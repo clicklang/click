@@ -1,12 +1,13 @@
-# Statement paths name points of the statements as written
+# Statement regions name points of the statements as written
 
-`statement(i)` is the `i`th statement of the function body as written,
-counting from zero: each block item, declarations included. Its `.entry` is
-before the first region `step()` crosses for it, and its `.exit` is after the
-last. A statement's calls are regions of their own, so `y = f(f(y));` is two
-regions: the inner call, then the outer call assigned to `y`.
-`statement(1).call(f, 1)` is the outer call, since calls are counted in the
-order they run, and `statement(1).region(1)` is the same region by its index.
+`statement(i)` is the region of the `i`th statement of the function body as
+written, counting from zero: each block item, declarations included. Its
+`.entry` is before the first atomic region `step()` crosses for it, and its
+`.exit` is after the last. A statement's calls are atomic regions of their
+own, so `y = f(f(y));` is two: the inner call, then the outer call assigned to
+`y`. `statement(1).call(f, 1)` is the outer call, since calls are counted in
+the order they run, and `statement(1).region(1)` is the same atomic region by
+its index.
 
 ```c filename=statement_paths.c
 int32 f(int32 v) { return v + 1; }

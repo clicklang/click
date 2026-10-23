@@ -3414,48 +3414,50 @@ at(region(0).entry, p[0] == 7)
 at(region(0).entry, viewable(p[0..n]))
 ```
 
-`region(N)` is the `N`th region `step()` crosses, zero-based, in executable
-preorder. A C statement's calls are each a region of their own, before the
-region that uses their result: `p->x = next(p);` is two regions, the call and
-then the store, so the state after `next` returns is the call region's
-`.exit`.
+Every selector names a region: a stretch of the program with an `.entry` and
+an `.exit`. `function` is the whole body and `loop(i)` is a loop. The regions
+`step()` crosses one at a time are the *atomic* regions, and `region(N)` is the
+`N`th of them, zero-based, in executable preorder. A C statement's calls are
+each an atomic region of their own, before the one that uses their result:
+`p->x = next(p);` is two atomic regions, the call and then the store, so the
+state after `next` returns is the call region's `.exit`.
 
-A path through the statements as written names the same points by the
-source's own structure. Every step counts from zero within the step before it:
+A region can also be written as a chain, each link a region inside the one
+before it and counted from zero there:
 
-| Path | Names |
+| Region | Names |
 |---|---|
-| `statement(i)` | the `i`th block item of the function body, declarations included |
+| `statement(i)` | the `i`th block item of the function body as written, declarations included |
 | `S.statement(j)` | the `j`th statement `S` controls or contains; an `if`'s arms share one count in source order |
 | `loop(i).statement(j)` | the `j`th statement of loop `i`'s body |
-| `S.region(j)` | the `j`th region of `S`'s own, in executable order |
+| `S.region(j)` | the `j`th atomic region of `S`'s own, in executable order |
 | `S.call(f, j)` | `S`'s `j`th call of `f`, in the order the calls run |
 
-A statement's `.entry` is before its first region, its own or a child's. Its
-`.exit` is after its `if` or loop region when it is one, after its last
-region otherwise, and after its last statement when it is a block. A path
-resolves to the `region(N)` point it names, so it reads the snapshot `step()`
-recorded there; a path to a statement, region or call the function does not
+A statement's `.entry` is before its first atomic region, its own or a
+child's. Its `.exit` is after its `if` or loop region when it is one, after its
+last atomic region otherwise, and after its last statement when it is a block.
+A chained region reads the snapshot `step()` recorded at the atomic region it
+resolves to. One that names a statement, region or call the function does not
 have is refused with what it does have
-(`mdtests/a_statement_path_past_the_written_statements_is_refused.md`).
+(`mdtests/a_statement_region_past_the_written_statements_is_refused.md`).
 
-<!-- verified-example: mdtests/statement_paths_name_points_of_statements_as_written.md -->
+<!-- verified-example: mdtests/statement_regions_name_points_of_statements_as_written.md -->
 ```click
 have at(statement(1).call(f, 1).entry, y) == x + 1 by simp();
 have at(statement(1).region(1).entry, y) == x + 1 by simp();
 ```
 
 There `y = f(f(y));` is `statement(1)`, and its outer call is both its second
-call of `f` and its second region.
+call of `f` and its second atomic region.
 
 Click writes points the same way. A diagnostic, a suggested premise or an
-expansion names a recorded point by the path to its statement: `.entry` or
-`.exit` when the point is one, and the statement's `.call(f, j)` or
-`.region(j)` otherwise. It writes `region(N)` only for a region that belongs to
-no statement as written, such as a `break`, or in a function whose frontend
-records none. Nested statements and loop bodies are in
-`mdtests/statement_paths_count_the_arms_of_an_if_together.md` and
-`mdtests/statement_paths_reach_a_loop_body.md`.
+expansion names a recorded point by its statement: `.entry` or `.exit` when
+the point is one, and the statement's `.call(f, j)` or `.region(j)` otherwise.
+It writes `region(N)` only for an atomic region that belongs to no statement as
+written, such as a `break`, or in a function whose frontend records none.
+Nested statements and loop bodies are in
+`mdtests/statement_regions_count_the_arms_of_an_if_together.md` and
+`mdtests/statement_regions_reach_a_loop_body.md`.
 
 An execution proof can give its current frontier state a local name and use
 that bare name as a selector later:

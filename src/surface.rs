@@ -3135,8 +3135,9 @@ impl RecordedSnapshots {
         let layout = match &self.source_layout {
             Some(layout) => layout,
             None => {
-                fallback = diagnostics::spelling_layout()
-                    .ok_or("statement paths name points of a function body being executed")?;
+                fallback = diagnostics::spelling_layout().ok_or(
+                    "`statement(i)` regions name points of a function body being executed",
+                )?;
                 &fallback
             }
         };
@@ -5566,26 +5567,26 @@ pub enum CodeRegionRef {
     Read(usize),
     /// The current loop preservation region's checked back edge.
     BackEdge,
-    /// A path through the statements as written, such as
-    /// `statement(2).statement(0)` or `statement(3).call(f, 1)`; it names the
-    /// regions it resolves to through the function's source layout.
+    /// A region written as a chain of regions, each inside the one before
+    /// it, such as `statement(2).statement(0)` or `statement(3).call(f, 1)`;
+    /// it names the atomic regions it resolves to through the function's
+    /// source layout.
     Path(Vec<SourcePathStep>),
 }
 
-/// One step of a path through the statements as written. Each counts from
-/// zero within the region before it: the function body, a statement, or a
-/// loop's statement.
+/// One link of a chained region. Each counts from zero within the region
+/// before it: the function body, a statement, or a loop's statement.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum SourcePathStep {
     /// The `i`th statement: a block item, or a statement an `if` or loop
     /// controls. The arms of an `if` share one count, in source order.
     Statement(usize),
-    /// Loop `i` of the function, as `loop(i)` counts it; a path's start.
+    /// Loop `i` of the function, as `loop(i)` counts it; a chain's start.
     Loop(usize),
-    /// The statement's `j`th region of its own, in executable order; a
-    /// path's end.
+    /// The statement's `j`th atomic region of its own, in executable order;
+    /// a chain's end.
     Region(usize),
-    /// The statement's `j`th call of `f`, in evaluation order; a path's end.
+    /// The statement's `j`th call of `f`, in evaluation order; a chain's end.
     Call(String, usize),
 }
 
@@ -5608,9 +5609,7 @@ impl CodeRegionRef {
             CodeRegionRef::BackEdge => Err(CodeRegionResolutionError::ExecutionTargetOnly(
                 "back_edge regions are",
             )),
-            CodeRegionRef::Path(_) => Err(CodeRegionResolutionError::ExecutionTargetOnly(
-                "statement paths name points in `at(...)` and are not",
-            )),
+            CodeRegionRef::Path(_) => Err(CodeRegionResolutionError::StatementRegionTarget),
             CodeRegionRef::Assignment { .. } | CodeRegionRef::Read(_) => Err(
                 CodeRegionResolutionError::ExecutionTargetOnly("assignment and read regions are"),
             ),
@@ -5625,6 +5624,9 @@ pub(in crate::surface) enum CodeRegionResolutionError {
     ExecutionTargetOnly(&'static str),
     /// No loop on this execution path was given this label.
     UnknownLabel(String),
+    /// A statement region, which names points for `at(...)` but is not yet
+    /// an `execute_until` target.
+    StatementRegionTarget,
 }
 
 impl std::fmt::Display for CodeRegionResolutionError {
@@ -5634,6 +5636,10 @@ impl std::fmt::Display for CodeRegionResolutionError {
                 write!(formatter, "{regions} supported only by `execute_until`")
             }
             Self::UnknownLabel(label) => write!(formatter, "unknown code region label `{label}`"),
+            Self::StatementRegionTarget => write!(
+                formatter,
+                "`execute_until` does not take a `statement(i)` region yet; give it the `region(N)` the statement starts at"
+            ),
         }
     }
 }

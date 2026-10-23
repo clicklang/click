@@ -1,11 +1,11 @@
-# Statement paths count an `if`'s arms together
+# Statement regions count an `if`'s arms together
 
 `statement(i).statement(j)` is the `j`th statement `statement(i)` controls.
 An `if`'s arms share one count in source order, so here the then-arm holds
 `statement(1).statement(0)` and `statement(1).statement(1)`, and the else-arm
 starts at `statement(1).statement(2)`. A loop's statements are reached either
 through the statement the loop is or as `loop(i).statement(j)`: in
-[`statement_paths_reach_a_loop_body.md`](statement_paths_reach_a_loop_body.md),
+[`statement_regions_reach_a_loop_body.md`](statement_regions_reach_a_loop_body.md),
 `loop(0).statement(0)` and `statement(2).statement(0)` are one point.
 
 ```c filename=statement_paths_if.c

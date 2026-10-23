@@ -1,4 +1,4 @@
-# Statement paths reach a loop body
+# Statement regions reach a loop body
 
 `loop(i).statement(j)` is the `j`th statement of loop `i`'s body. The loop is
 also the statement it is as written, here `statement(2)`, so
