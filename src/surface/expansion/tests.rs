@@ -2318,7 +2318,7 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
 
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
-fn wide_arithmetic_promotes_unsuffixed_literals_in_checked_bridge_arguments() {
+fn wide_arithmetic_promotes_unsuffixed_literals_in_checked_certificates() {
     for (carrier, suffix) in [("uint64", "u64"), ("int64", "i64")] {
         let source = format!(
             "theorem span(n: {carrier}) {{ requires 4{suffix} <= n; requires n <= 16{suffix}; \
@@ -2326,15 +2326,13 @@ fn wide_arithmetic_promotes_unsuffixed_literals_in_checked_bridge_arguments() {
         );
         verify_c0_sources(&source, &[]).expect("implicit wide literals must verify");
         let expanded = expand_c0_claim_source_by_label(&source, &[], "span.ensures_0")
-            .expect("the promoted bridge arguments must expand");
-        assert!(
-            expanded.contains(&format!(
-                "integer_operation_identity bounds [0, 1] => to_integer((16{suffix} - n))"
-            )),
-            "{expanded}"
-        );
+            .expect("the promoted literals must expand to a checked certificate");
+        // Normalization can discharge the arithmetic without explicit
+        // operation-identity bridges. Check the certificate independently.
+        assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
         assert!(!expanded.contains("arithmetic()"), "{expanded}");
-        verify_c0_sources(&expanded, &[]).expect("the explicit bridges must independently verify");
+        verify_c0_sources(&expanded, &[])
+            .expect("the explicit certificate must independently verify");
         let missing_bound = source.replace("4 <= n; n <= 16;", "n <= 16;");
         verify_c0_sources(&missing_bound, &[])
             .expect_err("the final inequality lacks its lower bound");
