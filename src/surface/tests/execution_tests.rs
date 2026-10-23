@@ -2242,7 +2242,7 @@ fn execute_stops_a_loop_that_never_exits_at_its_step_budget() {
             assert!(
                 error
                     .message()
-                    .contains("`execute` exhausted its 10000-step budget at statement("),
+                    .contains("`execute` exhausted its 10000-step budget at region("),
                 "expected the step budget refusal, got: {}",
                 error.message()
             );
@@ -2286,7 +2286,7 @@ fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
             assert!(
                 error
                     .message()
-                    .contains("`execute` exhausted its 10000-step budget at statement("),
+                    .contains("`execute` exhausted its 10000-step budget at region("),
                 "expected the step budget refusal, got: {}",
                 error.message()
             );
