@@ -12599,23 +12599,22 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
         expanded.unwrap_or_else(|error| panic!("failed to expand `{}`: {error:?}", path.display()));
 
     assert!(
-        expanded.contains("if to_integer(k) < (to_integer(j) - 1)"),
+        expanded.contains("if to_integer(k) < (to_integer(j) - 1)")
+            || expanded.contains("if k < ((int32)(j - 1))"),
         "expanded proof from `{}` omitted the checked upper-bound split",
         path.display()
     );
-    // Expansion spells the library theorem by its bare name and imports its
-    // module.
-    assert!(
-        expanded.contains("int32_less_than_increment_implies_less_equal("),
-        "expanded proof from `{}` omitted the split's explicit bound theorem",
-        path.display()
+    // The bound may be discharged by an arithmetic certificate rather than
+    // a named theorem. Cold rechecking must retain the explicit proof and
+    // must not recover it through implicit outcome planning.
+    let (checked, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
+        without_implicit_auto(|| verify_c0_sources(&expanded, &c_sources))
+    });
+    assert_eq!(
+        planning, 0,
+        "expanded bound proof must recheck without planning"
     );
-    assert!(
-        expanded.contains("import click::machine_integer;"),
-        "expanded proof from `{}` does not import the bound theorem's module",
-        path.display()
-    );
-    verify_c0_sources(&expanded, &c_sources).unwrap_or_else(|error| {
+    checked.unwrap_or_else(|error| {
         panic!(
             "expanded proof from `{}` failed independent verification: {error:?}",
             path.display()
