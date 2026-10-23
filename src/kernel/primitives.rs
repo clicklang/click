@@ -4357,6 +4357,11 @@ pub struct CMemorySegment {
     /// An optional entry-state condition guarding a contract footprint.
     /// Resource and loop segments are normally unconditional.
     pub(super) guard: Option<SpecProposition>,
+    /// `uninitialized(p[a..b])` in a contract: the bytes are held with no
+    /// claim that they are initialized. The callee's proof starts with them
+    /// unwritten, and a produced range reaches the caller unwritten. The
+    /// resource itself is ordinary ownership of the range.
+    pub(super) uninitialized: bool,
 }
 
 #[derive(Clone, Debug)]

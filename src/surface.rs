@@ -349,6 +349,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "transport",
     "uint8",
     "unfold",
+    "uninitialized",
     "using",
     "verifying",
     "viewable",
@@ -3785,6 +3786,10 @@ pub struct ContractSegment {
     start: CExpression,
     end: CExpression,
     surface: ContractSegmentSurface,
+    /// `uninitialized(p[a..b])`: the callee holds these bytes but makes no
+    /// claim that they are initialized. The callee's proof starts with them
+    /// unwritten; a produced range reaches the caller unwritten.
+    uninitialized: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -3834,6 +3839,15 @@ impl std::hash::Hash for StructRangeLayout {
 }
 
 impl ContractSegment {
+    pub(crate) fn is_uninitialized(&self) -> bool {
+        self.uninitialized
+    }
+
+    pub(crate) fn into_uninitialized(mut self) -> Self {
+        self.uninitialized = true;
+        self
+    }
+
     /// The written base and bounds of a range segment.
     ///
     /// A diagnostic that names the cell a single-cell condition came from

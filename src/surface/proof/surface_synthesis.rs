@@ -281,6 +281,7 @@ fn synthesize_struct_loadable_segment(
             }
             return Some(ClickProposition::Loadable {
                 segment: ContractSegment {
+                    uninitialized: false,
                     state: ContractSegmentState::Current,
                     base: owner.base,
                     start: CExpression::Value(int32(start / width)),
@@ -307,6 +308,7 @@ fn synthesize_struct_loadable_segment(
         let end = CExpression::Value(int32(end));
         return Some(ClickProposition::Loadable {
             segment: ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: cast.clone(),
                 start: start.clone(),
@@ -1306,6 +1308,7 @@ fn synthesize_zero_based_loadable_segment(
             .unwrap_or_else(|| ContractExpression::CFragment(semantic_base.clone()));
     Some(ClickProposition::Loadable {
         segment: ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base: semantic_base,
             start: CExpression::Value(int32(0)),
@@ -1375,6 +1378,7 @@ fn synthesize_exact_external_zero_based_byte_range(
     let start = CExpression::Value(int32(0));
     Ok(Some(ClickProposition::Loadable {
         segment: ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base: named.clone(),
             start: start.clone(),
@@ -1465,6 +1469,7 @@ fn synthesize_named_range_loadable_segment(
         )?)?;
         return Some(ClickProposition::Loadable {
             segment: ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: named.lowered,
                 start: start.clone(),
@@ -1514,6 +1519,7 @@ fn synthesize_named_range_loadable_segment(
     )?)?;
     Some(ClickProposition::Loadable {
         segment: ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base: named.lowered,
             start: start.clone(),
@@ -1608,6 +1614,7 @@ fn synthesize_external_symbolic_element_range(
         let end = CExpression::Value(int32(1));
         return Some(ClickProposition::Loadable {
             segment: ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: semantic_base,
                 start: start.clone(),
@@ -1636,6 +1643,7 @@ fn synthesize_external_symbolic_element_range(
     let named = CExpression::Variable(surface_local_name(name).to_string());
     Some(ClickProposition::Loadable {
         segment: ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base: named.clone(),
             start: start.clone(),
@@ -2401,6 +2409,7 @@ fn synthesize_surface_resource_subject(
     let start = contract_expression_to_c_fragment(&surface_start)?;
     let end = contract_expression_to_c_fragment(&surface_end)?;
     Some(ResourceSubject::Memory(ContractSegment {
+        uninitialized: false,
         state: ContractSegmentState::Current,
         base: semantic_base,
         start,

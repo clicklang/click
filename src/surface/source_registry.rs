@@ -650,6 +650,7 @@ mod tests {
         let requirements = vec![
             proposition("p"),
             Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: CExpression::Variable("p".to_string()),
                 start: CExpression::Value(int32(0)),
@@ -726,6 +727,7 @@ mod tests {
                     right: ContractExpression::IntegerLiteral("0".to_string()),
                 }),
                 Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
+                    uninitialized: false,
                     state: ContractSegmentState::Current,
                     base: CExpression::Variable("p".to_string()),
                     start: CExpression::Value(int32(0)),
@@ -980,6 +982,7 @@ mod tests {
                     }),
                 )),
                 Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
+                    uninitialized: false,
                     state: ContractSegmentState::Current,
                     base: CExpression::Variable("p".to_string()),
                     start: CExpression::Value(int32(0)),

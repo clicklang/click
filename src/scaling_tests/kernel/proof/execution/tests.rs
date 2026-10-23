@@ -425,6 +425,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
         false,
         vec![crate::kernel::CResourceSpec::owned_memory(
             crate::kernel::CMemorySegment {
+                uninitialized: false,
                 base: CExpression::Value(CValue::pointer(crate::kernel::Pointer::symbolic(
                     Variable(100),
                 ))),

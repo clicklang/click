@@ -891,6 +891,7 @@ fn parses_checked_signature_and_contract_clauses() {
         &[
             Requirement::LoadableSegment {
                 segment: ContractSegment {
+                    uninitialized: false,
                     state: ContractSegmentState::Current,
                     base: CExpression::Variable("p".to_string()),
                     start: CExpression::Value(int32(0)),
@@ -903,6 +904,7 @@ fn parses_checked_signature_and_contract_clauses() {
                 },
             },
             Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: CExpression::Variable("p".to_string()),
                 start: CExpression::Value(int32(0)),
@@ -3183,6 +3185,7 @@ fn parses_loadable_segment_syntax() {
         function.requires(),
         &[Requirement::LoadableSegment {
             segment: ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: CExpression::Variable("p".to_string()),
                 start: CExpression::Value(int32(0)),
@@ -3234,6 +3237,7 @@ fn parses_loadable_segment_proposition() {
         &[
             Requirement::LoadableSegment {
                 segment: ContractSegment {
+                    uninitialized: false,
                     state: ContractSegmentState::Current,
                     base: CExpression::Add(
                         Box::new(CExpression::Variable("p".to_string())),
@@ -3495,6 +3499,7 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
         function.requires(),
         &[Requirement::LoadableSegment {
             segment: ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: CExpression::Variable("obj".to_string()),
                 start: CExpression::Value(int32(0)),
@@ -3735,6 +3740,7 @@ fn parses_pilot_struct_field_owned_segment() {
     assert_eq!(
         segment,
         &ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base: CExpression::Variable("obj".to_string()),
             start: CExpression::Value(int32(0)),

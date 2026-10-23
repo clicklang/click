@@ -1719,6 +1719,46 @@ Top-level verification gets its resource context from the function's resource
 verbs, while function calls apply the callee's verified contract as one opaque
 execution step.
 
+### Uninitialized owned memory
+
+`owns uninitialized(p[a..b])` holds the range with no claim that its bytes are
+initialized: the callee may write them, and may not read one it has not
+written. The resource is ordinary ownership of the range; only the
+initialization claim differs. The proof starts with the bytes unwritten, as a
+fresh local's are, so a read needs a store before it or `defined` evidence
+(`mdtests/owns_uninitialized_refuses_a_read_before_a_write.md`,
+`mdtests/owns_uninitialized_with_a_symbolic_length_refuses_a_read.md`).
+A callee states the bytes it initialized with `ensures defined(...)`, and the
+caller may read those after the call; owning a range never says by itself
+that the callee wrote it.
+
+<!-- verified-example: mdtests/owns_uninitialized_reads_what_it_wrote.md -->
+```click
+int32 set_then_get(int32* p) {
+    owns uninitialized(p[0..1]);
+    ensures result == 1;
+    ensures p[0] == 1;
+    ensures defined(p[0]);
+} by { execute(); simp(); }
+```
+
+`produces uninitialized(result[0..n])` returns bytes the caller then holds
+unwritten, as it holds fresh `malloc` storage
+(`mdtests/produces_uninitialized_reaches_the_caller_unwritten.md`).
+`consumes uninitialized(p[a..b])` takes a range whatever its bytes hold, such
+as a destination a loop fills before anything reads it
+(`mdtests/uninitialized_destination_beside_a_viewed_source.md`).
+A viewed range is only read, so `views uninitialized(...)` is refused
+(`mdtests/views_uninitialized_is_refused.md`), and only a function contract's
+`owns`, `consumes`, and `produces` clauses accept the form. The generated
+`snprintf` contracts own their destination as `uninitialized(buffer[0..size])`.
+
+A range with a symbolic length, or 64-bit bounds, is marked from its first
+byte onward. Another array parameter's memory is not in it: a read belongs to
+the range only through an address built from its base. Memory the contract
+holds initialized past the range through that same base then also needs a
+store or `defined` evidence before a read.
+
 These memory resource facts belong to the built-in memory family. The family
 defines how resources entail, split, rejoin, transfer, and consume each other.
 This keeps the user-facing memory syntax concrete while sharing the same

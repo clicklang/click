@@ -169,6 +169,33 @@ pub(in crate::surface) fn evaluate_requirement_segment(
     )
 }
 
+/// A requirement segment's base pointer alone, for a segment whose bounds
+/// need not be `int32`.
+pub(in crate::surface) fn evaluate_requirement_segment_base(
+    parameter_binding: ParameterBinding<'_>,
+    entry_state: &CState,
+    segment: &ContractSegment,
+) -> Result<Pointer, String> {
+    let parameter_values = parameter_values_named(
+        parameter_binding,
+        &crate::surface::lowering::contract_segment_referenced_names(segment),
+    )
+    .map_err(|error| error.message)?;
+    let array_refs =
+        array_refs_for_values(parameter_binding, &parameter_values, entry_state.memory());
+    let CValue::Pointer(base) = crate::surface::proof::evaluate_c_fragment_through_kernel(
+        &segment.base,
+        &PureFactContext::new(),
+        ContractEnvironment::new(&parameter_values, &array_refs),
+        entry_state,
+        None,
+    )?
+    else {
+        return Err("segment base did not evaluate to a pointer".to_string());
+    };
+    Ok(base.into_pointer())
+}
+
 /// A segment's base, start, and end, each evaluated by the kernel at
 /// `state` as the C fragment it is.
 fn evaluate_segment_bounds(

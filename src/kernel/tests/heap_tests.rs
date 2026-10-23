@@ -1405,6 +1405,7 @@ fn nullable_owner_contract(body: CStatement) -> (CState, CFunction, Vec<CExpress
                 end: c_int32_literal(1),
                 element_width: 4,
                 guard: None,
+                uninitialized: false,
             }),
         ],
         Vec::new(),

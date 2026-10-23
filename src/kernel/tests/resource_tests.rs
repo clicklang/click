@@ -841,6 +841,7 @@ fn instance_memory_fixture() -> (ResourceInstance, CCompositeResourceDefinition,
             end: c_int32_literal(1),
             element_width: 4,
             guard: None,
+            uninitialized: false,
         })],
         vec![],
     )
@@ -4093,6 +4094,7 @@ fn resource_clauses_with_no_evaluable_order_name_two_positions() {
             end: c_int32_literal(1),
             element_width: 4,
             guard: None,
+            uninitialized: false,
         })
     };
     let evaluate = |clauses: &[CResourceSpec]| {
@@ -4300,6 +4302,7 @@ fn expanded_resource_clause_diagnostics_keep_source_positions() {
             end: c_int32_literal(1),
             element_width: 4,
             guard: None,
+            uninitialized: false,
         })
     };
     let error = crate::kernel::functions::evaluate_function_resource_context(
@@ -4356,6 +4359,7 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
             end,
             element_width: 4,
             guard: None,
+            uninitialized: false,
         })
     };
     let clauses = vec![

@@ -899,10 +899,24 @@ pub(super) fn verified_call_uninitialized_read(
     }
     let mut reads = Vec::new();
     collect_c_memory_read_expressions(function.body(), &mut reads);
+    // A parameter the contract holds as `uninitialized(p[a..b])` started
+    // unwritten in the callee's own proof, which checked each of its reads.
+    let uninitialized_parameters = function
+        .contract_interface()
+        .resource_requires()
+        .iter()
+        .filter_map(|resource| resource.term().memory_segment())
+        .filter(|segment| segment.is_uninitialized())
+        .filter_map(|segment| match &segment.base {
+            CExpression::Variable(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
     let pointer_parameters = function
         .parameters()
         .iter()
         .filter(|parameter| parameter.c_type().is_pointer())
+        .filter(|parameter| !uninitialized_parameters.contains(parameter.name()))
         .map(|parameter| parameter.name().to_string())
         .collect::<BTreeSet<_>>();
     for read in reads

@@ -1840,6 +1840,7 @@ fn substitute_contract_segment(
         surface => surface.clone(),
     };
     Ok(ContractSegment {
+        uninitialized: segment.uninitialized,
         state: segment.state,
         base: substitute_c_fragment_in(&segment.base, substitutions)?,
         start: substitute_c_fragment_in(&segment.start, substitutions)?,
@@ -2047,6 +2048,7 @@ pub(in crate::surface) fn apply_contract_lets_to_segment(
         surface => surface,
     };
     let segment = ContractSegment {
+        uninitialized: segment.uninitialized,
         state: segment.state,
         base: substitute_c_fragment(&segment.base, &substitutions)?,
         start: substitute_c_fragment(&segment.start, &substitutions)?,
