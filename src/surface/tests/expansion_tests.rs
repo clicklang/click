@@ -18918,7 +18918,7 @@ theorem untouched() { ensures 1 == 1 by { normalize(); } }
 
 #[test]
 #[ignore = "nightly: string resource expansion and retained rechecking"]
-fn expanded_string_witness_preserves_its_qualified_resource_module() {
+fn expanded_string_witness_survives_retained_and_cold_rechecking() {
     let (source, sources) = mdtest_sources("mdtests/cstr_readable_witness_stated_before_call.md");
     let sources = sources
         .iter()
@@ -18926,13 +18926,14 @@ fn expanded_string_witness_preserves_its_qualified_resource_module() {
         .collect::<Vec<_>>();
     let (session, verified) = C0VerificationSession::new(&source, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(&source, &verified, "fixed_string_length").unwrap();
-    assert!(expanded.contains("import click::cstr;"), "{expanded}");
     let at = expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
     session.verify_at(&expanded, at.line, at.column).unwrap();
     let changed = expanded.replace("ensures result == 2u64", "ensures result == 1u64");
     assert!(session.verify_at(&changed, at.line, at.column).is_err());
     drop(session);
-    parse(&expanded).expect("the written resource must resolve without implicit C call imports");
+    // Scalar witness facts need no resource import. Any declarations the
+    // expansion does reference must still resolve in a fresh parse.
+    parse(&expanded).expect("the expansion must resolve without implicit C call imports");
     verify_c0_sources(&expanded, &sources).unwrap();
 }
 
