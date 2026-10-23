@@ -65,9 +65,9 @@ arithmetic, such as `to_integer(a + b) <= to_integer(n)` or
 
 Built-in checks (Rust panic checks, C definedness and branch decisions) read
 machine facts, so filing an Integer fact (`PureFactContext::assume_condition`)
-also files, beside it, the native fact it holds exactly when in two more
-cases. Each costs constant work per filed fact: a shape match and at most a
-few exact lookups.
+also files, beside it, the native fact it holds exactly when, in the cases
+below. Each costs a shape match and at most a few exact lookups per
+comparison the filed fact makes.
 
 - A side that is the exact value of a machine `+` or `-` of observations or
   constants of one type reads as that operation's observation once the
@@ -79,6 +79,17 @@ few exact lookups.
   either spelling or as the signed definedness fact
   (`IntegerOperationRangeBound`). So `x <= 18446744073709551614u64 - y`
   files nothing: its difference may underflow.
+- A quantified fact `forall (k) { A(k) implies B(k) }` whose antecedent
+  compares such an operation's exact value, `to_integer(k) <
+  to_integer(len) + 1`, is filed again with that comparison read natively,
+  `k < len + 1u64` (`native_antecedent_reading`). The range bound follows the
+  rule above and may not name the bound variable. Built-in checks that match
+  a resource definition's quantified body fact exactly, such as assembling a
+  `cstr_at(p, len)` view, then read a fact a specification stated with
+  Integer arithmetic
+  (`mdtests/an_integer_stated_body_fact_assembles_a_c_string_view.md`,
+  `mdtests/an_integer_stated_body_fact_needs_its_range_bound.md`). The work
+  is the antecedent's conjuncts.
 - A signed `int32`/`int64` definedness fact is filed when this fact is one of
   the two Integer bounds of its exact result (`integer_bounds_of_definedness`)
   and the other is already known, so `execute` steps over C `a - b` under the
