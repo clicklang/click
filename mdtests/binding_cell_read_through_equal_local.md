@@ -9,15 +9,13 @@ spellings are one address only because the contract pins the payload —
 `Full(identity, value)` and `Full(parent, value)` in one equality class, and
 constructor injectivity in that class gives `identity == parent` to `simp`.
 
-An exact pointer equality between the binding and a C object makes the arm's
-clauses denote that object's cells, so `unfold` owns, names, and states them at
-the spelling the C reads (package A22; see
-[`docs/concepts/resources.md`](../docs/concepts/resources.md)). Without the
-rule the read is refused with `missing resource fact views
-symbolic-pointer:…`, with ownership of the very cell held one provable
-equality away. The refold is the same rule from the other side: it requires the
-arm's cells and facts at that spelling too, so the walk can hand the instance
-back.
+`unfold` owns and states the arm's cells at the binding itself, and the exact
+pointer equality between the binding and the C object lets the read through
+`parent` reach them (package A22; see
+[`docs/concepts/resources.md`](../docs/concepts/resources.md)). The binding is
+never renamed to the C spelling, so no fact the unfold produces depends on
+which equalities happened to be known. The refold requires the same cells and
+facts at the binding, so the walk can hand the instance back.
 
 This is the reduction of [`rb_ascending_walk_to_root.md`](rb_ascending_walk_to_root.md),
 where every iteration reads the frame's node through the C local the loop

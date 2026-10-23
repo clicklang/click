@@ -1603,43 +1603,42 @@ all; nothing here grants ownership, which only an explicit `unfold` produces.
 The ownership an arm introduces through a binding respects proved equality of
 that binding, exactly as declared resource identity respects proved equality of
 its arguments. A binding is a proof name: at an arbitrary frontier it is a
-fresh symbolic pointer, and no C statement is written through it. When an
-*exact* pointer equality identifies it with another pointer — the local an
-ascending walk reassigns, a parameter, a witness — the arm's clauses are
-instantiated at that pointer, so the cells the arm owns, the facts it states,
-its child resources' arguments, and the body a later `fold` requires all land
-on the address the program names. Without it a walk that has proved `identity
-== parent` still reads through the parameter's block while the frame owns the
-binding's, and the read is refused with `missing resource fact views
-symbolic-pointer:…` with ownership of that very cell one provable equality
-away. The reduction is `mdtests/binding_cell_read_through_equal_local.md` and
-the whole-loop case is `mdtests/rb_ascending_walk_to_root.md`, whose every
-iteration reads its frame through the C local the loop reassigns.
+fresh symbolic pointer, and no C statement is written through it. Its clauses
+are instantiated at the binding itself, so the cells it owns, the facts it
+states and its child resources' arguments are filed under the binding's own
+value, whatever equalities happen to be known. An access the program spells
+another way reaches them through the equality instead: memory resolution places
+an address in the owning block when the graph knows the two name one
+coordinate, and store separation looks an owned member up under every base that
+recorded cross-block equalities join to the store's address, proving that the
+two addresses are equal and that the member contains the access before using
+it. A walk that has proved `identity == parent` therefore reads through the
+parameter's block a cell the frame owns at the binding
+(`mdtests/binding_cell_read_through_equal_local.md`; the whole-loop case is
+`mdtests/rb_ascending_walk_to_root.md`), and a store through `q->next` is kept
+off a caller cell by ownership of `identity->next` two equalities away
+(`mdtests/do_while_restored_field_frame_remains_separate.md`).
 
-The `unfold` projection names an exposed cell the same way when the pointer is
-the resource's own argument. An instance folded through an alias, such as
-`tree(s)` with `s == p->right` exact, exposes cells its owner may already
-cache at `p->right`. Projecting them at `s` cached the same cells a second
-time under unrelated load names, so `s->left` and `p->right->left` read one
-cell as two values (`mdtests/an_unfold_through_an_alias_keeps_the_owners_cell_names.md`).
-The projection now names them at the older spelling. A loop invariant
-`n == old(n)` therefore makes `n->right` one read across the loop body
-without listing the alias in a later `transport`
+An `unfold` projection names the cells it exposes at the resource's own
+arguments in the same way. An instance folded through an alias, such as
+`tree(s)` with `s == p->right` exact, exposes cells its owner may already cache
+at `p->right`, and the read through `s` resolves through the equality to the
+cell already cached, one value
+(`mdtests/an_unfold_through_an_alias_keeps_the_owners_cell_names.md`). A loop
+invariant `n == old(n)` therefore makes `n->right` one read across the loop
+body without listing the alias in a later `transport`
 (`mdtests/a_retained_child_read_unfolded_at_its_older_alias_needs_no_listed_alias.md`);
 a store to the field still blocks that transport
 (`mdtests/a_store_to_a_retained_child_read_is_not_framed.md`).
 
-Exactness is the whole of the soundness argument. Only an assumed
-`PointerEqual` fact counts, read from the index that files those facts under
-each side, so a disequality, a disjunction, or an equality some heuristic could
-derive changes nothing
-(`mdtests/binding_cell_read_rejects_an_unproved_equality.md`). Two spellings of
-one address are exchanged and nothing else: an equality between two offsets of
-one block never becomes a `PointerEqual` in the first place, so the arm's
-clauses keep the offsets they state and a read at any other offset is still
-refused (`mdtests/binding_cell_read_rejects_an_unowned_offset.md`). The lookup
-is keyed by the pointer and takes one hop, so a binding costs one indexed
-query and no equality graph is walked.
+Neither route renames a value, so lowering a clause gives the same term with or
+without the equality, and every fact it produces is spellable from source. Only
+recorded equalities propose a base, and the access is proved equal before it is
+used, so a disequality, a disjunction, or an unproved equality changes nothing
+(`mdtests/binding_cell_read_rejects_an_unproved_equality.md`), and a read at an
+offset the arm does not own is still refused
+(`mdtests/binding_cell_read_rejects_an_unowned_offset.md`). The lookup visits
+the access's own alias class, never the other owned objects.
 
 If a fact reads mutable memory, the composite body must contain a memory
 resource covering that memory. That child is what makes the fact stable while

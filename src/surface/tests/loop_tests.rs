@@ -2852,6 +2852,48 @@ fn a_loop_snapshot_is_one_entry_under_every_spelling() {
     assert!(!snapshots.contains_key(&exit(CodeRegionRef::Label("inner".to_string()))));
 }
 
+/// Recorded snapshots find the point whose memory reads given bytes: each
+/// recorded memory answers with its own point, a newer point recording the
+/// same bytes takes over, and a removed point no longer answers.
+#[test]
+fn recorded_snapshots_find_the_point_reading_a_memory() {
+    let mark = |name: &str| SnapshotSelector::Mark(name.to_string());
+    let memory = |index: u32| {
+        let pointer = Pointer::symbolic(Variable(97_400 + u64::from(index)));
+        crate::kernel::intern_c_memory(
+            CMemory::new().store(pointer, CValue::Int32(Bitvector32Term::Constant(index))),
+        )
+    };
+    let state =
+        |memory: &crate::kernel::SharedCMemory| CState::new().with_memory(memory.memory().clone());
+    let mut snapshots = RecordedSnapshots::new();
+    let memories = (0..8).map(memory).collect::<Vec<_>>();
+    for (index, memory) in memories.iter().enumerate() {
+        snapshots.insert(mark(&format!("m{index}")), state(memory));
+    }
+    for (index, memory) in memories.iter().enumerate() {
+        let (selector, _) = snapshots
+            .point_reading_memory(memory)
+            .expect("every recorded memory has a point");
+        assert_eq!(*selector, mark(&format!("m{index}")));
+    }
+    snapshots.insert(mark("again"), state(&memories[3]));
+    assert_eq!(
+        snapshots
+            .point_reading_memory(&memories[3])
+            .map(|(selector, _)| selector.clone()),
+        Some(mark("again"))
+    );
+    snapshots.remove(&mark("again"));
+    assert_ne!(
+        snapshots
+            .point_reading_memory(&memories[3])
+            .map(|(selector, _)| selector.clone()),
+        Some(mark("again"))
+    );
+    assert!(snapshots.point_reading_memory(&memory(100)).is_none());
+}
+
 /// The indexed clause list binds, orders and answers label, scope and
 /// rebinding questions exactly as the whole-list fold and walks it
 /// replaced, over a long sequence of binds that rebind loops, move labels

@@ -854,8 +854,6 @@ fn never_address_taken_local_versus_pointer_value(
 /// of an alias is not reported. The re-ask is the ordinary query, but on a
 /// pointer that is *not* unresolved, so this rule is a no-op inside it and one
 /// hop cannot become a walk; `ResolutionQueryGuard` closes the remaining cycle.
-/// This is the same bound `arm_binding_program_spelling` accepts for the same
-/// index.
 fn pointers_distinct_through_one_exact_alias(
     left: &Pointer,
     right: &Pointer,

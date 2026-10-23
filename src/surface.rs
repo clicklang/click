@@ -2946,6 +2946,12 @@ struct RecordedSnapshots {
     /// `loop(N)` otherwise; a lookup by either spelling, or by another label
     /// of the same loop, reads that one entry.
     loop_labels: Option<std::sync::Arc<LoopLabels>>,
+    /// The newest recorded point whose memory reads each set of program
+    /// bytes, keyed by the memory's read identity. A load registered in a
+    /// memory other than the one being spelled is looked up here and
+    /// spelled `at(point, ...)` in one step, instead of trying recorded
+    /// snapshots in turn.
+    memory_points: imbl::HashMap<(u32, u32), SnapshotSelector>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -2969,6 +2975,7 @@ impl Default for RecordedSnapshots {
                 origin: std::sync::Arc::new(()),
             }),
             loop_labels: None,
+            memory_points: imbl::HashMap::new(),
         }
     }
 }
@@ -3196,6 +3203,16 @@ impl RecordedSnapshots {
         None
     }
 
+    /// The newest recorded point whose memory reads the same program bytes
+    /// as `memory`, with its state. One hash lookup; no snapshot is visited.
+    fn point_reading_memory(
+        &self,
+        memory: &crate::kernel::SharedCMemory,
+    ) -> Option<(&SnapshotSelector, &CState)> {
+        let selector = self.memory_points.get(&memory.read_identity())?;
+        Some((selector, self.get_exact(selector)?))
+    }
+
     fn contains_key<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> bool {
         self.get(key).is_some()
     }
@@ -3203,6 +3220,10 @@ impl RecordedSnapshots {
     fn insert(&mut self, selector: impl Into<SnapshotSelector>, state: CState) -> Option<CState> {
         let selector = self.recorded_spelling(selector.into());
         let prior = self.get(&selector).cloned();
+        if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
+            self.memory_points
+                .insert(memory.read_identity(), selector.clone());
+        }
         self.version = std::sync::Arc::new(RecordedSnapshotVersion {
             root: Some(recorded_snapshot_insert(
                 self.version.root.as_ref(),
@@ -3248,6 +3269,13 @@ impl RecordedSnapshots {
     fn remove<K: RecordedSnapshotKey + ?Sized>(&mut self, key: &K) -> Option<CState> {
         let selector = self.recorded_spelling(key.to_selector());
         let prior = self.get(key).cloned();
+        if let Some(memory) = prior
+            .as_ref()
+            .and_then(|state| crate::kernel::interned_storage_of(state.memory()))
+            && self.memory_points.get(&memory.read_identity()) == Some(&selector)
+        {
+            self.memory_points.remove(&memory.read_identity());
+        }
         if prior.is_some() {
             self.version = std::sync::Arc::new(RecordedSnapshotVersion {
                 root: Some(recorded_snapshot_insert(

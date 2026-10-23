@@ -30,20 +30,18 @@ The head explicitly refutes `Context::Top`. The failed-guard fact `parent != 0` 
 be `0` where the invariant says `1` (package A21).
 
 The exit explicitly refutes `Left` and `Right`. Constructor injectivity on the
-`ctx_reroot` invariant gives `identity == parent`. Unfolding that frame names
-its cells at `parent` and exposes its nonnull fact, contradicting the exit's
-`parent == 0`. The surviving arm states `c.model == Context::Top`, so the walk
-can fold the root frame.
+`ctx_reroot` invariant gives `identity == parent`. Unfolding that frame exposes
+its nonnull fact `identity != 0`, which `simp` carries across that equality to
+`parent != 0`, contradicting the exit's `parent == 0`. The surviving arm states
+`c.model == Context::Top`, so the walk can fold the root frame.
 
-The body reads the frame through the C local. `unfold(c)` owns, names, and
-states the arm's cells at the pointer the proved equality identifies the
-payload with, so `node = parent; parent = rb_parent(node);` reads the frame's
-own parent word, the refold of the lifted node requires that word at the same
-spelling, and the back edge hands `up` on as the next frame (package A22;
-[`binding_cell_read_through_equal_local.md`](binding_cell_read_through_equal_local.md)
-is the reduction). Without it the read is refused with `missing resource fact
-views symbolic-pointer:…` while ownership of that very cell is held one
-provable equality away.
+The body reads the frame through the C local. `unfold(c)` owns and states the
+arm's cells at the payload `identity`, and the proved `identity == parent`
+lets `node = parent; parent = rb_parent(node);` read the frame's own parent
+word through `parent`; the refold of the lifted node and the back edge, which
+hands `up` on as the next frame, reach the same cells the same way (package
+A22; [`binding_cell_read_through_equal_local.md`](binding_cell_read_through_equal_local.md)
+is the reduction).
 
 The frames carry the node they own as the payload `identity` because the frame
 above is keyed by that node, and `plug` still has to know which node each frame
@@ -383,12 +381,14 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
             unfold(ctx_reroot(Context::Left(identity, grandparent, color, sibling_model, up_model), parent));
             have identity == parent by assumption();
             let { sibling: exit_sibling, up: exit_up } = unfold(c);
+            have parent != 0 by simp();
             contradiction(parent == 0);
         },
         Context::Right(identity, grandparent, color, sibling_model, up_model) => {
             unfold(ctx_reroot(Context::Right(identity, grandparent, color, sibling_model, up_model), parent));
             have identity == parent by assumption();
             let { sibling: exit_sibling, up: exit_up } = unfold(c);
+            have parent != 0 by simp();
             contradiction(parent == 0);
         },
     }

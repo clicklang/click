@@ -8258,11 +8258,11 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     if let (AlgebraicValueType::C(_), AlgebraicValue::C(value)) =
                         (binding_type, value)
                     {
-                        let spelled = arm_binding_program_spelling(value, self.assumptions)
-                            .unwrap_or_else(|| value.clone());
-                        arm_evaluation
-                            .locals
-                            .set_typed(name.clone(), spelled, value.c_type());
+                        arm_evaluation.locals.set_typed(
+                            name.clone(),
+                            value.clone(),
+                            value.c_type(),
+                        );
                     }
                 }
             }
@@ -13953,73 +13953,6 @@ pub(in crate::kernel) fn child_composite_definition<'a>(
         .ok_or("resource match child has no registered definition")
 }
 
-/// The order that decides which of two equal spellings an arm is instantiated
-/// at. A block the program allocated or was handed is preferred over a
-/// symbolic one, and two symbolic blocks are ordered by their identities,
-/// which are minted in creation order: a binding introduced at the current
-/// frontier is newer than the havocked local or parameter a proof equates it
-/// with. The order is total and the choice is always the smaller element, so
-/// two spellings collapse to the same one whichever side the query starts
-/// from, and a spelling the program already uses is never traded away for a
-/// proof name. An opaque pure call is also a logical spelling, even when
-/// unfolding proves it equal to a program pointer. The block order puts it
-/// after symbolic variables, so it cannot displace a havocked C local.
-fn pointer_spelling_rank(pointer: &Pointer) -> (bool, &Pointer) {
-    (
-        matches!(
-            pointer.block,
-            PointerBlock::Symbolic(_) | PointerBlock::PureFunctionApplication(_)
-        ),
-        pointer,
-    )
-}
-
-/// The spelling a matched arm's pointer binding denotes.
-///
-/// A binding introduced by a proof `match` is a fresh symbolic pointer: it
-/// names the node the model says the arm holds, and no C statement is written
-/// through it. When an exact pointer equality identifies it with an older
-/// pointer -- the local an ascending walk reassigns, a parameter, a witness --
-/// the two are one address, and the program reads and writes that address
-/// under its own spelling. Instantiating the arm's clauses at the binding's
-/// symbolic spelling therefore owns, names, and requires cells the C can never
-/// reach: the read is refused with `missing resource fact views
-/// symbolic-pointer:...` while ownership of that very cell is held one
-/// provable equality away.
-///
-/// Declared resource identity already respects proved equality of a
-/// resource's arguments -- ownership of `list(node->next)` is ownership of
-/// `list(tail)` once `node->next == tail` is proved. This is that rule for the
-/// ownership a matched arm introduces *through a binding*: the arm's clauses
-/// are instantiated at a provably equal pointer, so the body they state is the
-/// same body, and every cell, fact, and child argument in it lands on the
-/// address the program names. A fold requires the body at the same spelling,
-/// which is what lets a walk hand its instance back.
-///
-/// Soundness rests on the equality being exact and on it being a genuine
-/// cross-block one. `exact_pointer_aliases` reads the index of assumed
-/// `PointerEqual` facts: never a derived, heuristic, or disjunctive
-/// conclusion, and never a `!=`. Same-block entries are explicitly excluded
-/// by `arm_pointer_program_spelling`; an entry can only exchange two
-/// spellings of one address, at the offset the fact states and no other. Which
-/// equal spelling is chosen changes nothing logically, since they are all the
-/// same address; `pointer_spelling_rank` fixes it so that the choice is
-/// deterministic, directed at the older spelling, and stable in the
-/// certificate. Boundedness: one keyed lookup per pointer binding, one hop, no
-/// transitive closure and no fact-set scan.
-pub(crate) fn arm_binding_program_spelling(
-    value: &CValue,
-    assumptions: &PureFactContext,
-) -> Option<CValue> {
-    let CValue::Pointer(value_pointer) = value else {
-        return None;
-    };
-    let spelling = arm_pointer_program_spelling(value_pointer.pointer(), assumptions)?;
-    let mut aliased = value_pointer.clone();
-    aliased.replace_pointer(spelling);
-    Some(CValue::Pointer(aliased))
-}
-
 /// Reuse an immutable algebraic payload when a constructor is matched again.
 /// The caller must have checked this constructor case; injectivity then makes
 /// its fresh binding equal to this payload. Only variables representable by
@@ -14048,22 +13981,6 @@ pub(crate) fn arm_algebraic_payload_spelling<'a>(
         return None;
     };
     (variable.0 >= 4_000_000 && (variable.0 - 4_000_000).is_multiple_of(65_536)).then_some(payload)
-}
-
-pub(in crate::kernel) fn arm_pointer_program_spelling(
-    pointer: &Pointer,
-    assumptions: &PureFactContext,
-) -> Option<Pointer> {
-    if !matches!(pointer.block, PointerBlock::Symbolic(_)) {
-        return None;
-    }
-    crate::instrumentation::record_deterministic_work(1);
-    assumptions
-        .exact_pointer_aliases(pointer)
-        .filter(|alias| alias.block != pointer.block)
-        .filter(|alias| pointer_spelling_rank(alias) < pointer_spelling_rank(pointer))
-        .min_by_key(|alias| pointer_spelling_rank(alias))
-        .cloned()
 }
 
 /// Reference type checking uses only the declaration and immutable reference
@@ -14328,13 +14245,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     AlgebraicValue::C(value),
                 ) => {
                     let ty = value.c_type();
-                    // A pointer payload an exact equality identifies with a C
-                    // pointer denotes that pointer, so the arm's cells are
-                    // owned, named, and required at the spelling the C
-                    // statements read (see `arm_binding_program_spelling`).
-                    let value = arm_binding_program_spelling(value, assumptions)
-                        .unwrap_or_else(|| value.clone());
-                    evaluation.locals.set_typed(name.clone(), value, ty);
+                    evaluation.locals.set_typed(name.clone(), value.clone(), ty);
                 }
                 (AlgebraicValueType::Integer, Some(variable), AlgebraicValue::Integer(value)) => {
                     if integer_bindings.insert(*variable, value.clone()).is_some() {
@@ -14539,17 +14450,6 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         {
             opening_assumptions = opening_assumptions.assume_proposition(fact.clone());
             opening_facts.push(fact);
-        }
-        if let Some(arm) = selected {
-            for (name, value) in arm.bindings.iter().zip(&constructor_fields) {
-                if let AlgebraicValue::C(value) = value
-                    && let Some(spelling) =
-                        arm_binding_program_spelling(value, &opening_assumptions)
-                {
-                    let ty = spelling.c_type();
-                    evaluation.locals.set_typed(name.clone(), spelling, ty);
-                }
-            }
         }
     }
     let assumptions = &opening_assumptions;
@@ -14860,23 +14760,6 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     "fold would duplicate instance ownership: {error}"
                 ))
             })?;
-    }
-    // Body propositions retain their source bindings, including exact facts
-    // about model pointers. Only memory/child placement uses the early alias
-    // spelling; lowering reads still has that checked equality available.
-    if unfold
-        && active
-        && !body_children.is_empty()
-        && let Some(arm) = selected
-    {
-        for (name, value) in arm.bindings.iter().zip(&constructor_fields) {
-            if let AlgebraicValue::C(value) = value {
-                let spelling = arm_binding_program_spelling(value, entry_assumptions)
-                    .unwrap_or_else(|| value.clone());
-                let ty = spelling.c_type();
-                evaluation.locals.set_typed(name.clone(), spelling, ty);
-            }
-        }
     }
     evaluation.resources = if unfold {
         next.resources.clone()

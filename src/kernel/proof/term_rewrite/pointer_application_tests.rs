@@ -159,29 +159,6 @@ fn pure_pointer_capture_cache_does_not_hide_a_free_occurrence_after_a_fold() {
     );
 }
 
-#[test]
-fn pure_pointer_projection_does_not_replace_a_program_spelling() {
-    let program = Pointer::symbolic(Variable(410));
-    let binding = Pointer::symbolic(Variable(411));
-    let projection = call("select", vec![argument(binding.clone())]);
-    let equality = |a, b| Proposition::ConditionIs(ConditionTerm::pointer_equal(a, b), true);
-    let projection_only =
-        PureFactContext::new().assume_proposition(equality(binding.clone(), projection));
-    let value = CValue::typed_pointer(binding.clone(), CType::Int32Pointer);
-    assert_eq!(
-        crate::kernel::arm_binding_program_spelling(&value, &projection_only),
-        None
-    );
-    let with_program = projection_only.assume_proposition(equality(binding, program.clone()));
-    assert_eq!(
-        crate::kernel::arm_binding_program_spelling(&value, &with_program),
-        Some(CValue::Pointer(
-            CPointerValue::new(Pointer::symbolic(Variable(411)), CType::Int32Pointer)
-                .with_address(program)
-        )),
-    );
-}
-
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/proof/term_rewrite/pointer_application_tests.rs");
