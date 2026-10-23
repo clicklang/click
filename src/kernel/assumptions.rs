@@ -6843,7 +6843,11 @@ impl PureFactContext {
             proposition => {
                 let decided = decided_algebraic_if(&proposition);
                 let reduced = self.reduce_by_decided_conditions(&proposition);
+                let native = self.native_antecedent_reading(&proposition);
                 self.insert_proposition_fact(proposition);
+                if let Some(native) = native {
+                    self.insert_proposition_fact(native);
+                }
                 if let Some((condition, value, selected)) = decided {
                     self = self.assume_decided_algebraic_if(condition, value, selected);
                 }
@@ -6853,6 +6857,83 @@ impl PureFactContext {
             }
         }
         self
+    }
+
+    /// A quantified fact `forall k { A(k) implies B(k) }` whose antecedent
+    /// compares the Integer value of an in-range machine `+` or `-`, such as
+    /// `to_integer(k) < to_integer(len) + 1`, filed again with that
+    /// comparison read natively, `k < len + 1u64`, as a top-level fact is
+    /// ([`native_comparison_through_integer_operations`]). The two
+    /// antecedents agree once each operation's result lies in its type, so a
+    /// range bound the operand types do not imply must already be a fact, and
+    /// it may not name the bound variable. Built-in checks that match a
+    /// definition's quantified body fact exactly, such as assembling
+    /// `cstr_at(p, len)`, then see what a specification stated with Integer
+    /// arithmetic. The work is the antecedent's conjuncts, each one shape
+    /// match and at most a few exact lookups.
+    fn native_antecedent_reading(&self, proposition: &Proposition) -> Option<Proposition> {
+        let Proposition::ForAll {
+            var,
+            sort,
+            body,
+            name,
+        } = proposition
+        else {
+            return None;
+        };
+        let Proposition::Implies(antecedent, consequent) = body.as_ref() else {
+            return None;
+        };
+        let native = self.native_conjunct_reading(antecedent, *var)?;
+        Some(Proposition::ForAll {
+            var: *var,
+            sort: sort.clone(),
+            body: Box::new(Proposition::Implies(Box::new(native), consequent.clone())),
+            name: name.clone(),
+        })
+    }
+
+    /// The native reading of each conjunct of `antecedent` that has one, or
+    /// `None` when no conjunct changes.
+    fn native_conjunct_reading(
+        &self,
+        antecedent: &Proposition,
+        var: Variable,
+    ) -> Option<Proposition> {
+        match antecedent {
+            Proposition::And(left, right) => {
+                let (native_left, native_right) = (
+                    self.native_conjunct_reading(left, var),
+                    self.native_conjunct_reading(right, var),
+                );
+                if native_left.is_none() && native_right.is_none() {
+                    return None;
+                }
+                Some(Proposition::And(
+                    Box::new(native_left.unwrap_or_else(|| left.as_ref().clone())),
+                    Box::new(native_right.unwrap_or_else(|| right.as_ref().clone())),
+                ))
+            }
+            Proposition::ConditionIs(condition, value) => {
+                crate::instrumentation::record_deterministic_work(1);
+                let (native, truth, bounds) =
+                    native_comparison_through_integer_operations(condition, *value)?;
+                (native != *condition
+                    && bounds.iter().all(|bound| {
+                        let facts = bound.stating_facts();
+                        let mut variables = std::collections::BTreeSet::new();
+                        for fact in &facts {
+                            crate::kernel::reasoning::variable_collection::collect_proposition_capture_variables(
+                                fact,
+                                &mut variables,
+                            );
+                        }
+                        !variables.contains(&var) && facts.iter().any(|fact| self.contains_known(fact))
+                    }))
+                .then(|| Proposition::ConditionIs(native, truth))
+            }
+            _ => None,
+        }
     }
 
     /// What [`decided_algebraic_if`] found: the condition at its value and
@@ -10782,6 +10863,64 @@ mod integer_observation_tests {
             word(left),
             Bitvector32Term::subtract(Bitvector32Term::Constant(value), word(right)),
         )
+    }
+
+    fn uint64_max() -> SharedIntegerTerm {
+        IntegerTerm::Constant(BigInt::from(u64::MAX)).into()
+    }
+
+    /// `forall (k: uint64) { antecedent implies word(832) == 0 }`.
+    fn quantified_over_k(antecedent: Proposition) -> Proposition {
+        Proposition::ForAll {
+            var: Variable(830),
+            sort: Sort::CMachineInteger(MachineIntegerType::UInt64),
+            body: Box::new(Proposition::Implies(
+                Box::new(antecedent),
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::equal(word(832), Bitvector32Term::Constant(0)),
+                    true,
+                )),
+            )),
+            name: BinderName::written("k"),
+        }
+    }
+
+    #[test]
+    fn a_quantified_integer_antecedent_through_an_in_range_sum_files_its_native_reading() {
+        // forall k { to_integer(k) < to_integer(len) + 1 implies ... } is
+        // forall k { k < len + 1u64 implies ... } once len + 1 cannot wrap.
+        let sum: SharedIntegerTerm =
+            IntegerTerm::Add(observe(MachineIntegerType::UInt64, 831), constant(1)).into();
+        let reading =
+            ConditionTerm::IntegerLessThan(observe(MachineIntegerType::UInt64, 830), sum.clone());
+        let (native, truth, _) = native_comparison_through_integer_operations(&reading, true)
+            .expect("the sum has a native reading");
+        let integer_fact = quantified_over_k(Proposition::ConditionIs(reading, true));
+        let native_fact = quantified_over_k(Proposition::ConditionIs(native, truth));
+        let unbounded = PureFactContext::new().assume_proposition(integer_fact.clone());
+        assert!(!unbounded.contains_known(&native_fact));
+        let bounded = PureFactContext::new()
+            .assume_condition(ConditionTerm::IntegerLessEqual(sum, uint64_max()), true)
+            .assume_proposition(integer_fact);
+        assert!(bounded.contains_known(&native_fact));
+    }
+
+    #[test]
+    fn a_quantified_antecedent_bound_that_names_the_binder_files_nothing() {
+        // to_integer(k) + 1 <= to_integer(len) needs a bound on k + 1, which
+        // differs for each k, so no fact about the context supplies it.
+        let sum: SharedIntegerTerm =
+            IntegerTerm::Add(observe(MachineIntegerType::UInt64, 830), constant(1)).into();
+        let reading =
+            ConditionTerm::IntegerLessEqual(sum.clone(), observe(MachineIntegerType::UInt64, 831));
+        let (native, truth, _) = native_comparison_through_integer_operations(&reading, true)
+            .expect("the sum has a native reading");
+        let context = PureFactContext::new()
+            .assume_condition(ConditionTerm::IntegerLessEqual(sum, uint64_max()), true)
+            .assume_proposition(quantified_over_k(Proposition::ConditionIs(reading, true)));
+        assert!(
+            !context.contains_known(&quantified_over_k(Proposition::ConditionIs(native, truth)))
+        );
     }
 
     #[test]
