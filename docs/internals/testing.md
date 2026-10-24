@@ -396,6 +396,7 @@ substitute the ten-minute target or a partial-cache measurement.
 | --- | --- | --- | --- |
 | Codex cloud, 4 CPU cores / 16 GiB, Linux x86-64 | 15m09s of commands: 6m01s setup + 9m08s gate | 5m25s for one added Rust test; 7m00s for a full Click rebuild | 4m50s |
 | GitHub Actions, `ubuntu-24.04`, sharded workflow | Unmeasured with all Click caches empty | 6m11s with build and tool caches restored | 6m15s for a same-source merge-queue workflow |
+| Claude Code cloud, 4 vCPUs / 15.7 GiB, Linux x86-64 | 24m19s of commands: 4m32s setup + 19m47s gate | 10m56s for one added Rust test; 17m13s for a full Click rebuild | 9m37s |
 
 The CI unchanged case tests an identical Git tree in a new workflow, not the
 same executable in the same working directory. It includes fresh checkouts,
@@ -404,6 +405,17 @@ startup. Its few seconds of difference from the edited case are not evidence
 that an unchanged source tree is slower. A fully cold CI measurement remains
 missing; the 9m40s comparison below must not fill that cell.
 
+The Claude Code cloud machine runs every phase about twice as long as Codex
+cloud, not only edits. At `929f45018`, with no compilation in either run, its
+unit/API tests took 1.97 times as long (248.61s against 126.50s) and its
+fixture tests 2.00 times (306.87s against 153.29s); the same added test's
+incremental build took 2.10 times (79s against 37.59s). Both machines run
+four CPUs' worth of work and the tests use every core, so the ratio measures
+per-core speed: a 2.1 GHz Intel Xeon VM against an AMD EPYC 9V45 host.
+Steal time was under 1% of the session's CPU time. Compare a gate run with
+the row for its own environment; a Claude Code cloud gate near ten minutes is
+its unchanged floor, not a regression.
+
 ### Environment resource profile
 
 The Codex cloud resource profile was inspected on **2026-10-24**. The fresh,
@@ -411,24 +423,26 @@ small-edit, and unchanged timings were measured on that date using verifier
 commit **`929f45018944c9443be3b29199e091f27f7ae93e`**, plus the provisioning fixes
 described below and the documented temporary test for the small-edit case.
 The earlier full Click rebuild used that same verifier commit on **2026-10-23**.
+The Claude Code cloud profile was inspected on **2026-10-24**, the date of
+all its timings; the evidence below gives each timing's revision.
 
-| Resource | Codex cloud measurement environment |
-| --- | --- |
-| CPU allocation | **4 CPU cores of effective quota** (`cpu.max = 400000 100000`); CPU affinity exposes 5 logical CPUs |
-| CPU model / architecture | AMD EPYC 9V45 96-Core Processor; `x86_64` |
-| Memory | **16 GiB** cgroup limit (`memory.max = 17179869184`), including the benchmark container; no configured swap |
-| Storage | Approximately **31.5 GiB** shared ephemeral overlay filesystem, with about 16 GiB free before the fresh benchmark; Cargo and Docker used this same storage |
-| Operating system | Host: Debian GNU/Linux 13.6, kernel 6.18.55; clean benchmark container: Ubuntu 24.04 |
-| Build concurrency | **5 Cargo jobs**; ordinary gate defaults for test and fixture workers; no competing benchmark builds |
-| Compiler/frontends | Rust and Cargo **1.98.1**; LLVM/Clang **19.1.7**; Charon's pinned **nightly-2026-09-17** Rust toolchain |
-| Test/docs tools | Clean benchmark: nextest **0.9.143**, mdBook **0.4.52**; the host's later documentation-validation check used nextest 0.9.146 |
+| Resource | Codex cloud measurement environment | Claude Code cloud measurement environment |
+| --- | --- | --- |
+| CPU allocation | **4 CPU cores of effective quota** (`cpu.max = 400000 100000`); CPU affinity exposes 5 logical CPUs | **4 vCPUs** of a KVM virtual machine, one thread per core; no cgroup CPU quota (`cpu.cfs_quota_us = -1`), affinity 0-3 |
+| CPU model / architecture | AMD EPYC 9V45 96-Core Processor; `x86_64` | Intel Xeon Processor @ 2.10GHz (family 6, model 207); `x86_64` |
+| Memory | **16 GiB** cgroup limit (`memory.max = 17179869184`), including the benchmark container; no configured swap | **15.7 GiB** VM memory (`MemTotal: 16477348 kB`), no memory cgroup limit; no configured swap |
+| Storage | Approximately **31.5 GiB** shared ephemeral overlay filesystem, with about 16 GiB free before the fresh benchmark; Cargo and Docker used this same storage | Per-session writable allowance on a 252 GB virtual disk, with about 18 GiB free before the fresh benchmark; the gate's `target/` reached 5.9 GiB |
+| Operating system | Host: Debian GNU/Linux 13.6, kernel 6.18.55; clean benchmark container: Ubuntu 24.04 | Ubuntu 24.04.5 VM, kernel 6.18.44; no nested container |
+| Build concurrency | **5 Cargo jobs**; ordinary gate defaults for test and fixture workers; no competing benchmark builds | **4 Cargo jobs** (the default); ordinary gate defaults; no competing builds |
+| Compiler/frontends | Rust and Cargo **1.98.1**; LLVM/Clang **19.1.7**; Charon's pinned **nightly-2026-09-17** Rust toolchain | Same versions |
+| Test/docs tools | Clean benchmark: nextest **0.9.143**, mdBook **0.4.52**; the host's later documentation-validation check used nextest 0.9.146 | Clean benchmark: nextest **0.9.143**, mdBook **0.4.52** |
 
 The nested benchmark container had the same four-core quota and 16 GiB limit;
 it did not add resources to the host's allowance. The CPU model names the host
 processor, not the number of cores allocated to this task. Compare effective
 CPU and memory limits rather than host-wide totals reported by `/proc`.
 The GitHub Actions samples use standard `ubuntu-24.04` hosted runners; their
-logs do not establish an exact CPU model or memory allocation, so the Codex
+logs do not establish an exact CPU model or memory allocation, so the cloud
 resource values above must not be attributed to those runners. Their dates,
 checked-out revisions, and workflow links are recorded below.
 
@@ -468,6 +482,29 @@ checked-out revisions, and workflow links are recorded below.
   passed in 7m00s; compiler-process RSS peaked at 8.48 GiB. This is a substantial
   rebuild observation, not a promise that every one-line edit takes seven
   minutes.
+- **Claude Code cloud fresh setup:** measured on 2026-10-24 at `333383d71`,
+  in a Claude Code on the web session. A separate worktree had its own empty
+  `RUSTUP_HOME`, `CARGO_HOME`, `CLICK_TOOL_ROOT`, Cargo registry, and
+  `target/`. The 4m32s setup sum is rustup 0.5s, Rust 1.98.1 12.4s, Charon's
+  nightly toolchain 24.4s, nextest 0.9.143 from its GitHub release 1.0s,
+  mdBook built by `scripts/install-tools.sh` 80.7s, and the official LLVM
+  19.1.7 Linux x86-64 release tarball downloaded and unpacked (8.2 GiB) in
+  152.9s. `scripts/setup-environment.sh` cannot complete there: the session
+  network denies `apt.llvm.org`. The exporter was then built against the
+  image's preinstalled `/usr/lib/llvm-19`, the same release; GCC came with
+  the image. About 3s of benchmark-script errors are excluded. The first plain
+  gate passed in 19m47s: Charon build 1m24s, test build including crate
+  downloads 5m58s, 6,524 unit/API tests 316.06s, four fixture tests 340.41s.
+- **Claude Code cloud rebuild, unchanged, and small edit:** measured on
+  2026-10-24 in the same worktree at `929f45018`, starting from the
+  `333383d71` build state. Only `clicklang` recompiled; the gate passed in
+  17m13s with a 6m46s test build. The immediately repeated gate passed in
+  9m37s: test build 0.17s, 6,476 unit/API tests 248.61s, four fixture tests
+  306.87s. Appending the same temporary `black_box` test as the Codex small
+  edit to `src/lib.rs` made the next gate take 10m56s, with a 79s incremental
+  test build and 6,477 unit/API tests. At `333383d71`, the unchanged gate took
+  10m06s, and appending one unused function to `src/kernel/spec.rs` took
+  11m21s with a 56.92s incremental build.
 - **GitHub Actions cached edit:** the successful
   [tests run for PR #1963](https://github.com/clicklang/click/actions/runs/40110835408)
   on 2026-10-24 took 6m11s from the first `scope` job log to the final `test`
