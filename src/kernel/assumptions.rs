@@ -4962,6 +4962,7 @@ impl PureFactContext {
         self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
         self.algebraic_variable_variant_evidence = crate::persistent::PersistentMap::default();
         self.resource_compositions = Default::default();
+        self.composite_owning_compositions = Default::default();
         self.store_owners = None;
         self.composition_members = Default::default();
         self.composition_object_resources = Default::default();
@@ -5940,6 +5941,13 @@ impl PureFactContext {
             if !self.resource_compositions.contains(&resources) {
                 self.resource_compositions =
                     self.resource_compositions.with_value(resources.clone());
+                if resources.facts().iter().any(|fact| {
+                    fact.is_own() && matches!(fact.resource(), CResource::Composite { .. })
+                }) {
+                    self.composite_owning_compositions = self
+                        .composite_owning_compositions
+                        .with_value(resources.clone());
+                }
                 self.composition_members.admit(&resources);
                 self.composition_object_resources.admit(&resources);
                 self.composition_object_resources
