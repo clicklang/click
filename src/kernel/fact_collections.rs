@@ -337,7 +337,6 @@ impl<T: Ord> ScanSet<T> {
         Self(self.0.with_value(value))
     }
 
-    #[cfg(test)]
     pub(crate) fn without_value(&self, value: &T) -> Self {
         Self(self.0.without_value(value))
     }
@@ -351,6 +350,11 @@ impl<T: Ord> ScanSet<T> {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
     }
 
     pub(crate) fn shares_root_with(&self, other: &Self) -> bool {
@@ -381,6 +385,15 @@ impl<T: Ord> ScanSet<T> {
     /// [`FactMap::scan_explicit_input`].
     #[track_caller]
     pub(crate) fn scan_explicit_input(
+        &self,
+    ) -> ChargedIter<impl DoubleEndedIterator<Item = &T> + ExactSizeIterator> {
+        self.scan()
+    }
+
+    /// Every element, for a search that expansion removes; see
+    /// [`FactMap::scan_for_search`].
+    #[track_caller]
+    pub(crate) fn scan_for_search(
         &self,
     ) -> ChargedIter<impl DoubleEndedIterator<Item = &T> + ExactSizeIterator> {
         self.scan()

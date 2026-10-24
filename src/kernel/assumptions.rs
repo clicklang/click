@@ -1022,8 +1022,8 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
         let mut key = assumptions.clone();
         key.equality_graph = assumptions.equality_graph.identity_only();
         key.atomic_connection_facts = crate::persistent::PersistentMap::default();
-        key.atomic_ground_facts = crate::persistent::PersistentSet::default();
-        key.atomic_quantified_facts = crate::persistent::PersistentSet::default();
+        key.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
+        key.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
         key.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
@@ -5077,7 +5077,7 @@ impl PureFactContext {
             .collect();
         self.rebuild_atomic_connection_facts();
         self.rebuild_stated_proposition_index();
-        self.disjunction_facts = crate::persistent::PersistentSet::default();
+        self.disjunction_facts = crate::kernel::fact_collections::ScanSet::default();
         self.equality_graph
             .admitted
             .algebraic_constructor_field_equalities = crate::persistent::PersistentMap::default();
@@ -5097,7 +5097,8 @@ impl PureFactContext {
         self.resource_contains_facts = crate::persistent::PersistentMap::default();
         self.memory_effect_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
-        self.separation_facts = crate::persistent::PersistentSet::default();
+        self.separation_facts = crate::kernel::fact_collections::ScanSet::default();
+        self.separation_facts_by_block = crate::persistent::PersistentMap::default();
         self.separated_address_classes = Default::default();
         self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
         self.separated_anchor_pointers = crate::persistent::PersistentMap::default();
@@ -5140,7 +5141,7 @@ impl PureFactContext {
             .iter()
             .filter(|fact| matches!(fact, Proposition::Or(_, _)))
             .fold(
-                crate::persistent::PersistentSet::default(),
+                crate::kernel::fact_collections::ScanSet::default(),
                 |index, fact| index.with_value(crate::kernel::clone_proposition_iteratively(fact)),
             );
         self.rebuild_atomic_connection_facts();
@@ -5701,14 +5702,34 @@ impl PureFactContext {
         )
     }
 
-    /// Every separation proposition fact, in `prop_facts` order, charged
-    /// one unit each: the scan for a query the block-pair index cannot key.
-    pub(in crate::kernel) fn separation_fact_propositions(
-        &self,
-    ) -> impl Iterator<Item = &Proposition> {
-        self.separation_facts
-            .iter()
-            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    /// The memory separations a shallow containment can use when one queried
+    /// range or pointer is in one of `blocks`: those with a side in one of
+    /// them and those with a wide side (`separation_facts_by_block`), in
+    /// `separation_facts` order, so a `find` chooses the fact a scan of every
+    /// separation would. A wide queried range can be covered from another
+    /// block, so a caller with one scans `separation_facts` instead.
+    pub(in crate::kernel) fn memory_separations_near<'a>(
+        &'a self,
+        blocks: impl IntoIterator<Item = &'a PointerBlock>,
+    ) -> std::collections::BTreeSet<&'a Proposition> {
+        let mut candidates = std::collections::BTreeSet::new();
+        let mut visit = |key: Option<PointerBlock>| {
+            crate::instrumentation::record_deterministic_work(1);
+            for fact in self
+                .separation_facts_by_block
+                .get(&key)
+                .into_iter()
+                .flat_map(crate::persistent::PersistentSet::iter)
+            {
+                crate::instrumentation::record_deterministic_work(1);
+                candidates.insert(fact);
+            }
+        };
+        visit(None);
+        for block in blocks {
+            visit(Some(block.clone()));
+        }
+        candidates
     }
 
     pub(in crate::kernel) fn memory_loadable_candidates_for_object(
@@ -5896,12 +5917,14 @@ impl PureFactContext {
             .iter()
             .filter(|fact| matches!(fact, Proposition::CResourceSeparate { .. }))
             .fold(
-                crate::persistent::PersistentSet::default(),
+                crate::kernel::fact_collections::ScanSet::default(),
                 |index, fact| index.with_value(fact.clone()),
             );
+        self.separation_facts_by_block = crate::persistent::PersistentMap::default();
         self.separated_address_classes = Default::default();
         let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
         for proposition in facts {
+            self.adjust_separation_block_fact(&proposition, true);
             self.adjust_memory_separation_fact(&proposition, true);
             self.adjust_nonmemory_separation_fact(&proposition, true);
             self.adjust_resource_contains_fact(&proposition, true);
@@ -5909,6 +5932,41 @@ impl PureFactContext {
         }
         // The anchor index mirrors the stated separations just rebuilt.
         self.rebuild_separated_anchor_offsets();
+    }
+
+    /// Files or withdraws a memory separation under each block its sides
+    /// name, or under `None` when a side is wide
+    /// (`separation_facts_by_block`).
+    fn adjust_separation_block_fact(&mut self, proposition: &Proposition, insert: bool) {
+        let Some((left, right)) = proposition.memory_separation() else {
+            return;
+        };
+        let keys = if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
+            vec![None]
+        } else {
+            let mut blocks = vec![Some(left.base().block.clone())];
+            if right.base().block != left.base().block {
+                blocks.push(Some(right.base().block.clone()));
+            }
+            blocks
+        };
+        for key in keys {
+            let bucket = self
+                .separation_facts_by_block
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+            let bucket = if insert {
+                bucket.with_value(proposition.clone())
+            } else {
+                bucket.without_value(proposition)
+            };
+            self.separation_facts_by_block = if bucket.is_empty() {
+                self.separation_facts_by_block.without_key(&key)
+            } else {
+                self.separation_facts_by_block.with_inserted(key, bucket)
+            };
+        }
     }
 
     /// Maintains the residual separation-fact list: `CResourceSeparate`
@@ -6107,6 +6165,7 @@ impl PureFactContext {
             self.adjust_pointer_value_equality(&proposition, true);
             self.adjust_algebraic_variable_variant_evidence(&proposition, true);
             self.adjust_memory_loadable_fact(&proposition, true);
+            self.adjust_separation_block_fact(&proposition, true);
             self.adjust_memory_separation_fact(&proposition, true);
             self.adjust_nonmemory_separation_fact(&proposition, true);
             self.adjust_resource_contains_fact(&proposition, true);
@@ -6136,6 +6195,7 @@ impl PureFactContext {
             self.adjust_pointer_value_equality(proposition, false);
             self.adjust_algebraic_variable_variant_evidence(proposition, false);
             self.adjust_memory_loadable_fact(proposition, false);
+            self.adjust_separation_block_fact(proposition, false);
             self.adjust_memory_separation_fact(proposition, false);
             self.adjust_nonmemory_separation_fact(proposition, false);
             self.adjust_resource_contains_fact(proposition, false);
@@ -7348,8 +7408,8 @@ impl PureFactContext {
 
     fn rebuild_atomic_connection_facts(&mut self) {
         self.atomic_connection_facts = crate::persistent::PersistentMap::default();
-        self.atomic_ground_facts = crate::persistent::PersistentSet::default();
-        self.atomic_quantified_facts = crate::persistent::PersistentSet::default();
+        self.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
+        self.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.scan_for_upkeep() {
             self.adjust_atomic_connection_fact(
@@ -7415,10 +7475,12 @@ impl PureFactContext {
         (self.condition_facts.len(), self.prop_facts.len())
     }
 
+    /// The atomic ground and universal facts, for the planner's premise
+    /// search.
     pub(crate) fn atomic_general_facts(&self) -> impl Iterator<Item = &Proposition> {
         self.atomic_ground_facts
-            .iter()
-            .chain(self.atomic_quantified_facts.iter())
+            .scan_for_search()
+            .chain(self.atomic_quantified_facts.scan_for_search())
             .map(SharedIndexFact::as_ref)
     }
 
@@ -7599,9 +7661,15 @@ impl PureFactContext {
             .flat_map(|facts| facts.iter())
     }
 
-    /// The disjunction facts of this context, in the index's own order.
+    /// The disjunction facts of this context, in the index's own order, for
+    /// a planner's case search.
     pub fn disjunction_fact_propositions(&self) -> impl Iterator<Item = &Proposition> {
-        self.disjunction_facts.iter()
+        self.disjunction_facts.scan_for_search()
+    }
+
+    /// Whether this context holds a disjunction fact.
+    pub fn has_disjunction_facts(&self) -> bool {
+        !self.disjunction_facts.is_empty()
     }
 
     /// Whether `proposition` is an exact proposition fact of this context.

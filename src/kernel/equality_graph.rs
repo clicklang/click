@@ -1998,6 +1998,26 @@ impl EqualityGraph {
             .collect()
     }
 
+    /// The blocks of `block`'s affine class, itself included: the blocks
+    /// `pointer_in_block` can move a pointer of this block into. Charged one
+    /// unit per member.
+    pub(in crate::kernel) fn pointer_class_blocks(
+        &self,
+        block: &PointerBlock,
+    ) -> Vec<PointerBlock> {
+        let mut state = self.state.lock().expect("equality graph");
+        state.register_blocks([block.clone()]);
+        let (representative, _) = state.find(block);
+        let mut blocks = vec![representative.clone()];
+        if let Some(members) = state.members.get(&representative) {
+            for (member, _) in members {
+                crate::instrumentation::record_deterministic_work(1);
+                blocks.push(member.clone());
+            }
+        }
+        blocks
+    }
+
     /// Transitional resource consumers still enumerate spellings. This is
     /// deliberately separate from congruence lookup, which never enumerates.
     fn pointer_class_members(&self, block: &PointerBlock) -> Vec<(PointerBlock, AffineOffset)> {

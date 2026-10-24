@@ -692,10 +692,9 @@ impl PureFactContext {
             Proposition::ConditionIs(condition, value) => Some((condition, *value)),
             _ => None,
         };
-        // Only the universal facts can instantiate: read their set, charged
-        // one unit each, not every proposition fact.
-        for quantified in self.atomic_quantified_facts.iter() {
-            crate::instrumentation::record_deterministic_work(1);
+        // Only the universal facts can instantiate: read their set, not
+        // every proposition fact.
+        for quantified in self.atomic_quantified_facts.scan_unindexed() {
             let quantified = quantified.as_ref();
             let Proposition::ForAll {
                 var,
@@ -3046,10 +3045,9 @@ impl PureFactContext {
     pub(in crate::kernel) fn quantified_fact_propositions(
         &self,
     ) -> impl Iterator<Item = &Proposition> {
-        self.atomic_quantified_facts.iter().map(|fact| {
-            crate::instrumentation::record_deterministic_work(1);
-            fact.as_ref()
-        })
+        self.atomic_quantified_facts
+            .scan_unindexed()
+            .map(|fact| fact.as_ref())
     }
 
     pub(super) fn collect_quantified_order_facts_for_condition(
