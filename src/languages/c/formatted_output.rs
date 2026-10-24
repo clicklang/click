@@ -158,12 +158,13 @@ pub(crate) fn function_name(format: &[u8]) -> String {
 /// first `size - 1` characters and a terminator after them. Nothing is
 /// written when `size` is zero, and the bytes after the terminator keep
 /// their values. The result is the number of characters the format
-/// produces, whether or not they fit (C11 7.21.6.5p2-3). Each character it
-/// writes, the terminator included, is stated `defined`, so a caller may read
-/// a buffer `snprintf` filled though it never wrote it itself. The contract
-/// requires that number and `size` to be at most `INT_MAX`, where C and
-/// Linux would report an error; and it reads each `%s` argument as a C
-/// string, so a null pointer, which Linux prints as `(null)`, is refused.
+/// produces, whether or not they fit (C11 7.21.6.5p2-3), and so is not
+/// negative. Each character it writes, the terminator included, is stated
+/// `defined`, so a caller may read a buffer `snprintf` filled though it never
+/// wrote it itself. The contract requires that number and `size` to be at
+/// most `INT_MAX`, where C and Linux would report an error; and it reads
+/// each `%s` argument as a C string, so a null pointer, which Linux prints as
+/// `(null)`, is refused.
 pub(crate) fn contract_source(name: &str, pieces: &[FormatPiece]) -> String {
     let mut parameters = vec!["uint8 buffer[]".to_string(), "uint64 size".to_string()];
     let mut clauses = Vec::new();
@@ -256,6 +257,9 @@ pub(crate) fn contract_source(name: &str, pieces: &[FormatPiece]) -> String {
     });
     clauses.push("    owns uninitialized(buffer[0..size]);".to_string());
     clauses.push(format!("    ensures result == (int32) ({total});"));
+    // The count is at most `INT_MAX` by the requirement above, so the
+    // result is never negative; stating it spares each caller the cast.
+    clauses.push("    ensures 0 <= result;".to_string());
     // The offset of the current piece, as a prefix of the index it adds to:
     // empty for the first piece.
     let mut offset = String::new();
@@ -290,9 +294,18 @@ pub(crate) fn contract_source(name: &str, pieces: &[FormatPiece]) -> String {
     clauses.push(format!(
         "    ensures {total} < size implies defined(buffer[{total}]);"
     ));
+    // The same terminator read through the result, which is the count: a
+    // caller states where its output ends with the value `snprintf` returned.
+    clauses.push(
+        "    ensures (uint64) result < size implies buffer[(uint64) result] == 0u8;".to_string(),
+    );
     clauses.push(format!(
         "    ensures size != 0u64 implies ({total} >= size implies buffer[size - 1u64] == 0u8);"
     ));
+    clauses.push(
+        "    ensures size != 0u64 implies ((uint64) result >= size implies buffer[size - 1u64] == 0u8);"
+            .to_string(),
+    );
     clauses.push(format!(
         "    ensures size != 0u64 implies ({total} >= size implies defined(buffer[size - 1u64]));"
     ));
@@ -363,6 +376,8 @@ mod tests {
             "    requires click::format::decimal_length((uint64) a0) <= 2147483644u64;",
             "    owns uninitialized(buffer[0..size]);",
             "    ensures result == (int32) (click::format::decimal_length((uint64) a0) + 3u64);",
+            "    ensures 0 <= result;",
+            "    ensures (uint64) result < size implies buffer[(uint64) result] == 0u8;",
             "    ensures forall (k: uint64) { k < click::format::decimal_length((uint64) a0) and k + 1u64 < size implies buffer[k] == click::format::decimal_digit((uint64) a0, k) };",
             "    ensures click::format::decimal_length((uint64) a0) + 1u64 + 1u64 < size implies buffer[click::format::decimal_length((uint64) a0) + 1u64] == 107u8;",
         ] {

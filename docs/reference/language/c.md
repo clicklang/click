@@ -1706,15 +1706,17 @@ The contract, for `buffer`, `size`, and the arguments `a0`, `a1`, ...:
 - views each `%s` argument as a C string, `click::cstr::cstr_at`, so a null
   pointer is refused;
 - ensures the result is the number of characters the format produces, as
-  `int`, whether or not they fit (C11 7.21.6.5p3);
+  `int`, whether or not they fit (C11 7.21.6.5p3), and that it is not
+  negative, which follows from the count's `INT_MAX` bound;
 - ensures each character at an index below `size - 1` is the format's
   character there, stated with the functions of
   [`click::format`](../library/index.md#decimal-formatting): `%u` writes
   `format::decimal_digit((uint64) a, k)` for `k < format::decimal_length(...)`,
   a field width `format::padded_digit`, and `%d` `format::signed_digit`;
 - ensures the terminator follows the output when it fits and is the last byte
-  of the buffer when it does not, and that the bytes after the terminator are
-  unchanged;
+  of the buffer when it does not, stated both at the count and at
+  `(uint64) result`, and that the bytes after the terminator are unchanged
+  (`mdtests/snprintf_states_its_result_sign_and_terminator.md`);
 - ensures every character and terminator it writes is `defined`, so a caller
   may read a buffer `snprintf` filled, such as a local array it passes on as a
   `%s` argument.

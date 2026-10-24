@@ -9691,6 +9691,78 @@ fn universal_consequents_ignore_unrelated_propositions() {
     );
 }
 
+/// The fast instantiation sites read the universals filed under their
+/// goal's conclusion shape (`UniversalConclusionKey`): an equality goal does
+/// not try universals that conclude an order. They once read every universal.
+#[test]
+fn universal_instantiation_ignores_universals_of_other_shapes() {
+    let ordered = |index: u32| {
+        let bound = Variable(96_000 + u64::from(index));
+        Proposition::ForAll {
+            name: Default::default(),
+            var: bound,
+            sort: Sort::CInt32,
+            body: Box::new(Proposition::Implies(
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::signed_less_than(
+                        Bitvector32Term::Variable(bound),
+                        Bitvector32Term::Constant(0),
+                    ),
+                    true,
+                )),
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::signed_less_equal(
+                        Bitvector32Term::Variable(bound),
+                        Bitvector32Term::Constant(index),
+                    ),
+                    true,
+                )),
+            )),
+        }
+    };
+    let cell = Bitvector32Term::Variable(Variable(95_900));
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::equal(cell.clone(), Bitvector32Term::Constant(7)),
+        true,
+    );
+    let bound = Variable(95_901);
+    let universal_goal = Proposition::ForAll {
+        name: Default::default(),
+        var: bound,
+        sort: Sort::CInt32,
+        body: Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(Bitvector32Term::Variable(bound), cell.clone()),
+            true,
+        )),
+    };
+    let work = [16_u32, 64, 256]
+        .into_iter()
+        .map(|unrelated| {
+            let assumptions = (0..unrelated).fold(PureFactContext::new(), |facts, index| {
+                facts.assume_proposition(ordered(index))
+            });
+            let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let Proposition::ConditionIs(condition, _) = &goal else {
+                    unreachable!()
+                };
+                !assumptions
+                    .instantiated_universal_consequents(condition)
+                    .is_empty()
+                    || assumptions
+                        .select_forall_int32_instantiation_evidence(&goal)
+                        .is_some()
+                    || assumptions.proves_atomic_without_search(&universal_goal)
+            });
+            assert!(!found);
+            work
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        work.windows(2).all(|pair| pair[0] == pair[1]),
+        "universals of other shapes changed the instantiation's work: {work:?}"
+    );
+}
+
 /// The fast exact check answers a condition by lookup: it does not read
 /// the stated implications and universals, which only a premise context
 /// (`proves_atomic_from_premises`) or the proposition search consults. It

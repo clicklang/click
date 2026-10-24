@@ -1523,7 +1523,7 @@ pub(super) fn plan_recorded_pointer_alignment(
 /// Expand registered-load address congruence into the ordinary exact
 /// equality rewrites that establish it. `rewrite` descends through the
 /// registered load origins, while `normalize` checks that the resulting
-/// memory epoch and complete pointer are identical.
+/// memory version and complete pointer are identical.
 pub(super) fn plan_recorded_load_address_congruence(
     goal: &Proposition,
     derivation: &PropositionDerivation,

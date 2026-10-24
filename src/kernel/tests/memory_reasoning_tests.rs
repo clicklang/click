@@ -7742,6 +7742,60 @@ fn snapshot_equality_ignores_unrelated_propositions() {
     );
 }
 
+/// An existential obligation is certified from an assumed existential
+/// alpha-equal to it, read from its identity bucket, and otherwise from the
+/// existentials of its sort (`existentials_over`). It once scanned every
+/// proposition fact, so its work grew with unrelated facts of other kinds
+/// and existentials of other sorts.
+#[test]
+fn existential_obligation_ignores_unrelated_facts() {
+    let existential = |var: u64, sort: Sort| Proposition::Exists {
+        name: "witness".into(),
+        var: Variable(var),
+        sort,
+        body: Box::new(Proposition::ConditionIs(
+            ConditionTerm::signed_less_than(
+                Bitvector32Term::Variable(Variable(var)),
+                Bitvector32Term::Constant(9),
+            ),
+            true,
+        )),
+    };
+    let obligation = existential(97_001, Sort::CInt32);
+    let work = [16_u64, 64, 256]
+        .into_iter()
+        .map(|unrelated| {
+            let mut assumptions =
+                PureFactContext::new().assume_proposition(existential(97_000, Sort::CInt32));
+            for index in 0..unrelated {
+                let block = Pointer {
+                    block: format!("existential-unrelated-{index}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                assumptions = assumptions
+                    .assume_proposition(Proposition::CResourceContains {
+                        parent: Box::new(CResource::Memory(memory_range(block.clone(), 0, 2))),
+                        child: Box::new(CResource::Memory(memory_range(block, 0, 1))),
+                    })
+                    .assume_proposition(existential(97_100 + index, Sort::Bitvector32));
+            }
+            assumptions.build_stated_proposition_index();
+            let (certified, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::api::certification_proves_exists_obligation_from_facts(
+                    &assumptions,
+                    &obligation,
+                )
+            });
+            assert!(certified);
+            work
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        work.windows(2).all(|pair| pair[0] == pair[1]),
+        "unrelated facts changed the existential obligation's work: {work:?}"
+    );
+}
+
 /// Loadability coverage reads the loadable facts filed under the goal's
 /// block. It once scanned every proposition fact, so a miss's work grew with
 /// unrelated loadable facts of other blocks.

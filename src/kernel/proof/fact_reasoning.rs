@@ -1879,12 +1879,12 @@ mod tests {
                 after: after.clone(),
                 writes: vec![(written, 4)],
             });
-        // The canonical memories are the cells' epochs. Snapshots that
+        // The canonical memories are the cells' versions. Snapshots that
         // differ only by a declared block or a write to another cell share
-        // an epoch, so a synthetic marker block would not separate these
+        // a version, so a synthetic marker block would not separate these
         // load variables; a write to the queried cell does (the second pair).
         // Both sides are the same four-byte access; the question under test
-        // is the epoch, not the width.
+        // is the version, not the width.
         let left = load_variable_for_cell_with_origin(
             &intern_c_memory(before.clone()),
             &preserved,

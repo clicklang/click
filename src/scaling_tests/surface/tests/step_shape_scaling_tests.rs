@@ -926,10 +926,16 @@ fn sequential_loops_build_the_same_context_entries_each() {
     }
     // A loop clause's annotation lowers its own loop; only the first walks
     // the whole function.
+    let annotation_walks = runs.each_ref().map(|(counts, _)| {
+        counts
+            .iter()
+            .find(|(name, _)| *name == "annotation walks")
+            .unwrap()
+            .1
+    });
     assert!(
-        runs.iter().all(|(counts, _)| counts[6].1 == 1),
-        "loop tactics walk the whole function more than once per claim: {:?}",
-        runs.each_ref().map(|(counts, _)| counts[6].1)
+        annotation_walks.iter().all(|count| *count == 1),
+        "loop tactics walk the whole function more than once per claim: {annotation_walks:?}"
     );
     let clauses = &runs[2].1;
     let (second, last) = (clauses[1], clauses[clauses.len() - 1]);

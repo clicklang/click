@@ -272,12 +272,20 @@ The fast/slow line is expansion: anything that still runs while checking an
 expanded proof must be fast. That is every simple tactic and every kernel
 check, not only code outside `simp`.
 
+Proposition facts (`FactSet`) have no `scan_unindexed` at all now: fast
+code reads them only through an index, and a new whole-set scan there does
+not compile.
+
 **Known fast-part scans** (`scan_unindexed`) still open:
 
 - Certifying an existential obligation from an assumed existential
-  (`certification_proves_exists_obligation_from_facts`). It tries each
-  existential fact of the obligation's sort as the witness source, a
-  search for which fact to use.
+  (`certification_proves_exists_obligation_from_facts`) when no assumed
+  existential is alpha-equal to it. It reads the alpha-equal ones from the
+  identity bucket first; those were every hit across the gate and the unit
+  tests (four, each with three facts on its path). On a miss it tries each
+  existential of the obligation's sort (`existentials_over`) as the witness
+  source, a search for which fact to use; it once tried every proposition
+  fact (`existential_obligation_ignores_unrelated_facts`).
 - The memory-resolution condition match's fallback
   (`scanned_matching_condition_fact_for_memory_resolution`), reached from
   `functions.rs` and contract certification whenever its index declines.
@@ -332,10 +340,23 @@ Where a match is up to an equivalence that implies equality of a
 computable key, such as a canonical form or a snapshot shape, an index on
 that key keeps every verdict and reads only the candidates.
 
-Instantiating a universal in fast code reads every universal fact, not
-every fact, after the first pass: `condition_holds_by_instantiated_fact`
-and `quantified_int32_fact_certifies_loadable_cell`. That set is still
-path-sized; it is listed with item 12.
+**Fixed: universals are read by conclusion shape.** Each universal fact
+is filed under the shapes its conclusion takes (`UniversalConclusionKey`:
+an `int32` equality, a strict or non-strict order, an overflow, an integer,
+pointer value or offset equality, loadability, or another condition),
+read through its binders, implications and conjunctions. Two conditions
+`condition_matches` relates share a shape, and so do alpha-equivalent
+propositions and propositions equal up to proven terms. So these read only
+the universals under their goal's shape: instantiation for a derivation
+(`select_forall_int32_instantiation_evidence`), certification of a
+condition (`condition_holds_by_instantiated_fact`) and of a loadable cell
+(`quantified_int32_fact_certifies_loadable_cell`), the alpha match of a
+universal goal, and the consequents an iterated guard equality
+instantiates (`instantiated_universal_consequents`; another condition
+offers its own variables to every universal, so it still reads them all).
+The quantified order facts for a condition serve only `simp`
+(`scan_for_search`). `universal_instantiation_ignores_universals_of_other_shapes`
+covers the scaling.
 
 **Compositions.** `resource_compositions` is a `ScanSet`, the same named
 scans over a persistent set, and its scans are now charged: a persistent
@@ -354,12 +375,21 @@ every composition:
   base roots and aliases in other blocks;
 - `proves_owned_resources_separate` for a non-memory side, matched by
   resource identity, which the member index does not file (two memory
-  sides read it), and the composition range cover in
-  `proves_resource_separate_inner`, whose owner of the other side may be a
-  composite;
+  sides read it): the index lists a composition under the memory members
+  it adds beyond its predecessor, and a non-memory member would need the
+  same difference over non-memory facts;
+- the composition range cover in `proves_resource_separate_inner`, only
+  while the path states a containment fact with a non-memory parent.
+  Otherwise the owner of the other range is a memory member in its block
+  or in a block its address equals, and the cover reads the compositions
+  listed under those blocks and the target's: one listed under none holds
+  no member there beyond its predecessor, which covers whatever it covers
+  (`composition_cover_ignores_unrelated_compositions`; debug builds compare
+  every answer with the scan);
 - the composite frame frontier (`frame_frontier_compositions`), now over
-  the compositions owning a composite only (`composite_owning_compositions`;
-  a composition without one expands to nothing). Its gate once walked
+  the compositions owning a composite only (`composite_owning_compositions`,
+  read from each composition's own count; a composition without one
+  expands to nothing). Its gate once walked
   every fact of every composition on each store's cell drop
   (`frame_frontier_ignores_compositions_without_composites`);
 - `store_compositions` when the writer stated no store owners: the
@@ -401,10 +431,18 @@ Still `scan_unindexed`:
   Resolution equates loaded pointers whose cells agree across snapshots,
   so this is the same open question as the memory-resolution condition
   match above;
-- separation of a non-memory resource, with the composition case above;
-- instantiating a universal (`quantified_fact_propositions`,
-  `select_forall_int32_instantiation_evidence`), which reads every
-  universal fact (item 12).
+- a universal instantiated by a condition other than an equality
+  (`instantiated_universal_consequents`), which offers the condition's
+  variables to every universal.
+
+**Fixed:** separation of a non-memory resource. The stated separations
+with a non-memory side are filed under each such side, and containment
+facts with a non-memory child under that child. Containment of a
+non-memory resource is identity or a chain of containment facts down to
+it, so its containers are walked upward from it and only their
+separations are read (`separations_with_side_containing`). A memory parent
+on the way contains by range, which no key spells, and falls back to the
+scan. `token_separation_ignores_unrelated_separations` covers it.
 
 The memory effect facts are filed under each memory they name; the
 resolution check of two snapshots
@@ -545,9 +583,8 @@ four times the work at a quarter of it.
     proposition fact; it reads `atomic_quantified_facts`, the set of
     universal facts, so unrelated facts of other kinds cost nothing. So do
     the alpha match for a universal goal, the quantified order facts for a
-    condition, and `instantiated_universal_consequents`. Keying universals
-    by their conclusion's shape remains, as do the existential alpha match
-    and `proves_condition_from_facts`, which read every proposition fact.
+    condition, and `instantiated_universal_consequents`. **Fixed:** the fast
+    sites now read universals by conclusion shape ("Every scan is named").
 13. **Fixed:** the inconsistency check labelled every fact. The context
     now files each fact under its contradiction keys as it is assumed
     (`contradictions.rs`), and the check reads whether any key conflicts.

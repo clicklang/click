@@ -519,7 +519,7 @@ impl TermClasses {
                             T::MemoryLoad(memory, pointer, kind)
                                 if *kind != crate::kernel::LoadKind::Int8 =>
                             {
-                                // Exact observation naming, without an epoch walk:
+                                // Exact observation naming, without a version walk:
                                 // another snapshot needs its checked read bridge.
                                 T::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                                     memory,

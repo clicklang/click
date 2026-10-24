@@ -3617,17 +3617,17 @@ fn serialized_loop_premises_reject_a_changed_snapshot_or_polarity() {
         expand_c0_claim_source(source, &sources, "fill_tail", CProofClaim::Grouped).unwrap();
     verify_c0_sources(&expanded, &sources).expect("serialized loop proof must reverify");
 
-    let original = "extract(at(region(3).entry, i) <= at(region(3).entry, n));";
+    let original = "extract(at(loop(0).exit, i) <= at(loop(0).exit, n));";
     assert!(expanded.contains(original), "{expanded}");
     for corrupted in [
         expanded.replacen(
             original,
-            "extract(at(loop(0).exit, i) <= at(region(3).entry, n));",
+            "extract(at(region(3).entry, i) <= at(loop(0).exit, n));",
             1,
         ),
         expanded.replacen(
             original,
-            "extract(not at(region(3).entry, i) <= at(region(3).entry, n));",
+            "extract(not at(loop(0).exit, i) <= at(loop(0).exit, n));",
             1,
         ),
     ] {
@@ -12367,7 +12367,7 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
             .contains("expanded execution branch condition does not match the checked C branch")
             || error
                 .message()
-                .contains("no state snapshot was recorded for `region(6).entry`"),
+                .contains("no state snapshot was recorded for `statement(2).entry`"),
         "the checked Proof split should reject the tamper directly: {error:?}"
     );
 }

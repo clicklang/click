@@ -862,7 +862,7 @@ fn explicit_invariant_body_checks_expands_and_rejects_incomplete_proofs() {
 /// smart closer should retain that direct proof and recheck explicitly.
 #[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
-fn observed_member_closure_expands_to_direct_assumption() {
+fn observed_member_closure_expands_to_direct_assumptions() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/close_invariants_closes_a_guarded_member_by_intro.md");
     let source = std::fs::read_to_string(&path).unwrap();
@@ -887,7 +887,8 @@ fn observed_member_closure_expands_to_direct_assumption() {
         .collect::<Vec<_>>()
         .join(" ");
     assert!(
-        explicit.starts_with("close_invariants() by { assumption(); }"),
+        explicit
+            .starts_with("close_invariants() by { both { assumption(); } and { assumption(); } }"),
         "{expanded}"
     );
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources))

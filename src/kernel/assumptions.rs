@@ -1025,6 +1025,8 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
         key.atomic_connection_facts = crate::persistent::PersistentMap::default();
         key.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         key.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
+        key.universals_by_conclusion = crate::persistent::PersistentMap::default();
+        key.existentials_by_sort = crate::persistent::PersistentMap::default();
         key.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
@@ -5103,8 +5105,11 @@ impl PureFactContext {
         self.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.resource_contains_facts = crate::persistent::PersistentMap::default();
+        self.nonmemory_parent_containments = 0;
         self.memory_effect_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
+        self.nonmemory_separations_by_side = crate::persistent::PersistentMap::default();
+        self.resource_containers = crate::persistent::PersistentMap::default();
         self.separation_facts = crate::kernel::fact_collections::ScanSet::default();
         self.separation_facts_by_block = crate::persistent::PersistentMap::default();
         self.separated_address_classes = Default::default();
@@ -5827,9 +5832,20 @@ impl PureFactContext {
 
     /// Files or withdraws a `CResourceContains` fact under its parent's key.
     fn adjust_resource_contains_fact(&mut self, proposition: &Proposition, insert: bool) {
-        let Proposition::CResourceContains { parent, .. } = proposition else {
+        let Proposition::CResourceContains { parent, child } = proposition else {
             return;
         };
+        if !matches!(**parent, CResource::Memory(_)) {
+            if insert {
+                self.nonmemory_parent_containments += 1;
+            } else {
+                self.nonmemory_parent_containments -= 1;
+            }
+        }
+        if !matches!(**child, CResource::Memory(_)) {
+            self.resource_containers =
+                with_adjusted_member(&self.resource_containers, child, proposition, insert);
+        }
         let key = ResourceContainsKey::of(parent);
         let facts = self
             .resource_contains_facts
@@ -5846,6 +5862,54 @@ impl PureFactContext {
         } else {
             self.resource_contains_facts.with_inserted(key, facts)
         };
+    }
+
+    /// The separation facts with a side that may contain `resource`, a
+    /// non-memory resource, or `None` when that needs every separation.
+    /// Containment of a non-memory resource is identity or a chain of
+    /// containment facts down to it (`proves_resource_contains_inner`), so
+    /// its containers are walked upward through the facts filed under each
+    /// child. A memory parent on the way contains by range, which no key
+    /// spells, and gives up. The facts come in `separation_facts` order.
+    pub(in crate::kernel) fn separations_with_side_containing(
+        &self,
+        resource: &CResource,
+    ) -> Option<BTreeSet<&Proposition>> {
+        let mut containers = BTreeSet::from([resource]);
+        let mut pending = vec![resource];
+        while let Some(current) = pending.pop() {
+            for fact in self
+                .resource_containers
+                .get(current)
+                .into_iter()
+                .flat_map(crate::persistent::PersistentSet::iter)
+            {
+                crate::instrumentation::record_deterministic_work(1);
+                let Proposition::CResourceContains { parent, .. } = fact else {
+                    continue;
+                };
+                if matches!(**parent, CResource::Memory(_)) {
+                    return None;
+                }
+                if containers.insert(parent) {
+                    pending.push(parent);
+                }
+            }
+        }
+        let mut separations = BTreeSet::new();
+        for container in containers {
+            crate::instrumentation::record_deterministic_work(1);
+            for fact in self
+                .nonmemory_separations_by_side
+                .get(container)
+                .into_iter()
+                .flat_map(crate::persistent::PersistentSet::iter)
+            {
+                crate::instrumentation::record_deterministic_work(1);
+                separations.insert(fact);
+            }
+        }
+        Some(separations)
     }
 
     /// The `CResourceContains` facts whose parent `current` may contain by
@@ -5917,9 +5981,12 @@ impl PureFactContext {
     #[cfg(test)]
     fn rebuild_memory_separation_facts(&mut self) {
         self.resource_contains_facts = crate::persistent::PersistentMap::default();
+        self.nonmemory_parent_containments = 0;
         self.memory_effect_facts = crate::persistent::PersistentMap::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
+        self.nonmemory_separations_by_side = crate::persistent::PersistentMap::default();
+        self.resource_containers = crate::persistent::PersistentMap::default();
         self.separation_facts = self
             .prop_facts
             .iter()
@@ -5981,10 +6048,21 @@ impl PureFactContext {
     /// facts with at least one non-memory side, which the block-pair index
     /// cannot serve but whose containment may entail memory separation.
     fn adjust_nonmemory_separation_fact(&mut self, proposition: &Proposition, insert: bool) {
-        if !matches!(proposition, Proposition::CResourceSeparate { .. })
-            || Self::proposition_memory_separation(proposition).is_some()
-        {
+        let Proposition::CResourceSeparate { left, right } = proposition else {
             return;
+        };
+        if Self::proposition_memory_separation(proposition).is_some() {
+            return;
+        }
+        for side in [left, right] {
+            if !matches!(**side, CResource::Memory(_)) {
+                self.nonmemory_separations_by_side = with_adjusted_member(
+                    &self.nonmemory_separations_by_side,
+                    side,
+                    proposition,
+                    insert,
+                );
+            }
         }
         let residuals = std::sync::Arc::make_mut(&mut self.nonmemory_separation_facts);
         if insert {
@@ -6130,9 +6208,7 @@ impl PureFactContext {
             if !self.resource_compositions.contains(&resources) {
                 self.resource_compositions =
                     self.resource_compositions.with_value(resources.clone());
-                if resources.facts().iter().any(|fact| {
-                    fact.is_own() && matches!(fact.resource(), CResource::Composite { .. })
-                }) {
+                if resources.owns_composite() {
                     self.composite_owning_compositions = self
                         .composite_owning_compositions
                         .with_value(resources.clone());
@@ -7407,19 +7483,77 @@ impl PureFactContext {
                     self.atomic_connection_facts.with_inserted(key, bucket)
                 };
         }
+        if let Proposition::Exists { sort, .. } = proposition {
+            self.existentials_by_sort =
+                with_adjusted_member(&self.existentials_by_sort, sort, &shared, insert);
+        }
         if matches!(proposition, Proposition::ForAll { .. }) {
             self.atomic_quantified_facts = if insert {
                 self.atomic_quantified_facts.with_value(shared.clone())
             } else {
                 self.atomic_quantified_facts.without_value(&shared)
             };
+            for key in UniversalConclusionKey::of(proposition) {
+                crate::instrumentation::record_deterministic_work(1);
+                let bucket = self
+                    .universals_by_conclusion
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or_default();
+                let bucket = if insert {
+                    bucket.with_value(shared.clone())
+                } else {
+                    bucket.without_value(&shared)
+                };
+                self.universals_by_conclusion = if bucket.is_empty() {
+                    self.universals_by_conclusion.without_key(&key)
+                } else {
+                    self.universals_by_conclusion.with_inserted(key, bucket)
+                };
+            }
         }
+    }
+
+    /// The existential facts over `sort`, in proposition order.
+    pub(in crate::kernel) fn existentials_over(
+        &self,
+        sort: &Sort,
+    ) -> impl Iterator<Item = &Proposition> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.existentials_by_sort
+            .get(sort)
+            .into_iter()
+            .flat_map(crate::persistent::PersistentSet::iter)
+            .map(|fact| {
+                crate::instrumentation::record_deterministic_work(1);
+                fact.as_ref()
+            })
+    }
+
+    /// The universal facts whose conclusion takes the shape `key`, in
+    /// `atomic_quantified_facts` order, so a `find` picks the fact a scan
+    /// of every universal would.
+    pub(in crate::kernel) fn universals_concluding(
+        &self,
+        key: UniversalConclusionKey,
+    ) -> impl Iterator<Item = &Proposition> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.universals_by_conclusion
+            .get(&key)
+            .into_iter()
+            .flat_map(crate::persistent::PersistentSet::iter)
+            .map(|fact| {
+                crate::instrumentation::record_deterministic_work(1);
+                fact.as_ref()
+            })
     }
 
     fn rebuild_atomic_connection_facts(&mut self) {
         self.atomic_connection_facts = crate::persistent::PersistentMap::default();
         self.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         self.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
+        self.universals_by_conclusion = crate::persistent::PersistentMap::default();
+        self.existentials_by_sort = crate::persistent::PersistentMap::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.scan_for_upkeep() {
             self.adjust_atomic_connection_fact(
@@ -11413,4 +11547,110 @@ pub(in crate::kernel) fn offset_snapshot_shape(offset: &PointerOffsetTerm) -> u6
         other => (2u8, other).hash(&mut hasher),
     }
     hasher.finish()
+}
+
+/// A shape a universal fact's conclusion takes, read through its binders,
+/// implications and conjunctions. Two conditions `condition_matches` can
+/// relate share one, and so do two propositions that are alpha-equivalent
+/// or equal up to proven terms, so an instantiation or a match against a
+/// goal reads only the universals filed under the goal's shape.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(in crate::kernel) enum UniversalConclusionKey {
+    /// An `int32` equality.
+    Equal,
+    /// A strict `int32` order, either way round.
+    StrictOrder,
+    /// A non-strict `int32` order, either way round.
+    Order,
+    /// Signed `int32` addition overflow.
+    OverflowAdd,
+    /// A mathematical integer equality.
+    IntegerEqual,
+    /// A pointer value equality.
+    PointerValueEqual,
+    /// A pointer offset equality.
+    OffsetEqual,
+    /// Any other condition, which matches only itself.
+    OtherCondition,
+    /// A loadability fact.
+    Loadable,
+    /// A universal with none of the shapes above.
+    Other,
+}
+
+impl UniversalConclusionKey {
+    /// The shape `condition_matches` relates `condition` within.
+    pub(in crate::kernel) fn of_condition(condition: &ConditionTerm) -> Self {
+        match condition {
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation,
+                ..
+            } => match relation {
+                CompareRelation::Equal => Self::Equal,
+                CompareRelation::LessThan | CompareRelation::GreaterThan => Self::StrictOrder,
+                CompareRelation::LessEqual | CompareRelation::GreaterEqual => Self::Order,
+            },
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                ..
+            } => Self::OverflowAdd,
+            ConditionTerm::IntegerEqual(_, _) => Self::IntegerEqual,
+            ConditionTerm::PointerValueEqual(_, _) => Self::PointerValueEqual,
+            ConditionTerm::PointerOffsetEqual(_, _) => Self::OffsetEqual,
+            _ => Self::OtherCondition,
+        }
+    }
+
+    /// Every shape the conclusion of `proposition` takes, or `Other` when
+    /// it takes none. The walk follows a universal's body, an implication's
+    /// consequent and both conjuncts, as instantiation and condition
+    /// matching do.
+    pub(in crate::kernel) fn of(proposition: &Proposition) -> BTreeSet<Self> {
+        fn collect(proposition: &Proposition, keys: &mut BTreeSet<UniversalConclusionKey>) {
+            match proposition {
+                Proposition::ForAll { body, .. } => collect(body, keys),
+                Proposition::Implies(_, conclusion) => collect(conclusion, keys),
+                Proposition::And(left, right) => {
+                    collect(left, keys);
+                    collect(right, keys);
+                }
+                Proposition::ConditionIs(condition, _) => {
+                    keys.insert(UniversalConclusionKey::of_condition(condition));
+                }
+                Proposition::CMemoryLoadable { .. } => {
+                    keys.insert(UniversalConclusionKey::Loadable);
+                }
+                _ => {}
+            }
+        }
+        let mut keys = BTreeSet::new();
+        collect(proposition, &mut keys);
+        if keys.is_empty() {
+            keys.insert(Self::Other);
+        }
+        keys
+    }
+}
+
+/// `map` with `member` added to or withdrawn from the set under `key`, the
+/// key dropped when its set empties.
+fn with_adjusted_member<K: Ord + Clone, V: Ord + Clone>(
+    map: &crate::persistent::PersistentMap<K, crate::persistent::PersistentSet<V>>,
+    key: &K,
+    member: &V,
+    insert: bool,
+) -> crate::persistent::PersistentMap<K, crate::persistent::PersistentSet<V>> {
+    let bucket = map.get(key).cloned().unwrap_or_default();
+    let bucket = if insert {
+        bucket.with_value(member.clone())
+    } else {
+        bucket.without_value(member)
+    };
+    if bucket.is_empty() {
+        map.without_key(key)
+    } else {
+        map.with_inserted(key.clone(), bucket)
+    }
 }

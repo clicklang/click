@@ -453,7 +453,7 @@ Terms have one canonical identity and state changes are explicit:
   assumption-free canonical form. A frame proof needing another vocabulary
   supplies an explicit `frame using` restatement.
 - **Canonicalize at creation.** A memory load becomes the load variable for
-  its cell epoch where lowering or execution creates it, so condition-fact
+  its cell version where lowering or execution creates it, so condition-fact
   availability is exact canonical-form lookup. Separation facts use a
   snapshot-independent shape index only to select candidates; the kernel then
   proves the range relationship from frame evidence. See

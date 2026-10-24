@@ -273,15 +273,8 @@ impl<T: Clone + Ord> FactSet<T> {
         self.scan()
     }
 
-    /// Every entry, in fast code that should read an index instead: a known
-    /// violation of the fast-part rule, listed in `roadmap/smart-tactics.md`.
-    /// Do not add uses; each one is removed by indexing its query.
-    #[track_caller]
-    pub(crate) fn scan_unindexed(
-        &self,
-    ) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
-        self.scan()
-    }
+    // No `scan_unindexed`: fast code reads proposition facts only through
+    // an index, and a new whole-set scan there does not compile.
 
     #[cfg(test)]
     #[track_caller]

@@ -670,12 +670,12 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
         target_variables.insert(variable);
     }
     collect_shallow_offset_variables(&base.offset, &mut target_variables);
-    // Only a universal can certify the cell. This still reads every
-    // universal fact: a known fast-part scan (`roadmap/smart-tactics.md`).
-    let exact_binder_candidates = assumptions.quantified_fact_propositions().filter(
+    // Only a universal concluding loadability can certify the cell.
+    let loadable = crate::kernel::assumptions::UniversalConclusionKey::Loadable;
+    let exact_binder_candidates = assumptions.universals_concluding(loadable).filter(
         |fact| matches!(fact, Proposition::ForAll { var, .. } if target_variables.contains(var)),
     );
-    let renamed_binder_candidates = assumptions.quantified_fact_propositions().filter(
+    let renamed_binder_candidates = assumptions.universals_concluding(loadable).filter(
         |fact| matches!(fact, Proposition::ForAll { var, .. } if !target_variables.contains(var)),
     );
     exact_binder_candidates
@@ -754,7 +754,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
 /// assumed existential over the same sort supplies the bound variable, its
 /// body conjuncts become facts, and the obligation body must then certify
 /// pointwise.
-fn certification_proves_exists_obligation_from_facts(
+pub(in crate::kernel) fn certification_proves_exists_obligation_from_facts(
     assumptions: &PureFactContext,
     obligation: &Proposition,
 ) -> bool {
@@ -764,11 +764,22 @@ fn certification_proves_exists_obligation_from_facts(
     else {
         return false;
     };
-    let fact_candidates = assumptions
-        .prop_facts
-        .scan_unindexed()
+    // An assumed existential alpha-equal to the obligation supplies every
+    // witness the obligation needs, and it is the one shape that certified
+    // across the gate: read its identity bucket first. Any other existential
+    // of the sort may still supply the witness, so a miss reads those, every
+    // existential of the sort: a known fast-part scan
+    // (`roadmap/smart-tactics.md`).
+    let mut fact_candidates = assumptions
+        .stated_identity_bucket(obligation)
         .cloned()
         .collect::<Vec<_>>();
+    let alpha_equal = fact_candidates.len();
+    for fact in assumptions.existentials_over(sort) {
+        if !fact_candidates[..alpha_equal].contains(fact) {
+            fact_candidates.push(fact.clone());
+        }
+    }
     fact_candidates.iter().any(|fact| {
         let Proposition::Exists {
             var: fact_var,
@@ -2805,31 +2816,36 @@ pub(crate) fn condition_holds_by_instantiated_fact(
         "certification proposition",
         "certification proof: quantified condition facts",
         || {
-            // Only a universal instantiates. This still reads every universal
-            // fact: a known fast-part scan (`roadmap/smart-tactics.md`).
-            assumptions.quantified_fact_propositions().any(|fact| {
-                assumptions
-                    .forall_instantiations_for_condition(fact, condition)
-                    .into_iter()
-                    .any(|instance| {
-                        let mut body = &instance;
-                        let mut premises = Vec::new();
-                        while let Proposition::Implies(premise, rest) = body {
-                            premises.push(premise.as_ref());
-                            body = rest;
-                        }
-                        let Proposition::ConditionIs(_, instance_value) = body else {
-                            return false;
-                        };
-                        *instance_value == value
-                            && c_condition_facts_equivalent_for_memory_resolution(
-                                body,
-                                &Proposition::ConditionIs(condition.clone(), value),
-                                assumptions,
-                            )
-                            && premises.into_iter().all(premise_holds)
-                    })
-            })
+            // Only a universal concluding a condition of this shape can
+            // state it (`c_condition_facts_equivalent_for_memory_resolution`
+            // relates one relation to itself).
+            assumptions
+                .universals_concluding(
+                    crate::kernel::assumptions::UniversalConclusionKey::of_condition(condition),
+                )
+                .any(|fact| {
+                    assumptions
+                        .forall_instantiations_for_condition(fact, condition)
+                        .into_iter()
+                        .any(|instance| {
+                            let mut body = &instance;
+                            let mut premises = Vec::new();
+                            while let Proposition::Implies(premise, rest) = body {
+                                premises.push(premise.as_ref());
+                                body = rest;
+                            }
+                            let Proposition::ConditionIs(_, instance_value) = body else {
+                                return false;
+                            };
+                            *instance_value == value
+                                && c_condition_facts_equivalent_for_memory_resolution(
+                                    body,
+                                    &Proposition::ConditionIs(condition.clone(), value),
+                                    assumptions,
+                                )
+                                && premises.into_iter().all(premise_holds)
+                        })
+                })
         },
     )
 }

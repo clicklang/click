@@ -206,7 +206,7 @@ withdrawal, and snapshot restrictions apply unchanged. Regressions live in
 Semantic predicate lookup and callback-contract selection query the same
 address-class buckets. A predicate witness is stored by its first pointer
 argument and a bounded shape selector; pointer arguments become typed holes
-in that selector, while other arguments and memory epochs remain. Matching
+in that selector, while other arguments and memory versions remain. Matching
 checks all pointer arguments through equality closure with equal C types and
 all other arguments exactly, including the complete C state. This supplies
 pointer substitution only, without unfolding or snapshot transport. Exact

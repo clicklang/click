@@ -637,7 +637,7 @@ fn one_heap_load_is_logarithmic_in_unrelated_allocations() {
         //
         // The memory is built in a session of its own. Naming a load walks
         // the derivation history back to the cell's last write (the
-        // resource tracker's cell epoch walk), which is work in the length
+        // resource tracker's cell version walk), which is work in the length
         // of the history, one edge per transition, not in the size of the
         // memory. Measuring in a fresh session leaves that walk nothing to
         // cross, so what remains is the load's own work beside `size`

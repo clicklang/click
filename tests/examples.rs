@@ -158,6 +158,10 @@ const NIGHTLY: &[(&str, &str)] = &[
         "rbtree/rbtree-augmented",
         "261 s in a debug test build on 4 cores, 44 s release, the gate's long pole (2026-10-15)",
     ),
+    (
+        "string-get-size",
+        "76 final snprintf cases; about 50 s release on one core (2026-10-24)",
+    ),
 ];
 
 #[test]

@@ -5365,7 +5365,7 @@ pub(crate) fn first_unavailable_connective_side<'a>(
 
 /// The canonical defining read of loaded pointer bits: a raw load or the
 /// load variable minted for it. A raw load is named as its load variable,
-/// whose recorded snapshot is the cell's epoch, so equal reads of one cell
+/// whose recorded snapshot is the cell's version, so equal reads of one cell
 /// across unchanged snapshots name one value.
 /// The canonical snapshot and address a pointer read names, and the load
 /// variable it was named through, if any (`record_pointer_load_source`).

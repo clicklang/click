@@ -11944,7 +11944,7 @@ pub(crate) struct IndexedSignedOrderBoundEvidence {
 }
 
 /// Evidence that two load variables name one cell because their
-/// registered origins have the same memory epoch and block and congruent
+/// registered origins have the same memory version and block and congruent
 /// offsets. The original variables remain distinct context-free names.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LoadAddressCongruenceEvidence {
@@ -12338,6 +12338,18 @@ pub struct PureFactContext {
         crate::kernel::fact_collections::ScanSet<SharedIndexFact<Proposition>>,
     pub(super) atomic_quantified_facts:
         crate::kernel::fact_collections::ScanSet<SharedIndexFact<Proposition>>,
+    /// The universal facts filed under each shape their conclusion takes
+    /// (`UniversalConclusionKey`), so an instantiation reads the universals
+    /// that can conclude its goal, not every universal.
+    /// The existential facts, filed under their bound variable's sort.
+    pub(super) existentials_by_sort: crate::persistent::PersistentMap<
+        Sort,
+        crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    >,
+    pub(super) universals_by_conclusion: crate::persistent::PersistentMap<
+        super::assumptions::UniversalConclusionKey,
+        crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    >,
     pub(super) condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read
@@ -12515,7 +12527,7 @@ pub struct PureFactContext {
     /// only a search path, not the whole set.
     pub(super) prop_facts: super::fact_collections::FactSet<Proposition>,
     /// Alpha/load identity index for propositions that may be stated as a
-    /// call requirement.  The key retains memory epochs and canonicalizes
+    /// call requirement.  The key retains memory versions and canonicalizes
     /// only binders; the persistent buckets keep updates local to one key.
     /// A context built in bulk from a fact list defers the keys until the
     /// index is first asked for (see `StatedPropositionIndex`).
@@ -12599,6 +12611,10 @@ pub struct PureFactContext {
         super::assumptions::ResourceContainsKey,
         crate::persistent::PersistentSet<Proposition>,
     >,
+    /// How many containment facts have a parent other than memory. Only
+    /// through one can a non-memory owner contain memory, so while there are
+    /// none a composition's memory owners are all its owners.
+    pub(super) nonmemory_parent_containments: usize,
     pub(super) memory_separation_facts: crate::persistent::PersistentMap<
         (PointerBlock, PointerBlock),
         std::sync::Arc<Vec<(Proposition, CMemoryRange, CMemoryRange)>>,
@@ -12608,6 +12624,13 @@ pub struct PureFactContext {
     /// memory separation through its body. Kept small and scanned
     /// linearly; memory-memory facts live in the index above instead.
     pub(super) nonmemory_separation_facts: std::sync::Arc<Vec<Proposition>>,
+    /// The separation facts filed under each non-memory side they name.
+    pub(super) nonmemory_separations_by_side:
+        crate::persistent::PersistentMap<CResource, crate::persistent::PersistentSet<Proposition>>,
+    /// The containment facts filed under their child when it is not memory,
+    /// so the containers of a non-memory resource are walked upward from it.
+    pub(super) resource_containers:
+        crate::persistent::PersistentMap<CResource, crate::persistent::PersistentSet<Proposition>>,
     /// Every separation proposition fact, memory or not, in the
     /// proposition order of `prop_facts`. The provers that cannot key a
     /// separation query by block pair scan these instead of every
