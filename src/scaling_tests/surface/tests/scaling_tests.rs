@@ -6023,18 +6023,16 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
 
 /// `arithmetic() using` over a chain of listed order facts adds the premises
 /// once each, so its work grows with the chain and not with its square.
-/// Both a signed and an unsigned chain are measured at several lengths. A
-/// `uint32` chain longer than one Integer step is carried to Integer order
-/// premise by premise; the Integer planner tried first searches premise
-/// triples only up to `MAX_TRIPLE_CLAIMS` premises, a bounded cost, so the
-/// unsigned chain is measured past that bound.
+/// Both a signed and an unsigned chain are measured at several lengths. The
+/// Integer planner tried first searches premise triples only while a chain
+/// has at most `MAX_TRIPLE_CLAIMS` premises: a bounded cost both chains pay
+/// at short lengths. Past that bound each grows near-linearly, and the
+/// unsigned chain's bounded peak stays within twice the signed chain's.
 #[test]
 fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
-    for (value_type, bound, sizes) in [
-        ("int32", "4", [8usize, 16, 32]),
-        ("uint32", "4u32", [18, 24, 32]),
-    ] {
-        let samples = sizes.map(|edges| {
+    let mut peaks = Vec::new();
+    for (value_type, bound) in [("int32", "4"), ("uint32", "4u32")] {
+        let samples = [8usize, 16, 24, 32].map(|edges| {
             let names = (0..edges).map(|index| format!("v{index}")).collect::<Vec<_>>();
             let parameters = names
                 .iter()
@@ -6064,13 +6062,18 @@ fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
             (edges, work)
         });
         eprintln!("{value_type} chain work: {samples:?}");
-        for pair in samples.windows(2) {
+        for pair in samples[1..].windows(2) {
             assert!(
                 pair[1].1 <= pair[0].1.saturating_mul(3),
                 "{value_type}: {samples:?}"
             );
         }
+        peaks.push(samples[1].1);
     }
+    assert!(
+        peaks[1] <= peaks[0].saturating_mul(2),
+        "uint32 chain's bounded peak against int32's: {peaks:?}"
+    );
 }
 
 /// A `step()` written in a loop's `preserve` body is its own simple tactic:
