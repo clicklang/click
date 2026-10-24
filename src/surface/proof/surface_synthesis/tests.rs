@@ -2747,3 +2747,89 @@ fn recorded_memories_near_a_read_are_offered_after_it_then_before_it() {
     assert_eq!(near(&last), vec![point(1), point(0)]);
     assert_eq!(near(&first), vec![point(0), point(1)]);
 }
+
+#[test]
+fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_introduced() {
+    // A call replaces `o`'s model, so the earlier `o.size` value is held by
+    // no current instance; the point after the first call held it.
+    use crate::kernel::{
+        AlgebraicValue, CResource, CResourceFact, ResourceContext, ResourceFieldSchema,
+        ResourceFieldType, ResourceInstance,
+    };
+    let identity = Variable(930_001);
+    let (earlier, later) = (Variable(930_002), Variable(930_003));
+    let schema =
+        ResourceFieldSchema::new(vec![("size".into(), ResourceFieldType::C(CType::Int32))])
+            .unwrap();
+    let holding = |value: Variable| {
+        let instance = ResourceInstance::new(
+            identity,
+            "object".into(),
+            vec![].into(),
+            schema.clone(),
+            vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
+                value,
+            )))]
+            .into(),
+        )
+        .unwrap();
+        CState::new().with_resource_context(
+            ResourceContext::new()
+                .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance))),
+        )
+    };
+    crate::kernel::model_fields::register_instance_spelling(identity, "o");
+    for value in [earlier, later] {
+        crate::kernel::model_fields::register_model_field_variable(
+            value,
+            crate::kernel::model_fields::ModelFieldOrigin {
+                identity,
+                field: "size".into(),
+                field_index: 0,
+                minted_by: crate::kernel::model_fields::ModelMint::LoopHead,
+            },
+        );
+    }
+    let point = |index| {
+        SnapshotSelector::from(ProgramPointRef {
+            region: CodeRegionRef::Region(index),
+            kind: ProgramPointKind::Exit,
+        })
+    };
+    let now = holding(later);
+    let mut recorded_snapshots = RecordedSnapshots::new();
+    recorded_snapshots.insert(point(0), holding(earlier));
+    recorded_snapshots.insert(point(1), now.clone());
+    let fact = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(Bitvector32Term::Variable(earlier)),
+            Box::new(Bitvector32Term::Constant(5)),
+        ),
+        true,
+    );
+    let spelled = {
+        let _points = SynthesisRecordedPointsScope::enter(&recorded_snapshots);
+        synthesize_surface_proposition_at_entry_and_post(
+            &fact,
+            ParameterBinding::default(),
+            &now,
+            &now,
+        )
+    }
+    .expect("the earlier field value must be spelled where its instance held it");
+    let ClickProposition::Comparison { left, .. } = &spelled else {
+        panic!("the fact must be spelled as a comparison: {spelled:?}");
+    };
+    let ContractExpression::At {
+        selector,
+        expression,
+    } = left
+    else {
+        panic!("the earlier field value must be read at a recorded point: {spelled:?}");
+    };
+    assert_eq!(selector, &point(0));
+    assert!(
+        matches!(expression.as_ref(), ContractExpression::ResourceField(field) if field.field == "size"),
+        "the value must be spelled as the instance's field: {spelled:?}"
+    );
+}

@@ -4569,9 +4569,20 @@ fn synthesize_scalar_model_field(variable: Variable, state: &CState) -> Option<C
     }) {
         return Some(field);
     }
-    SYNTHESIS_ENTRY_STATE.with(|slot| {
+    if let Some(field) = SYNTHESIS_ENTRY_STATE.with(|slot| {
         let slot = slot.borrow();
         Some(ContractExpression::Old(Box::new(field_at(slot.as_ref()?)?)))
+    }) {
+        return Some(field);
+    }
+    // The point whose instance first held this field value, in one lookup.
+    SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        let (selector, recorded) = slot.as_ref()?.point_holding_field_value(variable)?;
+        Some(ContractExpression::At {
+            selector: selector.clone(),
+            expression: Box::new(field_at(recorded)?),
+        })
     })
 }
 

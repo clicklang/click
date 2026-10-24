@@ -7825,6 +7825,11 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
         kind: ProgramPointKind::Exit,
     };
     let value = |index: usize| Bitvector32Term::Variable(Variable(700_000 + index as u64));
+    let schema = crate::kernel::ResourceFieldSchema::new(vec![(
+        "size".into(),
+        crate::kernel::ResourceFieldType::C(CType::Int32),
+    )])
+    .unwrap();
     let block_pointer = |index: usize| crate::kernel::Pointer {
         block: crate::kernel::PointerBlock::Symbolic(Variable(800_000 + index as u64)),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
@@ -7836,16 +7841,37 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
         for index in 0..size {
             // Each point binds one new local, and from the second on also
             // gives local `x0` a new value: with `p` below, three changed
-            // locals per point.
+            // locals and one new instance per point.
             state = state.with_local(format!("x{}", index + 1), CValue::Int32(value(2 * index)));
             if index > 0 {
                 state = state.with_local("x0", CValue::Int32(value(2 * index + 1)));
             }
-            // And local `p` a pointer into a block of its own.
+            // And local `p` a pointer into a block of its own, and a new
+            // resource instance with one field.
             state = state.with_local(
                 "p",
                 CValue::typed_pointer(block_pointer(index), CType::Int32Pointer),
             );
+            let resources =
+                state
+                    .resources()
+                    .clone()
+                    .unchecked_with_fact(crate::kernel::CResourceFact::own(
+                        crate::kernel::CResource::Instance(
+                            crate::kernel::ResourceInstance::new(
+                                Variable(900_000 + index as u64),
+                                "object".into(),
+                                vec![].into(),
+                                schema.clone(),
+                                vec![crate::kernel::AlgebraicValue::C(CValue::Int32(value(
+                                    4 * size + index,
+                                )))]
+                                .into(),
+                            )
+                            .unwrap(),
+                        ),
+                    ));
+            state = state.with_resource_context(resources);
             let (((), work), persistent) = crate::persistent::measure_persistent_work(|| {
                 crate::instrumentation::measure_deterministic_work(|| {
                     snapshots.insert(point(index), state.clone());
@@ -7857,7 +7883,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
         let last = *insert_work.last().unwrap();
         assert!(
             last <= 24 * height + 32,
-            "size {size}: the last insert changed three locals and did {last} work"
+            "size {size}: the last insert changed three locals and one instance and did {last} work"
         );
         // The first value `x0` held is named at the point that recorded it,
         // though `x0` holds a newer value now; the newest one at its point.
