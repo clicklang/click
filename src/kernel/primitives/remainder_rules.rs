@@ -2,6 +2,7 @@
 //! identity carries nonnegative, non-wrapping guards; uint64 divisors are
 //! checked at their full width.
 use super::{Bitvector32Term as B, ConditionTerm as C};
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl C {
@@ -64,7 +65,13 @@ impl C {
             } => (a.as_ref(), b.as_ref(), true),
             _ => return None,
         };
-        let B::UInt64Remainder(n, d) = left else {
+        let B::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Remainder,
+            left: n,
+            right: d,
+        } = left
+        else {
             return None;
         };
         if (!strict && n.as_ref() == right) || (strict && d.as_ref() == right) {
@@ -81,32 +88,49 @@ impl C {
 impl B {
     pub(crate) fn guarded_remainder_rewrite(&self) -> Option<(Vec<C>, Self)> {
         match self {
-            B::UInt64Remainder(_, d) if d.uint64_as_const() == Some(1) => {
-                Some((Vec::new(), B::UInt64Constant(0)))
-            }
+            B::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Remainder,
+                left: _,
+                right: d,
+            } if d.uint64_as_const() == Some(1) => Some((Vec::new(), B::UInt64Constant(0))),
             // `n - n % d` is a multiple of `d`: the difference does not wrap,
             // since a remainder is at most its dividend.
-            B::UInt64Remainder(n, d)
-                if d.uint64_as_const().is_some_and(|d| d != 0)
-                    && matches!(
-                        n.as_ref(),
-                        B::UInt64Subtract(original, tail)
-                            if matches!(
-                                tail.as_ref(),
-                                B::UInt64Remainder(tail_original, tail_d)
-                                    if tail_original == original && tail_d == d
-                            )
-                    ) =>
+            B::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Remainder,
+                left: n,
+                right: d,
+            } if d.uint64_as_const().is_some_and(|d| d != 0)
+                && matches!(
+                    n.as_ref(),
+                    B::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Subtract, left: original, right: tail }
+                        if matches!(
+                            tail.as_ref(),
+                            B::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Remainder, left: tail_original, right: tail_d }
+                                if tail_original == original && tail_d == d
+                        )
+                ) =>
             {
                 Some((Vec::new(), B::UInt64Constant(0)))
             }
             // `(n - d) % d` is `n % d` when `d <= n`, where the difference
             // does not wrap.
-            B::UInt64Remainder(n, d)
-                if d.uint64_as_const().is_some_and(|d| d != 0)
-                    && matches!(n.as_ref(), B::UInt64Subtract(_, step) if step == d) =>
+            B::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Remainder,
+                left: n,
+                right: d,
+            } if d.uint64_as_const().is_some_and(|d| d != 0)
+                && matches!(n.as_ref(), B::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Subtract, left: _, right: step } if step == d) =>
             {
-                let B::UInt64Subtract(original, _) = n.as_ref() else {
+                let B::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Subtract,
+                    left: original,
+                    right: _,
+                } = n.as_ref()
+                else {
                     unreachable!("matched above")
                 };
                 Some((
@@ -117,7 +141,12 @@ impl B {
                     B::uint64_remainder(original.as_ref().clone(), d.as_ref().clone()),
                 ))
             }
-            B::UInt64Remainder(n, d) => Some((
+            B::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Remainder,
+                left: n,
+                right: d,
+            } => Some((
                 vec![C::uint64_less_than(n.as_ref().clone(), d.as_ref().clone())],
                 n.as_ref().clone(),
             )),
@@ -128,8 +157,18 @@ impl B {
                     return None;
                 }
                 if let B::UInt32From64(wide) = n.as_ref()
-                    && let B::UInt64Subtract(original, tail) = wide.as_ref()
-                    && let B::UInt64Remainder(other_original, other_d) = tail.as_ref()
+                    && let B::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::Subtract,
+                        left: original,
+                        right: tail,
+                    } = wide.as_ref()
+                    && let B::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::Remainder,
+                        left: other_original,
+                        right: other_d,
+                    } = tail.as_ref()
                     && original == other_original
                     && other_d.uint64_as_const() == Some(k as u64)
                 {

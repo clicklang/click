@@ -233,13 +233,17 @@ fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
     assert_eq!(
         load_byte(&memory, 5, CType::UInt8, Some(ByteOrder::Little)),
         CExpressionOutcome::Value(CValue::UInt8(Bitvector32Term::UInt32From64(Box::new(
-            Bitvector32Term::UInt64BitwiseAnd(
-                Box::new(Bitvector32Term::UInt64LogicalShiftRight(
-                    Box::new(wide),
-                    Box::new(Bitvector32Term::UInt64Constant(40)),
-                )),
-                Box::new(Bitvector32Term::UInt64Constant(0xFF)),
-            )
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::BitwiseAnd,
+                left: Box::new(Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::ShiftRight,
+                    left: Box::new(wide),
+                    right: Box::new(Bitvector32Term::UInt64Constant(40))
+                }),
+                right: Box::new(Bitvector32Term::UInt64Constant(0xFF))
+            }
         ))))
     );
 

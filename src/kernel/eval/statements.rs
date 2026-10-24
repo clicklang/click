@@ -1603,15 +1603,30 @@ fn exact_signed_size_value(term: &Bitvector32Term, assumptions: &PureFactContext
         return Some(value);
     }
     match term {
-        Bitvector32Term::Int64Add(left, right) => Some(
+        Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Add,
+            left,
+            right,
+        } => Some(
             exact_signed_size_value(left, assumptions)?
                 .checked_add(exact_signed_size_value(right, assumptions)?)?,
         ),
-        Bitvector32Term::Int64Subtract(left, right) => Some(
+        Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Subtract,
+            left,
+            right,
+        } => Some(
             exact_signed_size_value(left, assumptions)?
                 .checked_sub(exact_signed_size_value(right, assumptions)?)?,
         ),
-        Bitvector32Term::Int64Multiply(left, right) => Some(
+        Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Multiply,
+            left,
+            right,
+        } => Some(
             exact_signed_size_value(left, assumptions)?
                 .checked_mul(exact_signed_size_value(right, assumptions)?)?,
         ),
@@ -1627,15 +1642,30 @@ fn exact_unsigned_size_value(term: &Bitvector32Term, assumptions: &PureFactConte
         return u64::try_from(value).ok();
     }
     match term {
-        Bitvector32Term::UInt64Add(left, right) => Some(
+        Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Add,
+            left,
+            right,
+        } => Some(
             exact_unsigned_size_value(left, assumptions)?
                 .wrapping_add(exact_unsigned_size_value(right, assumptions)?),
         ),
-        Bitvector32Term::UInt64Subtract(left, right) => Some(
+        Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Subtract,
+            left,
+            right,
+        } => Some(
             exact_unsigned_size_value(left, assumptions)?
                 .wrapping_sub(exact_unsigned_size_value(right, assumptions)?),
         ),
-        Bitvector32Term::UInt64Multiply(left, right) => Some(
+        Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Multiply,
+            left,
+            right,
+        } => Some(
             exact_unsigned_size_value(left, assumptions)?
                 .wrapping_mul(exact_unsigned_size_value(right, assumptions)?),
         ),

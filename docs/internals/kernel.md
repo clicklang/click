@@ -506,10 +506,15 @@ In `src/kernel/`:
 
 - `Bitvector32Term`: the one term arena for every C integer and float value,
   including arithmetic, `If`, `RangeFold`, and memory loads. Despite its
-  name it holds every width, and records none: the width is implied by the
-  operator family (`Add` is 32-bit, `Int64Add` and `UInt64Add` 64-bit), the
-  constant's shape (`Constant`, `Int64Constant`, `UInt64Constant`, a 128-bit
-  `MachineIntegerConstant`), a load's kind, or a cast's destination. Values of
+  name it holds every width. A 64-bit operator is a format-carrying
+  `Binary { format, op, .. }` or `Unary { format, op, .. }` node
+  (`MachineBinaryOp`, `MachineUnaryOp`; signed and unsigned division,
+  remainder and right shift are told apart by the format), and only `int64`
+  and `uint64` have such nodes so far; the width check refuses one at any
+  other format. Elsewhere the width is implied: by the operator family
+  (`Add` is 32-bit), the constant's shape (`Constant`, `Int64Constant`,
+  `UInt64Constant`, a 128-bit `MachineIntegerConstant`), a load's kind, or a
+  cast's destination. Values of
   8 and 16 bits and `_Bool` ride in the 32-bit carrier, and floats in the
   carrier of their bit width. `term_width.rs` infers that carrier width.
   Debug builds refuse a condition assumed into a fact context, a value an

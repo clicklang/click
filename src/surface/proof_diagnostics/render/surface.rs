@@ -18,6 +18,7 @@ use super::*;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
 use crate::kernel::OverflowOperation;
+use crate::kernel::{MachineBinaryOp, MachineIntegerType, MachineUnaryOp};
 
 /// Which spelling policy a printer applies.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1115,33 +1116,47 @@ impl Printer<'_> {
                 else_term,
                 ..
             } => self.hint_of(then_term).or_else(|| self.hint_of(else_term)),
-            B::Int64BitwiseNot(_) => Some(Hint::Int64),
-            B::UInt64BitwiseNot(_) => Some(Hint::UInt64),
+            B::Unary {
+                format: MachineIntegerType::Int64,
+                op: MachineUnaryOp::BitwiseNot,
+                operand: _,
+            } => Some(Hint::Int64),
+            B::Unary {
+                format: MachineIntegerType::UInt64,
+                op: MachineUnaryOp::BitwiseNot,
+                operand: _,
+            } => Some(Hint::UInt64),
             B::BitwiseNot(inner) => self.hint_of(inner),
             _ => {
                 let (operator, left, right) = value.as_binary()?;
                 use crate::kernel::BitvectorBinaryOp as Op;
                 match operator {
-                    Op::Int64Add
-                    | Op::Int64Subtract
-                    | Op::Int64Multiply
-                    | Op::Int64Divide
-                    | Op::Int64Remainder
-                    | Op::Int64ShiftLeft
-                    | Op::Int64ArithmeticShiftRight
-                    | Op::Int64BitwiseAnd
-                    | Op::Int64BitwiseOr
-                    | Op::Int64BitwiseXor => Some(Hint::Int64),
-                    Op::UInt64Add
-                    | Op::UInt64Subtract
-                    | Op::UInt64Multiply
-                    | Op::UInt64Divide
-                    | Op::UInt64Remainder
-                    | Op::UInt64ShiftLeft
-                    | Op::UInt64LogicalShiftRight
-                    | Op::UInt64BitwiseAnd
-                    | Op::UInt64BitwiseOr
-                    | Op::UInt64BitwiseXor => Some(Hint::UInt64),
+                    Op::Machine(
+                        MachineIntegerType::Int64,
+                        MachineBinaryOp::Add
+                        | MachineBinaryOp::Subtract
+                        | MachineBinaryOp::Multiply
+                        | MachineBinaryOp::Divide
+                        | MachineBinaryOp::Remainder
+                        | MachineBinaryOp::ShiftLeft
+                        | MachineBinaryOp::ShiftRight
+                        | MachineBinaryOp::BitwiseAnd
+                        | MachineBinaryOp::BitwiseOr
+                        | MachineBinaryOp::BitwiseXor,
+                    ) => Some(Hint::Int64),
+                    Op::Machine(
+                        MachineIntegerType::UInt64,
+                        MachineBinaryOp::Add
+                        | MachineBinaryOp::Subtract
+                        | MachineBinaryOp::Multiply
+                        | MachineBinaryOp::Divide
+                        | MachineBinaryOp::Remainder
+                        | MachineBinaryOp::ShiftLeft
+                        | MachineBinaryOp::ShiftRight
+                        | MachineBinaryOp::BitwiseAnd
+                        | MachineBinaryOp::BitwiseOr
+                        | MachineBinaryOp::BitwiseXor,
+                    ) => Some(Hint::UInt64),
                     Op::UnsignedDivide | Op::UnsignedRemainder | Op::LogicalShiftRight => {
                         Some(Hint::Unsigned32)
                     }
@@ -1325,11 +1340,15 @@ impl Printer<'_> {
                     B::Add(..)
                         | B::Subtract(..)
                         | B::Multiply(..)
-                        | B::UInt64Add(..)
-                        | B::UInt64Subtract(..)
-                        | B::UInt64Multiply(..)
-                        | B::UInt64Divide(..)
-                        | B::UInt64Remainder(..)
+                        | B::Binary {
+                            format: MachineIntegerType::UInt64,
+                            op: MachineBinaryOp::Add
+                                | MachineBinaryOp::Subtract
+                                | MachineBinaryOp::Multiply
+                                | MachineBinaryOp::Divide
+                                | MachineBinaryOp::Remainder,
+                            ..
+                        }
                 )
             {
                 return None;
@@ -1380,7 +1399,7 @@ impl Printer<'_> {
         if let Some((operator, inner)) = value.as_unary() {
             use crate::kernel::BitvectorUnaryOp as U;
             let (prefix, type_name) = match operator {
-                U::BitwiseNot | U::Int64BitwiseNot | U::UInt64BitwiseNot => (Some("~"), None),
+                U::BitwiseNot | U::Machine(_, MachineUnaryOp::BitwiseNot) => (Some("~"), None),
                 U::Float32Negate | U::Float64Negate => (Some("-"), None),
                 U::Int64From32 | U::Int64FromUInt32 => (None, Some("int64")),
                 U::UInt64From32 | U::UInt64FromInt32 | U::UInt64FromInt64 => (None, Some("uint64")),
@@ -1390,7 +1409,7 @@ impl Printer<'_> {
                 }
             };
             let inner_hint = match operator {
-                U::BitwiseNot | U::Int64BitwiseNot | U::UInt64BitwiseNot => hint,
+                U::BitwiseNot | U::Machine(_, MachineUnaryOp::BitwiseNot) => hint,
                 U::Int64FromUInt32 | U::UInt64From32 => Some(Hint::Unsigned32),
                 U::Int64From32 | U::UInt64FromInt32 => Some(Hint::Signed32),
                 U::UInt64FromInt64 => Some(Hint::Int64),
@@ -1797,15 +1816,21 @@ impl Printer<'_> {
                     Some(atom(format!("{}u64", *value as i64 / width)))
                 }
                 Bitvector32Term::Multiply(left, right)
-                | Bitvector32Term::UInt64Multiply(left, right)
-                    if right.as_const().map(i64::from) == Some(width) =>
-                {
+                | Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Multiply,
+                    left,
+                    right,
+                } if right.as_const().map(i64::from) == Some(width) => {
                     self.bitvector(left, hint, depth)
                 }
                 Bitvector32Term::Multiply(left, right)
-                | Bitvector32Term::UInt64Multiply(left, right)
-                    if left.as_const().map(i64::from) == Some(width) =>
-                {
+                | Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Multiply,
+                    left,
+                    right,
+                } if left.as_const().map(i64::from) == Some(width) => {
                     self.bitvector(right, hint, depth)
                 }
                 _ => None,

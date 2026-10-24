@@ -2,7 +2,7 @@
 //!
 //! `Bitvector32Term` is the one term arena for every C integer and float
 //! value, and it does not record a width. Width is implied: by the operator
-//! family (`Add` is 32-bit, `Int64Add` and `UInt64Add` are 64-bit), by a
+//! family (`Add` is 32-bit, `Binary` carries its 64-bit format), by a
 //! constant's shape, by a load's kind, and by a cast's or conversion's
 //! destination. Narrow values (8 and 16 bits, and `_Bool`) ride in the
 //! 32-bit carrier, and floats ride in the carrier of their bit width.
@@ -13,7 +13,7 @@
 //! explain why the width stays implied and is checked here instead.
 
 use super::*;
-use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{CompareRelation, MachineBinaryOp, OverflowOperation};
 
 mod narrow;
 pub(crate) use narrow::*;
@@ -75,7 +75,7 @@ impl CarrierWidth {
 /// A place where a term's implied widths disagree.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WidthMismatch {
-    /// The node whose operand or context disagrees, e.g. `Int64Add`.
+    /// The node whose operand or context disagrees, e.g. `64-bit operator`.
     pub(crate) site: &'static str,
     pub(crate) expected: CarrierWidth,
     pub(crate) found: CarrierWidth,
@@ -166,6 +166,25 @@ fn operands(site: &'static str, width: CarrierWidth, terms: &[&Bitvector32Term])
         expect(site, width, term)?;
     }
     Ok(Some(width))
+}
+
+/// The carrier of a format-carrying operator ([`Bitvector32Term::Binary`],
+/// [`Bitvector32Term::Unary`]). Only the 64-bit formats have such operators
+/// so far (`design/machine-integers.md`, "Stage 3"); a node at any other
+/// format is malformed, and is reported as a 64-bit operator meeting the
+/// format's carrier.
+fn machine_operator_width(
+    site: &'static str,
+    format: MachineIntegerType,
+) -> Result<CarrierWidth, WidthMismatch> {
+    match format {
+        MachineIntegerType::Int64 | MachineIntegerType::UInt64 => Ok(CarrierWidth::Bits64),
+        _ => Err(WidthMismatch {
+            site,
+            expected: CarrierWidth::Bits64,
+            found: CarrierWidth::of_machine_type(format),
+        }),
+    }
 }
 
 /// Unifies two widths that must agree, such as the arms of an `If`.
@@ -270,32 +289,26 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
             Ok(Some(Bits32))
         }
         T::UInt64FromInt64(value) => operands("64-bit conversion", Bits64, &[value]),
-        T::Int64Add(l, r)
-        | T::Int64Subtract(l, r)
-        | T::Int64Multiply(l, r)
-        | T::Int64Divide(l, r)
-        | T::Int64Remainder(l, r)
-        | T::Int64BitwiseAnd(l, r)
-        | T::Int64BitwiseOr(l, r)
-        | T::Int64BitwiseXor(l, r)
-        | T::UInt64Add(l, r)
-        | T::UInt64Subtract(l, r)
-        | T::UInt64Multiply(l, r)
-        | T::UInt64Divide(l, r)
-        | T::UInt64Remainder(l, r)
-        | T::UInt64BitwiseAnd(l, r)
-        | T::UInt64BitwiseOr(l, r)
-        | T::UInt64BitwiseXor(l, r) => operands("64-bit operator", Bits64, &[l, r]),
-        // A shift count is its own operand: C promotes it separately.
-        T::Int64ShiftLeft(value, count)
-        | T::Int64ArithmeticShiftRight(value, count)
-        | T::UInt64ShiftLeft(value, count)
-        | T::UInt64LogicalShiftRight(value, count) => {
-            term_width(count)?;
-            operands("64-bit shift", Bits64, &[value])
+        T::Binary {
+            format,
+            op,
+            left,
+            right,
+        } => {
+            let width = machine_operator_width("format-carrying binary operator", *format)?;
+            // A shift count is its own operand: C promotes it separately.
+            if matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight) {
+                term_width(right)?;
+                operands("64-bit shift", width, &[left])
+            } else {
+                operands("64-bit operator", width, &[left, right])
+            }
         }
-        T::Int64BitwiseNot(value) | T::UInt64BitwiseNot(value) => {
-            operands("64-bit operator", Bits64, &[value])
+        T::Unary {
+            format, operand, ..
+        } => {
+            let width = machine_operator_width("format-carrying unary operator", *format)?;
+            operands("64-bit operator", width, &[operand])
         }
         T::Float32Negate(value) => operands("float32 operator", Bits32, &[value]),
         T::Float32Binary { left, right, .. } => {

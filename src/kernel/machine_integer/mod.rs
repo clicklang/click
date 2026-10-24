@@ -23,7 +23,7 @@
 //!   destination; widening needs no premise, narrowing needs the range.
 //!
 //! The term representation still spells each width with its own nodes
-//! (`Add` at 32 bits, `Int64Add` at 64, no operators at 128). The one place
+//! (`Add` at 32 bits, `Binary` with its format at 64, no operators at 128). The one place
 //! that maps a format to those nodes, and back, is [`representation`]. A
 //! rule that has no node at some format is unavailable there, and the test
 //! matrix (`matrix_tests.rs`) records each such format as a named

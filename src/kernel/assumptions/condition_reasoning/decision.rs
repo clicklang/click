@@ -1711,21 +1711,24 @@ impl PureFactContext {
     fn bitvector64_identity_base<'a>(&self, mut term: &'a Bitvector32Term) -> &'a Bitvector32Term {
         loop {
             term = match term {
-                Bitvector32Term::Int64Add(a, b)
-                    if self.wide_constant_from_equalities(b) == Some(0) =>
-                {
-                    a
-                }
-                Bitvector32Term::Int64Add(a, b)
-                    if self.wide_constant_from_equalities(a) == Some(0) =>
-                {
-                    b
-                }
-                Bitvector32Term::Int64Subtract(a, b)
-                    if self.wide_constant_from_equalities(b) == Some(0) =>
-                {
-                    a
-                }
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::Int64,
+                    op: MachineBinaryOp::Add,
+                    left: a,
+                    right: b,
+                } if self.wide_constant_from_equalities(b) == Some(0) => a,
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::Int64,
+                    op: MachineBinaryOp::Add,
+                    left: a,
+                    right: b,
+                } if self.wide_constant_from_equalities(a) == Some(0) => b,
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::Int64,
+                    op: MachineBinaryOp::Subtract,
+                    left: a,
+                    right: b,
+                } if self.wide_constant_from_equalities(b) == Some(0) => a,
                 // A signed-to-unsigned 64-bit conversion preserves all bits.
                 Bitvector32Term::UInt64FromInt64(value) => value,
                 _ => return term,

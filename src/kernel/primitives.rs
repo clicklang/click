@@ -759,28 +759,25 @@ pub enum Bitvector32Term {
     Int64FromUInt32(Box<Bitvector32Term>),
     UInt64FromInt32(Box<Bitvector32Term>),
     UInt64FromInt64(Box<Bitvector32Term>),
-    Int64Add(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Int64Subtract(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Int64Multiply(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Int64Divide(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Int64Remainder(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Int64ShiftLeft(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Int64ArithmeticShiftRight(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Int64BitwiseAnd(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Int64BitwiseOr(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Int64BitwiseXor(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Int64BitwiseNot(Box<Bitvector32Term>),
-    UInt64Add(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    UInt64Subtract(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    UInt64Multiply(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    UInt64Divide(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    UInt64Remainder(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    UInt64ShiftLeft(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    UInt64LogicalShiftRight(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    UInt64BitwiseAnd(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    UInt64BitwiseOr(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    UInt64BitwiseXor(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    UInt64BitwiseNot(Box<Bitvector32Term>),
+    /// `left op right`, both operands read at `format`. Signed and unsigned
+    /// division, remainder and right shift are told apart by the format, not
+    /// the operator; a shift count is its own operand of any width. Only the
+    /// 64-bit formats are built here so far: the 32-bit operators above join
+    /// in a later step of `design/machine-integers.md` ("Stage 3"), and the
+    /// width audit (`term_width`) refuses any other format.
+    Binary {
+        format: MachineIntegerType,
+        op: MachineBinaryOp,
+        left: Box<Bitvector32Term>,
+        right: Box<Bitvector32Term>,
+    },
+    /// `op operand`, the operand read at `format`, under the same format
+    /// restriction as [`Self::Binary`].
+    Unary {
+        format: MachineIntegerType,
+        op: MachineUnaryOp,
+        operand: Box<Bitvector32Term>,
+    },
     Float32Negate(Box<Bitvector32Term>),
     Float32Binary {
         operator: CFloatBinaryOperator,
@@ -909,6 +906,30 @@ impl PointerOffsetTerm {
     }
 }
 
+/// The operator of a machine binary term ([`Bitvector32Term::Binary`]).
+/// Signedness comes from the term's format: `Divide`, `Remainder` and
+/// `ShiftRight` are signed (arithmetic) at a signed format and unsigned
+/// (logical) at an unsigned one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum MachineBinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+    ShiftLeft,
+    ShiftRight,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+}
+
+/// The operator of a machine unary term ([`Bitvector32Term::Unary`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum MachineUnaryOp {
+    BitwiseNot,
+}
+
 /// The relation of a machine comparison ([`ConditionTerm::Compare`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CompareRelation {
@@ -1010,48 +1031,31 @@ macro_rules! binary_bitvector32_term {
 }
 pub(crate) use binary_bitvector32_term;
 
-/// Matches every two-operand signed 64-bit [`Bitvector32Term`] operation, binding the operands to
-/// `$left` and `$right`.
-macro_rules! binary_int64_term {
-    ($left:pat, $right:pat) => {
-        $crate::kernel::Bitvector32Term::Int64Add($left, $right)
-            | $crate::kernel::Bitvector32Term::Int64Subtract($left, $right)
-            | $crate::kernel::Bitvector32Term::Int64Multiply($left, $right)
-            | $crate::kernel::Bitvector32Term::Int64Divide($left, $right)
-            | $crate::kernel::Bitvector32Term::Int64Remainder($left, $right)
-            | $crate::kernel::Bitvector32Term::Int64BitwiseAnd($left, $right)
-            | $crate::kernel::Bitvector32Term::Int64BitwiseOr($left, $right)
-            | $crate::kernel::Bitvector32Term::Int64BitwiseXor($left, $right)
-            | $crate::kernel::Bitvector32Term::Int64ShiftLeft($left, $right)
-            | $crate::kernel::Bitvector32Term::Int64ArithmeticShiftRight($left, $right)
-    };
-}
-pub(crate) use binary_int64_term;
-
 /// Matches every two-operand unsigned 64-bit [`Bitvector32Term`] operation, binding the operands to
 /// `$left` and `$right`.
 macro_rules! binary_uint64_term {
     ($left:pat, $right:pat) => {
-        $crate::kernel::Bitvector32Term::UInt64Add($left, $right)
-            | $crate::kernel::Bitvector32Term::UInt64Subtract($left, $right)
-            | $crate::kernel::Bitvector32Term::UInt64Multiply($left, $right)
-            | $crate::kernel::Bitvector32Term::UInt64Divide($left, $right)
-            | $crate::kernel::Bitvector32Term::UInt64Remainder($left, $right)
-            | $crate::kernel::Bitvector32Term::UInt64BitwiseAnd($left, $right)
-            | $crate::kernel::Bitvector32Term::UInt64BitwiseOr($left, $right)
-            | $crate::kernel::Bitvector32Term::UInt64BitwiseXor($left, $right)
-            | $crate::kernel::Bitvector32Term::UInt64ShiftLeft($left, $right)
-            | $crate::kernel::Bitvector32Term::UInt64LogicalShiftRight($left, $right)
+        $crate::kernel::Bitvector32Term::Binary {
+            format: $crate::kernel::MachineIntegerType::UInt64,
+            op: _,
+            left: $left,
+            right: $right,
+        }
     };
 }
 pub(crate) use binary_uint64_term;
 
-/// Matches every two-operand 64-bit [`Bitvector32Term`] operation, signed or unsigned, binding the
-/// operands to `$left` and `$right`.
+/// Matches every format-carrying two-operand [`Bitvector32Term`] operation, binding the operands to
+/// `$left` and `$right`. Only the 64-bit formats, signed or unsigned, are built so far (see
+/// [`Bitvector32Term::Binary`]).
 macro_rules! binary_wide_term {
     ($left:pat, $right:pat) => {
-        $crate::kernel::binary_int64_term!($left, $right)
-            | $crate::kernel::binary_uint64_term!($left, $right)
+        $crate::kernel::Bitvector32Term::Binary {
+            format: _,
+            op: _,
+            left: $left,
+            right: $right,
+        }
     };
 }
 pub(crate) use binary_wide_term;
@@ -1243,8 +1247,7 @@ pub(crate) use arithmetic_c_value;
 macro_rules! unary_machine_term {
     ($term:pat) => {
         $crate::kernel::Bitvector32Term::BitwiseNot($term)
-            | $crate::kernel::Bitvector32Term::Int64BitwiseNot($term)
-            | $crate::kernel::Bitvector32Term::UInt64BitwiseNot($term)
+            | $crate::kernel::Bitvector32Term::Unary { operand: $term, .. }
             | $crate::kernel::Bitvector32Term::Int64From32($term)
             | $crate::kernel::Bitvector32Term::MachineIntegerCast { value: $term, .. }
             | $crate::kernel::Bitvector32Term::UInt64From32($term)

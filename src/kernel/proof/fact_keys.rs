@@ -7,6 +7,7 @@
 #[cfg(test)]
 use crate::kernel::CompareRelation;
 use crate::kernel::LoadKind;
+use crate::kernel::MachineUnaryOp;
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, CPointerValue, CType, CValue,
     IntegerComparisonOperator, IntegerTerm, MachineIntegerType, PureFunctionArgument,
@@ -803,8 +804,7 @@ enum AlphaBitvectorKey {
     Variable(AlphaVariableKey),
     Binary(BitvectorBinaryOp, Box<Self>, Box<Self>),
     BitwiseNot(Box<Self>),
-    Int64BitwiseNot(Box<Self>),
-    UInt64BitwiseNot(Box<Self>),
+    Unary(MachineIntegerType, MachineUnaryOp, Box<Self>),
     Float32Negate(Box<Self>),
     Float64Negate(Box<Self>),
     If {
@@ -2141,18 +2141,19 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
         Bitvector32Term::BitwiseNot(body) => AlphaBitvectorKey::BitwiseNot(Box::new(
             alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder)?,
         )),
-        Bitvector32Term::Int64BitwiseNot(body) => {
-            AlphaBitvectorKey::Int64BitwiseNot(Box::new(alpha_bitvector_key_with_bindings::<
-                ALLOW_LOADS,
-            >(body, bindings, next_binder)?))
-        }
-        Bitvector32Term::UInt64BitwiseNot(body) => {
-            AlphaBitvectorKey::UInt64BitwiseNot(Box::new(alpha_bitvector_key_with_bindings::<
-                ALLOW_LOADS,
-            >(
-                body, bindings, next_binder
-            )?))
-        }
+        Bitvector32Term::Unary {
+            format,
+            op,
+            operand: body,
+        } => AlphaBitvectorKey::Unary(
+            *format,
+            *op,
+            Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                body,
+                bindings,
+                next_binder,
+            )?),
+        ),
         Bitvector32Term::Float32Negate(body) => {
             AlphaBitvectorKey::Float32Negate(Box::new(alpha_bitvector_key_with_bindings::<
                 ALLOW_LOADS,

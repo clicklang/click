@@ -454,6 +454,19 @@ Done 2026-10-24. What changed:
 - Separate floats into their own term type.
 - Load equations take their load's format.
 
+Progress:
+
+- The 64-bit operators are merged (2026-10-24). `Bitvector32Term` has
+  `Binary { format, op, left, right }` (`MachineBinaryOp`) and
+  `Unary { format, op, operand }` (`MachineUnaryOp`) in place of its 24
+  `Int64*` and `UInt64*` operator variants; `ShiftRight` is arithmetic at
+  `int64` and logical at `uint64`. The constructors are unchanged, and
+  `machine_binary` and `machine_unary` dispatch to them by format.
+  `term_shape.rs` reads both nodes as `Machine(format, op)`. Only `int64`
+  and `uint64` have these nodes until the 32-bit operators join; the width
+  check refuses any other format. Output is unchanged; the derived order
+  now sorts every 64-bit binary before every 64-bit complement.
+
 ### Stage 4. Front ends and library
 
 - Lower C promotions, C narrowing, Rust narrow arithmetic and casts to the

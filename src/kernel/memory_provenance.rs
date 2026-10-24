@@ -6486,72 +6486,17 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                     Bitvector32Term::BitwiseXor(left, right) => {
                         push_binary(&mut tasks, BitvectorBinaryOp::BitwiseXor, left, right)
                     }
-                    Bitvector32Term::Int64Add(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::Int64Add, left, right)
-                    }
-                    Bitvector32Term::Int64Subtract(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::Int64Subtract, left, right)
-                    }
-                    Bitvector32Term::Int64Multiply(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::Int64Multiply, left, right)
-                    }
-                    Bitvector32Term::Int64Divide(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::Int64Divide, left, right)
-                    }
-                    Bitvector32Term::Int64Remainder(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::Int64Remainder, left, right)
-                    }
-                    Bitvector32Term::Int64ShiftLeft(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::Int64ShiftLeft, left, right)
-                    }
-                    Bitvector32Term::Int64ArithmeticShiftRight(left, right) => push_binary(
+                    Bitvector32Term::Binary {
+                        format,
+                        op,
+                        left,
+                        right,
+                    } => push_binary(
                         &mut tasks,
-                        BitvectorBinaryOp::Int64ArithmeticShiftRight,
+                        BitvectorBinaryOp::Machine(format, op),
                         left,
                         right,
                     ),
-                    Bitvector32Term::Int64BitwiseAnd(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::Int64BitwiseAnd, left, right)
-                    }
-                    Bitvector32Term::Int64BitwiseOr(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::Int64BitwiseOr, left, right)
-                    }
-                    Bitvector32Term::Int64BitwiseXor(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::Int64BitwiseXor, left, right)
-                    }
-                    Bitvector32Term::UInt64Add(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::UInt64Add, left, right)
-                    }
-                    Bitvector32Term::UInt64Subtract(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::UInt64Subtract, left, right)
-                    }
-                    Bitvector32Term::UInt64Multiply(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::UInt64Multiply, left, right)
-                    }
-                    Bitvector32Term::UInt64Divide(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::UInt64Divide, left, right)
-                    }
-                    Bitvector32Term::UInt64Remainder(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::UInt64Remainder, left, right)
-                    }
-                    Bitvector32Term::UInt64ShiftLeft(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::UInt64ShiftLeft, left, right)
-                    }
-                    Bitvector32Term::UInt64LogicalShiftRight(left, right) => push_binary(
-                        &mut tasks,
-                        BitvectorBinaryOp::UInt64LogicalShiftRight,
-                        left,
-                        right,
-                    ),
-                    Bitvector32Term::UInt64BitwiseAnd(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::UInt64BitwiseAnd, left, right)
-                    }
-                    Bitvector32Term::UInt64BitwiseOr(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::UInt64BitwiseOr, left, right)
-                    }
-                    Bitvector32Term::UInt64BitwiseXor(left, right) => {
-                        push_binary(&mut tasks, BitvectorBinaryOp::UInt64BitwiseXor, left, right)
-                    }
                     Bitvector32Term::Float32Negate(value) => {
                         push_unary(&mut tasks, BitvectorUnaryOp::Float32Negate, value)
                     }
@@ -6599,12 +6544,11 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                     Bitvector32Term::UInt64FromInt64(value) => {
                         push_unary(&mut tasks, BitvectorUnaryOp::UInt64FromInt64, value)
                     }
-                    Bitvector32Term::Int64BitwiseNot(value) => {
-                        push_unary(&mut tasks, BitvectorUnaryOp::Int64BitwiseNot, value)
-                    }
-                    Bitvector32Term::UInt64BitwiseNot(value) => {
-                        push_unary(&mut tasks, BitvectorUnaryOp::UInt64BitwiseNot, value)
-                    }
+                    Bitvector32Term::Unary {
+                        format,
+                        op,
+                        operand: value,
+                    } => push_unary(&mut tasks, BitvectorUnaryOp::Machine(format, op), value),
                     Bitvector32Term::If {
                         condition,
                         then_term,

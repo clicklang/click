@@ -113,8 +113,7 @@ fn collect_offset_load_variables_from_term(
         | Bitvector32Term::Int64FromUInt32(value)
         | Bitvector32Term::UInt64FromInt32(value)
         | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value) => {
+        | Bitvector32Term::Unary { operand: value, .. } => {
             collect_offset_load_variables_from_term(value, load_variables);
         }
         crate::kernel::binary_wide_term!(left, right) => {
@@ -192,8 +191,7 @@ fn assert_scaled_index_free_of_raw_loads(
         | Bitvector32Term::Int64FromUInt32(value)
         | Bitvector32Term::UInt64FromInt32(value)
         | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value) => {
+        | Bitvector32Term::Unary { operand: value, .. } => {
             assert_scaled_index_free_of_raw_loads(value, load_variables);
         }
         crate::kernel::binary_wide_term!(left, right) => {
@@ -370,6 +368,25 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
             Bitvector32Term::$variant(Box::new($left), Box::new($right))
         };
     }
+    macro_rules! machine_binary {
+        ($format:ident, $op:ident, $left:expr, $right:expr) => {
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::$format,
+                op: MachineBinaryOp::$op,
+                left: Box::new($left),
+                right: Box::new($right),
+            }
+        };
+    }
+    macro_rules! machine_unary {
+        ($format:ident, $op:ident, $value:expr) => {
+            Bitvector32Term::Unary {
+                format: MachineIntegerType::$format,
+                op: MachineUnaryOp::$op,
+                operand: Box::new($value),
+            }
+        };
+    }
     macro_rules! unary {
         ($variant:ident, $value:expr) => {
             Bitvector32Term::$variant(Box::new($value))
@@ -428,28 +445,28 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
         unary!(Int64FromUInt32, load.clone()),
         unary!(UInt64FromInt32, load.clone()),
         unary!(UInt64FromInt64, load.clone()),
-        unary!(Int64BitwiseNot, load.clone()),
-        unary!(UInt64BitwiseNot, load.clone()),
-        binary!(Int64Add, load.clone(), i64_value.clone()),
-        binary!(Int64Subtract, load.clone(), i64_value.clone()),
-        binary!(Int64Multiply, load.clone(), i64_value.clone()),
-        binary!(Int64Divide, load.clone(), i64_value.clone()),
-        binary!(Int64Remainder, load.clone(), i64_value.clone()),
-        binary!(Int64ShiftLeft, load.clone(), i64_value.clone()),
-        binary!(Int64ArithmeticShiftRight, load.clone(), i64_value.clone()),
-        binary!(Int64BitwiseAnd, load.clone(), i64_value.clone()),
-        binary!(Int64BitwiseOr, load.clone(), i64_value.clone()),
-        binary!(Int64BitwiseXor, load.clone(), i64_value.clone()),
-        binary!(UInt64Add, load.clone(), u64_value.clone()),
-        binary!(UInt64Subtract, load.clone(), u64_value.clone()),
-        binary!(UInt64Multiply, load.clone(), u64_value.clone()),
-        binary!(UInt64Divide, load.clone(), u64_value.clone()),
-        binary!(UInt64Remainder, load.clone(), u64_value.clone()),
-        binary!(UInt64ShiftLeft, load.clone(), u64_value.clone()),
-        binary!(UInt64LogicalShiftRight, load.clone(), u64_value.clone()),
-        binary!(UInt64BitwiseAnd, load.clone(), u64_value.clone()),
-        binary!(UInt64BitwiseOr, load.clone(), u64_value.clone()),
-        binary!(UInt64BitwiseXor, load, u64_value),
+        machine_unary!(Int64, BitwiseNot, load.clone()),
+        machine_unary!(UInt64, BitwiseNot, load.clone()),
+        machine_binary!(Int64, Add, load.clone(), i64_value.clone()),
+        machine_binary!(Int64, Subtract, load.clone(), i64_value.clone()),
+        machine_binary!(Int64, Multiply, load.clone(), i64_value.clone()),
+        machine_binary!(Int64, Divide, load.clone(), i64_value.clone()),
+        machine_binary!(Int64, Remainder, load.clone(), i64_value.clone()),
+        machine_binary!(Int64, ShiftLeft, load.clone(), i64_value.clone()),
+        machine_binary!(Int64, ShiftRight, load.clone(), i64_value.clone()),
+        machine_binary!(Int64, BitwiseAnd, load.clone(), i64_value.clone()),
+        machine_binary!(Int64, BitwiseOr, load.clone(), i64_value.clone()),
+        machine_binary!(Int64, BitwiseXor, load.clone(), i64_value.clone()),
+        machine_binary!(UInt64, Add, load.clone(), u64_value.clone()),
+        machine_binary!(UInt64, Subtract, load.clone(), u64_value.clone()),
+        machine_binary!(UInt64, Multiply, load.clone(), u64_value.clone()),
+        machine_binary!(UInt64, Divide, load.clone(), u64_value.clone()),
+        machine_binary!(UInt64, Remainder, load.clone(), u64_value.clone()),
+        machine_binary!(UInt64, ShiftLeft, load.clone(), u64_value.clone()),
+        machine_binary!(UInt64, ShiftRight, load.clone(), u64_value.clone()),
+        machine_binary!(UInt64, BitwiseAnd, load.clone(), u64_value.clone()),
+        machine_binary!(UInt64, BitwiseOr, load.clone(), u64_value.clone()),
+        machine_binary!(UInt64, BitwiseXor, load, u64_value),
     ];
 
     for term in terms {

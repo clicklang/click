@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 #[cfg(test)]
@@ -3518,76 +3519,30 @@ fn synthesize_surface_bitvector(
                 explicit_qualification: false,
             }))
         }
-        Bitvector32Term::Int64Add(left, right) => {
+        Bitvector32Term::Binary {
+            op, left, right, ..
+        } => {
             let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Add(left, right))
+            Some(match op {
+                MachineBinaryOp::Add => ContractExpression::Add(left, right),
+                MachineBinaryOp::Subtract => ContractExpression::Subtract(left, right),
+                MachineBinaryOp::Multiply => ContractExpression::Multiply(left, right),
+                MachineBinaryOp::Divide => ContractExpression::Divide(left, right),
+                MachineBinaryOp::Remainder => ContractExpression::Remainder(left, right),
+                MachineBinaryOp::ShiftLeft => ContractExpression::ShiftLeft(left, right),
+                MachineBinaryOp::ShiftRight => ContractExpression::ShiftRight(left, right),
+                MachineBinaryOp::BitwiseAnd => ContractExpression::BitwiseAnd(left, right),
+                MachineBinaryOp::BitwiseOr => ContractExpression::BitwiseOr(left, right),
+                MachineBinaryOp::BitwiseXor => ContractExpression::BitwiseXor(left, right),
+            })
         }
-        Bitvector32Term::Int64Subtract(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Subtract(left, right))
-        }
-        Bitvector32Term::Int64Multiply(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Multiply(left, right))
-        }
-        Bitvector32Term::Int64Divide(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Divide(left, right))
-        }
-        Bitvector32Term::Int64Remainder(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Remainder(left, right))
-        }
-        Bitvector32Term::UInt64Add(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Add(left, right))
-        }
-        Bitvector32Term::UInt64Subtract(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Subtract(left, right))
-        }
-        Bitvector32Term::UInt64Multiply(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Multiply(left, right))
-        }
-        Bitvector32Term::UInt64Divide(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Divide(left, right))
-        }
-        Bitvector32Term::UInt64Remainder(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Remainder(left, right))
-        }
-        Bitvector32Term::Int64ShiftLeft(left, right)
-        | Bitvector32Term::UInt64ShiftLeft(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::ShiftLeft(left, right))
-        }
-        Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-        | Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::ShiftRight(left, right))
-        }
-        Bitvector32Term::Int64BitwiseAnd(left, right)
-        | Bitvector32Term::UInt64BitwiseAnd(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::BitwiseAnd(left, right))
-        }
-        Bitvector32Term::Int64BitwiseOr(left, right)
-        | Bitvector32Term::UInt64BitwiseOr(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::BitwiseOr(left, right))
-        }
-        Bitvector32Term::Int64BitwiseXor(left, right)
-        | Bitvector32Term::UInt64BitwiseXor(left, right) => {
-            let (left, right) = binary(left, right)?;
-            Some(ContractExpression::BitwiseXor(left, right))
-        }
-        Bitvector32Term::Int64BitwiseNot(value) | Bitvector32Term::UInt64BitwiseNot(value) => {
-            Some(ContractExpression::BitwiseNot(Box::new(
-                synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
-            )))
-        }
+        Bitvector32Term::Unary {
+            op: crate::kernel::MachineUnaryOp::BitwiseNot,
+            operand,
+            ..
+        } => Some(ContractExpression::BitwiseNot(Box::new(
+            synthesize_surface_bitvector(operand, parameter_binding, state, bound_variables)?,
+        ))),
         Bitvector32Term::If { .. } | Bitvector32Term::RangeFold { .. } => None,
         Bitvector32Term::PureFunctionApplication {
             name,

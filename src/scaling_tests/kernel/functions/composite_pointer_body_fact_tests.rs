@@ -24,13 +24,17 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(word.clone()),
-                right: Box::new(Bitvector32Term::UInt64Add(
-                    Box::new(address.clone()),
-                    Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                        Box::new(word.clone()),
-                        Box::new(Bitvector32Term::UInt64Constant(1)),
-                    )),
-                )),
+                right: Box::new(Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(address.clone()),
+                    right: Box::new(Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::BitwiseAnd,
+                        left: Box::new(word.clone()),
+                        right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                    }),
+                }),
             },
             true,
         )
@@ -113,13 +117,17 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(word.clone()),
-                right: Box::new(Bitvector32Term::UInt64Add(
-                    Box::new(address.clone()),
-                    Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                        Box::new(word.clone()),
-                        Box::new(Bitvector32Term::UInt64Constant(1)),
-                    )),
-                )),
+                right: Box::new(Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(address.clone()),
+                    right: Box::new(Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::BitwiseAnd,
+                        left: Box::new(word.clone()),
+                        right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                    }),
+                }),
             },
             true,
         )

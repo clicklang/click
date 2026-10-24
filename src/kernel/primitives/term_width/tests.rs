@@ -17,10 +17,12 @@ fn operator_families_imply_their_carrier() {
         Ok(Some(CarrierWidth::Bits32))
     );
     assert_eq!(
-        term_width(&Bitvector32Term::UInt64Add(
-            boxed(x.clone()),
-            boxed(Bitvector32Term::UInt64Constant(1))
-        )),
+        term_width(&Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Add,
+            left: boxed(x.clone()),
+            right: boxed(Bitvector32Term::UInt64Constant(1))
+        }),
         Ok(Some(CarrierWidth::Bits64))
     );
     assert_eq!(
@@ -41,10 +43,12 @@ fn operator_families_imply_their_carrier() {
 
 #[test]
 fn an_operand_of_the_wrong_width_is_reported_where_it_meets_its_operator() {
-    let mixed = Bitvector32Term::Int64Add(
-        boxed(Bitvector32Term::Constant(1)),
-        boxed(Bitvector32Term::Int64Constant(2)),
-    );
+    let mixed = Bitvector32Term::Binary {
+        format: MachineIntegerType::Int64,
+        op: MachineBinaryOp::Add,
+        left: boxed(Bitvector32Term::Constant(1)),
+        right: boxed(Bitvector32Term::Int64Constant(2)),
+    };
     assert_eq!(
         term_width(&mixed),
         Err(WidthMismatch {
@@ -133,10 +137,12 @@ fn a_condition_reports_each_variable_at_the_width_it_is_used() {
         relation: CompareRelation::Equal,
         left: boxed(Bitvector32Term::Variable(n)),
         right: boxed(Bitvector32Term::UInt32From64(boxed(
-            Bitvector32Term::UInt64Add(
-                boxed(Bitvector32Term::Variable(n)),
-                boxed(Bitvector32Term::UInt64Constant(1)),
-            ),
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: boxed(Bitvector32Term::Variable(n)),
+                right: boxed(Bitvector32Term::UInt64Constant(1)),
+            },
         ))),
     };
     assert_eq!(
@@ -278,5 +284,70 @@ fn order_chains_decide_alike_at_every_width() {
             "reversed at {base}"
         );
         assert_eq!(facts.decide(&less(v(10), v(13))), None, "gap at {base}");
+    }
+}
+
+/// Only the 64-bit formats have format-carrying operator nodes so far
+/// (`design/machine-integers.md`, "Stage 3"): the width audit refuses a
+/// `Binary` or `Unary` node at any other format, whatever its operands.
+#[test]
+fn a_format_carrying_operator_at_a_format_without_such_nodes_is_refused() {
+    let x = boxed(Bitvector32Term::Variable(Variable(1)));
+    for format in [
+        MachineIntegerType::Int8,
+        MachineIntegerType::UInt16,
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int128,
+        MachineIntegerType::UInt128,
+    ] {
+        let found = CarrierWidth::of_machine_type(format);
+        let binary = Bitvector32Term::Binary {
+            format,
+            op: MachineBinaryOp::Add,
+            left: x.clone(),
+            right: x.clone(),
+        };
+        assert_eq!(
+            term_width(&binary),
+            Err(WidthMismatch {
+                site: "format-carrying binary operator",
+                expected: CarrierWidth::Bits64,
+                found,
+            }),
+            "{format:?}"
+        );
+        let unary = Bitvector32Term::Unary {
+            format,
+            op: MachineUnaryOp::BitwiseNot,
+            operand: x.clone(),
+        };
+        assert_eq!(
+            term_width(&unary),
+            Err(WidthMismatch {
+                site: "format-carrying unary operator",
+                expected: CarrierWidth::Bits64,
+                found,
+            }),
+            "{format:?}"
+        );
+        // The refusal reaches a condition that reads the node, so the
+        // per-context audit of an assumed fact rejects it too.
+        let condition = ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessThan,
+            left: boxed(binary),
+            right: boxed(Bitvector32Term::Int64Constant(0)),
+        };
+        assert!(condition_variable_widths(&condition).is_err(), "{format:?}");
+    }
+    for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+        let binary = Bitvector32Term::Binary {
+            format,
+            op: MachineBinaryOp::ShiftRight,
+            left: x.clone(),
+            right: boxed(Bitvector32Term::Constant(3)),
+        };
+        assert_eq!(term_width(&binary), Ok(Some(CarrierWidth::Bits64)));
     }
 }

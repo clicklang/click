@@ -10,16 +10,20 @@ fn word(memory: &SharedCMemory, pointer: &Pointer, bytes: u32) -> Bitvector32Ter
     ))
 }
 fn packed(value: &Bitvector32Term, parent: &Pointer) -> Bitvector32Term {
-    Bitvector32Term::UInt64Add(
-        Box::new(Bitvector32Term::PointerAddress(
+    Bitvector32Term::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::Add,
+        left: Box::new(Bitvector32Term::PointerAddress(
             Box::new(parent.clone()),
             crate::kernel::AddressObjectClass::NONE,
         )),
-        Box::new(Bitvector32Term::UInt64BitwiseAnd(
-            Box::new(value.clone()),
-            Box::new(Bitvector32Term::UInt64Constant(1)),
-        )),
-    )
+        right: Box::new(Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::BitwiseAnd,
+            left: Box::new(value.clone()),
+            right: Box::new(Bitvector32Term::UInt64Constant(1)),
+        }),
+    }
 }
 fn fact(a: Bitvector32Term, b: Bitvector32Term) -> Proposition {
     Proposition::ConditionIs(ConditionTerm::uint64_equal(a, b), true)

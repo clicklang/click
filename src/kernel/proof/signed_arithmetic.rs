@@ -7,6 +7,7 @@
 //! migration is in progress.
 
 use super::super::{Bitvector32Term, BitvectorBinaryOp, ConditionTerm, Proposition, Variable};
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use num_bigint::BigInt;
@@ -177,11 +178,14 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
                         native => match native.as_binary() {
                             Some(
                                 binary @ (
-                                    BitvectorBinaryOp::UInt64Add
-                                    | BitvectorBinaryOp::UInt64Subtract
-                                    | BitvectorBinaryOp::UInt64Multiply
-                                    | BitvectorBinaryOp::UInt64Divide
-                                    | BitvectorBinaryOp::UInt64Remainder,
+                                    BitvectorBinaryOp::Machine(
+                                        MachineIntegerType::UInt64,
+                                        MachineBinaryOp::Add
+                                        | MachineBinaryOp::Subtract
+                                        | MachineBinaryOp::Multiply
+                                        | MachineBinaryOp::Divide
+                                        | MachineBinaryOp::Remainder,
+                                    ),
                                     _,
                                     _,
                                 ),
@@ -4295,10 +4299,12 @@ mod tests {
             SignedArithmeticAtom::from_term(&narrowed),
             SignedArithmeticAtom::from_term(&changed)
         );
-        let computed = Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::UInt64Add(
-            Box::new(variable),
-            Box::new(Bitvector32Term::UInt64Constant(2)),
-        )));
+        let computed = Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Add,
+            left: Box::new(variable),
+            right: Box::new(Bitvector32Term::UInt64Constant(2)),
+        }));
         assert!(is_opaque_atom(&computed));
         assert_ne!(
             SignedArithmeticAtom::from_term(&computed),

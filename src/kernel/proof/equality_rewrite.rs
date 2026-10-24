@@ -1624,7 +1624,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
             if let Some(pointer) = term.address_pointer() {
                 return Some((pointer, None));
             }
-            let Bitvector32Term::UInt64BitwiseAnd(left, right) = term else {
+            let Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::BitwiseAnd,
+                left,
+                right,
+            } = term
+            else {
                 return None;
             };
             let (pointer, mask) = if let Some(pointer) = left.address_pointer() {
@@ -2916,10 +2922,12 @@ mod tests {
         for term in terms {
             let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int64,
-                Bitvector32Term::Int64Add(
-                    Box::new(Bitvector32Term::Variable(Variable(193_043))),
-                    Box::new(term),
-                ),
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::Int64,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(Bitvector32Term::Variable(Variable(193_043))),
+                    right: Box::new(term),
+                },
             ));
             let goal = integer_equality(observed.clone(), IntegerTerm::add(x.clone(), x.clone()));
             let expected =
@@ -3042,7 +3050,12 @@ mod tests {
             };
             let mask = |value| {
                 if wide {
-                    Bitvector32Term::UInt64BitwiseAnd(Box::new(value), Box::new(one.clone()))
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::BitwiseAnd,
+                        left: Box::new(value),
+                        right: Box::new(one.clone()),
+                    }
                 } else {
                     Bitvector32Term::BitwiseAnd(Box::new(value), Box::new(one.clone()))
                 }
@@ -3109,10 +3122,12 @@ mod tests {
                     kind,
                 )),
                 if wide {
-                    Bitvector32Term::UInt64BitwiseOr(
-                        Box::new(load(&after, pointer.clone(), kind)),
-                        Box::new(one.clone()),
-                    )
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::BitwiseOr,
+                        left: Box::new(load(&after, pointer.clone(), kind)),
+                        right: Box::new(one.clone()),
+                    }
                 } else {
                     Bitvector32Term::BitwiseOr(
                         Box::new(load(&after, pointer.clone(), kind)),
@@ -3146,10 +3161,12 @@ mod tests {
                 LoadKind::Bits64,
             );
             for index in 0..size {
-                term = Bitvector32Term::UInt64BitwiseXor(
-                    Box::new(term),
-                    Box::new(Bitvector32Term::Variable(Variable(931_000 + index))),
-                );
+                term = Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::BitwiseXor,
+                    left: Box::new(term),
+                    right: Box::new(Bitvector32Term::Variable(Variable(931_000 + index))),
+                };
             }
             term
         };

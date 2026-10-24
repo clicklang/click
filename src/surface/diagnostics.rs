@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::proof_diagnostics::render::{
     render_resource_diagnostic, render_resource_fact_diagnostic, render_resource_facts_diagnostic,
@@ -2688,10 +2689,12 @@ fn range_end_is_next_element(start: &Bitvector32Term, end: &Bitvector32Term) -> 
         |term: &Bitvector32Term| term.as_const() == Some(1) || term.uint64_as_const() == Some(1);
     match end {
         Bitvector32Term::Add(left, right)
-        | Bitvector32Term::Int64Add(left, right)
-        | Bitvector32Term::UInt64Add(left, right) => {
-            (left.as_ref() == start && one(right)) || (right.as_ref() == start && one(left))
-        }
+        | Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Add,
+            left,
+            right,
+        } => (left.as_ref() == start && one(right)) || (right.as_ref() == start && one(left)),
         _ => false,
     }
 }
@@ -7077,7 +7080,7 @@ pub(super) fn describe_bitvector_with_context(
             "((uint32){})",
             describe_bitvector_with_context(value, parameter_binding)
         ),
-        Bitvector32Term::Int64BitwiseNot(value) | Bitvector32Term::UInt64BitwiseNot(value) => {
+        Bitvector32Term::Unary { operand: value, .. } => {
             format!(
                 "~{}",
                 describe_bitvector_with_context(value, parameter_binding)

@@ -116,14 +116,46 @@ fn collect_machine_affine_atoms(
     crate::instrumentation::record_deterministic_work(1);
     match (term, wide) {
         (Bitvector32Term::Add(left, right), false)
-        | (Bitvector32Term::Int64Add(left, right), true)
-        | (Bitvector32Term::UInt64Add(left, right), true) => {
+        | (
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Add,
+                left,
+                right,
+            },
+            true,
+        )
+        | (
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left,
+                right,
+            },
+            true,
+        ) => {
             collect_machine_affine_atoms(left, coefficient, wide, atoms, constant);
             collect_machine_affine_atoms(right, coefficient, wide, atoms, constant);
         }
         (Bitvector32Term::Subtract(left, right), false)
-        | (Bitvector32Term::Int64Subtract(left, right), true)
-        | (Bitvector32Term::UInt64Subtract(left, right), true) => {
+        | (
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Subtract,
+                left,
+                right,
+            },
+            true,
+        )
+        | (
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Subtract,
+                left,
+                right,
+            },
+            true,
+        ) => {
             collect_machine_affine_atoms(left, coefficient, wide, atoms, constant);
             collect_machine_affine_atoms(right, coefficient.wrapping_neg(), wide, atoms, constant);
         }
@@ -3235,8 +3267,12 @@ mod uint64_loop_tests {
         let length = Bitvector32Term::Variable(Variable(981_011));
         let removed = Bitvector32Term::Variable(Variable(981_012));
         let upper = Bitvector32Term::Variable(Variable(981_013));
-        let difference =
-            Bitvector32Term::UInt64Subtract(Box::new(length.clone()), Box::new(removed.clone()));
+        let difference = Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Subtract,
+            left: Box::new(length.clone()),
+            right: Box::new(removed.clone()),
+        };
         let condition = ConditionTerm::uint64_less_equal(difference, upper.clone());
         let goal = Proposition::ConditionIs(condition.clone(), true);
         let premises = [
