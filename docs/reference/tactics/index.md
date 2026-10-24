@@ -1677,6 +1677,14 @@ bounded combinations miss an `Integer` bound, `arithmetic` refutes the goal's
 negation from all the listed premises by simplex, so a chain of any length
 closes; the certificate adds up the cited premises and the negated goal to a
 constant contradiction.
+When that refutation needs a value's type range, as `k < x` with `x == 0u64`
+needs `0 <= to_integer(k)`, it retries with the type range of each machine
+value the goal and listed premises observe, spelled from the written operand,
+and the certificate cites each one it uses as a `type_range` bound. A `false`
+goal is proved the same way, from the listed premises alone
+([`arithmetic_using_reads_unsigned_type_ranges.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_using_reads_unsigned_type_ranges.md));
+a signed value has no zero floor, so `k < x` with `x == 0` is consistent
+([`arithmetic_using_signed_values_have_no_zero_floor.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_using_signed_values_have_no_zero_floor.md)).
 
 An equality goal must reduce away completely; an order goal is decided, after
 that elimination, by at most two of the reduced inequalities, whether or not the

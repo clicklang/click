@@ -89,16 +89,43 @@ pub(in crate::surface) fn plan_arithmetic(
                 .map(ArithmeticPlan::SignedInt32)
         }
         ArithmeticEngine::IntegerRefutation => {
-            match plan_integer_refutation_with_ranges(goal, premises, &[]) {
-                IntegerRefutation::Proved {
-                    certificate,
-                    premises: used,
-                } => cited_by_caller_index(certificate, &used, premises)
-                    .map(ArithmeticPlan::IntegerAffine),
-                _ => None,
-            }
+            let plan =
+                |ranges: &[crate::kernel::IntegerTerm]| match plan_integer_refutation_with_ranges(
+                    goal, premises, ranges,
+                ) {
+                    IntegerRefutation::Proved {
+                        certificate,
+                        premises: used,
+                    } => cited_by_caller_index(certificate, &used, premises)
+                        .map(ArithmeticPlan::IntegerAffine),
+                    _ => None,
+                };
+            // A refutation that misses from the listed premises alone is
+            // planned once more with the type range of each machine value
+            // they and the goal observe, as `simp`'s refutation is: that
+            // `k < x` and `x == 0u64` leave no unsigned `k` is the range,
+            // not a premise. A range enters the certificate as a checked
+            // `TypeRange` node, not as a fact.
+            plan(&[]).or_else(|| {
+                let ranges = machine_observations(goal, premises);
+                (!ranges.is_empty()).then(|| plan(&ranges)).flatten()
+            })
         }
     }
+}
+
+/// Each machine value the goal and the premises observe, once.
+pub(in crate::surface) fn machine_observations(
+    goal: &Proposition,
+    premises: &[Proposition],
+) -> Vec<crate::kernel::IntegerTerm> {
+    let mut seen = std::collections::HashSet::new();
+    std::iter::once(goal)
+        .chain(premises)
+        .flat_map(crate::kernel::proof::integer_arithmetic::integer_affine_machine_values)
+        .filter(|value| seen.insert(value.id()))
+        .map(crate::kernel::IntegerTerm::Machine)
+        .collect()
 }
 
 /// Renumbers a refutation's premise nodes, which index the premises it

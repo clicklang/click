@@ -1545,9 +1545,10 @@ impl<'a> Proof<'a> {
             )
         }).flatten();
         let surface_goal = self.surface_goal().or(synthesized_goal.as_ref());
+        use crate::kernel::proof::integer_arithmetic::IntegerArithmeticNode;
         use crate::kernel::proof::integer_arithmetic::written_integer_affine_claim;
         use crate::surface::checking::{ArithmeticPlan, arithmetic_plans};
-        use crate::surface::proof::smart_closures::integer_plan_to_surface_certificate;
+        use crate::surface::proof::smart_closures::integer_plan_to_surface_certificate_with_ranges;
         if let Some(goal) = self.goal() {
             for plan in arithmetic_plans(goal, &premises, true) {
                 match plan {
@@ -1591,9 +1592,29 @@ impl<'a> Proof<'a> {
                             .cloned()
                             .zip(anchored_surface_premises.iter().cloned())
                             .collect::<Vec<_>>();
-                        if let Some(certificate) =
-                            integer_plan_to_surface_certificate(&plan, &pairs, surface_goal)
+                        // A plan citing an unsigned or signed type range,
+                        // `0 <= to_integer(x)`, spells it from the written
+                        // observations of the goal and listed premises.
+                        let ranges = if plan
+                            .nodes
+                            .iter()
+                            .any(|node| matches!(node, IntegerArithmeticNode::TypeRange { .. }))
                         {
+                            let Some(ranges) =
+                                self.listed_premise_type_ranges(&plan, &pairs, surface_goal)
+                            else {
+                                continue;
+                            };
+                            ranges
+                        } else {
+                            Vec::new()
+                        };
+                        if let Some(certificate) = integer_plan_to_surface_certificate_with_ranges(
+                            &plan,
+                            &pairs,
+                            surface_goal,
+                            &ranges,
+                        ) {
                             // A native goal the Integer certificate cannot spell exactly,
                             // a read named two ways, is still the signed planner's.
                             match self.apply_integer_certificate(&certificate) {
