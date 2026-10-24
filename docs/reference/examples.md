@@ -570,6 +570,14 @@ sequence:
 - `examples/jsonc-existing-source/`: byte-preserved upstream json-c source
   with a checked SHA-256 manifest. Proves its numeric version and NUL-terminated
   version-string contents under the default user-space target.
+- `examples/string-get-size/`: Linux `string_get_size` from
+  `lib/string_helpers.c` at `v7.3`, the function copied byte-for-byte with a
+  local header stand-in (`SOURCE.md`). Proves it free of undefined behavior
+  for both unit systems and every flag combination, with a non-negative
+  result and a terminated output. The reduction loops cover both divisors
+  through one `if ensuring` join each; the remainder, rounding, carry, and
+  `.%03u` fraction string rejoin through interfaces, the fraction exported as
+  a C string of length `tmp_len(j)`. Nightly only.
 - `examples/detachable-buffer/`: attached metadata and storage split into two
   independently owned resources and later recombined.
 - `examples/borrowed-slice/`: a symbolic middle range leaves its owner as an
