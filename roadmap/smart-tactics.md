@@ -375,8 +375,42 @@ or loop exit (`loops.rs` turns a loop exit's context into its path's fact
 list, linear in the context per exit). One was quadratic: reused contract
 paths dropped their entry premises with `Vec::contains`; they read a set.
 
-Still to classify: `atomic_quantified_facts` and the disjunction,
-separation and effect sets.
+**Derived sets.** The universal, ground, disjunction and separation sets
+are `ScanSet`s too:
+
+- the planner's premise search (`atomic_general_facts`) and case search
+  (`disjunction_fact_propositions`) are `scan_for_search`; the path-fact
+  walk that only asked whether a disjunction is held asks
+  `has_disjunction_facts`;
+- the shallow separation checks, a range against an access
+  (`ranges_directly_disjoint_from_access`) or a pointer
+  (`range_proven_disjoint_from_pointer`), and the directed pass of range
+  separation, read `memory_separations_near`: the memory separations filed
+  under the blocks their sides name, plus those with a wide side, whose
+  cover can cross a base equality. A shallow containment of a narrow range
+  needs the side in the range's own block, and a direct one a block of the
+  pointer's affine class (`pointer_class_blocks`), so the candidates hold
+  every fact the scan could use, visited in the scan's order
+  (`pointer_separation_ignores_unrelated_separations`).
+
+Still `scan_unindexed`:
+
+- range separation with both sides matched by memory resolution
+  (`memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution`),
+  which `range_proven_disjoint_from_pointer` falls through to on a miss.
+  Resolution equates loaded pointers whose cells agree across snapshots,
+  so this is the same open question as the memory-resolution condition
+  match above;
+- separation of a non-memory resource, with the composition case above;
+- instantiating a universal (`quantified_fact_propositions`,
+  `select_forall_int32_instantiation_evidence`), which reads every
+  universal fact (item 12).
+
+The memory effect facts are filed under each memory they name; the
+resolution check of two snapshots
+(`memory_snapshots_directly_proven_equal_for_memory_resolution`) reads all
+of them, because it matches memories up to the load's pointer. It belongs
+to the memory-resolution question too.
 
 ### The 2026-10-20 audit
 

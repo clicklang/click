@@ -1212,7 +1212,7 @@ pub(in crate::kernel) fn required_obligation_is_exactly_discharged(
             // A held disjunction can shortcut the walk. Otherwise check its
             // leaves, without running builtin solving or alpha key creation
             // over every subtree of a long goal.
-            return assumptions.disjunction_fact_propositions().next().is_some()
+            return assumptions.has_disjunction_facts()
                 && assumptions.contains_proposition_fact(side);
         }
         directly_available(side)

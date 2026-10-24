@@ -2594,7 +2594,7 @@ impl PureFactContext {
         // one side. This gives the other side a single, directed equivalence
         // check instead of exploring both orientations of every separation
         // fact before reaching the structurally relevant certificate.
-        if self.separation_fact_propositions().any(|proposition| {
+        let directed = |proposition: &Proposition| {
             let Some((fact_left, fact_right)) = proposition.memory_separation() else {
                 return false;
             };
@@ -2607,10 +2607,21 @@ impl PureFactContext {
                 || memory_range_shallowly_contained_with_facts(left, fact_right, self)
                     && memory_range_contained_for_memory_resolution(right, fact_left, self))
                 && !self.memory_ranges_overlap_after_base_equality(fact_left, fact_right)
-        }) {
+        };
+        // Each certificate shape has one shallow side, which a narrow query
+        // range meets only in its own block.
+        if if left.wide_bounds().is_none() && right.wide_bounds().is_none() {
+            self.memory_separations_near([&left.base().block, &right.base().block])
+                .into_iter()
+                .any(directed)
+        } else {
+            self.separation_facts.scan_unindexed().any(directed)
+        } {
             return true;
         }
-        self.separation_fact_propositions().any(|proposition| {
+        // Both sides by memory resolution, which can cross blocks through
+        // any proven base equality.
+        self.separation_facts.scan_unindexed().any(|proposition| {
             let Some((fact_left, fact_right)) = proposition.memory_separation() else {
                 return false;
             };
@@ -3346,7 +3357,7 @@ impl PureFactContext {
             if memory_memory_query {
                 self.nonmemory_separation_facts.iter().any(entails)
             } else {
-                self.separation_fact_propositions().any(entails)
+                self.separation_facts.scan_unindexed().any(entails)
             }
         };
         let residual_hit = crate::instrumentation::measure_operation(
@@ -4462,52 +4473,47 @@ impl PureFactContext {
             {
                 return outside;
             }
-            if let Some(proposition) = self.separation_fact_propositions().find(|proposition| {
-                match proposition.memory_separation() {
-                    Some((left_range, right_range)) => {
-                        (memory_range_shallowly_contained_with_facts(range, left_range, self)
+            // `range` is narrow here. Each certificate shape has a shallow
+            // side in its block or `pointer`'s, or a direct side in a block of
+            // `pointer`'s class (`pointer_in_block`).
+            let mut blocks = self.equality_graph.pointer_class_blocks(&pointer.block);
+            blocks.push(range.base().block.clone());
+            blocks.push(pointer.block.clone());
+            let candidates = self.memory_separations_near(blocks.iter());
+            if let Some(proposition) = candidates.into_iter().find(|proposition| match proposition
+                .memory_separation()
+            {
+                Some((left_range, right_range)) => {
+                    (memory_range_shallowly_contained_with_facts(range, left_range, self)
+                        && (pointer_in_memory_range_shallow_with_facts(pointer, right_range, self)
+                            || self.pointer_directly_in_memory_range(pointer, right_range))
+                        || memory_range_shallowly_contained_with_facts(range, right_range, self)
                             && (pointer_in_memory_range_shallow_with_facts(
-                                pointer,
-                                right_range,
-                                self,
-                            ) || self.pointer_directly_in_memory_range(pointer, right_range))
-                            || memory_range_shallowly_contained_with_facts(
-                                range,
-                                right_range,
-                                self,
-                            ) && (pointer_in_memory_range_shallow_with_facts(
                                 pointer, left_range, self,
-                            ) || self
-                                .pointer_directly_in_memory_range(pointer, left_range))
-                            || pointer_in_memory_range_shallow_with_facts(
-                                pointer, left_range, self,
-                            ) && memory_range_contained_for_memory_resolution(
+                            ) || self.pointer_directly_in_memory_range(pointer, left_range))
+                        || pointer_in_memory_range_shallow_with_facts(pointer, left_range, self)
+                            && memory_range_contained_for_memory_resolution(
                                 range,
                                 right_range,
                                 self,
                             )
-                            || pointer_in_memory_range_shallow_with_facts(
-                                pointer,
-                                right_range,
-                                self,
-                            ) && memory_range_contained_for_memory_resolution(
+                        || pointer_in_memory_range_shallow_with_facts(pointer, right_range, self)
+                            && memory_range_contained_for_memory_resolution(
                                 range, left_range, self,
                             )
-                            || self.pointer_directly_in_memory_range(pointer, left_range)
-                                && memory_range_contained_for_memory_resolution(
-                                    range,
-                                    right_range,
-                                    self,
-                                )
-                            || self.pointer_directly_in_memory_range(pointer, right_range)
-                                && memory_range_contained_for_memory_resolution(
-                                    range, left_range, self,
-                                ))
-                            && !self
-                                .memory_ranges_overlap_after_base_equality(left_range, right_range)
-                    }
-                    _ => false,
+                        || self.pointer_directly_in_memory_range(pointer, left_range)
+                            && memory_range_contained_for_memory_resolution(
+                                range,
+                                right_range,
+                                self,
+                            )
+                        || self.pointer_directly_in_memory_range(pointer, right_range)
+                            && memory_range_contained_for_memory_resolution(
+                                range, left_range, self,
+                            ))
+                        && !self.memory_ranges_overlap_after_base_equality(left_range, right_range)
                 }
+                _ => false,
             }) {
                 record_implicit_reasoning_provenance(self, proposition);
                 return true;
@@ -4784,20 +4790,33 @@ impl PureFactContext {
         {
             return true;
         }
-        if let Some(proposition) = self.separation_fact_propositions().find(|proposition| {
-            match proposition.memory_separation() {
-                Some((left_range, right_range)) => {
-                    (memory_range_shallowly_contained_with_facts(range, left_range, self)
-                        && pointer_in_memory_range_shallow_with_facts(pointer, right_range, self)
-                        || memory_range_shallowly_contained_with_facts(range, right_range, self)
+        // `range` is narrow here, and both certificate shapes contain it
+        // shallowly in one side, so that side is in its block.
+        let candidates = self.memory_separations_near([&range.base().block]);
+        if let Some(proposition) =
+            candidates
+                .into_iter()
+                .find(|proposition| match proposition.memory_separation() {
+                    Some((left_range, right_range)) => {
+                        (memory_range_shallowly_contained_with_facts(range, left_range, self)
                             && pointer_in_memory_range_shallow_with_facts(
+                                pointer,
+                                right_range,
+                                self,
+                            )
+                            || memory_range_shallowly_contained_with_facts(
+                                range,
+                                right_range,
+                                self,
+                            ) && pointer_in_memory_range_shallow_with_facts(
                                 pointer, left_range, self,
                             ))
-                        && !self.memory_ranges_overlap_after_base_equality(left_range, right_range)
-                }
-                _ => false,
-            }
-        }) {
+                            && !self
+                                .memory_ranges_overlap_after_base_equality(left_range, right_range)
+                    }
+                    _ => false,
+                })
+        {
             record_implicit_reasoning_provenance(self, proposition);
             return true;
         }
@@ -5336,6 +5355,63 @@ mod shallow_composition_separation_tests {
         assert!(
             work.windows(2).all(|pair| pair[0] == pair[1]),
             "compositions without composites changed the frame frontier's work: {work:?}"
+        );
+    }
+
+    /// A pointer's own block, which may alias any other pointer's.
+    fn symbolic(variable: u64) -> Pointer {
+        Pointer {
+            block: PointerBlock::Symbolic(crate::kernel::Variable(variable)),
+            offset: PointerOffsetTerm::Constant(0),
+        }
+    }
+
+    fn cells(variable: u64) -> CMemoryRange {
+        CMemoryRange::new_with_element_width(symbolic(variable), 0u32.into(), 1u32.into(), 4)
+    }
+
+    fn separate(left: u64, right: u64) -> Proposition {
+        Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(cells(left))),
+            right: Box::new(CResource::Memory(cells(right))),
+        }
+    }
+
+    /// A range and a pointer are disjoint by a stated separation whose sides
+    /// hold them. The shallow checks read the separations filed under the
+    /// range's block and the pointer's class (`memory_separations_near`);
+    /// they once scanned every stated separation. Only the access check's
+    /// miss is measured: `range_proven_disjoint_from_pointer` goes on to
+    /// the memory-resolution range separation, which still scans.
+    #[test]
+    fn pointer_separation_ignores_unrelated_separations() {
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
+                facts.assume_proposition(separate(9_100 + 2 * index, 9_101 + 2 * index))
+            });
+            let (range, pointer) = (cells(9_000), symbolic(9_001));
+            let (missed, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.ranges_directly_disjoint_from_access(
+                    std::slice::from_ref(&range),
+                    &pointer,
+                    4,
+                )
+            });
+            assert!(!missed);
+            let held = facts.assume_proposition(separate(9_000, 9_001));
+            assert!(held.range_proven_disjoint_from_pointer(&range, &pointer));
+            assert!(held.ranges_directly_disjoint_from_access(
+                std::slice::from_ref(&range),
+                &pointer,
+                4,
+            ));
+            samples.push((size, work));
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "pointer separation grew with unrelated separations: {samples:?}"
         );
     }
 }

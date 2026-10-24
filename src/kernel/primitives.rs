@@ -12347,9 +12347,10 @@ pub struct PureFactContext {
     /// free-variable indexes, this never scans snapshot contents.
     pub(super) atomic_connection_facts:
         crate::persistent::PersistentMap<AtomicConnectionKey, AtomicConnectionFacts>,
-    pub(super) atomic_ground_facts: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    pub(super) atomic_ground_facts:
+        crate::kernel::fact_collections::ScanSet<SharedIndexFact<Proposition>>,
     pub(super) atomic_quantified_facts:
-        crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+        crate::kernel::fact_collections::ScanSet<SharedIndexFact<Proposition>>,
     pub(super) condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read
@@ -12549,7 +12550,7 @@ pub struct PureFactContext {
     /// Exact disjunctive proposition facts. This derived index keeps bounded
     /// case search proportional to possible case splits rather than every
     /// unrelated proposition in the context.
-    pub(super) disjunction_facts: crate::persistent::PersistentSet<Proposition>,
+    pub(super) disjunction_facts: crate::kernel::fact_collections::ScanSet<Proposition>,
     pub(super) resource_compositions: super::fact_collections::ScanSet<ResourceContext>,
     /// The stated compositions owning a composite, the only ones a frame
     /// frontier expands (`frame_frontier_compositions`).
@@ -12617,7 +12618,16 @@ pub struct PureFactContext {
     /// proposition order of `prop_facts`. The provers that cannot key a
     /// separation query by block pair scan these instead of every
     /// proposition fact, and a `find` here chooses the same fact.
-    pub(super) separation_facts: crate::persistent::PersistentSet<Proposition>,
+    pub(super) separation_facts: crate::kernel::fact_collections::ScanSet<Proposition>,
+    /// The memory separations among `separation_facts`, filed under each
+    /// block a side names, and under `None` when a side is wide. A shallow
+    /// containment of a narrow range in a narrow side needs the side in the
+    /// range's own block; a wide side's cover can reach another block
+    /// through a base equality, so those are always candidates.
+    pub(super) separation_facts_by_block: crate::persistent::PersistentMap<
+        Option<PointerBlock>,
+        crate::persistent::PersistentSet<Proposition>,
+    >,
     pub(super) content_fingerprint: u64,
     pub(super) reasoning_policy: ReasoningPolicy,
     /// At least the greatest execution-range variable any fact filed here
