@@ -12601,6 +12601,11 @@ pub struct PureFactContext {
     /// memory separation through its body. Kept small and scanned
     /// linearly; memory-memory facts live in the index above instead.
     pub(super) nonmemory_separation_facts: std::sync::Arc<Vec<Proposition>>,
+    /// Every separation proposition fact, memory or not, in the
+    /// proposition order of `prop_facts`. The provers that cannot key a
+    /// separation query by block pair scan these instead of every
+    /// proposition fact, and a `find` here chooses the same fact.
+    pub(super) separation_facts: crate::persistent::PersistentSet<Proposition>,
     pub(super) content_fingerprint: u64,
     pub(super) reasoning_policy: ReasoningPolicy,
     /// At least the greatest execution-range variable any fact filed here

@@ -7622,3 +7622,57 @@ fn kept_call_frame_with_loaded_owner_survives_equivalent_input_lineages() {
         "retained class membership is not evidence in a weaker context"
     );
 }
+
+/// Separation queries the block-pair index cannot key scan the separation
+/// facts, not every proposition fact. A miss between two symbolic ranges
+/// of one block costs the same however many unrelated facts are held;
+/// the old `prop_facts` scans grew with them.
+#[test]
+fn unkeyed_range_separation_ignores_unrelated_propositions() {
+    let base = Pointer {
+        block: "unkeyed-buffer".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let range_at = |variable| {
+        let start = Bitvector32Term::Variable(Variable(variable));
+        CMemoryRange::new(
+            base.clone(),
+            start.clone(),
+            Bitvector32Term::add(start, Bitvector32Term::Constant(1)),
+        )
+    };
+    let (left, right) = (range_at(93_200), range_at(93_201));
+    let work = [16_u64, 64, 256]
+        .into_iter()
+        .map(|unrelated| {
+            let mut assumptions =
+                PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+                    left: Box::new(CResource::Memory(range_at(93_202))),
+                    right: Box::new(CResource::Memory(range_at(93_203))),
+                });
+            for index in 0..unrelated {
+                let unrelated = Pointer {
+                    block: format!("unrelated-{index}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                assumptions = assumptions.assume_proposition(Proposition::CResourceContains {
+                    parent: Box::new(CResource::Memory(memory_range(unrelated.clone(), 0, 2))),
+                    child: Box::new(CResource::Memory(memory_range(unrelated, 0, 1))),
+                });
+            }
+            let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assumptions
+                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                        &left, &right,
+                    )
+            });
+            assert!(!separate);
+            work
+        })
+        .collect::<Vec<_>>();
+    assert!(work[0] > 0);
+    assert!(
+        work.windows(2).all(|pair| pair[0] == pair[1]),
+        "unrelated facts changed the separation miss's work: {work:?}"
+    );
+}
