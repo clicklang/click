@@ -7743,8 +7743,7 @@ fn snapshot_equality_ignores_unrelated_propositions() {
 }
 
 /// An existential obligation is certified from an assumed existential
-/// alpha-equal to it, read from its identity bucket, and otherwise from the
-/// existentials of its sort (`existentials_over`). It once scanned every
+/// alpha-equal to it, read from its identity bucket. It once scanned every
 /// proposition fact, so its work grew with unrelated facts of other kinds
 /// and existentials of other sorts.
 #[test]

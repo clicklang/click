@@ -750,10 +750,13 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
 }
 
 /// Certifies an existential requirement side-obligation (typically the
-/// loadability safety of an existential requirement body): the witness of an
-/// assumed existential over the same sort supplies the bound variable, its
-/// body conjuncts become facts, and the obligation body must then certify
-/// pointwise.
+/// loadability safety of an existential requirement body) from an assumed
+/// existential alpha-equal to it: its witness supplies the bound variable,
+/// its body conjuncts become facts, and the obligation body must then
+/// certify pointwise. Only the alpha-equal existentials, read from the
+/// identity bucket, are tried; across the gate and the unit tests they were
+/// the only ones that ever certified, and trying every other existential of
+/// the sort was a search for which one to use.
 pub(in crate::kernel) fn certification_proves_exists_obligation_from_facts(
     assumptions: &PureFactContext,
     obligation: &Proposition,
@@ -764,22 +767,10 @@ pub(in crate::kernel) fn certification_proves_exists_obligation_from_facts(
     else {
         return false;
     };
-    // An assumed existential alpha-equal to the obligation supplies every
-    // witness the obligation needs, and it is the one shape that certified
-    // across the gate: read its identity bucket first. Any other existential
-    // of the sort may still supply the witness, so a miss reads those, every
-    // existential of the sort: a known fast-part scan
-    // (`roadmap/smart-tactics.md`).
-    let mut fact_candidates = assumptions
+    let fact_candidates = assumptions
         .stated_identity_bucket(obligation)
         .cloned()
         .collect::<Vec<_>>();
-    let alpha_equal = fact_candidates.len();
-    for fact in assumptions.existentials_over(sort) {
-        if !fact_candidates[..alpha_equal].contains(fact) {
-            fact_candidates.push(fact.clone());
-        }
-    }
     fact_candidates.iter().any(|fact| {
         let Proposition::Exists {
             var: fact_var,
