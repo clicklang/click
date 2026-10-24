@@ -3,7 +3,7 @@
 `let c: int64 = 5;` is the `int64` 5, not an `int32` that would fail to
 match its annotation. Every fixed-width type takes its full range, signed
 minimums included. A literal outside the declared type's range is refused
-(`mdtests/a_typed_let_literal_out_of_range_is_refused.md`).
+(`mdtests/contract_let_type_mismatch.md`).
 
 ```click
 theorem typed_literals(x: int64) {

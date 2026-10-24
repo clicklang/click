@@ -1017,7 +1017,7 @@ gives an unsuffixed literal its machine type: `let m: int64 = 5;` is the
 (`mdtests/a_typed_let_gives_a_literal_its_machine_type.md`), and a literal
 outside the range is refused with
 `` `let byte: uint8` cannot hold 300; a `uint8` lies in 0..=255 ``
-(`mdtests/a_typed_let_literal_out_of_range_is_refused.md`). An `Integer`
+(`mdtests/contract_let_type_mismatch.md`). An `Integer`
 resource field's `fold` value is exact
 (`mdtests/an_integer_resource_field_reads_fold_arithmetic_exactly.md`).
 Predicates' `Integer` parameters and `Integer` resource parameters are not
