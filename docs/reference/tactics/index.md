@@ -647,6 +647,14 @@ proof knows about it (`mdtests/branch_ensuring_named_resource.md`).
 A comparison with `at(mark, ...)` freezes only that marked expression; the
 current side is checked in both arms and the joined state.
 
+An arm may split its path with a proof `if`. One that ends the arm rejoins its
+cases where they end, keeping what both establish, and the join checks the
+interface on that rejoined arm; neither case runs to the function exit. One
+earlier in the arm rejoins before the rest of it, as at the top level
+(`mdtests/a_proof_if_inside_a_branch_arm_rejoins_at_the_join.md`). A fact only
+one case proves does not survive that rejoin, so it cannot be exported
+(`mdtests/a_proof_if_inside_a_branch_arm_keeps_only_what_both_cases_establish.md`).
+
 **Failure, checking, and tools:**
 
 A non-`if` frontier, overshot arm, unproved interface item, or nondeterministic
