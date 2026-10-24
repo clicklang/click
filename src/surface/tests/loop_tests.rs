@@ -887,7 +887,8 @@ fn observed_member_closure_expands_to_direct_assumptions() {
         .collect::<Vec<_>>()
         .join(" ");
     assert!(
-        explicit.starts_with("close_invariants() by { both { assumption(); } and { assumption(); } }"),
+        explicit
+            .starts_with("close_invariants() by { both { assumption(); } and { assumption(); } }"),
         "{expanded}"
     );
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
