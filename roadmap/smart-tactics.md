@@ -371,8 +371,6 @@ against pointer when deciding which memory facts survive a store
 charging made fail on the old scans). Still `scan_unindexed`, each over
 every composition:
 
-- `proves_owned_memory_ranges_separate_by`, which finds members through
-  base roots and aliases in other blocks;
 - `proves_owned_resources_separate` for a non-memory side, matched by
   resource identity, which the member index does not file (two memory
   sides read it): the index lists a composition under the memory members
@@ -396,6 +394,14 @@ every composition:
   owned store footprint collects the member of every composition holding
   the cell, so its output is as large as the compositions that restate
   it.
+
+**Fixed:** owned range separation through related roots
+(`composition_separates_owned_ranges`). Each side is asked of a
+composition's members under its base's related roots, in those roots'
+blocks, and owned members of a valid composition are disjoint, so the
+compositions listed under those blocks reach one holding both
+(`owned_range_separation_ignores_unrelated_compositions`; debug builds
+compare every answer with the scan).
 
 **Accessors.** The callers of `pure_facts`, `condition_fact_pairs` and
 `proposition_facts` read a whole context to copy or describe it, not to

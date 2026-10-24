@@ -2643,22 +2643,46 @@ impl PureFactContext {
                 || memory_range_contained_for_memory_resolution(right, fact_left, self)
                     && memory_range_contained_for_memory_resolution(left, fact_right, self))
                 && !self.memory_ranges_overlap_after_base_equality(fact_left, fact_right)
-        }) || self
-            .resource_compositions
-            .scan_unindexed()
-            .any(|resources| {
-                // The proof-aware form of the shallow composition fallback above:
-                // the same containment relation the materialized-pair loops use,
-                // served by the compact composition's indexed candidates.
-                resources.proves_owned_memory_ranges_separate_by(
-                    left,
-                    right,
-                    self,
-                    |child, parent| {
-                        memory_range_contained_for_memory_resolution(child, parent, self)
-                    },
-                )
+        }) || self.composition_separates_owned_ranges(left, right)
+    }
+
+    /// Two ranges are separate as distinct owned members of one held
+    /// composition, each found among the members under its related roots
+    /// (`proves_owned_memory_ranges_separate_by`). Those members are in the
+    /// roots' blocks, and owned members of a valid composition are disjoint,
+    /// so a composition holding the two finds them; the compositions listed
+    /// under those blocks reach one (`CompositionMemberIndex`). Debug builds
+    /// compare every answer with the scan.
+    fn composition_separates_owned_ranges(
+        &self,
+        left: &CMemoryRange,
+        right: &CMemoryRange,
+    ) -> bool {
+        let separates = |resources: &ResourceContext| {
+            resources.proves_owned_memory_ranges_separate_by(left, right, self, |child, parent| {
+                memory_range_contained_for_memory_resolution(child, parent, self)
             })
+        };
+        let blocks = [left.base(), right.base()]
+            .into_iter()
+            .flat_map(|base| crate::kernel::primitives::related_pointer_root_blocks(base, self))
+            .collect::<BTreeSet<_>>();
+        let indexed = self
+            .composition_members
+            .listed_under([], blocks.iter())
+            .into_iter()
+            .any(separates);
+        #[cfg(debug_assertions)]
+        if !crate::instrumentation::in_uncharged_debug_check() {
+            crate::instrumentation::uncharged_debug_check(|| {
+                let scanned = self.resource_compositions.scan_for_upkeep().any(separates);
+                assert_eq!(
+                    indexed, scanned,
+                    "the listed compositions' owned separation differs from every composition's"
+                );
+            });
+        }
+        indexed
     }
 
     fn pointer_element_index_from_base_with_width(
@@ -5480,6 +5504,33 @@ mod shallow_composition_separation_tests {
         assert!(
             samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
             "the composition cover grew with unrelated compositions: {samples:?}"
+        );
+    }
+
+    /// Two ranges are separate as distinct owned members of one composition,
+    /// found through their bases' related roots. The check reads the
+    /// compositions listed under those roots' blocks; it once asked every
+    /// stated composition.
+    #[test]
+    fn owned_range_separation_ignores_unrelated_compositions() {
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
+                facts.assume_proposition(owner_of(&[at(&format!("owned-other-{index}"))]))
+            });
+            let (left, right) = (cells(9_300), cells(9_301));
+            let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.composition_separates_owned_ranges(&left, &right)
+            });
+            assert!(!separate);
+            let held = facts.assume_proposition(owner_of(&[symbolic(9_300), symbolic(9_301)]));
+            assert!(held.composition_separates_owned_ranges(&left, &right));
+            samples.push((size, work));
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "owned range separation grew with unrelated compositions: {samples:?}"
         );
     }
 
