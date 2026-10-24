@@ -337,10 +337,37 @@ every fact, after the first pass: `condition_holds_by_instantiated_fact`
 and `quantified_int32_fact_certifies_loadable_cell`. That set is still
 path-sized; it is listed with item 12.
 
-Still to classify the same way: the callers of the accessors that hand out
-a whole collection (`pure_facts`, `condition_fact_pairs`,
-`proposition_facts`), and the other collections (`resource_compositions`,
-`atomic_quantified_facts`, the disjunction, separation and effect sets).
+**Compositions.** `resource_compositions` is a `ScanSet`, the same named
+scans over a persistent set, and its scans are now charged: a persistent
+set's own iterator records no work, so before this the store path walked
+every stated composition invisibly. The composition separations that find
+owned members in the two sides' blocks read the compositions
+`CompositionMemberIndex` lists under those blocks: pointer separation,
+shallow and through the fact graph, shallow range separation, and range
+against pointer when deciding which memory facts survive a store
+(`shallow_owned_separation_ignores_unrelated_compositions`, and
+`heap_object_stores_and_releases_cost_the_same_at_every_position`, which
+charging made fail on the old scans). Still `scan_unindexed`, each over
+every composition:
+
+- `proves_owned_memory_ranges_separate_by`, which finds members through
+  base roots and aliases in other blocks;
+- `proves_owned_resources_separate` and the composition range cover in
+  `proves_resource_separate_inner`;
+- the composite frame frontier (`frame_frontier_compositions`), on the
+  store cell-drop path;
+- `store_compositions` when the writer stated no store owners.
+
+**Accessors.** The callers of `pure_facts`, `condition_fact_pairs` and
+`proposition_facts` read a whole context to copy or describe it, not to
+answer a query: diagnostics after a failure, the planner's retained
+premises, a rule's own prerequisites, and one copy per function, path end
+or loop exit (`loops.rs` turns a loop exit's context into its path's fact
+list, linear in the context per exit). One was quadratic: reused contract
+paths dropped their entry premises with `Vec::contains`; they read a set.
+
+Still to classify: `atomic_quantified_facts` and the disjunction,
+separation and effect sets.
 
 ### The 2026-10-20 audit
 

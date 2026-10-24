@@ -7120,7 +7120,13 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
             // spelled out.
             if reused {
                 for path in &mut set.paths {
-                    let entry_premises = path.assumptions.pure_facts();
+                    // A set, so dropping the entry premises costs the path's
+                    // facts and not their product with the premises.
+                    let entry_premises = path
+                        .assumptions
+                        .pure_facts()
+                        .into_iter()
+                        .collect::<std::collections::BTreeSet<_>>();
                     path.facts
                         .retain(|fact| !entry_premises.contains(fact.proposition()));
                     path.assumptions = reuse_assumptions.clone();

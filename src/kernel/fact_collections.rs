@@ -306,6 +306,96 @@ impl<T: Clone + Ord> FromIterator<T> for FactSet<T> {
     }
 }
 
+/// A persistent set of context records whose whole-set iteration must be
+/// named, like [`FactSet`]'s: the resource compositions and the derived
+/// fact sets of a context. Charged one unit per element.
+#[derive(Clone)]
+pub(crate) struct ScanSet<T>(crate::persistent::PersistentSet<T>);
+
+impl<T> Default for ScanSet<T> {
+    fn default() -> Self {
+        Self(crate::persistent::PersistentSet::default())
+    }
+}
+
+impl<T: Ord + std::fmt::Debug> std::fmt::Debug for ScanSet<T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl<T: Ord + PartialEq> PartialEq for ScanSet<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: Ord + Eq> Eq for ScanSet<T> {}
+
+impl<T: Ord> ScanSet<T> {
+    pub(crate) fn with_value(&self, value: T) -> Self {
+        Self(self.0.with_value(value))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn without_value(&self, value: &T) -> Self {
+        Self(self.0.without_value(value))
+    }
+
+    pub(crate) fn contains<Q: Ord + ?Sized>(&self, value: &Q) -> bool
+    where
+        T: std::borrow::Borrow<Q>,
+    {
+        self.0.contains(value)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub(crate) fn shares_root_with(&self, other: &Self) -> bool {
+        self.0.shares_root_with(&other.0)
+    }
+
+    /// The elements only one of the two sets holds, walking only the paths
+    /// where their persistent trees differ (`PersistentSet::diff`).
+    pub(crate) fn diff<'a>(&'a self, other: &'a Self) -> impl Iterator<Item = (&'a T, bool)> + 'a {
+        self.0.diff(&other.0)
+    }
+
+    #[track_caller]
+    fn scan(&self) -> ChargedIter<impl DoubleEndedIterator<Item = &T> + ExactSizeIterator> {
+        ChargedIter::new(self.0.iter())
+    }
+
+    /// Every element, for maintaining the context; see
+    /// [`FactMap::scan_for_upkeep`].
+    #[track_caller]
+    pub(crate) fn scan_for_upkeep(
+        &self,
+    ) -> ChargedIter<impl DoubleEndedIterator<Item = &T> + ExactSizeIterator> {
+        self.scan()
+    }
+
+    /// Every element of a step's explicit input; see
+    /// [`FactMap::scan_explicit_input`].
+    #[track_caller]
+    pub(crate) fn scan_explicit_input(
+        &self,
+    ) -> ChargedIter<impl DoubleEndedIterator<Item = &T> + ExactSizeIterator> {
+        self.scan()
+    }
+
+    /// Every element, in fast code that should read an index; see
+    /// [`FactMap::scan_unindexed`].
+    #[track_caller]
+    pub(crate) fn scan_unindexed(
+        &self,
+    ) -> ChargedIter<impl DoubleEndedIterator<Item = &T> + ExactSizeIterator> {
+        self.scan()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

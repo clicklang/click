@@ -12550,7 +12550,7 @@ pub struct PureFactContext {
     /// case search proportional to possible case splits rather than every
     /// unrelated proposition in the context.
     pub(super) disjunction_facts: crate::persistent::PersistentSet<Proposition>,
-    pub(super) resource_compositions: crate::persistent::PersistentSet<ResourceContext>,
+    pub(super) resource_compositions: super::fact_collections::ScanSet<ResourceContext>,
     /// The ownership a store in this context writes under, when the writer
     /// stated it: the current state's observable composition and any
     /// composition the store opened from held folded instances, all also

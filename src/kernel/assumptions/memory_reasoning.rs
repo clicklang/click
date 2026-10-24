@@ -2194,9 +2194,13 @@ impl PureFactContext {
                     );
                 })
                 .is_some()
+            // Two owned members, one in each pointer's block: a composition
+            // holding both is listed under both blocks
+            // (`CompositionMemberIndex`).
             || self
-                .resource_compositions
-                .iter()
+                .composition_members
+                .listed_under([], [&left.block, &right.block])
+                .into_iter()
                 .any(|resources| resources.proves_owned_pointers_separate_shallow(left, right))
     }
 
@@ -2425,16 +2429,19 @@ impl PureFactContext {
             "explicit range arms",
             "explicit range: resource shallow",
             || {
-                self.resource_compositions.iter().any(|resources| {
-                    let proved = resources.proves_owned_pointers_separate_shallow(left, right);
-                    if proved {
-                        record_implicit_reasoning_provenance(
-                            self,
-                            &Proposition::CResourceComposition(resources.clone()),
-                        );
-                    }
-                    proved
-                })
+                self.composition_members
+                    .listed_under([], [&left.block, &right.block])
+                    .into_iter()
+                    .any(|resources| {
+                        let proved = resources.proves_owned_pointers_separate_shallow(left, right);
+                        if proved {
+                            record_implicit_reasoning_provenance(
+                                self,
+                                &Proposition::CResourceComposition(resources.clone()),
+                            );
+                        }
+                        proved
+                    })
             },
         ) {
             return true;
@@ -2444,36 +2451,42 @@ impl PureFactContext {
             "explicit range arms",
             "explicit range: resource fact graph",
             || {
-                self.resource_compositions.iter().any(|resources| {
-                    let proved = resources.proves_owned_pointers_separate_by(
-                        left,
-                        right,
-                        |pointer, range| {
-                            if range.wide_bounds().is_some() {
-                                self.pointer_access_in_wide_range(
-                                    pointer,
-                                    range.element_width(),
-                                    range,
-                                )
-                            } else {
-                                self.pointer_in_range_by_shallow_fact_graph_with_width(
-                                    pointer,
-                                    range.base(),
-                                    range.start(),
-                                    range.end(),
-                                    range.element_width(),
-                                )
-                            }
-                        },
-                    );
-                    if proved {
-                        record_implicit_reasoning_provenance(
-                            self,
-                            &Proposition::CResourceComposition(resources.clone()),
+                // The members `proves_owned_pointers_separate_by` finds are in
+                // the two pointers' blocks, the keys a composition holding
+                // both is listed under (`CompositionMemberIndex`).
+                self.composition_members
+                    .listed_under([], [&left.block, &right.block])
+                    .into_iter()
+                    .any(|resources| {
+                        let proved = resources.proves_owned_pointers_separate_by(
+                            left,
+                            right,
+                            |pointer, range| {
+                                if range.wide_bounds().is_some() {
+                                    self.pointer_access_in_wide_range(
+                                        pointer,
+                                        range.element_width(),
+                                        range,
+                                    )
+                                } else {
+                                    self.pointer_in_range_by_shallow_fact_graph_with_width(
+                                        pointer,
+                                        range.base(),
+                                        range.start(),
+                                        range.end(),
+                                        range.element_width(),
+                                    )
+                                }
+                            },
                         );
-                    }
-                    proved
-                })
+                        if proved {
+                            record_implicit_reasoning_provenance(
+                                self,
+                                &Proposition::CResourceComposition(resources.clone()),
+                            );
+                        }
+                        proved
+                    })
             },
         ) {
             return true;
@@ -2567,9 +2580,12 @@ impl PureFactContext {
         }
         // Separate sides need not have the same logical element width.
         // Each query is contained in its own certificate side below.
+        // Two owned members in the ranges' blocks: listed under both
+        // (`CompositionMemberIndex`).
         if self
-            .resource_compositions
-            .iter()
+            .composition_members
+            .listed_under([], [&left.base().block, &right.base().block])
+            .into_iter()
             .any(|resources| resources.proves_owned_memory_ranges_separate_shallow(left, right))
         {
             return true;
@@ -2603,14 +2619,22 @@ impl PureFactContext {
                 || memory_range_contained_for_memory_resolution(right, fact_left, self)
                     && memory_range_contained_for_memory_resolution(left, fact_right, self))
                 && !self.memory_ranges_overlap_after_base_equality(fact_left, fact_right)
-        }) || self.resource_compositions.iter().any(|resources| {
-            // The proof-aware form of the shallow composition fallback above:
-            // the same containment relation the materialized-pair loops use,
-            // served by the compact composition's indexed candidates.
-            resources.proves_owned_memory_ranges_separate_by(left, right, self, |child, parent| {
-                memory_range_contained_for_memory_resolution(child, parent, self)
+        }) || self
+            .resource_compositions
+            .scan_unindexed()
+            .any(|resources| {
+                // The proof-aware form of the shallow composition fallback above:
+                // the same containment relation the materialized-pair loops use,
+                // served by the compact composition's indexed candidates.
+                resources.proves_owned_memory_ranges_separate_by(
+                    left,
+                    right,
+                    self,
+                    |child, parent| {
+                        memory_range_contained_for_memory_resolution(child, parent, self)
+                    },
+                )
             })
-        })
     }
 
     fn pointer_element_index_from_base_with_width(
@@ -3405,7 +3429,7 @@ impl PureFactContext {
             "resource separation: owned resources",
             || {
                 self.resource_compositions
-                    .iter()
+                    .scan_unindexed()
                     .any(|resources| resources.proves_owned_resources_separate(left, right, self))
             },
         ) {
@@ -3417,51 +3441,53 @@ impl PureFactContext {
                 if target.wide_bounds().is_some() {
                     return false;
                 }
-                self.resource_compositions.iter().any(|resources| {
-                    let cover = |ranges: Vec<CMemoryRange>| {
-                        let intervals = ranges
-                            .into_iter()
-                            .filter_map(|range| {
-                                if range.wide_bounds().is_some() {
-                                    return None;
-                                }
-                                self.fact_range_interval_on_target(
-                                    target,
-                                    range.base(),
-                                    range.start(),
-                                    range.end(),
-                                )
-                            })
-                            .collect();
-                        range_intervals_cover_target(target, intervals)
-                    };
-                    let indexed = cover(resources.owned_memory_ranges_separate_from(
-                        target,
-                        other,
-                        self,
-                        |owner, child| self.proves_resource_contains_inner(owner, child),
-                    ));
-                    #[cfg(debug_assertions)]
-                    if crate::instrumentation::separation_candidate_cross_checks_enabled()
-                        && !crate::instrumentation::in_uncharged_debug_check()
-                    {
-                        crate::instrumentation::uncharged_debug_check(|| {
-                            let full =
-                                cover(resources.owned_memory_ranges_separate_from_full_scan(
-                                    &target.base().block,
-                                    &CResource::Memory(other.clone()),
-                                    |owner, child| {
-                                        self.proves_resource_contains_inner(owner, child)
-                                    },
-                                ));
-                            assert_eq!(
-                                indexed, full,
-                                "indexed separation interval cover differs from full scan"
-                            );
-                        });
-                    }
-                    indexed
-                })
+                self.resource_compositions
+                    .scan_unindexed()
+                    .any(|resources| {
+                        let cover = |ranges: Vec<CMemoryRange>| {
+                            let intervals = ranges
+                                .into_iter()
+                                .filter_map(|range| {
+                                    if range.wide_bounds().is_some() {
+                                        return None;
+                                    }
+                                    self.fact_range_interval_on_target(
+                                        target,
+                                        range.base(),
+                                        range.start(),
+                                        range.end(),
+                                    )
+                                })
+                                .collect();
+                            range_intervals_cover_target(target, intervals)
+                        };
+                        let indexed = cover(resources.owned_memory_ranges_separate_from(
+                            target,
+                            other,
+                            self,
+                            |owner, child| self.proves_resource_contains_inner(owner, child),
+                        ));
+                        #[cfg(debug_assertions)]
+                        if crate::instrumentation::separation_candidate_cross_checks_enabled()
+                            && !crate::instrumentation::in_uncharged_debug_check()
+                        {
+                            crate::instrumentation::uncharged_debug_check(|| {
+                                let full =
+                                    cover(resources.owned_memory_ranges_separate_from_full_scan(
+                                        &target.base().block,
+                                        &CResource::Memory(other.clone()),
+                                        |owner, child| {
+                                            self.proves_resource_contains_inner(owner, child)
+                                        },
+                                    ));
+                                assert_eq!(
+                                    indexed, full,
+                                    "indexed separation interval cover differs from full scan"
+                                );
+                            });
+                        }
+                        indexed
+                    })
             };
             if crate::instrumentation::measure_operation(
                 "kernel",
@@ -4370,24 +4396,32 @@ impl PureFactContext {
             if pointer_in_memory_range_shallow_with_facts(pointer, range, self) {
                 return false;
             }
-            if self.resource_compositions.iter().any(|resources| {
-                resources.proves_owned_range_separate_from_pointer_shallow(
-                    range,
-                    pointer,
-                    self,
-                    |pointer, available| {
-                        (available.wide_bounds().is_none()
-                            && self.pointer_in_range_by_shallow_fact_graph_with_width(
-                                pointer,
-                                available.base(),
-                                available.start(),
-                                available.end(),
-                                available.element_width(),
-                            ))
-                            || self.pointer_directly_in_memory_range(pointer, available)
-                    },
-                )
-            }) {
+            // The owners are in the range's and the pointer's blocks, the
+            // keys a composition holding both is listed under
+            // (`CompositionMemberIndex`).
+            if self
+                .composition_members
+                .listed_under([], [&range.base().block, &pointer.block])
+                .into_iter()
+                .any(|resources| {
+                    resources.proves_owned_range_separate_from_pointer_shallow(
+                        range,
+                        pointer,
+                        self,
+                        |pointer, available| {
+                            (available.wide_bounds().is_none()
+                                && self.pointer_in_range_by_shallow_fact_graph_with_width(
+                                    pointer,
+                                    available.base(),
+                                    available.start(),
+                                    available.end(),
+                                    available.element_width(),
+                                ))
+                                || self.pointer_directly_in_memory_range(pointer, available)
+                        },
+                    )
+                })
+            {
                 return true;
             }
             let direct_index = self.direct_pointer_element_index_from_base_with_width(
@@ -4638,12 +4672,14 @@ impl PureFactContext {
         if self.resource_compositions.is_empty() {
             return Vec::new();
         }
-        let has_composite_own = self.resource_compositions.iter().any(|composition| {
-            composition
-                .facts()
-                .iter()
-                .any(|fact| fact.is_own() && matches!(fact.resource(), CResource::Composite { .. }))
-        });
+        let has_composite_own = self
+            .resource_compositions
+            .scan_unindexed()
+            .any(|composition| {
+                composition.facts().iter().any(|fact| {
+                    fact.is_own() && matches!(fact.resource(), CResource::Composite { .. })
+                })
+            });
         if !has_composite_own {
             return Vec::new();
         }
@@ -4661,7 +4697,7 @@ impl PureFactContext {
         const EXPANSION_MEMO_LIMIT: usize = 10_000;
         let memory_id = crate::kernel::intern_c_memory_ref(memory).arena_id();
         let mut expanded = Vec::new();
-        for composition in self.resource_compositions.iter() {
+        for composition in self.resource_compositions.scan_unindexed() {
             let key = (
                 std::sync::Arc::as_ptr(&composition.storage) as usize,
                 memory_id,
@@ -4735,8 +4771,9 @@ impl PureFactContext {
             )
         };
         if self
-            .resource_compositions
-            .iter()
+            .composition_members
+            .listed_under([], [&range.base().block, &pointer.block])
+            .into_iter()
             .any(owned_member_holds_pointer)
         {
             return true;
@@ -5214,6 +5251,61 @@ mod nonnegative_successor_tests {
         assert!(
             work.windows(2).all(|pair| pair[0] == pair[1]),
             "unrelated facts changed the successor rule's work: {work:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod shallow_composition_separation_tests {
+    use super::*;
+
+    fn owner_of(pointers: &[Pointer]) -> Proposition {
+        Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts(
+            pointers.iter().map(|pointer| {
+                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                    pointer.clone(),
+                    0u32.into(),
+                    1u32.into(),
+                    4,
+                ))
+            }),
+        ))
+    }
+
+    fn at(block: &str) -> Pointer {
+        Pointer {
+            block: block.into(),
+            offset: PointerOffsetTerm::Constant(0),
+        }
+    }
+
+    /// Two pointers owned as distinct members of one composition are
+    /// disjoint. The shallow check reads the compositions listed under the
+    /// two pointers' blocks (`CompositionMemberIndex`); it once asked every
+    /// composition the path had stated.
+    #[test]
+    fn shallow_owned_separation_ignores_unrelated_compositions() {
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (left, right) = (at("shallow-left"), at("shallow-right"));
+            // The first composition is the index's unlisted root; keep the
+            // pair out of it.
+            let facts = (0..size)
+                .fold(PureFactContext::new(), |facts, index| {
+                    facts.assume_proposition(owner_of(&[at(&format!("shallow-other-{index}"))]))
+                })
+                .assume_proposition(owner_of(&[left.clone(), right.clone()]));
+            let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.pointers_proven_disjoint_by_shallow_explicit_range(&left, &right)
+            });
+            assert!(separate);
+            samples.push((size, work));
+        }
+        let (_, smallest) = samples[0];
+        assert!(
+            samples.iter().all(|(_, work)| *work <= smallest + 4),
+            "shallow owned separation grew with unrelated compositions: {samples:?}"
         );
     }
 }
