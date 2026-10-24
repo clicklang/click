@@ -215,9 +215,12 @@ width-specific promotion logic of their own.
 A width-indexed library fact is one statement over a format parameter, not
 a family of copies. The two ways to do that are:
 
-1. Generic theorems over a type parameter constrained to machine integers
-   (`theorem add_to_integer<T: machine>(a: T, b: T)`), if the generic
-   machinery supports it.
+1. Generic theorems over a type parameter constrained to a signed or an
+   unsigned machine-integer bound (`theorem wrapping_add<T: uintn>(a: T,
+   b: T)`, `theorem add_to_integer<T: intn>(a: T, b: T)`), stated with the
+   built-in constants `min(T)`, `max(T)` and `bits(T)`
+   ([Decisions](#decisions), 2026-10-24), if the generic machinery
+   supports it.
 2. One template expanded per format when the library loads, with each copy
    checked as today.
 
@@ -459,3 +462,24 @@ Maintainer direction, 2026-10-21:
   whose value does not fit is implementation-defined in C (C11 6.3.1.3p3).
   Click reads it as modular, as every supported target defines it, and it
   owes no obligation. A strict mode that asks for one can be added later.
+
+Maintainer direction, 2026-10-24:
+
+- **Unsigned definedness is not a surface predicate.** Surface
+  `defined(...)` is about undefined behavior only, so for C unsigned `+`,
+  `-` and `*` it is always true. The unsigned `Overflows` condition of
+  Stage 2 is kernel-internal: Rust panic checks use it, and it relates a
+  wrapping result to its exact value. No new surface predicate is added;
+  "does not wrap" stays a bound, such as `to_integer(a) + to_integer(b) <=
+  MAX`.
+- **Pure reordering is approved.** Merging node families (Stages 2 and 3)
+  changes the derived order canonical forms use, which may reorder terms
+  in `click expand` output and in diagnostics. A pure reordering needs no
+  further approval. Any change in wording or content still goes to the
+  maintainer.
+- **Generic library bounds.** Generic machine-integer library theorems use
+  the bounds `T: intn` (`int8` to `int128`) and `T: uintn` (`uint8` to
+  `uint128`), with the built-in constants `min(T)`, `max(T)` and `bits(T)`.
+  There is no union bound for now: a fact that holds regardless of
+  signedness is stated twice, or `T: intn | uintn` is added later if it is
+  needed. This is design only; it is not implemented yet.
