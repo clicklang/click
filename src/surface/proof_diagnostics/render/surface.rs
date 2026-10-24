@@ -850,39 +850,18 @@ impl Printer<'_> {
         }
         let operator_text = comparison(symbol, polarity);
         let operand_type = operator.operand_type();
-        // Lowered unsigned 32-bit order flips both sign bits. Recover the
-        // comparison and spell its operands as `uint32` values.
-        const SIGN: u32 = 0x8000_0000;
-        fn flipped(value: &Bitvector32Term) -> Option<&Bitvector32Term> {
-            const SIGN: u32 = 0x8000_0000;
-            match value {
-                Bitvector32Term::BitwiseXor(a, b) if b.as_const() == Some(SIGN) => Some(a.as_ref()),
-                Bitvector32Term::BitwiseXor(a, b) if a.as_const() == Some(SIGN) => Some(b.as_ref()),
-                _ => None,
-            }
-        }
         let is_equality = symbol == "==";
-        if operand_type == "int32"
-            && !is_equality
-            && (flipped(left).is_some() || flipped(right).is_some())
-        {
-            let recover = |value: &Bitvector32Term| {
-                flipped(value).cloned().or_else(|| {
-                    value
-                        .as_const()
-                        .map(|v| Bitvector32Term::Constant(v ^ SIGN))
-                })
-            };
-            let (left, right) = (recover(left)?, recover(right)?);
+        // A `uint32` order spells its operands as `uint32` values.
+        if operand_type == "uint32" && !is_equality {
             if !self.source_mode() {
                 return Some(atom(format!(
                     "{} {operator_text} {} (unsigned)",
-                    self.exact_operand(&left, Some(false), depth)?,
-                    self.exact_operand(&right, Some(false), depth)?
+                    self.exact_operand(left, Some(false), depth)?,
+                    self.exact_operand(right, Some(false), depth)?
                 )));
             }
-            let left = self.as_type(&left, Hint::Unsigned32, depth)?;
-            let right = self.as_type(&right, Hint::Unsigned32, depth)?;
+            let left = self.as_type(left, Hint::Unsigned32, depth)?;
+            let right = self.as_type(right, Hint::Unsigned32, depth)?;
             return Some(atom(format!(
                 "{} {operator_text} {}",
                 operand(left, SHIFT),
@@ -2726,13 +2705,10 @@ mod tests {
         // An unsigned order over an `int32` value converts it.
         let order = Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::UInt32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::BitwiseXor(
-                    Box::new(Bitvector32Term::Variable(Variable(7))),
-                    Box::new(Bitvector32Term::Constant(0x8000_0000)),
-                )),
-                right: Box::new(Bitvector32Term::Constant(1073741823 ^ 0x8000_0000)),
+                left: Box::new(Bitvector32Term::Variable(Variable(7))),
+                right: Box::new(Bitvector32Term::Constant(1073741823)),
             },
             true,
         );

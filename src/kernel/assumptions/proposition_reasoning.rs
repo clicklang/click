@@ -989,15 +989,17 @@ impl PureFactContext {
         };
         let wide_order_evidence = match proposition {
             Proposition::ConditionIs(condition, value) => {
-                [true, false].into_iter().find_map(|unsigned| {
-                    let (left, right, strict) =
-                        super::condition_reasoning::wide_order_fact(condition, *value, unsigned)?;
-                    self.exact_wide_order_path_evidence(&left, &right, strict, unsigned)
-                        .map(|path| AtomicPropositionDerivationEvidence::WideOrderPath {
-                            unsigned,
-                            path,
-                        })
-                })
+                super::condition_reasoning::WIDE_ORDER_FORMATS
+                    .into_iter()
+                    .find_map(|format| {
+                        let (left, right, strict) =
+                            super::condition_reasoning::wide_order_fact(condition, *value, format)?;
+                        self.exact_wide_order_path_evidence(&left, &right, strict, format)
+                            .map(|path| AtomicPropositionDerivationEvidence::WideOrderPath {
+                                format,
+                                path,
+                            })
+                    })
             }
             _ => None,
         };
@@ -1926,12 +1928,12 @@ impl PureFactContext {
             return (current == &right || constant_connection.is_some())
                 && (!require_strict || strict || constant_connection == Some(true));
         }
-        if let AtomicPropositionDerivationEvidence::WideOrderPath { unsigned, path } = evidence {
+        if let AtomicPropositionDerivationEvidence::WideOrderPath { format, path } = evidence {
             let Proposition::ConditionIs(condition, value) = proposition else {
                 return false;
             };
             let Some((left, right, require_strict)) =
-                super::condition_reasoning::wide_order_fact(condition, *value, *unsigned)
+                super::condition_reasoning::wide_order_fact(condition, *value, *format)
             else {
                 return false;
             };
@@ -1945,7 +1947,7 @@ impl PureFactContext {
                         Proposition::ConditionIs(condition, value)
                             if self.exact_condition_value(condition) == Some(*value)
                                 && super::condition_reasoning::wide_order_fact(
-                                    condition, *value, *unsigned,
+                                    condition, *value, *format,
                                 ) == Some((step.lower.clone(), step.upper.clone(), step.strict))
                     )
                 {
@@ -2644,6 +2646,30 @@ impl PureFactContext {
                 None
             } else {
                 self.signed_order_bounds.get(&canonical)
+            }
+        };
+        direct
+            .into_iter()
+            .chain(alias)
+            .flat_map(|bounds| bounds.keys())
+            .map(|(fact_endpoint, other, strict, forward)| {
+                (fact_endpoint.clone(), other.clone(), *strict, *forward)
+            })
+    }
+
+    /// The `uint32` counterpart of [`Self::signed_order_bound_entries`],
+    /// read from `uint32_order_bounds`.
+    pub(crate) fn uint32_order_bound_entries(
+        &self,
+        term: &Bitvector32Term,
+    ) -> impl Iterator<Item = (Bitvector32Term, Bitvector32Term, bool, bool)> + '_ {
+        let direct = self.uint32_order_bounds.get(term);
+        let alias = {
+            let canonical = crate::kernel::eval::canonical_term(term);
+            if &canonical == term {
+                None
+            } else {
+                self.uint32_order_bounds.get(&canonical)
             }
         };
         direct
@@ -3768,6 +3794,47 @@ impl PureFactContext {
                 target_right,
                 target_left,
             ),
+            // A `uint32` order carries as a signed one does: in the same
+            // relation side by side, or mirrored with its sides swapped.
+            (
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt32,
+                    relation: fact_relation,
+                    left: fact_left,
+                    right: fact_right,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt32,
+                    relation: target_relation,
+                    left: target_left,
+                    right: target_right,
+                },
+            ) if *fact_relation != CompareRelation::Equal => {
+                let mirrored = match fact_relation {
+                    CompareRelation::LessThan => CompareRelation::GreaterThan,
+                    CompareRelation::LessEqual => CompareRelation::GreaterEqual,
+                    CompareRelation::GreaterThan => CompareRelation::LessThan,
+                    CompareRelation::GreaterEqual => CompareRelation::LessEqual,
+                    CompareRelation::Equal => return false,
+                };
+                if fact_relation == target_relation {
+                    self.comparison_sides_equal_for_transport(
+                        fact_left,
+                        fact_right,
+                        target_left,
+                        target_right,
+                    )
+                } else if *target_relation == mirrored {
+                    self.comparison_sides_equal_for_transport(
+                        fact_left,
+                        fact_right,
+                        target_right,
+                        target_left,
+                    )
+                } else {
+                    false
+                }
+            }
             _ => false,
         }
     }

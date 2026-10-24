@@ -573,6 +573,12 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
             left,
             right,
         } => (left.as_ref(), right.as_ref()),
+        crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::UInt32,
+            relation,
+            left,
+            right,
+        } if *relation != crate::kernel::CompareRelation::Equal => (left.as_ref(), right.as_ref()),
         _ => return None,
     };
     let mut machine_operation = false;
@@ -619,58 +625,24 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
     Some((nonlinear, machine_operation))
 }
 
-/// Unsigned order is lowered to signed order by xoring an int32 value with
-/// the sign bit.  That xor is total; when the planner cannot prove the
-/// resulting bound, the useful failure is missing premises rather than an
-/// overflow/definedness failure for a machine operation.
-fn signed_goal_is_unsigned_signbit_bound(goal: &crate::kernel::Proposition) -> bool {
-    let crate::kernel::Proposition::ConditionIs(condition, true) = goal else {
-        return false;
-    };
-    let (left, right) = match condition {
-        crate::kernel::ConditionTerm::Compare {
-            format: crate::kernel::MachineIntegerType::Int32,
-            relation: crate::kernel::CompareRelation::LessThan,
-            left,
-            right,
-        }
-        | crate::kernel::ConditionTerm::Compare {
-            format: crate::kernel::MachineIntegerType::Int32,
-            relation: crate::kernel::CompareRelation::LessEqual,
-            left,
-            right,
-        }
-        | crate::kernel::ConditionTerm::Compare {
-            format: crate::kernel::MachineIntegerType::Int32,
-            relation: crate::kernel::CompareRelation::GreaterThan,
-            left,
-            right,
-        }
-        | crate::kernel::ConditionTerm::Compare {
-            format: crate::kernel::MachineIntegerType::Int32,
-            relation: crate::kernel::CompareRelation::GreaterEqual,
-            left,
-            right,
-        } => (left.as_ref(), right.as_ref()),
-        _ => return false,
-    };
-    let is_signbit_xor = |term: &crate::kernel::Bitvector32Term| {
-        let crate::kernel::Bitvector32Term::BitwiseXor(first, second) = term else {
-            return false;
-        };
-        matches!(
-            (first.as_ref(), second.as_ref()),
-            (
-                crate::kernel::Bitvector32Term::Constant(value),
-                crate::kernel::Bitvector32Term::Variable(_)
-            )
-            | (
-                crate::kernel::Bitvector32Term::Variable(_),
-                crate::kernel::Bitvector32Term::Constant(value)
-            ) if *value == 0x8000_0000
-        )
-    };
-    is_signbit_xor(left) || is_signbit_xor(right)
+/// Whether a held `uint32` order goal has a plain variable as an operand.
+fn unsigned_order_names_a_variable(goal: &crate::kernel::Proposition) -> bool {
+    matches!(
+        goal,
+        crate::kernel::Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::Compare {
+                format: crate::kernel::MachineIntegerType::UInt32,
+                relation: crate::kernel::CompareRelation::LessThan
+                    | crate::kernel::CompareRelation::LessEqual
+                    | crate::kernel::CompareRelation::GreaterThan
+                    | crate::kernel::CompareRelation::GreaterEqual,
+                left,
+                right,
+            },
+            true,
+        ) if matches!(left.as_ref(), crate::kernel::Bitvector32Term::Variable(_))
+            || matches!(right.as_ref(), crate::kernel::Bitvector32Term::Variable(_))
+    )
 }
 
 fn signed_interval(
@@ -698,6 +670,12 @@ fn signed_comparison(
         }
         SignedInt32Comparison::Disequal => {
             crate::kernel::proof::signed_arithmetic::SignedArithmeticComparison::Disequal
+        }
+        SignedInt32Comparison::UnsignedLessThan => {
+            crate::kernel::proof::signed_arithmetic::SignedArithmeticComparison::UnsignedLessThan
+        }
+        SignedInt32Comparison::UnsignedLessEqual => {
+            crate::kernel::proof::signed_arithmetic::SignedArithmeticComparison::UnsignedLessEqual
         }
     }
 }
@@ -1848,7 +1826,10 @@ impl<'a> Proof<'a> {
             )));
         }
         if let Some(goal) = self.goal() {
-            if crate::kernel::proof::signed_arithmetic::signed_arithmetic_claim(goal).is_none() {
+            let unsigned_order = crate::surface::checking::is_unsigned_order_goal(goal);
+            if crate::kernel::proof::signed_arithmetic::signed_arithmetic_claim(goal).is_none()
+                && !unsigned_order
+            {
                 return Err(self.step_error(
                     "`arithmetic` requires a supported signed int32 comparison or equality goal",
                 ));
@@ -1859,7 +1840,10 @@ impl<'a> Proof<'a> {
                         "`arithmetic` requires a supported signed int32 comparison or equality goal",
                     ));
                 }
-                if machine_operation && !signed_goal_is_unsigned_signbit_bound(goal) {
+                // A `uint32` order over a plain variable is decided from the
+                // operands' signed intervals, which owe no definedness; the
+                // useful failure is then the premises, not an operation.
+                if machine_operation && !(unsigned_order && unsigned_order_names_a_variable(goal)) {
                     if premises.is_empty() {
                         return Err(self.step_error(format!(
                             "`arithmetic` cannot establish that every int32 operation in the current goal is defined without overflow from the goal alone; {BARE_ARITHMETIC_HINT}"
@@ -2757,12 +2741,6 @@ impl<'a> Proof<'a> {
                     mask: *mask,
                     result: signed_interval(*result),
                 },
-                SignedArithmeticStep::IntervalSignBitFlip { operand, result } => {
-                    SignedArithmeticNode::IntervalSignBitFlip {
-                        operand: *operand,
-                        result: signed_interval(*result),
-                    }
-                }
                 SignedArithmeticStep::IntervalNarrowedCast {
                     operand,
                     source,

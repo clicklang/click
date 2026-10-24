@@ -601,8 +601,8 @@ refuses a shift of a 64-bit value and a `?:` that chooses between 64-bit
 values, and names the refusal. A pure component and a self-recursive
 function's expression measure take the same carriers.
 
-An unsigned comparison is a signed order between sign-bit-flipped values, so
-signed arithmetic does not relate `x - 1` to `x` through the flip. The closer
+An unsigned comparison is a `uint32` order, and `uint32` subtraction wraps,
+so order reasoning does not relate `x - 1` to `x` on its own. The closer
 proves an unsigned member with the `uint32_*` order lemmas instead: one lemma
 per member, from the exact fact that lemma requires, as
 `while (x > 0u) x--;` under `decreases x` does

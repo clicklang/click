@@ -10,11 +10,9 @@
 //! Conditions carry their format (`ConditionTerm::Compare` and
 //! `ConditionTerm::Overflows`), so a comparison or overflow test exists at
 //! every format. Where a format has no operator node the answer is `None`,
-//! and the rule is unavailable there: there are no 128-bit operators, and
-//! no 32-bit unsigned order other than the signed order of operands whose
-//! sign bit is flipped. These are the representation gaps that
-//! `design/machine-integers.md` Stages 2 and 3 remove; the test matrix
-//! names each one.
+//! and the rule is unavailable there: there are no 128-bit operators. That
+//! is the representation gap `design/machine-integers.md` Stage 3 removes;
+//! the test matrix names each one.
 
 use super::{Operation, Relation};
 use crate::kernel::{Bitvector32Term, ConditionTerm, MachineIntegerType};
@@ -168,11 +166,10 @@ pub(crate) fn spells_comparison_natively(ty: MachineIntegerType) -> bool {
 }
 
 /// The operands of a native comparison and the formats whose exact reading
-/// it may be, most specific first. A 32-bit order is signed, or a `uint32`
-/// order of operands whose sign bit is flipped (`order_operand` strips the
-/// flip); a narrow value reads through the `int32` reading, which
-/// `IntegerTerm::from_machine` normalizes to the narrow observation. An
-/// equality reads no sign, so it reads at both formats of its width.
+/// it may be, most specific first. A narrow value reads through the `int32`
+/// reading, which `IntegerTerm::from_machine` normalizes to the narrow
+/// observation. An equality reads no sign, so it reads at both formats of
+/// its width.
 pub(crate) fn comparison_readings(
     condition: &ConditionTerm,
 ) -> Option<(
@@ -192,11 +189,9 @@ pub(crate) fn comparison_readings(
     };
     let equality = *relation == CompareRelation::Equal;
     let types: &'static [MachineIntegerType] = match (format, equality) {
-        // A `uint32` order is the signed order of sign-flipped operands,
-        // so its own reading comes first; a genuinely signed order has no
-        // sign-bit encoding to strip and reads as `int32`.
-        (Ty::Int32, false) => &[Ty::UInt32, Ty::Int32],
+        (Ty::Int32, false) => &[Ty::Int32],
         (Ty::Int32, true) => &[Ty::Int32, Ty::UInt32],
+        (Ty::UInt32, false) => &[Ty::UInt32],
         (Ty::Int64, false) => &[Ty::Int64],
         (Ty::Int64, true) => &[Ty::Int64, Ty::UInt64],
         (Ty::UInt64, false) => &[Ty::UInt64],
@@ -206,41 +201,6 @@ pub(crate) fn comparison_readings(
         _ => return None,
     };
     Some((left, right, types))
-}
-
-/// The word a native comparison at `ty` compares, before its encoding: a
-/// `uint32` order compares its operands with the sign bit flipped, so the
-/// flip is removed; any other comparison compares its operands as they are.
-/// `None` when a `uint32` order's operand carries no flip.
-pub(crate) fn order_operand(
-    ty: MachineIntegerType,
-    condition: &ConditionTerm,
-    side: &Bitvector32Term,
-) -> Option<Bitvector32Term> {
-    if ty != MachineIntegerType::UInt32
-        || matches!(
-            condition,
-            ConditionTerm::Compare {
-                relation: CompareRelation::Equal,
-                ..
-            }
-        )
-    {
-        return Some(side.clone());
-    }
-    let sign_bit = 0x8000_0000u32;
-    match side {
-        Bitvector32Term::Constant(value) => Some(Bitvector32Term::Constant(value ^ sign_bit)),
-        Bitvector32Term::BitwiseXor(a, b) => match (a.as_ref(), b.as_ref()) {
-            (Bitvector32Term::Constant(bit), other) | (other, Bitvector32Term::Constant(bit))
-                if *bit == sign_bit =>
-            {
-                Some(other.clone())
-            }
-            _ => None,
-        },
-        _ => None,
-    }
 }
 
 /// Whether `ty` has an overflow test for `+`, `-` and `*`

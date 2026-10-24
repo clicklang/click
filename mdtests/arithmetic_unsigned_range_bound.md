@@ -1,8 +1,8 @@
 # Signed allocation bounds establish unsigned byte-count bounds
 
-Unsigned order lowers to signed order after flipping the sign bit. Explicit
-signed bounds must suffice to check the resulting byte-count obligation, without
-search or an extra unsigned assumption.
+A `uint32` order is checked from its operands' signed intervals, each read as
+unsigned once its sign is known. Explicit signed bounds must suffice to check
+the byte-count obligation, without search or an extra unsigned assumption.
 
 ```click
 theorem allocation_range_fits(length: int32) {

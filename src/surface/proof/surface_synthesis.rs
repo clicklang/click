@@ -2514,72 +2514,37 @@ fn synthesize_surface_integer(
     })
 }
 
-/// A 32-bit unsigned comparison spelled as the comparison it means.
+/// A `uint32` order spelled as a comparison of `uint32` operands.
 ///
-/// The kernel states `x < 4` over a `uint32` as the signed comparison of
-/// both operands with their sign bit flipped
-/// (`ConditionTerm::unsigned_less_than`), a constant operand arriving already
-/// flipped; spelled operand by operand that reads `(-2147483648 ^ x) <
-/// -2147483644`. Constants and uint32 locals retain their direct spellings;
-/// computed operands and signed locals receive an explicit uint32 cast. The
-/// reconstructed comparison must lower back to this same flipped form.
-/// Snapshot-relative operands retain the literal sign-bit spelling.
+/// The kernel's 32-bit words carry no signedness, so each operand is spelled
+/// so that it reads as `uint32`: constants and `uint32` locals keep their
+/// direct spellings, and computed operands and signed locals receive an
+/// explicit `uint32` cast. The comparison lowers back to the same `uint32`
+/// order. A comparison with a snapshot-relative operand has no spelling
+/// here.
 fn synthesize_unsigned_comparison(
     condition: &ConditionTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
-    const SIGN_BIT: u32 = 0x8000_0000;
-    let (left, operator, right) = match condition {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        } => (left, ComparisonOperator::LessThan, right),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        } => (left, ComparisonOperator::LessEqual, right),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        } => (left, ComparisonOperator::GreaterThan, right),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
-        } => (left, ComparisonOperator::GreaterEqual, right),
-        _ => return None,
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::UInt32,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
     };
-    let flipped = |term: &Bitvector32Term| match term {
-        Bitvector32Term::BitwiseXor(value, sign) | Bitvector32Term::BitwiseXor(sign, value)
-            if sign.as_const() == Some(SIGN_BIT) =>
-        {
-            Some(value.as_ref().clone())
-        }
-        _ => None,
+    let operator = match relation {
+        CompareRelation::LessThan => ComparisonOperator::LessThan,
+        CompareRelation::LessEqual => ComparisonOperator::LessEqual,
+        CompareRelation::GreaterThan => ComparisonOperator::GreaterThan,
+        CompareRelation::GreaterEqual => ComparisonOperator::GreaterEqual,
+        CompareRelation::Equal => return None,
     };
-    let unflipped = |term: &Bitvector32Term| {
-        flipped(term).or_else(|| {
-            term.as_const()
-                .map(|value| Bitvector32Term::Constant(value ^ SIGN_BIT))
-        })
-    };
-    // At least one side carries the flip itself; two bare constants are an
-    // ordinary signed comparison.
-    let (left, right) = match (flipped(left), flipped(right)) {
-        (Some(left), Some(right)) => (left, right),
-        (Some(left), None) => (left, unflipped(right)?),
-        (None, Some(right)) => (unflipped(left)?, right),
-        (None, None) => return None,
-    };
+    let (left, right) = (left.as_ref(), right.as_ref());
     // The `uint32` local holding the operand, named directly: a signed local
     // can hold the same bits, and its name would make the comparison signed.
     let operand = |term: &Bitvector32Term| match term.as_const() {
@@ -2602,10 +2567,11 @@ fn synthesize_unsigned_comparison(
             .or_else(|| {
                 let expression =
                     synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?;
-                // Keep the literal sign-bit order when an operand is snapshot
-                // relative, preserving loop-ranking observations and refusal
-                // diagnostics. Division/remainder still cast within their own
-                // snapshot when reconstructing those operations.
+                // A snapshot-relative operand is left to the diagnostic
+                // renderer, which spells it in its snapshot, preserving
+                // loop-ranking observations and refusal diagnostics.
+                // Division/remainder still cast within their own snapshot
+                // when reconstructing those operations.
                 if matches!(
                     expression,
                     ContractExpression::At { .. } | ContractExpression::Old(_)
@@ -2616,9 +2582,9 @@ fn synthesize_unsigned_comparison(
             }),
     };
     Some(ClickProposition::Comparison {
-        left: operand(&left)?,
+        left: operand(left)?,
         operator,
-        right: operand(&right)?,
+        right: operand(right)?,
     })
 }
 

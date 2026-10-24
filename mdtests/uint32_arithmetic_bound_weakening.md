@@ -1,8 +1,8 @@
 # Unsigned bound weakening preserves the certificate's affine claim
 
-Unsigned comparisons are affine in sign-bit-flipped atoms. A constant slack
-weakens a bound without adding wrapping machine operands or treating a
-`uint32` value as signed. These bounds include both sides of the sign bit.
+A constant slack weakens a `uint32` bound without adding wrapping machine
+operands or treating a `uint32` value as signed. These bounds include both
+sides of the sign bit.
 
 ```click
 theorem lane_ceiling(lane: uint32) {

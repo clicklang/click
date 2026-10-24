@@ -2139,7 +2139,7 @@ fn native_view_prefix_premises(
     } else {
         let (evidence, _) = context.proves_atomic_for_derivation_with_id(&coverage, true);
         let Some(AtomicPropositionDerivationEvidence::WideOrderPath {
-            unsigned: true,
+            format: crate::kernel::MachineIntegerType::UInt64,
             path,
         }) = evidence
         else {

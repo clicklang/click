@@ -36,6 +36,7 @@ use super::machine_integer::definedness::{
 };
 use super::machine_integer::modular::wrapped_equality_of_integer_equality;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
+pub(in crate::kernel) use condition_reasoning::held_order_at;
 pub(in crate::kernel) use condition_reasoning::narrowed_cast_identity;
 
 #[derive(Clone, Debug)]
@@ -2791,6 +2792,12 @@ impl PureFactContext {
             Self::adjust_order_bound_index(&mut index, left, right, strict, insert);
             self.int64_signed_order_bounds = index;
         } else if let Some((left, right, strict)) =
+            condition_reasoning::condition_as_uint32_order_fact(condition, value)
+        {
+            let mut index = std::mem::take(&mut self.uint32_order_bounds);
+            Self::adjust_order_bound_index(&mut index, left, right, strict, insert);
+            self.uint32_order_bounds = index;
+        } else if let Some((left, right, strict)) =
             condition_reasoning::condition_as_uint64_order_fact(condition, value)
         {
             self.adjust_wide_order_edges(0, &left, &right, strict, insert);
@@ -4288,6 +4295,7 @@ impl PureFactContext {
         self.order_facts_by_lower = OrderFactsByLower::default();
         self.signed_order_bounds = crate::persistent::PersistentMap::default();
         self.int64_signed_order_bounds = crate::persistent::PersistentMap::default();
+        self.uint32_order_bounds = crate::persistent::PersistentMap::default();
         self.uint64_order_bounds = crate::persistent::PersistentMap::default();
         self.wide_order_edges = Default::default();
         let facts = self
@@ -6347,6 +6355,9 @@ impl PureFactContext {
                 .int64_signed_order_bounds
                 .shares_root_with(&other.int64_signed_order_bounds)
             && self
+                .uint32_order_bounds
+                .shares_root_with(&other.uint32_order_bounds)
+            && self
                 .uint64_order_bounds
                 .shares_root_with(&other.uint64_order_bounds)
             && self
@@ -6968,9 +6979,8 @@ impl PureFactContext {
         // The graph derives a same-block comparison's offset view. Do not
         // publish it as an independent premise: it must disappear when the
         // original pointer comparison is withdrawn.
-        // An unsigned upper bound below the sign bit, `x <u c` with
-        // `c <= 2^31`, is spelled as the biased signed order
-        // `(x ^ 2^31) < (c ^ 2^31)`. It holds exactly when the signed pair
+        // An unsigned upper bound below the sign bit, the `uint32` order
+        // `x <u c` with `c <= 2^31`, holds exactly when the signed pair
         // `0 <= x` and `x < c` does, so the pair is filed beside it, with the
         // source's strictness: every reader of signed order facts on `x`
         // (interval, index range, and element-membership rules) then sees
@@ -11317,8 +11327,8 @@ mod decided_algebraic_if_tests;
 /// node finds every edge whose lower end is a constant at least as large by
 /// one range read; and when `lower` is a load also under its pointer and
 /// kind, the only loads memory-derivation bridging relates to it. A 64-bit
-/// fact is filed under its canonical lower end, per kind (0 unsigned, 1
-/// signed), as the wide walk matches.
+/// or `uint32` fact is filed under its canonical lower end, per format
+/// (`WIDE_ORDER_FORMATS`), as the format-indexed walk matches.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OrderFactsByLower {
     written: crate::persistent::PersistentMap<
@@ -11337,7 +11347,7 @@ pub(crate) struct OrderFactsByLower {
     wide: [crate::persistent::PersistentMap<
         Bitvector32Term,
         crate::persistent::PersistentSet<ConditionTerm>,
-    >; 2],
+    >; 3],
 }
 
 impl OrderFactsByLower {
@@ -11394,9 +11404,12 @@ impl OrderFactsByLower {
             file(&mut self.written, lower, condition, insert);
             return;
         }
-        for (kind, unsigned) in [(0, true), (1, false)] {
+        for (kind, format) in condition_reasoning::WIDE_ORDER_FORMATS
+            .into_iter()
+            .enumerate()
+        {
             if let Some((lower, _, _)) =
-                condition_reasoning::wide_order_fact(condition, value, unsigned)
+                condition_reasoning::wide_order_fact(condition, value, format)
             {
                 file(
                     &mut self.wide[kind],
@@ -11457,15 +11470,18 @@ impl OrderFactsByLower {
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
-    /// The 64-bit order facts of one kind (unsigned or signed) whose lower
-    /// end has canonical form `lower`.
+    /// The order facts at `format`, one of
+    /// [`condition_reasoning::WIDE_ORDER_FORMATS`], whose lower end has
+    /// canonical form `lower`.
     pub(crate) fn wide_from<'a>(
         &'a self,
-        unsigned: bool,
+        format: MachineIntegerType,
         lower: &Bitvector32Term,
     ) -> impl Iterator<Item = &'a ConditionTerm> + 'a {
-        self.wide[usize::from(!unsigned)]
-            .get(lower)
+        let kind = condition_reasoning::WIDE_ORDER_FORMATS
+            .iter()
+            .position(|wide| *wide == format);
+        kind.and_then(|kind| self.wide[kind].get(lower))
             .into_iter()
             .flat_map(crate::persistent::PersistentSet::iter)
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))

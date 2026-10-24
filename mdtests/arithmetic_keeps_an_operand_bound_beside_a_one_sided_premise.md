@@ -2,9 +2,9 @@
 
 A loop's back edge owes a stated range's extent bound over the new index
 `i + 1`, and the loop head supplies both the invariant `0 <= i + 1` and, through
-the guard, `i < n` with `n <= 1073741823`. The kernel spells the extent bound
-with a sign-bit bias, `(-2147483648 ^ (i + 1)) <= -1073741825`, which the
-signed-arithmetic certificate decides from an interval for `i + 1`.
+the guard, `i < n` with `n <= 1073741823`. The extent bound is the `uint32`
+order `((uint32)(i + 1)) <= 1073741823u32`, which the signed-arithmetic
+certificate decides from an interval for `i + 1` read as unsigned.
 
 The planner read that interval off the premise that bounds `i + 1` directly and
 stopped there, so `0 <= i + 1` gave `i + 1` no upper bound and hid the one its
@@ -32,7 +32,7 @@ int32 next_index(int32 i, int32 n) {
     have 0 <= to_integer(i + 1) by {
         arithmetic() using { 0 <= i; i < n; n <= 1073741823; };
     }
-    have to_integer((-2147483648 ^ (i + 1))) <= to_integer(-1073741825) by {
+    have ((uint32)(i + 1)) <= 1073741823u32 by {
         arithmetic() using {
             0 <= to_integer(i + 1);
             0 <= i;

@@ -44,17 +44,24 @@ nextest_installed_version() {
 if ! command -v cargo-nextest >/dev/null 2>&1 || \
     [[ "$(nextest_installed_version)" != "$nextest_version" ]]; then
     case "$(uname -s)/$(uname -m)" in
-        Linux/x86_64) nextest_platform=linux ;;
-        Linux/aarch64) nextest_platform=linux-arm ;;
-        Darwin/*) nextest_platform=mac ;;
+        Linux/x86_64) nextest_platform=linux; nextest_target=x86_64-unknown-linux-gnu ;;
+        Linux/aarch64) nextest_platform=linux-arm; nextest_target=aarch64-unknown-linux-gnu ;;
+        Darwin/*) nextest_platform=mac; nextest_target=universal-apple-darwin ;;
         *) nextest_platform= ;;
     esac
     if [[ -n "$nextest_platform" ]]; then
         nextest_directory="$(mktemp -d)"
         trap 'rm -rf "$nextest_directory"' EXIT
-        curl --fail --location --silent --show-error --retry 3 \
+        if ! curl --fail --location --silent --show-error --retry 3 \
             "https://get.nexte.st/$nextest_version/$nextest_platform" \
-            --output "$nextest_directory/nextest.tar.gz"
+            --output "$nextest_directory/nextest.tar.gz"; then
+            # Restricted cloud networks may allow GitHub releases but not the
+            # download shortcut. Keep the same pinned upstream release.
+            echo "nextest shortcut unavailable; using GitHub release $nextest_version" >&2
+            curl --fail --location --silent --show-error --retry 3 \
+                "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-$nextest_version/cargo-nextest-$nextest_version-$nextest_target.tar.gz" \
+                --output "$nextest_directory/nextest.tar.gz"
+        fi
         tar -xzf "$nextest_directory/nextest.tar.gz" -C "$nextest_directory" cargo-nextest
         cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
         mkdir -p "$cargo_bin"
@@ -84,9 +91,24 @@ if [[ "$docs_only" != true ]]; then
         echo "error: restore the pinned Charon compiler runtime at $CHARON_SYSROOT before setting up a Rust test runner" >&2
         exit 1
     fi
+    # The packages put llvm-config-19 on PATH; the release fallback below
+    # provides only /usr/lib/llvm-19, where scripts/build-cpp-exporter.sh
+    # also looks.
+    pinned_llvm_installed() {
+        local llvm_config
+        for llvm_config in "$(command -v llvm-config-19 || true)" /usr/lib/llvm-19/bin/llvm-config; do
+            if [[ -x "$llvm_config" && "$("$llvm_config" --version)" == 19.1.7 ]]; then
+                return 0
+            fi
+        done
+        return 1
+    }
+    pinned_clang_has_headers() {
+        printf '#include <algorithm>\n' \
+            | /usr/lib/llvm-19/bin/clang++ -std=c++20 -x c++ -fsyntax-only - >/dev/null 2>&1
+    }
     needs_llvm=false
-    if ! command -v llvm-config-19 >/dev/null 2>&1 || \
-        [[ "$(llvm-config-19 --version)" != 19.1.7 ]]; then
+    if ! pinned_llvm_installed; then
         needs_llvm=true
     fi
 
@@ -96,9 +118,7 @@ if [[ "$docs_only" != true ]]; then
     fi
 
     needs_headers=false
-    if [[ "$(uname -s)" == Linux && "$needs_llvm" != true ]] && \
-        ! printf '#include <algorithm>\n' \
-            | /usr/lib/llvm-19/bin/clang++ -std=c++20 -x c++ -fsyntax-only - >/dev/null 2>&1; then
+    if [[ "$(uname -s)" == Linux && "$needs_llvm" != true ]] && ! pinned_clang_has_headers; then
         needs_headers=true
     fi
 
@@ -141,34 +161,42 @@ if [[ "$docs_only" != true ]]; then
         fi
 
         needs_headers=false
-        if ! printf '#include <algorithm>\n' \
-            | /usr/lib/llvm-19/bin/clang++ -std=c++20 -x c++ -fsyntax-only - >/dev/null 2>&1; then
+        if ! pinned_clang_has_headers; then
             needs_headers=true
         fi
+        llvm_release=false
         if [[ "$needs_llvm" == true || ! -x /usr/bin/gcc || "$needs_headers" == true ]]; then
-            wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
-                | "${root_command[@]}" tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
-            echo "deb https://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" \
-                | "${root_command[@]}" tee /etc/apt/sources.list.d/llvm-19.list >/dev/null
-            "${apt_command[@]}" update
-            "${apt_command[@]}" install -y build-essential clang-19 libclang-19-dev \
-                llvm-19-dev libstdc++-14-dev zstd clang-tools-19 libclang-rt-19-dev
+            if llvm_key="$(wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key)"; then
+                printf '%s\n' "$llvm_key" \
+                    | "${root_command[@]}" tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+                echo "deb https://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" \
+                    | "${root_command[@]}" tee /etc/apt/sources.list.d/llvm-19.list >/dev/null
+                "${apt_command[@]}" update
+                "${apt_command[@]}" install -y build-essential clang-19 libclang-19-dev \
+                    llvm-19-dev libstdc++-14-dev zstd clang-tools-19 libclang-rt-19-dev
+            else
+                # Restricted cloud networks may deny apt.llvm.org but allow
+                # GitHub releases. Install the same pinned version from the
+                # official release, and only Ubuntu's own packages from apt.
+                echo "apt.llvm.org key unavailable; installing the LLVM 19.1.7 release from GitHub" >&2
+                llvm_release=true
+                if [[ "$needs_llvm" == true ]]; then
+                    if ! command -v xz >/dev/null 2>&1; then
+                        "${apt_command[@]}" update
+                        "${apt_command[@]}" install -y xz-utils
+                    fi
+                    "${root_command[@]}" scripts/install-llvm-release.sh
+                fi
+                if [[ ! -x /usr/bin/gcc ]] || ! pinned_clang_has_headers; then
+                    "${apt_command[@]}" update
+                    "${apt_command[@]}" install -y build-essential libstdc++-14-dev
+                fi
+            fi
         fi
 
-        if [[ ! -f "$llvm_cache" ]]; then
-            llvm_files="$(mktemp)"
-            dpkg-query -L clang-19 libclang-19-dev llvm-19-dev libllvm19 \
-                libclang-cpp19 libclang1-19 libclang-common-19-dev \
-                llvm-19-linker-tools clang-tools-19 llvm-19-runtime llvm-19 \
-                llvm-19-tools libclang-rt-19-dev \
-                | sed 's,^/,,' | sort -u > "$llvm_files"
-            mkdir -p "$(dirname "$llvm_cache")"
-            # --no-recursion prevents package directory entries such as /usr
-            # from accidentally including the rest of the runner filesystem.
-            tar -I 'zstd -T0 -3' --no-recursion -cf "$llvm_cache.tmp" \
-                -C / --verbatim-files-from --files-from "$llvm_files"
-            mv "$llvm_cache.tmp" "$llvm_cache"
-            rm "$llvm_files"
+        # The cache holds package files; a release install has none.
+        if [[ "$llvm_release" != true && ! -f "$llvm_cache" ]]; then
+            scripts/cache-llvm.sh "$llvm_cache"
         fi
     fi
 fi

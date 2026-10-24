@@ -1,10 +1,10 @@
 # An unsigned index below a constant bound indexes a parameter array
 
-`x < 4u` with `uint32 x` is lowered to the sign-biased signed comparison
-`(-2147483648 ^ x) < -2147483644`. The access `values[x]` widens `x` to an
-exact 64-bit element index, and neither the 64-bit pointer-formation guard
-nor the `views` and `owns` coverage of `values[0..4]` could read the biased
-spelling as a bound on `x`, so every read and write below was refused as
+`x < 4u` with `uint32 x` is a `uint32` order. The access `values[x]` widens
+`x` to an exact 64-bit element index, and neither the 64-bit
+pointer-formation guard nor the `views` and `owns` coverage of `values[0..4]`
+could read the unsigned order (then spelled as a sign-biased signed
+comparison) as a bound on `x`, so every read and write below was refused as
 "pointer arithmetic left the pointed-to object" or a missing resource.
 
 An unsigned bound below the sign bit holds exactly when the signed pair

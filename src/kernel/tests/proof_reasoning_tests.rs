@@ -3997,8 +3997,32 @@ fn unsigned_extent_bound_below_the_sign_bit_is_decided_by_signed_order() {
     assert_eq!(above.decide(&fits), Some(false));
 }
 
-/// An unsigned chain `x <u n`, `n <=u 4` is the signed chain over the
-/// sign-bit-flipped atoms, so it gives `x <u 4`, and with it the signed range
+/// A `uint32` order fact answers its mirrored spelling, as a signed one
+/// does, and never the signed order of the same words.
+#[test]
+fn a_uint32_order_fact_answers_its_mirror_and_not_a_signed_order() {
+    let x = Bitvector32Term::Variable(Variable(89_310));
+    let y = Bitvector32Term::Variable(Variable(89_311));
+    let context = PureFactContext::new().assume_condition(
+        ConditionTerm::unsigned_less_than(x.clone(), y.clone()),
+        true,
+    );
+    assert!(context.has_condition_fact(
+        ConditionTerm::unsigned_greater_than(y.clone(), x.clone()),
+        true
+    ));
+    assert_eq!(
+        context.decide(&ConditionTerm::unsigned_greater_equal(x.clone(), y.clone())),
+        Some(false)
+    );
+    assert!(
+        !context.has_condition_fact(ConditionTerm::signed_less_than(x.clone(), y.clone()), true)
+    );
+    assert_eq!(context.decide(&ConditionTerm::signed_less_than(x, y)), None);
+}
+
+/// An unsigned chain `x <u n`, `n <=u 4` composes in the `uint32` order, so
+/// it gives `x <u 4`, and with it the signed range
 /// `0 <= x` and `x < 4` an index needs. It does not compose with a signed
 /// bound on `n` (a negative `n` is a huge unsigned one), with no bound on
 /// `n`, or through a wrapped `n - 1`.
@@ -7650,7 +7674,7 @@ fn uint32_subtract_bridge_matches_unsigned_underflow_boundary_model() {
     };
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::UInt32,
             relation: CompareRelation::LessEqual,
             left,
             right,
@@ -7680,10 +7704,7 @@ fn uint32_subtract_bridge_matches_unsigned_underflow_boundary_model() {
     for a in samples {
         for b in samples {
             let safe = a.checked_sub(b).is_some();
-            assert_eq!(
-                (machine(left, a, b) as i32) <= (machine(right, a, b) as i32),
-                safe
-            );
+            assert_eq!(machine(left, a, b) <= machine(right, a, b), safe);
             assert_eq!(
                 integer(observed, a, b),
                 num_bigint::BigInt::from(a.wrapping_sub(b))
@@ -7823,13 +7844,13 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
             ) => machine(left, a, b) == machine(right, a, b),
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::UInt32,
                     relation: CompareRelation::LessEqual,
                     left,
                     right,
                 },
                 true,
-            ) => (machine(left, a, b) as i32) <= (machine(right, a, b) as i32),
+            ) => machine(left, a, b) <= machine(right, a, b),
             Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
                 integer(left, a, b) == integer(right, a, b)
             }
@@ -7911,13 +7932,13 @@ fn uint32_integer_order_bridges_agree_with_unsigned_boundary_models() {
         match p {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::UInt32,
                     relation: CompareRelation::LessEqual,
                     left,
                     right,
                 },
                 true,
-            ) => (machine(left, a, b) as i32) <= (machine(right, a, b) as i32),
+            ) => machine(left, a, b) <= machine(right, a, b),
             Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => {
                 let observe = |term: &IntegerTerm| {
                     let IntegerTerm::Machine(value) = term else {
@@ -8057,7 +8078,7 @@ fn uint32_remainder_bound_agrees_with_full_width_models() {
     };
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::UInt32,
             relation: CompareRelation::LessThan,
             left,
             right,
@@ -8093,10 +8114,7 @@ fn uint32_remainder_bound_agrees_with_full_width_models() {
             assert_eq!(guarded, divisor != 0);
             if guarded {
                 assert!(u64::from(value) % u64::from(divisor) < u64::from(divisor));
-                assert!(
-                    (machine(left, value, divisor) as i32)
-                        < (machine(right, value, divisor) as i32)
-                );
+                assert!(machine(left, value, divisor) < machine(right, value, divisor));
             }
         }
     }
