@@ -2890,16 +2890,17 @@ fn loop_exit_argument_contexts(
                         retained = retained.assume_execution_pure_fact(fact);
                     }
                 }
-                if !context
+                // The compositions the incoming context states and the exit
+                // does not: a walk of the two sets' difference, not of every
+                // composition the path stated.
+                for (composition, in_exit) in context
                     .resource_compositions
-                    .shares_root_with(&assumptions.resource_compositions)
+                    .diff(&assumptions.resource_compositions)
                 {
-                    for composition in assumptions.resource_compositions.iter() {
-                        if !retained.resource_compositions.contains(composition) {
-                            retained = retained.assume_proposition(
-                                Proposition::CResourceComposition(composition.clone()),
-                            );
-                        }
+                    if !in_exit && !retained.resource_compositions.contains(composition) {
+                        retained = retained.assume_proposition(Proposition::CResourceComposition(
+                            composition.clone(),
+                        ));
                     }
                 }
                 return retained;

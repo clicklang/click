@@ -470,7 +470,13 @@ four times the work at a quarter of it.
     inside, 1,098 unknown, 14 outside, 12 undecided). A composition that
     only views the block is no longer read; fewer ranges can only weaken
     an answer, and none did. `held_range_membership_ignores_unrelated_compositions`
-    covers it. `loops.rs` remains.
+    covers it. **Fixed for `loops.rs`:** merging the incoming context's
+    compositions into a retained loop-exit context walked every incoming
+    composition whenever the two sets did not share a root. It now walks
+    their difference (`PersistentSet::diff`, which skips shared subtrees),
+    adding each incoming composition the exit lacks;
+    `set_diff_names_each_side_and_walks_the_changed_paths` covers the
+    diff.
 24. `split_focused_call_outcomes` copies all facts on every caught-throw
     split (`execution_joins.rs:4215`).
 
