@@ -12,12 +12,6 @@
 //! that explicit script and nothing here is trusted.
 use super::*;
 
-/// The largest `uint64`, the upper bound of an unsigned sum's exact value.
-const UINT64_MAX: &str = "18446744073709551615";
-/// The range of `int64`, the bounds of a signed sum's exact value.
-const INT64_MIN: &str = "-9223372036854775808";
-const INT64_MAX: &str = "9223372036854775807";
-
 /// Which 64-bit integers a goal orders.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(super) enum Carrier {
@@ -96,12 +90,18 @@ impl Carrier {
     }
 
     /// The bridge theorem `<type>_<stem>`.
-    /// The type's range, as Integer literals.
-    fn range(self) -> (&'static str, &'static str) {
+    /// The machine format a goal of this carrier orders.
+    pub(super) fn machine_type(self) -> crate::kernel::MachineIntegerType {
         match self {
-            Self::UInt64 => ("0", UINT64_MAX),
-            Self::Int64 => (INT64_MIN, INT64_MAX),
+            Self::UInt64 => crate::kernel::MachineIntegerType::UInt64,
+            Self::Int64 => crate::kernel::MachineIntegerType::Int64,
         }
+    }
+
+    /// The type's range, as Integer literals.
+    fn range(self) -> (String, String) {
+        let (minimum, maximum) = crate::kernel::machine_integer::range::range(self.machine_type());
+        (minimum.to_string(), maximum.to_string())
     }
 }
 
@@ -624,8 +624,8 @@ impl<'a> Proof<'a> {
         if !operations.is_empty() || goal_relation == Relation::Equal {
             let (minimum, maximum) = carrier.range();
             for atom in &atoms {
-                let lower = order(literal(minimum), to_integer(atom), false);
-                let upper = order(to_integer(atom), literal(maximum), false);
+                let lower = order(literal(&minimum), to_integer(atom), false);
+                let upper = order(to_integer(atom), literal(&maximum), false);
                 let Ok(next) = proof
                     .apply_step(have(lower.clone(), vec![type_range(lower.clone())]))
                     .and_then(|proof| {
@@ -740,8 +740,8 @@ impl<'a> Proof<'a> {
                         // an unsigned difference does not go below zero, and
                         // a signed operation is then defined.
                         let (minimum, maximum) = carrier.range();
-                        let lower = order(literal(minimum), exact.clone(), false);
-                        let upper = order(exact.clone(), literal(maximum), false);
+                        let lower = order(literal(&minimum), exact.clone(), false);
+                        let upper = order(exact.clone(), literal(&maximum), false);
                         let bounded = prove(&proof, &lower).and_then(|proof| prove(&proof, &upper));
                         // Both bounds of a signed operation's exact value
                         // are its definedness, which they now file as a
@@ -795,8 +795,9 @@ impl<'a> Proof<'a> {
                         if carrier == Carrier::UInt64
                             && let Pending::Operation(operation) = &item
                         {
-                            let lower = order(literal("0"), to_integer(operation), false);
-                            let upper = order(to_integer(operation), literal(UINT64_MAX), false);
+                            let (minimum, maximum) = carrier.range();
+                            let lower = order(literal(&minimum), to_integer(operation), false);
+                            let upper = order(to_integer(operation), literal(&maximum), false);
                             if let Ok(next) = proof
                                 .apply_step(have(lower.clone(), vec![type_range(lower.clone())]))
                                 .and_then(|proof| {

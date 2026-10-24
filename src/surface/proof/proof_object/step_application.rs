@@ -2978,7 +2978,7 @@ impl<'a> Proof<'a> {
                     // A bound of an exact observation lowers to its native
                     // comparison; the range is its Integer reading.
                     let lowered =
-                        crate::kernel::assumptions::integer_observations_of_native_comparison(
+                        crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
                             &lowered,
                         )
                         .into_iter()
@@ -3021,7 +3021,7 @@ impl<'a> Proof<'a> {
                         "integer certificate operation bound",
                     )?;
                     let lowered =
-                        crate::kernel::assumptions::integer_observations_of_native_comparison(
+                        crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
                             &lowered,
                         )
                         .into_iter()
@@ -3041,7 +3041,7 @@ impl<'a> Proof<'a> {
                     .into_iter()
                     .flat_map(|value| [(value.clone(), false), (value, true)])
                     .find(|(value, upper)| {
-                        crate::kernel::proof::integer_arithmetic::operation_bound(value, *upper)
+                        crate::kernel::machine_integer::bounds::operation_bound(value, *upper)
                             .as_ref()
                             .and_then(integer_affine_claim)
                             .as_ref()
@@ -3049,7 +3049,7 @@ impl<'a> Proof<'a> {
                     });
                     let Some((value, upper)) = bound else {
                         return Err(self.step_error(
-                            "integer certificate operation bound must be `c * to_integer(x / c) <= to_integer(x)`, `to_integer(x) <= c * to_integer(x / c) + (c - 1)`, or `to_integer(x % c) <= c - 1` for an unsigned `x` and constant `c`, with `x >> k` as `x / 2^k`",
+                            "integer certificate operation bound must be `c * to_integer(x / c) <= to_integer(x)`, `to_integer(x) <= c * to_integer(x / c) + (c - 1)`, or `to_integer(x % c) <= c - 1` for an unsigned `x` and positive constant `c`, with `x >> k` as `x / 2^k`; for a signed `x` also `c * to_integer(x / c) - (c - 1) <= to_integer(x)` in place of the first, and `-(c - 1) <= to_integer(x % c)`",
                         ));
                     };
                     IntegerArithmeticNode::OperationBound {

@@ -8,10 +8,11 @@
 //! trusted.
 
 use super::simplex::{self, Constraint, FarkasTerm, Rational, Relation, SimplexOutcome};
+use crate::kernel::machine_integer::bounds::operation_bound;
 use crate::kernel::proof::integer_arithmetic::{
     IntegerAffineAtom, IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticCertificate,
     IntegerArithmeticNode, add_claim, excluded_type_bound, integer_affine_claim,
-    integer_affine_claims, machine_type_range_claim, negate_claim, operation_bound, scale_claim,
+    integer_affine_claims, machine_type_range_claim, negate_claim, scale_claim,
 };
 use crate::kernel::{IntegerTerm, Proposition};
 use num_bigint::BigInt;

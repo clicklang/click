@@ -79,6 +79,7 @@ pub use loans::{
 };
 mod integer_truncation_laws;
 mod loops;
+pub(crate) mod machine_integer;
 mod memory_provenance;
 pub(crate) mod model_fields;
 mod mutexes;

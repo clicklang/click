@@ -1797,7 +1797,7 @@ pub(in crate::kernel) fn decide_with_facts(
             // Keep execution's bounded query: this strictly changes an Integer
             // comparison into a native one, without opening ambient reasoning.
             let (native, truth) =
-                crate::kernel::assumptions::native_comparison_of_integer_observation(
+                crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
                     condition, true,
                 )?;
             decide_with_facts(assumptions, facts, &native).map(|value| value == truth)

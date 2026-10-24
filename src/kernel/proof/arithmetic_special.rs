@@ -1495,10 +1495,12 @@ fn integer_rule(
     let cited = bounds
         .iter()
         .map(|&bound| {
-            crate::kernel::assumptions::integer_observations_of_native_comparison(&premises[bound])
-                .into_iter()
-                .next()
-                .unwrap_or_else(|| premises[bound].clone())
+            crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+                &premises[bound],
+            )
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| premises[bound].clone())
         })
         .collect::<Vec<_>>();
     let local = (0..bounds.len()).collect::<Vec<_>>();
@@ -1524,7 +1526,10 @@ fn integer_rule_holds(
         },
         _ => result,
     };
-    let readings = crate::kernel::assumptions::integer_observations_of_native_comparison(native);
+    let readings =
+        crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+            native,
+        );
     if readings.is_empty() {
         return check(result);
     }

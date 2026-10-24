@@ -986,7 +986,7 @@ division truncates, which is the floor, so `q = x / c` with constant `c > 0`
 has `c * q <= x` and `x <= c * q + (c - 1)`; `x >> k`, for a constant `k`
 below the width, is `x / 2^k`; and `x % c <= c - 1`. The kernel finds the
 operation among `P`'s machine observations and recomputes the bound
-(`operation_bound` in `src/kernel/proof/integer_arithmetic.rs`). Signed
+(`kernel::machine_integer::bounds::operation_bound`). Signed
 operations, a zero or symbolic divisor, and a shift by the width or more give
 none. `excluded_bound N: D => P;` cites premise `N`, a disequality of a
 machine value with its type's minimum or maximum, as the bound it gives: an

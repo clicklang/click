@@ -229,7 +229,9 @@ fn rewrite_with_admitted_equality(
     if exact.is_ok() {
         return exact;
     }
-    for reading in crate::kernel::assumptions::integer_observations_of_native_comparison(goal) {
+    for reading in
+        crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(goal)
+    {
         if let Ok(rewritten) = rewrite_with_admitted_equality_as_written(&reading, equality) {
             return Ok(rewritten);
         }
@@ -356,7 +358,7 @@ fn rewrite_with_admitted_equality_as_written(
                     // The source's complete interned observation identity
                     // selects its carrier and proves a root occurrence.
                     let reading = integer_source.and_then(|source| {
-                        crate::kernel::assumptions::integer_observations_of_native_comparison(
+                        crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
                             atomic,
                         )
                         .into_iter()

@@ -399,7 +399,8 @@ pub(super) fn observed_native_surface_comparison(
     };
     // The kernel form is a native comparison with an Integer reading, or
     // that Integer reading itself, spelled by the native fact it reads.
-    if crate::kernel::assumptions::integer_observations_of_native_comparison(kernel).is_empty()
+    if crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(kernel)
+        .is_empty()
         && crate::kernel::assumptions::native_reading_of_integer_observation_fact(kernel).is_none()
     {
         return written.clone();
@@ -1219,10 +1220,12 @@ fn reads_result_before_return(proposition: &ClickProposition) -> bool {
 /// `>= -2147483648`).
 fn integer_readings_of_native_fact(premise: &Proposition) -> Vec<Proposition> {
     let mut readings =
-        crate::kernel::assumptions::integer_observations_of_native_comparison(premise);
-    readings.extend(crate::kernel::assumptions::integer_bounds_of_definedness(
-        premise,
-    ));
+        crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+            premise,
+        );
+    readings.extend(
+        crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(premise),
+    );
     readings
 }
 
@@ -1258,10 +1261,10 @@ type OperationIdentity = (
 /// identity comes after its operation's. A cast whose operand has two
 /// readings (a 64-to-32-bit word narrowing) takes the one observed.
 fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<OperationIdentity> {
-    use crate::kernel::proof::integer_cast_identity::{
+    use crate::kernel::machine_integer::conversion::{
         cast_operands, narrow_widening, widened_narrow_word,
     };
-    use crate::kernel::proof::integer_operation_identity::mathematical;
+    use crate::kernel::machine_integer::identity::mathematical;
     let observed_ids = observations
         .iter()
         .cloned()
@@ -2932,7 +2935,10 @@ impl<'a> Proof<'a> {
         ) {
             return self.equality_by_bounds(true);
         }
-        let readings = crate::kernel::assumptions::integer_observations_of_native_comparison(goal);
+        let readings =
+            crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+                goal,
+            );
         if readings.is_empty() {
             return Ok(None);
         }
@@ -3009,8 +3015,10 @@ impl<'a> Proof<'a> {
         // which it spells by the native fact's own written operands; the
         // native candidates themselves stay out.
         let native = |premise: &Proposition| {
-            !crate::kernel::assumptions::integer_observations_of_native_comparison(premise)
-                .is_empty()
+            !crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+                premise,
+            )
+            .is_empty()
         };
         // The first plan reads only the native facts that observe a value
         // the goal does; the extended search below reads the rest.
@@ -3421,7 +3429,7 @@ impl<'a> Proof<'a> {
             // as filed, `(int32)x >= lo` and `(int32)x <= hi`, which need
             // no proof of their own.
             let binder = if cast {
-                crate::kernel::proof::integer_cast_identity::narrow_binder_word(observed, value)
+                crate::kernel::machine_integer::conversion::narrow_binder_word(observed, value)
             } else {
                 None
             };
@@ -3654,7 +3662,7 @@ impl<'a> Proof<'a> {
                     return false;
                 };
                 let lowered =
-                    crate::kernel::assumptions::integer_observations_of_native_comparison(&lowered)
+                    crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(&lowered)
                         .into_iter()
                         .next()
                         .unwrap_or(lowered);
@@ -3758,7 +3766,7 @@ impl<'a> Proof<'a> {
                         BoundSource::Operation,
                         value.clone(),
                         *upper,
-                        crate::kernel::proof::integer_arithmetic::operation_bound(machine, *upper)?,
+                        crate::kernel::machine_integer::bounds::operation_bound(machine, *upper)?,
                     )
                 }
                 IntegerArithmeticNode::ExcludedTypeBound { index, .. } => {

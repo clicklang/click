@@ -120,16 +120,14 @@ impl MachineOrder {
 
     /// The type range of a value's observation, as Integer literals, for
     /// the types a carried order reads ranges of.
-    fn range(self) -> Option<(&'static str, &'static str)> {
-        match self {
-            Self::Int32 => Some(("-2147483648", "2147483647")),
-            Self::Wide(carrier) => match carrier.name() {
-                "uint64" => Some(("0", "18446744073709551615")),
-                "int64" => Some(("-9223372036854775808", "9223372036854775807")),
-                _ => None,
-            },
-            Self::Equal64 => None,
-        }
+    fn range(self) -> Option<(String, String)> {
+        let ty = match self {
+            Self::Int32 => crate::kernel::MachineIntegerType::Int32,
+            Self::Wide(carrier) => carrier.machine_type(),
+            Self::Equal64 => return None,
+        };
+        let (minimum, maximum) = crate::kernel::machine_integer::range::range(ty);
+        Some((minimum.to_string(), maximum.to_string()))
     }
 }
 
@@ -164,8 +162,7 @@ fn observed_operation_format(
         return None;
     };
     [left, right].into_iter().find_map(|side| {
-        crate::kernel::proof::integer_operation_identity::mathematical(side)
-            .map(|(ty, _)| ty.format())
+        crate::kernel::machine_integer::identity::mathematical(side).map(|(ty, _)| ty.format())
     })
 }
 
@@ -349,13 +346,6 @@ impl Carried {
     }
 }
 
-/// The ranges of the signed types whose definedness `defined(a + b)` is
-/// closed by bounds.
-const SIGNED_RANGES: [(&str, &str); 2] = [
-    ("-2147483648", "2147483647"),
-    ("-9223372036854775808", "9223372036854775807"),
-];
-
 /// The type range of the observation of `value`, a machine value of
 /// `format`.
 fn range_items(
@@ -397,20 +387,7 @@ fn oriented_forms(
 ) -> Vec<(Proposition, ClickProposition)> {
     // Arithmetic operands need an explicit observation when reparsed under
     // Integer arithmetic. Ordinary equalities retain their source spelling.
-    let machine_arithmetic = |term: &Bitvector32Term| {
-        matches!(
-            term,
-            Bitvector32Term::Add(..)
-                | Bitvector32Term::Subtract(..)
-                | Bitvector32Term::Multiply(..)
-                | Bitvector32Term::Int64Add(..)
-                | Bitvector32Term::Int64Subtract(..)
-                | Bitvector32Term::Int64Multiply(..)
-                | Bitvector32Term::UInt64Add(..)
-                | Bitvector32Term::UInt64Subtract(..)
-                | Bitvector32Term::UInt64Multiply(..)
-        )
-    };
+    let machine_arithmetic = crate::kernel::machine_integer::representation::is_ring_operation;
     let arithmetic = |mut operand: &ContractExpression| {
         loop {
             match operand {
@@ -1793,15 +1770,18 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        for (minimum, maximum) in SIGNED_RANGES {
+        // The formats a definedness fact can be stated at, each by its
+        // range (`machine_integer::definedness`).
+        for ty in crate::kernel::machine_integer::definedness::defined_formats() {
+            let (minimum, maximum) = crate::kernel::machine_integer::range::range(ty);
             let lower = ClickProposition::Comparison {
                 left: exact.clone(),
                 operator: ComparisonOperator::GreaterEqual,
-                right: ContractExpression::IntegerLiteral(minimum.into()),
+                right: ContractExpression::IntegerLiteral(minimum.to_string()),
             };
             let upper = relate(
                 exact.clone(),
-                ContractExpression::IntegerLiteral(maximum.into()),
+                ContractExpression::IntegerLiteral(maximum.to_string()),
                 Relation::LessEqual,
             );
             let Some(bounded) = base.prove_stated_fact(&lower)? else {
@@ -1984,13 +1964,13 @@ impl<'a> Proof<'a> {
                     ranged.push(value.clone());
                     for bound in [
                         relate(
-                            integer_literal(minimum),
+                            integer_literal(&minimum),
                             to_integer(&value),
                             Relation::LessEqual,
                         ),
                         relate(
                             to_integer(&value),
-                            integer_literal(maximum),
+                            integer_literal(&maximum),
                             Relation::LessEqual,
                         ),
                     ] {

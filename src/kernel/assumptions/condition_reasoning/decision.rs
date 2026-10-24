@@ -425,7 +425,9 @@ impl PureFactContext {
         // has the truth of its native comparison, which the machine
         // reasoning below decides (`native_comparison_of_integer_observation`).
         if let Some((native, truth)) =
-            crate::kernel::assumptions::native_comparison_of_integer_observation(condition, true)
+            crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
+                condition, true,
+            )
             && &native != condition
             && let Some(value) = self.decide(&native)
         {

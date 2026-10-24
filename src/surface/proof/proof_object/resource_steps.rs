@@ -2964,7 +2964,7 @@ fn describe_missing_fold_guards(
             // same fact. The spelling `a - b < c` reads as exact Integer
             // arithmetic, a different proposition.
             let reading =
-                crate::kernel::assumptions::integer_observations_of_native_comparison(premise)
+                crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(premise)
                     .into_iter()
                     .find(observes_machine_arithmetic);
             format!(
