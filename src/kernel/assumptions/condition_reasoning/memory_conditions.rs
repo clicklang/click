@@ -185,83 +185,88 @@ impl PureFactContext {
         right: &CMemory,
         pointer: &Pointer,
     ) -> bool {
-        self.prop_facts.iter().any(|proposition| match proposition {
-            Proposition::CMemoryMutatesOnly {
-                before,
-                after,
-                writes,
-            } => {
-                let matches = memories_match_for_pointer_load(before, left, pointer)
-                    && memories_match_for_pointer_load(after, right, pointer)
-                    || memories_match_for_pointer_load(before, right, pointer)
-                        && memories_match_for_pointer_load(after, left, pointer);
-                matches
-                    && writes.iter().all(|(write, bytes)| {
-                        crate::kernel::memory_provenance::write_access_is_disjoint_from_load(
-                            write,
-                            *bytes,
+        // Memories match up to the load's pointer, not exactly, so every
+        // effect fact is a candidate; other proposition facts are not.
+        self.memory_effect_fact_propositions()
+            .any(|proposition| match proposition {
+                Proposition::CMemoryMutatesOnly {
+                    before,
+                    after,
+                    writes,
+                } => {
+                    let matches = memories_match_for_pointer_load(before, left, pointer)
+                        && memories_match_for_pointer_load(after, right, pointer)
+                        || memories_match_for_pointer_load(before, right, pointer)
+                            && memories_match_for_pointer_load(after, left, pointer);
+                    matches
+                        && writes.iter().all(|(write, bytes)| {
+                            crate::kernel::memory_provenance::write_access_is_disjoint_from_load(
+                                write,
+                                *bytes,
+                                pointer,
+                                crate::kernel::eval::load_access_width_at_address_or_widest(
+                                    pointer,
+                                ),
+                                self,
+                            )
+                        })
+                }
+                Proposition::CMemoryEffectSummary {
+                    before,
+                    after,
+                    mutable_ranges,
+                } => {
+                    // Endpoint matching filters candidate effect facts inside a
+                    // prop-facts scan, so it must stay bounded: the general
+                    // composition-backed alias search per differing cell per
+                    // candidate dominated a simple step's budget on bounded-pool
+                    // (370k of 500k units).
+                    let endpoint_matches = |expected: &CMemory, actual: &CMemory| {
+                        memory_matches_effect_summary_endpoint(expected, actual, pointer)
+                            || memories_match_for_pointer_load_bounded_alias(
+                                expected, actual, pointer, self,
+                            )
+                    };
+                    let matches = endpoint_matches(before, left) && endpoint_matches(after, right)
+                        || endpoint_matches(before, right) && endpoint_matches(after, left);
+                    matches
+                        && (self.ranges_directly_disjoint_from_pointer(mutable_ranges, pointer)
+                            || crate::kernel::primitives::CallKeptRanges::recorded_on(after)
+                                .is_some_and(|kept| {
+                                    kept.holds_access(
+                                        pointer,
+                                        crate::kernel::eval::load_access_width_at_address_or_widest(
+                                            pointer,
+                                        ),
+                                        self,
+                                    )
+                                }))
+                }
+                Proposition::CHeapAllocationFreed {
+                    before,
+                    after,
+                    allocation_base,
+                    bytes,
+                } => {
+                    // Bounded for the same reason as the effect-summary arm.
+                    let endpoint_matches = |expected: &CMemory, actual: &CMemory| {
+                        memory_matches_effect_summary_endpoint(expected, actual, pointer)
+                            || memories_match_for_pointer_load_bounded_alias(
+                                expected, actual, pointer, self,
+                            )
+                    };
+                    let matches = endpoint_matches(before, left) && endpoint_matches(after, right)
+                        || endpoint_matches(before, right) && endpoint_matches(after, left);
+                    matches
+                        && crate::kernel::api::heap_allocation_proven_separate_from_pointer(
+                            allocation_base,
+                            bytes,
                             pointer,
-                            crate::kernel::eval::load_access_width_at_address_or_widest(pointer),
                             self,
                         )
-                    })
-            }
-            Proposition::CMemoryEffectSummary {
-                before,
-                after,
-                mutable_ranges,
-            } => {
-                // Endpoint matching filters candidate effect facts inside a
-                // prop-facts scan, so it must stay bounded: the general
-                // composition-backed alias search per differing cell per
-                // candidate dominated a simple step's budget on bounded-pool
-                // (370k of 500k units).
-                let endpoint_matches = |expected: &CMemory, actual: &CMemory| {
-                    memory_matches_effect_summary_endpoint(expected, actual, pointer)
-                        || memories_match_for_pointer_load_bounded_alias(
-                            expected, actual, pointer, self,
-                        )
-                };
-                let matches = endpoint_matches(before, left) && endpoint_matches(after, right)
-                    || endpoint_matches(before, right) && endpoint_matches(after, left);
-                matches
-                    && (self.ranges_directly_disjoint_from_pointer(mutable_ranges, pointer)
-                        || crate::kernel::primitives::CallKeptRanges::recorded_on(after)
-                            .is_some_and(|kept| {
-                                kept.holds_access(
-                                    pointer,
-                                    crate::kernel::eval::load_access_width_at_address_or_widest(
-                                        pointer,
-                                    ),
-                                    self,
-                                )
-                            }))
-            }
-            Proposition::CHeapAllocationFreed {
-                before,
-                after,
-                allocation_base,
-                bytes,
-            } => {
-                // Bounded for the same reason as the effect-summary arm.
-                let endpoint_matches = |expected: &CMemory, actual: &CMemory| {
-                    memory_matches_effect_summary_endpoint(expected, actual, pointer)
-                        || memories_match_for_pointer_load_bounded_alias(
-                            expected, actual, pointer, self,
-                        )
-                };
-                let matches = endpoint_matches(before, left) && endpoint_matches(after, right)
-                    || endpoint_matches(before, right) && endpoint_matches(after, left);
-                matches
-                    && crate::kernel::api::heap_allocation_proven_separate_from_pointer(
-                        allocation_base,
-                        bytes,
-                        pointer,
-                        self,
-                    )
-            }
-            _ => false,
-        })
+                }
+                _ => false,
+            })
     }
 
     pub(in crate::kernel) fn resolve_memory_load_term(

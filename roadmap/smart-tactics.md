@@ -351,13 +351,13 @@ four times the work at a quarter of it.
     `condition_facts.iter().any`, the `x + 1 < y` check (`order_paths.rs`)
     and `has_anchored_bitvector_equality_fact_for_memory_resolution`
     (`condition_reasoning/simp.rs`) read only the facts with their terms as
-    a side. Still scanning, because they match sides semantically (simp,
-    transport, or memory-resolution equality) rather than structurally:
-    `bounds.rs` (`has_add_const_lower_bound_above`,
-    `has_add_const_upper_bound_below`, and the two others that still iterate
-    `condition_facts`); `memory_conditions.rs` (snapshot equality). Each
-    needs an index keyed by the equality its match uses, or to move into
-    `simp`. The scans in `condition_reasoning/simp.rs` (additive
+    a side. The `bounds.rs` add-constant bound helpers read the endpoint
+    index (`signed_order_bounds`). Snapshot equality (`memory_conditions.rs`)
+    matches memories up to a load's pointer, so it cannot key by memory: 19
+    of its 41 gate hits name neither memory exactly. It reads the effect
+    facts (`memory_effect_facts`, each once) instead of every proposition
+    fact; across the gate it ran 995 times over at most 8 effect facts. The
+    scans in `condition_reasoning/simp.rs` (additive
     cancellation, the simp condition match and its memory-resolution scan,
     the `x + 1` simp rule, transport equality) are slow part: only the `simp`
     tactic reaches them, through `decide_condition_for_simp`, and a kernel

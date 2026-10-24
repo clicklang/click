@@ -5600,6 +5600,28 @@ impl PureFactContext {
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
+    /// Every memory effect fact once, charged one unit per filed entry. A
+    /// fact is filed under both of its memories; it is yielded from the
+    /// bucket of its `before` memory.
+    pub(in crate::kernel) fn memory_effect_fact_propositions(
+        &self,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.memory_effect_facts.iter().flat_map(|(memory, facts)| {
+            facts
+                .iter()
+                .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+                .filter(move |fact| {
+                    matches!(
+                        fact,
+                        Proposition::CMemoryEffectSummary { before, .. }
+                        | Proposition::CMemoryMutatesOnly { before, .. }
+                        | Proposition::CHeapAllocationFreed { before, .. }
+                            if before == memory
+                    )
+                })
+        })
+    }
+
     /// Files or withdraws a `CResourceContains` fact under its parent's key.
     fn adjust_resource_contains_fact(&mut self, proposition: &Proposition, insert: bool) {
         let Proposition::CResourceContains { parent, .. } = proposition else {
