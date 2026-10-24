@@ -7676,3 +7676,58 @@ fn unkeyed_range_separation_ignores_unrelated_propositions() {
         "unrelated facts changed the separation miss's work: {work:?}"
     );
 }
+
+/// Snapshot equality for a load matches memories up to the load's pointer,
+/// so every effect fact is a candidate, but no other proposition fact is.
+/// It once scanned every proposition fact; a miss now costs the same
+/// however many unrelated facts are held.
+#[test]
+fn snapshot_equality_ignores_unrelated_propositions() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let target = Pointer {
+        block: "snapshot-target".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let before = CMemory::new()
+        .store(target.clone(), CValue::UInt32(Bitvector32Term::Constant(1)))
+        .with_block("call-havoc:0", 0);
+    let after = before.clone().with_block("call-havoc:1", 0);
+    // The call may write the target itself, so the summary shows nothing.
+    let summary = Proposition::CMemoryEffectSummary {
+        before: before.clone(),
+        after: after.clone(),
+        mutable_ranges: vec![memory_range(target.clone(), 0, 1)],
+    };
+    let work = [16_usize, 64, 256]
+        .into_iter()
+        .map(|unrelated| {
+            let mut assumptions = PureFactContext::new().assume_proposition(summary.clone());
+            for index in 0..unrelated {
+                let unrelated = Pointer {
+                    block: format!("snapshot-unrelated-{index}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                assumptions = assumptions.assume_proposition(Proposition::CResourceContains {
+                    parent: Box::new(CResource::Memory(memory_range(unrelated.clone(), 0, 2))),
+                    child: Box::new(CResource::Memory(memory_range(unrelated, 0, 1))),
+                });
+            }
+            // The first query warms per-session caches; measure the second.
+            assumptions.memory_snapshots_directly_proven_equal_for_memory_resolution(
+                &before, &after, &target,
+            );
+            let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assumptions.memory_snapshots_directly_proven_equal_for_memory_resolution(
+                    &before, &after, &target,
+                )
+            });
+            assert!(!equal);
+            work
+        })
+        .collect::<Vec<_>>();
+    assert!(work[0] > 0);
+    assert!(
+        work.windows(2).all(|pair| pair[0] == pair[1]),
+        "unrelated facts changed the snapshot equality miss's work: {work:?}"
+    );
+}
