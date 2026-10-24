@@ -426,6 +426,9 @@ impl ResourceContextIndex {
         if fact.memory_range().is_some() && !self.exact.contains_key(fact) {
             result.memory_facts.insert(fact.clone(), ());
         }
+        if fact.is_own() && fact.memory_range().is_none() && !self.exact.contains_key(fact) {
+            result.owned_non_memory_facts.insert(fact.clone(), ());
+        }
         if let Some(range) = fact.memory_own_range() {
             let count = result
                 .owned_memory_range_counts
@@ -668,6 +671,15 @@ impl ResourceContextIndex {
                 .is_some_and(|entries| entries.len() == 1)
         {
             result.memory_facts.remove(fact);
+        }
+        if fact.is_own()
+            && fact.memory_range().is_none()
+            && self
+                .exact
+                .get(fact)
+                .is_some_and(|entries| entries.len() == 1)
+        {
+            result.owned_non_memory_facts.remove(fact);
         }
         if let Some(range) = fact.memory_own_range() {
             let count = result
@@ -1412,6 +1424,13 @@ impl ResourceContext {
         &self.storage.index.memory_facts
     }
 
+    /// The owned facts of resources other than memory, each once.
+    pub(in crate::kernel) fn owned_non_memory_input_facts(
+        &self,
+    ) -> &SnapshotMap<CResourceFact, ()> {
+        &self.storage.index.owned_non_memory_facts
+    }
+
     pub(in crate::kernel) fn flat_owned_memory_ranges(&self) -> &SnapshotMap<CMemoryRange, ()> {
         &self.storage.index.owned_memory_ranges
     }
@@ -1486,6 +1505,23 @@ impl ResourceContext {
         &self,
         previous: &Self,
     ) -> Option<Vec<CResourceFact>> {
+        self.changed_inputs_from(previous, |fact| fact.memory_range().is_some())
+    }
+
+    /// New live owned members, of memory or not, between two retained
+    /// checkpoints, by the same walk as `changed_memory_inputs_from`.
+    pub(in crate::kernel) fn changed_owned_inputs_from(
+        &self,
+        previous: &Self,
+    ) -> Option<Vec<CResourceFact>> {
+        self.changed_inputs_from(previous, CResourceFact::is_own)
+    }
+
+    fn changed_inputs_from(
+        &self,
+        previous: &Self,
+        selected: impl Fn(&CResourceFact) -> bool,
+    ) -> Option<Vec<CResourceFact>> {
         if !std::sync::Arc::ptr_eq(&self.storage.origin, &previous.storage.origin) {
             return None;
         }
@@ -1508,13 +1544,13 @@ impl ResourceContext {
             crate::instrumentation::record_deterministic_work(1);
             if left.map_or(0, |change| change.depth) >= right.map_or(0, |change| change.depth) {
                 let change = left?;
-                if change.fact.memory_range().is_some() {
+                if selected(&change.fact) {
                     changed.insert(change.fact.clone());
                 }
                 left = change.parent.as_ref();
             } else {
                 let change = right?;
-                if change.fact.memory_range().is_some() {
+                if selected(&change.fact) {
                     changed.insert(change.fact.clone());
                 }
                 right = change.parent.as_ref();
@@ -4975,24 +5011,21 @@ impl ResourceContext {
     }
 
     fn direct_match_candidate_positions(&self, fact: &CResourceFact) -> Option<&ResourceEntryIds> {
-        match fact.resource() {
-            CResource::PopulationAuthority(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_) => self.storage.index.by_resource.get(fact.resource()),
-            CResource::Instance(instance) => self.storage.index.instances.get(&instance.identity),
-            CResource::Iterated(iterated) => self
-                .storage
-                .index
-                .iterated_by_block
-                .get(&iterated.element_base.block),
-            CResource::Memory(range) => self.storage.index.memory_by_block.get(&range.base().block),
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => self
-                .storage
-                .index
-                .exact_shapes
-                .get(&(fact.family(), name.clone(), arguments.len())),
+        let index = &self.storage.index;
+        match OwnedMemberKey::of(fact) {
+            None => {
+                let CResource::Memory(range) = fact.resource() else {
+                    unreachable!("only memory has no member key")
+                };
+                index.memory_by_block.get(&range.base().block)
+            }
+            Some(OwnedMemberKey::Resource(resource)) => index.by_resource.get(&resource),
+            Some(OwnedMemberKey::Instance(identity)) => index.instances.get(&identity),
+            Some(OwnedMemberKey::IteratedBlock(block)) => index.iterated_by_block.get(&block),
+            Some(OwnedMemberKey::Shape(family, name, arity)) => {
+                index.exact_shapes.get(&(family, name, arity))
+            }
+            Some(OwnedMemberKey::ShapeRoot(_)) => unreachable!("a bucket key is never a root key"),
         }
     }
 
@@ -7863,6 +7896,88 @@ fn shape_root_key(
     )
 }
 
+/// The bucket a non-memory fact is matched in by
+/// `direct_match_candidate_positions`, as a key: two facts one can entail
+/// share it, so a context can list compositions under their non-memory
+/// owned members (`CompositionMemberIndex`). Memory has none; its members
+/// are listed by block.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(in crate::kernel) enum OwnedMemberKey {
+    Resource(CResource),
+    Instance(Variable),
+    IteratedBlock(PointerBlock),
+    Shape(ResourceFamily, String, usize),
+    /// A token or composite's shape and first-pointer root, the narrower
+    /// bucket `direct_match_candidates_for` reads.
+    ShapeRoot(super::ShapeRootKey),
+}
+
+impl OwnedMemberKey {
+    pub(in crate::kernel) fn of(fact: &CResourceFact) -> Option<Self> {
+        Some(match fact.resource() {
+            CResource::Memory(_) => return None,
+            resource @ (CResource::PopulationAuthority(_)
+            | CResource::MutexGuard(_)
+            | CResource::MutexLive(_)
+            | CResource::MutexUse(_)
+            | CResource::Publication(_)) => Self::Resource(resource.clone()),
+            CResource::Instance(instance) => Self::Instance(instance.identity),
+            CResource::Iterated(iterated) => {
+                Self::IteratedBlock(iterated.element_base.block.clone())
+            }
+            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+                Self::Shape(fact.family(), name.clone(), arguments.len())
+            }
+        })
+    }
+
+    /// The keys a composition is listed under for its owned member `fact`:
+    /// its bucket and, for a token or composite, its shape and root too.
+    pub(in crate::kernel) fn listed(fact: &CResourceFact) -> Vec<Self> {
+        let mut keys = Vec::from_iter(Self::of(fact));
+        if let CResource::Composite { name, arguments } | CResource::Token { name, arguments } =
+            fact.resource()
+        {
+            keys.push(Self::ShapeRoot(shape_root_key(
+                fact.family(),
+                name,
+                arguments,
+            )));
+        }
+        keys
+    }
+
+    /// The keys under which every owned member that can entail `view` is
+    /// listed. A token or composite whose first argument is a pointer reads
+    /// the roots `direct_match_candidates_for` reads, and the root-free key
+    /// of members whose first argument is not a pointer; other facts read
+    /// their bucket.
+    pub(in crate::kernel) fn probed(
+        view: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Vec<Self> {
+        let (CResource::Composite { name, arguments } | CResource::Token { name, arguments }) =
+            view.resource()
+        else {
+            return Vec::from_iter(Self::of(view));
+        };
+        let Some(pointer) = normalization_root_pointer(arguments) else {
+            return Vec::from_iter(Self::of(view));
+        };
+        std::iter::once(None)
+            .chain(
+                related_pointer_roots(pointer, assumptions)
+                    .into_iter()
+                    .map(Some),
+            )
+            .map(|root| {
+                crate::instrumentation::record_deterministic_work(1);
+                Self::ShapeRoot((view.family(), name.clone(), arguments.len(), root))
+            })
+            .collect()
+    }
+}
+
 /// The first argument of a token or composite when it is a pointer.
 fn normalization_root_pointer(arguments: &[AlgebraicValue]) -> Option<&Pointer> {
     match arguments.first() {
@@ -7871,8 +7986,6 @@ fn normalization_root_pointer(arguments: &[AlgebraicValue]) -> Option<&Pointer> 
     }
 }
 
-/// The roots a normalization lookup visits for a pointer: its related roots
-/// and those of its recorded exact aliases.
 /// The blocks of `pointer`'s related roots and its own: the blocks of the
 /// owned members `proves_owned_memory_ranges_separate_by` can find for a
 /// range at `pointer`, so the compositions `CompositionMemberIndex` lists
@@ -7890,6 +8003,8 @@ pub(in crate::kernel) fn related_pointer_root_blocks(
     blocks
 }
 
+/// The roots a normalization lookup visits for a pointer: its related roots
+/// and those of its recorded exact aliases.
 fn related_pointer_roots(
     pointer: &Pointer,
     assumptions: &PureFactContext,

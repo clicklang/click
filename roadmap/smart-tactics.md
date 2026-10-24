@@ -365,11 +365,6 @@ against pointer when deciding which memory facts survive a store
 charging made fail on the old scans). Still `scan_unindexed`, each over
 every composition:
 
-- `proves_owned_resources_separate` for a non-memory side, matched by
-  resource identity, which the member index does not file (two memory
-  sides read it): the index lists a composition under the memory members
-  it adds beyond its predecessor, and a non-memory member would need the
-  same difference over non-memory facts;
 - the composition range cover in `proves_resource_separate_inner`, only
   while the path states a containment fact with a non-memory parent.
   Otherwise the owner of the other range is a memory member in its block
@@ -388,6 +383,23 @@ every composition:
   owned store footprint collects the member of every composition holding
   the cell, so its output is as large as the compositions that restate
   it.
+
+**Fixed:** owned separation of a non-memory side. The member index also
+lists a composition under the `OwnedMemberKey`s of each owned non-memory
+member it adds beyond its predecessor. One key is the bucket the
+composition's own direct match reads, which `direct_match_candidate_positions`
+now takes from the same key. A token or composite is also listed under its
+shape and first-pointer root (`ShapeRoot`). A side whose first argument is a
+pointer reads only the roots `direct_match_candidates_for` reads, so
+compositions owning the same composite at unrelated pointers are not
+visited. The difference walks cover the owned non-memory facts beside the
+memory ones (`changed_owned_inputs_from`, `owned_non_memory_input_facts`).
+A predecessor from another origin is chosen by the count of both
+(`listed_size`), so admission still costs what changed.
+`proves_owned_resources_separate` reads the compositions listed under the
+two sides' keys (`token_ownership_ignores_unrelated_compositions`,
+`composite_ownership_ignores_compositions_of_other_roots`; debug builds
+compare every answer with the scan).
 
 **Fixed:** owned range separation through related roots
 (`composition_separates_owned_ranges`). Each side is asked of a

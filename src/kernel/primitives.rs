@@ -8916,6 +8916,10 @@ pub(super) struct ResourceContextIndex {
     /// facts share its root, so equality never walks them.
     pub(super) canonical: canonical_fact_set::CanonicalFactSet,
     pub(super) memory_facts: SnapshotMap<CResourceFact, ()>,
+    /// The owned facts of resources other than memory, each once: the
+    /// non-memory members a composition is listed under
+    /// (`CompositionMemberIndex`).
+    pub(super) owned_non_memory_facts: SnapshotMap<CResourceFact, ()>,
     pub(super) owned_memory_ranges: SnapshotMap<CMemoryRange, ()>,
     pub(super) owned_memory_range_counts: PersistentMap<CMemoryRange, usize>,
     owned_count: usize,

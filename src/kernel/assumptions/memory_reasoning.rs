@@ -3514,11 +3514,42 @@ impl PureFactContext {
                             resources.proves_owned_resources_separate(left, right, self)
                         })
                 } else {
-                    self.resource_compositions
-                        .scan_unindexed()
-                        .any(|resources| {
-                            resources.proves_owned_resources_separate(left, right, self)
-                        })
+                    // Each side is matched in its own bucket: a memory side
+                    // by block, another by the `OwnedMemberKey`s that hold
+                    // every member able to entail it, the keys
+                    // `CompositionMemberIndex` lists a composition under.
+                    let mut blocks = Vec::new();
+                    let mut members = Vec::new();
+                    for side in [left, right] {
+                        match side {
+                            CResource::Memory(range) => blocks.push(range.base().block.clone()),
+                            other => members.extend(OwnedMemberKey::probed(
+                                &crate::kernel::CResourceFact::View(other.clone()),
+                                self,
+                            )),
+                        }
+                    }
+                    let separates = |resources: &ResourceContext| {
+                        resources.proves_owned_resources_separate(left, right, self)
+                    };
+                    let indexed = self
+                        .composition_members
+                        .listed_under_members(blocks.iter(), members.iter())
+                        .into_iter()
+                        .any(separates);
+                    #[cfg(debug_assertions)]
+                    if !crate::instrumentation::in_uncharged_debug_check() {
+                        crate::instrumentation::uncharged_debug_check(|| {
+                            let scanned =
+                                self.resource_compositions.scan_for_upkeep().any(separates);
+                            assert_eq!(
+                                indexed, scanned,
+                                "the listed compositions' owned separation differs from every \
+                                 composition's"
+                            );
+                        });
+                    }
+                    indexed
                 }
             },
         ) {
@@ -5594,6 +5625,85 @@ mod shallow_composition_separation_tests {
         assert!(
             samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
             "token separation grew with unrelated separations: {samples:?}"
+        );
+    }
+
+    /// Two tokens are separate as distinct owned members of one composition.
+    /// The check reads the compositions listed under the tokens' member keys
+    /// (`OwnedMemberKey`); it once asked every stated composition.
+    #[test]
+    fn token_ownership_ignores_unrelated_compositions() {
+        let owning =
+            |tokens: &[CResource]| {
+                Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts(
+                    tokens.iter().map(|token| CResourceFact::own(token.clone())),
+                ))
+            };
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
+                facts.assume_proposition(owning(&[token(&format!("owned-token-{index}"))]))
+            });
+            let (left, right) = (token("owned-query-left"), token("owned-query-right"));
+            let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.proves_resource_separate(&left, &right)
+            });
+            assert!(!separate);
+            let held = facts.assume_proposition(owning(&[left.clone(), right.clone()]));
+            assert!(held.proves_resource_separate(&left, &right));
+            samples.push((size, work));
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "token ownership grew with unrelated compositions: {samples:?}"
+        );
+    }
+
+    /// Two `boxed(p)` composites at distinct pointers are separate as
+    /// distinct owned members of one composition. The check reads the
+    /// compositions listed under the two pointers' roots, not every
+    /// composition owning a `boxed` (`OwnedMemberKey::ShapeRoot`): all of
+    /// those share the composite's name and arity.
+    #[test]
+    fn composite_ownership_ignores_compositions_of_other_roots() {
+        let boxed = |variable: u64| CResource::Composite {
+            name: "boxed".into(),
+            arguments: vec![crate::kernel::AlgebraicValue::C(
+                crate::kernel::CValue::Pointer(crate::kernel::CPointerValue::new(
+                    symbolic(variable),
+                    crate::kernel::CType::Int32Pointer,
+                )),
+            )]
+            .into(),
+        };
+        let owning = |members: &[CResource]| {
+            Proposition::CResourceComposition(
+                ResourceContext::new().unchecked_with_facts(
+                    members
+                        .iter()
+                        .map(|member| CResourceFact::own(member.clone())),
+                ),
+            )
+        };
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
+                facts.assume_proposition(owning(&[boxed(9_400 + index)]))
+            });
+            let (left, right) = (boxed(9_300), boxed(9_301));
+            let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.proves_resource_separate(&left, &right)
+            });
+            assert!(!separate);
+            let held = facts.assume_proposition(owning(&[left.clone(), right.clone()]));
+            assert!(held.proves_resource_separate(&left, &right));
+            samples.push((size, work));
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "composite ownership grew with compositions of other roots: {samples:?}"
         );
     }
 
