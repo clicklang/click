@@ -365,14 +365,6 @@ against pointer when deciding which memory facts survive a store
 charging made fail on the old scans). Still `scan_unindexed`, each over
 every composition:
 
-- the composition range cover in `proves_resource_separate_inner`, only
-  while the path states a containment fact with a non-memory parent.
-  Otherwise the owner of the other range is a memory member in its block
-  or in a block its address equals, and the cover reads the compositions
-  listed under those blocks and the target's: one listed under none holds
-  no member there beyond its predecessor, which covers whatever it covers
-  (`composition_cover_ignores_unrelated_compositions`; debug builds compare
-  every answer with the scan);
 - the composite frame frontier (`frame_frontier_compositions`), now over
   the compositions owning a composite only (`composite_owning_compositions`,
   read from each composition's own count; a composition without one
@@ -383,6 +375,20 @@ every composition:
   owned store footprint collects the member of every composition holding
   the cell, so its output is as large as the compositions that restate
   it.
+
+**Fixed:** the composition range cover in `proves_resource_separate_inner`
+while the path states a containment fact with a non-memory parent, as
+composite expansion does for every opened composite. The owners of the
+other range are now found by walking containment facts upward from its
+blocks: facts with a memory child filed by the child's block
+(`memory_containers`), then those with a non-memory child
+(`resource_containers`). A memory container adds its blocks and their
+address-equal blocks; a non-memory container adds its narrowest member key
+(`OwnedMemberKey::exact`). The cover reads the compositions listed under
+those blocks and keys, and the work is the containment facts on the way
+(`composition_cover_with_a_token_container_ignores_unrelated_compositions`;
+debug builds compare every answer with the scan). The counter that chose
+the scan, `nonmemory_parent_containments`, is gone.
 
 **Fixed:** owned separation of a non-memory side. The member index also
 lists a composition under the `OwnedMemberKey`s of each owned non-memory

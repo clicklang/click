@@ -7947,6 +7947,21 @@ impl OwnedMemberKey {
         keys
     }
 
+    /// The narrowest key a composition lists an owned member equal to
+    /// `fact` under.
+    pub(in crate::kernel) fn exact(fact: &CResourceFact) -> Option<Self> {
+        match fact.resource() {
+            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+                Some(Self::ShapeRoot(shape_root_key(
+                    fact.family(),
+                    name,
+                    arguments,
+                )))
+            }
+            _ => Self::of(fact),
+        }
+    }
+
     /// The keys under which every owned member that can entail `view` is
     /// listed. A token or composite whose first argument is a pointer reads
     /// the roots `direct_match_candidates_for` reads, and the root-free key
