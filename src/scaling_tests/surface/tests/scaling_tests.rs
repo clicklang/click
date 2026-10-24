@@ -6024,11 +6024,16 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
 /// `arithmetic() using` over a chain of listed order facts adds the premises
 /// once each, so its work grows with the chain and not with its square.
 /// Both a signed and an unsigned chain are measured at several lengths.
+/// The lengths list more than `MAX_TRIPLE_CLAIMS` (16) premises: a shorter
+/// list also tries the bounded three-premise route, cubic in the list, so
+/// samples on both sides of that cutoff would compare two planners.
 #[test]
 fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
     for (value_type, bound) in [("int32", "4"), ("uint32", "4u32")] {
-        let samples = [8usize, 16, 32].map(|edges| {
-            let names = (0..edges).map(|index| format!("v{index}")).collect::<Vec<_>>();
+        let source = |edges: usize| {
+            let names = (0..edges)
+                .map(|index| format!("v{index}"))
+                .collect::<Vec<_>>();
             let parameters = names
                 .iter()
                 .map(|name| format!("{name}: {value_type}"))
@@ -6047,9 +6052,18 @@ fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
                 .iter()
                 .map(|fact| format!("{fact}; "))
                 .collect::<String>();
-            let source = format!(
+            format!(
                 "theorem chained({parameters}) {{ {requires}ensures v0 < {bound} by {{ arithmetic() using {{ {listed}}} }} }}"
-            );
+            )
+        };
+        // Lazily initialized shared state charges its one-time cost to
+        // whichever verification first reaches it, which under parallel test
+        // threads need not be the first sample: each source is verified once
+        // before it is measured, so no sample pays for it.
+        let samples = [20usize, 40].map(|edges| {
+            let source = source(edges);
+            verify_c0_sources(&source, &[])
+                .unwrap_or_else(|error| panic!("{edges}-edge warm-up: {}", error.message()));
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 verify_c0_sources(&source, &[])
             });
