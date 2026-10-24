@@ -31,7 +31,10 @@ ensures result_value: result == expected by auto();
 
 These `let` bindings are Click-side abbreviations. They do not add runtime C
 variables and they are not mutable proof state. A type annotation is optional
-when Click can infer the intended value shape from use.
+when Click can infer the intended value shape from use, except that arithmetic
+on a machine value needs one: `let expected: int32 = x + 1;` is C's sum and
+`let expected: Integer = x + 1;` the exact one
+([Integer specification arithmetic](../reference/language/index.md#integer-specification-arithmetic)).
 
 A contract can also bind an immutable witness with `let ... where`:
 

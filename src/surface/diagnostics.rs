@@ -6743,6 +6743,19 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             output.push(')');
             output
         }
+        // A machine-typed `let` keeps its annotation: the type is the
+        // expected type of its value's arithmetic.
+        ContractExpression::Let {
+            name,
+            click_type: Some(click_type),
+            value,
+            body,
+        } => format!(
+            "(let {name}: {} = {}; {})",
+            describe_let_type(click_type),
+            describe_let_value(value),
+            describe_let_value(body)
+        ),
         ContractExpression::Let {
             name, value, body, ..
         } => format!(
@@ -6779,6 +6792,28 @@ fn describe_add_contract_expression(expression: &ContractExpression) -> String {
     }
     output.push(')');
     output
+}
+
+/// A `let` annotation as the file's language spells it.
+fn describe_let_type(click_type: &ClickType) -> String {
+    let name = describe_click_type(click_type);
+    if !rust_spelling() {
+        return name;
+    }
+    match name.as_str() {
+        "int8" => "i8",
+        "int16" => "i16",
+        "int32" => "i32",
+        "int64" => "i64",
+        "uint8" => "u8",
+        "uint16" => "u16",
+        "uint32" => "u32",
+        "uint64" => "u64",
+        "int128" => "i128",
+        "uint128" => "u128",
+        other => other,
+    }
+    .to_string()
 }
 
 /// Keep generated let bindings source-printable for long left-associated

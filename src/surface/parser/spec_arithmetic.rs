@@ -142,8 +142,25 @@ impl Parser {
         };
         let machine = self
             .machine_operand_type(operand)
-            .map(describe_c0_type)
-            .unwrap_or_else(|| "T".to_string());
+            .map(|c_type| {
+                let name = describe_c0_type(c_type);
+                if !self.verifies_rust() {
+                    return name;
+                }
+                match name.as_str() {
+                    "int8" => "i8",
+                    "int16" => "i16",
+                    "int32" => "i32",
+                    "int64" => "i64",
+                    "uint8" => "u8",
+                    "uint16" => "u16",
+                    "uint32" => "u32",
+                    "uint64" => "u64",
+                    other => other,
+                }
+                .to_string()
+            })
+            .unwrap_or_else(|| "<machine type>".to_string());
         Err(self.error(format!(
             "untyped `let {name}` does arithmetic on a machine value; arithmetic takes its \
              meaning from the type its result is used at, so write `let {name}: Integer = ...;` \
@@ -695,5 +712,34 @@ impl Parser {
             }
         }
         arguments
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn integer_parameters(source: &str) -> Option<Vec<usize>> {
+        let (tokens, _) = tokenizer::tokenize(source, None).expect("tokenize");
+        written_integer_parameters(&tokens, 0)
+    }
+
+    #[test]
+    fn written_integer_parameters_count_top_level_parameters_only() {
+        assert_eq!(
+            integer_parameters("function f(a: int32, n: Integer) -> Integer"),
+            Some(vec![1])
+        );
+        // Commas and `>>` inside a parameter's type arguments do not start a
+        // parameter.
+        assert_eq!(
+            integer_parameters("theorem t(xs: Map<Box<T>, List<U>>, n: Integer, m: Integer)"),
+            Some(vec![1, 2])
+        );
+        assert_eq!(integer_parameters("function g(x: int32) -> Integer"), None);
+        assert_eq!(
+            integer_parameters("function h(xs: List<Integer>) -> Integer"),
+            None
+        );
     }
 }
