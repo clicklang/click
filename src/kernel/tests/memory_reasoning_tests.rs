@@ -7741,3 +7741,54 @@ fn snapshot_equality_ignores_unrelated_propositions() {
         "unrelated facts changed the snapshot equality miss's work: {work:?}"
     );
 }
+
+/// Loadability coverage reads the loadable facts filed under the goal's
+/// block. It once scanned every proposition fact, so a miss's work grew with
+/// unrelated loadable facts of other blocks.
+#[test]
+fn loadability_coverage_ignores_other_blocks() {
+    let memory = CMemory::new();
+    let base = Pointer {
+        block: "coverage-target".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let goal = Proposition::CMemoryLoadable {
+        memory: memory.clone(),
+        base: base.clone(),
+        bytes: Bitvector32Term::Constant(16),
+        wide: false,
+    };
+    let work = [16_usize, 64, 256]
+        .into_iter()
+        .map(|unrelated| {
+            let mut assumptions =
+                PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
+                    memory: memory.clone(),
+                    base: base.clone(),
+                    bytes: Bitvector32Term::Constant(8),
+                    wide: false,
+                });
+            for index in 0..unrelated {
+                assumptions = assumptions.assume_proposition(Proposition::CMemoryLoadable {
+                    memory: memory.clone(),
+                    base: Pointer {
+                        block: format!("coverage-unrelated-{index}").into(),
+                        offset: PointerOffsetTerm::Constant(0),
+                    },
+                    bytes: Bitvector32Term::Constant(8),
+                    wide: false,
+                });
+            }
+            let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::api::loadable_covered_by_fact(&assumptions, &goal)
+            });
+            assert!(!covered, "an eight-byte fact does not cover sixteen bytes");
+            work
+        })
+        .collect::<Vec<_>>();
+    assert!(work[0] > 0);
+    assert!(
+        work.windows(2).all(|pair| pair[0] == pair[1]),
+        "unrelated blocks changed the coverage check's work: {work:?}"
+    );
+}

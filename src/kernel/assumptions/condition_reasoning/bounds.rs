@@ -54,6 +54,9 @@ impl PureFactContext {
         LOWER_BOUND_CANDIDATE_VISITS.with(std::cell::Cell::get)
     }
 
+    /// Every order fact, for `simp`'s order search (`has_order_path_for_simp`,
+    /// `increment_preserves_order_for_simp`). Fast walks read
+    /// `OrderFactsByLower` instead.
     pub(in crate::kernel) fn condition_order_facts(&self) -> std::rc::Rc<Vec<OrderFact>> {
         // Ambient scope id when live, content id otherwise — the same
         // hash-once-per-distinct-fact-set policy `decide` pays at its entry.
@@ -69,7 +72,7 @@ impl PureFactContext {
         }
         let mut facts = Vec::new();
         let mut complete = true;
-        for (condition, value) in self.order_condition_facts.iter() {
+        for (condition, value) in self.order_condition_facts.scan_for_search() {
             if crate::kernel::assumptions::reasoning_interrupted() {
                 complete = false;
                 break;
@@ -83,7 +86,7 @@ impl PureFactContext {
             crate::instrumentation::uncharged_debug_check(|| {
                 let scanned = self
                     .condition_facts
-                    .iter()
+                    .scan_for_upkeep()
                     .filter_map(|(condition, value)| condition_as_order_fact(condition, *value))
                     .collect::<Vec<_>>();
                 assert_eq!(

@@ -257,27 +257,30 @@ impl PureFactContext {
     ) -> bool {
         self.exact_condition_value(&ConditionTerm::equal(left.clone(), right.clone()))
             == Some(false)
-            || self.condition_facts.iter().any(|(condition, value)| {
-                if *value {
-                    return false;
-                }
-                let ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: fact_left,
-                    right: fact_right,
-                } = condition
-                else {
-                    return false;
-                };
-                let Some((fact_left, fact_right)) =
-                    bitvector_equality_after_additive_cancellation(fact_left, fact_right)
-                else {
-                    return false;
-                };
-                (&fact_left == left && &fact_right == right)
-                    || (&fact_left == right && &fact_right == left)
-            })
+            || self
+                .condition_facts
+                .scan_for_search()
+                .any(|(condition, value)| {
+                    if *value {
+                        return false;
+                    }
+                    let ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: fact_left,
+                        right: fact_right,
+                    } = condition
+                    else {
+                        return false;
+                    };
+                    let Some((fact_left, fact_right)) =
+                        bitvector_equality_after_additive_cancellation(fact_left, fact_right)
+                    else {
+                        return false;
+                    };
+                    (&fact_left == left && &fact_right == right)
+                        || (&fact_left == right && &fact_right == left)
+                })
     }
 
     fn decide_condition_for_simp_without_prop_facts(
@@ -337,11 +340,14 @@ impl PureFactContext {
         };
         // A slow-part scan: only `simp` reaches this, and a certificate
         // runs it again over the step's retained premises alone.
-        self.condition_facts.iter().any(|(fact, fact_value)| {
-            *fact_value == value && self.condition_matches_for_simp(fact, condition)
-        }) || self.prop_facts.iter().any(|proposition| {
-            self.proposition_proves_condition_for_simp(proposition, condition, value)
-        })
+        self.condition_facts
+            .scan_for_search()
+            .any(|(fact, fact_value)| {
+                *fact_value == value && self.condition_matches_for_simp(fact, condition)
+            })
+            || self.prop_facts.scan_for_search().any(|proposition| {
+                self.proposition_proves_condition_for_simp(proposition, condition, value)
+            })
     }
 
     pub(in crate::kernel) fn has_matching_condition_fact_for_memory_resolution(
@@ -373,10 +379,12 @@ impl PureFactContext {
         condition: &ConditionTerm,
         value: bool,
     ) -> bool {
-        self.condition_facts.iter().any(|(fact, fact_value)| {
-            crate::instrumentation::record_deterministic_work(1);
-            *fact_value == value && self.condition_matches_for_simp(fact, condition)
-        })
+        self.condition_facts
+            .scan_unindexed()
+            .any(|(fact, fact_value)| {
+                crate::instrumentation::record_deterministic_work(1);
+                *fact_value == value && self.condition_matches_for_simp(fact, condition)
+            })
     }
 
     /// The memory-resolution match read from the condition-match index
@@ -860,7 +868,7 @@ impl PureFactContext {
         // syntactic so certificate selection cannot recurse into memory or
         // alias resolution.
         addend == 1
-            && self.condition_facts.iter().any(|(condition, value)| {
+            && self.condition_facts.scan_for_search().any(|(condition, value)| {
                 matches!(
                     (condition, value),
                     (
@@ -911,23 +919,25 @@ impl PureFactContext {
             return true;
         }
 
-        self.condition_facts.iter().any(|(condition, value)| {
-            let (
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                true,
-            ) = (condition, value)
-            else {
-                return false;
-            };
-            self.bitvector_terms_equal_for_transport(left, fact_left)
-                && self.bitvector_terms_equal_for_transport(right, fact_right)
-                || self.bitvector_terms_equal_for_transport(left, fact_right)
-                    && self.bitvector_terms_equal_for_transport(right, fact_left)
-        })
+        self.condition_facts
+            .scan_for_search()
+            .any(|(condition, value)| {
+                let (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: fact_left,
+                        right: fact_right,
+                    },
+                    true,
+                ) = (condition, value)
+                else {
+                    return false;
+                };
+                self.bitvector_terms_equal_for_transport(left, fact_left)
+                    && self.bitvector_terms_equal_for_transport(right, fact_right)
+                    || self.bitvector_terms_equal_for_transport(left, fact_right)
+                        && self.bitvector_terms_equal_for_transport(right, fact_left)
+            })
     }
 }

@@ -58,22 +58,21 @@ pub(in crate::kernel) fn wrap_proof_facts(
 
     let proposition = assumptions
         .prop_facts
-        .iter()
+        .scan_for_upkeep()
         .rev()
         .fold(proposition, |body, proposition| {
             Proposition::Implies(Box::new(proposition.clone()), Box::new(body))
         });
 
-    assumptions
-        .condition_facts
-        .iter()
-        .rev()
-        .fold(proposition, |body, (condition, value)| {
+    assumptions.condition_facts.scan_for_upkeep().rev().fold(
+        proposition,
+        |body, (condition, value)| {
             Proposition::Implies(
                 Box::new(Proposition::ConditionIs(condition.clone(), *value)),
                 Box::new(body),
             )
-        })
+        },
+    )
 }
 
 /// Why one node at the head of a lowered proposition exists.

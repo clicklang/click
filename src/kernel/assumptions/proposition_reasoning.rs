@@ -544,7 +544,7 @@ impl PureFactContext {
                 other => into.push(other.clone()),
             }
         }
-        let alpha = self.prop_facts.iter().any(|fact| {
+        let alpha = self.prop_facts.scan_unindexed().any(|fact| {
             let Proposition::Exists {
                 var: fact_var,
                 sort: fact_sort,
@@ -2965,13 +2965,13 @@ impl PureFactContext {
         value: bool,
     ) -> bool {
         self.condition_facts
-            .iter()
+            .scan_unindexed()
             .any(|(fact_condition, fact_value)| {
                 fact_value == &value && self.condition_matches(fact_condition, condition)
             })
             || self
                 .prop_facts
-                .iter()
+                .scan_unindexed()
                 .any(|proposition| self.proposition_proves_condition(proposition, condition, value))
             || self.proves_condition_from_derived_order_facts(condition, value)
     }
@@ -3892,18 +3892,20 @@ impl PureFactContext {
         // Keep this deliberately structural and one-hop. Callers use it only
         // to move an already-certified address equality between framed memory
         // snapshots, never to synthesize a new alias relationship.
-        self.condition_facts.iter().any(|(condition, value)| {
-            if !*value {
-                return false;
-            }
-            let ConditionTerm::PointerOffsetEqual(fact_left, fact_right) = condition else {
-                return false;
-            };
-            self.pointer_offset_terms_snapshot_equivalent(fact_left, left)
-                && self.pointer_offset_terms_snapshot_equivalent(fact_right, right)
-                || self.pointer_offset_terms_snapshot_equivalent(fact_left, right)
-                    && self.pointer_offset_terms_snapshot_equivalent(fact_right, left)
-        })
+        self.condition_facts
+            .scan_unindexed()
+            .any(|(condition, value)| {
+                if !*value {
+                    return false;
+                }
+                let ConditionTerm::PointerOffsetEqual(fact_left, fact_right) = condition else {
+                    return false;
+                };
+                self.pointer_offset_terms_snapshot_equivalent(fact_left, left)
+                    && self.pointer_offset_terms_snapshot_equivalent(fact_right, right)
+                    || self.pointer_offset_terms_snapshot_equivalent(fact_left, right)
+                        && self.pointer_offset_terms_snapshot_equivalent(fact_right, left)
+            })
     }
 
     pub(super) fn bitvector_terms_snapshot_equivalent(
@@ -4066,7 +4068,7 @@ impl PureFactContext {
         self.contradictions
             .index(|| {
                 self.condition_facts
-                    .iter()
+                    .scan_for_upkeep()
                     .map(|(condition, value)| (condition, *value))
                     .collect()
             })

@@ -357,19 +357,6 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
     } = options;
     let integer_values = integer_values.unwrap_or(&no_integer_values);
     let obligation_assumptions = obligation_assumptions.unwrap_or(assumptions);
-    let mut click_function_calls = BTreeSet::new();
-    crate::surface::validation::collect_click_function_calls_in_proposition(
-        proposition,
-        &mut click_function_calls,
-    );
-    // A conversion such as `to_integer(*p)` is a builtin observation, not a
-    // Click function whose body the proof unfolds: its operand's loads read
-    // as a native comparison's do.
-    click_function_calls
-        .retain(|name| !crate::surface::integer_conversions::is_integer_conversion(name));
-    let symbolic_load_assumptions =
-        (!click_function_calls.is_empty()).then(|| assumptions.clone().keep_spec_loads_symbolic());
-    let assumptions = symbolic_load_assumptions.as_ref().unwrap_or(assumptions);
     let states = FixedStateLowering::for_proposition(
         proposition,
         contract_environment,
