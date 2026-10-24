@@ -6521,6 +6521,11 @@ impl PureFactContext {
                 )
             });
         crate::kernel::eval::check_canonical_at_creation(&condition, value);
+        crate::kernel::debug_assert_widths(
+            "an assumed condition",
+            || crate::kernel::condition_narrow_violation(&condition),
+            &condition,
+        );
         if cfg!(debug_assertions) {
             let widths = &mut self.variable_widths;
             crate::kernel::debug_assert_widths(
@@ -10125,18 +10130,25 @@ pub(in crate::kernel) fn native_comparison_of_integer_observation(
     ) {
         return None;
     }
-    // A narrow observation reads its type's bits of the word, which the
-    // 32-bit order compares exactly only when the word is their zero- or
-    // sign-extension: a narrow load or conversion.
+    // A narrow value's word is the canonical carrier of its format, its
+    // zero or sign extension, which the signed 32-bit order compares
+    // exactly, as C's promotion to `int` does. The native form is taken only
+    // where its Integer reading, an `int32` observation of the word, is this
+    // same narrow observation again (`IntegerTerm::from_machine`
+    // normalizes a narrow load or conversion so), keeping one spelling per
+    // value. A binder's word does not name its format, so a comparison of
+    // a narrow binder keeps its Integer form.
     let narrow = ty.format().bits() < 32;
     let carrier = |side: &IntegerTerm| -> Option<Bitvector32Term> {
         match side {
             IntegerTerm::Machine(machine)
                 if narrow
-                    && !crate::kernel::primitives::narrow_word_is_extension(
-                        ty,
-                        machine.value(),
-                    ) =>
+                    && IntegerTerm::from_machine(
+                        MachineIntegerType::Int32,
+                        machine.value().clone(),
+                    )
+                    .as_ref()
+                        != Some(side) =>
             {
                 None
             }

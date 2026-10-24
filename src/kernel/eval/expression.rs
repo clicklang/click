@@ -975,7 +975,9 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
 /// `int64` the same 64 bits read as signed.
 ///
 /// A specification's conversion ([`IntegerConversion::Checked`]) files the
-/// same range conditions as obligations and is then the carrier itself.
+/// same range conditions as obligations. Its result is the same conversion
+/// node, and its caller files the node's identity with its operand, which
+/// holds exactly where those obligations do.
 fn narrow_integer(
     value: CValue,
     target: CType,
@@ -1052,7 +1054,7 @@ fn narrow_integer(
             )),
         ),
         _ => {
-            let (bounds, carrier) =
+            let (bounds, _) =
                 crate::kernel::assumptions::narrowed_cast_identity(&term, source, destination)?;
             for bound in bounds {
                 let condition = bound.conditions.into_iter().next()?;
@@ -1063,8 +1065,85 @@ fn narrow_integer(
                     narrowing_context(destination, bound.lower),
                 )?;
             }
-            Some(destination.value_from_term(carrier))
+            // The result is the conversion node, the canonical carrier of the
+            // destination. Inside the range the obligations above require,
+            // it denotes its operand; the caller files that identity
+            // (`checked_narrowing_identity`).
+            Some(
+                destination.value_from_term(Bitvector32Term::machine_integer_cast(
+                    source,
+                    destination,
+                    term,
+                )),
+            )
         }
+    }
+}
+
+/// The identity `to_integer(conv(v)) == to_integer(v)` of a checked
+/// narrowing whose result `converted` is the conversion node of `source`,
+/// and, for an operand of at most 32 bits, the word identity `conv(w) == w`.
+///
+/// A checked narrowing files its operand's destination-range bounds as the
+/// path's obligations (`narrow_integer`), and inside that range the modular
+/// conversion leaves the value unchanged. So the identity holds on every
+/// path where the obligations do, which is every path that carries them;
+/// it is a consequence of the step, as a narrow value's range is. The node
+/// is the destination's canonical carrier, the sign or zero extension of
+/// its value, and an operand word of at most 32 bits is likewise its own
+/// value's extension, so inside the range the two words are equal. That is
+/// the form a comparison of words takes, which a Rust narrow result's `==`
+/// lowers to. A conversion that cannot change the value, or a folded
+/// constant, has no node and files nothing.
+pub(in crate::kernel) fn checked_narrowing_identity(
+    source: &CValue,
+    converted: &CValue,
+) -> Vec<Proposition> {
+    checked_narrowing_identity_readings(source, converted).unwrap_or_default()
+}
+
+fn checked_narrowing_identity_readings(
+    source: &CValue,
+    converted: &CValue,
+) -> Option<Vec<Proposition>> {
+    let source_type = MachineIntegerType::from_c_type(source.c_type())?;
+    let operand = match source.numeric_value() {
+        crate::kernel::integer_c_value!(term) => term,
+        _ => return None,
+    };
+    let converted = converted_term(converted)?;
+    let Bitvector32Term::MachineIntegerCast {
+        value,
+        source: cast_source,
+        destination,
+    } = converted
+    else {
+        return None;
+    };
+    if *cast_source != source_type || value.as_ref() != operand {
+        return None;
+    }
+    let observed = IntegerTerm::from_machine(*destination, converted.clone())?;
+    let original = IntegerTerm::from_machine(source_type, operand.clone())?;
+    let mut identities = vec![Proposition::ConditionIs(
+        ConditionTerm::integer_equal(observed, original),
+        true,
+    )];
+    if source_type.format().bits() <= 32 {
+        identities.push(Proposition::ConditionIs(
+            ConditionTerm::equal(converted.clone(), operand.clone()),
+            true,
+        ));
+    }
+    Some(identities)
+}
+
+fn converted_term(value: &CValue) -> Option<&Bitvector32Term> {
+    match value {
+        CValue::Int8(term) | CValue::UInt8(term) | CValue::Int16(term) | CValue::UInt16(term) => {
+            Some(term)
+        }
+        _ => None,
     }
 }
 
@@ -1911,6 +1990,14 @@ fn evaluate_c_cast_paths(
                 } else {
                     IntegerConversion::Checked
                 };
+                // A checked narrowing into an 8- or 16-bit type keeps its
+                // operand, whose identity with the result it files below.
+                let checked_source = (conversion == IntegerConversion::Checked
+                    && matches!(
+                        target_type,
+                        CType::Int8 | CType::UInt8 | CType::Int16 | CType::UInt16
+                    ))
+                .then(|| value.clone());
                 let needs_integer_origin = match &value {
                     CValue::Int64(bits) | CValue::UInt64(bits) if target_type.is_pointer() => {
                         bits.uint64_as_const() != Some(0)
@@ -2004,6 +2091,13 @@ fn evaluate_c_cast_paths(
                         integer_pointer_origin,
                     )
                 };
+                if let (Some(source), Ok(converted)) = (&checked_source, &coerced) {
+                    facts.extend(
+                        checked_narrowing_identity(source, converted)
+                            .into_iter()
+                            .map(ExecutionPureFact::certified),
+                    );
+                }
                 let coerced = coerced.and_then(|value| {
                     let (Some(bits), CValue::Pointer(pointer)) = (&word_bits, &value) else {
                         return Ok(value);

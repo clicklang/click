@@ -14,6 +14,9 @@
 
 use super::*;
 
+mod narrow;
+pub(crate) use narrow::*;
+
 /// The width of the carrier a term's value occupies.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) enum CarrierWidth {
@@ -330,8 +333,8 @@ pub(crate) fn value_width_mismatch(value: &CValue) -> Option<WidthMismatch> {
 /// A narrow value's constant outside its type's range: `int8` and `int16`
 /// constants ride sign-extended in the 32-bit carrier, `uint8`, `uint16` and
 /// `_Bool` zero-extended, so the carrier word of an in-range constant is one
-/// of those extensions. A symbolic narrow value is kept in range by the path
-/// facts its producer adds.
+/// of those extensions. A symbolic narrow value's word is checked to be its
+/// format's canonical carrier by [`value_narrow_violation`].
 pub(crate) fn narrow_constant_out_of_range(value: &CValue) -> Option<NarrowRangeViolation> {
     let (site, term, low, high) = match value {
         CValue::Bool(term) => ("CValue::Bool", term, 0, 1),
@@ -375,11 +378,13 @@ impl std::fmt::Display for NarrowRangeViolation {
     }
 }
 
-/// Every refusal for a value: its widths, then a narrow constant's range.
+/// Every refusal for a value: its widths, then a narrow constant's range,
+/// then a narrow word that is not its format's canonical carrier.
 pub(crate) fn value_mismatch(value: &CValue) -> Option<String> {
     value_width_mismatch(value)
         .map(|mismatch| mismatch.to_string())
         .or_else(|| narrow_constant_out_of_range(value).map(|violation| violation.to_string()))
+        .or_else(|| value_narrow_violation(value).map(|violation| violation.to_string()))
 }
 
 fn value_site(value: &CValue) -> &'static str {

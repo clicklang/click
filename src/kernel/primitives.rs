@@ -64,7 +64,6 @@ pub(crate) use contracts::{
     stated_separation_extent_guards, wide_loadable_element_count, wide_range_bounds,
 };
 mod integer;
-pub(crate) use integer::narrow_word_is_extension;
 mod machine_integer;
 pub use machine_integer::{
     MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,

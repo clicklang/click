@@ -49,15 +49,45 @@ fn integer_cast_identity_promotes_only_canonical_unsigned_subword_carriers() {
                 }
                 assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
             }
+            // A bare variable, or a mask of one by anything but the
+            // format's mask, is a carrier only through a binder's stated
+            // range, which bounds on the narrow observation do not give. A
+            // word built by 32-bit arithmetic is not a carrier at all.
             for carrier in [
                 word.clone(),
                 Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::Constant(mask + 1)),
+                Bitvector32Term::add(word.clone(), Bitvector32Term::Constant(1)),
+                Bitvector32Term::add(
+                    Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::Constant(mask)),
+                    Bitvector32Term::Constant(1),
+                ),
             ] {
                 let (premises, goal) = claim(source, destination, carrier);
                 assert!(
                     certificate(goal.clone(), vec![0, 1])
                         .check(&goal, &premises)
                         .is_err()
+                );
+            }
+            // A binder widens when the certificate cites its stated range,
+            // the `int32` bounds of its word inside the source's range, and
+            // not when those bounds reach past that range.
+            let (_, goal) = claim(source, destination, word.clone());
+            let int32_word = observation(Ty::Int32, word.clone());
+            for (upper, holds) in [(mask, true), (mask + 1, false)] {
+                let premises = vec![
+                    le(IntegerTerm::constant_i64(0), int32_word.clone()),
+                    le(
+                        int32_word.clone(),
+                        IntegerTerm::constant_i64(i64::from(upper)),
+                    ),
+                ];
+                assert_eq!(
+                    certificate(goal.clone(), vec![0, 1])
+                        .check(&goal, &premises)
+                        .is_ok(),
+                    holds,
+                    "{source:?} -> {destination:?} up to {upper}"
                 );
             }
         }
