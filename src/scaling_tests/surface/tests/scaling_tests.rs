@@ -7836,12 +7836,13 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
     };
     for size in [16usize, 64, 256, 1024] {
         let mut snapshots = RecordedSnapshots::new();
-        let mut state = CState::new();
+        let mut state = CState::new()
+            .with_memory(crate::kernel::CMemory::new().with_block("cells", 4 * size as u32));
         let mut insert_work = Vec::new();
         for index in 0..size {
             // Each point binds one new local, and from the second on also
             // gives local `x0` a new value: with `p` below, three changed
-            // locals and one new instance per point.
+            // locals, one new instance and one stored cell per point.
             state = state.with_local(format!("x{}", index + 1), CValue::Int32(value(2 * index)));
             if index > 0 {
                 state = state.with_local("x0", CValue::Int32(value(2 * index + 1)));
@@ -7872,6 +7873,15 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
                         ),
                     ));
             state = state.with_resource_context(resources);
+            // And one memory cell a new value.
+            let memory = state.memory().clone().store(
+                crate::kernel::Pointer {
+                    block: crate::kernel::PointerBlock::Concrete("cells".into()),
+                    offset: crate::kernel::PointerOffsetTerm::Constant(4 * index as i64),
+                },
+                CValue::Int32(value(6 * size + index)),
+            );
+            state = state.with_memory(memory);
             let (((), work), persistent) = crate::persistent::measure_persistent_work(|| {
                 crate::instrumentation::measure_deterministic_work(|| {
                     snapshots.insert(point(index), state.clone());
@@ -7882,8 +7892,8 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
         let height = (usize::BITS - size.leading_zeros()) as usize;
         let last = *insert_work.last().unwrap();
         assert!(
-            last <= 24 * height + 32,
-            "size {size}: the last insert changed three locals and one instance and did {last} work"
+            last <= 24 * height + 64,
+            "size {size}: the last insert changed three locals, one instance and one cell and did {last} work"
         );
         // The first value `x0` held is named at the point that recorded it,
         // though `x0` holds a newer value now; the newest one at its point.
@@ -7911,6 +7921,18 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
         });
         assert_eq!(points, vec![SnapshotSelector::from(point(0))]);
         assert!(work <= 4, "size {size}: naming one pointer did {work} work");
+        // The value the first point stored is found by its fingerprint.
+        let (cells, work) = crate::instrumentation::measure_deterministic_work(|| {
+            snapshots
+                .points_holding_cell_integer(&value(6 * size))
+                .map(|(selector, _)| selector.clone())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(cells, vec![SnapshotSelector::from(point(0))]);
+        assert!(
+            work <= 4,
+            "size {size}: naming one cell value did {work} work"
+        );
     }
 }
 

@@ -2953,6 +2953,10 @@ fn instance_holds_field_value(
         })
 }
 
+/// How many recorded points whose memory held a value's fingerprint the
+/// speller tries.
+const CELL_POINTS_OFFERED: usize = 4;
+
 /// How many recorded points holding a pointer's block the speller tries.
 const POINTER_POINTS_OFFERED: usize = 4;
 
@@ -3001,6 +3005,17 @@ struct RecordedSnapshots {
     /// The resources of the state inserted last, against which the next
     /// insert finds the instances it changed.
     last_resources: Option<crate::kernel::ResourceContext>,
+    /// The recorded points at which a memory cell came to hold each integer
+    /// value, keyed by the value's held-term fingerprint and then newest
+    /// first (by the count of entries made before, subtracted from the
+    /// largest count): a value no nearer state names is spelled in such a
+    /// point's state, as the field or element it is there. Filled from the
+    /// cells each insert's memory changed; whether the point's state spells
+    /// the value is the reader's check.
+    cell_points: crate::persistent::PersistentMap<(u64, usize), SnapshotSelector>,
+    /// The memory of the state inserted last, against which the next insert
+    /// finds the cells it changed.
+    last_memory: Option<crate::kernel::CMemory>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -3031,6 +3046,8 @@ impl Default for RecordedSnapshots {
             field_points: crate::persistent::PersistentMap::default(),
             last_locals: None,
             last_resources: None,
+            cell_points: crate::persistent::PersistentMap::default(),
+            last_memory: None,
         }
     }
 }
@@ -3399,6 +3416,18 @@ impl RecordedSnapshots {
             }
         }
         self.last_resources = Some(state.resources().clone());
+        for term in state
+            .memory()
+            .changed_cell_integers(self.last_memory.as_ref())
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let newest_first = usize::MAX - self.cell_points.len();
+            self.cell_points.insert(
+                (crate::kernel::held_term_fingerprint(term), newest_first),
+                selector.clone(),
+            );
+        }
+        self.last_memory = Some(state.memory().clone());
     }
 
     /// The recorded points whose memories are nearest `memory` in the order
@@ -3457,6 +3486,36 @@ impl RecordedSnapshots {
             }
         })
         .take(POINTER_POINTS_OFFERED)
+    }
+
+    /// The recorded points at which a memory cell held an integer term of
+    /// `term`'s fingerprint, newest first, with their states: at most
+    /// [`CELL_POINTS_OFFERED`]. The caller spells the term in each state.
+    fn points_holding_cell_integer(
+        &self,
+        term: &crate::kernel::Bitvector32Term,
+    ) -> impl Iterator<Item = (&SnapshotSelector, &CState)> {
+        let fingerprint = crate::kernel::held_term_fingerprint(term);
+        let mut key = (fingerprint, 0);
+        let mut first = true;
+        std::iter::from_fn(move || {
+            let found = if std::mem::take(&mut first) {
+                self.cell_points
+                    .get_key_value(&key)
+                    .or_else(|| self.cell_points.get_greater_than(&key))
+            } else {
+                self.cell_points.get_greater_than(&key)
+            };
+            let (found_key, selector) = found?;
+            if found_key.0 != fingerprint {
+                return None;
+            }
+            key = *found_key;
+            crate::instrumentation::record_deterministic_work(1);
+            Some(selector)
+        })
+        .filter_map(|selector| Some((selector, self.get_exact(selector)?)))
+        .take(CELL_POINTS_OFFERED)
     }
 
     /// The recorded point at which a resource instance held the scalar

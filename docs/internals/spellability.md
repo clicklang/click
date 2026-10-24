@@ -44,9 +44,11 @@ checked. Each one costs completeness, expansion, or a readable report.
   point and the local it was first given to (`RecordedSnapshots::value_points`
   and `pointer_points`, filled from the locals each recorded state changed),
   and each scalar model-field value by the point whose resource instance first
-  held it (`field_points`, filled from the instances each state changed). The
-  structural speller writes `at(point, ...)` from these indexes for a value no
-  nearer state names. A load or field read made in a memory no point
+  held it (`field_points`, filled from the instances each state changed), and
+  each integer a memory cell came to hold by the point that recorded it there
+  (`cell_points`, filled from the cells each memory changed). The structural
+  speller writes `at(point, ...)` from these indexes for a value no nearer
+  state names. A load or field read made in a memory no point
   records, inside a call or after the last point, is read at the nearest
   recorded memory that reads the same bytes.
 - **Every fact kind has syntax.** A kernel fact that a proof state can hold
