@@ -4349,6 +4349,7 @@ impl PureFactContext {
             .typed_pointer_read_definitions
             .clone();
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
+        self.pointer_offset_equalities_by_shape = crate::persistent::PersistentMap::default();
         self.condition_match_keys_by_side = crate::persistent::PersistentMap::default();
         self.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
@@ -4566,6 +4567,26 @@ impl PureFactContext {
             self.difference_graph.withdraw(condition);
         }
         self.contradictions.adjust(condition, value, insert);
+        if let (ConditionTerm::PointerOffsetEqual(left, right), true) = (condition, value) {
+            for shape in [offset_snapshot_shape(left), offset_snapshot_shape(right)] {
+                let filed = self
+                    .pointer_offset_equalities_by_shape
+                    .get(&shape)
+                    .cloned()
+                    .unwrap_or_default();
+                let filed = if insert {
+                    filed.with_value(condition.clone())
+                } else {
+                    filed.without_value(condition)
+                };
+                self.pointer_offset_equalities_by_shape = if filed.is_empty() {
+                    self.pointer_offset_equalities_by_shape.without_key(&shape)
+                } else {
+                    self.pointer_offset_equalities_by_shape
+                        .with_inserted(shape, filed)
+                };
+            }
+        }
         if condition_as_order_fact(condition, value).is_some() {
             self.order_condition_facts = if insert {
                 self.order_condition_facts
@@ -5016,6 +5037,20 @@ impl PureFactContext {
     #[cfg(test)]
     pub(crate) fn build_stated_proposition_index(&self) {
         let _ = self.stated_proposition_index();
+    }
+
+    /// The stated facts alpha-equal to `goal` can only be those filed under
+    /// its identity key: the facts of that bucket. None when the key builder
+    /// declines `goal` or the index could not be completed in budget.
+    pub(in crate::kernel) fn stated_identity_bucket(
+        &self,
+        goal: &Proposition,
+    ) -> impl Iterator<Item = &Proposition> {
+        crate::kernel::proof::proposition_identity_key(goal)
+            .and_then(|key| self.stated_proposition_index()?.get(&key))
+            .into_iter()
+            .flat_map(|bucket| bucket.iter())
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
     /// The stated-proposition index, or `None` when a deferred index could
@@ -11089,7 +11124,8 @@ mod decided_algebraic_if_tests;
 ///
 /// An `int32` fact `lower < upper` (or `<=`, after
 /// [`condition_as_order_fact`]'s normalization) is filed under its written
-/// `lower`; when `lower` is a constant also under its value, so a constant
+/// `lower` and its canonical form; when `lower` is a constant also under
+/// its value, so a constant
 /// node finds every edge whose lower end is a constant at least as large by
 /// one range read; and when `lower` is a load also under its pointer and
 /// kind, the only loads memory-derivation bridging relates to it. A 64-bit
@@ -11098,6 +11134,10 @@ mod decided_algebraic_if_tests;
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OrderFactsByLower {
     written: crate::persistent::PersistentMap<
+        Bitvector32Term,
+        crate::persistent::PersistentSet<ConditionTerm>,
+    >,
+    canonical: crate::persistent::PersistentMap<
         Bitvector32Term,
         crate::persistent::PersistentSet<ConditionTerm>,
     >,
@@ -11157,6 +11197,12 @@ impl OrderFactsByLower {
                     insert,
                 );
             }
+            file(
+                &mut self.canonical,
+                crate::kernel::eval::canonical_term(&lower),
+                condition,
+                insert,
+            );
             file(&mut self.written, lower, condition, insert);
             return;
         }
@@ -11182,6 +11228,19 @@ impl OrderFactsByLower {
     ) -> impl Iterator<Item = &'a ConditionTerm> + 'a {
         self.written
             .get(lower)
+            .into_iter()
+            .flat_map(crate::persistent::PersistentSet::iter)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    }
+
+    /// The `int32` order facts whose lower end has canonical form
+    /// `canonical`.
+    pub(crate) fn canonical_from<'a>(
+        &'a self,
+        canonical: &Bitvector32Term,
+    ) -> impl Iterator<Item = &'a ConditionTerm> + 'a {
+        self.canonical
+            .get(canonical)
             .into_iter()
             .flat_map(crate::persistent::PersistentSet::iter)
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
@@ -11223,4 +11282,43 @@ impl OrderFactsByLower {
             .flat_map(crate::persistent::PersistentSet::iter)
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
+}
+
+/// A hash of an offset's structure that two snapshot-equivalent offsets
+/// (`pointer_offset_terms_snapshot_equivalent`) always share: every
+/// literal load stands for its kind alone, since two loads of one kind at
+/// proven-equal addresses may match whatever their pointers and snapshots,
+/// and a sum's operands are taken in either order. Unequal offsets may
+/// share one too; the shape only narrows the facts to check.
+pub(in crate::kernel) fn offset_snapshot_shape(offset: &PointerOffsetTerm) -> u64 {
+    use std::hash::{Hash, Hasher};
+    fn term_shape(term: &Bitvector32Term) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        match term {
+            Bitvector32Term::MemoryLoad(_, _, kind) => (0u8, kind).hash(&mut hasher),
+            Bitvector32Term::Add(left, right) => {
+                (1u8, term_shape(left), term_shape(right)).hash(&mut hasher)
+            }
+            Bitvector32Term::Subtract(left, right) => {
+                (2u8, term_shape(left), term_shape(right)).hash(&mut hasher)
+            }
+            Bitvector32Term::Multiply(left, right) => {
+                (3u8, term_shape(left), term_shape(right)).hash(&mut hasher)
+            }
+            other => (4u8, other).hash(&mut hasher),
+        }
+        hasher.finish()
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    match offset {
+        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+            (0u8, byte_width, term_shape(value)).hash(&mut hasher)
+        }
+        PointerOffsetTerm::Add(left, right) => {
+            let (left, right) = (offset_snapshot_shape(left), offset_snapshot_shape(right));
+            (1u8, left.min(right), left.max(right)).hash(&mut hasher)
+        }
+        other => (2u8, other).hash(&mut hasher),
+    }
+    hasher.finish()
 }

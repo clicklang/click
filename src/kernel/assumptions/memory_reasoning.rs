@@ -2875,16 +2875,21 @@ impl PureFactContext {
                 ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), form.clone());
             (self.exact_condition_value(&nonnegative) == Some(true)
                 || self.exact_ordering_modulo_canonical_atoms(&nonnegative))
-                && self.condition_facts.scan_unindexed().any(|(fact, value)| {
-                    *value
-                        && matches!(
-                            fact,
-                            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left, right: _ }
-                                if crate::kernel::eval::terms_have_same_canonical_form(
-                                    left, form,
-                                )
-                        )
-                })
+                // A true `left < _` fact is an order fact filed under the
+                // canonical form of `left` (`OrderFactsByLower`).
+                && self
+                    .order_facts_by_lower
+                    .canonical_from(&crate::kernel::eval::canonical_term(form))
+                    .any(|fact| {
+                        self.condition_facts.get(fact) == Some(&true)
+                            && matches!(
+                                fact,
+                                ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left, right: _ }
+                                    if crate::kernel::eval::terms_have_same_canonical_form(
+                                        left, form,
+                                    )
+                            )
+                    })
         })
     }
 
@@ -3579,8 +3584,13 @@ impl PureFactContext {
         // Snapshot-aware endpoints are valid only for bounded fact transport.
         // Keeping them out of the global equality graph avoids recursive
         // memory resolution and changes to symbolic execution paths.
+        // A stated equality is already an equality-graph edge, which the
+        // transport equality reads; the snapshot-aware step is the loads'
+        // own comparison. Chaining stated equalities through snapshot-aware
+        // endpoints once scanned every condition fact at every step, and
+        // no gate proof used it.
         if self.bitvector_terms_equal_for_transport(left, right)
-            || self.bitvector_terms_equal_from_snapshot_facts(left, right)
+            || memory_load_terms_equal_for_fact_transport(left, right, self)
         {
             return true;
         }
@@ -3600,61 +3610,6 @@ impl PureFactContext {
             }
             _ => false,
         }
-    }
-
-    fn bitvector_terms_equal_from_snapshot_facts(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> bool {
-        let endpoint_matches = |left: &Bitvector32Term, right: &Bitvector32Term| {
-            left == right || memory_load_terms_equal_for_fact_transport(left, right, self)
-        };
-        let mut seen = BTreeSet::new();
-        let mut stack = vec![left.clone()];
-        while let Some(term) = stack.pop() {
-            if !seen.insert(term.clone()) {
-                continue;
-            }
-            if endpoint_matches(&term, right) {
-                return true;
-            }
-            for (condition, value) in self.condition_facts.scan_unindexed() {
-                if !*value {
-                    continue;
-                }
-                let (fact_left, fact_right) = match condition {
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::Equal,
-                        left: fact_left,
-                        right: fact_right,
-                    } => (fact_left.as_ref().clone(), fact_right.as_ref().clone()),
-                    ConditionTerm::PointerOffsetEqual(fact_left, fact_right) => {
-                        let Some(element_width) =
-                            common_pointer_offset_element_width(fact_left, fact_right)
-                        else {
-                            continue;
-                        };
-                        let (Some(fact_left), Some(fact_right)) = (
-                            element_index_from_offset(fact_left, element_width),
-                            element_index_from_offset(fact_right, element_width),
-                        ) else {
-                            continue;
-                        };
-                        (fact_left, fact_right)
-                    }
-                    _ => continue,
-                };
-                if endpoint_matches(&fact_left, &term) {
-                    stack.push(fact_right.clone());
-                }
-                if endpoint_matches(&fact_right, &term) {
-                    stack.push(fact_left);
-                }
-            }
-        }
-        false
     }
 
     fn range_covered_by_resource_separate_ranges(
@@ -5249,6 +5204,50 @@ mod seeded_interval_adjacency_tests {
     mod scaling_tests {
         include!(
             "../../scaling_tests/kernel/assumptions/memory_reasoning/seeded_interval_adjacency_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod nonnegative_successor_tests {
+    use super::*;
+
+    /// The successor rule's `term < _` fact is read from the order facts
+    /// filed under `term`'s canonical form (`OrderFactsByLower`); it once
+    /// scanned every condition fact, so a miss grew with unrelated facts.
+    #[test]
+    fn successor_rule_ignores_unrelated_condition_facts() {
+        let term = Bitvector32Term::Variable(Variable(96_000));
+        let goal = ConditionTerm::signed_less_equal(
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::add(term.clone(), Bitvector32Term::Constant(1)),
+        );
+        let work = [16_u64, 64, 256]
+            .into_iter()
+            .map(|unrelated| {
+                let mut context = PureFactContext::new().assume_condition(
+                    ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), term.clone()),
+                    true,
+                );
+                for index in 0..unrelated {
+                    context = context.assume_condition(
+                        ConditionTerm::signed_less_than(
+                            Bitvector32Term::Variable(Variable(96_100 + index)),
+                            Bitvector32Term::Variable(Variable(96_600 + index)),
+                        ),
+                        true,
+                    );
+                }
+                let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    context.nonnegative_successor_by_exact_facts(&goal)
+                });
+                assert!(!proved, "no fact bounds the term above");
+                work
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            work.windows(2).all(|pair| pair[0] == pair[1]),
+            "unrelated facts changed the successor rule's work: {work:?}"
         );
     }
 }
