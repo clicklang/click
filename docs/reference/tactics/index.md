@@ -1872,10 +1872,10 @@ must be the goal itself:
   their observations when promoted to a 32-bit word; both source bounds
   remain explicit.
 - `integer_operation_identity bounds [i, j] => to_integer(a + b) ==
-  to_integer(a) + to_integer(b);` (or `-`) checks two named constant bounds
-  on the Integer result against the range of the `int`, `unsigned int`,
-  `int64` or `uint64` operation; see [in-range sums and
-  differences](../../internals/mathematical-integers.md#in-range-machine-sums-and-differences).
+  to_integer(a) + to_integer(b);` (or `-`, `*`) checks two named constant
+  bounds on the Integer result against the range of the operation's format,
+  8 to 64 bits; see [in-range sums, differences and
+  products](../../internals/mathematical-integers.md#in-range-machine-sums-differences-and-products).
 
 **Outside it**, with what to write instead:
 
@@ -2740,8 +2740,10 @@ On an implication `A implies B`, `simp` introduces `A` and closes `B`, with
 this arithmetic and the searches below, as for `result == 1 implies cap ==
 old(cap) + 1` on a path where the antecedent reads `true`
 ([`auto_proves_an_implication_whose_consequent_needs_the_solver.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_an_implication_whose_consequent_needs_the_solver.md)).
-The in-range `+` and `-` identities and integral-cast identities this
-arithmetic uses, nested ones included, are described in [mathematical integers](../../internals/mathematical-integers.md#in-range-machine-sums-and-differences).
+The in-range `+` and `-` identities, `*` identities with a constant factor
+([`auto_observes_a_product_by_a_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_observes_a_product_by_a_constant.md)),
+and integral-cast identities this arithmetic uses, nested ones included, are
+described in [mathematical integers](../../internals/mathematical-integers.md#in-range-machine-sums-differences-and-products).
 
 When its other strategies miss, `simp` searches chains of at most three
 `rewrite` steps by the equalities connected to `P`, machine, `Integer` and

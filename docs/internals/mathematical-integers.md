@@ -963,18 +963,22 @@ and remainder narrowing, modular caller framing, offline artifacts, expansion,
 and retained audit. The source profile remains unchanged; the current artifact schema is 45.
 
 
-## In-range machine sums and differences
+## In-range machine sums, differences and products
 
 The `integer_operation_identity` node in the `rules` family proves that a
-machine `+` or `-` that does not wrap is the same operation on its operands'
-Integer values: `to_integer(a + b) == to_integer(a) + to_integer(b)`, or with
-`-`, in either orientation. The operation is an `int`, `unsigned int`,
-`int64` or `uint64` addition or subtraction, and each operand is observed in
-that same type. Two named premises `lo <= S` and `S <= hi` bound the stated
-Integer result `S` by constants inside the type's range, in that order. The
-kernel recomputes `S` from the observed operation and reads only the two
+machine `+`, `-` or `*` that does not wrap is the same operation on its
+operands' Integer values: `to_integer(a + b) == to_integer(a) +
+to_integer(b)`, or with `-` or `*`, in either orientation. The operation is
+of any format of 8 to 64 bits (`int`, `unsigned int`, `int64`, `uint64`, and
+the narrow formats, whose operations are the 32-bit word's), and each operand
+is observed in that same format. Two named premises `lo <= S` and `S <= hi`
+bound the stated Integer result `S` by constants inside the format's range,
+in that order. The kernel recomputes `S` from the observed operation
+(`kernel::machine_integer::identity::mathematical`) and reads only the two
 named premises (`mdtests/an_in_range_machine_difference_is_its_integer_difference.md`,
-`mdtests/an_operation_identity_bound_outside_its_type_is_refused.md`).
+`mdtests/an_operation_identity_bound_outside_its_type_is_refused.md`,
+`mdtests/integer_operation_identity_of_a_product.md`,
+`mdtests/a_product_identity_bound_outside_its_type_is_refused.md`).
 
 The Integer certificate's `type_range => MIN <= to_integer(v);` (or
 `to_integer(v) <= MAX`) states the range of a machine observation's type,
@@ -1005,7 +1009,8 @@ operation bound of each unsigned quotient, shift, or remainder by a constant,
 and the bound each disequality with a type endpoint gives
 (`mdtests/auto_bounds_an_unsigned_quotient_by_its_operand.md`,
 `mdtests/auto_refuses_a_quotient_bound_past_the_floor.md`). When that
-also fails, it may assume the identity of each machine `+` or `-` it sees;
+also fails, it may assume the identity of each machine `+` or `-` it sees,
+and of each `*` with a constant factor, whose exact value is affine;
 for each identity the refutation uses, it proves the two bounds with the
 same arithmetic, applies `integer_operation_identity`, and then proves the
 goal. So

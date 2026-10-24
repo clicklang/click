@@ -1,10 +1,12 @@
 //! In-range identity: `to_integer(a op b) == to_integer(a) op to_integer(b)`
-//! for a machine `+` or `-` of format `F` whose exact result lies in `F`.
+//! for a machine `+`, `-` or `*` of format `F` whose exact result lies in
+//! `F`.
 //!
 //! The machine operation is the exact result reduced modulo `2^w` into
 //! `F`: each operand's word is congruent to its value modulo `2^w`
 //! (a narrow value's word is its canonical extension, congruent modulo
-//! `2^32`), and `+` and `-` respect the congruence. When the exact result lies in `F` it is the one element of
+//! `2^32` and so modulo its own `2^w`), and `+`, `-` and `*` respect the
+//! congruence. When the exact result lies in `F` it is the one element of
 //! `F` in its residue class, so it is the machine result. The certificate
 //! rule `integer_operation_identity` checks this statement for the format
 //! the observation names, with the two bounds as premises.
@@ -13,7 +15,7 @@ use super::{Operation, definedness, range, representation};
 use crate::kernel::{Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition};
 use num_bigint::BigInt;
 
-/// The format of the machine `+` or `-` that `observed` reads, and
+/// The format of the machine `+`, `-` or `*` that `observed` reads, and
 /// its exact value spelled over the operands' own observations in that
 /// format. `to_integer(observed) == value` is the in-range identity once
 /// `value` is bounded inside the format.
@@ -22,13 +24,24 @@ pub(crate) fn mathematical(observed: &IntegerTerm) -> Option<(MachineIntegerType
         return None;
     };
     let ty = machine.ty();
-    let (operation, left, right) = match representation::word_operation(ty, machine.value())? {
-        found @ (Operation::Add | Operation::Subtract, _, _) => found,
-        (Operation::Multiply, _, _) => return None,
-    };
+    let (operation, left, right) = representation::word_operation(ty, machine.value())?;
     let left = IntegerTerm::from_machine(ty, left.clone())?;
     let right = IntegerTerm::from_machine(ty, right.clone())?;
     Some((ty, operation.exact(left, right)))
+}
+
+/// [`mathematical`] for `+` and `-` only: the operations whose identity
+/// the comparison readings and the surface's identity planner spell.
+pub(crate) fn additive_mathematical(
+    observed: &IntegerTerm,
+) -> Option<(MachineIntegerType, IntegerTerm)> {
+    let IntegerTerm::Machine(machine) = observed else {
+        return None;
+    };
+    match representation::word_operation(machine.ty(), machine.value())? {
+        (Operation::Add | Operation::Subtract, _, _) => mathematical(observed),
+        (Operation::Multiply, _, _) => None,
+    }
 }
 
 /// One endpoint of a format's range that the exact value of a machine

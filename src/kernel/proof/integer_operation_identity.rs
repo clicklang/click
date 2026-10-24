@@ -1,5 +1,5 @@
-//! A machine addition or subtraction whose mathematical result lies inside
-//! its format's range is that mathematical result
+//! A machine addition, subtraction or multiplication whose mathematical
+//! result lies inside its format's range is that mathematical result
 //! (`kernel::machine_integer::identity`). The certificate names exactly two
 //! bounds on the mathematical result.
 

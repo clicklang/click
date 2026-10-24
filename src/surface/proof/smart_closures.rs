@@ -1291,6 +1291,10 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
             continue;
         }
         let value = match mathematical(&observed) {
+            // A product's identity is planned only with a constant factor,
+            // where its exact value is affine and its bounds are decided by
+            // the same arithmetic as a sum's.
+            Some((_, value)) if identity_operands(&value).is_none() => continue,
             Some((_, value)) => value,
             None => {
                 let operands = cast_operands(&observed);
@@ -1334,13 +1338,19 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
 }
 
 /// The observations an identity's value is written over: the two operands
-/// of a `+` or `-`, or a cast's operand.
+/// of a `+` or `-`, the operands of a `*` with a constant factor, or a
+/// cast's operand.
 fn identity_operands(
     value: &crate::kernel::IntegerTerm,
 ) -> Option<Vec<&crate::kernel::IntegerTerm>> {
     use crate::kernel::IntegerTerm;
     match value {
         IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
+            Some(vec![left.as_ref(), right.as_ref()])
+        }
+        IntegerTerm::Multiply(left, right)
+            if left.as_const().is_some() || right.as_const().is_some() =>
+        {
             Some(vec![left.as_ref(), right.as_ref()])
         }
         IntegerTerm::Machine(_) => Some(vec![value]),
@@ -3402,7 +3412,9 @@ impl<'a> Proof<'a> {
             };
             let cast = matches!(value, IntegerTerm::Machine(_));
             let spelled_value = match value {
-                IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
+                IntegerTerm::Add(left, right)
+                | IntegerTerm::Subtract(left, right)
+                | IntegerTerm::Multiply(left, right) => {
                     let (Some(spelled_left), Some(spelled_right)) = (
                         self.spell_integer_observation(left, written),
                         self.spell_integer_observation(right, written),
@@ -3410,10 +3422,10 @@ impl<'a> Proof<'a> {
                         return Ok(Err(failed.clone()));
                     };
                     let (left, right) = (Box::new(spelled_left), Box::new(spelled_right));
-                    if matches!(value, IntegerTerm::Subtract(..)) {
-                        ContractExpression::Subtract(left, right)
-                    } else {
-                        ContractExpression::Add(left, right)
+                    match value {
+                        IntegerTerm::Subtract(..) => ContractExpression::Subtract(left, right),
+                        IntegerTerm::Multiply(..) => ContractExpression::Multiply(left, right),
+                        _ => ContractExpression::Add(left, right),
                     }
                 }
                 IntegerTerm::Machine(_) => {

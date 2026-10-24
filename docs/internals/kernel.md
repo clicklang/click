@@ -706,7 +706,7 @@ the widths a rule supports; it asks the module
 |---|---|---|
 | Exact comparison | `comparison::native_comparison_of_integer_observation`, `integer_observations_of_native_comparison`, `native_comparison_through_integer_operations` | `to_integer(a) R to_integer(b)` holds exactly when the native comparison of `a` and `b` at their format does |
 | Range | `range::range`, `range_fact`, `constant_word` | `min(F) <= to_integer(v) <= max(F)` |
-| In-range identity | `identity::mathematical`, `machine_operation_of_integer_value` | `to_integer(a op b) == to_integer(a) op to_integer(b)` for `+ -` when the exact result lies in `F` |
+| In-range identity | `identity::mathematical`, `machine_operation_of_integer_value` | `to_integer(a op b) == to_integer(a) op to_integer(b)` for `+ - *` when the exact result lies in `F` |
 | Operation bounds | `bounds::operation_bound` | an unsigned quotient, right shift or remainder by a positive constant, against its operand |
 | Definedness | `definedness::integer_bounds_of_definedness`, `definedness_of_integer_bound`, `defined_formats` | `not overflows(F, op, a, b)` exactly when the exact result lies in `F` |
 | Modular equality | `modular::wrapped_equality_at`, `wrapped_equality_of_integer_equality` | an `Integer` equality over `+ - *` of observations of width `w` implies the word equality modulo `2^w` |
@@ -718,14 +718,28 @@ comparison or overflow test to its node, and a node back to its format and
 operation. It is the only place a rule's width dispatch lives. Where a
 format has no node the rule is unavailable there: no 128-bit operators or
 comparisons, no overflow test except at `int32` and `int64`, no signed quotient
-bound or product identity yet, no narrow quotient (C computes it on
-promoted `int` words), and a `uint32` order spelled as the signed order of
-sign-flipped operands. Those are representation gaps
+bound yet, no narrow quotient (C computes it on promoted `int` words), and
+a `uint32` order spelled as the signed order of sign-flipped operands. Those are representation gaps
 that Stages 2 and 3 of the design remove. The test matrix
 (`machine_integer/matrix_tests.rs`) runs every rule at every format, checks on
 constants that it decides as exact arithmetic does wherever the values fit,
 and names each gap; a rule that misses a format, or newly reaches one, fails
 it.
+
+One statement reaches operations it did not before, a kernel trust the
+certificate checker applies:
+
+- **Product identity.** `integer_operation_identity` accepts a machine `*`
+  at every format with a product node (8 to 64 bits), as it accepts `+` and
+  `-`. A machine product is the product of the operands' words modulo
+  `2^w`, the word's width. Each operand's word is congruent to its value
+  modulo `2^w`: a 32- or 64-bit word is its value's bits, and a narrow word is
+  its canonical extension, congruent modulo `2^32`. Multiplication respects
+  the congruence, so the machine result is congruent to the exact product.
+  The two certified bounds put the exact product inside `F`, where it is the
+  one element of its residue class, and for a narrow format inside the
+  word's canonical range, so the word is that product's canonical carrier.
+  This is the argument the rule already relied on for `+` and `-`.
 
 The modular rule is stated at every width, but the fact context files it at
 32 bits only, as before. A narrow format's operations are 32-bit word

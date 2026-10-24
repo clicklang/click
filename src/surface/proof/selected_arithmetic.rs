@@ -162,7 +162,8 @@ fn observed_operation_format(
         return None;
     };
     [left, right].into_iter().find_map(|side| {
-        crate::kernel::machine_integer::identity::mathematical(side).map(|(ty, _)| ty.format())
+        crate::kernel::machine_integer::identity::additive_mathematical(side)
+            .map(|(ty, _)| ty.format())
     })
 }
 

@@ -3049,7 +3049,7 @@ impl<'a> Proof<'a> {
                     });
                     let Some((value, upper)) = bound else {
                         return Err(self.step_error(
-                            "integer certificate operation bound must be `c * to_integer(x / c) <= to_integer(x)`, `to_integer(x) <= c * to_integer(x / c) + (c - 1)`, or `to_integer(x % c) <= c - 1` for an unsigned `x` and positive constant `c`, with `x >> k` as `x / 2^k`; for a signed `x` also `c * to_integer(x / c) - (c - 1) <= to_integer(x)` in place of the first, and `-(c - 1) <= to_integer(x % c)`",
+                            "integer certificate operation bound must be `c * to_integer(x / c) <= to_integer(x)`, `to_integer(x) <= c * to_integer(x / c) + (c - 1)`, or `to_integer(x % c) <= c - 1` for an unsigned `x` and constant `c`, with `x >> k` as `x / 2^k`",
                         ));
                     };
                     IntegerArithmeticNode::OperationBound {
@@ -4109,7 +4109,7 @@ fn describe_special_arithmetic_check_error(
             "node {index} requires an exact typed cast observation and two non-strict constant bounds on its source value, in lower/upper order, within the destination range"
         ),
         Error::InvalidIntegerOperationIdentity(index) => format!(
-            "node {index} requires `to_integer(a + b) == to_integer(a) + to_integer(b)` (or `-`) for an `int`, `unsigned int`, `int64` or `uint64` operation, and two non-strict constant bounds on the mathematical result, in lower/upper order, within that type's range"
+            "node {index} requires `to_integer(a + b) == to_integer(a) + to_integer(b)` (or `-`, `*`) for a machine operation of 8 to 64 bits, and two non-strict constant bounds on the mathematical result, in lower/upper order, within that type's range"
         ),
         Error::InvalidIntegerProductBounds(index) => format!(
             "node {index} requires four non-strict bounds with constant endpoints on the product operands, in left-lower/upper then right-lower/upper order"

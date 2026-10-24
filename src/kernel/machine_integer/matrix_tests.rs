@@ -48,8 +48,6 @@ const DIVISION_GAPS: &[Ty] = &[
     Ty::Int128,
     Ty::UInt128,
 ];
-/// No product identity is checked yet.
-const PRODUCT_IDENTITY_GAPS: &[Ty] = &FORMATS;
 
 fn in_gaps(gaps: &[Ty], ty: Ty) -> bool {
     gaps.contains(&ty)
@@ -282,10 +280,6 @@ fn in_range_identity_holds_at_every_format() {
                 "{ty:?} {operation:?}"
             );
             let observed = observe(ty, word);
-            if operation == Operation::Multiply && in_gaps(PRODUCT_IDENTITY_GAPS, ty) {
-                assert_eq!(identity::mathematical(&observed), None, "{ty:?}");
-                continue;
-            }
             let value = operation.exact(observe(ty, a.clone()), observe(ty, b.clone()));
             assert_eq!(
                 identity::mathematical(&observed),
