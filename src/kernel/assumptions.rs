@@ -2694,7 +2694,7 @@ impl PureFactContext {
                 fingerprint ^= Self::typed_pointer_read_fingerprint(*variable, key, value);
             }
         }
-        for resources in self.resource_compositions.iter() {
+        for resources in self.resource_compositions.scan_for_upkeep() {
             fingerprint ^= Self::fingerprint(3, resources);
         }
         if let Some(owners) = &self.store_owners {
@@ -4961,7 +4961,7 @@ impl PureFactContext {
         self.algebraic_constructor_conflicts = crate::persistent::PersistentMap::default();
         self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
         self.algebraic_variable_variant_evidence = crate::persistent::PersistentMap::default();
-        self.resource_compositions = crate::persistent::PersistentSet::default();
+        self.resource_compositions = Default::default();
         self.store_owners = None;
         self.composition_members = Default::default();
         self.composition_object_resources = Default::default();
@@ -6190,7 +6190,7 @@ impl PureFactContext {
     ) -> Box<dyn Iterator<Item = &ResourceContext> + '_> {
         match &self.store_owners {
             Some(owners) => Box::new(owners.iter()),
-            None => Box::new(self.resource_compositions.iter()),
+            None => Box::new(self.resource_compositions.scan_unindexed()),
         }
     }
 
@@ -6198,7 +6198,7 @@ impl PureFactContext {
     /// ownership alone proves, independent of any condition or other fact.
     pub(crate) fn compositions_only(&self) -> Self {
         let mut context = Self::new();
-        for resources in self.resource_compositions.iter() {
+        for resources in self.resource_compositions.scan_for_upkeep() {
             context =
                 context.assume_proposition(Proposition::CResourceComposition(resources.clone()));
         }
@@ -7571,7 +7571,7 @@ impl PureFactContext {
                 .all(|proposition| self.prop_facts.contains(proposition))
             && required
                 .resource_compositions
-                .iter()
+                .scan_explicit_input()
                 .all(|resources| self.resource_compositions.contains(resources))
     }
 }
