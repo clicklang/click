@@ -425,3 +425,26 @@ fn authorization_not_field_presence_selects_countability() {
         }
     }
 }
+
+/// A library proof sees only the theorems declared above it, so a missing
+/// sibling of its own module is named as declared later, not as a missing
+/// import, which would change nothing. Outside the module the hint still
+/// suggests the import.
+#[test]
+fn a_later_sibling_of_a_library_proof_is_not_an_import_hint() {
+    let sibling = "click::integer::int32_increment_lower_bound";
+    crate::surface::enter_ambient_declaration("click::integer::int32_increment_upper_bound");
+    let inside = library_import_hint(sibling);
+    crate::surface::enter_ambient_declaration("user_theorem");
+    let outside = library_import_hint(sibling);
+    crate::surface::clear_ambient_proof_source();
+    assert!(
+        inside.contains("declared later in Click library module `click::integer`")
+            && !inside.contains("import"),
+        "{inside}"
+    );
+    assert!(
+        outside.contains("add `import click::integer;`"),
+        "{outside}"
+    );
+}

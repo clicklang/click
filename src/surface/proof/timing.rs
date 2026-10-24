@@ -78,6 +78,21 @@ pub(in crate::surface) fn source_site_kind(tactic: &ProofTactic) -> SourceSiteKi
     }
 }
 
+/// The work budget `tactic`'s timing charges. A `have` whose proof still
+/// searches, `have P by { auto(); }`, owns that search when its body is not
+/// timed tactic by tactic, as inside another `have`'s script, so it spends a
+/// smart budget and a miss is reported as one. Its source site stays a
+/// control container: expansion selects the nested tactics.
+fn budget_class(tactic: &ProofTactic) -> &'static str {
+    if let ProofTactic::Have(_) = tactic
+        && source_site_kind(tactic) == SourceSiteKind::ControlContainer
+        && ProofCertificate::from_proof_tactics(std::slice::from_ref(tactic)).is_err()
+    {
+        return SourceSiteKind::ExpandableAutomation.profiling_label();
+    }
+    source_site_kind(tactic).profiling_label()
+}
+
 /// Attributes the steps `tactic` checks to it in a proof trace: by name
 /// when it is a smart tactic or an elided form, whose search chose them.
 pub(super) fn trace_origin(tactic: &ProofTactic) -> crate::surface::proof_trace::TraceOrigin {
@@ -209,7 +224,7 @@ impl TacticTiming {
             return None;
         }
         crate::instrumentation::enabled().then(|| {
-            let tactic_class = source_site_kind(tactic).profiling_label();
+            let tactic_class = budget_class(tactic);
             if crate::instrumentation::starts_enabled() {
                 crate::instrumentation::emit(
                     crate::instrumentation::VerificationEvent::TacticStarted(
