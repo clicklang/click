@@ -272,12 +272,20 @@ The fast/slow line is expansion: anything that still runs while checking an
 expanded proof must be fast. That is every simple tactic and every kernel
 check, not only code outside `simp`.
 
+Proposition facts (`FactSet`) have no `scan_unindexed` at all now: fast
+code reads them only through an index, and a new whole-set scan there does
+not compile.
+
 **Known fast-part scans** (`scan_unindexed`) still open:
 
 - Certifying an existential obligation from an assumed existential
-  (`certification_proves_exists_obligation_from_facts`). It tries each
-  existential fact of the obligation's sort as the witness source, a
-  search for which fact to use.
+  (`certification_proves_exists_obligation_from_facts`) when no assumed
+  existential is alpha-equal to it. It reads the alpha-equal ones from the
+  identity bucket first; those were every hit across the gate and the unit
+  tests (four, each with three facts on its path). On a miss it tries each
+  existential of the obligation's sort (`existentials_over`) as the witness
+  source, a search for which fact to use; it once tried every proposition
+  fact (`existential_obligation_ignores_unrelated_facts`).
 - The memory-resolution condition match's fallback
   (`scanned_matching_condition_fact_for_memory_resolution`), reached from
   `functions.rs` and contract certification whenever its index declines.
@@ -369,12 +377,19 @@ every composition:
   resource identity, which the member index does not file (two memory
   sides read it): the index lists a composition under the memory members
   it adds beyond its predecessor, and a non-memory member would need the
-  same difference over non-memory facts; and the composition range cover in
-  `proves_resource_separate_inner`, whose owner of the other side may be a
-  composite;
+  same difference over non-memory facts;
+- the composition range cover in `proves_resource_separate_inner`, only
+  while the path states a containment fact with a non-memory parent.
+  Otherwise the owner of the other range is a memory member in its block
+  or in a block its address equals, and the cover reads the compositions
+  listed under those blocks and the target's: one listed under none holds
+  no member there beyond its predecessor, which covers whatever it covers
+  (`composition_cover_ignores_unrelated_compositions`; debug builds compare
+  every answer with the scan);
 - the composite frame frontier (`frame_frontier_compositions`), now over
-  the compositions owning a composite only (`composite_owning_compositions`;
-  a composition without one expands to nothing). Its gate once walked
+  the compositions owning a composite only (`composite_owning_compositions`,
+  read from each composition's own count; a composition without one
+  expands to nothing). Its gate once walked
   every fact of every composition on each store's cell drop
   (`frame_frontier_ignores_compositions_without_composites`);
 - `store_compositions` when the writer stated no store owners: the

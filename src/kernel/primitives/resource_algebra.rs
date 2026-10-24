@@ -4056,6 +4056,11 @@ impl ResourceContext {
         })
     }
 
+    /// Whether this composition owns a composite, read from its index.
+    pub(in crate::kernel) fn owns_composite(&self) -> bool {
+        self.storage.index.owned_composite_count != 0
+    }
+
     /// Reads at most two entries from the maintained owned-memory index.
     pub(in crate::kernel) fn has_multiple_owned_memory_members(&self) -> bool {
         crate::instrumentation::record_deterministic_work(1);

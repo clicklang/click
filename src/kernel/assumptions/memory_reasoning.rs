@@ -3506,53 +3506,87 @@ impl PureFactContext {
                 if target.wide_bounds().is_some() {
                     return false;
                 }
-                self.resource_compositions
-                    .scan_unindexed()
-                    .any(|resources| {
-                        let cover = |ranges: Vec<CMemoryRange>| {
-                            let intervals = ranges
-                                .into_iter()
-                                .filter_map(|range| {
-                                    if range.wide_bounds().is_some() {
-                                        return None;
-                                    }
-                                    self.fact_range_interval_on_target(
-                                        target,
-                                        range.base(),
-                                        range.start(),
-                                        range.end(),
-                                    )
-                                })
-                                .collect();
-                            range_intervals_cover_target(target, intervals)
-                        };
-                        let indexed = cover(resources.owned_memory_ranges_separate_from(
-                            target,
-                            other,
-                            self,
-                            |owner, child| self.proves_resource_contains_inner(owner, child),
-                        ));
-                        #[cfg(debug_assertions)]
-                        if crate::instrumentation::separation_candidate_cross_checks_enabled()
-                            && !crate::instrumentation::in_uncharged_debug_check()
-                        {
-                            crate::instrumentation::uncharged_debug_check(|| {
-                                let full =
-                                    cover(resources.owned_memory_ranges_separate_from_full_scan(
-                                        &target.base().block,
-                                        &CResource::Memory(other.clone()),
-                                        |owner, child| {
-                                            self.proves_resource_contains_inner(owner, child)
-                                        },
-                                    ));
-                                assert_eq!(
-                                    indexed, full,
-                                    "indexed separation interval cover differs from full scan"
-                                );
-                            });
+                let covers = |resources: &ResourceContext| {
+                    let cover = |ranges: Vec<CMemoryRange>| {
+                        let intervals = ranges
+                            .into_iter()
+                            .filter_map(|range| {
+                                if range.wide_bounds().is_some() {
+                                    return None;
+                                }
+                                self.fact_range_interval_on_target(
+                                    target,
+                                    range.base(),
+                                    range.start(),
+                                    range.end(),
+                                )
+                            })
+                            .collect();
+                        range_intervals_cover_target(target, intervals)
+                    };
+                    let indexed = cover(resources.owned_memory_ranges_separate_from(
+                        target,
+                        other,
+                        self,
+                        |owner, child| self.proves_resource_contains_inner(owner, child),
+                    ));
+                    #[cfg(debug_assertions)]
+                    if crate::instrumentation::separation_candidate_cross_checks_enabled()
+                        && !crate::instrumentation::in_uncharged_debug_check()
+                    {
+                        crate::instrumentation::uncharged_debug_check(|| {
+                            let full =
+                                cover(resources.owned_memory_ranges_separate_from_full_scan(
+                                    &target.base().block,
+                                    &CResource::Memory(other.clone()),
+                                    |owner, child| {
+                                        self.proves_resource_contains_inner(owner, child)
+                                    },
+                                ));
+                            assert_eq!(
+                                indexed, full,
+                                "indexed separation interval cover differs from full scan"
+                            );
+                        });
+                    }
+                    indexed
+                };
+                // A composition covers `target` with its owned members in
+                // `target`'s block, apart from an owner of `other`: a member
+                // in `other`'s block or in one its address equals, or a
+                // non-memory owner, which contains memory only through a
+                // containment fact with that parent. With no such fact, the
+                // compositions listed under those blocks are enough
+                // (`CompositionMemberIndex`): one listed under none of them
+                // holds no member there beyond its predecessor, which then
+                // covers whatever it covers.
+                if self.nonmemory_parent_containments != 0 {
+                    return self.resource_compositions.scan_unindexed().any(covers);
+                }
+                let mut blocks = vec![target.base().block.clone(), other.base().block.clone()];
+                for pointer in [other.base().clone(), other.start_pointer()] {
+                    for (alias, _) in self.pointer_equality_component(&pointer) {
+                        if !blocks.contains(&alias.block) {
+                            blocks.push(alias.block);
                         }
-                        indexed
-                    })
+                    }
+                }
+                let indexed = self
+                    .composition_members
+                    .listed_under([], blocks.iter())
+                    .into_iter()
+                    .any(covers);
+                #[cfg(debug_assertions)]
+                if !crate::instrumentation::in_uncharged_debug_check() {
+                    crate::instrumentation::uncharged_debug_check(|| {
+                        let scanned = self.resource_compositions.scan_for_upkeep().any(covers);
+                        assert_eq!(
+                            indexed, scanned,
+                            "the listed compositions' cover differs from every composition's"
+                        );
+                    });
+                }
+                indexed
             };
             if crate::instrumentation::measure_operation(
                 "kernel",
@@ -5418,6 +5452,35 @@ mod shallow_composition_separation_tests {
             left: Box::new(CResource::Memory(cells(left))),
             right: Box::new(CResource::Memory(cells(right))),
         }
+    }
+
+    /// A range is separate from another when a composition's owned members
+    /// in its block cover it apart from the other's owner. The cover reads
+    /// the compositions listed under the two ranges' blocks
+    /// (`CompositionMemberIndex`); it once asked every stated composition.
+    #[test]
+    fn composition_cover_ignores_unrelated_compositions() {
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            // The first composition is the index's unlisted root.
+            let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
+                facts.assume_proposition(owner_of(&[at(&format!("cover-other-{index}"))]))
+            });
+            let (left, right) = (cells(9_200), cells(9_201));
+            let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.proves_resource_separate(
+                    &CResource::Memory(left.clone()),
+                    &CResource::Memory(right.clone()),
+                )
+            });
+            assert!(!separate);
+            samples.push((size, work));
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "the composition cover grew with unrelated compositions: {samples:?}"
+        );
     }
 
     fn token(name: &str) -> CResource {
