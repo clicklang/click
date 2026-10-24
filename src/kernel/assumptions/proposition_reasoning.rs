@@ -422,7 +422,7 @@ impl PureFactContext {
                 var, sort, body, ..
             } => {
                 self.prop_facts.contains(proposition)
-                    || self.prop_facts.iter().any(|fact| {
+                    || self.quantified_fact_propositions().any(|fact| {
                         let Proposition::ForAll {
                             var: fact_var,
                             sort: fact_sort,
@@ -2557,12 +2557,23 @@ impl PureFactContext {
         self.difference_graph_proves_order(&left, &right, strict)
     }
 
+    /// The universal proposition facts, in `prop_facts` order, charged one
+    /// unit each: only these can be instantiated or alpha-renamed.
+    pub(in crate::kernel) fn quantified_fact_propositions(
+        &self,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.atomic_quantified_facts.iter().map(|fact| {
+            crate::instrumentation::record_deterministic_work(1);
+            fact.as_ref()
+        })
+    }
+
     pub(super) fn collect_quantified_order_facts_for_condition(
         &self,
         condition: &ConditionTerm,
         order_facts: &mut Vec<(Bitvector32Term, Bitvector32Term, bool)>,
     ) {
-        for proposition in self.prop_facts.iter() {
+        for proposition in self.quantified_fact_propositions() {
             for instance in self.forall_instantiations_for_condition(proposition, condition) {
                 self.collect_derived_order_facts_from_proposition(&instance, order_facts);
             }
@@ -2621,18 +2632,14 @@ impl PureFactContext {
 
     /// The consequents of this context's universal implications, instantiated
     /// where `condition` names their bound variable and their antecedent is
-    /// proved here. One scan of the quantified facts; each candidate costs its
+    /// proved here. One scan of the universal facts; each candidate costs its
     /// own antecedent.
     pub(in crate::kernel) fn instantiated_universal_consequents(
         &self,
         condition: &ConditionTerm,
     ) -> Vec<Proposition> {
         let mut consequents = Vec::new();
-        for proposition in self.prop_facts.iter() {
-            if !matches!(proposition, Proposition::ForAll { .. }) {
-                continue;
-            }
-            crate::instrumentation::record_deterministic_work(1);
+        for proposition in self.quantified_fact_propositions() {
             for instance in self.forall_instantiations_for_condition(proposition, condition) {
                 if let Proposition::Implies(antecedent, consequent) = instance
                     && self.proves_without_prop_facts(&antecedent)
