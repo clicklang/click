@@ -476,24 +476,10 @@ impl BitvectorUnaryOp {
 /// A comparison or overflow test of two machine-integer operands, at the
 /// format that reads them: the shape of [`ConditionTerm::Compare`] and
 /// [`ConditionTerm::Overflows`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum BitvectorComparisonOp {
     Compare(MachineIntegerType, CompareRelation),
     Overflows(MachineIntegerType, OverflowOperation),
-}
-
-impl PartialOrd for BitvectorComparisonOp {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-/// The order of the condition each operator builds
-/// (`ConditionTerm::order_rank`).
-impl Ord for BitvectorComparisonOp {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.order_rank().cmp(&other.order_rank())
-    }
 }
 
 impl ConditionTerm {
@@ -587,36 +573,6 @@ impl BitvectorComparisonOp {
         match self {
             Self::Compare(MachineIntegerType::Int64, CompareRelation::Equal) => "bits64",
             other => other.format().name(),
-        }
-    }
-
-    /// The position of the condition this operator builds in the order of
-    /// conditions (`ConditionTerm::order_rank`).
-    pub(super) fn order_rank(self) -> u32 {
-        let relation = |relation: CompareRelation| match relation {
-            CompareRelation::LessThan => 0,
-            CompareRelation::LessEqual => 1,
-            CompareRelation::GreaterThan => 2,
-            CompareRelation::GreaterEqual => 3,
-            CompareRelation::Equal => 4,
-        };
-        let operation = |op: OverflowOperation| match op {
-            OverflowOperation::Add => 0,
-            OverflowOperation::Subtract => 1,
-            OverflowOperation::Multiply => 2,
-            OverflowOperation::Divide => 3,
-            OverflowOperation::ShiftLeft => 4,
-        };
-        use MachineIntegerType as Ty;
-        match self {
-            Self::Compare(Ty::Int32, r) => 100 + relation(r),
-            Self::Overflows(Ty::Int32, op) => 110 + operation(op),
-            Self::Compare(Ty::Int64 | Ty::UInt64, CompareRelation::Equal) => 208,
-            Self::Compare(Ty::Int64, r) => 200 + relation(r),
-            Self::Compare(Ty::UInt64, r) => 204 + relation(r),
-            Self::Overflows(Ty::Int64, op) => 210 + operation(op),
-            Self::Compare(format, r) => 1000 + 20 * format as u32 + relation(r),
-            Self::Overflows(format, op) => 1010 + 20 * format as u32 + operation(op),
         }
     }
 
