@@ -2,6 +2,7 @@
 # Regressions for cached source-built nextest versions and binary installation.
 # Use fake tools so this check never installs packages or reaches the network.
 set -euo pipefail
+platform="$(uname -s)"
 
 repository="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 directory="$(mktemp -d)"
@@ -21,6 +22,12 @@ cat > "$directory/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'download\n' >> "$MOCK_DOWNLOADS"
+if [[ "${MOCK_PRIMARY_DOWNLOAD_FAIL:-}" == 1 && "$*" == *https://get.nexte.st/* ]]; then
+    exit 22
+fi
+if [[ "${MOCK_RELEASE_DOWNLOAD_FAIL:-}" == 1 ]]; then
+    exit 22
+fi
 while [[ $# -gt 0 ]]; do
     if [[ "$1" == --output ]]; then
         cp "$MOCK_RELEASE_ARCHIVE" "$2"
@@ -63,6 +70,19 @@ check_case 'cargo-nextest 0.9.143' 0
 check_case $'cargo-nextest 0.9.143\nrelease: 0.9.143\nhost: x86_64-unknown-linux-gnu' 0
 check_case $'cargo-nextest 0.9.143 (60fa45f63 2026-08-04)\nrelease: 0.9.143' 0
 check_case 'cargo-nextest 0.9.142' 1
+
+# A blocked shortcut can use the same pinned release on GitHub. Failure of
+# both sources must still fail setup rather than accepting the stale binary.
+export MOCK_PRIMARY_DOWNLOAD_FAIL=1
+check_case 'cargo-nextest 0.9.142' 2
+export MOCK_RELEASE_DOWNLOAD_FAIL=1
+export MOCK_NEXTEST_OUTPUT='cargo-nextest 0.9.142'
+cp "$directory/cached-nextest" "$directory/bin/cargo-nextest"
+if "$repository/scripts/setup-environment.sh" --docs-only > "$directory/output" 2>&1; then
+    echo 'error: setup accepted a stale nextest after both downloads failed' >&2
+    exit 1
+fi
+unset MOCK_PRIMARY_DOWNLOAD_FAIL MOCK_RELEASE_DOWNLOAD_FAIL
 
 # Refuse an incorrect downloaded version instead of silently running its tests.
 export MOCK_NEXTEST_OUTPUT='cargo-nextest 0.9.142'
@@ -137,5 +157,46 @@ fi
 if "$repository/scripts/charon-runtime.sh" pack "$directory/missing-runtime.tar.gz" > "$directory/output" 2>&1; then
     echo "error: packed a missing Rust runtime" >&2
     exit 1
+fi
+# Minimal Linux images omit docs/man pages that dpkg still lists. Keep real
+# compiler files in the cache and fail if a required file is missing.
+if [[ "$platform" == Linux ]]; then
+    export MOCK_LLVM_FILE="$directory/libLLVM-test.so"
+    export MOCK_MISSING_LLVM_FILE=""
+    export MOCK_LLVM_LICENSE=""
+    for license in /usr/share/doc/*/copyright; do
+        if [[ -f "$license" ]]; then
+            MOCK_LLVM_LICENSE="$license"
+            break
+        fi
+    done
+    printf 'compiler runtime\n' > "$MOCK_LLVM_FILE"
+    cat > "$directory/bin/dpkg-query" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$MOCK_LLVM_FILE" /usr/share/doc/clang-19/omitted-doc /usr/share/man/man1/omitted-page.1.gz
+[[ -z "$MOCK_LLVM_LICENSE" ]] || printf '%s\n' "$MOCK_LLVM_LICENSE"
+if [[ -n "$MOCK_MISSING_LLVM_FILE" ]]; then
+    printf '%s\n' "$MOCK_MISSING_LLVM_FILE"
+fi
+EOF
+    # Compression is orthogonal to archive membership and missing-file errors.
+    cat > "$directory/bin/zstd" <<'EOF'
+#!/usr/bin/env bash
+exec cat
+EOF
+    chmod +x "$directory/bin/dpkg-query" "$directory/bin/zstd"
+    "$repository/scripts/cache-llvm.sh" "$directory/llvm.tar.zst"
+    members="$(tar -tf "$directory/llvm.tar.zst")"
+    [[ "$members" == *"${MOCK_LLVM_FILE#/}"* ]]
+    [[ "$members" != *omitted-doc* && "$members" != *omitted-page* ]]
+    if [[ -n "$MOCK_LLVM_LICENSE" ]]; then
+        [[ "$members" == *"${MOCK_LLVM_LICENSE#/}"* ]]
+    fi
+    export MOCK_MISSING_LLVM_FILE="$directory/missing-compiler.so"
+    if "$repository/scripts/cache-llvm.sh" "$directory/missing.tar.zst" > "$directory/output" 2>&1; then
+        echo 'error: LLVM cache accepted a missing compiler file' >&2
+        exit 1
+    fi
+    [[ ! -e "$directory/missing.tar.zst" && ! -e "$directory/missing.tar.zst.tmp" ]]
 fi
 echo "Environment setup regressions passed"

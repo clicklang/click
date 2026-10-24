@@ -32,7 +32,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/click/llvm
-          key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh', 'scripts/cache-llvm.sh') }}
       - name: Locate pinned Charon compiler runtime
         id: rust_runtime
         run: |
@@ -65,7 +65,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/click/llvm
-          key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh', 'scripts/cache-llvm.sh') }}
       - name: Set up full test environment
         run: scripts/setup-environment.sh
       - uses: Swatinem/rust-cache@v2

@@ -366,6 +366,151 @@ minutes on four cores, from one example: `examples/rbtree/rbtree-augmented` grew
 from 259 to 5,467 proof lines in a day and verified in 261 seconds of the
 examples harness's 317, so it joined the other rbtree examples in nightly.
 
+## Gate timing baselines
+
+The **gate timing baselines** are the reference for expected gate speed. When
+asked to compare a run with the baselines, use this section and match the
+environment, cache state, command, and source revision before interpreting a
+difference. These observations are separate from the ten-minute gate budget;
+first-time prerequisite installation is outside that budget.
+
+Distinguish three scenarios:
+
+1. **Fresh machine:** start with a supported OS and an empty checkout, tool,
+   Cargo download, build, and incremental cache. Count prerequisite setup plus
+   the first full gate. Exclude provisioning the VM or pulling its OS image.
+2. **Edit and rerun:** retain tools, downloaded dependencies, and compiled
+   dependencies; make a Rust change and run the full gate. Record the change
+   and whether Click's own incremental state was retained: adding one test
+   and rebuilding all of Click are different workloads.
+3. **Unchanged rerun:** immediately repeat the full gate with the same source
+   and build artifacts. This measures the test-execution floor, not editing
+   performance.
+
+All local measurements use plain `scripts/check.sh`, with both compiler
+frontends installed and no test filters. These are single-run observations,
+not medians or timing guarantees. Unknown cells mean unmeasured; do not
+substitute the ten-minute target or a partial-cache measurement.
+
+| Environment | Fresh setup + first gate | Edit and rerun | Unchanged rerun |
+| --- | --- | --- | --- |
+| Codex cloud, 4 CPU cores / 16 GiB, Linux x86-64 | 15m09s of commands: 6m01s setup + 9m08s gate | 5m25s for one added Rust test; 7m00s for a full Click rebuild | 4m50s |
+| GitHub Actions, `ubuntu-24.04`, sharded workflow | Unmeasured with all Click caches empty | 6m11s with build and tool caches restored | 6m15s for a same-source merge-queue workflow |
+
+The CI unchanged case tests an identical Git tree in a new workflow, not the
+same executable in the same working directory. It includes fresh checkouts,
+remote cache restores, compilation as needed, artifact transfers, and runner
+startup. Its few seconds of difference from the edited case are not evidence
+that an unchanged source tree is slower. A fully cold CI measurement remains
+missing; the 9m40s comparison below must not fill that cell.
+
+### Environment resource profile
+
+The Codex cloud resource profile was inspected on **2026-10-24**. The fresh,
+small-edit, and unchanged timings were measured on that date using verifier
+commit **`929f45018944c9443be3b29199e091f27f7ae93e`**, plus the provisioning fixes
+described below and the documented temporary test for the small-edit case.
+The earlier full Click rebuild used that same verifier commit on **2026-10-23**.
+
+| Resource | Codex cloud measurement environment |
+| --- | --- |
+| CPU allocation | **4 CPU cores of effective quota** (`cpu.max = 400000 100000`); CPU affinity exposes 5 logical CPUs |
+| CPU model / architecture | AMD EPYC 9V45 96-Core Processor; `x86_64` |
+| Memory | **16 GiB** cgroup limit (`memory.max = 17179869184`), including the benchmark container; no configured swap |
+| Storage | Approximately **31.5 GiB** shared ephemeral overlay filesystem, with about 16 GiB free before the fresh benchmark; Cargo and Docker used this same storage |
+| Operating system | Host: Debian GNU/Linux 13.6, kernel 6.18.55; clean benchmark container: Ubuntu 24.04 |
+| Build concurrency | **5 Cargo jobs**; ordinary gate defaults for test and fixture workers; no competing benchmark builds |
+| Compiler/frontends | Rust and Cargo **1.98.1**; LLVM/Clang **19.1.7**; Charon's pinned **nightly-2026-09-17** Rust toolchain |
+| Test/docs tools | Clean benchmark: nextest **0.9.143**, mdBook **0.4.52**; the host's later documentation-validation check used nextest 0.9.146 |
+
+The nested benchmark container had the same four-core quota and 16 GiB limit;
+it did not add resources to the host's allowance. The CPU model names the host
+processor, not the number of cores allocated to this task. Compare effective
+CPU and memory limits rather than host-wide totals reported by `/proc`.
+The GitHub Actions samples use standard `ubuntu-24.04` hosted runners; their
+logs do not establish an exact CPU model or memory allocation, so the Codex
+resource values above must not be attributed to those runners. Their dates,
+checked-out revisions, and workflow links are recorded below.
+
+### Measurement evidence
+
+- **Codex cloud fresh setup:** measured on 2026-10-24 at `929f45018`, with
+  this change's provisioning fixes and no verifier changes. The host is Debian
+  13; the isolated container is Ubuntu 24.04, with a four-core CPU quota,
+  16 GiB memory limit, and five Cargo jobs. No host compiler, tool, Cargo, or
+  build cache was mounted into it. The 6m01s setup sum includes base build tools,
+  rustup, the pinned Rust and LLVM toolchains, nextest, mdBook, repository
+  checkout, and failed setup attempts. The first plain gate then passed in
+  9m08s, including exporter builds and all 6,476 unit/API tests and four corpus
+  tests. The 15m09s total sums timed commands and excludes the agent's diagnostic
+  pauses; it was not one uninterrupted setup invocation. Provisioning the OS
+  image is also excluded.
+- **Fresh-setup fixes:** the cloud network denied `get.nexte.st`, so the
+  pinned nextest release was obtained from its official GitHub asset. Setup now
+  falls back to that URL automatically. Ubuntu's minimal image also omitted
+  manual files still listed by dpkg; the LLVM cache writer now skips missing
+  documentation while preserving installed documentation and failing on
+  missing compiler files. All setup attempts are counted above; no compiled
+  artifacts were imported to recover from those failures.
+- **Codex cloud unchanged run:** immediately following the fresh gate, using
+  the same Ubuntu container, compiler artifacts, verifier, and corpus, the
+  full gate passed in 4m50s. Nextest's cached build took 0.12s; unit/API tests
+  took 126.50s and the four fixture tests took 153.29s.
+- **Codex cloud small edit:** in that same container, with incremental state
+  retained, appending one temporary unit test to `src/lib.rs` made the next
+  full gate take 5m25s. The test asserts that `std::hint::black_box(2) + 2`
+  equals 4; it changes no verifier logic or proof input. The incremental test
+  build took 37.59s, and all 6,477 unit/API tests and four fixture tests passed.
+  The temporary test is a benchmark edit, not part of the repository.
+- **Codex cloud rebuild:** measured on 2026-10-23 at `929f45018` in
+  [PR #1920](https://github.com/clicklang/click/pull/1920). Rust 1.98.1,
+  five Cargo jobs, dependencies already compiled, Click rebuilt. The full gate
+  passed in 7m00s; compiler-process RSS peaked at 8.48 GiB. This is a substantial
+  rebuild observation, not a promise that every one-line edit takes seven
+  minutes.
+- **GitHub Actions cached edit:** the successful
+  [tests run for PR #1963](https://github.com/clicklang/click/actions/runs/40110835408)
+  on 2026-10-24 took 6m11s from the first `scope` job log to the final `test`
+  check, testing merge commit `9588023c0`. It restored tool caches and the
+  compatible `master` build snapshot.
+  Preparation took 3m41s, including cache restore, exporter work, a 51.80s test
+  build, and artifact upload. Shards and orchestration completed the remaining
+  time. The interval excludes initial runner queue time but includes waits
+  between jobs and artifact transfers.
+- **GitHub Actions unchanged source:** the successful
+  [merge-queue run for PR #1960](https://github.com/clicklang/click/actions/runs/40110304932)
+  on 2026-10-24 took 6m15s by the same clock. Its checked-out commit
+  `7c8dfce80` and the preceding PR run's checked-out merge commit `879f26cb5`
+  both have Git tree `0ab69065245b88683a3c519f17edf64107f73ba1`.
+  Tool caches hit and the build snapshot came from `master` at `10cb3a2e7`.
+  Preparation took 3m53s, including a 27.52s test build. This is a measured
+  same-source workflow, rather than an assumption that a queue run has the
+  same source as its PR run.
+- **GitHub Actions Cargo-cold comparison:** the successful
+  [tests run for PR #1920](https://github.com/clicklang/click/actions/runs/40022592662)
+  on 2026-10-23 took 9m40s by the same clock. Its Cargo build-cache lookup
+  missed, but LLVM, Charon compiler-runtime, nextest, and documentation-tool
+  caches hit. This is **not** a fully fresh-machine measurement. Preparation
+  took 7m12s, including a 3m50s test build and artifact upload.
+
+### Updating the baselines
+
+Pin one revision for a comparison. Record the OS, architecture, effective CPU
+quota, memory limit, Rust/tool versions, Cargo job count, frontend availability,
+source diff, exact commands, cache state, elapsed wall time, and exit status.
+Keep measured results distinct from estimates. Do not measure competing builds
+at the same time, silently omit unavailable frontends, increase stack or work
+limits, or treat an interrupted or failing run as a passing baseline.
+
+For a fresh measurement, isolate the checkout and all caches in a disposable
+machine or container; do not clear another developer's working caches. Time
+setup and the gate separately, then add them for the first-run total. Retain
+those caches for the unchanged and edit measurements. For CI, inspect cache-hit
+logs and the complete workflow interval; summing parallel job durations does
+not measure how long a user waits. Record a fresh row only when tools as well
+as Cargo artifacts were absent. A retry of CI still uses a new hosted runner
+and can restore remote caches; it is not equivalent to a local unchanged run.
+
 ## One verifier build in the budgeted gate
 
 The ordinary `scripts/check.sh` gate compiles only the library test target,
