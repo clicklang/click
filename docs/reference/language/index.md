@@ -3648,7 +3648,7 @@ Function contracts may also use contract-level `let` bindings:
 ```click
 int32 bounded_increment(int32 x) {
     let max: int32 = 2147483647;
-    let expected = x + 1;
+    let expected: int32 = x + 1;
 
     requires x < max;
     ensures result_value: result == expected by auto();

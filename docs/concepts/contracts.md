@@ -23,7 +23,7 @@ A contract can define immutable local names:
 <!-- verified-example: mdtests/contract_let_bindings.md -->
 ```click
 let max: int32 = 2147483647;
-let expected = x + 1;
+let expected: int32 = x + 1;
 
 requires x < max;
 ensures result_value: result == expected by auto();

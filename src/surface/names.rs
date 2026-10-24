@@ -117,6 +117,36 @@ pub(super) fn library_declarations() -> &'static BTreeMap<&'static str, Vec<TopL
     })
 }
 
+/// The positions of the `Integer` parameters of each Click library function
+/// and theorem that has any, by the name a reference to it resolves to.
+/// Read from the library's tokens once per process.
+pub(super) fn library_integer_parameters() -> &'static BTreeMap<String, Vec<usize>> {
+    static POSITIONS: std::sync::OnceLock<BTreeMap<String, Vec<usize>>> =
+        std::sync::OnceLock::new();
+    POSITIONS.get_or_init(|| {
+        let mut positions = BTreeMap::new();
+        for (identity, source) in super::CLICK_LIBRARY_MODULES {
+            let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
+                continue;
+            };
+            for declaration in top_level_declarations(&tokens) {
+                if !matches!(
+                    declaration.kind,
+                    DeclarationKind::Function | DeclarationKind::Theorem
+                ) {
+                    continue;
+                }
+                if let Some(integers) =
+                    super::parser::written_integer_parameters(&tokens, declaration.at + 1)
+                {
+                    positions.insert(resolved_name(identity, &declaration.name), integers);
+                }
+            }
+        }
+        positions
+    })
+}
+
 /// The names a library module declares of the kinds `kinds`.
 fn library_names_of<'k>(
     identity: &str,
