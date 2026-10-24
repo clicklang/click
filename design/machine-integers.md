@@ -280,6 +280,44 @@ changes (`docs/internals/verification-efficiency.md`).
 - Afterwards `narrow_word_is_extension` holds for every narrow term, and
   its guard can go.
 
+Done 2026-10-23. What changed:
+
+- The invariant is stated in `docs/internals/kernel.md` ("One meaning for
+  a narrow value"), and the sentences that let a narrow word be unextended
+  are gone from it and from `docs/internals/mathematical-integers.md`.
+- Debug builds refuse a narrow value, narrow observation, or narrow
+  conversion operand whose word is not built as a canonical carrier
+  (`src/kernel/primitives/term_width/narrow.rs`), at the width checker's
+  hooks: an evaluated expression, a stored value, an assumed condition.
+  The gate's unit and fixture phases run clean under it.
+- The one producer it flagged in the gate was the checked (`Standard`)
+  narrowing, which Rust's checked narrow arithmetic and Rust-sidecar
+  narrow sums lower to: it returned the operand's 32-bit carrier. It now
+  returns the `MachineIntegerCast` node and files, beside its range
+  obligations, the certified identity `to_integer(conv(w)) ==
+  to_integer(w)`, which holds exactly where those obligations do, and for
+  an operand of at most 32 bits the word identity `conv(w) == w`, which a
+  comparison of words (Rust's `i8` `result == x / y`) needs. Every verdict
+  is unchanged. Rust's modular `as` already spelled the extension
+  (`((w & mask) ^ sign) - sign`), which the checker accepts. Two kernel
+  tests that stored an unextended byte now store its conversion.
+- Binders keep their representation: a fresh variable whose range is
+  stated where it is introduced (`c_narrow_integer_range_facts`). The
+  checker accepts a variable at a narrow format as such a binder.
+- `integer_cast_identity` accepts a widening of an 8- or 16-bit value into
+  a containing format through the same word or its 32-to-64-bit
+  extension, when the word is built as a canonical carrier or is a binder
+  whose stated `int32` range the certificate cites, and `auto` plans it by
+  matching the word, so every C widening of a narrow value
+  verifies with no premise (`mdtests/auto_widens_*`,
+  `mdtests/integer_cast_identity_widens_a_narrow_value.md`).
+- `narrow_word_is_extension` is gone. A narrow comparison still takes its
+  native form only where that form's `int32` reading normalizes back to
+  the same narrow observation, since a binder's word does not record its
+  format; that is now a spelling rule, not a soundness guard. Dropping it
+  outright changed verdicts: a binder's bounds filed natively read back as
+  `int32` observations.
+
 ### Stage 1. Rules stated once
 
 - Move the width-dispatched rules into `kernel/machine_integer/` as one

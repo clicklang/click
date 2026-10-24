@@ -519,10 +519,10 @@ In `src/kernel/`:
   width either, so each fact context remembers the width its facts use each
   variable at, and debug builds also refuse a condition that uses one at
   another width. The scope is the context, not the run: variable numbers are
-  assigned per function, and two facts only combine within one context. A
-  narrow constant must also lie inside its type's range: an `int8` constant
-  is its sign-extended word, a `uint8` one its zero-extended word. Why the
-  width stays implied instead of part of the term is ruled in
+  assigned per function, and two facts only combine within one context.
+  Debug builds also refuse a narrow value whose word is not the canonical
+  carrier of its format (see "One meaning for a narrow value" below). Why
+  the width stays implied instead of part of the term is ruled in
   `design/typed-indices.md`.
 - `PointerOffsetTerm`: pointer-offset expressions.
 - `ConditionTerm`: proof-level truth-valued conditions such as signed and
@@ -562,11 +562,80 @@ The current integer conversion slice is deliberately small. `eval.rs` promotes
 `int8`, `int16`, `uint8`, and `uint16` rvalues to `int32` terms for arithmetic, ordered
 comparisons, shifts, and bitwise operators, assignments, and returns.
 
-A narrow value is in its type's range wherever one exists, because every
-conversion into a narrow type owes that range as an obligation. The range
-(`0 <= x` and `x <= 255` for `uint8`, with the unsigned bound beside them for
-an unsigned type) has one definition, `c_narrow_integer_range_facts`, and is
-stated where the value is introduced, never where it is used:
+### One meaning for a narrow value
+
+A term of an 8- or 16-bit format (`int8`, `uint8`, `int16`, `uint16`, and
+`_Bool` read as `uint8`) has a 32-bit carrier word that is the canonical
+element of its format: the sign extension of a signed value, the zero
+extension of an unsigned one. `to_integer` of the term is that value, and no
+rule reads "the low bits of a word". Producers keep the invariant; readers
+rely on it:
+
+- a constant is its extended word;
+- a load of a narrow kind, or the variable naming one, reads the extension
+  of the stored value;
+- every conversion into a narrow format is a `MachineIntegerCast` node (or
+  `IntegerToMachine` from an Integer), whose word is the extension of the
+  converted value. C, a specification's cast, and C++20 or Rust `as`
+  convert modulo 2^N and owe nothing; Rust's `as` spells the extension as
+  `((w & mask) ^ sign) - sign` or `w & mask`. A checked (`Standard`)
+  narrowing, which Rust's checked narrow arithmetic lowers to, owes the
+  destination range as obligations and files, beside them, the certified
+  identity `to_integer(conv(w)) == to_integer(w)`, which holds exactly where
+  the obligations do (`checked_narrowing_identity`). For an operand of at
+  most 32 bits, which is its own value's extension, it also files the word
+  identity `conv(w) == w`, the form a comparison of words takes, so Rust's
+  `ensures result == x / y` on `i8` closes as it did when the result was
+  the operand's word;
+- a narrow binder (a parameter, a theorem or quantifier binder, or a value
+  a loop or call produced) is a fresh variable whose range is stated where
+  it is introduced, below; that range makes its word the canonical carrier.
+
+A word canonical for a narrow format is canonical for every format of at
+most 32 bits that contains it, so widening needs no premise: C promotion
+reuses the word, and a 64-bit widening extends it. `integer_cast_identity`
+accepts `to_integer(widened) == to_integer(x)` for a narrow `x` read at a
+containing format through the same word or its 32-to-64-bit extension,
+when that word is built as one of the forms above, so a term that merely
+claims a narrow format is not promoted (a zero-extended `0xffff` read as
+`int16` is negative, not `65535`). The kernel does not take a binder's
+canonicity on trust: a widening of an unregistered variable cites, as its
+two bounds, the range facts the binder's introduction filed, the native
+comparisons `w >= lo` and `w <= hi` (written `(int32)x >= lo`), which the
+checker reads as `lo <= int32(w)` and `int32(w) <= hi` and requires inside
+the source's range; bounds on the narrow observation alone are refused, and
+a variable nested inside another form is not a carrier to this rule
+(`narrow_word_is_syntactic_carrier`, `narrow_binder_range_facts`). `auto`
+and the planner cite those facts exactly as filed, and plan the identity
+by matching the word
+(`mdtests/auto_widens_a_narrow_value_into_a_containing_type.md`,
+`mdtests/auto_widens_a_narrow_value_to_64_bits.md`,
+`mdtests/integer_cast_identity_widens_a_narrow_value.md`). A narrowing still
+needs its operand's range
+(`mdtests/a_narrowing_conversion_without_its_range_is_not_its_operand.md`),
+and a conversion into a type that does not contain the source is not a
+widening
+(`mdtests/a_sign_changing_conversion_of_a_narrow_value_is_not_a_widening.md`).
+
+Debug builds check the invariant where values and conditions enter the
+kernel's state, beside the width checks above
+(`src/kernel/primitives/term_width/narrow.rs`): a narrow value, a narrow
+observation inside a condition, or the narrow operand of a conversion
+whose word is not built as one of the forms above is refused. A variable at
+a narrow format is accepted as a binder; its range comes from its
+introduction.
+
+A narrow comparison takes the native 32-bit form only when that form's
+Integer reading, an `int32` observation of the word, normalizes back to the
+same narrow observation (`IntegerTerm::from_machine` does so for a narrow
+load or conversion). A binder's word does not record its format, so a
+comparison of a narrow binder keeps its Integer form; this is a spelling
+choice, not a soundness condition.
+
+The range (`0 <= x` and `x <= 255` for `uint8`, with the unsigned bound
+beside them for an unsigned type) has one definition,
+`c_narrow_integer_range_facts`, and is stated where the value is introduced,
+never where it is used:
 
 - a narrow parameter's range is an entry fact of the function, as a `_Bool`
   parameter's `flag == 0 or flag == 1` is, so a claim may name the parameter
@@ -596,7 +665,8 @@ two-byte type it yields a `MachineIntegerCast` node, filed with the
 destination's range, which is the operand's carrier once the operand's range
 is known (`narrowed_cast_identity`). A specification's cast is the same
 modular conversion; a checked conversion is written `to_T(...)` and owes the
-destination range. `int8` occupies one byte with
+destination range. A checked narrowing cast yields the same node, with the
+identity fact described above. `int8` occupies one byte with
 signed range `-128..127`. `int16` occupies two bytes with
 signed range `-32768..32767`; `uint16` occupies two bytes with range `0..65535`.
 Scalar `int64` and `uint64` retain their signedness through arithmetic,

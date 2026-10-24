@@ -406,6 +406,11 @@ width-indexed lemma family is either complete over the supported widths or
 replaced by one generic statement" resolves to the generic statement, and the
 merge into `integer` with its rename follows its Stage 1.
 
+Progress: Stage 0 is done (2026-10-23). A narrow value's word is the
+canonical carrier of its format, checked in debug builds, and `auto` and
+`integer_cast_identity` prove 8- and 16-bit widenings without a premise
+([kernel](../docs/internals/kernel.md#one-meaning-for-a-narrow-value)).
+
 ### Naming decisions (maintainer, 2026-10-15)
 
 - The predicate that was `cstr` stays `cstr::cstr`.

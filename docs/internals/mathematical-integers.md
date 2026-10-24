@@ -90,17 +90,20 @@ The reading is exact, not arithmetic: `to_integer(a) + to_integer(b) <=
 (`mdtests/a_built_in_check_accepts_the_integer_reading_of_its_condition.md`,
 `charon_refused_panic_check_names_its_condition` in `tests/rust_import.rs`).
 
-A narrow (`int8`, `uint8`, `int16`, `uint16`) value rides in the 32-bit word.
-Its native comparison is the signed 32-bit order of the words, as C's
-promotion to `int` writes it. That order is exact only for a word that is the
-value's zero- or sign-extension: a load of the narrow type (or the variable
-naming one) or a conversion to it (`narrow_word_is_extension`). Only such a
-comparison takes the native form. One over another word, such as the Rust sum
-`old(bytes[0]) + 1`, keeps its Integer form. For the same reason an `int32`
-or `uint32` observation of a narrow load is that load's narrow observation
-(`IntegerTerm::from_machine`), as it already is for a narrow conversion. So
-the native `old(bytes[0]) < 255` reads as
-`to_integer(old(bytes[0])) < 255`, and the in-range identity of the narrow sum
+A narrow (`int8`, `uint8`, `int16`, `uint16`) value rides in the 32-bit word,
+which is always the canonical carrier of its format, its zero or sign
+extension ([kernel](kernel.md#one-meaning-for-a-narrow-value)). Its native
+comparison is the signed 32-bit order of the words, as C's promotion to `int`
+writes it, and that order is exact for every narrow value. The native form is
+taken where its Integer reading recovers the narrow observation: a load of the
+narrow type (or the variable naming one) or a conversion to it. A comparison
+of a narrow binder, whose word does not name its format, keeps its Integer
+form. For the same reason an `int32` or `uint32` observation of a narrow load
+is that load's narrow observation (`IntegerTerm::from_machine`), as it
+already is for a narrow conversion. So the native `old(bytes[0]) < 255` reads
+as `to_integer(old(bytes[0])) < 255`. The Rust sum `old(bytes[0]) + 1` is a
+checked narrowing of its 32-bit sum, a conversion node whose identity with
+the sum is filed beside its range obligations, so its in-range identity
 holds (`examples/rust-slices`).
 
 The `Integer` arithmetic family reads a native comparison as the Integer
@@ -920,11 +923,15 @@ Nested conversions are compared with the canonical modulo cast of the source
 observation, including a narrowing cast that discards an intermediate cast.
 Unsigned byte readback also admits an exact low-bit mask: a `uint32` source
 masked by `255` for a `uint8` observation or `65535` for a `uint16` observation.
-Both forms require the same two range bounds. A specification's narrowing
-into `int8`, `uint8`, `int16` or `uint16` keeps the source's 32-bit carrier,
-or the low word of a 64-bit source, without a cast node; the rule admits
-exactly those two carriers, again with bounds on the source observation
-inside the destination range. C's narrowing into those types is a typed
+Both forms require the same two range bounds. A narrow observation of the
+source's 32-bit carrier, or of the low word of a 64-bit source, is admitted
+too, again with bounds on the source observation inside the destination
+range; every narrowing the kernel produces is a conversion node, so such an
+observation arises only from a word already known to lie in the range. A
+widening of an 8- or 16-bit value into a type that contains it is admitted
+when the observation reads the same word, or its 32-to-64-bit sign
+extension (zero extension for an unsigned source); the word is the value's
+canonical carrier, so the source's own range serves as the two bounds. C's narrowing into those types is a typed
 `MachineIntegerCast` node; the rule compares it with the canonical cast, and
 also looks through a C conversion from a 32-bit type that contains the
 destination (`(uint16)(int32)w`) to the carrier beneath it, under the same
