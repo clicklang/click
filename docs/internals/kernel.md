@@ -535,8 +535,8 @@ In `src/kernel/`:
   floating comparisons/classifications. An equality is filed at the signed
   format of its width (it reads no sign), and a narrow comparison at
   `int32`, whose order its canonical words compare exactly, so a fact has
-  one spelling. A `uint32` order is still the `int32` order of operands
-  whose sign bit is flipped (`design/machine-integers.md`, Stage 2).
+  one spelling. Every other order is filed at its own format: a `uint32`
+  order is `Compare { format: UInt32, .. }` of the operands' words.
 - `CValue`, `CType`, `Pointer`, `CMemory`, `CState`: C semantic state,
   including the non-object `Void` return value, scalar `int8`, `int16`, `int32`,
   `uint8`, `uint16`, `uint32`, `int64`, and `uint64`, pointers, and typed
@@ -723,15 +723,21 @@ still spells each width with its own operator nodes, so one file,
 `machine_integer/representation.rs`, maps a format and an operation,
 comparison or overflow test to its node, and a node back to its format and
 operation. It is the only place a rule's width dispatch lives. Where a
-format has no node the rule is unavailable there: no 128-bit operators, no
-narrow quotient (C computes it on promoted `int` words), and a `uint32`
-order spelled as the signed order of sign-flipped operands. Those are
-representation gaps that Stage 3 of the design, and the rest of Stage 2,
-remove.
+format has no node the rule is unavailable there: no 128-bit operators and
+no narrow quotient (C computes it on promoted `int` words). Those are
+representation gaps that Stage 3 of the design removes.
 
-Two choices keep each fact's spelling where the kernel's reasoning reads
+Three choices keep each fact's spelling where the kernel's reasoning reads
 it:
 
+- **A `uint32` order is native.** The difference graph gives a 32-bit word
+  a `UInt32` node beside its `Int32` one, paired so that a known sign of
+  the signed reading, or an unsigned reading on one side of `2^31`, links
+  the two (`difference_graph.rs`, `readings`); the fact context files
+  `uint32` orders in their own endpoint index (`uint32_order_bounds`) and
+  in the format-indexed order walk (`WIDE_ORDER_FORMATS`), as it files
+  `uint64` ones. The condition checker's `uint32` rules
+  (`decide_unsigned32_order`) read only those indexes and the graph.
 - **128-bit comparisons are spelled as Integers.** `Compare` at `int128`
   and `uint128` folds on constants and reads back as the Integer
   comparison (`integer_observations_of_native_comparison`), but

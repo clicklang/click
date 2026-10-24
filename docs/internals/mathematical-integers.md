@@ -120,8 +120,8 @@ holds (`examples/rust-slices`).
 The `Integer` arithmetic family reads a native comparison as the Integer
 comparison of its operands' observations (`integer_affine_claims`). A 64-bit or
 32-bit equality records no signedness, so it has both readings and a
-certificate may use either; an order names its signedness. A `uint32` order is
-the signed order of sign-flipped operands, which the reading strips. The
+certificate may use either; an order names its signedness, so a `uint32`
+order reads as the `uint32` observations of its operands. The
 special Integer rules read only the premises a node cites. `auto` refutes a
 native goal as its Integer reading and spells each cited native fact through
 its written operands, so an expanded certificate cites the facts as written
