@@ -7873,6 +7873,23 @@ fn normalization_root_pointer(arguments: &[AlgebraicValue]) -> Option<&Pointer> 
 
 /// The roots a normalization lookup visits for a pointer: its related roots
 /// and those of its recorded exact aliases.
+/// The blocks of `pointer`'s related roots and its own: the blocks of the
+/// owned members `proves_owned_memory_ranges_separate_by` can find for a
+/// range at `pointer`, so the compositions `CompositionMemberIndex` lists
+/// under them are the ones that can answer it.
+pub(in crate::kernel) fn related_pointer_root_blocks(
+    pointer: &Pointer,
+    assumptions: &PureFactContext,
+) -> BTreeSet<PointerBlock> {
+    let mut blocks = BTreeSet::from([pointer.block.clone()]);
+    blocks.extend(
+        related_pointer_roots(pointer, assumptions)
+            .into_iter()
+            .map(|(block, _)| block),
+    );
+    blocks
+}
+
 fn related_pointer_roots(
     pointer: &Pointer,
     assumptions: &PureFactContext,

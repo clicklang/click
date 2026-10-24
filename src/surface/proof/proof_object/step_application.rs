@@ -593,10 +593,7 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
             | crate::kernel::Bitvector32Term::Remainder(left, right)
             | crate::kernel::Bitvector32Term::ShiftLeft(left, right)
             | crate::kernel::Bitvector32Term::ArithmeticShiftRight(left, right)
-            | crate::kernel::Bitvector32Term::LogicalShiftRight(left, right)
-            | crate::kernel::Bitvector32Term::BitwiseAnd(left, right)
-            | crate::kernel::Bitvector32Term::BitwiseOr(left, right)
-            | crate::kernel::Bitvector32Term::BitwiseXor(left, right) => {
+            | crate::kernel::Bitvector32Term::LogicalShiftRight(left, right) => {
                 machine_operation = true;
                 if matches!(term, crate::kernel::Bitvector32Term::Multiply(_, _))
                     && signed_term_constant_value(left).is_none()
@@ -607,8 +604,16 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
                 pending.push(left);
                 pending.push(right);
             }
+            // Bitwise operations are total. Inspect their operands for
+            // partial arithmetic, but do not invent an overflow obligation
+            // for the mask or the unsigned-order sign-bit xor itself.
+            crate::kernel::Bitvector32Term::BitwiseAnd(left, right)
+            | crate::kernel::Bitvector32Term::BitwiseOr(left, right)
+            | crate::kernel::Bitvector32Term::BitwiseXor(left, right) => {
+                pending.push(left);
+                pending.push(right);
+            }
             crate::kernel::Bitvector32Term::BitwiseNot(inner) => {
-                machine_operation = true;
                 pending.push(inner);
             }
             crate::kernel::Bitvector32Term::PureFunctionApplication { arguments, .. } => {

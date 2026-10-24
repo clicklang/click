@@ -9660,7 +9660,7 @@ fn universal_consequents_ignore_unrelated_propositions() {
             )),
         )),
     };
-    let query = ConditionTerm::equal(
+    let query = (
         Bitvector32Term::Variable(Variable(94_002)),
         Bitvector32Term::Constant(1),
     );
@@ -9679,7 +9679,7 @@ fn universal_consequents_ignore_unrelated_propositions() {
                 });
             }
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                assumptions.instantiated_universal_consequents(&query)
+                assumptions.instantiated_universal_consequents(&query.0, &query.1)
             });
             work
         })
@@ -9742,11 +9742,8 @@ fn universal_instantiation_ignores_universals_of_other_shapes() {
                 facts.assume_proposition(ordered(index))
             });
             let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let Proposition::ConditionIs(condition, _) = &goal else {
-                    unreachable!()
-                };
                 !assumptions
-                    .instantiated_universal_consequents(condition)
+                    .instantiated_universal_consequents(&cell, &Bitvector32Term::Constant(7))
                     .is_empty()
                     || assumptions
                         .select_forall_int32_instantiation_evidence(&goal)

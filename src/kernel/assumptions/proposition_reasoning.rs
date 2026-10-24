@@ -3074,16 +3074,6 @@ impl PureFactContext {
         self.difference_graph_proves_order(&left, &right, strict)
     }
 
-    /// The universal proposition facts, in `prop_facts` order, charged one
-    /// unit each: only these can be instantiated or alpha-renamed.
-    pub(in crate::kernel) fn quantified_fact_propositions(
-        &self,
-    ) -> impl Iterator<Item = &Proposition> {
-        self.atomic_quantified_facts
-            .scan_unindexed()
-            .map(|fact| fact.as_ref())
-    }
-
     pub(super) fn collect_quantified_order_facts_for_condition(
         &self,
         condition: &ConditionTerm,
@@ -3152,26 +3142,26 @@ impl PureFactContext {
     }
 
     /// The consequents of this context's universal implications, instantiated
-    /// where `condition` names their bound variable and their antecedent is
-    /// proved here. Each candidate costs its own antecedent. An equality
-    /// instantiates only a conclusion equality
-    /// (`guided_forall_condition_candidates`), so it reads the universals
-    /// concluding one; any other condition offers its own variables to
-    /// every universal.
+    /// where the `int32` equality `left == right` names their bound variable
+    /// and their antecedent is proved here. Each candidate costs its own
+    /// antecedent. An equality instantiates only a conclusion equality
+    /// (`guided_forall_condition_candidates`), so this reads the universals
+    /// concluding one.
     pub(in crate::kernel) fn instantiated_universal_consequents(
         &self,
-        condition: &ConditionTerm,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
     ) -> Vec<Proposition> {
         use crate::kernel::assumptions::UniversalConclusionKey;
-        let universals: Box<dyn Iterator<Item = &Proposition>> =
-            if UniversalConclusionKey::of_condition(condition) == UniversalConclusionKey::Equal {
-                Box::new(self.universals_concluding(UniversalConclusionKey::Equal))
-            } else {
-                Box::new(self.quantified_fact_propositions())
-            };
+        let condition = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left.clone()),
+            right: Box::new(right.clone()),
+        };
         let mut consequents = Vec::new();
-        for proposition in universals {
-            for instance in self.forall_instantiations_for_condition(proposition, condition) {
+        for proposition in self.universals_concluding(UniversalConclusionKey::Equal) {
+            for instance in self.forall_instantiations_for_condition(proposition, &condition) {
                 if let Proposition::Implies(antecedent, consequent) = instance
                     && self.proves_without_prop_facts(&antecedent)
                 {

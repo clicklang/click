@@ -278,14 +278,6 @@ not compile.
 
 **Known fast-part scans** (`scan_unindexed`) still open:
 
-- Certifying an existential obligation from an assumed existential
-  (`certification_proves_exists_obligation_from_facts`) when no assumed
-  existential is alpha-equal to it. It reads the alpha-equal ones from the
-  identity bucket first; those were every hit across the gate and the unit
-  tests (four, each with three facts on its path). On a miss it tries each
-  existential of the obligation's sort (`existentials_over`) as the witness
-  source, a search for which fact to use; it once tried every proposition
-  fact (`existential_obligation_ignores_unrelated_facts`).
 - The memory-resolution condition match's fallback
   (`scanned_matching_condition_fact_for_memory_resolution`), reached from
   `functions.rs` and contract certification whenever its index declines.
@@ -352,8 +344,10 @@ the universals under their goal's shape: instantiation for a derivation
 condition (`condition_holds_by_instantiated_fact`) and of a loadable cell
 (`quantified_int32_fact_certifies_loadable_cell`), the alpha match of a
 universal goal, and the consequents an iterated guard equality
-instantiates (`instantiated_universal_consequents`; another condition
-offers its own variables to every universal, so it still reads them all).
+instantiates (`instantiated_universal_consequents`, which takes the
+equality's two sides: its one caller, the iterated guard, asks only an
+equality, and another condition would offer its own variables to every
+universal). Universal facts have no unindexed scan left.
 The quantified order facts for a condition serve only `simp`
 (`scan_for_search`). `universal_instantiation_ignores_universals_of_other_shapes`
 covers the scaling.
@@ -371,8 +365,6 @@ against pointer when deciding which memory facts survive a store
 charging made fail on the old scans). Still `scan_unindexed`, each over
 every composition:
 
-- `proves_owned_memory_ranges_separate_by`, which finds members through
-  base roots and aliases in other blocks;
 - `proves_owned_resources_separate` for a non-memory side, matched by
   resource identity, which the member index does not file (two memory
   sides read it): the index lists a composition under the memory members
@@ -396,6 +388,14 @@ every composition:
   owned store footprint collects the member of every composition holding
   the cell, so its output is as large as the compositions that restate
   it.
+
+**Fixed:** owned range separation through related roots
+(`composition_separates_owned_ranges`). Each side is asked of a
+composition's members under its base's related roots, in those roots'
+blocks, and owned members of a valid composition are disjoint, so the
+compositions listed under those blocks reach one holding both
+(`owned_range_separation_ignores_unrelated_compositions`; debug builds
+compare every answer with the scan).
 
 **Accessors.** The callers of `pure_facts`, `condition_fact_pairs` and
 `proposition_facts` read a whole context to copy or describe it, not to
@@ -430,10 +430,16 @@ Still `scan_unindexed`:
   which `range_proven_disjoint_from_pointer` falls through to on a miss.
   Resolution equates loaded pointers whose cells agree across snapshots,
   so this is the same open question as the memory-resolution condition
-  match above;
-- a universal instantiated by a condition other than an equality
-  (`instantiated_universal_consequents`), which offers the condition's
-  variables to every universal.
+  match above.
+
+**Fixed, by narrowing:** certifying an existential obligation
+(`certification_proves_exists_obligation_from_facts`) tries only the
+assumed existentials alpha-equal to it, read from the identity bucket.
+Across the gate and the unit tests those were every hit (four, each with
+three facts on its path); trying every other existential of the sort as
+the witness source was a search for which fact to use, and is gone. It
+once tried every proposition fact
+(`existential_obligation_ignores_unrelated_facts`).
 
 **Fixed:** separation of a non-memory resource. The stated separations
 with a non-memory side are filed under each such side, and containment
