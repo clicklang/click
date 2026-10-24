@@ -506,6 +506,16 @@ impl<T: Ord> PersistentSet<T> {
     pub(crate) fn shares_root_with(&self, other: &Self) -> bool {
         self.map.shares_root_with(&other.map)
     }
+
+    /// The values only one of `self` and `other` holds, in ascending order,
+    /// each with whether `self` holds it. Shared subtrees are skipped, as in
+    /// [`PersistentMap::diff`], so for sets derived from one another the
+    /// walk is proportional to the changed paths.
+    pub(crate) fn diff<'a>(&'a self, other: &'a Self) -> impl Iterator<Item = (&'a T, bool)> + 'a {
+        self.map
+            .diff(&other.map)
+            .map(|(value, left, _)| (value, left.is_some()))
+    }
 }
 
 pub(crate) struct OwnedSetValues<T> {
@@ -889,6 +899,26 @@ mod tests {
         assert_eq!(differences, 1);
         // The changed path on each side, not the 4096 entries.
         assert!(work <= 4 * 13, "a one-key diff opened {work} subtrees");
+    }
+
+    /// A set diff names each value only one side holds, with its side, and
+    /// walks only the changed paths: a loop exit merging the compositions
+    /// its incoming context stated reads the few added since, not all of
+    /// them.
+    #[test]
+    fn set_diff_names_each_side_and_walks_the_changed_paths() {
+        let base = (0..4096u32).fold(PersistentSet::default(), |set, value| set.with_value(value));
+        let changed = base.without_value(&7).with_value(5000);
+        let (differences, work) = measure_persistent_work(|| {
+            base.diff(&changed)
+                .map(|(v, left)| (*v, left))
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(differences, vec![(7, true), (5000, false)]);
+        assert!(
+            work <= 8 * 13,
+            "a two-value set diff opened {work} subtrees"
+        );
     }
 
     #[test]
