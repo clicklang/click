@@ -2340,11 +2340,9 @@ pub(crate) fn read_over_write_resolved(proposition: &Proposition) -> Option<Prop
         let Some(value) = read_over_write_value(&read) else {
             continue;
         };
-        let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&read, &value);
-        let rewritten = rewrite.proposition(&resolved);
-        if rewrite.refusal().is_none() {
-            resolved = rewritten;
-        }
+        resolved = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
+            &resolved, variable, &value,
+        );
     }
     (&resolved != proposition).then_some(resolved)
 }

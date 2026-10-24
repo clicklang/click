@@ -4241,16 +4241,26 @@ fn fold_composite_resources_on_outcome_with_facts(
             // The kernel's condition decision settles a condition body fact
             // as it settles a step's: the difference graph, then the
             // decision's checked rules (a tagged pointer word's low bits, say).
-            let exactly_available = pure_facts
-                .exact_available_across_effects(&required, execution_pure_facts)
-                || decided_by_kernel_condition_decision(&body_assumptions, &required);
+            // A body fact reading a stored cell is checked as the value the
+            // cell holds (the read-over-write authority).
+            let available = |required: &Proposition| {
+                pure_facts.exact_available_across_effects(required, execution_pure_facts)
+                    || decided_by_kernel_condition_decision(&body_assumptions, required)
+            };
+            let resolved = crate::kernel::read_over_write_resolved(&required);
+            let exactly_available =
+                available(&required) || resolved.as_ref().is_some_and(available);
             // A body fact the exact checks miss is a requirement of this
             // `fold`, spelled as the definition's fact over the arguments as
             // written; the fold never searches the proof context for it. A
             // probe records it for the implicit `auto`, which proves it and
             // folds again.
+            let normalizes_true = |required: &Proposition| {
+                matches!(normalize_proposition(required), SimpProposition::True)
+            };
             let open = !exactly_available
-                && !matches!(normalize_proposition(&required), SimpProposition::True);
+                && !normalizes_true(&required)
+                && !resolved.as_ref().is_some_and(normalizes_true);
             // A witness the proof cannot name has no source expression, so
             // its body fact has no requirement spelling and the fold refuses
             // it. A fact read in the projected authority state is spelled as
