@@ -12338,6 +12338,13 @@ pub struct PureFactContext {
         crate::kernel::fact_collections::ScanSet<SharedIndexFact<Proposition>>,
     pub(super) atomic_quantified_facts:
         crate::kernel::fact_collections::ScanSet<SharedIndexFact<Proposition>>,
+    /// The universal facts filed under each shape their conclusion takes
+    /// (`UniversalConclusionKey`), so an instantiation reads the universals
+    /// that can conclude its goal, not every universal.
+    pub(super) universals_by_conclusion: crate::persistent::PersistentMap<
+        super::assumptions::UniversalConclusionKey,
+        crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    >,
     pub(super) condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read
@@ -12601,6 +12608,13 @@ pub struct PureFactContext {
     /// memory separation through its body. Kept small and scanned
     /// linearly; memory-memory facts live in the index above instead.
     pub(super) nonmemory_separation_facts: std::sync::Arc<Vec<Proposition>>,
+    /// The separation facts filed under each non-memory side they name.
+    pub(super) nonmemory_separations_by_side:
+        crate::persistent::PersistentMap<CResource, crate::persistent::PersistentSet<Proposition>>,
+    /// The containment facts filed under their child when it is not memory,
+    /// so the containers of a non-memory resource are walked upward from it.
+    pub(super) resource_containers:
+        crate::persistent::PersistentMap<CResource, crate::persistent::PersistentSet<Proposition>>,
     /// Every separation proposition fact, memory or not, in the
     /// proposition order of `prop_facts`. The provers that cannot key a
     /// separation query by block pair scan these instead of every
