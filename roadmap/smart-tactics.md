@@ -287,14 +287,23 @@ pass:
   (`scanned_matching_condition_fact_for_memory_resolution`), reached from
   `functions.rs` and contract certification whenever its index declines.
   Earlier text called the `simp.rs` scans slow part only; this one is not.
-- Order paths: `exact_signed_order_path_evidence` and
-  `exact_wide_order_path_evidence` (used by the resource tracker during
-  execution), and the constant and load edges of `has_exact_order_path`
-  (`condition_order_facts`).
 - Equality and snapshot walks: `bitvector_terms_equal_from_snapshot_facts`,
   `has_pointer_offset_snapshot_fact`,
   `pointer_offsets_equal_with_resolved_atoms`, and
   `nonnegative_successor_by_exact_facts`.
+
+**Fixed:** the exact order walks. `exact_signed_order_path_evidence`
+and `exact_wide_order_path_evidence`, used by the resource tracker during
+execution, collected every condition fact per call, and
+`has_exact_order_path` collected every order fact at a constant or load
+node. They read `OrderFactsByLower`, which files each order fact under its
+written lower end, a constant lower end by value (one range read finds
+every constant at least as large), a load lower end by pointer and kind,
+and a 64-bit fact by canonical lower end. The evidence walk visits the
+candidates in the order the scan did, so it returns the same path;
+`indexed_evidence_walk_finds_the_scanned_path` checks that, and
+`constant_order_walks_ignore_unrelated_order_facts` the scaling.
+`condition_order_facts` now serves only `simp`.
 
 Most of these match facts up to an equivalence (canonical form, memory
 snapshots, load equality). Where that equivalence implies equality of a
