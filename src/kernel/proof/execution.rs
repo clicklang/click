@@ -16,6 +16,7 @@ use crate::kernel::{
     CVerifiedLoopRule, ExecutionBudget, ExecutionLimit, ExecutionPureFact, Pointer, Proposition,
     PureFactContext, ResourceContext, SpecProposition, Theorem, Variable,
 };
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use crate::persistent::PersistentSet;
 use std::collections::{BTreeMap, HashMap};
@@ -1278,8 +1279,15 @@ fn authority_control_evaluation_condition_proven(
     if stated(goal) {
         return true;
     }
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedAddOverflows(left, right), false) =
-        goal
+    let Proposition::ConditionIs(
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left,
+            right,
+        },
+        false,
+    ) = goal
     else {
         return false;
     };
@@ -1302,7 +1310,12 @@ fn authority_control_evaluation_condition_proven(
         if stated(&Proposition::ConditionIs(condition.clone(), false)) {
             return true;
         }
-        if let ConditionTerm::Bitvector32SignedAddOverflows(left, right) = condition
+        if let ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left,
+            right,
+        } = condition
             && stated(&Proposition::ConditionIs(
                 ConditionTerm::signed_add_overflows(right.as_ref().clone(), left.as_ref().clone()),
                 false,
@@ -1311,20 +1324,22 @@ fn authority_control_evaluation_condition_proven(
             return true;
         }
         match condition {
-            ConditionTerm::Bitvector32SignedAddOverflows(value, one)
-                if one.as_const() == Some(1) =>
-            {
-                assumptions
-                    .indexed_constant_interval(value)
-                    .is_some_and(|(_, high)| high < i64::from(i32::MAX))
-            }
-            ConditionTerm::Bitvector32SignedSubtractOverflows(value, one)
-                if one.as_const() == Some(1) =>
-            {
-                assumptions
-                    .indexed_constant_interval(value)
-                    .is_some_and(|(low, _)| low > i64::from(i32::MIN))
-            }
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: value,
+                right: one,
+            } if one.as_const() == Some(1) => assumptions
+                .indexed_constant_interval(value)
+                .is_some_and(|(_, high)| high < i64::from(i32::MAX)),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Subtract,
+                left: value,
+                right: one,
+            } if one.as_const() == Some(1) => assumptions
+                .indexed_constant_interval(value)
+                .is_some_and(|(low, _)| low > i64::from(i32::MIN)),
             _ => false,
         }
     })
@@ -5439,7 +5454,12 @@ pub(super) struct CheckedInterfaceLoadDefinition {
 impl CheckedInterfaceLoadDefinition {
     fn check(proposition: &Proposition) -> Option<Self> {
         let Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::Bitvector32Equal(left, right),
+            crate::kernel::ConditionTerm::Compare {
+                format: crate::kernel::MachineIntegerType::Int32,
+                relation: crate::kernel::CompareRelation::Equal,
+                left,
+                right,
+            },
             true,
         ) = proposition
         else {
@@ -6238,11 +6258,36 @@ fn ground_comparison_premise_holds(premise: &Proposition) -> bool {
         return false;
     };
     let (left, right) = match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right) => (left, right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => (left, right),
         _ => return false,
     };
     let (Some(left), Some(right)) = (left.as_const(), right.as_const()) else {
@@ -6250,11 +6295,31 @@ fn ground_comparison_premise_holds(premise: &Proposition) -> bool {
     };
     let (left, right) = (left as i32, right as i32);
     let actual = match condition {
-        ConditionTerm::Bitvector32SignedLessThan(..) => left < right,
-        ConditionTerm::Bitvector32SignedLessEqual(..) => left <= right,
-        ConditionTerm::Bitvector32SignedGreaterThan(..) => left > right,
-        ConditionTerm::Bitvector32SignedGreaterEqual(..) => left >= right,
-        ConditionTerm::Bitvector32Equal(..) => left == right,
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            ..
+        } => left < right,
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            ..
+        } => left <= right,
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            ..
+        } => left > right,
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            ..
+        } => left >= right,
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            ..
+        } => left == right,
         _ => unreachable!("comparison shape was checked above"),
     };
     actual == *expected
@@ -6269,7 +6334,7 @@ pub(crate) fn checked_branch_fact_is_available(facts: &ProofFacts, fact: &Propos
         || facts.assumptions().proves_exact(fact)
         || ground_comparison_premise_holds(fact)
         || matches!(fact,
-            Proposition::ConditionIs(crate::kernel::ConditionTerm::Bitvector32Equal(left, right), true)
+            Proposition::ConditionIs(crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32, relation: crate::kernel::CompareRelation::Equal, left, right }, true)
                 if left == right)
 }
 

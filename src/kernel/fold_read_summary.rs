@@ -49,6 +49,7 @@
 //! except where the kernel's assumption-free block rule already proves the
 //! whole block untouched.
 
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -1148,14 +1149,18 @@ fn proven_signed_le(
     if let (Some(left), Some(right)) = (left.as_const(), right.as_const()) {
         return (left as i32) <= (right as i32);
     }
-    assumptions.exact_condition_value(&ConditionTerm::Bitvector32SignedLessEqual(
-        Box::new(left.clone()),
-        Box::new(right.clone()),
-    )) == Some(true)
-        || assumptions.exact_condition_value(&ConditionTerm::Bitvector32SignedLessThan(
-            Box::new(left.clone()),
-            Box::new(right.clone()),
-        )) == Some(true)
+    assumptions.exact_condition_value(&ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::LessEqual,
+        left: Box::new(left.clone()),
+        right: Box::new(right.clone()),
+    }) == Some(true)
+        || assumptions.exact_condition_value(&ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(left.clone()),
+            right: Box::new(right.clone()),
+        }) == Some(true)
 }
 
 /// `left < right` as signed `int32`, from constants or one exact fact.
@@ -1169,14 +1174,18 @@ fn proven_signed_lt(
         return (left as i32) < (right as i32);
     }
     left != right
-        && (assumptions.exact_condition_value(&ConditionTerm::Bitvector32SignedLessThan(
-            Box::new(left.clone()),
-            Box::new(right.clone()),
-        )) == Some(true)
-            || assumptions.exact_condition_value(&ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(right.clone()),
-                Box::new(left.clone()),
-            )) == Some(false))
+        && (assumptions.exact_condition_value(&ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(left.clone()),
+            right: Box::new(right.clone()),
+        }) == Some(true)
+            || assumptions.exact_condition_value(&ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(right.clone()),
+                right: Box::new(left.clone()),
+            }) == Some(false))
 }
 
 /// The interval reads no cell because its end is proven at or below its

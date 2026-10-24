@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::CompareRelation;
 use crate::kernel::equality_graph::EqualityGraph;
 
 fn offset(id: u64) -> PointerOffsetTerm {
@@ -173,7 +174,12 @@ fn int32_graph_conditions_do_not_cross_sorts_or_admit_disequality() {
     );
     for condition in [
         ConditionTerm::equal(b.clone(), c),
-        ConditionTerm::Bitvector64Equal(Box::new(a.clone()), Box::new(b.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: Box::new(a.clone()),
+            right: Box::new(b.clone()),
+        },
         ConditionTerm::IntegerEqual(
             IntegerTerm::from_machine(MachineIntegerType::Int32, a)
                 .unwrap()

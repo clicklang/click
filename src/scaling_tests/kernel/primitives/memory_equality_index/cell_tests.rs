@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn checked_attachment_is_flat_beside_unrelated_equality_history() {
@@ -997,11 +998,21 @@ fn symbolic_fragment_support_follows_indexed_endpoint_successors() {
     let next = Bitvector32Term::add(i.clone(), 1u32.into());
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::Bitvector32Equal(Box::new(n.clone()), Box::new(4u32.into())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(n.clone()),
+                right: Box::new(4u32.into()),
+            },
             true,
         )
         .assume_condition(
-            ConditionTerm::Bitvector32Equal(Box::new(i.clone()), Box::new(middle.clone())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(i.clone()),
+                right: Box::new(middle.clone()),
+            },
             true,
         )
         .assume_condition(

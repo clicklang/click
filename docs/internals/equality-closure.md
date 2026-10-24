@@ -614,7 +614,7 @@ does not imply a second Boolean pointer-equality system. Deterministic tests
 cover mixed offset/block chains, all premise insertion orders, late offset
 merges, branch isolation, and bounded query work beside growing offset classes.
 
-The full and shallow `Bitvector32Equal` decisions use the shared known-value
+The full and shallow `int32` equality decisions use the shared known-value
 query. Explicit negative premises, arithmetic rules, and checked memory
 resolution remain separate. Int32 fact transport uses the same query before
 its structural and broader expression rules; it has no separate Boolean
@@ -641,7 +641,7 @@ match as values, while changed snapshots and withdrawn premises do not.
 Multi-size regressions check that graph matches avoid building the legacy fact
 index.
 
-Contract certification's `Bitvector32Equal` check uses this typed int32
+Contract certification's `int32` equality check uses this typed int32
 value rule after its checked cross-snapshot load rule. Graph-congruent sums and
 same-snapshot loads therefore certify without searching the legacy fact index;
 changed snapshots and withdrawn premises still fail. This affects scalar

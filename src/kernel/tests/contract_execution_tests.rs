@@ -3,6 +3,7 @@
 // calls it, so the tests import the planner explicitly.
 use super::*;
 use crate::kernel::LoanRefusalCategory;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use std::sync::Arc;
 
@@ -1555,10 +1556,12 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         panic!("opaque helper should return int32")
     };
     assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(result.clone()),
-            Box::new(Bitvector32Term::Constant(5)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(result.clone()),
+            right: Box::new(Bitvector32Term::Constant(5))
+        },
         true,
     )));
 
@@ -1634,7 +1637,7 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
         matches!(
             fact.proposition(),
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(_, right),
+                ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: _, right },
                 true
             ) if right.as_const() == Some(1)
         )
@@ -2310,17 +2313,21 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                     panic!("normal result should be int32")
                 };
                 assert!(assumptions.proves(&Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(value.clone()),
-                        Box::new(Bitvector32Term::Constant(5)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(value.clone()),
+                        right: Box::new(Bitvector32Term::Constant(5))
+                    },
                     true,
                 )));
                 assert!(!assumptions.proves(&Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(value.clone()),
-                        Box::new(Bitvector32Term::Constant(7)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(value.clone()),
+                        right: Box::new(Bitvector32Term::Constant(7))
+                    },
                     true,
                 )));
             }
@@ -2335,17 +2342,21 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                     panic!("exceptional payload should be int32")
                 };
                 assert!(assumptions.proves(&Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(value.clone()),
-                        Box::new(Bitvector32Term::Constant(7)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(value.clone()),
+                        right: Box::new(Bitvector32Term::Constant(7))
+                    },
                     true,
                 )));
                 assert!(!assumptions.proves(&Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(value.clone()),
-                        Box::new(Bitvector32Term::Constant(5)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(value.clone()),
+                        right: Box::new(Bitvector32Term::Constant(5))
+                    },
                     true,
                 )));
             }
@@ -2448,17 +2459,21 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
                 .collect::<Vec<_>>(),
         );
         assert!(assumptions.proves(&Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(value.clone()),
-                Box::new(Bitvector32Term::Constant(7)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(value.clone()),
+                right: Box::new(Bitvector32Term::Constant(7))
+            },
             true,
         )));
         assert!(!assumptions.proves(&Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(value.clone()),
-                Box::new(Bitvector32Term::Constant(99)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(value.clone()),
+                right: Box::new(Bitvector32Term::Constant(99))
+            },
             true,
         )));
     }
@@ -3667,10 +3682,12 @@ fn bool_range_fact_requires_a_structurally_normalized_bool() {
     };
     let equals = |constant| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(term.clone()),
-                Box::new(Bitvector32Term::Constant(constant)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(term.clone()),
+                right: Box::new(Bitvector32Term::Constant(constant)),
+            },
             true,
         )
     };
@@ -4732,7 +4749,12 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     let truth = |value: bool| Proposition::ConditionIs(ConditionTerm::Constant(value), true);
     let equal = |left: &Bitvector32Term, right: &Bitvector32Term, value: bool| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(left.clone()), Box::new(right.clone())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(left.clone()),
+                right: Box::new(right.clone()),
+            },
             value,
         )
     };
@@ -5513,10 +5535,12 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
     // makes its first identity absent from an arbitrary kernel fact context.
     let would_be_witness = Variable(1 << 44);
     let assumed = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(would_be_witness)),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(would_be_witness)),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     let goal = Proposition::ForAll {
@@ -5524,10 +5548,12 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
         var: binder,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(binder)),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(binder)),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         )),
     };

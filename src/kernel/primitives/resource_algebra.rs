@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 mod observable;
 
 /// A proof-aware composition query in progress on this thread. Bridging a
@@ -8173,17 +8174,19 @@ fn resource_quantity_at_least(
     available == required
         || quantity_condition_holds(
             assumptions,
-            ConditionTerm::Bitvector32SignedGreaterEqual(
-                Box::new(available.clone()),
-                Box::new(required.clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(available.clone()),
+                right: Box::new(required.clone()),
+            },
         )
 }
 
 /// Whether a constant owned quantity is positive, as the signed number it is.
 ///
 /// An owned quantity is an `int32`, and `resource_quantity_at_least` beside it
-/// asks `Bitvector32SignedGreaterEqual`, so reading this one through
+/// asks the `int32` `>=` comparison, so reading this one through
 /// `Bitvector32Term::as_const` made the two arms disagree about one number:
 /// `-1` was the largest quantity there is. `a98a05e4` is the same confusion at
 /// the surface `fold`, and this is the kernel's own copy of it — the one that
@@ -8199,10 +8202,12 @@ pub(super) fn resource_quantity_is_positive(
     constant_quantity_is_positive(quantity)
         || quantity_condition_holds(
             assumptions,
-            ConditionTerm::Bitvector32SignedGreaterThan(
-                Box::new(quantity.clone()),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: Box::new(quantity.clone()),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
         )
 }
 
@@ -8256,10 +8261,12 @@ pub(in crate::kernel) fn population_quantity_sum(
     {
         return Some(total.as_ref().clone());
     }
-    let no_overflow = ConditionTerm::Bitvector32SignedAddOverflows(
-        Box::new(left.clone()),
-        Box::new(right.clone()),
-    );
+    let no_overflow = ConditionTerm::Overflows {
+        format: MachineIntegerType::Int32,
+        op: OverflowOperation::Add,
+        left: Box::new(left.clone()),
+        right: Box::new(right.clone()),
+    };
     (assumptions.proves_exact(&Proposition::ConditionIs(no_overflow.clone(), false))
         || assumptions.decide(&no_overflow) == Some(false))
     .then(|| Bitvector32Term::add(left.clone(), right.clone()))
@@ -8285,10 +8292,12 @@ fn numeric_population_owned_units(fact: &CResourceFact) -> Option<u32> {
 fn resource_quantity_is_zero(quantity: &Bitvector32Term, assumptions: &PureFactContext) -> bool {
     quantity.as_const() == Some(0)
         || assumptions.proves_exact(&Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(quantity.clone()),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(quantity.clone()),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         ))
 }
@@ -8445,10 +8454,12 @@ fn consume_exact_resource_fact(
         let residual_is_zero = residual.as_const() == Some(0)
             || quantity_condition_holds(
                 assumptions,
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(residual.clone()),
-                    Box::new(Bitvector32Term::Constant(0)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(residual.clone()),
+                    right: Box::new(Bitvector32Term::Constant(0)),
+                },
             );
         ResourceFactConsumption::Replace(if residual_is_zero {
             Vec::new()
@@ -9119,10 +9130,12 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
     }
     let term_equal = |a: &Bitvector32Term, b: &Bitvector32Term| {
         a == b
-            || assumptions.decide(&ConditionTerm::Bitvector32Equal(
-                Box::new(a.clone()),
-                Box::new(b.clone()),
-            )) == Some(true)
+            || assumptions.decide(&ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(a.clone()),
+                right: Box::new(b.clone()),
+            }) == Some(true)
     };
     let pointer_equal = |a: &Pointer, b: &Pointer| {
         crate::kernel::prelude::pointers_proven_equal_for_memory_resolution(a, b, assumptions)

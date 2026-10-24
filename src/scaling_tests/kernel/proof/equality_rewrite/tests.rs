@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::CompareRelation;
 
 #[test]
 fn pointer_rewrite_integer_reads_preserves_snapshot_kind_and_scales() {
@@ -235,7 +236,12 @@ fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
     let x = Bitvector32Term::Variable(Variable(193_020));
     let y = Bitvector32Term::Variable(Variable(193_021));
     let cited = Proposition::ConditionIs(
-        ConditionTerm::Bitvector64Equal(Box::new(x.clone()), Box::new(y.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: Box::new(x.clone()),
+            right: Box::new(y.clone()),
+        },
         true,
     );
     // The same immutable ambient sets exercise every order/truth case.
@@ -253,17 +259,24 @@ fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
             facts
         })
         .collect();
-    let comparisons = [
-        ConditionTerm::Bitvector64SignedLessThan
-            as fn(Box<Bitvector32Term>, Box<Bitvector32Term>) -> ConditionTerm,
-        ConditionTerm::Bitvector64SignedLessEqual,
-        ConditionTerm::Bitvector64SignedGreaterThan,
-        ConditionTerm::Bitvector64SignedGreaterEqual,
-        ConditionTerm::Bitvector64UnsignedLessThan,
-        ConditionTerm::Bitvector64UnsignedLessEqual,
-        ConditionTerm::Bitvector64UnsignedGreaterThan,
-        ConditionTerm::Bitvector64UnsignedGreaterEqual,
-    ];
+    let comparisons = [MachineIntegerType::Int64, MachineIntegerType::UInt64]
+        .into_iter()
+        .flat_map(|format| {
+            [
+                CompareRelation::LessThan,
+                CompareRelation::LessEqual,
+                CompareRelation::GreaterThan,
+                CompareRelation::GreaterEqual,
+            ]
+            .map(move |relation| {
+                move |left, right| ConditionTerm::Compare {
+                    format,
+                    relation,
+                    left,
+                    right,
+                }
+            })
+        });
     for make in comparisons {
         for bound in [
             Bitvector32Term::Int64Constant(i64::MIN),
@@ -717,14 +730,16 @@ fn rewrite_capture_collection_does_not_visit_snapshot_contents() {
             );
         }
         let equality = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(free)),
-                Box::new(Bitvector32Term::MemoryLoad(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(free)),
+                right: Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
                     Box::new(Pointer::symbolic(address)),
                     crate::kernel::LoadKind::Bits32,
                 )),
-            ),
+            },
             true,
         );
         let (variables, work) = crate::instrumentation::measure_deterministic_work(|| {

@@ -1,5 +1,6 @@
 use super::execution_facts::ContextFactKey;
 use super::prelude::*;
+use crate::kernel::{CompareRelation, OverflowOperation};
 
 #[cfg(test)]
 thread_local! {
@@ -388,11 +389,21 @@ pub(in crate::kernel) fn condition_match_key(
         }
     };
     Some(match condition {
-        ConditionTerm::Bitvector32Equal(left, right) => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => {
             let (left, right) = ordered(canonical(left), canonical(right));
             ConditionMatchKey::Equal(left, right)
         }
-        ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left,
+            right,
+        } => {
             let (left, right) = ordered(canonical(left), canonical(right));
             ConditionMatchKey::OverflowAdd(left, right)
         }
@@ -405,14 +416,30 @@ pub(in crate::kernel) fn condition_match_key(
                 ConditionMatchKey::OffsetEqual(right, left)
             }
         }
-        ConditionTerm::Bitvector32SignedLessThan(lower, upper)
-        | ConditionTerm::Bitvector32SignedGreaterThan(upper, lower) => {
-            ConditionMatchKey::Order(true, canonical(lower), canonical(upper))
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: lower,
+            right: upper,
         }
-        ConditionTerm::Bitvector32SignedLessEqual(lower, upper)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(upper, lower) => {
-            ConditionMatchKey::Order(false, canonical(lower), canonical(upper))
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left: upper,
+            right: lower,
+        } => ConditionMatchKey::Order(true, canonical(lower), canonical(upper)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: lower,
+            right: upper,
         }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: upper,
+            right: lower,
+        } => ConditionMatchKey::Order(false, canonical(lower), canonical(upper)),
         _ => return None,
     })
 }
@@ -452,12 +479,42 @@ fn condition_has_an_open_side(condition: &ConditionTerm) -> bool {
         _ => true,
     };
     match condition {
-        ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32SignedAddOverflows(left, right) => open(left) || open(right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        }
+        | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left,
+            right,
+        } => open(left) || open(right),
         ConditionTerm::PointerOffsetEqual(left, right) => open_offset(left) || open_offset(right),
         _ => false,
     }
@@ -991,10 +1048,12 @@ mod planning_index_memo_lifetime_tests {
             let mut context = PureFactContext::new();
             for index in 0..size {
                 context = context.assume_proposition(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Variable(Variable(size * 1000 + index))),
-                        Box::new(Bitvector32Term::Constant(7)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Variable(Variable(size * 1000 + index))),
+                        right: Box::new(Bitvector32Term::Constant(7)),
+                    },
                     true,
                 ));
             }
@@ -1847,10 +1906,6 @@ fn collect_condition_memory_loads(
     loads: &mut Vec<(Pointer, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
-    let mut collect_binary = |left: &Bitvector32Term, right: &Bitvector32Term| {
-        collect_bitvector_memory_loads(left, current_memory, loads, Some(4), seen_integers)?;
-        collect_bitvector_memory_loads(right, current_memory, loads, Some(4), seen_integers)
-    };
     match condition {
         ConditionTerm::PointerValueEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
@@ -1868,10 +1923,21 @@ fn collect_condition_memory_loads(
             collect_algebraic_memory_loads(left, current_memory, loads, seen_integers)?;
             collect_algebraic_memory_loads(right, current_memory, loads, seen_integers)
         }
-        crate::kernel::binary_bitvector32_condition!(left, right) => collect_binary(left, right),
-        crate::kernel::binary_bitvector64_condition!(left, right) => {
-            collect_bitvector_memory_loads(left, current_memory, loads, Some(8), seen_integers)?;
-            collect_bitvector_memory_loads(right, current_memory, loads, Some(8), seen_integers)
+        ConditionTerm::Compare {
+            format,
+            left,
+            right,
+            ..
+        }
+        | ConditionTerm::Overflows {
+            format,
+            left,
+            right,
+            ..
+        } => {
+            let width = Some(format.carrier_bytes());
+            collect_bitvector_memory_loads(left, current_memory, loads, width, seen_integers)?;
+            collect_bitvector_memory_loads(right, current_memory, loads, width, seen_integers)
         }
         ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
             let width = if matches!(condition, ConditionTerm::Float32(_)) {
@@ -2608,7 +2674,13 @@ fn is_algebraic_constructor_conflict(proposition: &Proposition) -> bool {
 /// `crate::kernel::spec_bool_value`) and `k` either `0` or `1`, the equation
 /// `b == 1 - k`, which holds exactly when the first does not.
 fn spec_bool_complement_equation(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    let ConditionTerm::Bitvector32Equal(left, right) = condition else {
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left,
+        right,
+    } = condition
+    else {
         return None;
     };
     let complement = |constant: &Bitvector32Term| match constant.as_const() {
@@ -3443,7 +3515,16 @@ impl PureFactContext {
         value: bool,
         insert: bool,
     ) {
-        let (ConditionTerm::Bitvector64Equal(left, right), true) = (condition, value) else {
+        let (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) = (condition, value)
+        else {
             return;
         };
         let edge = if insert {
@@ -3521,7 +3602,12 @@ impl PureFactContext {
         // residues only when both offsets admit that checked interpretation.
         let derived;
         let (left, right) = match condition {
-            ConditionTerm::Bitvector32Equal(left, right) => (left.as_ref(), right.as_ref()),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } => (left.as_ref(), right.as_ref()),
             condition if condition.true_pointer_offset_sides().is_some() => {
                 let (left, right) = condition.true_pointer_offset_sides().expect("offset view");
                 let Some(pair) = int32_element_index_from_offset(left)
@@ -3634,14 +3720,16 @@ impl PureFactContext {
         {
             return self;
         }
-        let condition = ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(*variable)),
-            Box::new(Bitvector32Term::MemoryLoad(
+        let condition = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(*variable)),
+            right: Box::new(Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(address.clone()),
                 *kind,
             )),
-        );
+        };
         if self.condition_facts.get(&condition) != Some(&true) {
             return self;
         }
@@ -3803,7 +3891,13 @@ impl PureFactContext {
         if !value {
             return;
         }
-        let ConditionTerm::Bitvector32Equal(left, right) = condition else {
+        let ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = condition
+        else {
             return;
         };
         let definition = match (left.as_ref(), right.as_ref()) {
@@ -4324,7 +4418,13 @@ impl PureFactContext {
             if !*value {
                 continue;
             }
-            let ConditionTerm::Bitvector32Equal(left, right) = condition else {
+            let ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } = condition
+            else {
                 continue;
             };
             let (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(_, _, _)) =
@@ -4338,14 +4438,16 @@ impl PureFactContext {
             if let Some(definitions) = prior_typed_reads.get(variable) {
                 for ((_, address), (pointer_value, memory)) in definitions.iter() {
                     crate::instrumentation::record_deterministic_work(1);
-                    let definition = ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Variable(*variable)),
-                        Box::new(Bitvector32Term::MemoryLoad(
+                    let definition = ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Variable(*variable)),
+                        right: Box::new(Bitvector32Term::MemoryLoad(
                             memory.clone(),
                             Box::new(address.clone()),
                             kind,
                         )),
-                    );
+                    };
                     if self.condition_facts.get(&definition) == Some(&true) {
                         self.file_typed_pointer_read(*variable, memory, address, pointer_value);
                     }
@@ -4551,8 +4653,18 @@ impl PureFactContext {
         value: bool,
         insert: bool,
     ) {
-        let (ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)) = condition
+        let (ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        }) = condition
         else {
             return;
         };
@@ -4597,7 +4709,13 @@ impl PureFactContext {
         value: bool,
         insert: bool,
     ) {
-        let ConditionTerm::Bitvector64Equal(left, right) = condition else {
+        let ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = condition
+        else {
             return;
         };
         if !value {
@@ -4655,7 +4773,12 @@ impl PureFactContext {
             let neighbors = if insert {
                 neighbors.with_inserted(other.clone(), condition.clone())
             } else {
-                let reversed = ConditionTerm::Bitvector64Equal(right.clone(), left.clone());
+                let reversed = ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left: right.clone(),
+                    right: left.clone(),
+                };
                 if reversed != *condition && self.condition_facts.get(&reversed) == Some(&true) {
                     neighbors.with_inserted(other.clone(), reversed)
                 } else {
@@ -6292,7 +6415,13 @@ impl PureFactContext {
             // A 64-bit word equality may relate tagged addresses
             // (`address(p) + tag`): the pointer-tag rules decide it, asking
             // only these fast decisions at their leaves.
-            let ConditionTerm::Bitvector64Equal(left, right) = condition else {
+            let ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } = condition
+            else {
                 return None;
             };
             let mut used = crate::kernel::eval::pointer_tags::UsedFacts::fast_only();
@@ -6326,7 +6455,12 @@ impl PureFactContext {
         }
         // Object-class annotations do not change numeric addresses. The
         // typed numeric graph shares those spellings, including disequality.
-        if let ConditionTerm::Bitvector64Equal(left, right) = condition
+        if let ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = condition
             && left.address_pointer().is_some()
             && right.address_pointer().is_some()
         {
@@ -6362,7 +6496,12 @@ impl PureFactContext {
             }
             // `left != INT_MIN or right != -1` kept whole as a fact: two
             // keyed lookups (`divide_overflow_excluded_by_disjunction`).
-            ConditionTerm::Bitvector32SignedDivideOverflows(left, right) => self
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Divide,
+                left,
+                right,
+            } => self
                 .divide_overflow_excluded_by_disjunction(left, right)
                 .then_some(false),
             _ => None,
@@ -6605,7 +6744,12 @@ impl PureFactContext {
                 &condition,
             );
         }
-        if let ConditionTerm::Bitvector32Equal(left, right) = &condition
+        if let ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = &condition
             && let Some((left, right)) = bitvector_equality_after_additive_cancellation(left, right)
         {
             self = self.assume_condition_uncharged(ConditionTerm::equal(left, right), value);
@@ -6616,7 +6760,14 @@ impl PureFactContext {
         // so equality reasoning relates `x == conv(y)` to `x == y`. One
         // memoized decision per bound of each converted side; nothing else
         // in the context is visited.
-        if value && let ConditionTerm::Bitvector32Equal(left, right) = &condition {
+        if value
+            && let ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } = &condition
+        {
             for side in [left.as_ref(), right.as_ref()] {
                 if matches!(side, Bitvector32Term::MachineIntegerCast { .. })
                     && let Some(carrier) = self.narrowed_cast_carrier(side)
@@ -9605,7 +9756,15 @@ fn generated_load_binding_matches_proposition(
     else {
         return true;
     };
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = proposition
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
+        true,
+    ) = proposition
     else {
         return false;
     };
@@ -9796,10 +9955,12 @@ mod stated_requirement_tests {
             var: Variable(var),
             sort: Sort::Bitvector32,
             body: Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(Variable(var))),
-                    Box::new(Bitvector32Term::Constant(4)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::Variable(Variable(var))),
+                    right: Box::new(Bitvector32Term::Constant(4)),
+                },
                 true,
             )),
         }
@@ -10138,10 +10299,12 @@ mod integer_observation_tests {
             destination: MachineIntegerType::Int32,
         };
         let fact = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedAddOverflows(
-                Box::new(Bitvector32Term::Variable(Variable(822))),
-                Box::new(byte),
-            ),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: Box::new(Bitvector32Term::Variable(Variable(822))),
+                right: Box::new(byte),
+            },
             false,
         );
         let bounds = integer_bounds_of_definedness(&fact);
@@ -10545,10 +10708,12 @@ mod integer_observation_tests {
         // A native order the forward map spells the other way round, as
         // `x >= 1` is stated beside `1 <= x`, reads back as the same bound.
         let mirrored = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(
-                Box::new(word(1)),
-                Box::new(Bitvector32Term::Constant(1)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(word(1)),
+                right: Box::new(Bitvector32Term::Constant(1)),
+            },
             true,
         );
         assert!(
@@ -10566,27 +10731,38 @@ mod integer_observation_tests {
         // `x >= 32u64` and a false `0u64 < x` read as their bounds.
         for (fact, reading) in [
             (
-                ConditionTerm::Bitvector64UnsignedGreaterEqual(
-                    Box::new(word(1)),
-                    Box::new(Bitvector32Term::UInt64Constant(32)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::GreaterEqual,
+                    left: Box::new(word(1)),
+                    right: Box::new(Bitvector32Term::UInt64Constant(32)),
+                },
                 ConditionTerm::IntegerLessEqual(
                     constant(32),
                     observe(MachineIntegerType::UInt64, 1),
                 ),
             ),
             (
-                ConditionTerm::Bitvector64UnsignedLessThan(
-                    Box::new(Bitvector32Term::UInt64Constant(0)),
-                    Box::new(word(1)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(Bitvector32Term::UInt64Constant(0)),
+                    right: Box::new(word(1)),
+                },
                 ConditionTerm::IntegerLessEqual(
                     observe(MachineIntegerType::UInt64, 1),
                     constant(0),
                 ),
             ),
         ] {
-            let truth = matches!(fact, ConditionTerm::Bitvector64UnsignedGreaterEqual(..));
+            let truth = matches!(
+                fact,
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::GreaterEqual,
+                    ..
+                }
+            );
             assert_eq!(
                 integer_observations_of_native_comparison(&Proposition::ConditionIs(fact, truth)),
                 vec![Proposition::ConditionIs(reading, true)]
@@ -10760,14 +10936,16 @@ mod execution_variable_ceiling_tests {
         let memory = CMemory::new()
             .with_block("a", 8)
             .store(word(0), CValue::Int32(Bitvector32Term::Variable(variable)));
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::MemoryLoad(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(&memory),
                 Box::new(word(4)),
                 crate::kernel::LoadKind::Bits32,
             )),
-            Box::new(Bitvector32Term::Constant(0)),
-        )
+            right: Box::new(Bitvector32Term::Constant(0)),
+        }
     }
 
     #[test]
@@ -10777,10 +10955,12 @@ mod execution_variable_ceiling_tests {
         let context = context
             .assume_condition(fact_over_snapshot_holding(execution_variable(7)), true)
             .assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(execution_variable(3))),
-                    Box::new(Bitvector32Term::Constant(1)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::Variable(execution_variable(3))),
+                    right: Box::new(Bitvector32Term::Constant(1)),
+                },
                 true,
             ));
         assert!(context.execution_variable_ceiling() >= Some(execution_variable(7)));

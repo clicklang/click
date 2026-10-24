@@ -2,6 +2,7 @@
 // `src/surface/planning/proposition_search.rs`. The kernel itself never
 // calls it, so the tests import the planner explicitly.
 use super::*;
+use crate::kernel::CompareRelation;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 mod ordered_range_access_tests {
@@ -496,7 +497,12 @@ fn a_sixty_four_bit_index_is_an_element_index_only_where_it_is_pinned() {
 
     let pinned = |constant: Bitvector32Term| {
         PureFactContext::new().assume_condition(
-            ConditionTerm::Bitvector64Equal(Box::new(value.clone()), Box::new(constant)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(value.clone()),
+                right: Box::new(constant),
+            },
             true,
         )
     };
@@ -645,10 +651,12 @@ fn a_sixty_four_bit_displacement_is_exact_only_where_a_fact_pins_it() {
 
     let pinned = |constant: i64| {
         PureFactContext::new().assume_condition(
-            ConditionTerm::Bitvector64Equal(
-                Box::new(value.clone()),
-                Box::new(Bitvector32Term::Int64Constant(constant)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(value.clone()),
+                right: Box::new(Bitvector32Term::Int64Constant(constant)),
+            },
             true,
         )
     };
@@ -5755,10 +5763,12 @@ mod wrapped_assumed_extent_is_refused {
         let symbolic_assumptions = assumptions
             .clone()
             .assume_condition(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(symbolic_bytes.clone()),
-                    Box::new(Bitvector32Term::Constant(0x6000_0000)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(symbolic_bytes.clone()),
+                    right: Box::new(Bitvector32Term::Constant(0x6000_0000)),
+                },
                 true,
             )
             .assume_condition(

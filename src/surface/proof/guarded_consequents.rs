@@ -16,6 +16,7 @@
 //! exactly available (`try_discharged_consequent_closure`).
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use std::cell::Cell;
 
 /// At most this many guarded comparisons are tried for one goal.
@@ -97,7 +98,15 @@ impl<'a> Proof<'a> {
             if matches!(
                 consequent.as_ref(),
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(..) | ConditionTerm::Bitvector64Equal(..),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        ..
+                    } | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        ..
+                    },
                     true
                 )
             ) && let Some(rewritten) = attempt::candidate_outcome(
@@ -295,18 +304,42 @@ fn overflow_operands(
     condition: &ConditionTerm,
 ) -> Option<(&Bitvector32Term, &Bitvector32Term, BinaryExpression)> {
     let (left, right, construct): (_, _, BinaryExpression) = match condition {
-        ConditionTerm::Bitvector32SignedAddOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
-            (left, right, ContractExpression::Add)
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left,
+            right,
         }
-        ConditionTerm::Bitvector32SignedSubtractOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => {
-            (left, right, ContractExpression::Subtract)
+        | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Add,
+            left,
+            right,
+        } => (left, right, ContractExpression::Add),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            left,
+            right,
         }
-        ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => {
-            (left, right, ContractExpression::Multiply)
+        | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Subtract,
+            left,
+            right,
+        } => (left, right, ContractExpression::Subtract),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Multiply,
+            left,
+            right,
         }
+        | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Multiply,
+            left,
+            right,
+        } => (left, right, ContractExpression::Multiply),
         _ => return None,
     };
     Some((left, right, construct))
@@ -411,26 +444,66 @@ impl GuardedTermSpeller<'_, '_> {
             return Some(whole);
         }
         let (left, right, operator) = match condition {
-            ConditionTerm::Bitvector32Equal(left, right)
-            | ConditionTerm::Bitvector64Equal(left, right) => {
-                (left, right, ComparisonOperator::Equal)
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
             }
-            ConditionTerm::Bitvector32SignedLessThan(left, right)
-            | ConditionTerm::Bitvector64SignedLessThan(left, right) => {
-                (left, right, ComparisonOperator::LessThan)
+            | ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } => (left, right, ComparisonOperator::Equal),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
             }
-            ConditionTerm::Bitvector32SignedLessEqual(left, right)
-            | ConditionTerm::Bitvector64SignedLessEqual(left, right) => {
-                (left, right, ComparisonOperator::LessEqual)
+            | ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            } => (left, right, ComparisonOperator::LessThan),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
             }
-            ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-            | ConditionTerm::Bitvector64SignedGreaterThan(left, right) => {
-                (left, right, ComparisonOperator::GreaterThan)
+            | ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            } => (left, right, ComparisonOperator::LessEqual),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
             }
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-            | ConditionTerm::Bitvector64SignedGreaterEqual(left, right) => {
-                (left, right, ComparisonOperator::GreaterEqual)
+            | ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            } => (left, right, ComparisonOperator::GreaterThan),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
             }
+            | ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            } => (left, right, ComparisonOperator::GreaterEqual),
             _ => return None,
         };
         let operator = if *value {

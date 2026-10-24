@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 #[ignore = "nightly: checks the complete stack-pop proof at four clause counts"]
@@ -1836,10 +1837,12 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
 
     let less = |left: u64, right: u64| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(Bitvector32Term::Variable(Variable(left))),
-                Box::new(Bitvector32Term::Variable(Variable(right))),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(Bitvector32Term::Variable(Variable(left))),
+                right: Box::new(Bitvector32Term::Variable(Variable(right))),
+            },
             true,
         )
     };
@@ -1847,10 +1850,12 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
         let mut available = Vec::new();
         for index in 0..unrelated {
             available.push(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(Bitvector32Term::Variable(Variable(441_000 + index as u64))),
-                    Box::new(Bitvector32Term::Constant(1_000 + index as u32)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(Bitvector32Term::Variable(Variable(441_000 + index as u64))),
+                    right: Box::new(Bitvector32Term::Constant(1_000 + index as u32)),
+                },
                 true,
             ));
         }
@@ -4250,10 +4255,12 @@ fn failing_simp_derivation_ignores_unrelated_disjunctions() {
 
     let equal = |variable: u64, value: u32| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(variable))),
-                Box::new(Bitvector32Term::Constant(value)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(variable))),
+                right: Box::new(Bitvector32Term::Constant(value)),
+            },
             true,
         )
     };
@@ -4269,10 +4276,12 @@ fn failing_simp_derivation_ignores_unrelated_disjunctions() {
                 ));
             }
             let goal = Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(Bitvector32Term::Variable(Variable(433_000))),
-                    Box::new(Bitvector32Term::Constant(5)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(Bitvector32Term::Variable(Variable(433_000))),
+                    right: Box::new(Bitvector32Term::Constant(5)),
+                },
                 true,
             );
             let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -4350,10 +4359,12 @@ fn failing_simp_derivation_ignores_unrelated_algebraic_disjunctions() {
                 ));
             }
             let goal = Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(Bitvector32Term::Variable(Variable(435_000))),
-                    Box::new(Bitvector32Term::Constant(5)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(Bitvector32Term::Variable(Variable(435_000))),
+                    right: Box::new(Bitvector32Term::Constant(5)),
+                },
                 true,
             );
             let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -6684,10 +6695,12 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
     };
     let equal = |left: u64, right: u64| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(left))),
-                Box::new(Bitvector32Term::Variable(Variable(right))),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(left))),
+                right: Box::new(Bitvector32Term::Variable(Variable(right))),
+            },
             true,
         )
     };
@@ -6827,10 +6840,12 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
     };
     let index = Bitvector32Term::Variable(Variable(490_000));
     let equality = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(index.clone()),
-            Box::new(Bitvector32Term::Constant(2)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(index.clone()),
+            right: Box::new(Bitvector32Term::Constant(2)),
+        },
         true,
     );
     let mut samples = Vec::new();
@@ -6847,10 +6862,12 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
                 CValue::Int32(value.clone()),
             );
             context = context.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(value),
-                    Box::new(Bitvector32Term::Constant(7)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(value),
+                    right: Box::new(Bitvector32Term::Constant(7)),
+                },
                 true,
             ));
         }
@@ -6928,13 +6945,23 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
     };
     let equal = |left: Bitvector32Term, right: Bitvector32Term| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
             true,
         )
     };
     let less = |left: Bitvector32Term, right: Bitvector32Term, holds: bool| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(Box::new(left), Box::new(right)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
             holds,
         )
     };

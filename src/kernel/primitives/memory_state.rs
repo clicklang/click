@@ -3,6 +3,7 @@ use crate::kernel::CheckedPopulationAuthorityExchange;
 use crate::kernel::CheckedPopulationMemberExchange;
 use crate::kernel::ResourceDescription;
 use crate::kernel::population_authority::c_creation::is_external_population_anchor;
+use crate::kernel::{CompareRelation, OverflowOperation};
 use std::fmt::Write;
 
 fn memory_havoc_write_set_identity(mutable_ranges: &[CMemoryRange]) -> String {
@@ -112,13 +113,55 @@ fn push_havoc_binary(
     tasks.push(HavocIdentityTask::Bitvector(left));
 }
 
-fn push_havoc_condition_binary(
+/// Pushes a machine comparison or overflow test: its format, relation or
+/// operation, and its operands.
+fn push_havoc_comparison(
     identity: &mut String,
     tasks: &mut Vec<HavocIdentityTask>,
-    tag: &'static str,
+    op: BitvectorComparisonOp,
     left: Bitvector32Term,
     right: Bitvector32Term,
 ) {
+    use CompareRelation as R;
+    use MachineIntegerType as Ty;
+    use OverflowOperation as O;
+    let tag = match op {
+        BitvectorComparisonOp::Compare(Ty::Int32, R::LessThan) => "clt",
+        BitvectorComparisonOp::Compare(Ty::Int32, R::LessEqual) => "cle",
+        BitvectorComparisonOp::Compare(Ty::Int32, R::GreaterThan) => "cgt",
+        BitvectorComparisonOp::Compare(Ty::Int32, R::GreaterEqual) => "cge",
+        BitvectorComparisonOp::Compare(Ty::Int32, R::Equal) => "ceq",
+        BitvectorComparisonOp::Overflows(Ty::Int32, O::Add) => "cao",
+        BitvectorComparisonOp::Overflows(Ty::Int32, O::Subtract) => "cso",
+        BitvectorComparisonOp::Overflows(Ty::Int32, O::Multiply) => "cmo",
+        BitvectorComparisonOp::Overflows(Ty::Int32, O::Divide) => "cdo",
+        BitvectorComparisonOp::Overflows(Ty::Int32, O::ShiftLeft) => "clo",
+        BitvectorComparisonOp::Compare(Ty::Int64, R::LessThan) => "ci64lt",
+        BitvectorComparisonOp::Compare(Ty::Int64, R::LessEqual) => "ci64le",
+        BitvectorComparisonOp::Compare(Ty::Int64, R::GreaterThan) => "ci64gt",
+        BitvectorComparisonOp::Compare(Ty::Int64, R::GreaterEqual) => "ci64ge",
+        BitvectorComparisonOp::Compare(Ty::UInt64, R::LessThan) => "cu64lt",
+        BitvectorComparisonOp::Compare(Ty::UInt64, R::LessEqual) => "cu64le",
+        BitvectorComparisonOp::Compare(Ty::UInt64, R::GreaterThan) => "cu64gt",
+        BitvectorComparisonOp::Compare(Ty::UInt64, R::GreaterEqual) => "cu64ge",
+        BitvectorComparisonOp::Compare(Ty::Int64, R::Equal) => "c64eq",
+        BitvectorComparisonOp::Overflows(Ty::Int64, O::Add) => "ci64ao",
+        BitvectorComparisonOp::Overflows(Ty::Int64, O::Subtract) => "ci64so",
+        BitvectorComparisonOp::Overflows(Ty::Int64, O::Multiply) => "ci64mo",
+        BitvectorComparisonOp::Overflows(Ty::Int64, O::Divide) => "ci64do",
+        BitvectorComparisonOp::Overflows(Ty::Int64, O::ShiftLeft) => "ci64lo",
+        // Every other format spells its name with the relation or operation.
+        other => {
+            let kind = if other.is_overflow() { "o" } else { "c" };
+            let _ = write!(
+                identity,
+                "c{}{kind}{}",
+                other.format().name(),
+                other.c_symbol()
+            );
+            ""
+        }
+    };
     push_havoc_binary(identity, tasks, tag, left, right);
 }
 
@@ -551,160 +594,30 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                     ConditionTerm::Variable(variable) => {
                         let _ = write!(identity, "cv{};", variable.0);
                     }
-                    ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-                        push_havoc_condition_binary(&mut identity, &mut tasks, "clt", *left, *right)
-                    }
-                    ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-                        push_havoc_condition_binary(&mut identity, &mut tasks, "cle", *left, *right)
-                    }
-                    ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-                        push_havoc_condition_binary(&mut identity, &mut tasks, "cgt", *left, *right)
-                    }
-                    ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-                        push_havoc_condition_binary(&mut identity, &mut tasks, "cge", *left, *right)
-                    }
-                    ConditionTerm::Bitvector32Equal(left, right) => {
-                        push_havoc_condition_binary(&mut identity, &mut tasks, "ceq", *left, *right)
-                    }
-                    ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
-                        push_havoc_condition_binary(&mut identity, &mut tasks, "cao", *left, *right)
-                    }
-                    ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => {
-                        push_havoc_condition_binary(&mut identity, &mut tasks, "cso", *left, *right)
-                    }
-                    ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => {
-                        push_havoc_condition_binary(&mut identity, &mut tasks, "cmo", *left, *right)
-                    }
-                    ConditionTerm::Bitvector32SignedDivideOverflows(left, right) => {
-                        push_havoc_condition_binary(&mut identity, &mut tasks, "cdo", *left, *right)
-                    }
-                    ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right) => {
-                        push_havoc_condition_binary(&mut identity, &mut tasks, "clo", *left, *right)
-                    }
-                    ConditionTerm::Bitvector64SignedLessThan(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "ci64lt",
-                            *left,
-                            *right,
-                        )
-                    }
-                    ConditionTerm::Bitvector64SignedLessEqual(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "ci64le",
-                            *left,
-                            *right,
-                        )
-                    }
-                    ConditionTerm::Bitvector64SignedGreaterThan(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "ci64gt",
-                            *left,
-                            *right,
-                        )
-                    }
-                    ConditionTerm::Bitvector64SignedGreaterEqual(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "ci64ge",
-                            *left,
-                            *right,
-                        )
-                    }
-                    ConditionTerm::Bitvector64UnsignedLessThan(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "cu64lt",
-                            *left,
-                            *right,
-                        )
-                    }
-                    ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "cu64le",
-                            *left,
-                            *right,
-                        )
-                    }
-                    ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "cu64gt",
-                            *left,
-                            *right,
-                        )
-                    }
-                    ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "cu64ge",
-                            *left,
-                            *right,
-                        )
-                    }
-                    ConditionTerm::Bitvector64Equal(left, right) => push_havoc_condition_binary(
+                    ConditionTerm::Compare {
+                        format,
+                        relation,
+                        left,
+                        right,
+                    } => push_havoc_comparison(
                         &mut identity,
                         &mut tasks,
-                        "c64eq",
+                        BitvectorComparisonOp::Compare(format, relation),
                         *left,
                         *right,
                     ),
-                    ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "ci64ao",
-                            *left,
-                            *right,
-                        )
-                    }
-                    ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "ci64so",
-                            *left,
-                            *right,
-                        )
-                    }
-                    ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "ci64mo",
-                            *left,
-                            *right,
-                        )
-                    }
-                    ConditionTerm::Bitvector64SignedDivideOverflows(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "ci64do",
-                            *left,
-                            *right,
-                        )
-                    }
-                    ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => {
-                        push_havoc_condition_binary(
-                            &mut identity,
-                            &mut tasks,
-                            "ci64lo",
-                            *left,
-                            *right,
-                        )
-                    }
+                    ConditionTerm::Overflows {
+                        format,
+                        op,
+                        left,
+                        right,
+                    } => push_havoc_comparison(
+                        &mut identity,
+                        &mut tasks,
+                        BitvectorComparisonOp::Overflows(format, op),
+                        *left,
+                        *right,
+                    ),
                     crate::kernel::integer_comparison_condition!(_, _) => {
                         let _ = write!(identity, "icond{condition:?};");
                     }

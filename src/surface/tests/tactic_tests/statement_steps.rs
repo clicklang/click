@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn proof_step_supports_explicit_fact_transport() {
@@ -293,10 +294,12 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
             )),
         ));
     let fact = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(first_value),
-            Box::new(Bitvector32Term::Constant(7)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(first_value),
+            right: Box::new(Bitvector32Term::Constant(7)),
+        },
         true,
     );
     let statement = CStatement::TypedStore {
@@ -333,14 +336,16 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         panic!("expected a normal transition")
     };
     let transported = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::MemoryLoad(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(post_state.memory().clone()),
                 Box::new(first),
                 crate::kernel::LoadKind::Bits32,
             )),
-            Box::new(Bitvector32Term::Constant(7)),
-        ),
+            right: Box::new(Bitvector32Term::Constant(7)),
+        },
         true,
     );
     assert!(!transition.pure_facts.contains(&transported));

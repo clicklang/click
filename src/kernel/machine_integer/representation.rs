@@ -16,6 +16,7 @@
 
 use super::{Operation, Relation};
 use crate::kernel::{Bitvector32Term, ConditionTerm, MachineIntegerType};
+use crate::kernel::{CompareRelation, OverflowOperation};
 
 /// The word a format's values ride in, which decides its nodes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -134,48 +135,36 @@ pub(crate) fn is_ring_operation(value: &Bitvector32Term) -> bool {
 }
 
 /// The native comparison `left REL right` at `ty`, with the truth it is
-/// filed at (`!=` is a false equality), built by the folding constructors.
-/// A narrow value's word is its canonical extension, which the signed
-/// 32-bit order compares exactly, as C's promotion to `int` does.
+/// filed at (`!=` is a false equality), built by the folding constructor
+/// (`ConditionTerm::machine_compare`). A narrow value's word is its
+/// canonical extension, which the signed 32-bit order compares exactly, as
+/// C's promotion to `int` does.
 pub(crate) fn comparison(
     ty: MachineIntegerType,
     relation: Relation,
     left: Bitvector32Term,
     right: Bitvector32Term,
 ) -> Option<(ConditionTerm, bool)> {
-    let unsigned32 = ty == MachineIntegerType::UInt32;
-    let condition = match (word(ty), relation) {
-        (Word::Bits32, Relation::Less) if unsigned32 => {
-            ConditionTerm::unsigned_less_than(left, right)
-        }
-        (Word::Bits32, Relation::Less) => ConditionTerm::signed_less_than(left, right),
-        (Word::Bits32, Relation::LessEqual) if unsigned32 => {
-            ConditionTerm::unsigned_less_equal(left, right)
-        }
-        (Word::Bits32, Relation::LessEqual) => ConditionTerm::signed_less_equal(left, right),
-        (Word::Bits32, Relation::Equal | Relation::NotEqual) => ConditionTerm::equal(left, right),
-        (Word::Signed64, Relation::Less) => ConditionTerm::int64_signed_less_than(left, right),
-        (Word::Signed64, Relation::LessEqual) => {
-            ConditionTerm::int64_signed_less_equal(left, right)
-        }
-        (Word::Signed64, Relation::Equal | Relation::NotEqual) => {
-            ConditionTerm::int64_equal(left, right)
-        }
-        (Word::Unsigned64, Relation::Less) => ConditionTerm::uint64_less_than(left, right),
-        (Word::Unsigned64, Relation::LessEqual) => ConditionTerm::uint64_less_equal(left, right),
-        (Word::Unsigned64, Relation::Equal | Relation::NotEqual) => {
-            ConditionTerm::uint64_equal(left, right)
-        }
-        (Word::Bits128, _) => return None,
+    if word(ty) == Word::Bits128 {
+        return None;
+    }
+    let compare = match relation {
+        Relation::Less => CompareRelation::LessThan,
+        Relation::LessEqual => CompareRelation::LessEqual,
+        Relation::Equal | Relation::NotEqual => CompareRelation::Equal,
     };
-    Some((condition, relation != Relation::NotEqual))
+    Some((
+        ConditionTerm::machine_compare(ty, compare, left, right),
+        relation != Relation::NotEqual,
+    ))
 }
 
 /// The operands of a native comparison and the formats whose exact reading
 /// it may be, most specific first. A 32-bit order is signed, or a `uint32`
 /// order of operands whose sign bit is flipped (`order_operand` strips the
 /// flip); a narrow value reads through the `int32` reading, which
-/// `IntegerTerm::from_machine` normalizes to the narrow observation.
+/// `IntegerTerm::from_machine` normalizes to the narrow observation. An
+/// equality reads no sign, so it reads at both formats of its width.
 pub(crate) fn comparison_readings(
     condition: &ConditionTerm,
 ) -> Option<(
@@ -183,28 +172,29 @@ pub(crate) fn comparison_readings(
     &Bitvector32Term,
     &'static [MachineIntegerType],
 )> {
-    use ConditionTerm as C;
     use MachineIntegerType as Ty;
-    Some(match condition {
+    let ConditionTerm::Compare {
+        format,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    let equality = *relation == CompareRelation::Equal;
+    let types: &'static [MachineIntegerType] = match (format, equality) {
         // A `uint32` order is the signed order of sign-flipped operands,
         // so its own reading comes first; a genuinely signed order has no
         // sign-bit encoding to strip and reads as `int32`.
-        C::Bitvector32SignedLessThan(left, right)
-        | C::Bitvector32SignedLessEqual(left, right)
-        | C::Bitvector32SignedGreaterThan(left, right)
-        | C::Bitvector32SignedGreaterEqual(left, right) => (left, right, &[Ty::UInt32, Ty::Int32]),
-        C::Bitvector32Equal(left, right) => (left, right, &[Ty::Int32, Ty::UInt32]),
-        C::Bitvector64SignedLessThan(left, right)
-        | C::Bitvector64SignedLessEqual(left, right)
-        | C::Bitvector64SignedGreaterThan(left, right)
-        | C::Bitvector64SignedGreaterEqual(left, right) => (left, right, &[Ty::Int64]),
-        C::Bitvector64Equal(left, right) => (left, right, &[Ty::Int64, Ty::UInt64]),
-        C::Bitvector64UnsignedLessThan(left, right)
-        | C::Bitvector64UnsignedLessEqual(left, right)
-        | C::Bitvector64UnsignedGreaterThan(left, right)
-        | C::Bitvector64UnsignedGreaterEqual(left, right) => (left, right, &[Ty::UInt64]),
+        (Ty::Int32, false) => &[Ty::UInt32, Ty::Int32],
+        (Ty::Int32, true) => &[Ty::Int32, Ty::UInt32],
+        (Ty::Int64, false) => &[Ty::Int64],
+        (Ty::Int64, true) => &[Ty::Int64, Ty::UInt64],
+        (Ty::UInt64, false) => &[Ty::UInt64],
         _ => return None,
-    })
+    };
+    Some((left, right, types))
 }
 
 /// The word a native comparison at `ty` compares, before its encoding: a
@@ -216,7 +206,14 @@ pub(crate) fn order_operand(
     condition: &ConditionTerm,
     side: &Bitvector32Term,
 ) -> Option<Bitvector32Term> {
-    if ty != MachineIntegerType::UInt32 || matches!(condition, ConditionTerm::Bitvector32Equal(..))
+    if ty != MachineIntegerType::UInt32
+        || matches!(
+            condition,
+            ConditionTerm::Compare {
+                relation: CompareRelation::Equal,
+                ..
+            }
+        )
     {
         return Some(side.clone());
     }
@@ -241,36 +238,28 @@ pub(crate) fn has_overflow_test(ty: MachineIntegerType) -> bool {
     matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::Int64)
 }
 
+fn overflow_operation_of(operation: Operation) -> OverflowOperation {
+    match operation {
+        Operation::Add => OverflowOperation::Add,
+        Operation::Subtract => OverflowOperation::Subtract,
+        Operation::Multiply => OverflowOperation::Multiply,
+    }
+}
+
 /// The overflow test of `left op right` at `ty`, as the unsimplified node
-/// a definedness fact files. `None` where `ty` has no overflow test: only
-/// `int32` and `int64` have one today.
+/// a definedness fact files. `None` where `ty` has no overflow test
+/// ([`has_overflow_test`]).
 pub(crate) fn overflow_condition(
     ty: MachineIntegerType,
     operation: Operation,
     left: Box<Bitvector32Term>,
     right: Box<Bitvector32Term>,
 ) -> Option<ConditionTerm> {
-    use ConditionTerm as C;
-    Some(match (ty, operation) {
-        (MachineIntegerType::Int32, Operation::Add) => {
-            C::Bitvector32SignedAddOverflows(left, right)
-        }
-        (MachineIntegerType::Int32, Operation::Subtract) => {
-            C::Bitvector32SignedSubtractOverflows(left, right)
-        }
-        (MachineIntegerType::Int32, Operation::Multiply) => {
-            C::Bitvector32SignedMultiplyOverflows(left, right)
-        }
-        (MachineIntegerType::Int64, Operation::Add) => {
-            C::Bitvector64SignedAddOverflows(left, right)
-        }
-        (MachineIntegerType::Int64, Operation::Subtract) => {
-            C::Bitvector64SignedSubtractOverflows(left, right)
-        }
-        (MachineIntegerType::Int64, Operation::Multiply) => {
-            C::Bitvector64SignedMultiplyOverflows(left, right)
-        }
-        _ => return None,
+    has_overflow_test(ty).then(|| ConditionTerm::Overflows {
+        format: ty,
+        op: overflow_operation_of(operation),
+        left,
+        right,
     })
 }
 
@@ -284,26 +273,22 @@ pub(crate) fn overflow_operation(
     &Bitvector32Term,
     &Bitvector32Term,
 )> {
-    use ConditionTerm as C;
-    use MachineIntegerType as Ty;
-    let (ty, operation, left, right) = match condition {
-        C::Bitvector32SignedAddOverflows(left, right) => (Ty::Int32, Operation::Add, left, right),
-        C::Bitvector32SignedSubtractOverflows(left, right) => {
-            (Ty::Int32, Operation::Subtract, left, right)
-        }
-        C::Bitvector32SignedMultiplyOverflows(left, right) => {
-            (Ty::Int32, Operation::Multiply, left, right)
-        }
-        C::Bitvector64SignedAddOverflows(left, right) => (Ty::Int64, Operation::Add, left, right),
-        C::Bitvector64SignedSubtractOverflows(left, right) => {
-            (Ty::Int64, Operation::Subtract, left, right)
-        }
-        C::Bitvector64SignedMultiplyOverflows(left, right) => {
-            (Ty::Int64, Operation::Multiply, left, right)
-        }
-        _ => return None,
+    let ConditionTerm::Overflows {
+        format,
+        op,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
     };
-    Some((ty, operation, left, right))
+    let operation = match op {
+        OverflowOperation::Add => Operation::Add,
+        OverflowOperation::Subtract => Operation::Subtract,
+        OverflowOperation::Multiply => Operation::Multiply,
+        OverflowOperation::Divide | OverflowOperation::ShiftLeft => return None,
+    };
+    has_overflow_test(*format).then_some((*format, operation, &**left, &**right))
 }
 
 /// A truncating quotient, floor right shift or remainder.

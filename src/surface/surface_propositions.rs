@@ -16,6 +16,7 @@ use super::{
     clone_click_proposition_iteratively, proof,
 };
 use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, Proposition, Sort, Variable};
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -887,8 +888,18 @@ impl SurfacePropositionMap {
                 if qualified.iter().any(Option::is_some) {
                     let resolved = crate::kernel::resolve_load_variables_from_registry(kernel);
                     if let Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32Equal(a, b)
-                        | ConditionTerm::Bitvector64Equal(a, b),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            left: a,
+                            right: b,
+                        }
+                        | ConditionTerm::Compare {
+                            format: MachineIntegerType::Int64,
+                            relation: CompareRelation::Equal,
+                            left: a,
+                            right: b,
+                        },
                         _,
                     ) = &resolved
                     {

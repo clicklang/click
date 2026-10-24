@@ -9,6 +9,7 @@
 //! at four sizes and prints the numbers in its assertion messages.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 // Keep large explicit-body sweeps separate from ambient-context setup. The
 // latter use 4..256 elements (8..512 for the two 64-unit logarithmic slopes):
@@ -825,10 +826,12 @@ fn variable_range(base: Pointer, start: Bitvector32Term, end: Bitvector32Term) -
 }
 
 fn int32_equal(left: u64, right: u64) -> ConditionTerm {
-    ConditionTerm::Bitvector32Equal(
-        Box::new(Bitvector32Term::Variable(Variable(left))),
-        Box::new(Bitvector32Term::Variable(Variable(right))),
-    )
+    ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left: Box::new(Bitvector32Term::Variable(Variable(left))),
+        right: Box::new(Bitvector32Term::Variable(Variable(right))),
+    }
 }
 
 /// Two held ranges that abut only by a proved endpoint equality merge in

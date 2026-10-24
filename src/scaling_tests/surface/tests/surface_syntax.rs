@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn integer_symbolic_aliases_keep_simple_verification_bounded() {
@@ -72,14 +73,16 @@ fn snapshot_blind_surface_selection_scales_by_index_height() {
     };
     let load_fact = |memory: CMemory, upper: u32| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(Bitvector32Term::MemoryLoad(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Bits32,
                 )),
-                Box::new(Bitvector32Term::Constant(upper)),
-            ),
+                right: Box::new(Bitvector32Term::Constant(upper)),
+            },
             true,
         )
     };
@@ -248,14 +251,16 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
             right: current_int(index),
         };
         let kernel = Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(
-                Box::new(Bitvector32Term::MemoryLoad(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Bits32,
                 )),
-                Box::new(Bitvector32Term::UInt64Constant(u64::from(index))),
-            ),
+                right: Box::new(Bitvector32Term::UInt64Constant(u64::from(index))),
+            },
             true,
         );
         (pointer, expression, surface, kernel)

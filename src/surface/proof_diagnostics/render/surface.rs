@@ -15,6 +15,9 @@
 //! after the report. Two reads of one place in two memories therefore never
 //! print alike.
 use super::*;
+#[cfg(test)]
+use crate::kernel::CompareRelation;
+use crate::kernel::OverflowOperation;
 
 /// Which spelling policy a printer applies.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -957,8 +960,16 @@ impl Printer<'_> {
         depth: usize,
     ) -> Option<Spelled> {
         if let (
-            ConditionTerm::Bitvector32SignedAddOverflows(..)
-            | ConditionTerm::Bitvector32SignedSubtractOverflows(..),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                ..
+            }
+            | ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Subtract,
+                ..
+            },
             Bitvector32Term::Constant(bits),
         ) = (condition, b)
         {
@@ -966,7 +977,14 @@ impl Printer<'_> {
             if offset == 0 {
                 return Some(atom((!polarity).to_string()));
             }
-            let addition = matches!(condition, ConditionTerm::Bitvector32SignedAddOverflows(..));
+            let addition = matches!(
+                condition,
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    ..
+                }
+            );
             let lower = if addition { offset < 0 } else { offset > 0 };
             let bound = if addition {
                 if lower {
@@ -2530,10 +2548,12 @@ mod tests {
 
     fn equality(value: Bitvector32Term) -> Proposition {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(value),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(value),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         )
     }
@@ -2592,10 +2612,12 @@ mod tests {
         );
         assert_eq!(source(&fact, &mut labels), "f + 1.5f32 < 2");
         let integer = Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(
-                Box::new(Bitvector32Term::UInt64Constant(1.5_f64.to_bits())),
-                Box::new(Bitvector32Term::Variable(Variable(9))),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::UInt64Constant(1.5_f64.to_bits())),
+                right: Box::new(Bitvector32Term::Variable(Variable(9))),
+            },
             true,
         );
         assert!(source(&integer, &mut labels).contains("4609434218613702656u64"));
@@ -2660,10 +2682,12 @@ mod tests {
         let value =
             Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Variable(Variable(94))));
         let fact = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(value),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(value),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         assert_eq!(
@@ -2680,30 +2704,36 @@ mod tests {
         labels.source_name(Variable(8), "u".into());
         labels.source_types.insert(Variable(8), CType::UInt32);
         let signed = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(7))),
-                Box::new(Bitvector32Term::Constant((-56i32) as u32)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(7))),
+                right: Box::new(Bitvector32Term::Constant((-56i32) as u32)),
+            },
             true,
         );
         assert_eq!(source(&signed, &mut labels), "a == -56");
         let unsigned = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(8))),
-                Box::new(Bitvector32Term::Constant((-56i32) as u32)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(8))),
+                right: Box::new(Bitvector32Term::Constant((-56i32) as u32)),
+            },
             false,
         );
         assert_eq!(source(&unsigned, &mut labels), "u != 4294967240u32");
         // An unsigned order over an `int32` value converts it.
         let order = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(Bitvector32Term::BitwiseXor(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(Bitvector32Term::BitwiseXor(
                     Box::new(Bitvector32Term::Variable(Variable(7))),
                     Box::new(Bitvector32Term::Constant(0x8000_0000)),
                 )),
-                Box::new(Bitvector32Term::Constant(1073741823 ^ 0x8000_0000)),
-            ),
+                right: Box::new(Bitvector32Term::Constant(1073741823 ^ 0x8000_0000)),
+            },
             true,
         );
         assert_eq!(source(&order, &mut labels), "(uint32)a <= 1073741823u32");
@@ -2721,14 +2751,21 @@ mod tests {
             Box::new(Bitvector32Term::Subtract(a(), b())),
         );
         let less = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(Box::new(product), a()),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(product),
+                right: a(),
+            },
             false,
         );
         let masked = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::BitwiseAnd(a(), b())),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::BitwiseAnd(a(), b())),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         let fact = Proposition::Implies(

@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{MachineIntegerType, OverflowOperation};
 
 const HI: Variable = Variable(72_201);
 const ACCUMULATOR: Variable = Variable(72_202);
@@ -49,10 +50,12 @@ fn hi_is_positive() -> PureFactContext {
 
 fn subtraction_is_defined() -> Proposition {
     Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedSubtractOverflows(
-            Box::new(Bitvector32Term::Variable(HI)),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            left: Box::new(Bitvector32Term::Variable(HI)),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         false,
     )
 }

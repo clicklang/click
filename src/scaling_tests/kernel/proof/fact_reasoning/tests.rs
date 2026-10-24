@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn quantified_single_match_does_not_check_the_whole_alpha_bucket() {
@@ -128,7 +129,12 @@ fn machine_affine_equality_work_is_linear_in_the_sum() {
         let forward = sum(&mut (0..size));
         let backward = sum(&mut (0..size).rev());
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(Box::new(forward), Box::new(backward)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(forward),
+                right: Box::new(backward),
+            },
             true,
         );
         let (proved, work) =

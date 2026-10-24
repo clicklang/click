@@ -4,6 +4,7 @@
 use super::*;
 use crate::kernel::LoanViewBinding;
 use crate::kernel::loans::{LoanLedger, LoanViewBindings};
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 /// A fold publishes read authority for the cells it consumed, attached to
@@ -890,10 +891,12 @@ fn inactive_instance_quantity_does_not_imply_nonnegativity() {
         rewrite_resource_instance(&folded, &instance, &definition, &assumptions, true).unwrap();
     assert!(opened.resources().is_empty());
     assert!(!facts.contains(&Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedGreaterEqual(
-            Box::new(Bitvector32Term::Constant(u32::MAX)),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: Box::new(Bitvector32Term::Constant(u32::MAX)),
+            right: Box::new(Bitvector32Term::Constant(0))
+        },
         true,
     )));
 }
@@ -2127,7 +2130,12 @@ fn unrelated_token_context(size: usize) -> ResourceContext {
 
 fn equality(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
     Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
         true,
     )
 }
@@ -3022,10 +3030,12 @@ fn symbolic_declared_resource_quantity_splits_without_materializing_units() {
     let symbolic = CResourceFact::own_quantity(resource.clone(), quantity.clone());
     let unit = CResourceFact::own(resource.clone());
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::Bitvector32SignedGreaterEqual(
-            Box::new(quantity.clone()),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: Box::new(quantity.clone()),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         true,
     );
 
@@ -3062,10 +3072,12 @@ fn declared_resource_quantity_work_ignores_the_numeric_coefficient() {
     .into_iter()
     .map(|(label, quantity)| {
         let assumptions = PureFactContext::new().assume_condition(
-            ConditionTerm::Bitvector32SignedGreaterEqual(
-                Box::new(quantity.clone()),
-                Box::new(Bitvector32Term::Constant(1)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(quantity.clone()),
+                right: Box::new(Bitvector32Term::Constant(1)),
+            },
             true,
         );
         let assumptions = assumptions.assume_condition(
@@ -5533,10 +5545,12 @@ mod constant_range_containment {
         );
         let pinned = |value: i32| {
             PureFactContext::new().assume_condition(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(index.clone()),
-                    Box::new(Bitvector32Term::Constant(value as u32)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(index.clone()),
+                    right: Box::new(Bitvector32Term::Constant(value as u32)),
+                },
                 true,
             )
         };
@@ -5559,7 +5573,7 @@ mod constant_range_containment {
 }
 
 /// An owned population's quantity is an `int32`. Every rule that *orders* one
-/// asks `Bitvector32SignedGreaterEqual`, except the two constant arms that
+/// asks the `int32` `>=` comparison, except the two constant arms that
 /// decide whether an owner may observe itself, which read the bits.
 mod owned_quantity_sign {
     use super::*;

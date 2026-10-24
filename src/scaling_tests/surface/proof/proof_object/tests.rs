@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::CompareRelation;
 
 #[test]
 fn a_missing_premise_spelling_walks_recorded_history_only_once() {
@@ -13,7 +14,12 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
     let state = CState::new().with_local("visible", CValue::Int32(visible.clone()));
     let equal_zero = |term| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(term), Box::new(Bitvector32Term::Constant(0))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(term),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         )
     };
@@ -141,17 +147,24 @@ fn same_block_offset_rewrite_work(
                     true,
                 ),
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(old),
-                        Box::new(Bitvector32Term::Constant(4)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(old),
+                        right: Box::new(Bitvector32Term::Constant(4)),
+                    },
                     true,
                 ),
             ]
         })
         .collect::<Vec<_>>();
     let bound = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(k), Box::new(Bitvector32Term::Constant(4))),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(k),
+            right: Box::new(Bitvector32Term::Constant(4)),
+        },
         true,
     );
     facts.push(bound.clone());
@@ -504,10 +517,12 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
             (0..size)
                 .map(|index| {
                     Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32Equal(
-                            Box::new(Bitvector32Term::Variable(chosen_variable)),
-                            Box::new(Bitvector32Term::Constant(index)),
-                        ),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            left: Box::new(Bitvector32Term::Variable(chosen_variable)),
+                            right: Box::new(Bitvector32Term::Constant(index)),
+                        },
                         true,
                     )
                 })
@@ -1106,7 +1121,12 @@ fn snapshot_premise_synthesis_seeks_near_anchor_without_scanning_history() {
     let arguments = vec![CExpression::Value(CValue::Int32(value.clone()))];
     let parameter_binding = ParameterBinding::new(parameters.parameters(), &arguments);
     let kernel = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(value), Box::new(Bitvector32Term::Constant(0))),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(value),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     let anchor = ProgramPointRef {
@@ -1178,10 +1198,12 @@ fn missing_snapshot_premise_spelling_has_bounded_history_search() {
     // misses, exercising the exhaustive-history fallback rather than the
     // successful first-candidate case.
     let kernel = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(8_178_903))),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(Variable(8_178_903))),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     for size in [16usize, 64, 256, 1024, 4096] {
@@ -1227,7 +1249,12 @@ fn snapshot_premise_candidates_stop_on_deterministic_work_exhaustion() {
     let value = Bitvector32Term::Variable(Variable(8_178_902));
     let arguments = vec![CExpression::Value(CValue::Int32(value.clone()))];
     let kernel = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(value), Box::new(Bitvector32Term::Constant(0))),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(value),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     let anchor = ProgramPointRef {
@@ -1309,15 +1336,30 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
     let y = Bitvector32Term::Variable(Variable(9_920_001));
     let bound = Bitvector32Term::UInt64Constant(22208);
     let equality = Proposition::ConditionIs(
-        ConditionTerm::Bitvector64Equal(Box::new(x.clone()), Box::new(y.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: Box::new(x.clone()),
+            right: Box::new(y.clone()),
+        },
         true,
     );
     let known = Proposition::ConditionIs(
-        ConditionTerm::Bitvector64UnsignedLessThan(Box::new(y.clone()), Box::new(bound.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left: Box::new(y.clone()),
+            right: Box::new(bound.clone()),
+        },
         true,
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector64UnsignedLessThan(Box::new(x.clone()), Box::new(bound.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left: Box::new(x.clone()),
+            right: Box::new(bound.clone()),
+        },
         true,
     );
     let expression = |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));
@@ -1336,10 +1378,12 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         let mut facts = vec![equality.clone(), known.clone()];
         for i in 0..ambient {
             facts.push(Proposition::ConditionIs(
-                ConditionTerm::Bitvector64Equal(
-                    Box::new(y.clone()),
-                    Box::new(Bitvector32Term::Variable(Variable(9_921_000 + i))),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(y.clone()),
+                    right: Box::new(Bitvector32Term::Variable(Variable(9_921_000 + i))),
+                },
                 true,
             ));
         }
@@ -1600,10 +1644,12 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
             );
             let (variable, registered) = crate::kernel::load_variable_for_term(&load).unwrap();
             let fact = Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(variable)),
-                    Box::new(registered),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::Variable(variable)),
+                    right: Box::new(registered),
+                },
                 true,
             );
             assert!(crate::kernel::is_verified_load_variable_defining_fact(
@@ -1638,7 +1684,12 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
                 Bitvector32Term::Add(Box::new(sum), Box::new(read))
             });
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(sum), Box::new(Bitvector32Term::Constant(7))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(sum),
+                right: Box::new(Bitvector32Term::Constant(7)),
+            },
             true,
         );
         let root = Proof::for_fixed_state_goal_with_requirements(
@@ -1679,7 +1730,12 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         );
         assert!(facts.iter().all(|fact| root.facts().contains(fact)));
         let alias = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(reads[0].clone()), Box::new(reads[1].clone())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(reads[0].clone()),
+                right: Box::new(reads[1].clone()),
+            },
             true,
         );
         let mut alias_facts = facts.clone();
@@ -1730,10 +1786,12 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_snapshots() {
     let state = CState::new().with_local("value", CValue::Int32(now.clone()));
     let equal_zero = |value| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(value),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(value),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         )
     };
@@ -1936,32 +1994,56 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 crate::kernel::LoadKind::Bits32,
             );
             facts.push(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(Box::new(load.clone()), Box::new(stored)),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(load.clone()),
+                    right: Box::new(stored),
+                },
                 true,
             ));
             reads.push(load);
         }
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-            &facts[0]
+        let Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) = &facts[0]
         else {
             unreachable!()
         };
         assert!(crate::kernel::is_store_fact(
-            &ConditionTerm::Bitvector32Equal(left.clone(), right.clone()),
+            &ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: left.clone(),
+                right: right.clone()
+            },
             true
         ));
         assert!(!crate::kernel::is_store_fact(
-            &ConditionTerm::Bitvector32Equal(left.clone(), right.clone()),
+            &ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: left.clone(),
+                right: right.clone()
+            },
             false
         ));
         assert!(!crate::kernel::is_store_fact(
-            &ConditionTerm::Bitvector32Equal(
-                left.clone(),
-                Box::new(Bitvector32Term::Add(
+            &ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: left.clone(),
+                right: Box::new(Bitvector32Term::Add(
                     right.clone(),
                     Box::new(Bitvector32Term::Constant(1))
                 ))
-            ),
+            },
             true
         ));
         let Bitvector32Term::MemoryLoad(memory_for_control, pointer_for_control, _) = left.as_ref()
@@ -1969,14 +2051,16 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             unreachable!()
         };
         assert!(!crate::kernel::is_store_fact(
-            &ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::MemoryLoad(
+            &ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::MemoryLoad(
                     memory_for_control.clone(),
                     pointer_for_control.clone(),
                     crate::kernel::LoadKind::Bits64
                 )),
-                right.clone()
-            ),
+                right: right.clone()
+            },
             true
         ));
         let state = CState::new()
@@ -2005,7 +2089,12 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 Bitvector32Term::Add(Box::new(sum), Box::new(read))
             });
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(sum), Box::new(Bitvector32Term::Constant(7))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(sum),
+                right: Box::new(Bitvector32Term::Constant(7)),
+            },
             true,
         );
         let root = Proof::for_fixed_state_goal_with_requirements(
@@ -2061,7 +2150,15 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             "direct premise resolution searched unrelated history"
         );
         // An explicitly retained store equality remains a source rewrite.
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(_, stored), true) = &facts[0]
+        let Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: _,
+                right: stored,
+            },
+            true,
+        ) = &facts[0]
         else {
             unreachable!()
         };
@@ -2100,7 +2197,12 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             "a retained store source must remain usable"
         );
         let alias = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(reads[0].clone()), Box::new(reads[1].clone())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(reads[0].clone()),
+                right: Box::new(reads[1].clone()),
+            },
             true,
         );
         let mut alias_facts = facts.clone();
@@ -2174,10 +2276,12 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
         let facts = (1..=size)
             .map(|index| {
                 let fact = Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(words[0].clone()),
-                        Box::new(words[index].clone()),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(words[0].clone()),
+                        right: Box::new(words[index].clone()),
+                    },
                     true,
                 );
                 surfaces
@@ -2193,13 +2297,15 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
         );
         let goal = Proposition::ConditionIs(
             if native {
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(words[0].clone()),
-                    Box::new(Bitvector32Term::Add(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(words[0].clone()),
+                    right: Box::new(Bitvector32Term::Add(
                         Box::new(words[base].clone()),
                         Box::new(Bitvector32Term::Constant(1)),
                     )),
-                )
+                }
             } else {
                 ConditionTerm::IntegerEqual(terms[0].clone().into(), right.into())
             },

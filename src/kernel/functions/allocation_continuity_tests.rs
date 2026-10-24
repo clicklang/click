@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn contract_retirement_invalidates_creation_provenance_even_with_replacement() {
@@ -239,13 +240,23 @@ fn allocation_size_continuity_uses_graph_with_snapshot_scope() {
     for (size, context) in [(&later_size, &branch), (&output_size, &parent)] {
         assert!(matches!(
             allocation_continuity(&base, &input_size, &base, size, context),
-            AllocationContinuity::Undecided(ConditionTerm::Bitvector32Equal(_, _)),
+            AllocationContinuity::Undecided(ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: _,
+                right: _
+            }),
         ));
     }
     let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
     assert!(matches!(
         allocation_continuity(&base, &input_size, &base, &output_size, &withdrawn),
-        AllocationContinuity::Undecided(ConditionTerm::Bitvector32Equal(_, _)),
+        AllocationContinuity::Undecided(ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: _,
+            right: _
+        }),
     ));
     assert_ne!(
         allocation_continuity(

@@ -1,6 +1,7 @@
 //! Logical/execution/outcome splits, joins, and `have`/`open` scopes.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 pub(in crate::surface::proof) struct CheckedBothSurfaceChild {
     surface: Option<ClickProposition>,
@@ -1103,7 +1104,12 @@ impl<'a> Proof<'a> {
         if let ClickProposition::Loadable { segment } = &body_surface
             && let Some((_, start, end)) = segment.surface_range()
             && let Proposition::ConditionIs(
-                ConditionTerm::Bitvector64UnsignedLessEqual(_, limit),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::LessEqual,
+                    left: _,
+                    right: limit,
+                },
                 true,
             ) = kernel
             && let Bitvector32Term::UInt64Constant(limit) = limit.as_ref()

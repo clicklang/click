@@ -2,6 +2,7 @@
 use super::*;
 use crate::kernel::assumptions::equality_graph_term_key;
 use crate::kernel::{BitvectorEqualityDerivationStep, ConditionTerm, Proposition};
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The two equality-graph keys a true condition records as scalar evidence:
@@ -16,7 +17,12 @@ pub(in crate::kernel) fn scalar_evidence_pair(
         return None;
     }
     let (a, b) = match condition {
-        ConditionTerm::Bitvector32Equal(a, b) => (a.as_ref().clone(), b.as_ref().clone()),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: a,
+            right: b,
+        } => (a.as_ref().clone(), b.as_ref().clone()),
         other => other.true_pointer_offset_sides().and_then(|(a, b)| {
             crate::kernel::reasoning::int32_element_index_from_offset(a)
                 .zip(crate::kernel::reasoning::int32_element_index_from_offset(b))
@@ -35,8 +41,14 @@ impl EqualityGraph {
         if !value {
             return;
         }
-        if !matches!(condition, ConditionTerm::Bitvector32Equal(..))
-            && condition.true_pointer_offset_sides().is_none()
+        if !matches!(
+            condition,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                ..
+            }
+        ) && condition.true_pointer_offset_sides().is_none()
         {
             return;
         }
@@ -258,8 +270,15 @@ impl EqualityGraph {
                     continue;
                 }
                 let Some(premise) = sources.iter().find_map(|(_, premise)| {
-                    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(a, b), true) =
-                        premise
+                    let Proposition::ConditionIs(
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            left: a,
+                            right: b,
+                        },
+                        true,
+                    ) = premise
                     else {
                         return None;
                     };
@@ -307,7 +326,13 @@ impl EqualityGraph {
             {
                 for (_, premises) in neighbors.iter() {
                     for (condition, _) in premises.iter() {
-                        let ConditionTerm::Bitvector32Equal(a, b) = condition else {
+                        let ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            left: a,
+                            right: b,
+                        } = condition
+                        else {
                             continue;
                         };
                         let other = if **a == current {

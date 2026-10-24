@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::kernel::LoweringIntroduction;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use num_traits::ToPrimitive;
 
 fn signed_constant_expression(expression: &ContractExpression) -> Option<num_bigint::BigInt> {
@@ -28,19 +29,30 @@ fn lower_signed_constant_comparison(
     let left = crate::kernel::Bitvector32Term::Constant(left);
     let right = crate::kernel::Bitvector32Term::Constant(right);
     let condition = match operator {
-        ComparisonOperator::LessEqual => crate::kernel::ConditionTerm::Bitvector32SignedLessEqual(
-            Box::new(left),
-            Box::new(right),
-        ),
-        ComparisonOperator::LessThan => {
-            crate::kernel::ConditionTerm::Bitvector32SignedLessThan(Box::new(left), Box::new(right))
-        }
-        ComparisonOperator::Equal => {
-            crate::kernel::ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right))
-        }
-        ComparisonOperator::NotEqual => {
-            crate::kernel::ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right))
-        }
+        ComparisonOperator::LessEqual => crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::LessEqual,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
+        ComparisonOperator::LessThan => crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::LessThan,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
+        ComparisonOperator::Equal => crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
+        ComparisonOperator::NotEqual => crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
         ComparisonOperator::GreaterThan
         | ComparisonOperator::GreaterEqual
         | ComparisonOperator::In => return None,
@@ -68,7 +80,12 @@ fn signed_step_result_surface(step: &SignedArithmeticStep) -> Option<&ClickPropo
 
 fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> bool {
     let crate::kernel::Proposition::ConditionIs(
-        crate::kernel::ConditionTerm::Bitvector32SignedLessThan(left, right),
+        crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::LessThan,
+            left,
+            right,
+        },
         true,
     ) = proposition
     else {
@@ -212,16 +229,46 @@ fn signed_scaled_surface_shape(
     let (source_left, source_right, target_left, target_right) =
         match (source_condition, target_condition) {
             (
-                crate::kernel::ConditionTerm::Bitvector32SignedLessThan(source_left, source_right),
-                crate::kernel::ConditionTerm::Bitvector32SignedLessThan(target_left, target_right),
+                crate::kernel::ConditionTerm::Compare {
+                    format: crate::kernel::MachineIntegerType::Int32,
+                    relation: crate::kernel::CompareRelation::LessThan,
+                    left: source_left,
+                    right: source_right,
+                },
+                crate::kernel::ConditionTerm::Compare {
+                    format: crate::kernel::MachineIntegerType::Int32,
+                    relation: crate::kernel::CompareRelation::LessThan,
+                    left: target_left,
+                    right: target_right,
+                },
             )
             | (
-                crate::kernel::ConditionTerm::Bitvector32SignedLessEqual(source_left, source_right),
-                crate::kernel::ConditionTerm::Bitvector32SignedLessEqual(target_left, target_right),
+                crate::kernel::ConditionTerm::Compare {
+                    format: crate::kernel::MachineIntegerType::Int32,
+                    relation: crate::kernel::CompareRelation::LessEqual,
+                    left: source_left,
+                    right: source_right,
+                },
+                crate::kernel::ConditionTerm::Compare {
+                    format: crate::kernel::MachineIntegerType::Int32,
+                    relation: crate::kernel::CompareRelation::LessEqual,
+                    left: target_left,
+                    right: target_right,
+                },
             )
             | (
-                crate::kernel::ConditionTerm::Bitvector32Equal(source_left, source_right),
-                crate::kernel::ConditionTerm::Bitvector32Equal(target_left, target_right),
+                crate::kernel::ConditionTerm::Compare {
+                    format: crate::kernel::MachineIntegerType::Int32,
+                    relation: crate::kernel::CompareRelation::Equal,
+                    left: source_left,
+                    right: source_right,
+                },
+                crate::kernel::ConditionTerm::Compare {
+                    format: crate::kernel::MachineIntegerType::Int32,
+                    relation: crate::kernel::CompareRelation::Equal,
+                    left: target_left,
+                    right: target_right,
+                },
             ) => (source_left, source_right, target_left, target_right),
             _ => return false,
         };
@@ -322,18 +369,30 @@ fn signed_ordered_surface_parts(
     // one written `not (i >= n)` the same as `i < n`; the planner adds them
     // alike, so the printed sum is read alike.
     let (left, right, strict) = match condition {
-        crate::kernel::ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-            (left.as_ref(), right.as_ref(), false)
-        }
-        crate::kernel::ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-            (left.as_ref(), right.as_ref(), true)
-        }
-        crate::kernel::ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-            (right.as_ref(), left.as_ref(), false)
-        }
-        crate::kernel::ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-            (right.as_ref(), left.as_ref(), true)
-        }
+        crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::LessEqual,
+            left,
+            right,
+        } => (left.as_ref(), right.as_ref(), false),
+        crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::LessThan,
+            left,
+            right,
+        } => (left.as_ref(), right.as_ref(), true),
+        crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => (right.as_ref(), left.as_ref(), false),
+        crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::GreaterThan,
+            left,
+            right,
+        } => (right.as_ref(), left.as_ref(), true),
         _ => return None,
     };
     // A false comparison is the reverse comparison of the other strictness.
@@ -454,22 +513,66 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
         _ => return None,
     };
     let (left, right) = match condition {
-        crate::kernel::ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | crate::kernel::ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | crate::kernel::ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | crate::kernel::ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | crate::kernel::ConditionTerm::Bitvector32Equal(left, right)
-            if value =>
-        {
-            (left.as_ref(), right.as_ref())
+        crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::LessThan,
+            left,
+            right,
         }
-        crate::kernel::ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | crate::kernel::ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | crate::kernel::ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | crate::kernel::ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | crate::kernel::ConditionTerm::Bitvector32Equal(left, right) => {
-            (left.as_ref(), right.as_ref())
+        | crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::LessEqual,
+            left,
+            right,
         }
+        | crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::GreaterThan,
+            left,
+            right,
+        }
+        | crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::GreaterEqual,
+            left,
+            right,
+        }
+        | crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::Equal,
+            left,
+            right,
+        } if value => (left.as_ref(), right.as_ref()),
+        crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::LessThan,
+            left,
+            right,
+        }
+        | crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::LessEqual,
+            left,
+            right,
+        }
+        | crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::GreaterThan,
+            left,
+            right,
+        }
+        | crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::GreaterEqual,
+            left,
+            right,
+        }
+        | crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::Equal,
+            left,
+            right,
+        } => (left.as_ref(), right.as_ref()),
         _ => return None,
     };
     let mut machine_operation = false;
@@ -520,12 +623,30 @@ fn signed_goal_is_unsigned_signbit_bound(goal: &crate::kernel::Proposition) -> b
         return false;
     };
     let (left, right) = match condition {
-        crate::kernel::ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | crate::kernel::ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | crate::kernel::ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | crate::kernel::ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-            (left.as_ref(), right.as_ref())
+        crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::LessThan,
+            left,
+            right,
         }
+        | crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::LessEqual,
+            left,
+            right,
+        }
+        | crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::GreaterThan,
+            left,
+            right,
+        }
+        | crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => (left.as_ref(), right.as_ref()),
         _ => return false,
     };
     let is_signbit_xor = |term: &crate::kernel::Bitvector32Term| {
@@ -2178,14 +2299,20 @@ impl<'a> Proof<'a> {
                     .step_error("signed_int32 certificate term did not lower to a proposition"));
             };
             let term = match condition {
-                crate::kernel::ConditionTerm::Bitvector32Equal(left, right)
-                    if matches!(right.as_ref(), crate::kernel::Bitvector32Term::Constant(0)) =>
-                {
+                crate::kernel::ConditionTerm::Compare {
+                    format: crate::kernel::MachineIntegerType::Int32,
+                    relation: crate::kernel::CompareRelation::Equal,
+                    left,
+                    right,
+                } if matches!(right.as_ref(), crate::kernel::Bitvector32Term::Constant(0)) => {
                     left.as_ref().clone()
                 }
-                crate::kernel::ConditionTerm::Bitvector32Equal(left, right)
-                    if matches!(left.as_ref(), crate::kernel::Bitvector32Term::Constant(0)) =>
-                {
+                crate::kernel::ConditionTerm::Compare {
+                    format: crate::kernel::MachineIntegerType::Int32,
+                    relation: crate::kernel::CompareRelation::Equal,
+                    left,
+                    right,
+                } if matches!(left.as_ref(), crate::kernel::Bitvector32Term::Constant(0)) => {
                     right.as_ref().clone()
                 }
                 _ => {
@@ -3611,10 +3738,12 @@ impl<'a> Proof<'a> {
         match context.theorem_context.values.get(parameter) {
             Some(CValue::Int32(current)) => {
                 let nonnegative = Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedGreaterEqual(
-                        Box::new(current.clone()),
-                        Box::new(Bitvector32Term::Constant(0)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterEqual,
+                        left: Box::new(current.clone()),
+                        right: Box::new(Bitvector32Term::Constant(0)),
+                    },
                     true,
                 );
                 if !self.facts().contains(&nonnegative)

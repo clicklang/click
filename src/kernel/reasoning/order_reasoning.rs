@@ -1,34 +1,83 @@
 use super::*;
+use crate::kernel::CompareRelation;
 
 pub(in crate::kernel) fn condition_as_order_fact(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
     match (condition, value) {
-        (ConditionTerm::Bitvector32SignedLessThan(left, right), true) => {
-            Some((left.as_ref().clone(), right.as_ref().clone(), true))
-        }
-        (ConditionTerm::Bitvector32SignedLessThan(left, right), false) => {
-            Some((right.as_ref().clone(), left.as_ref().clone(), false))
-        }
-        (ConditionTerm::Bitvector32SignedLessEqual(left, right), true) => {
-            Some((left.as_ref().clone(), right.as_ref().clone(), false))
-        }
-        (ConditionTerm::Bitvector32SignedLessEqual(left, right), false) => {
-            Some((right.as_ref().clone(), left.as_ref().clone(), true))
-        }
-        (ConditionTerm::Bitvector32SignedGreaterThan(left, right), true) => {
-            Some((right.as_ref().clone(), left.as_ref().clone(), true))
-        }
-        (ConditionTerm::Bitvector32SignedGreaterThan(left, right), false) => {
-            Some((left.as_ref().clone(), right.as_ref().clone(), false))
-        }
-        (ConditionTerm::Bitvector32SignedGreaterEqual(left, right), true) => {
-            Some((right.as_ref().clone(), left.as_ref().clone(), false))
-        }
-        (ConditionTerm::Bitvector32SignedGreaterEqual(left, right), false) => {
-            Some((left.as_ref().clone(), right.as_ref().clone(), true))
-        }
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            true,
+        ) => Some((left.as_ref().clone(), right.as_ref().clone(), true)),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            false,
+        ) => Some((right.as_ref().clone(), left.as_ref().clone(), false)),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+            true,
+        ) => Some((left.as_ref().clone(), right.as_ref().clone(), false)),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+            false,
+        ) => Some((right.as_ref().clone(), left.as_ref().clone(), true)),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            },
+            true,
+        ) => Some((right.as_ref().clone(), left.as_ref().clone(), true)),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            },
+            false,
+        ) => Some((left.as_ref().clone(), right.as_ref().clone(), false)),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            },
+            true,
+        ) => Some((right.as_ref().clone(), left.as_ref().clone(), false)),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            },
+            false,
+        ) => Some((left.as_ref().clone(), right.as_ref().clone(), true)),
         _ => None,
     }
 }
@@ -116,10 +165,30 @@ pub(in crate::kernel) fn condition_as_int64_order_fact(
     value: bool,
 ) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
     let (left, right, lower_first, strict) = match condition {
-        ConditionTerm::Bitvector64SignedLessThan(left, right) => (left, right, true, true),
-        ConditionTerm::Bitvector64SignedLessEqual(left, right) => (left, right, true, false),
-        ConditionTerm::Bitvector64SignedGreaterThan(left, right) => (left, right, false, true),
-        ConditionTerm::Bitvector64SignedGreaterEqual(left, right) => (left, right, false, false),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        } => (left, right, true, true),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        } => (left, right, true, false),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        } => (left, right, false, true),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => (left, right, false, false),
         _ => return None,
     };
     let (lower, upper) = if lower_first {
@@ -347,10 +416,30 @@ fn uint64_antecedent_ranges(
             // held false is the reversed one with the other strictness.
             Proposition::ConditionIs(condition, value) => {
                 let (left, right, lower_first, strict) = match condition {
-                    ConditionTerm::Bitvector64UnsignedLessThan(a, b) => (a, b, true, true),
-                    ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => (a, b, true, false),
-                    ConditionTerm::Bitvector64UnsignedGreaterThan(a, b) => (a, b, false, true),
-                    ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b) => (a, b, false, false),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::LessThan,
+                        left: a,
+                        right: b,
+                    } => (a, b, true, true),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::LessEqual,
+                        left: a,
+                        right: b,
+                    } => (a, b, true, false),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::GreaterThan,
+                        left: a,
+                        right: b,
+                    } => (a, b, false, true),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::GreaterEqual,
+                        left: a,
+                        right: b,
+                    } => (a, b, false, false),
                     _ => return,
                 };
                 let (lower, upper) = if lower_first {

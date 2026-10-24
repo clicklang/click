@@ -1,22 +1,27 @@
 // Scaling coverage for constant-bound selection beside earlier outcomes.
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn outcome_constant_bounds_keep_a_compact_selected_context() {
     for size in [4u32, 32, 64, 256] {
         let x = Bitvector32Term::Variable(Variable(786_001));
         let lower = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(Bitvector32Term::Constant(0)),
-                Box::new(x.clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(x.clone()),
+            },
             true,
         );
         let upper = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(x.clone()),
-                Box::new(Bitvector32Term::Constant(1000)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(x.clone()),
+                right: Box::new(Bitvector32Term::Constant(1000)),
+            },
             true,
         );
         let mut facts = PureFactContext::new()
@@ -24,24 +29,28 @@ fn outcome_constant_bounds_keep_a_compact_selected_context() {
             .assume_proposition(upper.clone());
         for index in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::Bitvector32SignedGreaterEqual(
-                    Box::new(x.clone()),
-                    Box::new(Bitvector32Term::Subtract(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: Box::new(x.clone()),
+                    right: Box::new(Bitvector32Term::Subtract(
                         Box::new(x.clone()),
                         Box::new(Bitvector32Term::Constant(index)),
                     )),
-                ),
+                },
                 true,
             );
         }
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(
-                Box::new(x.clone()),
-                Box::new(Bitvector32Term::Subtract(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(x.clone()),
+                right: Box::new(Bitvector32Term::Subtract(
                     Box::new(x),
                     Box::new(Bitvector32Term::Constant(size)),
                 )),
-            ),
+            },
             true,
         );
         let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {

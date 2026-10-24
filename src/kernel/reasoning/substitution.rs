@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::CompareRelation;
 use num_traits::ToPrimitive;
 
 /// One variable substitution, bitvector or pointer, as the structural walks
@@ -2005,8 +2006,15 @@ pub fn resolve_minted_load_variables(
         if !fact.certified {
             continue;
         }
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-            &fact.proposition
+        let Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) = &fact.proposition
         else {
             continue;
         };
@@ -4997,10 +5005,17 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             )),
         ),
         ConditionTerm::Variable(variable) => ConditionTerm::Variable(*variable),
-        ConditionTerm::Bitvector64Equal(left, right) => ConditionTerm::Bitvector64Equal(
-            Box::new(substitute_bitvector_variable(left, from, to)),
-            Box::new(substitute_bitvector_variable(right, from, to)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: Box::new(substitute_bitvector_variable(left, from, to)),
+            right: Box::new(substitute_bitvector_variable(right, from, to)),
+        },
         crate::kernel::integer_comparison_condition!(left, right) => {
             let rewrite =
                 |term: &IntegerTerm| substitute_bitvector_variable_in_integer(term, from, to);

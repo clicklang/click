@@ -12,6 +12,8 @@
 //! The census only observes: it never changes a proof, and without the
 //! variable it costs one cached check per step.
 
+#[cfg(test)]
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::fs::File;
 use std::io::Write;
 use std::sync::{Mutex, OnceLock};
@@ -98,6 +100,15 @@ pub(super) fn kind(proposition: &Proposition) -> String {
 }
 
 fn condition_kind(condition: &ConditionTerm) -> String {
+    // A machine comparison or overflow test names its format and relation.
+    if let Some((op, _, _)) = condition.as_bitvector_comparison() {
+        let kind = if op.is_overflow() {
+            "Overflows"
+        } else {
+            "Compare"
+        };
+        return format!("{kind}({} {})", op.format().name(), op.c_symbol());
+    }
     let debug = format!("{condition:?}");
     debug
         .split(|c: char| !c.is_alphanumeric())
@@ -275,10 +286,12 @@ theorem add3_adds_four() {
     #[test]
     fn a_censused_fact_is_classified_by_the_atom_it_concludes() {
         let atom = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(1))),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(1))),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         let guarded = Proposition::ForAll {
@@ -290,8 +303,8 @@ theorem add3_adds_four() {
             )),
             name: Default::default(),
         };
-        assert_eq!(kind(&atom), "condition:Bitvector32Equal");
-        assert_eq!(kind(&guarded), "forall/implies/condition:Bitvector32Equal");
+        assert_eq!(kind(&atom), "condition:Compare(int32 ==)");
+        assert_eq!(kind(&guarded), "forall/implies/condition:Compare(int32 ==)");
         assert_eq!(
             kind(&Proposition::Predicate {
                 name: "__click_internal".into(),

@@ -5,6 +5,7 @@
 //! currently reaches, and the spellings a reader depends on.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 /// `probe(p, index)` with `p` an external `int32*` argument and `index`
 /// symbolic: the shape a pure theorem's parameters reach a lowering in.
@@ -116,10 +117,12 @@ fn a_c_fragment_form_lists_the_premises_it_consulted() {
     let site = StatedSite::new(StatedForm::CFragment(&expression), &state, &values);
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(Bitvector32Term::Constant(0)),
-                Box::new(Bitvector32Term::Variable(Variable(1))),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::Variable(Variable(1))),
+            },
             true,
         ))
         .assume_proposition(Proposition::CMemoryLoadable {
@@ -162,10 +165,12 @@ fn an_overflow_guard_names_its_operation_without_wrapping_parentheses() {
     let site = StatedSite::new(StatedForm::CFragment(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedSubtractOverflows(
-                Box::new(Bitvector32Term::Variable(Variable(1))),
-                Box::new(Bitvector32Term::Constant(1)),
-            ),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Subtract,
+                left: Box::new(Bitvector32Term::Variable(Variable(1))),
+                right: Box::new(Bitvector32Term::Constant(1)),
+            },
             false,
         )),
         &PureFactContext::new(),
@@ -187,10 +192,12 @@ fn established_conditions_are_named_beside_the_missing_one() {
     let expression = CExpression::Variable("index".to_string());
     let site = StatedSite::new(StatedForm::CFragment(&expression), &state, &values);
     let guard = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedSubtractOverflows(
-            Box::new(Bitvector32Term::Variable(Variable(1))),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            left: Box::new(Bitvector32Term::Variable(Variable(1))),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         false,
     );
     let loadable = Proposition::CMemoryLoadable {
@@ -364,10 +371,12 @@ fn a_conditional_fold_body_quotes_the_condition_it_carried_out() {
         &crate::kernel::DroppedFoldBody {
             body_paths: 1,
             unavailable_body_fact: Some(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(Variable(1 << 41))),
-                    Box::new(Bitvector32Term::Variable(Variable(1))),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::Variable(Variable(1 << 41))),
+                    right: Box::new(Bitvector32Term::Variable(Variable(1))),
+                },
                 true,
             )),
             item: Variable(1 << 41),

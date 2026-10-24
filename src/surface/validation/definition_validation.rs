@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(test)]
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[cfg(test)]
@@ -3209,17 +3211,21 @@ mod read_authority_tests {
         let bound_value = Bitvector32Term::Variable(Variable(12_002));
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(
-                    Box::new(Bitvector32Term::Constant(0)),
-                    Box::new(index_value.clone()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: Box::new(Bitvector32Term::Constant(0)),
+                    right: Box::new(index_value.clone()),
+                },
                 true,
             ))
             .assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(index_value.clone()),
-                    Box::new(bound_value.clone()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(index_value.clone()),
+                    right: Box::new(bound_value.clone()),
+                },
                 true,
             ));
         let values = BTreeMap::from([

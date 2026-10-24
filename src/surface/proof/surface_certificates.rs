@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 pub(super) fn surface_logical_children(
@@ -573,7 +574,16 @@ fn plan_explicit_signed_antisymmetry(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = goal else {
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
+        true,
+    ) = goal
+    else {
         return None;
     };
     let forward = premise_pairs.iter().find(|(kernel, _)| {
@@ -639,13 +649,18 @@ pub(super) fn plan_explicit_le_and_neq_implies_lt(
         for (neq_kernel, neq_surface) in premise_pairs {
             let matches_neq = match neq_kernel {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(neq_left, neq_right),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: neq_left,
+                        right: neq_right,
+                    },
                     false,
                 ) => neq_left.as_ref() == left && neq_right.as_ref() == right,
                 Proposition::Not(body) => matches!(
                     body.as_ref(),
                     Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32Equal(neq_left, neq_right),
+                        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: neq_left, right: neq_right },
                         true,
                     ) if neq_left.as_ref() == left && neq_right.as_ref() == right
                 ),
@@ -788,11 +803,22 @@ pub(super) fn signed_strict_parts(
     proposition: &Proposition,
 ) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessThan(left, right), true) => {
-            Some((left, right))
-        }
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterThan(left, right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            true,
+        ) => Some((left, right)),
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            },
             true,
         ) => Some((right, left)),
         _ => None,
@@ -803,11 +829,22 @@ pub(super) fn signed_nonstrict_parts(
     proposition: &Proposition,
 ) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessEqual(left, right), true) => {
-            Some((left, right))
-        }
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+            true,
+        ) => Some((left, right)),
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            },
             true,
         ) => Some((right, left)),
         _ => None,
@@ -830,10 +867,30 @@ fn negated_signed_order_parts(
         _ => return None,
     };
     match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => Some((left, right, true)),
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => Some((right, left, true)),
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => Some((left, right, false)),
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => Some((right, left, false)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        } => Some((left, right, true)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        } => Some((right, left, true)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        } => Some((left, right, false)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => Some((right, left, false)),
         _ => None,
     }
 }
@@ -903,25 +960,45 @@ pub(super) fn spell_signed_goal(
     };
     match goal {
         Proposition::ConditionIs(condition, true) => match condition {
-            ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-                compare(left, ComparisonOperator::LessThan, right)
-            }
-            ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-                compare(left, ComparisonOperator::LessEqual, right)
-            }
-            ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-                compare(left, ComparisonOperator::GreaterThan, right)
-            }
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-                compare(left, ComparisonOperator::GreaterEqual, right)
-            }
-            ConditionTerm::Bitvector32Equal(left, right) => {
-                compare(left, ComparisonOperator::Equal, right)
-            }
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            } => compare(left, ComparisonOperator::LessThan, right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            } => compare(left, ComparisonOperator::LessEqual, right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            } => compare(left, ComparisonOperator::GreaterThan, right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            } => compare(left, ComparisonOperator::GreaterEqual, right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } => compare(left, ComparisonOperator::Equal, right),
             _ => None,
         },
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedAddOverflows(left, right),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left,
+                right,
+            },
             false,
         ) => Some(ClickProposition::Defined {
             expression: ContractExpression::Add(
@@ -930,7 +1007,12 @@ pub(super) fn spell_signed_goal(
             ),
         }),
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedSubtractOverflows(left, right),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Subtract,
+                left,
+                right,
+            },
             false,
         ) => Some(ClickProposition::Defined {
             expression: ContractExpression::Subtract(
@@ -1088,10 +1170,12 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor(
         .or_else(|| derivation.int32_equal_one_predecessor_strictly_decreases_path())?;
     let value = one_le_predecessor_value(goal)?;
     let one_le_kernel = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessEqual(
-            Box::new(Bitvector32Term::Constant(1)),
-            Box::new(value.clone()),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(Bitvector32Term::Constant(1)),
+            right: Box::new(value.clone()),
+        },
         true,
     );
     let first = path.first()?;
@@ -1112,10 +1196,12 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor(
             .find(|(kernel, _)| kernel == step.premise())?;
         let oriented_surface = orient_surface_bitvector_equality(step, surface)?;
         let oriented_kernel = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(step.source().clone()),
-                Box::new(step.target().clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(step.source().clone()),
+                right: Box::new(step.target().clone()),
+            },
             true,
         );
         current =
@@ -1156,10 +1242,12 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor_is_zero(
             .find(|(kernel, _)| kernel == step.premise())?;
         let oriented_surface = orient_surface_bitvector_equality(step, surface)?;
         let oriented_kernel = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(step.source().clone()),
-                Box::new(step.target().clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(step.source().clone()),
+                right: Box::new(step.target().clone()),
+            },
             true,
         );
         current =
@@ -1224,15 +1312,19 @@ pub(super) fn plan_recorded_signed_order_path(
         };
         let kernel_target = Proposition::ConditionIs(
             if strict {
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(current_lower),
-                    Box::new(next_upper),
-                )
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(current_lower),
+                    right: Box::new(next_upper),
+                }
             } else {
-                ConditionTerm::Bitvector32SignedLessEqual(
-                    Box::new(current_lower),
-                    Box::new(next_upper),
-                )
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: Box::new(current_lower),
+                    right: Box::new(next_upper),
+                }
             },
             true,
         );
@@ -1307,7 +1399,12 @@ fn orient_surface_bitvector_equality(
     surface: &ClickProposition,
 ) -> Option<ClickProposition> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(premise_left, premise_right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: premise_left,
+            right: premise_right,
+        },
         true,
     ) = step.premise()
     else {
@@ -1390,10 +1487,12 @@ pub(super) fn plan_recorded_bitvector_equality_path(
             .find(|(kernel, _)| kernel == step.premise())?;
         let oriented_surface = orient_surface_bitvector_equality(step, surface)?;
         let oriented_kernel = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(step.source().clone()),
-                Box::new(step.target().clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(step.source().clone()),
+                right: Box::new(step.target().clone()),
+            },
             true,
         );
         current =
@@ -1502,10 +1601,12 @@ pub(super) fn plan_recorded_load_address_congruence(
         for (step, (_, surface)) in path.iter().zip(pairs) {
             let oriented_surface = orient_surface_bitvector_equality(step, surface)?;
             let oriented_kernel = Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(step.source().clone()),
-                    Box::new(step.target().clone()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(step.source().clone()),
+                    right: Box::new(step.target().clone()),
+                },
                 true,
             );
             current = rewrite_proposition_by_exact_equality(&current, &oriented_kernel, &available)
@@ -1524,9 +1625,15 @@ pub(super) fn plan_recorded_load_address_congruence(
 /// `<`, not its reversed (`>`) spelling, which other rules recognize.
 fn goal_exact_less_than_parts(goal: &Proposition) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
     match goal {
-        Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessThan(left, right), true) => {
-            Some((left, right))
-        }
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            true,
+        ) => Some((left, right)),
         _ => None,
     }
 }
@@ -1535,9 +1642,15 @@ fn goal_exact_less_than_parts(goal: &Proposition) -> Option<(&Bitvector32Term, &
 /// [`goal_exact_less_than_parts`].
 fn goal_exact_less_equal_parts(goal: &Proposition) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
     match goal {
-        Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessEqual(left, right), true) => {
-            Some((left, right))
-        }
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+            true,
+        ) => Some((left, right)),
         _ => None,
     }
 }
@@ -1701,7 +1814,12 @@ pub(super) fn plan_explicit_le_transitive_constant_lower(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessEqual(goal_lower, goal_value),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: goal_lower,
+            right: goal_value,
+        },
         true,
     ) = goal
     else {
@@ -1723,10 +1841,12 @@ pub(super) fn plan_explicit_le_transitive_constant_lower(
             continue;
         }
         let constant_leg = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(goal_lower.as_ref().clone()),
-                Box::new(premise_lower.clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(goal_lower.as_ref().clone()),
+                right: Box::new(premise_lower.clone()),
+            },
             true,
         );
         if !normalizes_context_free(&constant_leg) {
@@ -1830,7 +1950,12 @@ fn plan_explicit_greater_equal_to_reversed_less_equal(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessEqual(goal_lower, goal_greater),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: goal_lower,
+            right: goal_greater,
+        },
         true,
     ) = goal
     else {
@@ -1838,7 +1963,12 @@ fn plan_explicit_greater_equal_to_reversed_less_equal(
     };
     for (kernel, surface) in premise_pairs {
         let Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(greater, lower),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: greater,
+                right: lower,
+            },
             true,
         ) = kernel
         else {
@@ -1859,11 +1989,21 @@ fn plan_explicit_not_strict_implies_greater_equal(
 ) -> Option<Vec<ProofTactic>> {
     let (goal_left, goal_right) = match goal {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            },
             true,
         ) => (left, right),
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(lower, greater),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: lower,
+                right: greater,
+            },
             true,
         ) => (greater, lower),
         _ => return None,
@@ -1873,12 +2013,17 @@ fn plan_explicit_not_strict_implies_greater_equal(
             Proposition::Not(body) => matches!(
                 body.as_ref(),
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(left, right),
+                    ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left, right },
                     true,
                 ) if left == goal_left && right == goal_right
             ),
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(left, right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left,
+                    right,
+                },
                 false,
             ) => left == goal_left && right == goal_right,
             _ => false,
@@ -1900,7 +2045,12 @@ fn plan_explicit_greater_equal_transitive(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedGreaterEqual(goal_last, goal_first),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: goal_last,
+            right: goal_first,
+        },
         true,
     ) = goal
     else {
@@ -1936,7 +2086,12 @@ pub(super) fn plan_explicit_negated_strict_successor_bound(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedGreaterEqual(goal_value, goal_lower),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: goal_value,
+            right: goal_lower,
+        },
         true,
     ) = goal
     else {
@@ -1950,13 +2105,23 @@ pub(super) fn plan_explicit_negated_strict_successor_bound(
         let (premise_value, premise_upper) = match kernel {
             Proposition::Not(body) => match body.as_ref() {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(value, upper),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left: value,
+                        right: upper,
+                    },
                     true,
                 ) => (value.as_ref(), upper.as_ref()),
                 _ => continue,
             },
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(value, upper),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: value,
+                    right: upper,
+                },
                 false,
             ) => (value.as_ref(), upper.as_ref()),
             _ => continue,
@@ -1980,7 +2145,12 @@ pub(super) fn plan_explicit_increment_greater_equal_lower_bound(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedGreaterEqual(incremented, goal_lower),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: incremented,
+            right: goal_lower,
+        },
         true,
     ) = goal
     else {
@@ -2017,7 +2187,12 @@ pub(super) fn plan_explicit_increment_strict_greater_lower_bound(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedGreaterThan(incremented, goal_lower),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left: incremented,
+            right: goal_lower,
+        },
         true,
     ) = goal
     else {
@@ -2054,7 +2229,12 @@ pub(super) fn plan_explicit_increment_strict_greater_from_strict_lower(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedGreaterThan(incremented, goal_lower),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left: incremented,
+            right: goal_lower,
+        },
         true,
     ) = goal
     else {
@@ -2129,11 +2309,21 @@ fn plan_explicit_transitive(
         matches!(first_order, SignedOrder::Strict) || matches!(second_order, SignedOrder::Strict);
     let (goal_first, goal_last) = match goal {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(goal_first, goal_last),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: goal_first,
+                right: goal_last,
+            },
             true,
         ) if strict => (goal_first, goal_last),
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(goal_first, goal_last),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: goal_first,
+                right: goal_last,
+            },
             true,
         ) if !strict => (goal_first, goal_last),
         _ => return None,
@@ -2171,7 +2361,12 @@ fn plan_explicit_constant_strict_upper_bound_weakening(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessThan(goal_value, goal_upper),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: goal_value,
+            right: goal_upper,
+        },
         true,
     ) = goal
     else {
@@ -2216,7 +2411,12 @@ pub(super) fn plan_explicit_increment_constant_upper_bound(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessEqual(incremented, goal_upper),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: incremented,
+            right: goal_upper,
+        },
         true,
     ) = goal
     else {
@@ -2258,7 +2458,15 @@ fn plan_explicit_constant_lower_bound_weakening(
     let Bitvector32Term::Constant(goal_constant) = goal_lower else {
         return None;
     };
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessEqual(_, _), true) = goal
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: _,
+            right: _,
+        },
+        true,
+    ) = goal
     else {
         return None;
     };
@@ -2289,7 +2497,12 @@ pub(super) fn plan_explicit_increment_below_max_is_defined(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedAddOverflows(value, amount),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: value,
+            right: amount,
+        },
         false,
     ) = goal
     else {
@@ -2315,8 +2528,15 @@ pub(super) fn plan_explicit_one_plus_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedAddOverflows(one, value), false) =
-        goal
+    let Proposition::ConditionIs(
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: one,
+            right: value,
+        },
+        false,
+    ) = goal
     else {
         return None;
     };
@@ -2340,7 +2560,15 @@ pub(super) fn plan_explicit_one_plus_strictly_increases(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessThan(value, sum), true) = goal
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: value,
+            right: sum,
+        },
+        true,
+    ) = goal
     else {
         return None;
     };
@@ -2368,7 +2596,12 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedAddOverflows(value, amount),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: value,
+            right: amount,
+        },
         false,
     ) = goal
     else {
@@ -2482,7 +2715,12 @@ pub(super) fn plan_explicit_nonnegative_subtract_within_value_is_defined(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedSubtractOverflows(value, amount),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            left: value,
+            right: amount,
+        },
         false,
     ) = goal
     else {
@@ -2563,10 +2801,12 @@ pub(super) fn plan_explicit_predecessor_upper_bound(
             continue;
         };
         let nonnegative_kernel = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(Bitvector32Term::Constant(0)),
-                value.clone(),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(Bitvector32Term::Constant(0)),
+                right: value.clone(),
+            },
             true,
         );
         let mut tactics = Vec::new();
@@ -2726,7 +2966,16 @@ pub(super) fn plan_explicit_le_and_not_lt_implies_eq(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = goal else {
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
+        true,
+    ) = goal
+    else {
         return None;
     };
     for (le_kernel, le_surface) in premise_pairs {
@@ -2739,13 +2988,18 @@ pub(super) fn plan_explicit_le_and_not_lt_implies_eq(
         for (not_lt_kernel, not_lt_surface) in premise_pairs {
             let matches_not_lt = match not_lt_kernel {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(not_left, not_right),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left: not_left,
+                        right: not_right,
+                    },
                     false,
                 ) => not_left.as_ref() == left.as_ref() && not_right.as_ref() == right.as_ref(),
                 Proposition::Not(body) => matches!(
                     body.as_ref(),
                     Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedLessThan(not_left, not_right),
+                        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: not_left, right: not_right },
                         true,
                     ) if not_left.as_ref() == left.as_ref()
                         && not_right.as_ref() == right.as_ref()
@@ -2776,7 +3030,16 @@ pub(super) fn plan_pointer_advanced_load_equality(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = goal else {
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
+        true,
+    ) = goal
+    else {
         return None;
     };
     let (left_pointer, right_pointer) = (
@@ -2806,10 +3069,12 @@ pub(super) fn plan_pointer_advanced_load_equality(
         let (source_index, target_index) =
             pointer_array_index_pair(&fact_array_pointer.offset, &right_pointer.offset)?;
         let index_goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(source_index.clone()),
-                Box::new(target_index.clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(source_index.clone()),
+                right: Box::new(target_index.clone()),
+            },
             true,
         );
         let index_proof = plan_explicit_le_and_not_lt_implies_eq(&index_goal, premise_pairs)?;
@@ -2887,12 +3152,26 @@ pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = goal else {
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
+        true,
+    ) = goal
+    else {
         return None;
     };
     for (ge_kernel, ge_surface) in premise_pairs {
         let Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(ge_left, ge_right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: ge_left,
+                right: ge_right,
+            },
             true,
         ) = ge_kernel
         else {
@@ -2904,13 +3183,18 @@ pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(
         for (not_gt_kernel, not_gt_surface) in premise_pairs {
             let matches_not_gt = match not_gt_kernel {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedGreaterThan(not_left, not_right),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        left: not_left,
+                        right: not_right,
+                    },
                     false,
                 ) => not_left == left && not_right == right,
                 Proposition::Not(body) => matches!(
                     body.as_ref(),
                     Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedGreaterThan(not_left, not_right),
+                        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::GreaterThan, left: not_left, right: not_right },
                         true,
                     ) if not_left == left && not_right == right
                 ),
@@ -2956,9 +3240,22 @@ pub(super) fn plan_explicit_successor_le_implies_lt(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (lower, value) = match goal {
-        Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessThan(lower, value), true)
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: lower,
+                right: value,
+            },
+            true,
+        )
         | Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterThan(value, lower),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: value,
+                right: lower,
+            },
             true,
         ) => (lower.as_ref(), value.as_ref()),
         _ => return None,
@@ -2977,10 +3274,12 @@ pub(super) fn plan_explicit_successor_le_implies_lt(
             continue;
         }
         let no_overflow = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(lower.clone()),
-                Box::new(successor.clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(lower.clone()),
+                right: Box::new(successor.clone()),
+            },
             true,
         );
         if !normalizes_context_free(&no_overflow) {
@@ -3013,16 +3312,18 @@ pub(super) fn plan_explicit_increment_preserves_order(
                 continue;
             }
             let expected = Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(
-                    Box::new(Bitvector32Term::add(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: Box::new(Bitvector32Term::add(
                         lower.clone(),
                         Bitvector32Term::Constant(1),
                     )),
-                    Box::new(Bitvector32Term::add(
+                    right: Box::new(Bitvector32Term::add(
                         value.clone(),
                         Bitvector32Term::Constant(1),
                     )),
-                ),
+                },
                 true,
             );
             if &expected != goal {

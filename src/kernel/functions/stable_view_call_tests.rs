@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::loans::LoanRefusal;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn pointer() -> Pointer {
     Pointer {
@@ -2552,10 +2553,12 @@ fn token_population_reader(name: &str, population: &str) -> CFunction {
 /// route looks at it; that check is unrelated to the planner gap.
 fn nonnegative_quantity(quantity: Variable) -> PureFactContext {
     PureFactContext::new().assume_condition(
-        ConditionTerm::Bitvector32SignedGreaterEqual(
-            Box::new(Bitvector32Term::Variable(quantity)),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: Box::new(Bitvector32Term::Variable(quantity)),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     )
 }

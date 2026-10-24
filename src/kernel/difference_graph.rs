@@ -20,7 +20,9 @@
 //! See "Condition decisions in simple checking" in
 //! `docs/internals/verification-efficiency.md`.
 
+use crate::kernel::MachineIntegerType;
 use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, PointerOffsetTerm};
+use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::persistent::PersistentMap;
 
 /// The integer domain a node's value ranges over.
@@ -188,7 +190,14 @@ impl DifferenceGraph {
             }
             return;
         }
-        if value && let ConditionTerm::Bitvector64Equal(a, b) = condition {
+        if value
+            && let ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            } = condition
+        {
             self.residues.assume_equal(a, b);
         }
         if let ConditionTerm::PointerEqual(a, b) = condition {
@@ -202,8 +211,18 @@ impl DifferenceGraph {
             return;
         }
         if value
-            && let ConditionTerm::Bitvector32Equal(a, b) | ConditionTerm::Bitvector64Equal(a, b) =
-                condition
+            && let ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            }
+            | ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            } = condition
             && self.alias_equality(condition, a, b)
         {
             return;
@@ -220,8 +239,18 @@ impl DifferenceGraph {
             return;
         }
         if !value
-            && let ConditionTerm::Bitvector32Equal(a, b) | ConditionTerm::Bitvector64Equal(a, b) =
-                condition
+            && let ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            }
+            | ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            } = condition
         {
             self.exclude(condition, a, b);
             return;
@@ -241,7 +270,14 @@ impl DifferenceGraph {
     /// plus an offset: the node excludes one value, and its interval steps
     /// off that value if it is an end.
     fn exclude(&mut self, condition: &ConditionTerm, a: &Bitvector32Term, b: &Bitvector32Term) {
-        let domains: &[Domain] = if matches!(condition, ConditionTerm::Bitvector32Equal(..)) {
+        let domains: &[Domain] = if matches!(
+            condition,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                ..
+            }
+        ) {
             &[Domain::Int32]
         } else {
             &[Domain::Int64, Domain::UInt64]
@@ -283,7 +319,14 @@ impl DifferenceGraph {
         a: &Bitvector32Term,
         b: &Bitvector32Term,
     ) -> bool {
-        let domains: &[Domain] = if matches!(condition, ConditionTerm::Bitvector32Equal(..)) {
+        let domains: &[Domain] = if matches!(
+            condition,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                ..
+            }
+        ) {
             &[Domain::Int32]
         } else {
             &[Domain::Int64, Domain::UInt64]
@@ -812,32 +855,79 @@ impl DifferenceGraph {
             // overflow answer this graph ever gives (see `decide_overflow`).
             return matches!(
                 condition,
-                C::Bitvector32SignedAddOverflows(..)
-                    | C::Bitvector32SignedSubtractOverflows(..)
-                    | C::Bitvector32SignedMultiplyOverflows(..)
-                    | C::Bitvector32SignedDivideOverflows(..)
-                    | C::Bitvector64SignedAddOverflows(..)
-                    | C::Bitvector64SignedSubtractOverflows(..)
-                    | C::Bitvector64SignedMultiplyOverflows(..)
-                    | C::Bitvector64SignedDivideOverflows(..)
+                C::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    ..
+                } | C::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Subtract,
+                    ..
+                } | C::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Multiply,
+                    ..
+                } | C::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Divide,
+                    ..
+                } | C::Overflows {
+                    format: MachineIntegerType::Int64,
+                    op: OverflowOperation::Add,
+                    ..
+                } | C::Overflows {
+                    format: MachineIntegerType::Int64,
+                    op: OverflowOperation::Subtract,
+                    ..
+                } | C::Overflows {
+                    format: MachineIntegerType::Int64,
+                    op: OverflowOperation::Multiply,
+                    ..
+                } | C::Overflows {
+                    format: MachineIntegerType::Int64,
+                    op: OverflowOperation::Divide,
+                    ..
+                }
             )
             .then_some(false);
         }
         let overflow = match condition {
-            C::Bitvector32SignedAddOverflows(a, b) => Some((Domain::Int32, a, b, Operation::Add)),
-            C::Bitvector32SignedSubtractOverflows(a, b) => {
-                Some((Domain::Int32, a, b, Operation::Subtract))
-            }
-            C::Bitvector32SignedMultiplyOverflows(a, b) => {
-                Some((Domain::Int32, a, b, Operation::Multiply))
-            }
-            C::Bitvector64SignedAddOverflows(a, b) => Some((Domain::Int64, a, b, Operation::Add)),
-            C::Bitvector64SignedSubtractOverflows(a, b) => {
-                Some((Domain::Int64, a, b, Operation::Subtract))
-            }
-            C::Bitvector64SignedMultiplyOverflows(a, b) => {
-                Some((Domain::Int64, a, b, Operation::Multiply))
-            }
+            C::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: a,
+                right: b,
+            } => Some((Domain::Int32, a, b, Operation::Add)),
+            C::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Subtract,
+                left: a,
+                right: b,
+            } => Some((Domain::Int32, a, b, Operation::Subtract)),
+            C::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Multiply,
+                left: a,
+                right: b,
+            } => Some((Domain::Int32, a, b, Operation::Multiply)),
+            C::Overflows {
+                format: MachineIntegerType::Int64,
+                op: OverflowOperation::Add,
+                left: a,
+                right: b,
+            } => Some((Domain::Int64, a, b, Operation::Add)),
+            C::Overflows {
+                format: MachineIntegerType::Int64,
+                op: OverflowOperation::Subtract,
+                left: a,
+                right: b,
+            } => Some((Domain::Int64, a, b, Operation::Subtract)),
+            C::Overflows {
+                format: MachineIntegerType::Int64,
+                op: OverflowOperation::Multiply,
+                left: a,
+                right: b,
+            } => Some((Domain::Int64, a, b, Operation::Multiply)),
             _ => None,
         };
         if let Some((operation, domain, a, b, commutative)) = overflow_parts(condition)
@@ -854,7 +944,13 @@ impl DifferenceGraph {
         if let Some((domain, a, b, operation)) = overflow {
             return self.decide_overflow(domain, a, b, operation);
         }
-        if let C::Bitvector32SignedShiftLeftOverflows(a, count) = condition {
+        if let C::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::ShiftLeft,
+            left: a,
+            right: count,
+        } = condition
+        {
             // As the general decision reads it: a shift by a constant count
             // does not overflow a value in `[0, INT_MAX >> count]`.
             let count = constant(Domain::Int32, count)?;
@@ -864,15 +960,32 @@ impl DifferenceGraph {
             let (low, high) = self.term_interval(Domain::Int32, a);
             return (low >= 0 && high <= i128::from(i32::MAX >> count)).then_some(false);
         }
-        if let C::Bitvector32SignedDivideOverflows(a, b)
-        | C::Bitvector64SignedDivideOverflows(a, b) = condition
+        if let C::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Divide,
+            left: a,
+            right: b,
+        }
+        | C::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Divide,
+            left: a,
+            right: b,
+        } = condition
         {
             // `a / b` overflows when `a` is the domain's least value and `b`
             // is `-1`. The `int64` condition also holds for a zero divisor
             // (`ConditionTerm::int64_signed_divide_overflows`); the `int32`
             // one leaves zero to a separate check. As above, only the
             // absence is answered.
-            let int64 = matches!(condition, C::Bitvector64SignedDivideOverflows(..));
+            let int64 = matches!(
+                condition,
+                C::Overflows {
+                    format: MachineIntegerType::Int64,
+                    op: OverflowOperation::Divide,
+                    ..
+                }
+            );
             let domain = if int64 { Domain::Int64 } else { Domain::Int32 };
             let (a_low, _) = self.term_interval(domain, a);
             let (b_low, b_high) = self.term_interval(domain, b);
@@ -886,8 +999,27 @@ impl DifferenceGraph {
             let nonzero = b_low > 0 || b_high < 0 || excludes(0);
             return (no_pair && (!int64 || nonzero)).then_some(false);
         }
-        if let C::Bitvector32Equal(a, b) | C::Bitvector64Equal(a, b) = condition {
-            let domains: &[Domain] = if matches!(condition, C::Bitvector32Equal(..)) {
+        if let C::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: a,
+            right: b,
+        }
+        | C::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: a,
+            right: b,
+        } = condition
+        {
+            let domains: &[Domain] = if matches!(
+                condition,
+                C::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    ..
+                }
+            ) {
                 &[Domain::Int32]
             } else {
                 &[Domain::Int64, Domain::UInt64]
@@ -922,7 +1054,13 @@ impl DifferenceGraph {
                     return Some(false);
                 }
             }
-            if let C::Bitvector64Equal(a, b) = condition {
+            if let C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            } = condition
+            {
                 return self.residues.decide_equal(a, b);
             }
             return None;
@@ -1388,20 +1526,63 @@ fn expresses(condition: &ConditionTerm) -> bool {
         || offset_equality(condition).is_some()
         || matches!(
             condition,
-            C::Bitvector32SignedLessThan(..)
-                | C::Bitvector32SignedLessEqual(..)
-                | C::Bitvector32SignedGreaterThan(..)
-                | C::Bitvector32SignedGreaterEqual(..)
-                | C::Bitvector32Equal(..)
-                | C::Bitvector64SignedLessThan(..)
-                | C::Bitvector64SignedLessEqual(..)
-                | C::Bitvector64SignedGreaterThan(..)
-                | C::Bitvector64SignedGreaterEqual(..)
-                | C::Bitvector64UnsignedLessThan(..)
-                | C::Bitvector64UnsignedLessEqual(..)
-                | C::Bitvector64UnsignedGreaterThan(..)
-                | C::Bitvector64UnsignedGreaterEqual(..)
-                | C::Bitvector64Equal(..)
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessThan,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterThan,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterEqual,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterThan,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterEqual,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                ..
+            }
         )
 }
 
@@ -1419,15 +1600,60 @@ fn overflow_parts(
 ) -> Option<(u8, Domain, &Bitvector32Term, &Bitvector32Term, bool)> {
     use ConditionTerm as C;
     Some(match condition {
-        C::Bitvector32SignedAddOverflows(a, b) => (0, Domain::Int32, a, b, true),
-        C::Bitvector32SignedSubtractOverflows(a, b) => (1, Domain::Int32, a, b, false),
-        C::Bitvector32SignedMultiplyOverflows(a, b) => (2, Domain::Int32, a, b, true),
-        C::Bitvector32SignedDivideOverflows(a, b) => (3, Domain::Int32, a, b, false),
-        C::Bitvector32SignedShiftLeftOverflows(a, b) => (4, Domain::Int32, a, b, false),
-        C::Bitvector64SignedAddOverflows(a, b) => (5, Domain::Int64, a, b, true),
-        C::Bitvector64SignedSubtractOverflows(a, b) => (6, Domain::Int64, a, b, false),
-        C::Bitvector64SignedMultiplyOverflows(a, b) => (7, Domain::Int64, a, b, true),
-        C::Bitvector64SignedDivideOverflows(a, b) => (8, Domain::Int64, a, b, false),
+        C::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: a,
+            right: b,
+        } => (0, Domain::Int32, a, b, true),
+        C::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            left: a,
+            right: b,
+        } => (1, Domain::Int32, a, b, false),
+        C::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Multiply,
+            left: a,
+            right: b,
+        } => (2, Domain::Int32, a, b, true),
+        C::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Divide,
+            left: a,
+            right: b,
+        } => (3, Domain::Int32, a, b, false),
+        C::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::ShiftLeft,
+            left: a,
+            right: b,
+        } => (4, Domain::Int32, a, b, false),
+        C::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Add,
+            left: a,
+            right: b,
+        } => (5, Domain::Int64, a, b, true),
+        C::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Subtract,
+            left: a,
+            right: b,
+        } => (6, Domain::Int64, a, b, false),
+        C::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Multiply,
+            left: a,
+            right: b,
+        } => (7, Domain::Int64, a, b, true),
+        C::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Divide,
+            left: a,
+            right: b,
+        } => (8, Domain::Int64, a, b, false),
         _ => return None,
     })
 }
@@ -1612,7 +1838,12 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
         }
         _ => return None,
     };
-    Some(ConditionTerm::Bitvector32Equal(Box::new(a), Box::new(b)))
+    Some(ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left: Box::new(a),
+        right: Box::new(b),
+    })
 }
 
 /// The bases of two offsets that add one constant field offset to each
@@ -2086,20 +2317,98 @@ fn condition_orders(
 ) -> Vec<(Domain, Bitvector32Term, Bitvector32Term, bool)> {
     use ConditionTerm as C;
     let (domain, left, right, strict) = match condition {
-        C::Bitvector32SignedLessThan(a, b) => (Domain::Int32, a, b, true),
-        C::Bitvector32SignedLessEqual(a, b) => (Domain::Int32, a, b, false),
-        C::Bitvector32SignedGreaterThan(a, b) => (Domain::Int32, b, a, true),
-        C::Bitvector32SignedGreaterEqual(a, b) => (Domain::Int32, b, a, false),
-        C::Bitvector64SignedLessThan(a, b) => (Domain::Int64, a, b, true),
-        C::Bitvector64SignedLessEqual(a, b) => (Domain::Int64, a, b, false),
-        C::Bitvector64SignedGreaterThan(a, b) => (Domain::Int64, b, a, true),
-        C::Bitvector64SignedGreaterEqual(a, b) => (Domain::Int64, b, a, false),
-        C::Bitvector64UnsignedLessThan(a, b) => (Domain::UInt64, a, b, true),
-        C::Bitvector64UnsignedLessEqual(a, b) => (Domain::UInt64, a, b, false),
-        C::Bitvector64UnsignedGreaterThan(a, b) => (Domain::UInt64, b, a, true),
-        C::Bitvector64UnsignedGreaterEqual(a, b) => (Domain::UInt64, b, a, false),
-        C::Bitvector32Equal(a, b) | C::Bitvector64Equal(a, b) if value => {
-            let domains: &[Domain] = if matches!(condition, C::Bitvector32Equal(..)) {
+        C::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: a,
+            right: b,
+        } => (Domain::Int32, a, b, true),
+        C::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: a,
+            right: b,
+        } => (Domain::Int32, a, b, false),
+        C::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left: a,
+            right: b,
+        } => (Domain::Int32, b, a, true),
+        C::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: a,
+            right: b,
+        } => (Domain::Int32, b, a, false),
+        C::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessThan,
+            left: a,
+            right: b,
+        } => (Domain::Int64, a, b, true),
+        C::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessEqual,
+            left: a,
+            right: b,
+        } => (Domain::Int64, a, b, false),
+        C::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterThan,
+            left: a,
+            right: b,
+        } => (Domain::Int64, b, a, true),
+        C::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterEqual,
+            left: a,
+            right: b,
+        } => (Domain::Int64, b, a, false),
+        C::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left: a,
+            right: b,
+        } => (Domain::UInt64, a, b, true),
+        C::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left: a,
+            right: b,
+        } => (Domain::UInt64, a, b, false),
+        C::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterThan,
+            left: a,
+            right: b,
+        } => (Domain::UInt64, b, a, true),
+        C::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterEqual,
+            left: a,
+            right: b,
+        } => (Domain::UInt64, b, a, false),
+        C::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: a,
+            right: b,
+        }
+        | C::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: a,
+            right: b,
+        } if value => {
+            let domains: &[Domain] = if matches!(
+                condition,
+                C::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    ..
+                }
+            ) {
                 &[Domain::Int32]
             } else {
                 &[Domain::Int64, Domain::UInt64]

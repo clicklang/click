@@ -1,6 +1,9 @@
 use super::diagnostics::*;
 use super::validation::{collect_called_predicates, collect_resource_count_families, tactic_name};
 use super::*;
+#[cfg(test)]
+use crate::kernel::CompareRelation;
+use crate::kernel::MachineIntegerType;
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use std::sync::Arc;
 
@@ -217,7 +220,12 @@ mod certificate_tests {
             term = Bitvector32Term::Add(Box::new(term), Box::new(Bitvector32Term::Constant(1)));
         }
         let proposition = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(term), Box::new(Bitvector32Term::Constant(0))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(term),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
 
@@ -272,14 +280,16 @@ mod certificate_tests {
             var: Variable(7),
             sort: Sort::Bitvector32,
             body: Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::MemoryLoad(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(target_memory.clone()),
                         Box::new(pointer),
                         crate::kernel::LoadKind::Bits32,
                     )),
-                    Box::new(Bitvector32Term::Variable(Variable(7))),
-                ),
+                    right: Box::new(Bitvector32Term::Variable(Variable(7))),
+                },
                 true,
             )),
         };
@@ -314,14 +324,16 @@ mod certificate_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let kernel = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::MemoryLoad(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(target_memory),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Bits32,
                 )),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         let state = CState::new().with_memory(CMemory::new().with_block("current", 4));

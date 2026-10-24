@@ -13,6 +13,7 @@
 //! explain why the width stays implied and is checked here instead.
 
 use super::*;
+use crate::kernel::{CompareRelation, OverflowOperation};
 
 mod narrow;
 pub(crate) use narrow::*;
@@ -416,7 +417,12 @@ pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<Widt
     // load variable's defining fact `x == load`. It is written with the
     // 32-bit equality whatever the load's width, so its two sides need only
     // agree with each other.
-    if let C::Bitvector32Equal(left, right) = condition
+    if let C::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left,
+        right,
+    } = condition
         && (matches!(left.as_ref(), Bitvector32Term::MemoryLoad(..))
             || matches!(right.as_ref(), Bitvector32Term::MemoryLoad(..)))
     {
@@ -425,34 +431,154 @@ pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<Widt
             .err();
     }
     let (site, width, left, right) = match condition {
-        C::Bitvector32SignedLessThan(l, r)
-        | C::Bitvector32SignedLessEqual(l, r)
-        | C::Bitvector32SignedGreaterThan(l, r)
-        | C::Bitvector32SignedGreaterEqual(l, r)
-        | C::Bitvector32Equal(l, r)
-        | C::Bitvector32SignedAddOverflows(l, r)
-        | C::Bitvector32SignedSubtractOverflows(l, r)
-        | C::Bitvector32SignedMultiplyOverflows(l, r)
-        | C::Bitvector32SignedDivideOverflows(l, r) => ("32-bit comparison", Bits32, l, r),
-        C::Bitvector32SignedShiftLeftOverflows(l, r) => {
+        C::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: l,
+            right: r,
+        }
+        | C::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: l,
+            right: r,
+        }
+        | C::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left: l,
+            right: r,
+        }
+        | C::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: l,
+            right: r,
+        }
+        | C::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: l,
+            right: r,
+        }
+        | C::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: l,
+            right: r,
+        }
+        | C::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            left: l,
+            right: r,
+        }
+        | C::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Multiply,
+            left: l,
+            right: r,
+        }
+        | C::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Divide,
+            left: l,
+            right: r,
+        } => ("32-bit comparison", Bits32, l, r),
+        C::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::ShiftLeft,
+            left: l,
+            right: r,
+        } => {
             return term_width(r)
                 .err()
                 .or_else(|| expect("32-bit shift overflow", Bits32, l).err());
         }
-        C::Bitvector64SignedLessThan(l, r)
-        | C::Bitvector64SignedLessEqual(l, r)
-        | C::Bitvector64SignedGreaterThan(l, r)
-        | C::Bitvector64SignedGreaterEqual(l, r)
-        | C::Bitvector64UnsignedLessThan(l, r)
-        | C::Bitvector64UnsignedLessEqual(l, r)
-        | C::Bitvector64UnsignedGreaterThan(l, r)
-        | C::Bitvector64UnsignedGreaterEqual(l, r)
-        | C::Bitvector64Equal(l, r)
-        | C::Bitvector64SignedAddOverflows(l, r)
-        | C::Bitvector64SignedSubtractOverflows(l, r)
-        | C::Bitvector64SignedMultiplyOverflows(l, r)
-        | C::Bitvector64SignedDivideOverflows(l, r) => ("64-bit comparison", Bits64, l, r),
-        C::Bitvector64SignedShiftLeftOverflows(l, r) => {
+        C::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessThan,
+            left: l,
+            right: r,
+        }
+        | C::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessEqual,
+            left: l,
+            right: r,
+        }
+        | C::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterThan,
+            left: l,
+            right: r,
+        }
+        | C::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterEqual,
+            left: l,
+            right: r,
+        }
+        | C::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left: l,
+            right: r,
+        }
+        | C::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left: l,
+            right: r,
+        }
+        | C::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterThan,
+            left: l,
+            right: r,
+        }
+        | C::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterEqual,
+            left: l,
+            right: r,
+        }
+        | C::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: l,
+            right: r,
+        }
+        | C::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Add,
+            left: l,
+            right: r,
+        }
+        | C::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Subtract,
+            left: l,
+            right: r,
+        }
+        | C::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Multiply,
+            left: l,
+            right: r,
+        }
+        | C::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Divide,
+            left: l,
+            right: r,
+        } => ("64-bit comparison", Bits64, l, r),
+        C::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::ShiftLeft,
+            left: l,
+            right: r,
+        } => {
             return term_width(r)
                 .err()
                 .or_else(|| expect("64-bit shift overflow", Bits64, l).err());

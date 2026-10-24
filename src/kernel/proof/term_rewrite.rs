@@ -1,6 +1,7 @@
 //! Sort-preserving congruence and explicitly directed conditional reduction.
 //! Memory snapshots are opaque: this walks the selected logical expression,
 //! never a heap or an ambient proof state.
+use crate::kernel::CompareRelation;
 use crate::kernel::*;
 use crate::kernel::{
     AlgebraicBitvectorMatchArm, AlgebraicResultMatchArm, AlgebraicTerm, AlgebraicTermNode,
@@ -230,7 +231,13 @@ fn bool_operand(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
     else {
         return None;
     };
-    let ConditionTerm::Bitvector32Equal(operand, zero) = condition.as_ref() else {
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left: operand,
+        right: zero,
+    } = condition.as_ref()
+    else {
         return None;
     };
     matches!(
@@ -880,19 +887,36 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
                 .map(ConditionTerm::Constant)
                 .unwrap_or(condition)
         }
-        ConditionTerm::Bitvector32Equal(left, right) => ConditionTerm::equal(*left, *right),
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-            ConditionTerm::signed_less_than(*left, *right)
-        }
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-            ConditionTerm::signed_less_equal(*left, *right)
-        }
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-            ConditionTerm::signed_greater_than(*left, *right)
-        }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-            ConditionTerm::signed_greater_equal(*left, *right)
-        }
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => ConditionTerm::equal(*left, *right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        } => ConditionTerm::signed_less_than(*left, *right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        } => ConditionTerm::signed_less_equal(*left, *right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        } => ConditionTerm::signed_greater_than(*left, *right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => ConditionTerm::signed_greater_equal(*left, *right),
         condition => condition,
     }
 }
@@ -1320,14 +1344,78 @@ fn bounded_uint64_indices(
         .filter_map(|(condition, value)| {
             crate::instrumentation::record_deterministic_work(1);
             let (lower, upper, strict) = match (condition, *value) {
-                (ConditionTerm::Bitvector64UnsignedLessEqual(a, b), true)
-                | (ConditionTerm::Bitvector64UnsignedGreaterThan(a, b), false) => (a, b, false),
-                (ConditionTerm::Bitvector64UnsignedLessThan(a, b), true)
-                | (ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b), false) => (a, b, true),
-                (ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b), true)
-                | (ConditionTerm::Bitvector64UnsignedLessThan(a, b), false) => (b, a, false),
-                (ConditionTerm::Bitvector64UnsignedGreaterThan(a, b), true)
-                | (ConditionTerm::Bitvector64UnsignedLessEqual(a, b), false) => (b, a, true),
+                (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::LessEqual,
+                        left: a,
+                        right: b,
+                    },
+                    true,
+                )
+                | (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::GreaterThan,
+                        left: a,
+                        right: b,
+                    },
+                    false,
+                ) => (a, b, false),
+                (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::LessThan,
+                        left: a,
+                        right: b,
+                    },
+                    true,
+                )
+                | (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::GreaterEqual,
+                        left: a,
+                        right: b,
+                    },
+                    false,
+                ) => (a, b, true),
+                (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::GreaterEqual,
+                        left: a,
+                        right: b,
+                    },
+                    true,
+                )
+                | (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::LessThan,
+                        left: a,
+                        right: b,
+                    },
+                    false,
+                ) => (b, a, false),
+                (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::GreaterThan,
+                        left: a,
+                        right: b,
+                    },
+                    true,
+                )
+                | (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::LessEqual,
+                        left: a,
+                        right: b,
+                    },
+                    false,
+                ) => (b, a, true),
                 _ => return None,
             };
             let limit = upper.uint64_as_const()?;
@@ -4531,7 +4619,12 @@ impl<'a> TermRewrite<'a> {
             ConditionTerm::Float64(c) => {
                 ConditionTerm::Float64(c.map_bitvector_terms(|b| self.bits(b)))
             }
-            ConditionTerm::Bitvector64Equal(a, b) => {
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            } => {
                 let left = self.bits(a);
                 let right = self.bits(b);
                 if matches!(
@@ -4549,7 +4642,12 @@ impl<'a> TermRewrite<'a> {
                     self.cited_condition_value(&canonical)
                         .map_or(canonical, ConditionTerm::Constant)
                 } else {
-                    ConditionTerm::Bitvector64Equal(Box::new(left), Box::new(right))
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    }
                 }
             }
             ConditionTerm::PointerValueEqual(a, b) => {
@@ -4641,7 +4739,13 @@ impl<'a> TermRewrite<'a> {
                 return ConditionTerm::Constant(true);
             }
         }
-        if let ConditionTerm::Bitvector64Equal(a, b) = &result {
+        if let ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: a,
+            right: b,
+        } = &result
+        {
             let le = ConditionTerm::uint64_less_equal(a.as_ref().clone(), b.as_ref().clone());
             let lt = ConditionTerm::uint64_less_than(a.as_ref().clone(), b.as_ref().clone());
             if let Some(conditions) = &mut self.collected_conditions {
@@ -4723,8 +4827,18 @@ impl<'a> TermRewrite<'a> {
             }
             ConditionTerm::PointerEqual(left, right) => graph.are_equal(left, right),
             ConditionTerm::PointerOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
-            ConditionTerm::Bitvector32Equal(left, right) => graph.are_int32_equal(left, right),
-            ConditionTerm::Bitvector64Equal(left, right) => graph.are_uint64_equal(left, right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } => graph.are_int32_equal(left, right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } => graph.are_uint64_equal(left, right),
             _ => false,
         }) {
             ConditionTerm::Constant(true)
@@ -5134,10 +5248,12 @@ mod tests {
     #[test]
     fn conditional_reduction_does_not_use_outer_facts_under_a_binder() {
         let variable = Variable(51);
-        let condition = ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(variable)),
-            Box::new(Bitvector32Term::Constant(0)),
-        );
+        let condition = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(variable)),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        };
         let conditions = HashMap::from([(condition.clone(), true)]);
         let input = Bitvector32Term::RangeFold {
             start: Box::new(Bitvector32Term::Constant(0)),
@@ -5606,22 +5722,26 @@ mod tests {
                     arguments,
                 };
                 right = Bitvector32Term::If {
-                    condition: Box::new(ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Variable(Variable(20_000 + index))),
-                        Box::new(Bitvector32Term::Constant(0)),
-                    )),
+                    condition: Box::new(ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Variable(Variable(20_000 + index))),
+                        right: Box::new(Bitvector32Term::Constant(0)),
+                    }),
                     then_term: Box::new(fanout),
                     else_term: Box::new(Bitvector32Term::Constant(0)),
                 };
             }
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::MemoryLoad(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::MemoryLoad(
                     memory.into(),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Bits32,
                 )),
-                Box::new(right),
-            )
+                right: Box::new(right),
+            }
         };
         let memory_with_unrelated_blocks = |count: u64| {
             let mut memory = CMemory::new().with_block("array", 8);

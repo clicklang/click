@@ -62,6 +62,7 @@ use super::{
 };
 use crate::kernel::primitives::Bitvector32Term;
 use crate::kernel::primitives::LoadKind;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{PureFactContext, Variable};
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
@@ -747,10 +748,12 @@ impl BlockKeyed for RunKey {
 pub(crate) fn cell_run_value(element_type: CType, load: Bitvector32Term) -> CValue {
     match element_type {
         CType::Bool => CValue::Bool(Bitvector32Term::if_then_else(
-            super::ConditionTerm::Bitvector32Equal(
-                Box::new(load),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            super::ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(load),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             Bitvector32Term::Constant(0),
             Bitvector32Term::Constant(1),
         )),

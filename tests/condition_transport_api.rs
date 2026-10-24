@@ -1,4 +1,5 @@
 use click::kernel::*;
+use click::kernel::{CompareRelation, MachineIntegerType};
 
 fn true_source() -> Proposition {
     Proposition::ConditionIs(ConditionTerm::Constant(true), true)
@@ -24,10 +25,12 @@ fn inconsistent_context_retains_its_false_premise() {
 fn consistent_context_retains_its_symbolic_premise() {
     let source = true_source();
     let target = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(777))),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(Variable(777))),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     assert!(
@@ -69,11 +72,21 @@ fn context_free_disjoint_store_transport_stays_closed() {
         LoadKind::Bits32,
     );
     let source = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(old_load.clone()), Box::new(old_load.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(old_load.clone()),
+            right: Box::new(old_load.clone()),
+        },
         true,
     );
     let target = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(new_load), Box::new(old_load)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(new_load),
+            right: Box::new(old_load),
+        },
         true,
     );
 
@@ -90,10 +103,12 @@ fn context_free_disjoint_store_transport_stays_closed() {
 fn retained_premises_ignore_unrelated_ambient_context_at_scale() {
     let source = true_source();
     let target = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(777))),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(Variable(777))),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     let expected = Proposition::Implies(

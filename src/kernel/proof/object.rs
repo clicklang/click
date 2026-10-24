@@ -9,6 +9,8 @@ use super::{
     PersistentOrderedSet, ProofBranch, ProofBranchState, ProofBranches, ProofExecutionState,
     ProofFacts, ProofObligation,
 };
+#[cfg(test)]
+use crate::kernel::CompareRelation;
 use crate::kernel::primitives::first_unavailable_connective_side;
 use crate::kernel::{Proposition, Sort, Variable};
 use std::ops::Deref;
@@ -2466,8 +2468,10 @@ fn condition_is_disequality(condition: &crate::kernel::ConditionTerm, value: boo
     use crate::kernel::ConditionTerm::*;
     match condition {
         IntegerNotEqual(..) => value,
-        Bitvector32Equal(..)
-        | Bitvector64Equal(..)
+        Compare {
+            relation: crate::kernel::CompareRelation::Equal,
+            ..
+        }
         | IntegerEqual(..)
         | AlgebraicEqual(..)
         | PointerEqual(..)
@@ -2839,17 +2843,21 @@ mod tests {
             body: Box::new(Proposition::Implies(
                 Box::new(Proposition::And(
                     Box::new(Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedLessEqual(
-                            Box::new(Bitvector32Term::Constant(0)),
-                            Box::new(Bitvector32Term::Variable(variable)),
-                        ),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessEqual,
+                            left: Box::new(Bitvector32Term::Constant(0)),
+                            right: Box::new(Bitvector32Term::Variable(variable)),
+                        },
                         true,
                     )),
                     Box::new(Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedLessEqual(
-                            Box::new(Bitvector32Term::Variable(variable)),
-                            Box::new(Bitvector32Term::Constant(16)),
-                        ),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessEqual,
+                            left: Box::new(Bitvector32Term::Variable(variable)),
+                            right: Box::new(Bitvector32Term::Constant(16)),
+                        },
                         true,
                     )),
                 )),

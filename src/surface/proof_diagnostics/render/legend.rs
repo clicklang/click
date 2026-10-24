@@ -1,6 +1,8 @@
 //! Definitions for report-local labels, never additional proof evidence.
 use super::*;
 use crate::kernel::{CMemoryConstructionKind, CMemoryDerivation, CValue, PointerBlock};
+#[cfg(test)]
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 const MAX_ROUNDS: usize = 96;
 const MAX_LEGEND_BYTES: usize = 12 * 1024;
@@ -745,10 +747,12 @@ mod tests {
                     ),
                 ))
             }));
-        let condition = ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Constant(7)),
-            Box::new(Bitvector32Term::Constant(7)),
-        );
+        let condition = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Constant(7)),
+            right: Box::new(Bitvector32Term::Constant(7)),
+        };
         let premises = vec![(condition.clone(), true)];
         let mut labels = SnapshotLabels::default();
         labels.immutable_pointer_name(&pointer, "node");

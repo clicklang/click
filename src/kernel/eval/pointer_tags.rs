@@ -18,6 +18,7 @@
 
 use super::operators::CBitwiseOperation;
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 pub(in crate::kernel) struct TaggedAddress {
     pub(in crate::kernel) pointer: Pointer,
@@ -146,7 +147,12 @@ impl PureFactContext {
                 return Some(false);
             }
         }
-        if let ConditionTerm::Bitvector64Equal(left, right) = condition
+        if let ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = condition
             && used.depth < MAX_CITING_DEPTH
         {
             used.depth += 1;

@@ -2,10 +2,12 @@
 //! Curried application nodes have shallow keys and indexed parent uses. A late
 //! operand merge therefore updates precisely the applications depending on it.
 use super::*;
+use crate::kernel::MachineIntegerType;
 use crate::kernel::{
     Bitvector32Term as T, BitvectorUnaryOp as U, CType, CValue, CarrierWidth as W,
     ConditionTerm as C, PureFunctionArgument as A, SharedPureApplication,
 };
+use crate::kernel::{CompareRelation, OverflowOperation};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ArgumentTag {
@@ -1057,47 +1059,96 @@ impl TermClasses {
                 let (a, b) = self.algebraic_nodes(a, b)?;
                 (AlgebraicEq, a, b)
             }
-            C::Bitvector32Equal(a, b) => (Int32Eq, self.intern_int32(a), self.intern_int32(b)),
-            C::Bitvector32SignedAddOverflows(a, b) => {
-                (Int32AddOverflow, self.intern_int32(a), self.intern_int32(b))
-            }
-            C::Bitvector32SignedLessThan(a, b) => {
-                (Int32Lt, self.intern_int32(a), self.intern_int32(b))
-            }
-            C::Bitvector32SignedLessEqual(a, b) => {
-                (Int32Le, self.intern_int32(a), self.intern_int32(b))
-            }
-            C::Bitvector32SignedGreaterThan(a, b) => {
-                (Int32Gt, self.intern_int32(a), self.intern_int32(b))
-            }
-            C::Bitvector32SignedGreaterEqual(a, b) => {
-                (Int32Ge, self.intern_int32(a), self.intern_int32(b))
-            }
-            C::Bitvector64Equal(a, b) => (UInt64Eq, self.intern_uint64(a), self.intern_uint64(b)),
-            C::Bitvector64SignedLessThan(a, b) => {
-                (Int64Lt, self.intern_uint64(a), self.intern_uint64(b))
-            }
-            C::Bitvector64SignedLessEqual(a, b) => {
-                (Int64Le, self.intern_uint64(a), self.intern_uint64(b))
-            }
-            C::Bitvector64SignedGreaterThan(a, b) => {
-                (Int64Gt, self.intern_uint64(a), self.intern_uint64(b))
-            }
-            C::Bitvector64SignedGreaterEqual(a, b) => {
-                (Int64Ge, self.intern_uint64(a), self.intern_uint64(b))
-            }
-            C::Bitvector64UnsignedLessThan(a, b) => {
-                (UInt64Lt, self.intern_uint64(a), self.intern_uint64(b))
-            }
-            C::Bitvector64UnsignedLessEqual(a, b) => {
-                (UInt64Le, self.intern_uint64(a), self.intern_uint64(b))
-            }
-            C::Bitvector64UnsignedGreaterThan(a, b) => {
-                (UInt64Gt, self.intern_uint64(a), self.intern_uint64(b))
-            }
-            C::Bitvector64UnsignedGreaterEqual(a, b) => {
-                (UInt64Ge, self.intern_uint64(a), self.intern_uint64(b))
-            }
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            } => (Int32Eq, self.intern_int32(a), self.intern_int32(b)),
+            C::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: a,
+                right: b,
+            } => (Int32AddOverflow, self.intern_int32(a), self.intern_int32(b)),
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            } => (Int32Lt, self.intern_int32(a), self.intern_int32(b)),
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            } => (Int32Le, self.intern_int32(a), self.intern_int32(b)),
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: a,
+                right: b,
+            } => (Int32Gt, self.intern_int32(a), self.intern_int32(b)),
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: a,
+                right: b,
+            } => (Int32Ge, self.intern_int32(a), self.intern_int32(b)),
+            C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            } => (UInt64Eq, self.intern_uint64(a), self.intern_uint64(b)),
+            C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            } => (Int64Lt, self.intern_uint64(a), self.intern_uint64(b)),
+            C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            } => (Int64Le, self.intern_uint64(a), self.intern_uint64(b)),
+            C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterThan,
+                left: a,
+                right: b,
+            } => (Int64Gt, self.intern_uint64(a), self.intern_uint64(b)),
+            C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterEqual,
+                left: a,
+                right: b,
+            } => (Int64Ge, self.intern_uint64(a), self.intern_uint64(b)),
+            C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            } => (UInt64Lt, self.intern_uint64(a), self.intern_uint64(b)),
+            C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            } => (UInt64Le, self.intern_uint64(a), self.intern_uint64(b)),
+            C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterThan,
+                left: a,
+                right: b,
+            } => (UInt64Gt, self.intern_uint64(a), self.intern_uint64(b)),
+            C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterEqual,
+                left: a,
+                right: b,
+            } => (UInt64Ge, self.intern_uint64(a), self.intern_uint64(b)),
             C::PointerValueEqual(a, b) => (
                 PointerValueEq,
                 self.intern_expression(
@@ -1147,24 +1198,84 @@ impl TermClasses {
             C::IntegerGreaterThan(..) => ConditionKind::IntegerGt,
             C::IntegerGreaterEqual(..) => ConditionKind::IntegerGe,
             C::AlgebraicEqual(..) => ConditionKind::AlgebraicEq,
-            C::Bitvector32Equal(..) => ConditionKind::Int32Eq,
-            C::Bitvector32SignedAddOverflows(..) => ConditionKind::Int32AddOverflow,
-            C::Bitvector64Equal(..) => ConditionKind::UInt64Eq,
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                ..
+            } => ConditionKind::Int32Eq,
+            C::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                ..
+            } => ConditionKind::Int32AddOverflow,
+            C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                ..
+            } => ConditionKind::UInt64Eq,
             C::PointerEqual(..) => ConditionKind::PointerEq,
             C::PointerValueEqual(..) => ConditionKind::PointerValueEq,
             C::PointerOffsetEqual(..) => ConditionKind::OffsetEq,
-            C::Bitvector32SignedLessThan(..) => ConditionKind::Int32Lt,
-            C::Bitvector32SignedLessEqual(..) => ConditionKind::Int32Le,
-            C::Bitvector32SignedGreaterThan(..) => ConditionKind::Int32Gt,
-            C::Bitvector32SignedGreaterEqual(..) => ConditionKind::Int32Ge,
-            C::Bitvector64SignedLessThan(..) => ConditionKind::Int64Lt,
-            C::Bitvector64SignedLessEqual(..) => ConditionKind::Int64Le,
-            C::Bitvector64SignedGreaterThan(..) => ConditionKind::Int64Gt,
-            C::Bitvector64SignedGreaterEqual(..) => ConditionKind::Int64Ge,
-            C::Bitvector64UnsignedLessThan(..) => ConditionKind::UInt64Lt,
-            C::Bitvector64UnsignedLessEqual(..) => ConditionKind::UInt64Le,
-            C::Bitvector64UnsignedGreaterThan(..) => ConditionKind::UInt64Gt,
-            C::Bitvector64UnsignedGreaterEqual(..) => ConditionKind::UInt64Ge,
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                ..
+            } => ConditionKind::Int32Lt,
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                ..
+            } => ConditionKind::Int32Le,
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                ..
+            } => ConditionKind::Int32Gt,
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                ..
+            } => ConditionKind::Int32Ge,
+            C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessThan,
+                ..
+            } => ConditionKind::Int64Lt,
+            C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                ..
+            } => ConditionKind::Int64Le,
+            C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterThan,
+                ..
+            } => ConditionKind::Int64Gt,
+            C::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterEqual,
+                ..
+            } => ConditionKind::Int64Ge,
+            C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                ..
+            } => ConditionKind::UInt64Lt,
+            C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                ..
+            } => ConditionKind::UInt64Le,
+            C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterThan,
+                ..
+            } => ConditionKind::UInt64Gt,
+            C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterEqual,
+                ..
+            } => ConditionKind::UInt64Ge,
             _ => return None,
         })
     }
@@ -1203,14 +1314,78 @@ impl TermClasses {
         // Only signed 32-bit order facts contribute to this interval. Wide
         // and unsigned comparisons retain their separate semantic orders.
         let order = match (condition, value) {
-            (C::Bitvector32SignedLessThan(a, b), true)
-            | (C::Bitvector32SignedLessEqual(a, b), false) => Some((a, b, true, value)),
-            (C::Bitvector32SignedLessEqual(a, b), true)
-            | (C::Bitvector32SignedLessThan(a, b), false) => Some((a, b, false, value)),
-            (C::Bitvector32SignedGreaterThan(a, b), true)
-            | (C::Bitvector32SignedGreaterEqual(a, b), false) => Some((b, a, true, value)),
-            (C::Bitvector32SignedGreaterEqual(a, b), true)
-            | (C::Bitvector32SignedGreaterThan(a, b), false) => Some((b, a, false, value)),
+            (
+                C::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: a,
+                    right: b,
+                },
+                true,
+            )
+            | (
+                C::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: a,
+                    right: b,
+                },
+                false,
+            ) => Some((a, b, true, value)),
+            (
+                C::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: a,
+                    right: b,
+                },
+                true,
+            )
+            | (
+                C::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: a,
+                    right: b,
+                },
+                false,
+            ) => Some((a, b, false, value)),
+            (
+                C::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: a,
+                    right: b,
+                },
+                true,
+            )
+            | (
+                C::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: a,
+                    right: b,
+                },
+                false,
+            ) => Some((b, a, true, value)),
+            (
+                C::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: a,
+                    right: b,
+                },
+                true,
+            )
+            | (
+                C::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: a,
+                    right: b,
+                },
+                false,
+            ) => Some((b, a, false, value)),
             _ => None,
         };
         if let Some((a, b, strict, forward)) = order {
@@ -1295,21 +1470,96 @@ impl C {
         &self,
     ) -> Option<(&T, &T)> {
         match self {
-            Self::Bitvector32Equal(a, b)
-            | Self::Bitvector32SignedAddOverflows(a, b)
-            | Self::Bitvector32SignedLessThan(a, b)
-            | Self::Bitvector32SignedLessEqual(a, b)
-            | Self::Bitvector32SignedGreaterThan(a, b)
-            | Self::Bitvector32SignedGreaterEqual(a, b)
-            | Self::Bitvector64Equal(a, b)
-            | Self::Bitvector64SignedLessThan(a, b)
-            | Self::Bitvector64SignedLessEqual(a, b)
-            | Self::Bitvector64SignedGreaterThan(a, b)
-            | Self::Bitvector64SignedGreaterEqual(a, b)
-            | Self::Bitvector64UnsignedLessThan(a, b)
-            | Self::Bitvector64UnsignedLessEqual(a, b)
-            | Self::Bitvector64UnsignedGreaterThan(a, b)
-            | Self::Bitvector64UnsignedGreaterEqual(a, b) => Some((a, b)),
+            Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            }
+            | Self::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterThan,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterEqual,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterThan,
+                left: a,
+                right: b,
+            }
+            | Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterEqual,
+                left: a,
+                right: b,
+            } => Some((a, b)),
             _ => None,
         }
     }

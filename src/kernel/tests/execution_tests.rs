@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::loans::LoanLedger;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
 
 #[test]
@@ -2451,10 +2452,12 @@ fn loop_entry_goals_preserve_guarded_judgments() {
 /// `a != 0` as the kernel spells a short-circuit guard operand's fact.
 fn guard_operand_fact(variable: u64, nonzero: bool) -> Proposition {
     Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(variable))),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(Variable(variable))),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         !nonzero,
     )
 }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::AlgebraicValueType;
+use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::c_function_contract_refinement_obligations;
 
@@ -534,20 +535,24 @@ pub(super) fn pure_induction_hypothesis(
                 Bitvector32Term::Variable(*current_variable),
             )
         } else {
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(value.clone()),
-                Box::new(Bitvector32Term::Variable(*current_variable)),
-            )
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(value.clone()),
+                right: Box::new(Bitvector32Term::Variable(*current_variable)),
+            }
         },
         true,
     );
     body = Proposition::Implies(Box::new(smaller), Box::new(body));
     if !unsigned {
         let nonnegative = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(
-                Box::new(value),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(value),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         body = Proposition::Implies(Box::new(nonnegative), Box::new(body));
@@ -3382,24 +3387,72 @@ fn oriented_order_comparisons(proposition: &Proposition) -> Proposition {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
             let oriented = match condition {
-                Condition::Bitvector32SignedGreaterThan(left, right) => {
-                    Condition::Bitvector32SignedLessThan(right.clone(), left.clone())
-                }
-                Condition::Bitvector32SignedGreaterEqual(left, right) => {
-                    Condition::Bitvector32SignedLessEqual(right.clone(), left.clone())
-                }
-                Condition::Bitvector64SignedGreaterThan(left, right) => {
-                    Condition::Bitvector64SignedLessThan(right.clone(), left.clone())
-                }
-                Condition::Bitvector64SignedGreaterEqual(left, right) => {
-                    Condition::Bitvector64SignedLessEqual(right.clone(), left.clone())
-                }
-                Condition::Bitvector64UnsignedGreaterThan(left, right) => {
-                    Condition::Bitvector64UnsignedLessThan(right.clone(), left.clone())
-                }
-                Condition::Bitvector64UnsignedGreaterEqual(left, right) => {
-                    Condition::Bitvector64UnsignedLessEqual(right.clone(), left.clone())
-                }
+                Condition::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left,
+                    right,
+                } => Condition::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: right.clone(),
+                    right: left.clone(),
+                },
+                Condition::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left,
+                    right,
+                } => Condition::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: right.clone(),
+                    right: left.clone(),
+                },
+                Condition::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::GreaterThan,
+                    left,
+                    right,
+                } => Condition::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::LessThan,
+                    left: right.clone(),
+                    right: left.clone(),
+                },
+                Condition::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::GreaterEqual,
+                    left,
+                    right,
+                } => Condition::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::LessEqual,
+                    left: right.clone(),
+                    right: left.clone(),
+                },
+                Condition::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::GreaterThan,
+                    left,
+                    right,
+                } => Condition::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::LessThan,
+                    left: right.clone(),
+                    right: left.clone(),
+                },
+                Condition::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::GreaterEqual,
+                    left,
+                    right,
+                } => Condition::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::LessEqual,
+                    left: right.clone(),
+                    right: left.clone(),
+                },
                 Condition::IntegerGreaterThan(left, right) => {
                     Condition::IntegerLessThan(right.clone(), left.clone())
                 }
@@ -3437,29 +3490,49 @@ mod tests {
         let word = |index| Box::new(Bitvector32Term::Variable(crate::kernel::Variable(index)));
         let fact = |condition| Proposition::ConditionIs(condition, true);
         let greater = Proposition::Implies(
-            Box::new(fact(Condition::Bitvector32SignedGreaterThan(
-                word(0),
-                word(1),
-            ))),
-            Box::new(Proposition::Not(Box::new(fact(
-                Condition::Bitvector64UnsignedGreaterEqual(word(2), word(3)),
-            )))),
+            Box::new(fact(Condition::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: word(0),
+                right: word(1),
+            })),
+            Box::new(Proposition::Not(Box::new(fact(Condition::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterEqual,
+                left: word(2),
+                right: word(3),
+            })))),
         );
         let less = Proposition::Implies(
-            Box::new(fact(Condition::Bitvector32SignedLessThan(word(1), word(0)))),
-            Box::new(Proposition::Not(Box::new(fact(
-                Condition::Bitvector64UnsignedLessEqual(word(3), word(2)),
-            )))),
+            Box::new(fact(Condition::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: word(1),
+                right: word(0),
+            })),
+            Box::new(Proposition::Not(Box::new(fact(Condition::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: word(3),
+                right: word(2),
+            })))),
         );
         assert_eq!(oriented_order_comparisons(&greater), less);
         assert_eq!(oriented_order_comparisons(&less), less);
         // Orientation swaps operands; it does not reverse the order.
-        let reversed = fact(Condition::Bitvector32SignedLessThan(word(0), word(1)));
+        let reversed = fact(Condition::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: word(0),
+            right: word(1),
+        });
         assert_ne!(
-            oriented_order_comparisons(&fact(Condition::Bitvector32SignedGreaterThan(
-                word(0),
-                word(1)
-            ))),
+            oriented_order_comparisons(&fact(Condition::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: word(0),
+                right: word(1)
+            })),
             reversed
         );
     }

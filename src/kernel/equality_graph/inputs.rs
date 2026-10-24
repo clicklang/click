@@ -4,6 +4,7 @@
 //! later admitted inputs. It never imports a sibling's query-local node IDs or
 //! class unions, and never scans the proof context to recover those inputs.
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -309,16 +310,20 @@ impl EqualityGraph {
             }
             let scalar_condition = match &node.input {
                 Input::Int32(left, right) if is_scalar_read(left) || is_scalar_read(right) => {
-                    Some(ConditionTerm::Bitvector32Equal(
-                        Box::new(left.clone()),
-                        Box::new(right.clone()),
-                    ))
+                    Some(ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(left.clone()),
+                        right: Box::new(right.clone()),
+                    })
                 }
                 Input::UInt64(left, right) if is_scalar_read(left) || is_scalar_read(right) => {
-                    Some(ConditionTerm::Bitvector64Equal(
-                        Box::new(left.clone()),
-                        Box::new(right.clone()),
-                    ))
+                    Some(ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(left.clone()),
+                        right: Box::new(right.clone()),
+                    })
                 }
                 Input::Offset(left, right) if is_read_offset(left) || is_read_offset(right) => {
                     Some(ConditionTerm::PointerOffsetEqual(

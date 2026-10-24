@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::prelude::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn pending_malloc(state: &CState) -> CState {
     let paths = execute_c_statement_paths(
@@ -1546,10 +1547,12 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         .unwrap();
     let retirement_assumptions =
         PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(spent.observe_symbolic(&description).unwrap().entry_count),
-                Box::new(Bitvector32Term::Constant(1)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(spent.observe_symbolic(&description).unwrap().entry_count),
+                right: Box::new(Bitvector32Term::Constant(1)),
+            },
             true,
         ));
     assert!(
@@ -2182,10 +2185,12 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
         CreationRefusal::UnknownTotal
     );
     let wrong_total = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(entry_count.clone()),
-            Box::new(Bitvector32Term::Constant(2)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(entry_count.clone()),
+            right: Box::new(Bitvector32Term::Constant(2)),
+        },
         true,
     ));
     assert!(
@@ -2194,10 +2199,12 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
             .is_err()
     );
     let right_total = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(entry_count),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(entry_count),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         true,
     ));
     let (retired, _) = spent
@@ -2264,10 +2271,12 @@ fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
         )
         .unwrap();
     let total_zero = assumptions.clone().assume_condition(
-        crate::kernel::ConditionTerm::Bitvector32Equal(
-            Box::new(total.clone()),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::Equal,
+            left: Box::new(total.clone()),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     assert_eq!(
@@ -2289,7 +2298,12 @@ fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
         Err(CreationRefusal::UnknownTotal)
     );
     let all_owned = assumptions.assume_condition(
-        crate::kernel::ConditionTerm::Bitvector32Equal(Box::new(total), Box::new(quantity)),
+        crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::Equal,
+            left: Box::new(total),
+            right: Box::new(quantity),
+        },
         true,
     );
     let (retired, _) = spent

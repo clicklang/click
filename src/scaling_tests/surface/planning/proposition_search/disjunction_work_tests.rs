@@ -3,16 +3,19 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 // A generated unsigned-arithmetic guard is `false or bound`. Checking its
 // available bound must not search unrelated facts for a proof of false.
 #[test]
 fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
     let bound = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessEqual(
-            Box::new(Bitvector32Term::Variable(Variable(950_000))),
-            Box::new(Bitvector32Term::Constant(20)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(Bitvector32Term::Variable(Variable(950_000))),
+            right: Box::new(Bitvector32Term::Constant(20)),
+        },
         true,
     );
     let goal = Proposition::Or(
@@ -27,10 +30,12 @@ fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
         let mut context = PureFactContext::new().assume_proposition(bound.clone());
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::Bitvector32SignedLessEqual(
-                    Box::new(Bitvector32Term::Variable(Variable(960_000 + index))),
-                    Box::new(Bitvector32Term::Constant(100)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: Box::new(Bitvector32Term::Variable(Variable(960_000 + index))),
+                    right: Box::new(Bitvector32Term::Constant(100)),
+                },
                 true,
             );
         }

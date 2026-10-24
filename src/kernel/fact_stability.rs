@@ -13,6 +13,8 @@
 //! one line per lowering whose fact-free term differs. The check only
 //! observes; the lowering's own result is unchanged.
 
+#[cfg(test)]
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::io::Write;
 
 use super::Proposition;
@@ -153,10 +155,12 @@ int32 id(int32 x) {
     fn a_term_that_differs_from_its_fact_free_lowering_is_reported() {
         let decided = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
         let written = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(7))),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(7))),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         let lines = capture(|| {

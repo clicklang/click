@@ -26,6 +26,8 @@
 
 use crate::kernel::proof::ProofFacts;
 use crate::kernel::proof::PropositionSource;
+#[cfg(test)]
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{Proposition, PureFactContext};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -694,10 +696,12 @@ mod tests {
     use crate::kernel::{Bitvector32Term, ConditionTerm, Variable};
 
     fn condition(variable: u64) -> ConditionTerm {
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(variable))),
-            Box::new(Bitvector32Term::Constant(0)),
-        )
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(Variable(variable))),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        }
     }
 
     #[test]

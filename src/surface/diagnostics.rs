@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::proof_diagnostics::render::{
     render_resource_diagnostic, render_resource_fact_diagnostic, render_resource_facts_diagnostic,
 };
@@ -713,30 +714,152 @@ pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
         ConditionTerm::IntegerGreaterEqual(_, _) => "Integer greater-or-equal",
         ConditionTerm::IntegerEqual(_, _) => "Integer equality",
         ConditionTerm::IntegerNotEqual(_, _) => "Integer disequality",
-        ConditionTerm::Bitvector32SignedLessThan(_, _) => "signed less-than",
-        ConditionTerm::Bitvector32SignedLessEqual(_, _) => "signed less-or-equal",
-        ConditionTerm::Bitvector32SignedGreaterThan(_, _) => "signed greater-than",
-        ConditionTerm::Bitvector32SignedGreaterEqual(_, _) => "signed greater-or-equal",
-        ConditionTerm::Bitvector32Equal(_, _) => "int32 equality",
-        ConditionTerm::Bitvector32SignedAddOverflows(_, _) => "addition overflow",
-        ConditionTerm::Bitvector32SignedSubtractOverflows(_, _) => "subtraction overflow",
-        ConditionTerm::Bitvector32SignedMultiplyOverflows(_, _) => "multiplication overflow",
-        ConditionTerm::Bitvector32SignedDivideOverflows(_, _) => "division overflow",
-        ConditionTerm::Bitvector32SignedShiftLeftOverflows(_, _) => "left-shift overflow",
-        ConditionTerm::Bitvector64SignedLessThan(_, _) => "int64 signed less-than",
-        ConditionTerm::Bitvector64SignedLessEqual(_, _) => "int64 signed less-or-equal",
-        ConditionTerm::Bitvector64SignedGreaterThan(_, _) => "int64 signed greater-than",
-        ConditionTerm::Bitvector64SignedGreaterEqual(_, _) => "int64 signed greater-or-equal",
-        ConditionTerm::Bitvector64UnsignedLessThan(_, _) => "uint64 less-than",
-        ConditionTerm::Bitvector64UnsignedLessEqual(_, _) => "uint64 less-or-equal",
-        ConditionTerm::Bitvector64UnsignedGreaterThan(_, _) => "uint64 greater-than",
-        ConditionTerm::Bitvector64UnsignedGreaterEqual(_, _) => "uint64 greater-or-equal",
-        ConditionTerm::Bitvector64Equal(_, _) => "64-bit equality",
-        ConditionTerm::Bitvector64SignedAddOverflows(_, _) => "int64 addition overflow",
-        ConditionTerm::Bitvector64SignedSubtractOverflows(_, _) => "int64 subtraction overflow",
-        ConditionTerm::Bitvector64SignedMultiplyOverflows(_, _) => "int64 multiplication overflow",
-        ConditionTerm::Bitvector64SignedDivideOverflows(_, _) => "int64 division overflow",
-        ConditionTerm::Bitvector64SignedShiftLeftOverflows(_, _) => "int64 left-shift overflow",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: _,
+            right: _,
+        } => "signed less-than",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: _,
+            right: _,
+        } => "signed less-or-equal",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left: _,
+            right: _,
+        } => "signed greater-than",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: _,
+            right: _,
+        } => "signed greater-or-equal",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: _,
+            right: _,
+        } => "int32 equality",
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: _,
+            right: _,
+        } => "addition overflow",
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            left: _,
+            right: _,
+        } => "subtraction overflow",
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Multiply,
+            left: _,
+            right: _,
+        } => "multiplication overflow",
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Divide,
+            left: _,
+            right: _,
+        } => "division overflow",
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::ShiftLeft,
+            left: _,
+            right: _,
+        } => "left-shift overflow",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessThan,
+            left: _,
+            right: _,
+        } => "int64 signed less-than",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessEqual,
+            left: _,
+            right: _,
+        } => "int64 signed less-or-equal",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterThan,
+            left: _,
+            right: _,
+        } => "int64 signed greater-than",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterEqual,
+            left: _,
+            right: _,
+        } => "int64 signed greater-or-equal",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left: _,
+            right: _,
+        } => "uint64 less-than",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left: _,
+            right: _,
+        } => "uint64 less-or-equal",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterThan,
+            left: _,
+            right: _,
+        } => "uint64 greater-than",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterEqual,
+            left: _,
+            right: _,
+        } => "uint64 greater-or-equal",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: _,
+            right: _,
+        } => "64-bit equality",
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Add,
+            left: _,
+            right: _,
+        } => "int64 addition overflow",
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Subtract,
+            left: _,
+            right: _,
+        } => "int64 subtraction overflow",
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Multiply,
+            left: _,
+            right: _,
+        } => "int64 multiplication overflow",
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Divide,
+            left: _,
+            right: _,
+        } => "int64 division overflow",
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::ShiftLeft,
+            left: _,
+            right: _,
+        } => "int64 left-shift overflow",
+        ConditionTerm::Compare { .. } => "machine comparison",
+        ConditionTerm::Overflows { .. } => "machine overflow test",
         ConditionTerm::Float32(CFloatCondition::Comparison { .. }) => "float32 comparison",
         ConditionTerm::Float32(CFloatCondition::Classification { .. }) => "float32 classification",
         ConditionTerm::Float64(CFloatCondition::Comparison { .. }) => "float64 comparison",
@@ -3884,8 +4007,10 @@ fn states_terms_differ(
         matches!(
             condition.as_bitvector_comparison(),
             Some((
-                crate::kernel::BitvectorComparisonOp::Bitvector32Equal
-                    | crate::kernel::BitvectorComparisonOp::Bitvector64Equal,
+                crate::kernel::BitvectorComparisonOp::Compare(
+                    _,
+                    crate::kernel::CompareRelation::Equal
+                ),
                 a,
                 b,
             )) if (a == left && b == right) || (a == right && b == left)
@@ -7315,7 +7440,8 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
                 describe_pointer(right, ParameterBinding::default())
             )
         }
-        crate::kernel::binary_bitvector_condition!(_, _) => {
+        crate::kernel::ConditionTerm::Compare { .. }
+        | crate::kernel::ConditionTerm::Overflows { .. } => {
             unreachable!("bitvector comparisons are described above")
         }
     }
@@ -7358,20 +7484,90 @@ pub(super) fn describe_condition_with_context(
         return unsigned;
     }
     match condition {
-        ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right) => binary(left, "==", right),
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right) => binary(left, "<", right),
-        ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => binary(left, "<=", right),
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => binary(left, ">", right),
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => binary(left, ">=", right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => binary(left, "==", right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        } => binary(left, "<", right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        } => binary(left, "<=", right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        } => binary(left, ">", right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => binary(left, ">=", right),
         ConditionTerm::PointerEqual(left, right) => format!(
             "{} == {}",
             describe_pointer(left, parameter_binding),
@@ -7391,10 +7587,30 @@ fn describe_unsigned_comparison(
 ) -> Option<String> {
     const SIGN_BIT: u32 = 0x8000_0000;
     let (left, operator, right) = match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => (left, "<", right),
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => (left, "<=", right),
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => (left, ">", right),
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => (left, ">=", right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        } => (left, "<", right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        } => (left, "<=", right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        } => (left, ">", right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => (left, ">=", right),
         _ => return None,
     };
     let flipped = |term: &Bitvector32Term| match term {

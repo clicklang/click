@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, OverflowOperation};
 
 /// Discharge one guard left open by a universal instantiation, naming the
 /// premises it consumed, or `None` when the retained exact routes do not
@@ -85,7 +86,12 @@ pub(super) fn canonical_contradiction_condition(condition: &ConditionTerm) -> Co
     }
 
     match condition {
-        ConditionTerm::Bitvector32Equal(left, right) => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => {
             let (left, right) = ordered(left.as_ref(), right.as_ref());
             ConditionTerm::equal(left, right)
         }
@@ -97,12 +103,18 @@ pub(super) fn canonical_contradiction_condition(condition: &ConditionTerm) -> Co
             let (left, right) = ordered(left.as_ref(), right.as_ref());
             ConditionTerm::pointer_equal(left, right)
         }
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-            ConditionTerm::signed_less_than(right.as_ref().clone(), left.as_ref().clone())
-        }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-            ConditionTerm::signed_less_equal(right.as_ref().clone(), left.as_ref().clone())
-        }
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        } => ConditionTerm::signed_less_than(right.as_ref().clone(), left.as_ref().clone()),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => ConditionTerm::signed_less_equal(right.as_ref().clone(), left.as_ref().clone()),
         _ => condition.clone(),
     }
 }
@@ -297,7 +309,7 @@ impl PureFactContext {
                     || *value
                         && matches!(
                             condition,
-                            ConditionTerm::Bitvector32Equal(left, right)
+                            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }
                                 if crate::kernel::api::atomic_loads_equal_along_memory_derivations(
                                     left, right, self,
                                 )
@@ -316,7 +328,7 @@ impl PureFactContext {
                     || *value
                         && matches!(
                             condition,
-                            ConditionTerm::Bitvector32Equal(left, right)
+                            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }
                                 if crate::kernel::api::canonicalize_atomic_loads(left)
                                         == crate::kernel::api::canonicalize_atomic_loads(right)
                                     && !crate::kernel::reasoning::load_equality_refuted_by_history(
@@ -572,7 +584,15 @@ impl PureFactContext {
             let (left, right) = match (sort, conjunct) {
                 (
                     Sort::CInt64 | Sort::CMachineInteger(MachineIntegerType::UInt64),
-                    Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true),
+                    Proposition::ConditionIs(
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int64,
+                            relation: CompareRelation::Equal,
+                            left,
+                            right,
+                        },
+                        true,
+                    ),
                 ) => (left, right),
                 (
                     Sort::CInt32
@@ -584,7 +604,15 @@ impl PureFactContext {
                         | MachineIntegerType::UInt16
                         | MachineIntegerType::UInt32,
                     ),
-                    Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true),
+                    Proposition::ConditionIs(
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            left,
+                            right,
+                        },
+                        true,
+                    ),
                 ) => (left, right),
                 _ => continue,
             };
@@ -735,24 +763,75 @@ impl PureFactContext {
         }
         let operands = match (left, right) {
             (
-                ConditionTerm::Bitvector32SignedLessThan(a, b),
-                ConditionTerm::Bitvector32SignedLessThan(c, d),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: a,
+                    right: b,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: c,
+                    right: d,
+                },
             )
             | (
-                ConditionTerm::Bitvector32SignedLessEqual(a, b),
-                ConditionTerm::Bitvector32SignedLessEqual(c, d),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: a,
+                    right: b,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: c,
+                    right: d,
+                },
             )
             | (
-                ConditionTerm::Bitvector32SignedGreaterThan(a, b),
-                ConditionTerm::Bitvector32SignedGreaterThan(c, d),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: a,
+                    right: b,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: c,
+                    right: d,
+                },
             )
             | (
-                ConditionTerm::Bitvector32SignedGreaterEqual(a, b),
-                ConditionTerm::Bitvector32SignedGreaterEqual(c, d),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: a,
+                    right: b,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: c,
+                    right: d,
+                },
             )
-            | (ConditionTerm::Bitvector32Equal(a, b), ConditionTerm::Bitvector32Equal(c, d)) => {
-                Some((a, b, c, d))
-            }
+            | (
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: a,
+                    right: b,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: c,
+                    right: d,
+                },
+            ) => Some((a, b, c, d)),
             _ => None,
         };
         let Some((a, b, c, d)) = operands else {
@@ -825,8 +904,18 @@ impl PureFactContext {
             // the question, which left a 64-bit load equality neither proved
             // nor refuted by the recorded history.
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(left, right)
-                | ConditionTerm::Bitvector64Equal(left, right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
                 true,
             ) => crate::kernel::api::atomic_memory_load_equality_evidence(left, right, self)
                 .filter(AtomicMemoryLoadEqualityEvidence::is_fully_typed)
@@ -840,7 +929,15 @@ impl PureFactContext {
             _ => None,
         };
         let load_address_congruence_evidence = match proposition {
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => self
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) => self
                 .load_address_congruence_evidence(left, right)
                 .map(Box::new)
                 .map(AtomicPropositionDerivationEvidence::LoadAddressCongruence),
@@ -871,21 +968,36 @@ impl PureFactContext {
             _ => None,
         };
         let equality_path_evidence = match proposition {
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => self
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) => self
                 .exact_bitvector_equality_path_evidence(left, right)
                 .map(AtomicPropositionDerivationEvidence::BitvectorEqualityPath),
             _ => None,
         };
         let pinned_constant_equality_evidence = match proposition {
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
-                if self
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) if self
+                .equality_graph
+                .exact_literal_sources(left.as_ref())
+                .is_some()
+                || self
                     .equality_graph
-                    .exact_literal_sources(left.as_ref())
-                    .is_some()
-                    || self
-                        .equality_graph
-                        .exact_literal_sources(right.as_ref())
-                        .is_some() =>
+                    .exact_literal_sources(right.as_ref())
+                    .is_some() =>
             {
                 self.direct_bitvector_equality_evidence(left, right)
                     .map(Box::new)
@@ -894,7 +1006,15 @@ impl PureFactContext {
             _ => None,
         };
         let le_and_not_lt_equality_evidence = match proposition {
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) => {
                 let less_equal =
                     ConditionTerm::signed_less_equal(left.as_ref().clone(), right.as_ref().clone());
                 let less_than =
@@ -915,7 +1035,15 @@ impl PureFactContext {
             _ => None,
         };
         let ge_and_not_gt_equality_evidence = match proposition {
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) => {
                 let greater_equal = ConditionTerm::signed_greater_equal(
                     left.as_ref().clone(),
                     right.as_ref().clone(),
@@ -941,7 +1069,12 @@ impl PureFactContext {
         };
         let le_and_neq_strict_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(left, right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left,
+                    right,
+                },
                 true,
             ) => {
                 let less_equal = Proposition::ConditionIs(
@@ -967,7 +1100,12 @@ impl PureFactContext {
         };
         let increment_upper_bound_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(incremented, upper),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: incremented,
+                    right: upper,
+                },
                 true,
             ) => incremented
                 .add_const_base(1)
@@ -978,7 +1116,12 @@ impl PureFactContext {
         };
         let increment_constant_upper_bound_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(incremented, goal_upper),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: incremented,
+                    right: goal_upper,
+                },
                 true,
             ) => incremented
                 .add_const_base(1)
@@ -1005,7 +1148,12 @@ impl PureFactContext {
         };
         let increment_strictly_increases_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(base, incremented),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: base,
+                    right: incremented,
+                },
                 true,
                 // The goal's base and the increment's base may be different
                 // terms for one value (a load and its load variable); the
@@ -1026,7 +1174,12 @@ impl PureFactContext {
         };
         let one_plus_strictly_increases_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(value, sum),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: value,
+                    right: sum,
+                },
                 true,
             ) => match sum.as_ref() {
                 Bitvector32Term::Add(left, right)
@@ -1044,7 +1197,12 @@ impl PureFactContext {
         };
         let increment_below_max_is_defined_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedAddOverflows(base, amount),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: base,
+                    right: amount,
+                },
                 false,
             ) if amount.as_ref() == &Bitvector32Term::Constant(1) => {
                 let int_max = Bitvector32Term::Constant(i32::MAX as u32);
@@ -1062,7 +1220,12 @@ impl PureFactContext {
         };
         let one_plus_below_max_is_defined_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedAddOverflows(one, value),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: one,
+                    right: value,
+                },
                 false,
             ) if one.as_ref() == &Bitvector32Term::Constant(1) => {
                 let int_max = Bitvector32Term::Constant(i32::MAX as u32);
@@ -1074,7 +1237,12 @@ impl PureFactContext {
         };
         let nonnegative_add_within_max_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedAddOverflows(value, amount),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: value,
+                    right: amount,
+                },
                 false,
             ) => {
                 let zero = Bitvector32Term::Constant(0);
@@ -1097,7 +1265,12 @@ impl PureFactContext {
         };
         let nonnegative_subtract_within_value_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedSubtractOverflows(value, amount),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Subtract,
+                    left: value,
+                    right: amount,
+                },
                 false,
             ) => {
                 let zero = Bitvector32Term::Constant(0);
@@ -1116,7 +1289,12 @@ impl PureFactContext {
         };
         let increment_lower_bound_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(lower, incremented),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: lower,
+                    right: incremented,
+                },
                 true,
             ) => incremented.add_const_base(1).and_then(|base| {
                 self.exact_increment_bounds_evidence(lower, &base)
@@ -1126,7 +1304,12 @@ impl PureFactContext {
         };
         let increment_greater_equal_lower_bound_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterEqual(incremented, lower),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: incremented,
+                    right: lower,
+                },
                 true,
             ) => incremented.add_const_base(1).and_then(|base| {
                 self.exact_increment_bounds_evidence(lower, &base)
@@ -1136,7 +1319,12 @@ impl PureFactContext {
         };
         let increment_strict_greater_lower_bound_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterThan(incremented, lower),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: incremented,
+                    right: lower,
+                },
                 true,
             ) => incremented.add_const_base(1).and_then(|base| {
                 self.exact_increment_bounds_evidence(lower, &base)
@@ -1146,7 +1334,12 @@ impl PureFactContext {
         };
         let increment_strict_greater_from_strict_lower_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterThan(incremented, lower),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: incremented,
+                    right: lower,
+                },
                 true,
             ) => incremented.add_const_base(1).and_then(|base| {
                 self.exact_strict_increment_bounds_evidence(lower, &base).map(|bounds| {
@@ -1159,7 +1352,12 @@ impl PureFactContext {
         };
         let increment_preserves_order_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(incremented_lower, incremented_value),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: incremented_lower,
+                    right: incremented_value,
+                },
                 true,
             ) => incremented_lower
                 .add_const_base(1)
@@ -1174,8 +1372,18 @@ impl PureFactContext {
         // `0 <= value` conclusion closes either spelling.
         let positive_is_nonnegative_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(lower, value)
-                | ConditionTerm::Bitvector32SignedGreaterEqual(value, lower),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: lower,
+                    right: value,
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: value,
+                    right: lower,
+                },
                 true,
             ) if lower.as_ref() == &Bitvector32Term::Constant(0) => self
                 .exact_direct_order_step(&Bitvector32Term::Constant(0), value, true)
@@ -1185,11 +1393,21 @@ impl PureFactContext {
         };
         let successor_le_implies_lt_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(lower, value),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: lower,
+                    right: value,
+                },
                 true,
             )
             | Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterThan(value, lower),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: value,
+                    right: lower,
+                },
                 true,
             ) => match lower.as_ref() {
                 Bitvector32Term::Constant(lower_bits) => (*lower_bits as i32)
@@ -1209,7 +1427,12 @@ impl PureFactContext {
         };
         let constant_lower_bound_weakening_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(goal_lower, value),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: goal_lower,
+                    right: value,
+                },
                 true,
             ) => match goal_lower.as_ref() {
                 Bitvector32Term::Constant(goal_bits) => self
@@ -1232,7 +1455,12 @@ impl PureFactContext {
         };
         let negated_strict_successor_bound_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterEqual(value, lower),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: value,
+                    right: lower,
+                },
                 true,
             ) => match lower.as_ref() {
                 Bitvector32Term::Constant(lower_bits) => {
@@ -1260,7 +1488,12 @@ impl PureFactContext {
         };
         let positive_predecessor_is_nonnegative_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(lower, predecessor),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: lower,
+                    right: predecessor,
+                },
                 true,
             ) if lower.as_ref() == &Bitvector32Term::Constant(0) => {
                 exact_predecessor_base(predecessor).and_then(|value| {
@@ -1273,7 +1506,7 @@ impl PureFactContext {
         };
         let positive_predecessor_strictly_decreases_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(predecessor, value),
+                ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: predecessor, right: value },
                 true,
             ) => exact_predecessor_base(predecessor)
                 .filter(|base| base == value.as_ref())
@@ -1289,7 +1522,12 @@ impl PureFactContext {
         };
         let nonnegative_predecessor_upper_bound_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(predecessor, upper),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: predecessor,
+                    right: upper,
+                },
                 true,
             ) => exact_predecessor_base(predecessor).and_then(|value| {
                 let nonnegative =
@@ -1308,7 +1546,12 @@ impl PureFactContext {
         };
         let one_le_predecessor_is_nonnegative_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(lower, predecessor),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: lower,
+                    right: predecessor,
+                },
                 true,
             ) if lower.as_ref() == &Bitvector32Term::Constant(0) => {
                 exact_predecessor_base(predecessor).and_then(|value| {
@@ -1321,7 +1564,12 @@ impl PureFactContext {
         };
         let one_le_predecessor_strictly_decreases_evidence = match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(predecessor, value),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: predecessor,
+                    right: value,
+                },
                 true,
             ) => exact_predecessor_base(predecessor)
                 .filter(|base| base == value.as_ref())
@@ -1333,15 +1581,18 @@ impl PureFactContext {
             _ => None,
         };
         let equal_one_predecessor_is_zero_evidence = match proposition {
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
-                exact_predecessor_equal_zero_base(left, right).and_then(|value| {
-                    self.exact_bitvector_equality_path_evidence(
-                        &value,
-                        &Bitvector32Term::Constant(1),
-                    )
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) => exact_predecessor_equal_zero_base(left, right).and_then(|value| {
+                self.exact_bitvector_equality_path_evidence(&value, &Bitvector32Term::Constant(1))
                     .map(AtomicPropositionDerivationEvidence::Int32EqualOnePredecessorIsZero)
-                })
-            }
+            }),
             _ => None,
         };
         let forall_instantiation_evidence = self
@@ -1350,7 +1601,15 @@ impl PureFactContext {
                 AtomicPropositionDerivationEvidence::ForallInt32Instantiation(Box::new(evidence))
             });
         let pointer_word_evidence = match proposition {
-            Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), value) => {
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                value,
+            ) => {
                 let mut used = crate::kernel::eval::pointer_tags::UsedFacts::new();
                 self.decide_pointer_word_equality_citing(left, right, &mut used)
                     .filter(|decided| decided == value && used.complete)
@@ -1466,8 +1725,15 @@ impl PureFactContext {
         evidence: &AtomicPropositionDerivationEvidence,
     ) -> bool {
         if let AtomicPropositionDerivationEvidence::PointerWord(evidence) = evidence {
-            let Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), value) =
-                proposition
+            let Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                value,
+            ) = proposition
             else {
                 return false;
             };
@@ -1532,8 +1798,15 @@ impl PureFactContext {
             return evidence.checks(left, right, self);
         }
         if let AtomicPropositionDerivationEvidence::BitvectorEqualityPath(path) = evidence {
-            let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-                proposition
+            let Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) = proposition
             else {
                 return false;
             };
@@ -1651,7 +1924,12 @@ impl PureFactContext {
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementUpperBound(step) = evidence {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(incremented, upper),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: incremented,
+                    right: upper,
+                },
                 true,
             ) = proposition
             else {
@@ -1675,7 +1953,12 @@ impl PureFactContext {
             evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(incremented, goal_upper),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: incremented,
+                    right: goal_upper,
+                },
                 true,
             ) = proposition
             else {
@@ -1697,7 +1980,12 @@ impl PureFactContext {
         if let AtomicPropositionDerivationEvidence::Int32IncrementStrictlyIncreases(step) = evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(base, incremented),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: base,
+                    right: incremented,
+                },
                 true,
             ) = proposition
             else {
@@ -1724,7 +2012,12 @@ impl PureFactContext {
         }
         if let AtomicPropositionDerivationEvidence::Int32OnePlusStrictlyIncreases(step) = evidence {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(value, sum),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: value,
+                    right: sum,
+                },
                 true,
             ) = proposition
             else {
@@ -1744,7 +2037,12 @@ impl PureFactContext {
         if let AtomicPropositionDerivationEvidence::Int32IncrementBelowMaxIsDefined(step) = evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedAddOverflows(base, amount),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: base,
+                    right: amount,
+                },
                 false,
             ) = proposition
             else {
@@ -1765,7 +2063,12 @@ impl PureFactContext {
         }
         if let AtomicPropositionDerivationEvidence::Int32OnePlusBelowMaxIsDefined(step) = evidence {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedAddOverflows(one, value),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: one,
+                    right: value,
+                },
                 false,
             ) = proposition
             else {
@@ -1782,7 +2085,12 @@ impl PureFactContext {
             evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedAddOverflows(value, amount),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: value,
+                    right: amount,
+                },
                 false,
             ) = proposition
             else {
@@ -1806,7 +2114,12 @@ impl PureFactContext {
         ) = evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedSubtractOverflows(value, amount),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Subtract,
+                    left: value,
+                    right: amount,
+                },
                 false,
             ) = proposition
             else {
@@ -1823,7 +2136,12 @@ impl PureFactContext {
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementLowerBound(bounds) = evidence {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(lower, incremented),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: lower,
+                    right: incremented,
+                },
                 true,
             ) = proposition
             else {
@@ -1838,7 +2156,12 @@ impl PureFactContext {
             evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterEqual(incremented, lower),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: incremented,
+                    right: lower,
+                },
                 true,
             ) = proposition
             else {
@@ -1853,7 +2176,12 @@ impl PureFactContext {
             evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterThan(incremented, lower),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: incremented,
+                    right: lower,
+                },
                 true,
             ) = proposition
             else {
@@ -1869,7 +2197,12 @@ impl PureFactContext {
         ) = evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterThan(incremented, lower),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: incremented,
+                    right: lower,
+                },
                 true,
             ) = proposition
             else {
@@ -1883,7 +2216,12 @@ impl PureFactContext {
         if let AtomicPropositionDerivationEvidence::Int32IncrementPreservesOrder(bounds) = evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(incremented_lower, incremented_value),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: incremented_lower,
+                    right: incremented_value,
+                },
                 true,
             ) = proposition
             else {
@@ -1899,8 +2237,18 @@ impl PureFactContext {
         }
         if let AtomicPropositionDerivationEvidence::Int32PositiveIsNonnegative(step) = evidence {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(lower, value)
-                | ConditionTerm::Bitvector32SignedGreaterEqual(value, lower),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: lower,
+                    right: value,
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: value,
+                    right: lower,
+                },
                 true,
             ) = proposition
             else {
@@ -1915,11 +2263,21 @@ impl PureFactContext {
         if let AtomicPropositionDerivationEvidence::Int32SuccessorLeImpliesLt(step) = evidence {
             let (lower, value) = match proposition {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(lower, value),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left: lower,
+                        right: value,
+                    },
                     true,
                 )
                 | Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedGreaterThan(value, lower),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        left: value,
+                        right: lower,
+                    },
                     true,
                 ) => (lower, value),
                 _ => return false,
@@ -1939,7 +2297,12 @@ impl PureFactContext {
             evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(goal_lower, value),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: goal_lower,
+                    right: value,
+                },
                 true,
             ) = proposition
             else {
@@ -1959,7 +2322,12 @@ impl PureFactContext {
             evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterEqual(value, lower),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: value,
+                    right: lower,
+                },
                 true,
             ) = proposition
             else {
@@ -1978,10 +2346,7 @@ impl PureFactContext {
                 && matches!(
                     &step.premise,
                     Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedLessThan(
-                            premise_value,
-                            premise_upper,
-                        ),
+                        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: premise_value, right: premise_upper },
                         false,
                     ) if premise_value.as_ref() == value.as_ref()
                         && premise_upper.as_ref() == &step.lower
@@ -1992,7 +2357,12 @@ impl PureFactContext {
             evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(lower, predecessor),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: lower,
+                    right: predecessor,
+                },
                 true,
             ) = proposition
             else {
@@ -2012,7 +2382,12 @@ impl PureFactContext {
         ) = evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(predecessor, value),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: predecessor,
+                    right: value,
+                },
                 true,
             ) = proposition
             else {
@@ -2031,7 +2406,12 @@ impl PureFactContext {
             evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(predecessor, upper),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: predecessor,
+                    right: upper,
+                },
                 true,
             ) = proposition
             else {
@@ -2053,7 +2433,12 @@ impl PureFactContext {
             evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(lower, predecessor),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: lower,
+                    right: predecessor,
+                },
                 true,
             ) = proposition
             else {
@@ -2069,7 +2454,12 @@ impl PureFactContext {
             evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(predecessor, value),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: predecessor,
+                    right: value,
+                },
                 true,
             ) = proposition
             else {
@@ -2082,8 +2472,15 @@ impl PureFactContext {
         }
         if let AtomicPropositionDerivationEvidence::Int32EqualOnePredecessorIsZero(path) = evidence
         {
-            let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-                proposition
+            let Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) = proposition
             else {
                 return false;
             };
@@ -2098,8 +2495,15 @@ impl PureFactContext {
         }
         if let AtomicPropositionDerivationEvidence::Int32PinnedConstantEquality(evidence) = evidence
         {
-            let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-                proposition
+            let Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) = proposition
             else {
                 return false;
             };
@@ -2108,8 +2512,15 @@ impl PureFactContext {
         if let AtomicPropositionDerivationEvidence::Int32LeAndNotLtImpliesEquality(evidence) =
             evidence
         {
-            let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-                proposition
+            let Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) = proposition
             else {
                 return false;
             };
@@ -2125,8 +2536,15 @@ impl PureFactContext {
         if let AtomicPropositionDerivationEvidence::Int32GeAndNotGtImpliesEquality(evidence) =
             evidence
         {
-            let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-                proposition
+            let Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) = proposition
             else {
                 return false;
             };
@@ -2142,7 +2560,12 @@ impl PureFactContext {
         if let AtomicPropositionDerivationEvidence::Int32LeAndNeqImpliesStrict(evidence) = evidence
         {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(left, right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left,
+                    right,
+                },
                 true,
             ) = proposition
             else {
@@ -2251,17 +2674,21 @@ impl PureFactContext {
                     false,
                 ),
                 (
-                    ConditionTerm::Bitvector32SignedGreaterThan(
-                        Box::new(upper.clone()),
-                        Box::new(lower.clone()),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        left: Box::new(upper.clone()),
+                        right: Box::new(lower.clone()),
+                    },
                     true,
                 ),
                 (
-                    ConditionTerm::Bitvector32SignedGreaterEqual(
-                        Box::new(lower.clone()),
-                        Box::new(upper.clone()),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterEqual,
+                        left: Box::new(lower.clone()),
+                        right: Box::new(upper.clone()),
+                    },
                     false,
                 ),
             ]
@@ -2276,17 +2703,21 @@ impl PureFactContext {
                     false,
                 ),
                 (
-                    ConditionTerm::Bitvector32SignedGreaterEqual(
-                        Box::new(upper.clone()),
-                        Box::new(lower.clone()),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterEqual,
+                        left: Box::new(upper.clone()),
+                        right: Box::new(lower.clone()),
+                    },
                     true,
                 ),
                 (
-                    ConditionTerm::Bitvector32SignedGreaterThan(
-                        Box::new(lower.clone()),
-                        Box::new(upper.clone()),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        left: Box::new(lower.clone()),
+                        right: Box::new(upper.clone()),
+                    },
                     false,
                 ),
             ]
@@ -2324,7 +2755,12 @@ impl PureFactContext {
         let mut current = left;
         for step in path {
             let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(premise_left, premise_right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: premise_left,
+                    right: premise_right,
+                },
                 true,
             ) = &step.premise
             else {
@@ -2829,47 +3265,147 @@ impl PureFactContext {
         ) {
             match (pattern, target) {
                 (
-                    ConditionTerm::Bitvector32SignedLessThan(pattern_left, pattern_right),
-                    ConditionTerm::Bitvector32SignedLessThan(target_left, target_right),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left: pattern_left,
+                        right: pattern_right,
+                    },
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left: target_left,
+                        right: target_right,
+                    },
                 )
                 | (
-                    ConditionTerm::Bitvector32SignedLessEqual(pattern_left, pattern_right),
-                    ConditionTerm::Bitvector32SignedLessEqual(target_left, target_right),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        left: pattern_left,
+                        right: pattern_right,
+                    },
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        left: target_left,
+                        right: target_right,
+                    },
                 )
                 | (
-                    ConditionTerm::Bitvector32SignedGreaterThan(pattern_left, pattern_right),
-                    ConditionTerm::Bitvector32SignedGreaterThan(target_left, target_right),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        left: pattern_left,
+                        right: pattern_right,
+                    },
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        left: target_left,
+                        right: target_right,
+                    },
                 )
                 | (
-                    ConditionTerm::Bitvector32SignedGreaterEqual(pattern_left, pattern_right),
-                    ConditionTerm::Bitvector32SignedGreaterEqual(target_left, target_right),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterEqual,
+                        left: pattern_left,
+                        right: pattern_right,
+                    },
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterEqual,
+                        left: target_left,
+                        right: target_right,
+                    },
                 )
                 | (
-                    ConditionTerm::Bitvector32SignedAddOverflows(pattern_left, pattern_right),
-                    ConditionTerm::Bitvector32SignedAddOverflows(target_left, target_right),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: pattern_left,
+                        right: pattern_right,
+                    },
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: target_left,
+                        right: target_right,
+                    },
                 )
                 | (
-                    ConditionTerm::Bitvector32SignedSubtractOverflows(pattern_left, pattern_right),
-                    ConditionTerm::Bitvector32SignedSubtractOverflows(target_left, target_right),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Subtract,
+                        left: pattern_left,
+                        right: pattern_right,
+                    },
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Subtract,
+                        left: target_left,
+                        right: target_right,
+                    },
                 )
                 | (
-                    ConditionTerm::Bitvector32SignedMultiplyOverflows(pattern_left, pattern_right),
-                    ConditionTerm::Bitvector32SignedMultiplyOverflows(target_left, target_right),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Multiply,
+                        left: pattern_left,
+                        right: pattern_right,
+                    },
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Multiply,
+                        left: target_left,
+                        right: target_right,
+                    },
                 )
                 | (
-                    ConditionTerm::Bitvector32SignedDivideOverflows(pattern_left, pattern_right),
-                    ConditionTerm::Bitvector32SignedDivideOverflows(target_left, target_right),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Divide,
+                        left: pattern_left,
+                        right: pattern_right,
+                    },
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Divide,
+                        left: target_left,
+                        right: target_right,
+                    },
                 )
                 | (
-                    ConditionTerm::Bitvector32SignedShiftLeftOverflows(pattern_left, pattern_right),
-                    ConditionTerm::Bitvector32SignedShiftLeftOverflows(target_left, target_right),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::ShiftLeft,
+                        left: pattern_left,
+                        right: pattern_right,
+                    },
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::ShiftLeft,
+                        left: target_left,
+                        right: target_right,
+                    },
                 ) => {
                     collect_term_candidates(pattern_left, target_left, bound, candidates);
                     collect_term_candidates(pattern_right, target_right, bound, candidates);
                 }
                 (
-                    ConditionTerm::Bitvector32Equal(pattern_left, pattern_right),
-                    ConditionTerm::Bitvector32Equal(target_left, target_right),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: pattern_left,
+                        right: pattern_right,
+                    },
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: target_left,
+                        right: target_right,
+                    },
                 ) => {
                     collect_term_candidates(pattern_left, target_left, bound, candidates);
                     collect_term_candidates(pattern_right, target_right, bound, candidates);
@@ -2919,7 +3455,14 @@ impl PureFactContext {
         // need not match the requested condition. Keep its scalar candidates;
         // equality transport must match a bound occurrence instead of trying
         // every unrelated scalar as an array index.
-        if !matches!(condition, ConditionTerm::Bitvector32Equal(..)) {
+        if !matches!(
+            condition,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                ..
+            }
+        ) {
             let mut variables = BTreeSet::new();
             collect_condition_bitvector_variables(condition, &mut variables);
             candidates.extend(variables.into_iter().map(Bitvector32Term::Variable));
@@ -2947,8 +3490,18 @@ impl PureFactContext {
                 ConditionTerm::IntegerEqual(target_left, target_right),
             ) => fact_left == target_right && fact_right == target_left,
             (
-                ConditionTerm::Bitvector32Equal(fact_left, fact_right),
-                ConditionTerm::Bitvector32Equal(target_left, target_right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: fact_left,
+                    right: fact_right,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: target_left,
+                    right: target_right,
+                },
             ) => {
                 let fact_left = fact_left.as_ref();
                 let fact_right = fact_right.as_ref();
@@ -3016,8 +3569,18 @@ impl PureFactContext {
                         && self.pointer_offset_terms_snapshot_equivalent(fact_right, target_left)
             }
             (
-                ConditionTerm::Bitvector32SignedAddOverflows(fact_left, fact_right),
-                ConditionTerm::Bitvector32SignedAddOverflows(target_left, target_right),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: fact_left,
+                    right: fact_right,
+                },
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: target_left,
+                    right: target_right,
+                },
             ) => {
                 self.bitvector_terms_equal_for_transport(fact_left, target_left)
                     && self.bitvector_terms_equal_for_transport(fact_right, target_right)
@@ -3025,20 +3588,60 @@ impl PureFactContext {
                         && self.bitvector_terms_equal_for_transport(fact_right, target_left)
             }
             (
-                ConditionTerm::Bitvector32SignedLessThan(fact_left, fact_right),
-                ConditionTerm::Bitvector32SignedLessThan(target_left, target_right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: fact_left,
+                    right: fact_right,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: target_left,
+                    right: target_right,
+                },
             )
             | (
-                ConditionTerm::Bitvector32SignedLessEqual(fact_left, fact_right),
-                ConditionTerm::Bitvector32SignedLessEqual(target_left, target_right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: fact_left,
+                    right: fact_right,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: target_left,
+                    right: target_right,
+                },
             )
             | (
-                ConditionTerm::Bitvector32SignedGreaterThan(fact_left, fact_right),
-                ConditionTerm::Bitvector32SignedGreaterThan(target_left, target_right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: fact_left,
+                    right: fact_right,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: target_left,
+                    right: target_right,
+                },
             )
             | (
-                ConditionTerm::Bitvector32SignedGreaterEqual(fact_left, fact_right),
-                ConditionTerm::Bitvector32SignedGreaterEqual(target_left, target_right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: fact_left,
+                    right: fact_right,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: target_left,
+                    right: target_right,
+                },
             ) => self.comparison_sides_equal_for_transport(
                 fact_left,
                 fact_right,
@@ -3046,20 +3649,60 @@ impl PureFactContext {
                 target_right,
             ),
             (
-                ConditionTerm::Bitvector32SignedLessThan(fact_left, fact_right),
-                ConditionTerm::Bitvector32SignedGreaterThan(target_left, target_right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: fact_left,
+                    right: fact_right,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: target_left,
+                    right: target_right,
+                },
             )
             | (
-                ConditionTerm::Bitvector32SignedGreaterThan(fact_left, fact_right),
-                ConditionTerm::Bitvector32SignedLessThan(target_left, target_right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: fact_left,
+                    right: fact_right,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: target_left,
+                    right: target_right,
+                },
             )
             | (
-                ConditionTerm::Bitvector32SignedLessEqual(fact_left, fact_right),
-                ConditionTerm::Bitvector32SignedGreaterEqual(target_left, target_right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: fact_left,
+                    right: fact_right,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: target_left,
+                    right: target_right,
+                },
             )
             | (
-                ConditionTerm::Bitvector32SignedGreaterEqual(fact_left, fact_right),
-                ConditionTerm::Bitvector32SignedLessEqual(target_left, target_right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: fact_left,
+                    right: fact_right,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: target_left,
+                    right: target_right,
+                },
             ) => self.comparison_sides_equal_for_transport(
                 fact_left,
                 fact_right,
@@ -3478,7 +4121,15 @@ impl PureFactContext {
             }
             match (condition, value) {
                 (ConditionTerm::Constant(actual), expected) if actual != expected => return true,
-                (ConditionTerm::Bitvector32Equal(left, right), true) => {
+                (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left,
+                        right,
+                    },
+                    true,
+                ) => {
                     equal_facts.push((left.as_ref().clone(), right.as_ref().clone()));
                     let pair = if left <= right {
                         (left.as_ref().clone(), right.as_ref().clone())
@@ -3487,7 +4138,15 @@ impl PureFactContext {
                     };
                     exact_equal_pairs.insert(pair);
                 }
-                (ConditionTerm::Bitvector32Equal(left, right), false) => {
+                (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left,
+                        right,
+                    },
+                    false,
+                ) => {
                     disequal_facts.push((left.as_ref().clone(), right.as_ref().clone()));
                     let pair = if left <= right {
                         (left.as_ref().clone(), right.as_ref().clone())
@@ -3957,27 +4616,36 @@ mod annotated_alignment_conflict_tests {
         // An address's class is not part of its identity, so the classed
         // spelling is the same term as the bare one and cannot hide a fact.
         assert_eq!(
-            ConditionTerm::Bitvector64Equal(
-                Box::new(masked_address.clone()),
-                Box::new(zero.clone())
-            ),
-            ConditionTerm::Bitvector64Equal(
-                Box::new(Bitvector32Term::uint64_bitwise_and(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(masked_address.clone()),
+                right: Box::new(zero.clone())
+            },
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::uint64_bitwise_and(
                     Bitvector32Term::object_pointer_address(
                         Pointer::symbolic(Variable(970_001)),
                         None,
                     ),
                     Bitvector32Term::UInt64Constant(7),
                 )),
-                Box::new(zero.clone()),
-            ),
+                right: Box::new(zero.clone())
+            },
         );
         // The context's same-key insertion replaces its prior value. Admit
         // a distinct spelling (operands swapped) to exercise congruence
         // conflict handling; the factory's canonical spelling was checked
         // above.
         let not_aligned = Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(Box::new(zero), Box::new(masked_address)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(zero),
+                right: Box::new(masked_address),
+            },
             false,
         );
         let base = PureFactContext::new().assume_proposition(aligned.clone());

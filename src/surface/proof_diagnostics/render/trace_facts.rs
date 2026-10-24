@@ -1,5 +1,7 @@
 //! Typed diagnostic forms for facts without an exact source spelling.
 use super::*;
+#[cfg(test)]
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl Renderer<'_> {
     pub(super) fn resource_arguments(&mut self, arguments: &[AlgebraicValue]) {
@@ -172,26 +174,30 @@ mod tests {
         let facts = [
             (
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector64Equal(
-                        Box::new(Bitvector32Term::UInt64BitwiseAnd(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::UInt64BitwiseAnd(
                             Box::new(word),
                             Box::new(Bitvector32Term::UInt64Constant(1)),
                         )),
-                        Box::new(Bitvector32Term::UInt64Constant(0)),
-                    ),
+                        right: Box::new(Bitvector32Term::UInt64Constant(0)),
+                    },
                     true,
                 ),
                 "read<Bits64>",
             ),
             (
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::ClickFunctionApplication {
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::ClickFunctionApplication {
                             name: "rb_root_black".into(),
                             arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
                         }),
-                        Box::new(Bitvector32Term::Constant(1)),
-                    ),
+                        right: Box::new(Bitvector32Term::Constant(1)),
+                    },
                     true,
                 ),
                 "rb_root_black(",

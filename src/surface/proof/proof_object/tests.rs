@@ -3,6 +3,7 @@
 // calls it, so the tests import the planner explicitly.
 use super::*;
 use crate::kernel::proof::quantified_equivalence_index_key;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{IntegerRangeFoldIndex, IntegerTerm, LoweringIntroduction, SharedIntegerTerm};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::{ArithmeticCertificateFamily, IntegerCertificateNode, SignedArithmeticStep};
@@ -18,10 +19,12 @@ const STRUCTURAL_PROOF_FACT_SIZES: [u32; 5] = [16, 64, 256, 1024, 2048];
 
 fn indexed_fact(index: u32) -> Proposition {
     Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessThan(
-            Box::new(Bitvector32Term::Variable(Variable(0))),
-            Box::new(Bitvector32Term::Constant(index)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(Bitvector32Term::Variable(Variable(0))),
+            right: Box::new(Bitvector32Term::Constant(index)),
+        },
         true,
     )
 }
@@ -129,17 +132,21 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
         .with_local("__rust_checked_94", CValue::UInt64(size.clone()));
     let remainder = Bitvector32Term::uint64_remainder(len, size.clone());
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector64Equal(
-            Box::new(remainder.clone()),
-            Box::new(Bitvector32Term::UInt64Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: Box::new(remainder.clone()),
+            right: Box::new(Bitvector32Term::UInt64Constant(0)),
+        },
         true,
     );
     let facts = [Proposition::ConditionIs(
-        ConditionTerm::Bitvector64Equal(
-            Box::new(size),
-            Box::new(Bitvector32Term::UInt64Constant(22208)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: Box::new(size),
+            right: Box::new(Bitvector32Term::UInt64Constant(22208)),
+        },
         true,
     )];
     let surface = ClickProposition::Comparison {
@@ -188,10 +195,12 @@ fn missing_assumption_side_uses_recorded_names_in_fixed_state_errors() {
     let entry = CState::new().with_local("remaining", CValue::UInt64(before.clone()));
     let state = CState::new().with_local("remaining", CValue::UInt64(after.clone()));
     let side = Proposition::ConditionIs(
-        ConditionTerm::Bitvector64UnsignedLessThan(
-            Box::new(before.clone()),
-            Box::new(after.clone()),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left: Box::new(before.clone()),
+            right: Box::new(after.clone()),
+        },
         true,
     );
     let goal = Proposition::And(Box::new(side.clone()), Box::new(side));
@@ -333,17 +342,21 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
         body: Box::new(Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessEqual(
-                        Box::new(Bitvector32Term::Constant(0)),
-                        Box::new(Bitvector32Term::Variable(Variable(30))),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        left: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::Variable(Variable(30))),
+                    },
                     true,
                 )),
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessEqual(
-                        Box::new(Bitvector32Term::Variable(Variable(30))),
-                        Box::new(Bitvector32Term::Constant(16)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        left: Box::new(Bitvector32Term::Variable(Variable(30))),
+                        right: Box::new(Bitvector32Term::Constant(16)),
+                    },
                     true,
                 )),
             )),
@@ -386,10 +399,12 @@ fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
     let comparison = |left: Bitvector32Term, right: Bitvector32Term| {
         (
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(
-                    Box::new(left.clone()),
-                    Box::new(right.clone()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: Box::new(left.clone()),
+                    right: Box::new(right.clone()),
+                },
                 true,
             ),
             ClickProposition::Comparison {
@@ -860,14 +875,16 @@ fn both_and_preserves_exact_binders_and_saved_snapshots() {
         var: Variable(binder),
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(Bitvector32Term::MemoryLoad(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(Bitvector32Term::MemoryLoad(
                     memory.clone().into(),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Bits32,
                 )),
-                Box::new(Bitvector32Term::Variable(Variable(binder))),
-            ),
+                right: Box::new(Bitvector32Term::Variable(Variable(binder))),
+            },
             true,
         )),
     };
@@ -1744,10 +1761,12 @@ fn have_scope_rejects_mismatched_reported_goal_transactionally() {
     let scope = root.begin_have(surface).expect("have should open");
     let before = scope.body().clone();
     let wrong = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Constant(0)),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         true,
     );
     let error = match scope.with_reported_goal_introductions(&wrong, Some(Vec::new())) {
@@ -1818,10 +1837,12 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
         var: Variable(8_765_432),
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(8_765_432))),
-                Box::new(Bitvector32Term::Constant(7)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(8_765_432))),
+                right: Box::new(Bitvector32Term::Constant(7)),
+            },
             true,
         )),
     };
@@ -2283,30 +2304,41 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
     let left = Bitvector32Term::Variable(Variable(80_000));
     let right = Bitvector32Term::Variable(Variable(80_001));
     let available = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessThan(Box::new(left.clone()), Box::new(right.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(left.clone()),
+            right: Box::new(right.clone()),
+        },
         true,
     );
     let facts = ProofFacts::from_ordered(&[available]);
     for required in [
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(
-                Box::new(left.clone()),
-                Box::new(right.clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(left.clone()),
+                right: Box::new(right.clone()),
+            },
             false,
         ),
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(right.clone()),
-                Box::new(left.clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(right.clone()),
+                right: Box::new(left.clone()),
+            },
             false,
         ),
         Proposition::Not(Box::new(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterThan(
-                Box::new(right.clone()),
-                Box::new(left.clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: Box::new(right.clone()),
+                right: Box::new(left.clone()),
+            },
             false,
         ))),
     ] {
@@ -2346,10 +2378,12 @@ fn outcome_fact_deltas_share_ambient_facts_and_preserve_unfold_provenance() {
         var: Variable(index),
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(index))),
-                Box::new(Bitvector32Term::Variable(Variable(index))),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(index))),
+                right: Box::new(Bitvector32Term::Variable(Variable(index))),
+            },
             true,
         )),
     };
@@ -3052,10 +3086,12 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
     let theorem_environment = TheoremEnvironment::new(&[]);
     let variable = Variable(9_000_000);
     let expected = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(variable)),
-            Box::new(Bitvector32Term::Constant(7)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(variable)),
+            right: Box::new(Bitvector32Term::Constant(7)),
+        },
         true,
     );
     let goal = Proposition::Exists {
@@ -3259,10 +3295,12 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         var: source_variable,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(source_variable)),
-                Box::new(Bitvector32Term::Constant(7)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(source_variable)),
+                right: Box::new(Bitvector32Term::Constant(7)),
+            },
             true,
         )),
     };
@@ -3272,10 +3310,12 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         var: goal_variable,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(goal_variable)),
-                Box::new(Bitvector32Term::Constant(7)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(goal_variable)),
+                right: Box::new(Bitvector32Term::Constant(7)),
+            },
             true,
         )),
     };
@@ -3851,10 +3891,12 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         var: variable,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(variable)),
-                Box::new(Bitvector32Term::Variable(variable)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(variable)),
+                right: Box::new(Bitvector32Term::Variable(variable)),
+            },
             true,
         )),
     };
@@ -6167,20 +6209,24 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
     let named = [selected_term.clone()];
     let named_values = named_int32_values(&named);
     let equality_fact = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(selected_term.clone()),
-            Box::new(Bitvector32Term::Constant(2)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(selected_term.clone()),
+            right: Box::new(Bitvector32Term::Constant(2)),
+        },
         true,
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Subtract(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Subtract(
                 Box::new(selected_term.clone()),
                 Box::new(Bitvector32Term::Constant(1)),
             )),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         true,
     );
     let equality_surface = ClickProposition::Comparison {
@@ -6201,12 +6247,14 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
         let mut facts = (0..size)
             .map(|index| {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Variable(Variable(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Variable(Variable(
                             9_000_000 + u64::from(index),
                         ))),
-                        Box::new(Bitvector32Term::Constant(10_000 + index)),
-                    ),
+                        right: Box::new(Bitvector32Term::Constant(10_000 + index)),
+                    },
                     true,
                 )
             })
@@ -6274,7 +6322,12 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     let zero = Bitvector32Term::Constant(0);
     let equality = |term: &Bitvector32Term| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(term.clone()), Box::new(zero.clone())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(term.clone()),
+                right: Box::new(zero.clone()),
+            },
             true,
         )
     };
@@ -6284,13 +6337,15 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
         right: ContractExpression::CFragment(CExpression::Value(int32(0))),
     };
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Add(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Add(
                 Box::new(left.clone()),
                 Box::new(right.clone()),
             )),
-            Box::new(zero.clone()),
-        ),
+            right: Box::new(zero.clone()),
+        },
         true,
     );
     let goal_surface = ClickProposition::Comparison {
@@ -6308,12 +6363,14 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
         let mut facts = (0..size)
             .map(|index| {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Variable(Variable(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Variable(Variable(
                             9_100_000 + u64::from(index),
                         ))),
-                        Box::new(Bitvector32Term::Constant(20_000 + index)),
-                    ),
+                        right: Box::new(Bitvector32Term::Constant(20_000 + index)),
+                    },
                     true,
                 )
             })
@@ -6631,10 +6688,12 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
     };
     let premises = surfaces.iter().map(lower).collect::<Vec<_>>();
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Add(Box::new(left), Box::new(right))),
-            Box::new(Bitvector32Term::Constant(2)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Add(Box::new(left), Box::new(right))),
+            right: Box::new(Bitvector32Term::Constant(2)),
+        },
         true,
     );
     let mut surface_propositions = SurfacePropositionMap::default();
@@ -11201,10 +11260,12 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
     // cursor path that records metadata immediately before advancing the
     // selected successor.
     let selecting_fact = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessThan(
-            Box::new(Bitvector32Term::Variable(Variable(60_001))),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(Bitvector32Term::Variable(Variable(60_001))),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     let selected_root = Proof::for_execution_frontier(
@@ -13857,14 +13918,21 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
     let left = Bitvector32Term::Variable(Variable(9_104_000));
     let right = Bitvector32Term::Variable(Variable(9_104_001));
     let equality = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left.clone()), Box::new(right.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left.clone()),
+            right: Box::new(right.clone()),
+        },
         true,
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(left.clone()),
-            Box::new(Bitvector32Term::Constant(7)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left.clone()),
+            right: Box::new(Bitvector32Term::Constant(7)),
+        },
         true,
     );
     let surface = ClickProposition::Comparison {
@@ -14004,10 +14072,12 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
     )
     .unwrap();
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(left.clone()),
-            Box::new(Bitvector32Term::Constant(7)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left.clone()),
+            right: Box::new(Bitvector32Term::Constant(7)),
+        },
         true,
     );
     let surface = equal("chosen", "right");
@@ -14108,11 +14178,21 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
         CExpression::Value(CValue::Int32(right.clone())),
     ];
     let facts = vec![Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left.clone()), Box::new(right.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left.clone()),
+            right: Box::new(right.clone()),
+        },
         true,
     )];
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(Bitvector32Term::Constant(7))),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(Bitvector32Term::Constant(7)),
+        },
         true,
     );
     let surface_goal = |name: &str| ClickProposition::Comparison {

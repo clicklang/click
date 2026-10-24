@@ -14,6 +14,7 @@
 //! caller already reached.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::proof_diagnostics::render;
 
@@ -357,24 +358,42 @@ fn conversion_bound(
 /// The machine operation a signed-overflow guard is about.
 fn overflowing_operation(condition: &ConditionTerm) -> Option<Bitvector32Term> {
     match condition {
-        ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
-            Some(Bitvector32Term::Add(left.clone(), right.clone()))
-        }
-        ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => {
-            Some(Bitvector32Term::Subtract(left.clone(), right.clone()))
-        }
-        ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => {
-            Some(Bitvector32Term::Multiply(left.clone(), right.clone()))
-        }
-        ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
-            Some(Bitvector32Term::Int64Add(left.clone(), right.clone()))
-        }
-        ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => {
-            Some(Bitvector32Term::Int64Subtract(left.clone(), right.clone()))
-        }
-        ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => {
-            Some(Bitvector32Term::Int64Multiply(left.clone(), right.clone()))
-        }
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left,
+            right,
+        } => Some(Bitvector32Term::Add(left.clone(), right.clone())),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            left,
+            right,
+        } => Some(Bitvector32Term::Subtract(left.clone(), right.clone())),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Multiply,
+            left,
+            right,
+        } => Some(Bitvector32Term::Multiply(left.clone(), right.clone())),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Add,
+            left,
+            right,
+        } => Some(Bitvector32Term::Int64Add(left.clone(), right.clone())),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Subtract,
+            left,
+            right,
+        } => Some(Bitvector32Term::Int64Subtract(left.clone(), right.clone())),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Multiply,
+            left,
+            right,
+        } => Some(Bitvector32Term::Int64Multiply(left.clone(), right.clone())),
         _ => None,
     }
 }
@@ -382,7 +401,15 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<Bitvector32Term> {
 /// The cell read by the equation naming one memory read, when this condition
 /// is such an equation.
 fn load_definition_cell(condition: &Proposition) -> Option<&Pointer> {
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = condition
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
+        true,
+    ) = condition
     else {
         return None;
     };

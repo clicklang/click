@@ -1,4 +1,6 @@
 use super::*;
+use crate::kernel::MachineIntegerType;
+use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{PureFactContext, Variable};
 
 thread_local! {
@@ -32,7 +34,12 @@ fn le(a: &Bitvector32Term, b: &Bitvector32Term) -> ConditionTerm {
 }
 
 fn add_overflows(a: &Bitvector32Term, b: &Bitvector32Term) -> ConditionTerm {
-    ConditionTerm::Bitvector32SignedAddOverflows(Box::new(a.clone()), Box::new(b.clone()))
+    ConditionTerm::Overflows {
+        format: MachineIntegerType::Int32,
+        op: OverflowOperation::Add,
+        left: Box::new(a.clone()),
+        right: Box::new(b.clone()),
+    }
 }
 
 fn graph(facts: &[(ConditionTerm, bool)]) -> DifferenceGraph {
@@ -113,13 +120,19 @@ fn unsigned_conversion_keeps_a_nonnegative_value() {
     let i = variable(0);
     let wide = Bitvector32Term::UInt64From32(Box::new(i.clone()));
     let length = variable(1);
-    let below =
-        ConditionTerm::Bitvector64UnsignedLessThan(Box::new(wide), Box::new(length.clone()));
+    let below = ConditionTerm::Compare {
+        format: MachineIntegerType::UInt64,
+        relation: CompareRelation::LessThan,
+        left: Box::new(wide),
+        right: Box::new(length.clone()),
+    };
     let graph = graph(&[(le(&constant(0), &i), true), (below, true)]);
-    let length_positive = ConditionTerm::Bitvector64UnsignedLessThan(
-        Box::new(Bitvector32Term::UInt64Constant(0)),
-        Box::new(length),
-    );
+    let length_positive = ConditionTerm::Compare {
+        format: MachineIntegerType::UInt64,
+        relation: CompareRelation::LessThan,
+        left: Box::new(Bitvector32Term::UInt64Constant(0)),
+        right: Box::new(length),
+    };
     assert_eq!(graph.decide(&length_positive), Some(true));
 }
 
@@ -359,16 +372,56 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
         let v = |term: &Bitvector32Term| value(term, &variables, model);
         match condition {
             ConditionTerm::Constant(value) => *value,
-            ConditionTerm::Bitvector32SignedLessThan(a, b) => v(a) < v(b),
-            ConditionTerm::Bitvector32SignedLessEqual(a, b) => v(a) <= v(b),
-            ConditionTerm::Bitvector32Equal(a, b) => v(a) == v(b),
-            ConditionTerm::Bitvector32SignedAddOverflows(a, b) => v(a).overflowing_add(v(b)).1,
-            ConditionTerm::Bitvector32SignedSubtractOverflows(a, b) => v(a).overflowing_sub(v(b)).1,
-            ConditionTerm::Bitvector32SignedDivideOverflows(a, b) => v(a) == i32::MIN && v(b) == -1,
-            ConditionTerm::Bitvector32SignedMultiplyOverflows(a, b) => v(a).overflowing_mul(v(b)).1,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            } => v(a) < v(b),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            } => v(a) <= v(b),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            } => v(a) == v(b),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: a,
+                right: b,
+            } => v(a).overflowing_add(v(b)).1,
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Subtract,
+                left: a,
+                right: b,
+            } => v(a).overflowing_sub(v(b)).1,
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Divide,
+                left: a,
+                right: b,
+            } => v(a) == i32::MIN && v(b) == -1,
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Multiply,
+                left: a,
+                right: b,
+            } => v(a).overflowing_mul(v(b)).1,
             // As `ConditionTerm::signed_shift_left_overflows` folds
             // constants; the graph answers only counts in `0..32`.
-            ConditionTerm::Bitvector32SignedShiftLeftOverflows(a, b) => {
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::ShiftLeft,
+                left: a,
+                right: b,
+            } => {
                 let count = v(b);
                 (0..32).contains(&count)
                     && v(a) >= 0
@@ -381,15 +434,41 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
     // and `b`.
     let holds_between = |condition: &ConditionTerm, a: i32, b: i32| -> bool {
         match condition {
-            ConditionTerm::Bitvector32SignedLessThan(..) => a < b,
-            ConditionTerm::Bitvector32Equal(..) => a == b,
-            ConditionTerm::Bitvector32SignedAddOverflows(..) => a.overflowing_add(b).1,
-            ConditionTerm::Bitvector32SignedSubtractOverflows(..) => a.overflowing_sub(b).1,
-            ConditionTerm::Bitvector32SignedDivideOverflows(..) => a == i32::MIN && b == -1,
-            ConditionTerm::Bitvector32SignedMultiplyOverflows(..) => a.overflowing_mul(b).1,
-            ConditionTerm::Bitvector32SignedShiftLeftOverflows(..) => {
-                (0..32).contains(&b) && a >= 0 && (i64::from(a) << b) > i64::from(i32::MAX)
-            }
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                ..
+            } => a < b,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                ..
+            } => a == b,
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                ..
+            } => a.overflowing_add(b).1,
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Subtract,
+                ..
+            } => a.overflowing_sub(b).1,
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Divide,
+                ..
+            } => a == i32::MIN && b == -1,
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Multiply,
+                ..
+            } => a.overflowing_mul(b).1,
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::ShiftLeft,
+                ..
+            } => (0..32).contains(&b) && a >= 0 && (i64::from(a) << b) > i64::from(i32::MAX),
             other => unreachable!("{other:?}"),
         }
     };
@@ -416,10 +495,12 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
                 0 => lt(a, &constants[next(constants.len())]),
                 1 => le(&constants[next(constants.len())], a),
                 2 => ConditionTerm::equal(variables[next(3)].clone(), constants[next(5)].clone()),
-                _ => ConditionTerm::Bitvector32SignedAddOverflows(
-                    boxed(a),
-                    boxed(&pool[next(pool.len())]),
-                ),
+                _ => ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: boxed(a),
+                    right: boxed(&pool[next(pool.len())]),
+                },
             };
             facts.push((fact, next(3) != 0));
         }
@@ -456,13 +537,48 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
             for (b_index, b) in operands.iter().enumerate() {
                 let (a, b) = (boxed(a), boxed(b));
                 for query in [
-                    ConditionTerm::Bitvector32SignedAddOverflows(a.clone(), b.clone()),
-                    ConditionTerm::Bitvector32SignedSubtractOverflows(a.clone(), b.clone()),
-                    ConditionTerm::Bitvector32SignedDivideOverflows(a.clone(), b.clone()),
-                    ConditionTerm::Bitvector32SignedMultiplyOverflows(a.clone(), b.clone()),
-                    ConditionTerm::Bitvector32SignedShiftLeftOverflows(a.clone(), b.clone()),
-                    ConditionTerm::Bitvector32Equal(a.clone(), b.clone()),
-                    ConditionTerm::Bitvector32SignedLessThan(a.clone(), b.clone()),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: a.clone(),
+                        right: b.clone(),
+                    },
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Subtract,
+                        left: a.clone(),
+                        right: b.clone(),
+                    },
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Divide,
+                        left: a.clone(),
+                        right: b.clone(),
+                    },
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Multiply,
+                        left: a.clone(),
+                        right: b.clone(),
+                    },
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::ShiftLeft,
+                        left: a.clone(),
+                        right: b.clone(),
+                    },
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: a.clone(),
+                        right: b.clone(),
+                    },
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left: a.clone(),
+                        right: b.clone(),
+                    },
                 ] {
                     let Some(answer) = graph.decide(&query) else {
                         continue;
@@ -490,8 +606,18 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
 fn a_disequality_at_a_range_end_tightens_it() {
     let (x, y) = (variable(0), variable(1));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let divide = ConditionTerm::Bitvector32SignedDivideOverflows(boxed(&x), boxed(&y));
-    let negate = ConditionTerm::Bitvector32SignedSubtractOverflows(boxed(&constant(0)), boxed(&x));
+    let divide = ConditionTerm::Overflows {
+        format: MachineIntegerType::Int32,
+        op: OverflowOperation::Divide,
+        left: boxed(&x),
+        right: boxed(&y),
+    };
+    let negate = ConditionTerm::Overflows {
+        format: MachineIntegerType::Int32,
+        op: OverflowOperation::Subtract,
+        left: boxed(&constant(0)),
+        right: boxed(&x),
+    };
     assert_eq!(graph(&[]).decide(&divide), None);
     let not_min = graph(&[(ConditionTerm::equal(x.clone(), constant(i32::MIN)), false)]);
     assert_eq!(not_min.decide(&negate), Some(false));
@@ -536,10 +662,12 @@ fn a_named_compound_term_keeps_its_operands_bounds() {
         (le(&constant(0), &x), true),
     ]);
     assert_eq!(
-        graph.decide(&ConditionTerm::Bitvector32SignedSubtractOverflows(
-            boxed(&difference),
-            boxed(&constant(1))
-        )),
+        graph.decide(&ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            left: boxed(&difference),
+            right: boxed(&constant(1))
+        }),
         Some(false)
     );
 }
@@ -552,45 +680,63 @@ fn overflow_facts_shifts_and_products_are_read() {
     let (x, y) = (variable(0), variable(1));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
     let recorded = graph(&[(
-        ConditionTerm::Bitvector32SignedAddOverflows(boxed(&x), boxed(&y)),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: boxed(&x),
+            right: boxed(&y),
+        },
         false,
     )]);
     assert_eq!(
-        recorded.decide(&ConditionTerm::Bitvector32SignedAddOverflows(
-            boxed(&y),
-            boxed(&x)
-        )),
+        recorded.decide(&ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: boxed(&y),
+            right: boxed(&x)
+        }),
         Some(false)
     );
     let alias = variable(2);
     let renamed = graph(&[
         (
-            ConditionTerm::Bitvector32SignedAddOverflows(boxed(&x), boxed(&y)),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: boxed(&x),
+                right: boxed(&y),
+            },
             false,
         ),
         (ConditionTerm::equal(alias.clone(), x.clone()), true),
     ]);
     assert_eq!(
-        renamed.decide(&ConditionTerm::Bitvector32SignedAddOverflows(
-            boxed(&alias),
-            boxed(&y)
-        )),
+        renamed.decide(&ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: boxed(&alias),
+            right: boxed(&y)
+        }),
         Some(false)
     );
     let byte = graph(&[(le(&constant(0), &x), true), (le(&x, &constant(255)), true)]);
     assert_eq!(
-        byte.decide(&ConditionTerm::Bitvector32SignedShiftLeftOverflows(
-            boxed(&x),
-            boxed(&constant(1))
-        )),
+        byte.decide(&ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::ShiftLeft,
+            left: boxed(&x),
+            right: boxed(&constant(1))
+        }),
         Some(false)
     );
     let doubled = Bitvector32Term::Multiply(boxed(&x), boxed(&constant(2)));
     assert_eq!(
-        byte.decide(&ConditionTerm::Bitvector32SignedSubtractOverflows(
-            boxed(&doubled),
-            boxed(&constant(1))
-        )),
+        byte.decide(&ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            left: boxed(&doubled),
+            right: boxed(&constant(1))
+        }),
         Some(false)
     );
 }
@@ -659,8 +805,12 @@ fn an_int64_division_guard_needs_a_nonzero_divisor() {
         ConditionTerm::int64_signed_less_equal(int64(0), d.clone()),
         true,
     )]);
-    let divide =
-        ConditionTerm::Bitvector64SignedDivideOverflows(Box::new(n.clone()), Box::new(d.clone()));
+    let divide = ConditionTerm::Overflows {
+        format: MachineIntegerType::Int64,
+        op: OverflowOperation::Divide,
+        left: Box::new(n.clone()),
+        right: Box::new(d.clone()),
+    };
     assert_eq!(nonnegative.decide(&divide), None);
     let zero = graph(&[(ConditionTerm::int64_equal(d.clone(), int64(0)), true)]);
     assert_eq!(zero.decide(&divide), None);
@@ -679,10 +829,12 @@ fn an_int64_division_guard_needs_a_nonzero_divisor() {
     assert_eq!(nonzero.decide(&divide), Some(false));
     let int32 = graph(&[(le(&constant(0), &d), true)]);
     assert_eq!(
-        int32.decide(&ConditionTerm::Bitvector32SignedDivideOverflows(
-            Box::new(n),
-            Box::new(d)
-        )),
+        int32.decide(&ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Divide,
+            left: Box::new(n),
+            right: Box::new(d)
+        }),
         Some(false)
     );
 }
@@ -769,8 +921,11 @@ fn a_zero_extension_reads_its_operands_bounds() {
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
     let wide = |term: &Bitvector32Term| T::Int64FromUInt32(boxed(term));
     let sum = |a: &Bitvector32Term, b: &Bitvector32Term| T::Int64Add(boxed(a), boxed(b));
-    let at_most = |a: &Bitvector32Term, k: i64| {
-        ConditionTerm::Bitvector64SignedLessEqual(boxed(a), Box::new(T::Int64Constant(k)))
+    let at_most = |a: &Bitvector32Term, k: i64| ConditionTerm::Compare {
+        format: MachineIntegerType::Int64,
+        relation: CompareRelation::LessEqual,
+        left: boxed(a),
+        right: Box::new(T::Int64Constant(k)),
     };
     let bounded = graph(&[
         (le(&constant(0), &x), true),
@@ -815,25 +970,50 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
     let (x, y) = (variable(0), variable(1));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
     let quotient = T::UInt64Divide(Box::new(T::UInt64Constant(u64::MAX)), boxed(&y));
-    let fits = ConditionTerm::Bitvector64UnsignedLessEqual(boxed(&x), Box::new(quotient));
+    let fits = ConditionTerm::Compare {
+        format: MachineIntegerType::UInt64,
+        relation: CompareRelation::LessEqual,
+        left: boxed(&x),
+        right: Box::new(quotient),
+    };
     let pinned = graph(&[
         (
-            ConditionTerm::Bitvector64Equal(boxed(&x), Box::new(T::UInt64Constant(1 << 32))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: boxed(&x),
+                right: Box::new(T::UInt64Constant(1 << 32)),
+            },
             true,
         ),
         (
-            ConditionTerm::Bitvector64Equal(boxed(&y), Box::new(T::UInt64Constant(1 << 31))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: boxed(&y),
+                right: Box::new(T::UInt64Constant(1 << 31)),
+            },
             true,
         ),
     ]);
     assert_eq!(pinned.decide(&fits), Some(true));
     let overflowing = graph(&[
         (
-            ConditionTerm::Bitvector64Equal(boxed(&x), Box::new(T::UInt64Constant(1 << 33))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: boxed(&x),
+                right: Box::new(T::UInt64Constant(1 << 33)),
+            },
             true,
         ),
         (
-            ConditionTerm::Bitvector64Equal(boxed(&y), Box::new(T::UInt64Constant(1 << 31))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: boxed(&y),
+                right: Box::new(T::UInt64Constant(1 << 31)),
+            },
             true,
         ),
     ]);
@@ -851,14 +1031,19 @@ fn a_constant_mask_bounds_an_unsigned_value() {
     let x = variable(0);
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
     let low_half = T::UInt64BitwiseAnd(boxed(&x), Box::new(T::UInt64Constant(65535)));
-    let at_least = |k| {
-        ConditionTerm::Bitvector64UnsignedLessEqual(
-            Box::new(T::UInt64Constant(k)),
-            Box::new(low_half.clone()),
-        )
+    let at_least = |k| ConditionTerm::Compare {
+        format: MachineIntegerType::UInt64,
+        relation: CompareRelation::LessEqual,
+        left: Box::new(T::UInt64Constant(k)),
+        right: Box::new(low_half.clone()),
     };
     let one = graph(&[(
-        ConditionTerm::Bitvector64Equal(boxed(&x), Box::new(T::UInt64Constant(65537))),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: boxed(&x),
+            right: Box::new(T::UInt64Constant(65537)),
+        },
         true,
     )]);
     assert_eq!(one.decide(&at_least(65521)), Some(false));
@@ -880,14 +1065,19 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
     let x = variable(0);
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
     let all_ones = graph(&[(
-        ConditionTerm::Bitvector64Equal(boxed(&x), Box::new(T::UInt64Constant(u64::MAX))),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: boxed(&x),
+            right: Box::new(T::UInt64Constant(u64::MAX)),
+        },
         true,
     )]);
-    let increment_overflows = |value: &Bitvector32Term| {
-        ConditionTerm::Bitvector64SignedAddOverflows(
-            Box::new(value.clone()),
-            Box::new(T::Int64Constant(1)),
-        )
+    let increment_overflows = |value: &Bitvector32Term| ConditionTerm::Overflows {
+        format: MachineIntegerType::Int64,
+        op: OverflowOperation::Add,
+        left: Box::new(value.clone()),
+        right: Box::new(T::Int64Constant(1)),
     };
     assert_eq!(all_ones.decide(&increment_overflows(&x)), Some(false));
     let cast = T::MachineIntegerCast {
@@ -899,7 +1089,12 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
     // The largest signed value is its own unsigned reading, and its
     // increment overflows: nothing says otherwise.
     let largest = graph(&[(
-        ConditionTerm::Bitvector64Equal(boxed(&x), Box::new(T::UInt64Constant(i64::MAX as u64))),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: boxed(&x),
+            right: Box::new(T::UInt64Constant(i64::MAX as u64)),
+        },
         true,
     )]);
     assert_eq!(largest.decide(&increment_overflows(&x)), None);
@@ -916,11 +1111,21 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
     let pinned = graph(&[
         (
-            ConditionTerm::Bitvector64Equal(boxed(&n), Box::new(T::Int64Constant(7))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: boxed(&n),
+                right: Box::new(T::Int64Constant(7)),
+            },
             true,
         ),
         (
-            ConditionTerm::Bitvector32Equal(boxed(&d), Box::new(T::Constant(3))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: boxed(&d),
+                right: Box::new(T::Constant(3)),
+            },
             true,
         ),
     ]);
@@ -929,10 +1134,12 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         boxed(&n),
         Box::new(divisor.clone()),
     )));
-    let positive = ConditionTerm::Bitvector32SignedGreaterThan(
-        Box::new(remainder.clone()),
-        Box::new(T::Constant(0)),
-    );
+    let positive = ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::GreaterThan,
+        left: Box::new(remainder.clone()),
+        right: Box::new(T::Constant(0)),
+    };
     assert_eq!(pinned.decide(&positive), Some(true));
     let correction = T::If {
         condition: Box::new(positive.clone()),
@@ -940,18 +1147,22 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         else_term: Box::new(T::Constant(0)),
     };
     assert_eq!(
-        pinned.decide(&ConditionTerm::Bitvector32Equal(
-            Box::new(correction),
-            Box::new(T::Constant(0))
-        )),
+        pinned.decide(&ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(correction),
+            right: Box::new(T::Constant(0))
+        }),
         Some(false)
     );
     let quotient = T::Int64Divide(boxed(&n), Box::new(divisor));
     assert_eq!(
-        pinned.decide(&ConditionTerm::Bitvector64SignedAddOverflows(
-            Box::new(quotient),
-            Box::new(T::Int64Constant(1))
-        )),
+        pinned.decide(&ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Add,
+            left: Box::new(quotient),
+            right: Box::new(T::Int64Constant(1))
+        }),
         Some(false)
     );
     // A divisor that may be zero bounds nothing, and an undecided condition
@@ -959,10 +1170,12 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
     let unknown = graph(&[]);
     let any_quotient = T::Int64Divide(boxed(&n), Box::new(T::Int64From32(boxed(&d))));
     assert_eq!(
-        unknown.decide(&ConditionTerm::Bitvector64SignedAddOverflows(
-            Box::new(any_quotient),
-            Box::new(T::Int64Constant(1))
-        )),
+        unknown.decide(&ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Add,
+            left: Box::new(any_quotient),
+            right: Box::new(T::Int64Constant(1))
+        }),
         None
     );
     let either = T::If {
@@ -971,17 +1184,21 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         else_term: Box::new(T::Constant(0)),
     };
     assert_eq!(
-        unknown.decide(&ConditionTerm::Bitvector32Equal(
-            Box::new(either.clone()),
-            Box::new(T::Constant(0))
-        )),
+        unknown.decide(&ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(either.clone()),
+            right: Box::new(T::Constant(0))
+        }),
         None
     );
     assert_eq!(
-        unknown.decide(&ConditionTerm::Bitvector32Equal(
-            Box::new(either),
-            Box::new(T::Constant(2))
-        )),
+        unknown.decide(&ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(either),
+            right: Box::new(T::Constant(2))
+        }),
         Some(false)
     );
 }
@@ -997,27 +1214,39 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
     let rounded = T::UInt64Subtract(boxed(&x), Box::new(remainder.clone()));
     let unknown = graph(&[]);
     assert_eq!(
-        unknown.decide(&ConditionTerm::Bitvector64UnsignedGreaterEqual(
-            boxed(&x),
-            Box::new(remainder)
-        )),
+        unknown.decide(&ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterEqual,
+            left: boxed(&x),
+            right: Box::new(remainder)
+        }),
         Some(true)
     );
-    let at_least_four = |rounded: &Bitvector32Term| {
-        ConditionTerm::Bitvector64UnsignedLessEqual(
-            Box::new(T::UInt64Constant(4)),
-            Box::new(rounded.clone()),
-        )
+    let at_least_four = |rounded: &Bitvector32Term| ConditionTerm::Compare {
+        format: MachineIntegerType::UInt64,
+        relation: CompareRelation::LessEqual,
+        left: Box::new(T::UInt64Constant(4)),
+        right: Box::new(rounded.clone()),
     };
     assert_eq!(unknown.decide(&at_least_four(&rounded)), None);
     let large = graph(&[(
-        ConditionTerm::Bitvector64UnsignedLessEqual(Box::new(T::UInt64Constant(4)), boxed(&x)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(T::UInt64Constant(4)),
+            right: boxed(&x),
+        },
         true,
     )]);
     assert_eq!(large.decide(&at_least_four(&rounded)), Some(true));
     // One less than the bound is not enough: `x == 3` rounds to 0.
     let small = graph(&[(
-        ConditionTerm::Bitvector64UnsignedLessEqual(Box::new(T::UInt64Constant(3)), boxed(&x)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(T::UInt64Constant(3)),
+            right: boxed(&x),
+        },
         true,
     )]);
     assert_eq!(small.decide(&at_least_four(&rounded)), None);
@@ -1034,17 +1263,29 @@ fn a_sign_flip_of_known_sign_is_bounded() {
         Box::new(T::Constant(i32::MIN as u32)),
         Box::new(T::Subtract(boxed(&a), boxed(&b))),
     );
-    let below_zero = ConditionTerm::Bitvector32SignedLessEqual(
-        Box::new(flipped),
-        Box::new(T::Constant(u32::MAX)),
-    );
+    let below_zero = ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::LessEqual,
+        left: Box::new(flipped),
+        right: Box::new(T::Constant(u32::MAX)),
+    };
     let ordered = graph(&[
         (
-            ConditionTerm::Bitvector32SignedLessEqual(boxed(&b), boxed(&a)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: boxed(&b),
+                right: boxed(&a),
+            },
             true,
         ),
         (
-            ConditionTerm::Bitvector32SignedLessEqual(Box::new(T::Constant(0)), boxed(&b)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(T::Constant(0)),
+                right: boxed(&b),
+            },
             true,
         ),
     ]);
@@ -1063,21 +1304,33 @@ fn an_unsigned_quotient_of_words_is_bounded() {
     let flip = |term: Bitvector32Term| {
         T::BitwiseXor(Box::new(T::Constant(i32::MIN as u32)), Box::new(term))
     };
-    let fits = ConditionTerm::Bitvector32SignedLessEqual(
-        Box::new(flip(x.clone())),
-        Box::new(flip(T::UnsignedDivide(
+    let fits = ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::LessEqual,
+        left: Box::new(flip(x.clone())),
+        right: Box::new(flip(T::UnsignedDivide(
             Box::new(T::Constant(u32::MAX)),
             boxed(&y),
         ))),
-    );
+    };
     let pinned = |y_value: u32| {
         graph(&[
             (
-                ConditionTerm::Bitvector32Equal(boxed(&x), Box::new(T::Constant(u32::MAX))),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: boxed(&x),
+                    right: Box::new(T::Constant(u32::MAX)),
+                },
                 true,
             ),
             (
-                ConditionTerm::Bitvector32Equal(boxed(&y), Box::new(T::Constant(y_value))),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: boxed(&y),
+                    right: Box::new(T::Constant(y_value)),
+                },
                 true,
             ),
         ])
@@ -1110,7 +1363,12 @@ fn field_offsets_from_equal_bases_are_equal() {
     )]);
     assert_eq!(equal.decide(&same_field), Some(true));
     let ordered = graph(&[(
-        ConditionTerm::Bitvector32SignedLessThan(Box::new(variable(0)), Box::new(variable(1))),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(variable(0)),
+            right: Box::new(variable(1)),
+        },
         true,
     )]);
     assert_eq!(ordered.decide(&same_field), Some(false));
@@ -1313,21 +1571,46 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
     let (a, b) = (variable(0), variable(1));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
     let difference = T::UInt64Subtract(boxed(&a), boxed(&b));
-    let at_most = ConditionTerm::Bitvector64UnsignedLessEqual(boxed(&difference), boxed(&a));
-    let below = ConditionTerm::Bitvector64UnsignedLessThan(boxed(&difference), boxed(&a));
+    let at_most = ConditionTerm::Compare {
+        format: MachineIntegerType::UInt64,
+        relation: CompareRelation::LessEqual,
+        left: boxed(&difference),
+        right: boxed(&a),
+    };
+    let below = ConditionTerm::Compare {
+        format: MachineIntegerType::UInt64,
+        relation: CompareRelation::LessThan,
+        left: boxed(&difference),
+        right: boxed(&a),
+    };
     let ordered = graph(&[(
-        ConditionTerm::Bitvector64UnsignedLessEqual(boxed(&b), boxed(&a)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left: boxed(&b),
+            right: boxed(&a),
+        },
         true,
     )]);
     assert_eq!(ordered.decide(&at_most), Some(true));
     assert_eq!(ordered.decide(&below), None);
     let positive = graph(&[
         (
-            ConditionTerm::Bitvector64UnsignedLessEqual(boxed(&b), boxed(&a)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: boxed(&b),
+                right: boxed(&a),
+            },
             true,
         ),
         (
-            ConditionTerm::Bitvector64UnsignedLessEqual(Box::new(T::UInt64Constant(1)), boxed(&b)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(T::UInt64Constant(1)),
+                right: boxed(&b),
+            },
             true,
         ),
     ]);
@@ -1361,8 +1644,11 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
     };
     let and = |a: &Bitvector32Term, mask| T::UInt64BitwiseAnd(boxed(a), Box::new(u(mask)));
     let add = |a: &Bitvector32Term, b: &Bitvector32Term| T::UInt64Add(boxed(a), boxed(b));
-    let equal = |a: &Bitvector32Term, b: &Bitvector32Term| {
-        ConditionTerm::Bitvector64Equal(boxed(a), boxed(b))
+    let equal = |a: &Bitvector32Term, b: &Bitvector32Term| ConditionTerm::Compare {
+        format: MachineIntegerType::Int64,
+        relation: CompareRelation::Equal,
+        left: boxed(a),
+        right: boxed(b),
     };
     let (p, q) = (
         address(pointer(scaled(0, 4))),
@@ -1406,8 +1692,11 @@ fn a_no_overflow_fact_answers_its_operands_under_other_names() {
     let (l, r, v) = (variable(0), variable(1), variable(2));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
     let one_more = |x: &Bitvector32Term| T::Add(boxed(&constant(1)), boxed(x));
-    let overflows = |x: &Bitvector32Term| {
-        ConditionTerm::Bitvector32SignedAddOverflows(Box::new(one_more(x)), boxed(&r))
+    let overflows = |x: &Bitvector32Term| ConditionTerm::Overflows {
+        format: MachineIntegerType::Int32,
+        op: OverflowOperation::Add,
+        left: Box::new(one_more(x)),
+        right: boxed(&r),
     };
     let graph = graph(&[
         (overflows(&l), false),
@@ -1421,10 +1710,12 @@ fn a_no_overflow_fact_answers_its_operands_under_other_names() {
         let boxed = |term: &Bitvector32Term| Box::new(term.clone());
         // `1 + l` with `l` unrelated to `v`.
         super::tests::graph(&[(
-            ConditionTerm::Bitvector32SignedAddOverflows(
-                Box::new(Bitvector32Term::Add(boxed(&constant(1)), boxed(l))),
-                boxed(r),
-            ),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: Box::new(Bitvector32Term::Add(boxed(&constant(1)), boxed(l))),
+                right: boxed(r),
+            },
             false,
         )])
     }
@@ -1438,8 +1729,11 @@ mod scaling_tests {
 #[test]
 fn direct_order_fact_survives_a_high_degree_source() {
     let n = variable(0);
-    let less = |left: Bitvector32Term, right: Bitvector32Term| {
-        ConditionTerm::Bitvector64UnsignedLessThan(Box::new(left), Box::new(right))
+    let less = |left: Bitvector32Term, right: Bitvector32Term| ConditionTerm::Compare {
+        format: MachineIntegerType::UInt64,
+        relation: CompareRelation::LessThan,
+        left: Box::new(left),
+        right: Box::new(right),
     };
     let last = EDGE_LIMIT as u64 + 1;
     let mut graph = DifferenceGraph::new();

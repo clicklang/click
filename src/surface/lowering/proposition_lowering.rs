@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 /// Two lowered operands whose C types have no common comparison, named by
 /// value and type rather than as kernel term dumps.
@@ -489,7 +490,12 @@ pub(in crate::surface) fn signed_less_than(
         (Bitvector32Term::Constant(left), Bitvector32Term::Constant(right)) => {
             ConditionTerm::Constant((*left as i32) < (*right as i32))
         }
-        _ => ConditionTerm::Bitvector32SignedLessThan(Box::new(left), Box::new(right)),
+        _ => ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
     }
 }
 
@@ -501,7 +507,12 @@ pub(in crate::surface) fn signed_less_equal(
         (Bitvector32Term::Constant(left), Bitvector32Term::Constant(right)) => {
             ConditionTerm::Constant((*left as i32) <= (*right as i32))
         }
-        _ => ConditionTerm::Bitvector32SignedLessEqual(Box::new(left), Box::new(right)),
+        _ => ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
     }
 }
 
@@ -513,7 +524,12 @@ pub(in crate::surface) fn signed_greater_than(
         (Bitvector32Term::Constant(left), Bitvector32Term::Constant(right)) => {
             ConditionTerm::Constant((*left as i32) > (*right as i32))
         }
-        _ => ConditionTerm::Bitvector32SignedGreaterThan(Box::new(left), Box::new(right)),
+        _ => ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
     }
 }
 
@@ -525,7 +541,12 @@ pub(in crate::surface) fn signed_greater_equal(
         (Bitvector32Term::Constant(left), Bitvector32Term::Constant(right)) => {
             ConditionTerm::Constant((*left as i32) >= (*right as i32))
         }
-        _ => ConditionTerm::Bitvector32SignedGreaterEqual(Box::new(left), Box::new(right)),
+        _ => ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
     }
 }
 
@@ -537,6 +558,11 @@ pub(in crate::surface) fn bitvector32_equal(
         (Bitvector32Term::Constant(left), Bitvector32Term::Constant(right)) => {
             ConditionTerm::Constant(left == right)
         }
-        _ => ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+        _ => ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
     }
 }

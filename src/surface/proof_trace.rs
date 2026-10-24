@@ -1,7 +1,9 @@
 //! Opt-in observations of checked proof steps for CLI diagnostics.
 //! The trace is diagnostic only; no recorded text participates in checking.
 
+use crate::kernel::CompareRelation;
 use crate::kernel::ContractPathPreparationFailure;
+use crate::kernel::MachineIntegerType;
 use crate::kernel::proof::BranchId;
 use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, Proposition, SharedCMemory};
 use crate::source::SourcePosition;
@@ -399,15 +401,27 @@ impl ProofDiagnosticState for CertificationTraceState {
         let mut relevant = Vec::new();
         let mut different_snapshots = false;
         if let Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(needed_left, needed_right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: needed_left,
+                right: needed_right,
+            },
             true,
         ) = &self.goal
             && let Some((needed_memory, needed_pointer)) = traced_read(needed_left)
         {
             let needed_snapshot = labels.snapshot_name(needed_memory.memory());
             for fact in &self.available {
-                let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-                    fact
+                let Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left,
+                        right,
+                    },
+                    true,
+                ) = fact
                 else {
                     continue;
                 };
@@ -1483,14 +1497,16 @@ mod tests {
         );
         let fact = |memory| {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector64Equal(
-                    Box::new(Bitvector32Term::MemoryLoad(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(memory),
                         Box::new(pointer.clone()),
                         LoadKind::Bits64,
                     )),
-                    Box::new(Bitvector32Term::UInt64Constant(3)),
-                ),
+                    right: Box::new(Bitvector32Term::UInt64Constant(3)),
+                },
                 true,
             )
         };
@@ -1724,14 +1740,16 @@ mod tests {
             panic!("an unresolved external read has a load variable");
         };
         let defining = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(variable)),
-                Box::new(Bitvector32Term::MemoryLoad(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(variable)),
+                right: Box::new(Bitvector32Term::MemoryLoad(
                     memory,
                     Box::new(pointer),
                     crate::kernel::LoadKind::Bits32,
                 )),
-            ),
+            },
             true,
         );
         let mut output = String::new();

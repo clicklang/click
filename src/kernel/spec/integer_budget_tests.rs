@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, OverflowOperation};
 use num_bigint::BigInt;
 use num_traits::One;
 
@@ -131,10 +132,12 @@ fn integer_existential_scopes_definedness_with_its_witness() {
     };
     assert_eq!(*var, witness);
     let overflow = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedAddOverflows(
-            Box::new(left_bits.clone()),
-            Box::new(right_bits.clone()),
-        ),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: Box::new(left_bits.clone()),
+            right: Box::new(right_bits.clone()),
+        },
         false,
     );
     assert!(
@@ -442,14 +445,16 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         crate::kernel::eval::registered_load_for_variable(&load)
             .expect("the load variable must retain its exact descriptor");
     let defining = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(load)),
-            Box::new(Bitvector32Term::MemoryLoad(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(load)),
+            right: Box::new(Bitvector32Term::MemoryLoad(
                 registered_memory.clone(),
                 Box::new(registered_pointer.clone()),
                 crate::kernel::LoadKind::Bits32,
             )),
-        ),
+        },
         true,
     );
     let loadable = Proposition::CMemoryLoadable {
@@ -471,9 +476,11 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     assert_eq!(retained_guard, guarded);
 
     let tampered_pointer = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(load)),
-            Box::new(Bitvector32Term::MemoryLoad(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(load)),
+            right: Box::new(Bitvector32Term::MemoryLoad(
                 registered_memory.clone(),
                 Box::new(Pointer {
                     offset: PointerOffsetTerm::Constant(4),
@@ -481,7 +488,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
                 }),
                 crate::kernel::LoadKind::Bits32,
             )),
-        ),
+        },
         true,
     );
     let retained_pointer = drop_verified_load_definition_conjuncts(Proposition::And(
@@ -493,14 +500,16 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
 
     let tampered_memory = crate::kernel::intern_c_memory(CMemory::new().with_block("other", 16));
     let tampered_snapshot = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(load)),
-            Box::new(Bitvector32Term::MemoryLoad(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(load)),
+            right: Box::new(Bitvector32Term::MemoryLoad(
                 tampered_memory,
                 Box::new(registered_pointer.clone()),
                 crate::kernel::LoadKind::Bits32,
             )),
-        ),
+        },
         true,
     );
     let retained_snapshot = drop_verified_load_definition_conjuncts(Proposition::And(
@@ -517,14 +526,16 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
 
     let unknown = Variable((1u64 << 40) + 123_456_789);
     let unknown_definition = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(unknown)),
-            Box::new(Bitvector32Term::MemoryLoad(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(unknown)),
+            right: Box::new(Bitvector32Term::MemoryLoad(
                 registered_memory,
                 Box::new(registered_pointer),
                 crate::kernel::LoadKind::Bits32,
             )),
-        ),
+        },
         true,
     );
     let retained_unknown = drop_verified_load_definition_conjuncts(Proposition::And(
@@ -612,14 +623,16 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
             .expect("the exact load must have a registry descriptor");
     let defining = |memory: SharedCMemory, pointer: Pointer, variable: Variable| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(variable)),
-                Box::new(Bitvector32Term::MemoryLoad(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(variable)),
+                right: Box::new(Bitvector32Term::MemoryLoad(
                     memory,
                     Box::new(pointer),
                     crate::kernel::LoadKind::Bits32,
                 )),
-            ),
+            },
             true,
         )
     };

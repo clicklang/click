@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::kernel::VerificationSession;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 const ACCUMULATOR: Variable = Variable(3_200_000);
 const ITEM: Variable = Variable(3_200_001);
@@ -430,17 +431,21 @@ fn fact(condition: ConditionTerm) -> Proposition {
 }
 
 fn le(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
-    fact(ConditionTerm::Bitvector32SignedLessEqual(
-        Box::new(left),
-        Box::new(right),
-    ))
+    fact(ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::LessEqual,
+        left: Box::new(left),
+        right: Box::new(right),
+    })
 }
 
 fn lt(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
-    fact(ConditionTerm::Bitvector32SignedLessThan(
-        Box::new(left),
-        Box::new(right),
-    ))
+    fact(ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::LessThan,
+        left: Box::new(left),
+        right: Box::new(right),
+    })
 }
 
 fn context(facts: &[Proposition]) -> PureFactContext {

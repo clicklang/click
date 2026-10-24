@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 /// Lowers a written proposition exactly as a `have` in a fixed-state proof
@@ -104,7 +105,15 @@ fn recorded_qualified_cells(
                 .expect("the comparison lowers to matching logical structure");
             // The load term as lowering produced it: a registered load
             // variable, one of the two forms an emitted requirement carries.
-            let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(load, _), _) = lowered
+            let Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: load,
+                    right: _,
+                },
+                _,
+            ) = lowered
             else {
                 panic!("a qualified cell comparison lowers to one load equality");
             };
@@ -122,17 +131,21 @@ fn cells_within_bounds(loads: &[Bitvector32Term]) -> Proposition {
     let clauses = loads.iter().flat_map(|load| {
         [
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterThan(
-                    Box::new(load.clone()),
-                    Box::new(Bitvector32Term::Constant((-1000i32) as u32)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: Box::new(load.clone()),
+                    right: Box::new(Bitvector32Term::Constant((-1000i32) as u32)),
+                },
                 true,
             ),
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(load.clone()),
-                    Box::new(Bitvector32Term::Constant(1000)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(load.clone()),
+                    right: Box::new(Bitvector32Term::Constant(1000)),
+                },
                 true,
             ),
         ]
@@ -508,17 +521,21 @@ fn external_byte_range_requirement(binder: Variable, length: &Bitvector32Term) -
         body: Box::new(Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessEqual(
-                        Box::new(Bitvector32Term::Constant(0)),
-                        Box::new(index.clone()),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        left: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(index.clone()),
+                    },
                     true,
                 )),
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(
-                        Box::new(index.clone()),
-                        Box::new(length.clone()),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left: Box::new(index.clone()),
+                        right: Box::new(length.clone()),
+                    },
                     true,
                 )),
             )),
@@ -1093,17 +1110,21 @@ fn strlen_quantified_element_range_requirement_round_trips() {
         body: Box::new(Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedGreaterEqual(
-                        Box::new(Bitvector32Term::Variable(binder)),
-                        Box::new(Bitvector32Term::Constant(0)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterEqual,
+                        left: Box::new(Bitvector32Term::Variable(binder)),
+                        right: Box::new(Bitvector32Term::Constant(0)),
+                    },
                     true,
                 )),
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(
-                        Box::new(Bitvector32Term::Variable(binder)),
-                        Box::new(Bitvector32Term::Variable(Variable(100_001))),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left: Box::new(Bitvector32Term::Variable(binder)),
+                        right: Box::new(Bitvector32Term::Variable(Variable(100_001))),
+                    },
                     true,
                 )),
             )),
@@ -1585,10 +1606,12 @@ fn nested_propositions_synthesize_with_small_frames_and_linear_work() {
             let state = CState::new();
             let atom = || {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Constant(7)),
-                        Box::new(Bitvector32Term::Constant(7)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Constant(7)),
+                        right: Box::new(Bitvector32Term::Constant(7)),
+                    },
                     true,
                 )
             };
@@ -1666,10 +1689,12 @@ fn load_defining_equation_round_trips() {
     );
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
     let requirement = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(variable)),
-            Box::new(defining_load),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(variable)),
+            right: Box::new(defining_load),
+        },
         true,
     );
     let spelled = synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
@@ -1706,10 +1731,12 @@ fn load_defining_equation_uses_entry_snapshot() {
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
     let entry = entry.with_local("result", CValue::Int32(Bitvector32Term::Variable(variable)));
     let requirement = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(variable)),
-            Box::new(defining_load),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(variable)),
+            right: Box::new(defining_load),
+        },
         true,
     );
     let spelled = synthesize_surface_proposition_at_entry_and_post(
@@ -1769,10 +1796,12 @@ fn load_defining_equation_uses_saved_snapshot() {
             .store(pointer, int32(2)),
     );
     let requirement = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(variable)),
-            Box::new(defining_load),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(variable)),
+            right: Box::new(defining_load),
+        },
         true,
     );
     let selector = SnapshotSelector::Mark("saved_load_epoch".into());
@@ -1841,10 +1870,12 @@ fn example_load_defining_requirement(
     (
         state,
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(variable)),
-                Box::new(defining_load),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(variable)),
+                right: Box::new(defining_load),
+            },
             true,
         ),
         variable,
@@ -1898,19 +1929,29 @@ fn load_equation_rejects_wrong_snapshot_and_unresolvable_variable() {
         block: PointerBlock::Concrete("owned-string:wrong-snapshot".into()),
         offset: PointerOffsetTerm::Constant(4),
     };
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, _), true) = &requirement
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right: _,
+        },
+        true,
+    ) = &requirement
     else {
         unreachable!()
     };
     let wrong_pointer_requirement = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            left.clone(),
-            Box::new(Bitvector32Term::MemoryLoad(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: left.clone(),
+            right: Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(state.memory()),
                 Box::new(wrong_pointer.clone()),
                 crate::kernel::LoadKind::Bits32,
             )),
-        ),
+        },
         true,
     );
     assert!(
@@ -1923,9 +1964,11 @@ fn load_equation_rejects_wrong_snapshot_and_unresolvable_variable() {
     );
 
     let wrong_epoch = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            left.clone(),
-            Box::new(Bitvector32Term::MemoryLoad(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: left.clone(),
+            right: Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(&wrong_memory),
                 Box::new(Pointer {
                     block: PointerBlock::Concrete("owned-string:wrong-snapshot".into()),
@@ -1933,7 +1976,7 @@ fn load_equation_rejects_wrong_snapshot_and_unresolvable_variable() {
                 }),
                 crate::kernel::LoadKind::Bits32,
             )),
-        ),
+        },
         true,
     );
     assert!(
@@ -1941,10 +1984,12 @@ fn load_equation_rejects_wrong_snapshot_and_unresolvable_variable() {
     );
 
     let unresolvable = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(variable.0 + 1))),
-            left.clone(),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(Variable(variable.0 + 1))),
+            right: left.clone(),
+        },
         true,
     );
     assert!(
@@ -1978,10 +2023,12 @@ fn actual_struct_field_load_equation(
     );
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
     let requirement = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(variable)),
-            Box::new(defining_load),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(variable)),
+            right: Box::new(defining_load),
+        },
         true,
     );
     let state = CState::new()
@@ -2049,17 +2096,21 @@ fn strlen_existential_guard_round_trips_without_duplicate_guard() {
         sort: Sort::CInt32,
         body: Box::new(Proposition::And(
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedAddOverflows(
-                    Box::new(Bitvector32Term::Variable(variable)),
-                    Box::new(Bitvector32Term::Constant(1)),
-                ),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: Box::new(Bitvector32Term::Variable(variable)),
+                    right: Box::new(Bitvector32Term::Constant(1)),
+                },
                 false,
             )),
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(
-                    Box::new(Bitvector32Term::Constant(0)),
-                    Box::new(increment),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: Box::new(Bitvector32Term::Constant(0)),
+                    right: Box::new(increment),
+                },
                 true,
             )),
         )),
@@ -2091,17 +2142,21 @@ fn strlen_guard_is_retained_when_the_sibling_does_not_regenerate_it() {
         sort: Sort::CInt32,
         body: Box::new(Proposition::And(
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedAddOverflows(
-                    Box::new(Bitvector32Term::Variable(variable)),
-                    Box::new(Bitvector32Term::Constant(1)),
-                ),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: Box::new(Bitvector32Term::Variable(variable)),
+                    right: Box::new(Bitvector32Term::Constant(1)),
+                },
                 false,
             )),
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterEqual(
-                    Box::new(Bitvector32Term::Variable(variable)),
-                    Box::new(Bitvector32Term::Constant(0)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: Box::new(Bitvector32Term::Variable(variable)),
+                    right: Box::new(Bitvector32Term::Constant(0)),
+                },
                 true,
             )),
         )),
@@ -2129,20 +2184,24 @@ fn strlen_guard_prefix_synthesis_scales_linearly_and_fails_closed() {
     fn requirement(guard_count: usize) -> Proposition {
         let variable = Variable(1);
         let guard = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedAddOverflows(
-                Box::new(Bitvector32Term::Variable(variable)),
-                Box::new(Bitvector32Term::Constant(1)),
-            ),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: Box::new(Bitvector32Term::Variable(variable)),
+                right: Box::new(Bitvector32Term::Constant(1)),
+            },
             false,
         );
         let comparison = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(Bitvector32Term::Constant(0)),
-                Box::new(Bitvector32Term::Add(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::Add(
                     Box::new(Bitvector32Term::Variable(variable)),
                     Box::new(Bitvector32Term::Constant(1)),
                 )),
-            ),
+            },
             true,
         );
         let mut body = comparison;
@@ -2387,8 +2446,18 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
     );
     let remainder = Bitvector32Term::UnsignedRemainder(Box::new(x.clone()), Box::new(divisor));
     for condition in [
-        ConditionTerm::Bitvector32Equal(Box::new(quotient.clone()), Box::new(result.clone())),
-        ConditionTerm::Bitvector32Equal(Box::new(remainder), Box::new(result)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(quotient.clone()),
+            right: Box::new(result.clone()),
+        },
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(remainder),
+            right: Box::new(result),
+        },
         ConditionTerm::unsigned_less_equal(x, quotient),
     ] {
         for polarity in [true, false] {
@@ -2609,10 +2678,12 @@ fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
     );
     recorded_snapshots.insert(exit.clone(), after);
     let fact = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(variable)),
-            Box::new(Bitvector32Term::Constant(5)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(variable)),
+            right: Box::new(Bitvector32Term::Constant(5)),
+        },
         true,
     );
     let spelled = {
@@ -2801,10 +2872,12 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
     recorded_snapshots.insert(point(0), holding(earlier));
     recorded_snapshots.insert(point(1), now.clone());
     let fact = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(earlier)),
-            Box::new(Bitvector32Term::Constant(5)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(earlier)),
+            right: Box::new(Bitvector32Term::Constant(5)),
+        },
         true,
     );
     let spelled = {

@@ -2,6 +2,7 @@
 //! condition when one branch applies a different constructor.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 pub(super) fn option_type() -> AlgebraicType {
     let key = AlgebraicValueType::Algebraic {
@@ -48,10 +49,12 @@ pub(super) fn some(variable: u64) -> AlgebraicTerm {
     })
 }
 pub(super) fn tag(variable: u64) -> ConditionTerm {
-    ConditionTerm::Bitvector32Equal(
-        Box::new(Bitvector32Term::Variable(Variable(variable))),
-        Box::new(Bitvector32Term::Constant(0)),
-    )
+    ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left: Box::new(Bitvector32Term::Variable(Variable(variable))),
+        right: Box::new(Bitvector32Term::Constant(0)),
+    }
 }
 /// `if tag == 0 { None } else { Some(payload) }`, a Rust option's view.
 pub(super) fn view(tag_variable: u64, payload: u64) -> AlgebraicTerm {
@@ -65,10 +68,12 @@ pub(super) fn equal(left: AlgebraicTerm, right: AlgebraicTerm) -> Proposition {
     Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
 }
 fn values_equal(left: u64, right: u64) -> ConditionTerm {
-    ConditionTerm::Bitvector32Equal(
-        Box::new(Bitvector32Term::Variable(Variable(left))),
-        Box::new(Bitvector32Term::Variable(Variable(right))),
-    )
+    ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left: Box::new(Bitvector32Term::Variable(Variable(left))),
+        right: Box::new(Bitvector32Term::Variable(Variable(right))),
+    }
 }
 
 #[test]

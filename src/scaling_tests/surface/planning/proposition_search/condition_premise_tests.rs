@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn refused_integer_equality_does_not_rebuild_connected_order_facts() {
@@ -52,10 +53,12 @@ fn wide_condition_index_construction_charges_its_variable_entries() {
                 })
                 .collect();
         }
-        let condition = ConditionTerm::Bitvector32Equal(
-            Box::new(terms.pop().unwrap()),
-            Box::new(Bitvector32Term::Constant(0)),
-        );
+        let condition = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(terms.pop().unwrap()),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        };
         let ((context, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 PureFactContext::new().assume_condition(condition, true)
@@ -96,9 +99,11 @@ fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
         let memory = intern_c_memory(CMemory::new().with_block("other", size as u32 * 4));
         let mut snapshot_facts = Vec::new();
         for index in 0..size {
-            let condition = ConditionTerm::Bitvector32Equal(
-                Box::new(term(20_000 + index as u64)),
-                Box::new(Bitvector32Term::MemoryLoad(
+            let condition = ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(term(20_000 + index as u64)),
+                right: Box::new(Bitvector32Term::MemoryLoad(
                     memory.clone(),
                     Box::new(Pointer {
                         block: "other".into(),
@@ -106,7 +111,7 @@ fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
                     }),
                     crate::kernel::LoadKind::Bits32,
                 )),
-            );
+            };
             context = context.assume_condition(condition.clone(), true);
             snapshot_facts.push(Proposition::ConditionIs(condition, true));
         }
@@ -142,9 +147,11 @@ fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
             rebuilt > warm && rebuilt <= warm + 8,
             "snapshot withdrawal must apply only its delta: {rebuilt}, {warm}"
         );
-        let extra = ConditionTerm::Bitvector32Equal(
-            Box::new(term(90_000)),
-            Box::new(Bitvector32Term::MemoryLoad(
+        let extra = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(term(90_000)),
+            right: Box::new(Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(Pointer {
                     block: "other".into(),
@@ -152,7 +159,7 @@ fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
                 }),
                 crate::kernel::LoadKind::Bits32,
             )),
-        );
+        };
         let extended = scalar_branch.assume_condition(extra, true);
         let (selected, extended_work) = crate::instrumentation::measure_deterministic_work(|| {
             connected_condition_premises(&extended, &goal, false).unwrap()
@@ -268,10 +275,12 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
                 wide: false,
             });
             context = context.assume_condition(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(term(10_000 + index)),
-                    Box::new(1000.into()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(term(10_000 + index)),
+                    right: Box::new(1000.into()),
+                },
                 true,
             );
         }
@@ -313,10 +322,12 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
             );
             let (variable, load) = load_variable_for_term(&read).unwrap();
             context = context.assume_condition(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(variable)),
-                    Box::new(load.clone()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::Variable(variable)),
+                    right: Box::new(load.clone()),
+                },
                 true,
             );
             reads.push((variable, load));
@@ -324,10 +335,12 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
         // An equation between different reads is useful, even when its left
         // operand is a reserved load name. It must remain a candidate.
         let alias = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(reads[0].0)),
-                Box::new(reads[1].1.clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(reads[0].0)),
+                right: Box::new(reads[1].1.clone()),
+            },
             true,
         );
         context = context.assume_proposition(alias.clone());
@@ -338,7 +351,12 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
             )
         });
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(sum), Box::new(7.into())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(sum),
+                right: Box::new(7.into()),
+            },
             true,
         );
         let ((equalities, premises), work) =
