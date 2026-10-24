@@ -173,7 +173,14 @@ a distribution update that moves the libstdc++ runtime forward without its
 headers is the usual cause of a sudden `<algorithm>` not found. The build
 script checks this first and names the missing package. On Ubuntu 24.04,
 `scripts/setup-environment.sh` installs the pinned development packages,
-including those headers, before the network-free gate runs.
+including those headers, before the network-free gate runs. Where the network
+denies `apt.llvm.org`, as in Claude Code cloud sessions, it instead installs
+the official LLVM 19.1.7 Linux x86-64 release with
+`scripts/install-llvm-release.sh`. The archive must match its pinned SHA-256,
+and only Clang, `llvm-config`, headers, and libraries are extracted, to
+`/opt/LLVM-19.1.7-Linux-X64`. Ubuntu's packages supply GCC and the headers.
+`/usr/lib/llvm-19` links to that directory, and setup accepts a pinned LLVM
+there, not only `llvm-config-19` on `PATH`.
 
 The C++ fixtures refresh typed artifacts for C++20 functions in a translation
 unit or one selected included project header through one exact JSON
@@ -489,10 +496,11 @@ checked-out revisions, and workflow links are recorded below.
   nightly toolchain 24.4s, nextest 0.9.143 from its GitHub release 1.0s,
   mdBook built by `scripts/install-tools.sh` 80.7s, and the official LLVM
   19.1.7 Linux x86-64 release tarball downloaded and unpacked (8.2 GiB) in
-  152.9s. `scripts/setup-environment.sh` cannot complete there: the session
-  network denies `apt.llvm.org`. The exporter was then built against the
-  image's preinstalled `/usr/lib/llvm-19`, the same release; GCC came with
-  the image. About 3s of benchmark-script errors are excluded. The first plain
+  152.9s. At that revision, `scripts/setup-environment.sh` could not complete
+  there because the session network denies `apt.llvm.org`; setup now installs
+  the same release, extracting 2.5 GiB of it, in 161s. The exporter was then
+  built against the image's preinstalled `/usr/lib/llvm-19`, the same release;
+  GCC came with the image. About 3s of benchmark-script errors are excluded. The first plain
   gate passed in 19m47s: Charon build 1m24s, test build including crate
   downloads 5m58s, 6,524 unit/API tests 316.06s, four fixture tests 340.41s.
 - **Claude Code cloud rebuild, unchanged, and small edit:** measured on
@@ -695,7 +703,8 @@ prerequisites for the full gate once per machine with
 use `scripts/setup-environment.sh --docs-only` to skip the LLVM packages used
 only by the full gate. The setup script installs the Rust toolchain pinned in
 `rust-toolchain.toml`, cargo-nextest, the pinned mdBook, and (on Ubuntu 24.04)
-the pinned LLVM development packages. `scripts/check.sh` only looks tools up
+the pinned LLVM development packages, or the pinned LLVM release where
+`apt.llvm.org` is unreachable. `scripts/check.sh` only looks tools up
 and never reaches the network. Then run:
 
 ```console
