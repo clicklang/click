@@ -1343,6 +1343,30 @@ impl ResourceContext {
             .collect()
     }
 
+    /// The owned instances whose held entries differ from `earlier`'s:
+    /// every owned instance when there is no earlier context. The index of
+    /// instances is persistent, so for contexts derived from one another the
+    /// walk visits only the changed identities.
+    pub(crate) fn changed_owned_instances<'a>(
+        &'a self,
+        earlier: Option<&'a Self>,
+    ) -> Vec<&'a ResourceInstance> {
+        let identities: Vec<Variable> = match earlier {
+            Some(earlier) => self
+                .storage
+                .index
+                .instances
+                .diff(&earlier.storage.index.instances)
+                .filter_map(|(identity, now, _)| now.map(|_| *identity))
+                .collect(),
+            None => self.storage.index.instances.keys().copied().collect(),
+        };
+        identities
+            .into_iter()
+            .filter_map(|identity| self.owned_instance(identity))
+            .collect()
+    }
+
     pub fn owned_instance(&self, identity: Variable) -> Option<&ResourceInstance> {
         let entries = self.storage.index.instances.get(&identity)?;
         if entries.len() != 1 {

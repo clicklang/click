@@ -2932,6 +2932,27 @@ impl<'a> ContractEnvironment<'a> {
 /// checks for it.
 const MEMORY_POINTS_NEAR: usize = 4;
 
+/// Whether `state`'s instance `identity` holds the scalar value `variable`
+/// as one of its fields.
+fn instance_holds_field_value(
+    state: &CState,
+    identity: crate::kernel::Variable,
+    variable: crate::kernel::Variable,
+) -> bool {
+    state
+        .resource_instance_fields(identity)
+        .is_some_and(|instance| {
+            instance.fields().iter().any(|field| {
+                matches!(
+                    field,
+                    crate::kernel::AlgebraicValue::C(CValue::Int32(
+                        crate::kernel::Bitvector32Term::Variable(held)
+                    )) if *held == variable
+                )
+            })
+        })
+}
+
 /// How many recorded points holding a pointer's block the speller tries.
 const POINTER_POINTS_OFFERED: usize = 4;
 
@@ -2968,9 +2989,18 @@ struct RecordedSnapshots {
     /// Filled and checked as `value_points` is.
     pointer_points:
         crate::persistent::PersistentMap<(crate::kernel::PointerBlock, String), SnapshotSelector>,
+    /// The recorded point at which each scalar model-field value was first
+    /// held by its resource instance, keyed by the value's variable: a field
+    /// value no nearer state's instance holds is spelled at that point.
+    /// Filled from the instances each insert changed, and checked against
+    /// the point's state when read.
+    field_points: crate::persistent::PersistentMap<crate::kernel::Variable, SnapshotSelector>,
     /// The locals of the state inserted last, against which the next insert
     /// finds the locals it changed.
     last_locals: Option<crate::kernel::CLocalEnvironment>,
+    /// The resources of the state inserted last, against which the next
+    /// insert finds the instances it changed.
+    last_resources: Option<crate::kernel::ResourceContext>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -2998,7 +3028,9 @@ impl Default for RecordedSnapshots {
             memory_points: imbl::OrdMap::new(),
             value_points: crate::persistent::PersistentMap::default(),
             pointer_points: crate::persistent::PersistentMap::default(),
+            field_points: crate::persistent::PersistentMap::default(),
             last_locals: None,
+            last_resources: None,
         }
     }
 }
@@ -3343,6 +3375,30 @@ impl RecordedSnapshots {
             }
         }
         self.last_locals = Some(state.locals().clone());
+        for instance in state
+            .resources()
+            .changed_owned_instances(self.last_resources.as_ref())
+        {
+            for field in instance.fields().iter() {
+                let crate::kernel::AlgebraicValue::C(CValue::Int32(
+                    crate::kernel::Bitvector32Term::Variable(variable),
+                )) = field
+                else {
+                    continue;
+                };
+                crate::instrumentation::record_deterministic_work(1);
+                let named = self.field_points.get(variable).is_some_and(|earlier| {
+                    earlier != selector
+                        && self.get_exact(earlier).is_some_and(|earlier| {
+                            instance_holds_field_value(earlier, instance.identity(), *variable)
+                        })
+                });
+                if !named {
+                    self.field_points.insert(*variable, selector.clone());
+                }
+            }
+        }
+        self.last_resources = Some(state.resources().clone());
     }
 
     /// The recorded points whose memories are nearest `memory` in the order
@@ -3401,6 +3457,19 @@ impl RecordedSnapshots {
             }
         })
         .take(POINTER_POINTS_OFFERED)
+    }
+
+    /// The recorded point at which a resource instance held the scalar
+    /// model-field value `variable`, with its state: one index lookup,
+    /// checked against that state.
+    fn point_holding_field_value(
+        &self,
+        variable: crate::kernel::Variable,
+    ) -> Option<(&SnapshotSelector, &CState)> {
+        let selector = self.field_points.get(&variable)?;
+        let state = self.get_exact(selector)?;
+        let origin = crate::kernel::model_fields::registered_model_field_origin(variable)?;
+        instance_holds_field_value(state, origin.identity, variable).then_some((selector, state))
     }
 
     fn contains_key<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> bool {
