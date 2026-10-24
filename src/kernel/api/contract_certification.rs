@@ -754,7 +754,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
 /// assumed existential over the same sort supplies the bound variable, its
 /// body conjuncts become facts, and the obligation body must then certify
 /// pointwise.
-fn certification_proves_exists_obligation_from_facts(
+pub(in crate::kernel) fn certification_proves_exists_obligation_from_facts(
     assumptions: &PureFactContext,
     obligation: &Proposition,
 ) -> bool {
@@ -764,11 +764,22 @@ fn certification_proves_exists_obligation_from_facts(
     else {
         return false;
     };
-    let fact_candidates = assumptions
-        .prop_facts
-        .scan_unindexed()
+    // An assumed existential alpha-equal to the obligation supplies every
+    // witness the obligation needs, and it is the one shape that certified
+    // across the gate: read its identity bucket first. Any other existential
+    // of the sort may still supply the witness, so a miss reads those, every
+    // existential of the sort: a known fast-part scan
+    // (`roadmap/smart-tactics.md`).
+    let mut fact_candidates = assumptions
+        .stated_identity_bucket(obligation)
         .cloned()
         .collect::<Vec<_>>();
+    let alpha_equal = fact_candidates.len();
+    for fact in assumptions.existentials_over(sort) {
+        if !fact_candidates[..alpha_equal].contains(fact) {
+            fact_candidates.push(fact.clone());
+        }
+    }
     fact_candidates.iter().any(|fact| {
         let Proposition::Exists {
             var: fact_var,

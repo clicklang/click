@@ -1025,6 +1025,7 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
         key.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         key.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
         key.universals_by_conclusion = crate::persistent::PersistentMap::default();
+        key.existentials_by_sort = crate::persistent::PersistentMap::default();
         key.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
@@ -5096,6 +5097,7 @@ impl PureFactContext {
         self.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.resource_contains_facts = crate::persistent::PersistentMap::default();
+        self.nonmemory_parent_containments = 0;
         self.memory_effect_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
         self.nonmemory_separations_by_side = crate::persistent::PersistentMap::default();
@@ -5825,6 +5827,13 @@ impl PureFactContext {
         let Proposition::CResourceContains { parent, child } = proposition else {
             return;
         };
+        if !matches!(**parent, CResource::Memory(_)) {
+            if insert {
+                self.nonmemory_parent_containments += 1;
+            } else {
+                self.nonmemory_parent_containments -= 1;
+            }
+        }
         if !matches!(**child, CResource::Memory(_)) {
             self.resource_containers =
                 with_adjusted_member(&self.resource_containers, child, proposition, insert);
@@ -5964,6 +5973,7 @@ impl PureFactContext {
     #[cfg(test)]
     fn rebuild_memory_separation_facts(&mut self) {
         self.resource_contains_facts = crate::persistent::PersistentMap::default();
+        self.nonmemory_parent_containments = 0;
         self.memory_effect_facts = crate::persistent::PersistentMap::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
@@ -6190,9 +6200,7 @@ impl PureFactContext {
             if !self.resource_compositions.contains(&resources) {
                 self.resource_compositions =
                     self.resource_compositions.with_value(resources.clone());
-                if resources.facts().iter().any(|fact| {
-                    fact.is_own() && matches!(fact.resource(), CResource::Composite { .. })
-                }) {
+                if resources.owns_composite() {
                     self.composite_owning_compositions = self
                         .composite_owning_compositions
                         .with_value(resources.clone());
@@ -7465,6 +7473,10 @@ impl PureFactContext {
                     self.atomic_connection_facts.with_inserted(key, bucket)
                 };
         }
+        if let Proposition::Exists { sort, .. } = proposition {
+            self.existentials_by_sort =
+                with_adjusted_member(&self.existentials_by_sort, sort, &shared, insert);
+        }
         if matches!(proposition, Proposition::ForAll { .. }) {
             self.atomic_quantified_facts = if insert {
                 self.atomic_quantified_facts.with_value(shared.clone())
@@ -7492,6 +7504,22 @@ impl PureFactContext {
         }
     }
 
+    /// The existential facts over `sort`, in proposition order.
+    pub(in crate::kernel) fn existentials_over(
+        &self,
+        sort: &Sort,
+    ) -> impl Iterator<Item = &Proposition> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.existentials_by_sort
+            .get(sort)
+            .into_iter()
+            .flat_map(crate::persistent::PersistentSet::iter)
+            .map(|fact| {
+                crate::instrumentation::record_deterministic_work(1);
+                fact.as_ref()
+            })
+    }
+
     /// The universal facts whose conclusion takes the shape `key`, in
     /// `atomic_quantified_facts` order, so a `find` picks the fact a scan
     /// of every universal would.
@@ -7515,6 +7543,7 @@ impl PureFactContext {
         self.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         self.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
         self.universals_by_conclusion = crate::persistent::PersistentMap::default();
+        self.existentials_by_sort = crate::persistent::PersistentMap::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.scan_for_upkeep() {
             self.adjust_atomic_connection_fact(
