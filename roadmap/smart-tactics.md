@@ -383,10 +383,16 @@ four times the work at a quarter of it.
     refuting a pointer disequality by the congruence closure are gone;
     across the gate they found contradictions only in unit tests written
     for them.
-14. Withdrawing a fact clears the difference graph
-    (`difference_graph.rs:1351-1354`), and withdrawing an equality clears
-    the contradiction index (`contradictions.rs`); the next query rebuilds
-    each from all condition facts.
+14. **Measured, left as is:** withdrawing a fact clears the difference
+    graph (`difference_graph.rs`), and withdrawing an equality clears the
+    contradiction index (`contradictions.rs`); the next query rebuilds each
+    from all condition facts. Both rebuild lazily, so a withdrawal costs
+    nothing until a later query on the same context. Across the gate the
+    graph was cleared 757 times and rebuilt 11 times over at most 11
+    facts (63 in all), and the contradiction index cleared 209 times and
+    rebuilt 5 times over at most 10 (35 in all). An index that drops one
+    edge would cost more than it saves until a proof shows a query after
+    each of many withdrawals.
 
 **Fact-store maintenance:**
 
@@ -418,7 +424,15 @@ four times the work at a quarter of it.
     `prop_facts`; `c_memories_connected_by_effects`
     (`memory_provenance.rs:3999`) scans all `prop_facts`, canonicalizes every
     effect, and runs a breadth-first search with `Vec::contains`, quadratic in
-    effects and uncharged. Callers include `memory_reasoning.rs:724` and
+    effects and uncharged. **Fixed:** `c_memories_connected_by_effects`
+    walks the write effects `memory_effect_facts` files under each memory
+    it reaches, with a hash set of the memories seen. Across the gate it
+    ran 14 times over at most 6 facts and found no connection, and the
+    indexed walk agreed every time; no gate verdict changed, and
+    `effect_connection_ignores_unrelated_effect_facts` covers it (the old
+    search grew from 116 to 1,316 units at 16 to 256 unrelated effects).
+    Still scanning: the `CMemoryLoadable` route's outer pass over
+    `prop_facts`, which matches a fact's base by memory resolution. Callers include `memory_reasoning.rs:724` and
     `contract_certification.rs:429`. Index: effect edges keyed by snapshot,
     and `memory_loadable_object_facts`. **Fixed:** the effect-summary route
     of checked load equality (`memory_provenance.rs`) scanned every

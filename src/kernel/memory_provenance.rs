@@ -4009,10 +4009,18 @@ pub(crate) fn c_memories_connected_by_effects(
     after: &CMemory,
     assumptions: &PureFactContext,
 ) -> bool {
-    let mut steps = Vec::new();
-    for proposition in assumptions.prop_facts.iter() {
-        match proposition {
-            Proposition::CMemoryMutatesOnly {
+    // A walk over the write effects (`CMemoryMutatesOnly`,
+    // `CMemoryEffectSummary`) filed under each memory it reaches, in either
+    // direction, not over every proposition fact. A memory reached is the
+    // target when it is the target's canonical equal.
+    if c_memories_canonically_equal(before, after) {
+        return true;
+    }
+    let mut seen = std::collections::HashSet::from([before.clone()]);
+    let mut frontier = vec![before.clone()];
+    while let Some(current) = frontier.pop() {
+        for fact in assumptions.memory_effect_facts_naming(&current) {
+            let (Proposition::CMemoryMutatesOnly {
                 before: step_before,
                 after: step_after,
                 ..
@@ -4021,41 +4029,22 @@ pub(crate) fn c_memories_connected_by_effects(
                 before: step_before,
                 after: step_after,
                 ..
-            } => {
-                steps.push((
-                    canonical_c_memory_deep(step_before),
-                    canonical_c_memory_deep(step_after),
-                ));
-            }
-            _ => {}
-        }
-    }
-    if steps.is_empty() {
-        return false;
-    }
-    let target = canonical_c_memory_deep(after);
-    let start = canonical_c_memory_deep(before);
-    if start == target {
-        return true;
-    }
-    let mut seen = vec![start.clone()];
-    let mut frontier = vec![start];
-    while !frontier.is_empty() {
-        let mut next = Vec::new();
-        for current in &frontier {
-            for (step_before, step_after) in &steps {
-                for (from, to) in [(step_before, step_after), (step_after, step_before)] {
-                    if from == current && !seen.contains(to) {
-                        if to == &target {
-                            return true;
-                        }
-                        seen.push(to.clone());
-                        next.push(to.clone());
-                    }
+            }) = fact
+            else {
+                continue;
+            };
+            let other = if step_before == &current {
+                step_after
+            } else {
+                step_before
+            };
+            if seen.insert(other.clone()) {
+                if c_memories_canonically_equal(other, after) {
+                    return true;
                 }
+                frontier.push(other.clone());
             }
         }
-        frontier = next;
     }
     false
 }
@@ -7915,6 +7904,47 @@ mod direct_unchanged_scaling_tests {
 
     fn value(index: usize) -> CValue {
         CValue::UInt32(Bitvector32Term::Constant(index as u32))
+    }
+
+    /// `c_memories_connected_by_effects` walks the effects filed under the
+    /// memories it reaches. It once collected every write effect among the
+    /// proposition facts and searched them with `Vec::contains`, so each
+    /// loadability fallback paid for every call the path had made.
+    #[test]
+    fn effect_connection_ignores_unrelated_effect_facts() {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let start = CMemory::new().store(cell("target"), value(1));
+            let middle = start.clone().with_block("call-havoc:0", 0);
+            let end = middle.clone().with_block("call-havoc:1", 0);
+            let summary = |before: &CMemory, after: &CMemory| Proposition::CMemoryEffectSummary {
+                before: before.clone(),
+                after: after.clone(),
+                mutable_ranges: Vec::new(),
+            };
+            let facts = (0..size)
+                .fold(PureFactContext::new(), |facts, index| {
+                    let base =
+                        CMemory::new().store(cell(&format!("unrelated-{index}")), value(index));
+                    let next = base
+                        .clone()
+                        .store(cell(&format!("unrelated-{index}")), value(index + 1));
+                    facts.assume_proposition(summary(&base, &next))
+                })
+                .assume_proposition(summary(&start, &middle))
+                .assume_proposition(summary(&middle, &end));
+            let (connected, work) = crate::instrumentation::measure_deterministic_work(|| {
+                c_memories_connected_by_effects(&start, &end, &facts)
+            });
+            assert!(connected, "two recorded calls connect the snapshots");
+            samples.push((size, work));
+        }
+        let (_, smallest) = samples[0];
+        assert!(
+            samples.iter().all(|(_, work)| *work == smallest),
+            "the effect connection grew with unrelated effect facts: {samples:?}"
+        );
     }
 
     /// `c_memory_load_is_directly_unchanged` reads the effect facts filed
