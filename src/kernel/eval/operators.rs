@@ -3126,6 +3126,12 @@ impl HeldRangeSurvey {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The compositions `held_range_membership` surveyed.
+    static HELD_RANGE_COMPOSITIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 fn held_range_membership(
     state: &CState,
     assumptions: &PureFactContext,
@@ -3136,9 +3142,15 @@ fn held_range_membership(
 ) -> HeldRangeMembership {
     let mut survey = HeldRangeSurvey::default();
     let object = pointer.object_base();
-    for resources in
-        std::iter::once(state.resources()).chain(assumptions.resource_compositions.iter())
-    {
+    // The stated compositions with owned memory in the pointer's block
+    // (`CompositionMemberIndex`), not every composition the path stated.
+    for resources in std::iter::once(state.resources()).chain(
+        assumptions
+            .composition_members
+            .listed_under([], [&pointer.block]),
+    ) {
+        #[cfg(test)]
+        HELD_RANGE_COMPOSITIONS.with(|visits| visits.set(visits.get() + 1));
         for fact in resources.memory_facts_in_block(&pointer.block) {
             let Some(range) = fact.memory_range() else {
                 continue;
@@ -5485,3 +5497,69 @@ mod word_tag_tests {
 #[cfg(test)]
 #[path = "unknown_pointer_formation_tests.rs"]
 mod unknown_pointer_formation_tests;
+
+#[cfg(test)]
+mod held_range_scaling_tests {
+    use super::*;
+
+    fn owner_of(base: &Pointer) -> Proposition {
+        Proposition::CResourceComposition(ResourceContext::new().unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                base.clone(),
+                0u32.into(),
+                2u32.into(),
+                4,
+            )),
+        ))
+    }
+
+    /// A pointer formed inside a range a stated composition holds is placed
+    /// by the compositions with memory in its block (`CompositionMemberIndex`).
+    /// It once surveyed every composition the path had stated, one per call,
+    /// fold and store.
+    #[test]
+    fn held_range_membership_ignores_unrelated_compositions() {
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let base = Pointer::symbolic(Variable(992_000));
+            // The first composition is the index's unlisted root, read by
+            // every question; keep the range out of it.
+            let facts = (0..size)
+                .fold(PureFactContext::new(), |facts, index| {
+                    facts
+                        .assume_proposition(owner_of(&Pointer::symbolic(Variable(992_100 + index))))
+                })
+                .assume_proposition(owner_of(&base));
+            let pointer = base.offset_by_int32_elements(Bitvector32Term::Constant(1));
+            HELD_RANGE_COMPOSITIONS.with(|visits| visits.set(0));
+            let (inside, work) = crate::instrumentation::measure_deterministic_work(|| {
+                matches!(
+                    held_range_membership(
+                        &CState::new(),
+                        &facts,
+                        &ExecutionFacts::new(),
+                        &base,
+                        &pointer,
+                        4,
+                    ),
+                    HeldRangeMembership::Inside
+                )
+            });
+            assert!(inside, "the stated range holds element 1");
+            samples.push((
+                size,
+                work,
+                HELD_RANGE_COMPOSITIONS.with(std::cell::Cell::get),
+            ));
+        }
+        let (_, work, visits) = samples[0];
+        assert!(
+            samples
+                .iter()
+                .all(|sample| (sample.1, sample.2) == (work, visits)),
+            "held range membership grew with unrelated compositions \
+             (size, work, compositions surveyed): {samples:?}"
+        );
+    }
+}
