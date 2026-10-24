@@ -3617,17 +3617,17 @@ fn serialized_loop_premises_reject_a_changed_snapshot_or_polarity() {
         expand_c0_claim_source(source, &sources, "fill_tail", CProofClaim::Grouped).unwrap();
     verify_c0_sources(&expanded, &sources).expect("serialized loop proof must reverify");
 
-    let original = "extract(at(region(3).entry, i) <= at(region(3).entry, n));";
+    let original = "extract(at(loop(0).exit, i) <= at(loop(0).exit, n));";
     assert!(expanded.contains(original), "{expanded}");
     for corrupted in [
         expanded.replacen(
             original,
-            "extract(at(loop(0).exit, i) <= at(region(3).entry, n));",
+            "extract(at(region(3).entry, i) <= at(loop(0).exit, n));",
             1,
         ),
         expanded.replacen(
             original,
-            "extract(not at(region(3).entry, i) <= at(region(3).entry, n));",
+            "extract(not at(loop(0).exit, i) <= at(loop(0).exit, n));",
             1,
         ),
     ] {
