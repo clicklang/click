@@ -5238,11 +5238,9 @@ impl CheckedInterfaceLowering {
         facts: &ProofFacts,
         access: &InterfaceReadPremises,
     ) -> Option<Self> {
-        let assumptions = facts
-            .assumptions()
-            .clone()
-            .defer_non_exact_condition_reasoning()
-            .defer_non_exact_loadability_obligations();
+        // Lower each arm's interface fact as a `have` of the same text in
+        // that arm lowers: the arm's proof states the fact in that form.
+        let assumptions = crate::kernel::api::proof_lowering_assumptions(facts.assumptions(), spec);
         Self::check_in(
             spec,
             state,
