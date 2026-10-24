@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> Pointer {
     Pointer {
@@ -148,7 +149,12 @@ fn pure_pointer_capture_cache_does_not_hide_a_free_occurrence_after_a_fold() {
         body: Box::new(observed.clone()),
     };
     let proposition = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(fold), Box::new(observed)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(fold),
+            right: Box::new(observed),
+        },
         true,
     );
     let mut variables = BTreeSet::new();

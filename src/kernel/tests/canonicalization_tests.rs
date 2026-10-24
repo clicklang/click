@@ -2,6 +2,7 @@
 // `src/surface/planning/proposition_search.rs`. The kernel itself never
 // calls it, so the tests import the planner explicitly.
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 // --- the canonicalization model's production invariants -------------------
@@ -237,7 +238,7 @@ fn assert_load_variables_have_defining_facts(
             crate::kernel::is_load_variable_defining_fact(&fact.proposition)
                 && matches!(
                     &fact.proposition,
-                    Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, _), true)
+                    Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right: _ }, true)
                         if matches!(left.as_ref(), Bitvector32Term::Variable(variable) if variable == load_variable)
                 )
         });
@@ -399,10 +400,12 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
         binary!(BitwiseXor, load.clone(), u32_value.clone()),
         unary!(BitwiseNot, load.clone()),
         Bitvector32Term::If {
-            condition: Box::new(ConditionTerm::Bitvector32Equal(
-                Box::new(load.clone()),
-                Box::new(u32_value.clone()),
-            )),
+            condition: Box::new(ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(load.clone()),
+                right: Box::new(u32_value.clone()),
+            }),
             then_term: Box::new(load.clone()),
             else_term: Box::new(u32_value.clone()),
         },
@@ -467,10 +470,12 @@ fn canonical_term_is_idempotent_at_multiple_term_depths() {
         for depth in 0..target_depth {
             term = Bitvector32Term::Add(
                 Box::new(Bitvector32Term::If {
-                    condition: Box::new(ConditionTerm::Bitvector32Equal(
-                        Box::new(term),
-                        Box::new(Bitvector32Term::Constant(depth as u32)),
-                    )),
+                    condition: Box::new(ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(term),
+                        right: Box::new(Bitvector32Term::Constant(depth as u32)),
+                    }),
                     then_term: Box::new(unresolved_canonicalization_test_load()),
                     else_term: Box::new(Bitvector32Term::Constant(depth as u32 + 1)),
                 }),
@@ -502,17 +507,21 @@ fn canonical_term_is_independent_of_contextual_equalities() {
     let term = Bitvector32Term::Variable(Variable(30_004));
     let canonical = crate::kernel::eval::canonical_term(&term);
     let equal_to_one = PureFactContext::new().assume_condition(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(term.clone()),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(term.clone()),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         true,
     );
     let equal_to_two = PureFactContext::new().assume_condition(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(term.clone()),
-            Box::new(Bitvector32Term::Constant(2)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(term.clone()),
+            right: Box::new(Bitvector32Term::Constant(2)),
+        },
         true,
     );
 
@@ -590,10 +599,12 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
         crate::kernel::LoadKind::Bits32,
     );
     let overflow = Bitvector32Term::If {
-        condition: Box::new(ConditionTerm::Bitvector32SignedAddOverflows(
-            Box::new(load.clone()),
-            Box::new(Bitvector32Term::Constant(1)),
-        )),
+        condition: Box::new(ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: Box::new(load.clone()),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        }),
         then_term: Box::new(Bitvector32Term::Constant(2)),
         else_term: Box::new(Bitvector32Term::Constant(3)),
     };
@@ -615,7 +626,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     };
     assert!(matches!(
         condition.as_ref(),
-        ConditionTerm::Bitvector32SignedAddOverflows(left, _)
+        ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right: _ }
             if left.as_ref() == &Bitvector32Term::Constant(7)
     ));
 
@@ -658,7 +669,12 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
         crate::kernel::eval::canonical_term(&right),
     );
     assert!(PureFactContext::new().proves(&Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(right)
+        },
         true,
     )));
 }
@@ -1211,10 +1227,12 @@ fn variable_substitution_visits_each_snapshot_once_per_rewrite() {
     let mut totals = Vec::new();
     for depth in [2, 4, 8, 16] {
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(nested_snapshot_load(depth)),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(nested_snapshot_load(depth)),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         let (rewritten, rewrite_count, total) = snapshot_rewrite_count(|| {

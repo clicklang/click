@@ -13,6 +13,7 @@
 //! [`plan_iterated_guard_store`] or drops the fact.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 /// The element-level proof steps and the whole-range conversions.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -51,7 +52,7 @@ fn terms_equal(
         || crate::kernel::assumptions::affine_bitvector_difference_constant(left, right) == Some(0)
         || proves(
             assumptions,
-            ConditionTerm::Bitvector32Equal(Box::new(left.clone()), Box::new(right.clone())),
+            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: Box::new(left.clone()), right: Box::new(right.clone()) },
         )
 }
 
@@ -63,7 +64,12 @@ fn terms_distinct(
     left != right
         && decide(
             assumptions,
-            ConditionTerm::Bitvector32Equal(Box::new(left.clone()), Box::new(right.clone())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(left.clone()),
+                right: Box::new(right.clone()),
+            },
         ) == Some(false)
 }
 
@@ -84,10 +90,12 @@ fn index_in_range(
         ConditionTerm::signed_less_equal(iterated.lower().clone(), index.clone()),
     ) && proves(
         assumptions,
-        ConditionTerm::Bitvector32SignedLessThan(
-            Box::new(index.clone()),
-            Box::new(iterated.upper().clone()),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(index.clone()),
+            right: Box::new(iterated.upper().clone()),
+        },
     )
 }
 
@@ -99,10 +107,12 @@ fn index_out_of_range(
 ) -> bool {
     proves(
         assumptions,
-        ConditionTerm::Bitvector32SignedLessThan(
-            Box::new(index.clone()),
-            Box::new(iterated.lower().clone()),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(index.clone()),
+            right: Box::new(iterated.lower().clone()),
+        },
     ) || proves(
         assumptions,
         ConditionTerm::signed_less_equal(iterated.upper().clone(), index.clone()),
@@ -117,10 +127,12 @@ fn guard_holds_for(
 ) -> Option<bool> {
     let equal = decide(
         assumptions,
-        ConditionTerm::Bitvector32Equal(
-            Box::new(cell.clone()),
-            Box::new(iterated.guard().value().clone()),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(cell.clone()),
+            right: Box::new(iterated.guard().value().clone()),
+        },
     )?;
     Some(equal == iterated.guard().holds_when_equal())
 }
@@ -555,10 +567,12 @@ fn every_guard(
             true,
         ))
         .assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(index.clone()),
-                Box::new(iterated.upper().clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(index.clone()),
+                right: Box::new(iterated.upper().clone()),
+            },
             true,
         ));
     let cell = guard_cell_value(state, iterated, &index, &hypotheses)?;
@@ -579,10 +593,12 @@ fn instantiate_guard(
     iterated: &CIteratedMemory,
     cell: &Bitvector32Term,
 ) -> PureFactContext {
-    let equal = ConditionTerm::Bitvector32Equal(
-        Box::new(cell.clone()),
-        Box::new(iterated.guard().value().clone()),
-    );
+    let equal = ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left: Box::new(cell.clone()),
+        right: Box::new(iterated.guard().value().clone()),
+    };
     hypotheses
         .instantiated_universal_consequents(&equal)
         .into_iter()

@@ -2,6 +2,7 @@
 //! identity carries nonnegative, non-wrapping guards; uint64 divisors are
 //! checked at their full width.
 use super::{Bitvector32Term as B, ConditionTerm as C};
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl C {
     /// In the nonnegative signed-word range, both signed and unsigned
@@ -9,8 +10,18 @@ impl C {
     /// The divisor must be strictly positive; no zero/negative case is used.
     pub(crate) fn nonnegative_division_bound_guards(&self) -> Option<Vec<Self>> {
         let (left, right) = match self {
-            C::Bitvector32SignedLessEqual(left, right) => (left, right),
-            C::Bitvector32SignedGreaterEqual(left, right) => (right, left),
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            } => (left, right),
+            C::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            } => (right, left),
             _ => return None,
         };
         let (result, upper) = if left.as_const() == Some(0) {
@@ -39,8 +50,18 @@ impl C {
 
     pub(crate) fn uint64_remainder_bound_guard(&self) -> Option<Self> {
         let (left, right, strict) = match self {
-            C::Bitvector64UnsignedLessEqual(a, b) => (a.as_ref(), b.as_ref(), false),
-            C::Bitvector64UnsignedLessThan(a, b) => (a.as_ref(), b.as_ref(), true),
+            C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            } => (a.as_ref(), b.as_ref(), false),
+            C::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            } => (a.as_ref(), b.as_ref(), true),
             _ => return None,
         };
         let B::UInt64Remainder(n, d) = left else {

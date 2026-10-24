@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn integer_parameter_preserves_machine_literal_and_cast_behavior() {
@@ -2510,10 +2511,12 @@ fn records_checked_surface_forms_for_lowered_propositions() {
 fn surface_synthesis_qualifies_a_c_local_named_result() {
     let local = Bitvector32Term::Variable(Variable(42));
     let proposition = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(local.clone()),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(local.clone()),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     let state = CState::new().with_local("result", CValue::Int32(local));
@@ -2646,14 +2649,16 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let proposition = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::MemoryLoad(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::new()),
                 Box::new(owner.clone()),
                 crate::kernel::LoadKind::Bits32,
             )),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     let surface = synthesize_surface_proposition(
@@ -2687,14 +2692,16 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         },
     };
     let proposition = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::MemoryLoad(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::new()),
                 Box::new(first_data_cell),
                 crate::kernel::LoadKind::Bits32,
             )),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     let surface = synthesize_surface_proposition(
@@ -5695,17 +5702,21 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         right: current_int(1),
     };
     let stated = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(984_500))),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(Variable(984_500))),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         true,
     );
     let side = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessThan(
-            Box::new(Bitvector32Term::Variable(Variable(984_501))),
-            Box::new(Bitvector32Term::Constant(7)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(Bitvector32Term::Variable(Variable(984_501))),
+            right: Box::new(Bitvector32Term::Constant(7)),
+        },
         true,
     );
     let lowered = Proposition::And(Box::new(stated.clone()), Box::new(side.clone()));
@@ -5732,10 +5743,12 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         right: current_int(2),
     };
     let left_kernel = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(984_502))),
-            Box::new(Bitvector32Term::Constant(2)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(Variable(984_502))),
+            right: Box::new(Bitvector32Term::Constant(2)),
+        },
         true,
     );
     let mut written = SurfacePropositionMap::default();

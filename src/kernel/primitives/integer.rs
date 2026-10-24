@@ -5,6 +5,8 @@
 //! and overflow semantics.  Mathematical integers have no C representation.
 
 use super::*;
+#[cfg(test)]
+use crate::kernel::CompareRelation;
 use num_bigint::BigInt;
 #[cfg(test)]
 use num_traits::ToPrimitive;
@@ -1673,7 +1675,15 @@ mod tests {
         ));
         assert!(matches!(
             ordering.as_ref(),
-            Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessEqual(_, _), true)
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: _,
+                    right: _
+                },
+                true
+            )
         ));
         let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
             conclusion.as_ref()

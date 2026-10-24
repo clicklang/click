@@ -528,9 +528,15 @@ In `src/kernel/`:
   the width stays implied instead of part of the term is ruled in
   `design/typed-indices.md`.
 - `PointerOffsetTerm`: pointer-offset expressions.
-- `ConditionTerm`: proof-level truth-valued conditions such as signed and
-  unsigned order, equality, overflow, pointer-offset equality, and typed
-  IEEE floating comparisons/classifications.
+- `ConditionTerm`: proof-level truth-valued conditions: machine comparisons
+  `Compare { format, relation, left, right }` and overflow tests
+  `Overflows { format, op, left, right }` at every machine-integer format,
+  `Integer` comparisons, pointer-offset and pointer equality, and typed IEEE
+  floating comparisons/classifications. An equality is filed at the signed
+  format of its width (it reads no sign), and a narrow comparison at
+  `int32`, whose order its canonical words compare exactly, so a fact has
+  one spelling. A `uint32` order is still the `int32` order of operands
+  whose sign bit is flipped (`design/machine-integers.md`, Stage 2).
 - `CValue`, `CType`, `Pointer`, `CMemory`, `CState`: C semantic state,
   including the non-object `Void` return value, scalar `int8`, `int16`, `int32`,
   `uint8`, `uint16`, `uint32`, `int64`, and `uint64`, pointers, and typed
@@ -708,19 +714,39 @@ the widths a rule supports; it asks the module
 | Range | `range::range`, `range_fact`, `constant_word` | `min(F) <= to_integer(v) <= max(F)` |
 | In-range identity | `identity::mathematical`, `machine_operation_of_integer_value` | `to_integer(a op b) == to_integer(a) op to_integer(b)` for `+ - *` when the exact result lies in `F` |
 | Operation bounds | `bounds::operation_bound` | a quotient, right shift or remainder by a positive constant, against its operand |
-| Definedness | `definedness::integer_bounds_of_definedness`, `definedness_of_integer_bound`, `defined_formats` | `not overflows(F, op, a, b)` exactly when the exact result lies in `F` |
+| Definedness | `definedness::integer_bounds_of_definedness`, `overflow_fact_of_integer_bound`, `definedness_of_integer_bound`, `defined_formats` | `not overflows(F, op, a, b)` exactly when the exact result lies in `F`; facts are filed at `int32` and `int64` only |
 | Modular equality | `modular::wrapped_equality_at`, `wrapped_equality_of_integer_equality` | an `Integer` equality over `+ - *` of observations of width `w` implies the word equality modulo `2^w` |
 | Conversion | `conversion::cast` and the narrow-widening helpers | a cast preserves a value its destination holds; a widening needs no premise |
 
-The term arena still spells each width with its own nodes, so one file,
+Conditions carry their format (`Compare`, `Overflows`), but the term arena
+still spells each width with its own operator nodes, so one file,
 `machine_integer/representation.rs`, maps a format and an operation,
 comparison or overflow test to its node, and a node back to its format and
 operation. It is the only place a rule's width dispatch lives. Where a
-format has no node the rule is unavailable there: no 128-bit operators or
-comparisons, no overflow test except at `int32` and `int64`, no narrow
-quotient (C computes it on promoted `int` words), and a `uint32` order spelled
-as the signed order of sign-flipped operands. Those are representation gaps
-that Stages 2 and 3 of the design remove. The test matrix
+format has no node the rule is unavailable there: no 128-bit operators, no
+narrow quotient (C computes it on promoted `int` words), and a `uint32`
+order spelled as the signed order of sign-flipped operands. Those are
+representation gaps that Stage 3 of the design, and the rest of Stage 2,
+remove.
+
+Two choices keep each fact's spelling where the kernel's reasoning reads
+it:
+
+- **128-bit comparisons are spelled as Integers.** `Compare` at `int128`
+  and `uint128` folds on constants and reads back as the Integer
+  comparison (`integer_observations_of_native_comparison`), but
+  `native_comparison_of_integer_observation` leaves an Integer comparison
+  of 128-bit observations in Integer form
+  (`representation::spells_comparison_natively`): the difference graph and
+  interval bounds have no 128-bit nodes and decide it as Integers.
+- **Definedness is filed where C's overflow is undefined.** Every format
+  has an overflow test, which folds on constants by the exact result's
+  range, and `integer_bounds_of_definedness` reads it at any format. The
+  fact context files a definedness fact beside its two Integer bounds only
+  at `int32` and `int64` (`representation::files_definedness`). An
+  unsigned test is a wrap and kernel-internal: surface `defined(...)` is
+  about undefined behavior only (`design/machine-integers.md`,
+  "Decisions", 2026-10-24). The test matrix
 (`machine_integer/matrix_tests.rs`) runs every rule at every format, checks on
 constants that it decides as exact arithmetic does wherever the values fit,
 and names each gap; a rule that misses a format, or newly reaches one, fails

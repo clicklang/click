@@ -1,4 +1,7 @@
 use super::*;
+#[cfg(test)]
+use crate::kernel::CompareRelation;
+use crate::kernel::{MachineIntegerType, OverflowOperation};
 
 pub(in crate::surface::proof) fn explicit_loop_preservation_tactics(
     clause: &StructuralClause,
@@ -683,7 +686,7 @@ fn source_range_capability_is_supported(proposition: &Proposition) -> Option<boo
         };
         let guard = |p: &Proposition| {
             matches!(p,
-            Proposition::ConditionIs(ConditionTerm::Bitvector32SignedAddOverflows(left, right), false)
+            Proposition::ConditionIs(ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right }, false)
                 if left.as_ref() == &Bitvector32Term::Variable(*var)
                     && right.as_ref() == &Bitvector32Term::Constant(1))
         };
@@ -831,7 +834,15 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
         super::super::check_verification_deadline()?;
         match item {
             Work::Proposition(
-                Proposition::ConditionIs(ConditionTerm::Bitvector32SignedAddOverflows(_, _), true),
+                Proposition::ConditionIs(
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: _,
+                        right: _,
+                    },
+                    true,
+                ),
                 _,
             ) if quantified_external_range => {
                 return Ok(false);
@@ -1115,10 +1126,12 @@ mod tests {
         assert!(error.message().contains("structural limit"));
 
         let load_variable = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(1 << 40))),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(1 << 40))),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         assert!(
@@ -1153,10 +1166,12 @@ mod tests {
             &memory,
         );
         let proposition = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(variable)),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(variable)),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         let source_snapshot = crate::kernel::CMemorySnapshotIdentity::of(memory.memory());
@@ -1170,14 +1185,16 @@ mod tests {
             .unwrap()
         );
         let memory_load = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::MemoryLoad(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::MemoryLoad(
                     memory.clone(),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Bits32,
                 )),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         assert!(
@@ -1202,10 +1219,12 @@ mod tests {
             &memory,
         );
         let dynamic_load = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(dynamic_variable)),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(dynamic_variable)),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         assert!(
@@ -1273,10 +1292,12 @@ mod tests {
             sort: Sort::CInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedAddOverflows(
-                        Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
-                        Box::new(Bitvector32Term::Constant(1)),
-                    ),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
+                        right: Box::new(Bitvector32Term::Constant(1)),
+                    },
                     false,
                 )),
                 Box::new(quantified.clone()),
@@ -1305,10 +1326,12 @@ mod tests {
             sort: Sort::CInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedAddOverflows(
-                        Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
-                        Box::new(Bitvector32Term::Constant(1)),
-                    ),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
+                        right: Box::new(Bitvector32Term::Constant(1)),
+                    },
                     true,
                 )),
                 Box::new(quantified.clone()),
@@ -1326,10 +1349,12 @@ mod tests {
             sort: Sort::CInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedAddOverflows(
-                        Box::new(Bitvector32Term::Variable(Variable(1 << 40))),
-                        Box::new(Bitvector32Term::Constant(1)),
-                    ),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: Box::new(Bitvector32Term::Variable(Variable(1 << 40))),
+                        right: Box::new(Bitvector32Term::Constant(1)),
+                    },
                     false,
                 )),
                 Box::new(quantified.clone()),
@@ -1368,10 +1393,12 @@ mod tests {
             sort: Sort::CInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedAddOverflows(
-                        Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
-                        Box::new(Bitvector32Term::Constant(1)),
-                    ),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
+                        right: Box::new(Bitvector32Term::Constant(1)),
+                    },
                     false,
                 )),
                 Box::new(wide_range),
@@ -1397,10 +1424,12 @@ mod tests {
             sort: Sort::CInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedAddOverflows(
-                        Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
-                        Box::new(Bitvector32Term::Constant(1)),
-                    ),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
+                        right: Box::new(Bitvector32Term::Constant(1)),
+                    },
                     false,
                 )),
                 Box::new(unregistered_range),
@@ -1417,10 +1446,12 @@ mod tests {
             sort: Sort::CInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedAddOverflows(
-                        Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
-                        Box::new(Bitvector32Term::Constant(1)),
-                    ),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
+                        right: Box::new(Bitvector32Term::Constant(1)),
+                    },
                     false,
                 )),
                 Box::new(Proposition::And(

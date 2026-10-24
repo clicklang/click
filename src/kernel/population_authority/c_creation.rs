@@ -30,10 +30,12 @@ fn same_quantity(
     left == right
         || crate::kernel::quantity_condition_holds(
             assumptions,
-            crate::kernel::ConditionTerm::Bitvector32Equal(
-                Box::new(left.clone()),
-                Box::new(right.clone()),
-            ),
+            crate::kernel::ConditionTerm::Compare {
+                format: crate::kernel::MachineIntegerType::Int32,
+                relation: crate::kernel::CompareRelation::Equal,
+                left: Box::new(left.clone()),
+                right: Box::new(right.clone()),
+            },
         )
 }
 

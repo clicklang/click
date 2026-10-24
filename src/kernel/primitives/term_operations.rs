@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, OverflowOperation};
 
 // Operands here have already undergone the language's scalar promotions.
 // Keep both constant-folding entry points on the shared format semantics.
@@ -2060,20 +2061,15 @@ impl ConditionTerm {
         match self {
             Self::PointerValueEqual(left, right) => (left == right).then_some(true),
 
-            Self::Bitvector32SignedLessEqual(left, right)
-            | Self::Bitvector32SignedGreaterEqual(left, right)
-            | Self::Bitvector32Equal(left, right)
-            | Self::Bitvector64SignedLessEqual(left, right)
-            | Self::Bitvector64SignedGreaterEqual(left, right)
-            | Self::Bitvector64UnsignedLessEqual(left, right)
-            | Self::Bitvector64UnsignedGreaterEqual(left, right)
-            | Self::Bitvector64Equal(left, right) => (left == right).then_some(true),
-            Self::Bitvector32SignedLessThan(left, right)
-            | Self::Bitvector32SignedGreaterThan(left, right)
-            | Self::Bitvector64SignedLessThan(left, right)
-            | Self::Bitvector64SignedGreaterThan(left, right)
-            | Self::Bitvector64UnsignedLessThan(left, right)
-            | Self::Bitvector64UnsignedGreaterThan(left, right) => (left == right).then_some(false),
+            Self::Compare {
+                relation,
+                left,
+                right,
+                ..
+            } => (left == right).then_some(!matches!(
+                relation,
+                CompareRelation::LessThan | CompareRelation::GreaterThan
+            )),
             Self::IntegerLessEqual(left, right)
             | Self::IntegerGreaterEqual(left, right)
             | Self::IntegerEqual(left, right) => (left == right).then_some(true),
@@ -2085,16 +2081,7 @@ impl ConditionTerm {
             Self::AlgebraicEqual(_, _)
             | Self::Constant(_)
             | Self::Variable(_)
-            | Self::Bitvector32SignedAddOverflows(_, _)
-            | Self::Bitvector32SignedSubtractOverflows(_, _)
-            | Self::Bitvector32SignedMultiplyOverflows(_, _)
-            | Self::Bitvector32SignedDivideOverflows(_, _)
-            | Self::Bitvector32SignedShiftLeftOverflows(_, _)
-            | Self::Bitvector64SignedAddOverflows(_, _)
-            | Self::Bitvector64SignedSubtractOverflows(_, _)
-            | Self::Bitvector64SignedMultiplyOverflows(_, _)
-            | Self::Bitvector64SignedDivideOverflows(_, _)
-            | Self::Bitvector64SignedShiftLeftOverflows(_, _)
+            | Self::Overflows { .. }
             | Self::Float32(_)
             | Self::Float64(_) => None,
         }
@@ -2166,24 +2153,175 @@ impl ConditionTerm {
         }
     }
 
+    /// The comparison `left REL right` at `format`, through the folding
+    /// constructor of its width (`signed_less_than`, `uint64_less_than`,
+    /// ...). A narrow comparison is the `int32` comparison of its canonical
+    /// words.
+    pub(crate) fn machine_compare(
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        left: Bitvector32Term,
+        right: Bitvector32Term,
+    ) -> Self {
+        use CompareRelation as R;
+        use MachineIntegerType as Ty;
+        match (format, relation) {
+            (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16, R::LessThan) => {
+                Self::signed_less_than(left, right)
+            }
+            (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16, R::LessEqual) => {
+                Self::signed_less_equal(left, right)
+            }
+            (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16, R::GreaterThan) => {
+                Self::signed_greater_than(left, right)
+            }
+            (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16, R::GreaterEqual) => {
+                Self::signed_greater_equal(left, right)
+            }
+            (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16 | Ty::UInt32, R::Equal) => {
+                Self::equal(left, right)
+            }
+            (Ty::UInt32, R::LessThan) => Self::unsigned_less_than(left, right),
+            (Ty::UInt32, R::LessEqual) => Self::unsigned_less_equal(left, right),
+            (Ty::UInt32, R::GreaterThan) => Self::unsigned_greater_than(left, right),
+            (Ty::UInt32, R::GreaterEqual) => Self::unsigned_greater_equal(left, right),
+            (Ty::Int64, R::LessThan) => Self::int64_signed_less_than(left, right),
+            (Ty::Int64, R::LessEqual) => Self::int64_signed_less_equal(left, right),
+            (Ty::Int64, R::GreaterThan) => Self::int64_signed_greater_than(left, right),
+            (Ty::Int64, R::GreaterEqual) => Self::int64_signed_greater_equal(left, right),
+            (Ty::Int64 | Ty::UInt64, R::Equal) => Self::int64_equal(left, right),
+            (Ty::UInt64, R::LessThan) => Self::uint64_less_than(left, right),
+            (Ty::UInt64, R::LessEqual) => Self::uint64_less_equal(left, right),
+            (Ty::UInt64, R::GreaterThan) => Self::uint64_greater_than(left, right),
+            (Ty::UInt64, R::GreaterEqual) => Self::uint64_greater_equal(left, right),
+            // Equality reads no sign: it is filed at the signed format.
+            (Ty::Int128 | Ty::UInt128, R::Equal) => {
+                match (
+                    machine_constant_value(format, &left),
+                    machine_constant_value(format, &right),
+                ) {
+                    (Some(left), Some(right)) => Self::Constant(left == right),
+                    _ if left == right => Self::Constant(true),
+                    _ => Self::Compare {
+                        format: Ty::Int128,
+                        relation,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                }
+            }
+            (Ty::Int128 | Ty::UInt128, relation) => {
+                match (
+                    machine_constant_value(format, &left),
+                    machine_constant_value(format, &right),
+                ) {
+                    (Some(left), Some(right)) => Self::Constant(match relation {
+                        R::LessThan => left < right,
+                        R::LessEqual => left <= right,
+                        R::GreaterThan => left > right,
+                        R::GreaterEqual => left >= right,
+                        R::Equal => left == right,
+                    }),
+                    _ => Self::Compare {
+                        format,
+                        relation,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                }
+            }
+        }
+    }
+
+    /// The overflow test of `left op right` at `format`, through the folding
+    /// constructor of its format.
+    pub(crate) fn machine_overflows(
+        format: MachineIntegerType,
+        op: OverflowOperation,
+        left: Bitvector32Term,
+        right: Bitvector32Term,
+    ) -> Self {
+        use MachineIntegerType as Ty;
+        use OverflowOperation as O;
+        match (format, op) {
+            (Ty::Int32, O::Add) => Self::signed_add_overflows(left, right),
+            (Ty::Int32, O::Subtract) => Self::signed_subtract_overflows(left, right),
+            (Ty::Int32, O::Multiply) => Self::signed_multiply_overflows(left, right),
+            (Ty::Int32, O::Divide) => Self::signed_divide_overflows(left, right),
+            (Ty::Int32, O::ShiftLeft) => Self::signed_shift_left_overflows(left, right),
+            (Ty::Int64, O::Add) => Self::int64_signed_add_overflows(left, right),
+            (Ty::Int64, O::Subtract) => Self::int64_signed_subtract_overflows(left, right),
+            (Ty::Int64, O::Multiply) => Self::int64_signed_multiply_overflows(left, right),
+            (Ty::Int64, O::Divide) => Self::int64_signed_divide_overflows(left, right),
+            (Ty::Int64, O::ShiftLeft) => Self::int64_signed_shift_left_overflows(left, right),
+            // Every other format folds constant operands by the exact
+            // result's range: an unsigned overflow is a wrap, a narrow one
+            // leaves the narrow range.
+            (format, op @ (O::Add | O::Subtract | O::Multiply)) => {
+                match (
+                    machine_constant_value(format, &left),
+                    machine_constant_value(format, &right),
+                ) {
+                    (Some(a), Some(b)) => {
+                        let exact = match op {
+                            O::Add => a + b,
+                            O::Subtract => a - b,
+                            _ => a * b,
+                        };
+                        let (minimum, maximum) =
+                            crate::kernel::machine_integer::range::range(format);
+                        Self::Constant(exact < minimum || exact > maximum)
+                    }
+                    _ => Self::Overflows {
+                        format,
+                        op,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                }
+            }
+            (format, op) => Self::Overflows {
+                format,
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
+        }
+    }
+
     pub(crate) fn int64_signed_less_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         match int64_signed_order_by_width(&left, &right, |left, right| left < right) {
             Some(value) => Self::Constant(value),
-            None => Self::Bitvector64SignedLessThan(Box::new(left), Box::new(right)),
+            None => Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessThan,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
     pub(crate) fn int64_signed_less_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         match int64_signed_order_by_width(&left, &right, |left, right| left <= right) {
             Some(value) => Self::Constant(value),
-            None => Self::Bitvector64SignedLessEqual(Box::new(left), Box::new(right)),
+            None => Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
     pub(crate) fn int64_signed_greater_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         match int64_signed_order_by_width(&left, &right, |left, right| left > right) {
             Some(value) => Self::Constant(value),
-            None => Self::Bitvector64SignedGreaterThan(Box::new(left), Box::new(right)),
+            None => Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterThan,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2193,7 +2331,12 @@ impl ConditionTerm {
     ) -> Self {
         match int64_signed_order_by_width(&left, &right, |left, right| left >= right) {
             Some(value) => Self::Constant(value),
-            None => Self::Bitvector64SignedGreaterEqual(Box::new(left), Box::new(right)),
+            None => Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2219,14 +2362,40 @@ impl ConditionTerm {
                 _ => None,
             }
         }
-        if let Self::Bitvector32Equal(a, b) = self {
+        if let Self::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: a,
+            right: b,
+        } = self
+        {
             return Some([Self::int64_equal(wide(a)?, wide(b)?), Self::Constant(true)]);
         }
         let (a, b, strict) = match self {
-            Self::Bitvector32SignedLessThan(a, b) => (a, b, true),
-            Self::Bitvector32SignedGreaterThan(a, b) => (b, a, true),
-            Self::Bitvector32SignedLessEqual(a, b) => (a, b, false),
-            Self::Bitvector32SignedGreaterEqual(a, b) => (b, a, false),
+            Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            } => (a, b, true),
+            Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: a,
+                right: b,
+            } => (b, a, true),
+            Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            } => (a, b, false),
+            Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: a,
+                right: b,
+            } => (b, a, false),
             _ => return None,
         };
         if !strict && a.as_const() == Some(0) {
@@ -2319,25 +2488,39 @@ impl ConditionTerm {
             }
         }
         match self {
-            Self::Bitvector64UnsignedLessEqual(n, next)
-                if predecessor(next) == Some(n.as_ref()) =>
-            {
-                Some(Self::uint64_less_equal(
-                    n.as_ref().clone(),
-                    Bitvector32Term::UInt64Constant(u64::MAX - 1),
-                ))
-            }
-            Self::Bitvector64UnsignedLessEqual(next, n) => Some(Self::uint64_less_than(
+            Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: n,
+                right: next,
+            } if predecessor(next) == Some(n.as_ref()) => Some(Self::uint64_less_equal(
+                n.as_ref().clone(),
+                Bitvector32Term::UInt64Constant(u64::MAX - 1),
+            )),
+            Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: next,
+                right: n,
+            } => Some(Self::uint64_less_than(
                 predecessor(next)?.clone(),
                 n.as_ref().clone(),
             )),
-            Self::Bitvector64UnsignedLessThan(n, next) if predecessor(next) == Some(n.as_ref()) => {
-                Some(Self::uint64_less_equal(
-                    n.as_ref().clone(),
-                    Bitvector32Term::UInt64Constant(u64::MAX - 1),
-                ))
-            }
-            Self::Bitvector64UnsignedLessThan(next_distance, old_distance) => {
+            Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left: n,
+                right: next,
+            } if predecessor(next) == Some(n.as_ref()) => Some(Self::uint64_less_equal(
+                n.as_ref().clone(),
+                Bitvector32Term::UInt64Constant(u64::MAX - 1),
+            )),
+            Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left: next_distance,
+                right: old_distance,
+            } => {
                 let Bitvector32Term::UInt64Subtract(n, next) = next_distance.as_ref() else {
                     return None;
                 };
@@ -2354,9 +2537,12 @@ impl ConditionTerm {
     /// Sufficient non-wrapping bounds for an unsigned slice remainder length.
     pub(crate) fn uint64_subtraction_guard(&self) -> Option<Self> {
         match self {
-            Self::Bitvector64UnsignedLessThan(zero, difference)
-                if zero.uint64_as_const() == Some(0) =>
-            {
+            Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left: zero,
+                right: difference,
+            } if zero.uint64_as_const() == Some(0) => {
                 let Bitvector32Term::UInt64Subtract(length, midpoint) = difference.as_ref() else {
                     return None;
                 };
@@ -2365,7 +2551,12 @@ impl ConditionTerm {
                     length.as_ref().clone(),
                 ))
             }
-            Self::Bitvector64UnsignedLessEqual(difference, upper) => {
+            Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: difference,
+                right: upper,
+            } => {
                 let Bitvector32Term::UInt64Subtract(length, midpoint) = difference.as_ref() else {
                     return None;
                 };
@@ -2375,7 +2566,12 @@ impl ConditionTerm {
             }
             // `length - c < length` for a constant `c >= 1`, when the
             // difference does not wrap: `c <= length`.
-            Self::Bitvector64UnsignedLessThan(difference, upper) => {
+            Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left: difference,
+                right: upper,
+            } => {
                 let Bitvector32Term::UInt64Subtract(length, midpoint) = difference.as_ref() else {
                     return None;
                 };
@@ -2390,7 +2586,13 @@ impl ConditionTerm {
     /// `(n - k) <= upper` follows from `k <= n <= upper`. The first
     /// guard is essential: unsigned subtraction otherwise wraps.
     pub(crate) fn uint64_subtraction_upper_bound_guards(&self) -> Option<Vec<Self>> {
-        let Self::Bitvector64UnsignedLessEqual(difference, upper) = self else {
+        let Self::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left: difference,
+            right: upper,
+        } = self
+        else {
             return None;
         };
         let Bitvector32Term::UInt64Subtract(length, removed) = difference.as_ref() else {
@@ -2409,7 +2611,13 @@ impl ConditionTerm {
     /// value: `(whole - removed) + restored <= upper`, with exact native
     /// subtraction and addition under the three guards below.
     pub(crate) fn uint64_partial_restoration_upper_bound_guards(&self) -> Option<Vec<Self>> {
-        let Self::Bitvector64UnsignedLessEqual(sum, upper) = self else {
+        let Self::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left: sum,
+            right: upper,
+        } = self
+        else {
             return None;
         };
         let Bitvector32Term::UInt64Add(left, right) = sum.as_ref() else {
@@ -2446,7 +2654,12 @@ impl ConditionTerm {
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left < right),
             (_, Some(0)) | (Some(u64::MAX), _) => Self::Constant(false),
-            _ => Self::Bitvector64UnsignedLessThan(Box::new(left), Box::new(right)),
+            _ => Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2456,7 +2669,12 @@ impl ConditionTerm {
             // Zero is the least unsigned 64-bit value and `u64::MAX` the
             // greatest.
             (Some(0), _) | (_, Some(u64::MAX)) => Self::Constant(true),
-            _ => Self::Bitvector64UnsignedLessEqual(Box::new(left), Box::new(right)),
+            _ => Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2464,7 +2682,12 @@ impl ConditionTerm {
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left > right),
             (Some(0), _) | (_, Some(u64::MAX)) => Self::Constant(false),
-            _ => Self::Bitvector64UnsignedGreaterThan(Box::new(left), Box::new(right)),
+            _ => Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterThan,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2472,7 +2695,12 @@ impl ConditionTerm {
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left >= right),
             (_, Some(0)) | (Some(u64::MAX), _) => Self::Constant(true),
-            _ => Self::Bitvector64UnsignedGreaterEqual(Box::new(left), Box::new(right)),
+            _ => Self::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2514,12 +2742,28 @@ impl ConditionTerm {
     /// image; other conditions are returned unchanged.
     pub(crate) fn flipped(&self) -> Self {
         match self {
-            Self::Bitvector32Equal(left, right) => {
-                Self::Bitvector32Equal(right.clone(), left.clone())
-            }
-            Self::Bitvector64Equal(left, right) => {
-                Self::Bitvector64Equal(right.clone(), left.clone())
-            }
+            Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } => Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: right.clone(),
+                right: left.clone(),
+            },
+            Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } => Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: right.clone(),
+                right: left.clone(),
+            },
             Self::PointerEqual(left, right) => Self::PointerEqual(right.clone(), left.clone()),
             Self::PointerValueEqual(left, right) => {
                 Self::PointerValueEqual(right.clone(), left.clone())
@@ -2551,7 +2795,13 @@ impl ConditionTerm {
     /// Recognizes the alignment shape in either operand order and with any
     /// constant spelling of the mask and the zero.
     pub(crate) fn as_pointer_alignment(&self) -> Option<(&Pointer, u64)> {
-        let Self::Bitvector64Equal(left, right) = self else {
+        let Self::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = self
+        else {
             return None;
         };
         let masked = if right.uint64_as_const() == Some(0) {
@@ -2591,21 +2841,28 @@ impl ConditionTerm {
         match (left.bitvector64_as_const(), right.bitvector64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
             _ => {
-                let condition = Self::Bitvector64Equal(Box::new(left), Box::new(right));
+                let condition = Self::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                };
                 // Alignment describes address bits, independently of the
                 // object's class. Give C masks and `aligned` one canonical
                 // proposition while leaving pointer-producing words intact.
                 if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
-                    return Self::Bitvector64Equal(
-                        Box::new(Bitvector32Term::UInt64BitwiseAnd(
+                    return Self::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::UInt64BitwiseAnd(
                             Box::new(Bitvector32Term::PointerAddress(
                                 Box::new(pointer.clone()),
                                 crate::kernel::AddressObjectClass::NONE,
                             )),
                             Box::new(Bitvector32Term::UInt64Constant(alignment - 1)),
                         )),
-                        Box::new(Bitvector32Term::UInt64Constant(0)),
-                    );
+                        right: Box::new(Bitvector32Term::UInt64Constant(0)),
+                    };
                 }
                 condition
             }
@@ -2630,7 +2887,12 @@ impl ConditionTerm {
             {
                 Self::Constant(false)
             }
-            _ => Self::Bitvector64SignedAddOverflows(Box::new(left), Box::new(right)),
+            _ => Self::Overflows {
+                format: MachineIntegerType::Int64,
+                op: OverflowOperation::Add,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2647,7 +2909,12 @@ impl ConditionTerm {
             {
                 Self::Constant(false)
             }
-            _ => Self::Bitvector64SignedSubtractOverflows(Box::new(left), Box::new(right)),
+            _ => Self::Overflows {
+                format: MachineIntegerType::Int64,
+                op: OverflowOperation::Subtract,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2657,7 +2924,12 @@ impl ConditionTerm {
     ) -> Self {
         match (left.int64_as_const(), right.int64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left.checked_mul(right).is_none()),
-            _ => Self::Bitvector64SignedMultiplyOverflows(Box::new(left), Box::new(right)),
+            _ => Self::Overflows {
+                format: MachineIntegerType::Int64,
+                op: OverflowOperation::Multiply,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2669,7 +2941,12 @@ impl ConditionTerm {
             (Some(left), Some(right)) => {
                 Self::Constant(right == 0 || (left == i64::MIN && right == -1))
             }
-            _ => Self::Bitvector64SignedDivideOverflows(Box::new(left), Box::new(right)),
+            _ => Self::Overflows {
+                format: MachineIntegerType::Int64,
+                op: OverflowOperation::Divide,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2681,7 +2958,12 @@ impl ConditionTerm {
             (Some(left), Some(count)) => Self::Constant(
                 count >= 64 || left < 0 || left.checked_shl(count).is_none_or(|result| result < 0),
             ),
-            _ => Self::Bitvector64SignedShiftLeftOverflows(Box::new(left), Box::new(right)),
+            _ => Self::Overflows {
+                format: MachineIntegerType::Int64,
+                op: OverflowOperation::ShiftLeft,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2743,7 +3025,12 @@ impl ConditionTerm {
     ) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant((left as i32) < (right as i32)),
-            _ => Self::Bitvector32SignedLessThan(Box::new(left), Box::new(right)),
+            _ => Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2753,7 +3040,12 @@ impl ConditionTerm {
     ) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant((left as i32) <= (right as i32)),
-            _ => Self::Bitvector32SignedLessEqual(Box::new(left), Box::new(right)),
+            _ => Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2763,7 +3055,12 @@ impl ConditionTerm {
     ) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant((left as i32) > (right as i32)),
-            _ => Self::Bitvector32SignedGreaterThan(Box::new(left), Box::new(right)),
+            _ => Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2773,14 +3070,24 @@ impl ConditionTerm {
     ) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant((left as i32) >= (right as i32)),
-            _ => Self::Bitvector32SignedGreaterEqual(Box::new(left), Box::new(right)),
+            _ => Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
     pub(in crate::kernel) fn equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
-            _ => Self::Bitvector32Equal(Box::new(left), Box::new(right)),
+            _ => Self::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2789,7 +3096,12 @@ impl ConditionTerm {
             (Some(left), Some(right)) => {
                 Self::Constant((left as i32).overflowing_add(right as i32).1)
             }
-            _ => Self::Bitvector32SignedAddOverflows(Box::new(left), Box::new(right)),
+            _ => Self::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2804,7 +3116,12 @@ impl ConditionTerm {
             (Some(left), Some(right)) => {
                 Self::Constant((left as i32).overflowing_sub(right as i32).1)
             }
-            _ => Self::Bitvector32SignedSubtractOverflows(Box::new(left), Box::new(right)),
+            _ => Self::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Subtract,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2816,7 +3133,12 @@ impl ConditionTerm {
             (Some(left), Some(right)) => {
                 Self::Constant((left as i32).overflowing_mul(right as i32).1)
             }
-            _ => Self::Bitvector32SignedMultiplyOverflows(Box::new(left), Box::new(right)),
+            _ => Self::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Multiply,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2828,7 +3150,12 @@ impl ConditionTerm {
             (Some(left), Some(right)) => {
                 Self::Constant(left == i32::MIN as u32 && right == (-1i32) as u32)
             }
-            _ => Self::Bitvector32SignedDivideOverflows(Box::new(left), Box::new(right)),
+            _ => Self::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Divide,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2840,12 +3167,20 @@ impl ConditionTerm {
             (Some(left_value), Some(right_value)) => {
                 match signed_shift_left_overflows_const(left_value, right_value) {
                     Some(overflows) => Self::Constant(overflows),
-                    None => {
-                        Self::Bitvector32SignedShiftLeftOverflows(Box::new(left), Box::new(right))
-                    }
+                    None => Self::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::ShiftLeft,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
                 }
             }
-            _ => Self::Bitvector32SignedShiftLeftOverflows(Box::new(left), Box::new(right)),
+            _ => Self::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::ShiftLeft,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 
@@ -2945,6 +3280,27 @@ impl ConditionTerm {
 /// is a multiple of the strides' greatest common divisor, so offsets whose
 /// constants differ modulo it are distinct. `items[x].y` at `x * 8 + 4` is
 /// never the cell at `0` or `8`.
+/// The value of a constant word read at `format`, or `None` for any other
+/// term. Only constant nodes are read, so a symbolic operand costs one match.
+fn machine_constant_value(
+    format: MachineIntegerType,
+    term: &Bitvector32Term,
+) -> Option<num_bigint::BigInt> {
+    if !matches!(
+        term,
+        Bitvector32Term::Constant(_)
+            | Bitvector32Term::Int64Constant(_)
+            | Bitvector32Term::UInt64Constant(_)
+            | Bitvector32Term::MachineIntegerConstant(_)
+    ) {
+        return None;
+    }
+    match IntegerTerm::from_machine(format, term.clone())? {
+        IntegerTerm::Constant(value) => Some(value),
+        _ => None,
+    }
+}
+
 fn pointer_offsets_differ_by_residue(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> bool {
     let (Some((left_scaled, left_constant)), Some((right_scaled, right_constant))) = (
         left.int32_scaled_linear_form(),
@@ -4723,7 +5079,12 @@ mod shift_overflow_refusal_tests {
         );
         assert_eq!(
             ConditionTerm::signed_shift_left_overflows(left.clone(), right.clone()),
-            ConditionTerm::Bitvector32SignedShiftLeftOverflows(Box::new(left), Box::new(right),),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::ShiftLeft,
+                left: Box::new(left),
+                right: Box::new(right)
+            },
             "an out-of-range shift must not become the safe constant false"
         );
     }
@@ -4762,12 +5123,28 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
         ConditionTerm::AlgebraicEqual(left, right) => {
             ConditionTerm::AlgebraicEqual(right.clone(), left.clone())
         }
-        ConditionTerm::Bitvector32Equal(left, right) => {
-            ConditionTerm::Bitvector32Equal(right.clone(), left.clone())
-        }
-        ConditionTerm::Bitvector64Equal(left, right) => {
-            ConditionTerm::Bitvector64Equal(right.clone(), left.clone())
-        }
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: right.clone(),
+            right: left.clone(),
+        },
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: right.clone(),
+            right: left.clone(),
+        },
         ConditionTerm::PointerOffsetEqual(left, right) => {
             ConditionTerm::PointerOffsetEqual(right.clone(), left.clone())
         }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 pub(crate) fn c_checked_function_proposition_with_reason(
     function: &CFunction,
@@ -2478,7 +2479,12 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
     }
     fn reflexive(condition: &ConditionTerm) -> bool {
         match condition {
-            ConditionTerm::Bitvector32Equal(left, right) => left == right,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } => left == right,
             ConditionTerm::PointerEqual(left, right) => left == right,
             ConditionTerm::PointerValueEqual(left, right) => left == right,
             ConditionTerm::PointerOffsetEqual(left, right) => left == right,
@@ -3204,10 +3210,12 @@ mod checked_proposition_index_tests {
 
     fn route(variable: u64, value: bool) -> Proposition {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(variable))),
-                Box::new(Bitvector32Term::Constant(1)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(variable))),
+                right: Box::new(Bitvector32Term::Constant(1)),
+            },
             value,
         )
     }
@@ -3461,10 +3469,12 @@ mod unproved_path_obligation_message_tests {
     #[test]
     fn names_the_obligation_by_its_context_without_a_term_dump() {
         let condition = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(Bitvector32Term::Variable(Variable(7))),
-                Box::new(Bitvector32Term::Constant(3)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(Bitvector32Term::Variable(Variable(7))),
+                right: Box::new(Bitvector32Term::Constant(3)),
+            },
             true,
         );
         let with_context = ProofObligation::verification_condition(condition.clone())

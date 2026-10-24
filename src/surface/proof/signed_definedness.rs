@@ -21,6 +21,7 @@ use crate::kernel::SignedDefinedWidth;
 use crate::kernel::proof::arithmetic_special::{
     signed_constant_bound_on, signed_definedness_operands, signed_width_constant,
 };
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl<'a> Proof<'a> {
     /// `simp` on an `int32` or `int64` definedness goal: cite the constant
@@ -301,26 +302,96 @@ fn spell_signed_bound(
         return None;
     };
     let (left, right, operator) = match (width, condition) {
-        (SignedDefinedWidth::Int32, ConditionTerm::Bitvector32Equal(left, right))
-        | (SignedDefinedWidth::Int64, ConditionTerm::Bitvector64Equal(left, right)) => {
-            (left, right, ComparisonOperator::Equal)
-        }
-        (SignedDefinedWidth::Int32, ConditionTerm::Bitvector32SignedLessThan(left, right))
-        | (SignedDefinedWidth::Int64, ConditionTerm::Bitvector64SignedLessThan(left, right)) => {
-            (left, right, ComparisonOperator::LessThan)
-        }
-        (SignedDefinedWidth::Int32, ConditionTerm::Bitvector32SignedLessEqual(left, right))
-        | (SignedDefinedWidth::Int64, ConditionTerm::Bitvector64SignedLessEqual(left, right)) => {
-            (left, right, ComparisonOperator::LessEqual)
-        }
-        (SignedDefinedWidth::Int32, ConditionTerm::Bitvector32SignedGreaterThan(left, right))
-        | (SignedDefinedWidth::Int64, ConditionTerm::Bitvector64SignedGreaterThan(left, right)) => {
-            (left, right, ComparisonOperator::GreaterThan)
-        }
-        (SignedDefinedWidth::Int32, ConditionTerm::Bitvector32SignedGreaterEqual(left, right))
-        | (SignedDefinedWidth::Int64, ConditionTerm::Bitvector64SignedGreaterEqual(left, right)) => {
-            (left, right, ComparisonOperator::GreaterEqual)
-        }
+        (
+            SignedDefinedWidth::Int32,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+        )
+        | (
+            SignedDefinedWidth::Int64,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+        ) => (left, right, ComparisonOperator::Equal),
+        (
+            SignedDefinedWidth::Int32,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+        )
+        | (
+            SignedDefinedWidth::Int64,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+        ) => (left, right, ComparisonOperator::LessThan),
+        (
+            SignedDefinedWidth::Int32,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+        )
+        | (
+            SignedDefinedWidth::Int64,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+        ) => (left, right, ComparisonOperator::LessEqual),
+        (
+            SignedDefinedWidth::Int32,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            },
+        )
+        | (
+            SignedDefinedWidth::Int64,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            },
+        ) => (left, right, ComparisonOperator::GreaterThan),
+        (
+            SignedDefinedWidth::Int32,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            },
+        )
+        | (
+            SignedDefinedWidth::Int64,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            },
+        ) => (left, right, ComparisonOperator::GreaterEqual),
         _ => return None,
     };
     let side = |side: &Bitvector32Term| {
@@ -358,7 +429,18 @@ fn exact_constant_of(
     term: &Bitvector32Term,
 ) -> Option<i64> {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(left, right) | ConditionTerm::Bitvector64Equal(left, right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
         true,
     ) = fact
     else {

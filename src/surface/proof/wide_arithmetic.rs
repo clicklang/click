@@ -11,6 +11,7 @@
 //! explicit arithmetic certificate, recorded as such, so the expansion is
 //! that explicit script and nothing here is trusted.
 use super::*;
+use crate::kernel::CompareRelation;
 
 /// Which 64-bit integers a goal orders.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -23,17 +24,49 @@ impl Carrier {
     pub(super) fn of(proposition: &Proposition) -> Option<Self> {
         match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector64UnsignedLessThan(..)
-                | ConditionTerm::Bitvector64UnsignedLessEqual(..)
-                | ConditionTerm::Bitvector64UnsignedGreaterThan(..)
-                | ConditionTerm::Bitvector64UnsignedGreaterEqual(..),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::LessThan,
+                    ..
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::LessEqual,
+                    ..
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::GreaterThan,
+                    ..
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::GreaterEqual,
+                    ..
+                },
                 _,
             ) => Some(Self::UInt64),
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector64SignedLessThan(..)
-                | ConditionTerm::Bitvector64SignedLessEqual(..)
-                | ConditionTerm::Bitvector64SignedGreaterThan(..)
-                | ConditionTerm::Bitvector64SignedGreaterEqual(..),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::LessThan,
+                    ..
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::LessEqual,
+                    ..
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::GreaterThan,
+                    ..
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::GreaterEqual,
+                    ..
+                },
                 _,
             ) => Some(Self::Int64),
             _ => None,
@@ -451,7 +484,11 @@ impl<'a> Proof<'a> {
         if !matches!(
             goal,
             Some(Proposition::ConditionIs(
-                ConditionTerm::Bitvector64Equal(..),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    ..
+                },
                 true
             ))
         ) {
@@ -562,7 +599,14 @@ impl<'a> Proof<'a> {
                 })?;
             let equality = matches!(
                 kernel,
-                Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(..), true)
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        ..
+                    },
+                    true
+                )
             );
             // An equality the kernel already holds by identity: a local
             // whose value is the other side, `next == i + 1u64` after

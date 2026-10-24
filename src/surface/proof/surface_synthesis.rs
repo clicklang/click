@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 #[cfg(test)]
 mod tests;
@@ -1159,7 +1160,15 @@ fn synthesize_surface_proposition_with_bound_variables(
 fn is_leading_add_definedness_guard(proposition: &Proposition) -> bool {
     matches!(
         proposition,
-        Proposition::ConditionIs(ConditionTerm::Bitvector32SignedAddOverflows(_, _), false)
+        Proposition::ConditionIs(
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: _,
+                right: _
+            },
+            false
+        )
     )
 }
 
@@ -1933,8 +1942,15 @@ fn synthesize_surface_atomic_proposition(
     state: &CState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
-    if let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-        proposition
+    if let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
+        true,
+    ) = proposition
         && let (
             Bitvector32Term::Variable(variable),
             Bitvector32Term::MemoryLoad(memory, pointer, kind),
@@ -2195,7 +2211,12 @@ fn synthesize_surface_atomic_proposition(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
-    if let ConditionTerm::Bitvector32SignedAddOverflows(left, right) = condition
+    if let ConditionTerm::Overflows {
+        format: MachineIntegerType::Int32,
+        op: OverflowOperation::Add,
+        left,
+        right,
+    } = condition
         && !value
     {
         return Some(ClickProposition::Defined {
@@ -2317,28 +2338,90 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     let (left, operator, right) = match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64SignedLessThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessThan(left, right) => {
-            (left, ComparisonOperator::LessThan, right)
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
         }
-        ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => {
-            (left, ComparisonOperator::LessEqual, right)
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
         }
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => {
-            (left, ComparisonOperator::GreaterThan, right)
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        } => (left, ComparisonOperator::LessThan, right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
         }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => {
-            (left, ComparisonOperator::GreaterEqual, right)
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
         }
-        ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right) => (left, ComparisonOperator::Equal, right),
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        } => (left, ComparisonOperator::LessEqual, right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        } => (left, ComparisonOperator::GreaterThan, right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => (left, ComparisonOperator::GreaterEqual, right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => (left, ComparisonOperator::Equal, right),
         _ => return None,
     };
     let surface_left =
@@ -2449,18 +2532,30 @@ fn synthesize_unsigned_comparison(
 ) -> Option<ClickProposition> {
     const SIGN_BIT: u32 = 0x8000_0000;
     let (left, operator, right) = match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-            (left, ComparisonOperator::LessThan, right)
-        }
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-            (left, ComparisonOperator::LessEqual, right)
-        }
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-            (left, ComparisonOperator::GreaterThan, right)
-        }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-            (left, ComparisonOperator::GreaterEqual, right)
-        }
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        } => (left, ComparisonOperator::LessThan, right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        } => (left, ComparisonOperator::LessEqual, right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        } => (left, ComparisonOperator::GreaterThan, right),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => (left, ComparisonOperator::GreaterEqual, right),
         _ => return None,
     };
     let flipped = |term: &Bitvector32Term| match term {
@@ -2597,8 +2692,18 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
             })
     };
     let (left, right) = match condition {
-        ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right) => (
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => (
             anchored(&|state| {
                 synthesize_surface_bitvector(left, parameter_binding, state, &bound_variables)
             })?,

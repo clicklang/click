@@ -909,36 +909,56 @@ impl PointerOffsetTerm {
     }
 }
 
+/// The relation of a machine comparison ([`ConditionTerm::Compare`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum CompareRelation {
+    LessThan,
+    LessEqual,
+    GreaterThan,
+    GreaterEqual,
+    Equal,
+}
+
+/// The operation a machine overflow test ([`ConditionTerm::Overflows`])
+/// guards.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum OverflowOperation {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    ShiftLeft,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ConditionTerm {
     Constant(bool),
     Variable(Variable),
     /// Logical equality of immutable algebraic values, not a C comparison.
     AlgebraicEqual(Box<AlgebraicTerm>, Box<AlgebraicTerm>),
-    Bitvector32SignedLessThan(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector32SignedLessEqual(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector32SignedGreaterThan(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector32SignedGreaterEqual(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector32Equal(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector32SignedAddOverflows(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector32SignedSubtractOverflows(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector32SignedMultiplyOverflows(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector32SignedDivideOverflows(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector32SignedShiftLeftOverflows(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64SignedLessThan(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64SignedLessEqual(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64SignedGreaterThan(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64SignedGreaterEqual(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64UnsignedLessThan(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64UnsignedLessEqual(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64UnsignedGreaterThan(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64UnsignedGreaterEqual(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64Equal(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64SignedAddOverflows(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64SignedSubtractOverflows(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64SignedMultiplyOverflows(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64SignedDivideOverflows(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64SignedShiftLeftOverflows(Box<Bitvector32Term>, Box<Bitvector32Term>),
+    /// `left REL right`, both operands read at `format`. A format of 8 to 32
+    /// bits compares 32-bit words, 64 bits 64-bit words and 128 bits 128-bit
+    /// words. Equality reads no sign, so an equality is filed at the signed
+    /// format of its width. A narrow value's word is its canonical extension,
+    /// which the `int32` order compares exactly, so a narrow comparison is
+    /// filed at `int32` (`design/machine-integers.md`, "One condition
+    /// family").
+    Compare {
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        left: Box<Bitvector32Term>,
+        right: Box<Bitvector32Term>,
+    },
+    /// Whether the exact result of `left op right`, the operands read at
+    /// `format`, lies outside `format`: a signed overflow test is C's
+    /// undefined behavior and Rust's panic, an unsigned one is wrapping, which
+    /// is defined in C (`design/machine-integers.md`, "Decisions").
+    Overflows {
+        format: MachineIntegerType,
+        op: OverflowOperation,
+        left: Box<Bitvector32Term>,
+        right: Box<Bitvector32Term>,
+    },
     Float32(CFloatCondition),
     Float64(CFloatCondition),
     PointerOffsetEqual(Box<PointerOffsetTerm>, Box<PointerOffsetTerm>),
@@ -953,51 +973,18 @@ pub enum ConditionTerm {
     IntegerNotEqual(SharedIntegerTerm, SharedIntegerTerm),
 }
 
-/// Matches every two-operand 32-bit [`ConditionTerm`] (the comparisons and the
-/// overflow tests), binding the operands to `$left` and `$right`.
-macro_rules! binary_bitvector32_condition {
-    ($left:pat, $right:pat) => {
-        $crate::kernel::ConditionTerm::Bitvector32SignedLessThan($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector32SignedLessEqual($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector32SignedGreaterThan($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector32SignedGreaterEqual($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector32Equal($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector32SignedAddOverflows($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector32SignedSubtractOverflows($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector32SignedMultiplyOverflows($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector32SignedDivideOverflows($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector32SignedShiftLeftOverflows($left, $right)
-    };
-}
-pub(crate) use binary_bitvector32_condition;
-
-/// Matches every two-operand 64-bit [`ConditionTerm`], signed and unsigned,
-/// binding the operands to `$left` and `$right`.
-macro_rules! binary_bitvector64_condition {
-    ($left:pat, $right:pat) => {
-        $crate::kernel::ConditionTerm::Bitvector64SignedLessThan($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64SignedLessEqual($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64SignedGreaterThan($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64SignedGreaterEqual($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64UnsignedLessThan($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64UnsignedLessEqual($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64UnsignedGreaterThan($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64UnsignedGreaterEqual($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64Equal($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64SignedAddOverflows($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64SignedSubtractOverflows($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64SignedMultiplyOverflows($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64SignedDivideOverflows($left, $right)
-            | $crate::kernel::ConditionTerm::Bitvector64SignedShiftLeftOverflows($left, $right)
-    };
-}
-pub(crate) use binary_bitvector64_condition;
-
-/// Matches every two-operand bitvector [`ConditionTerm`] of either width.
+/// Matches every machine comparison and overflow test, at any format.
 macro_rules! binary_bitvector_condition {
     ($left:pat, $right:pat) => {
-        $crate::kernel::binary_bitvector32_condition!($left, $right)
-            | $crate::kernel::binary_bitvector64_condition!($left, $right)
+        $crate::kernel::ConditionTerm::Compare {
+            left: $left,
+            right: $right,
+            ..
+        } | $crate::kernel::ConditionTerm::Overflows {
+            left: $left,
+            right: $right,
+            ..
+        }
     };
 }
 pub(crate) use binary_bitvector_condition;
@@ -12482,7 +12469,7 @@ pub struct PureFactContext {
         crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
     >,
     /// The `int64` counterpart of `signed_order_bounds`, maintained by the
-    /// same insert and remove path over `Bitvector64Signed*` order facts. It
+    /// same insert and remove path over `int64` order facts. It
     /// is kept separate so an `int64` bound is never read as an int32 one.
     pub(super) int64_signed_order_bounds: crate::persistent::PersistentMap<
         Bitvector32Term,

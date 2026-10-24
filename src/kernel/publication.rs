@@ -11,6 +11,7 @@
 //! The trusted runtime statement is `src/languages/c/modeled_pthread_spec.md`.
 
 use super::prelude::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::languages::c::thread_runtime::{
     ATOMIC_INIT_NAME, ATOMIC_INIT_PAYLOAD_BINDER_ID, ATOMIC_LOAD_NAME, ATOMIC_STORE_NAME,
 };
@@ -301,10 +302,12 @@ fn release_store(
     let CValue::Int32(desired) = desired else {
         return Ok(Err(refusal("atomic_store_explicit stores an int")));
     };
-    if assumptions.decide(&ConditionTerm::Bitvector32Equal(
-        Box::new(desired.clone()),
-        Box::new(Bitvector32Term::Constant(0)),
-    )) != Some(false)
+    if assumptions.decide(&ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left: Box::new(desired.clone()),
+        right: Box::new(Bitvector32Term::Constant(0)),
+    }) != Some(false)
     {
         return Ok(Err(refusal(
             "a publishing store must store a value proven nonzero",
@@ -445,10 +448,12 @@ pub(crate) fn resolve_observed_publications(
         let Some(CValue::Int32(term)) = &right.observed else {
             continue;
         };
-        let zero = ConditionTerm::Bitvector32Equal(
-            Box::new(term.clone()),
-            Box::new(Bitvector32Term::Constant(0)),
-        );
+        let zero = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(term.clone()),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        };
         let Some(unpublished) = assumptions.decide(&zero) else {
             continue;
         };
@@ -558,10 +563,12 @@ mod tests {
                     unreachable!()
                 };
                 facts.assume_proposition(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(term),
-                        Box::new(Bitvector32Term::Constant(0)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(term),
+                        right: Box::new(Bitvector32Term::Constant(0)),
+                    },
                     false,
                 ))
             });

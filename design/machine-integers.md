@@ -66,11 +66,11 @@ and the matrix there checks this coverage:
 
 | Rule | Covers | Omits, and the stage that adds it |
 |---|---|---|
-| exact comparison, both directions | 8 to 64 bits, narrow through a canonical carrier | 128 (Stage 2); a narrow binder (Stage 3) |
+| exact comparison, both directions | every format since Stage 2; narrow through a canonical carrier, 128 bits read back but spelled as Integers | a narrow binder (Stage 3) |
 | range and constants | every format | none |
 | in-range identity | `+ - *` at 8 to 64 bits | 128 (Stage 3) |
 | operation bounds | `/ >> %` at 32 and 64 bits, signed and unsigned | narrow, 128 (Stage 3) |
-| definedness as Integer bounds | int32 and int64 `+ - *` | unsigned, narrow, 128 (Stage 2) |
+| definedness as Integer bounds | every format's `+ - *` since Stage 2; filed at int32 and int64 | none |
 | modular equality | stated at 32 and 64 bits, filed at 32 | narrow moduli (not sound on 32-bit words), 128 (Stage 3) |
 | conversion identity | every pair of formats | none |
 | `Carrier`, `signed_arithmetic_planner.rs`, `simp.rs` | unchanged | planner heuristics, after Stages 2 and 3 |
@@ -215,9 +215,12 @@ width-specific promotion logic of their own.
 A width-indexed library fact is one statement over a format parameter, not
 a family of copies. The two ways to do that are:
 
-1. Generic theorems over a type parameter constrained to machine integers
-   (`theorem add_to_integer<T: machine>(a: T, b: T)`), if the generic
-   machinery supports it.
+1. Generic theorems over a type parameter constrained to a signed or an
+   unsigned machine-integer bound (`theorem wrapping_add<T: uintn>(a: T,
+   b: T)`, `theorem add_to_integer<T: intn>(a: T, b: T)`), stated with the
+   built-in constants `min(T)`, `max(T)` and `bits(T)`
+   ([Decisions](#decisions), 2026-10-24), if the generic machinery
+   supports it.
 2. One template expanded per format when the library loads, with each copy
    checked as today.
 
@@ -389,6 +392,52 @@ Done 2026-10-24, for every gap that needs no new node. What changed:
   `uint32` order.
 - 128-bit comparisons join here.
 
+Done 2026-10-24, except the `uint32` order. What changed:
+
+- `ConditionTerm` has `Compare { format, relation, left, right }` and
+  `Overflows { format, op, left, right }` (`CompareRelation`,
+  `OverflowOperation`) in place of its 24 per-width variants. The format
+  is a `MachineIntegerType`, `Copy` and part of the derived order and hash.
+  Equality reads no sign and is filed at the signed format of its width;
+  a narrow comparison is filed at `int32`, whose order its canonical words
+  compare exactly. So every fact keeps one spelling.
+- The per-width constructors (`signed_less_than`, `uint64_less_equal`,
+  `int64_signed_add_overflows`, ...) build the new nodes, and
+  `ConditionTerm::machine_compare` and `machine_overflows` dispatch to them
+  by format. `as_bitvector_comparison` reports the format with the relation
+  or operation. Readers were rewritten to the new nodes; traversals that
+  listed every variant (substitution, variable and load collection, the
+  havoc identity, reflexivity, the width checker) read one arm per node at
+  any format, and `machine_integer/representation.rs` maps formats to the
+  nodes directly.
+- The derived order of conditions changed once, in its own commit, as
+  approved: over a sample of 309 mdtests and examples every audit row and
+  `click expand` output was unchanged.
+- 128-bit comparisons fold on constants and read back as Integer
+  comparisons. An Integer comparison of 128-bit observations keeps its
+  Integer spelling (`spells_comparison_natively`): the difference graph and
+  interval bounds have no 128-bit nodes and decide it as Integers, and
+  spelling it natively lost `wide_division_tests`' division guard.
+- Every format has an overflow test. Constant operands fold by the exact
+  result's range; `integer_bounds_of_definedness` reads a test at any
+  format, and `overflow_fact_of_integer_bound` is its converse. Definedness
+  facts are still filed only at `int32` and `int64`, where C's overflow is
+  undefined (`files_definedness`); an unsigned test is kernel-internal
+  (decision of 2026-10-24). No producer builds an unsigned, narrow or
+  128-bit test yet: Rust's panic checks still lower to bounds.
+- The matrix has no comparison or definedness gap left.
+
+Left: the `uint32` order is still the `int32` order of sign-flipped
+operands (`order_operand`, `unsigned_less_than`). Its readers include the
+surface certificate step `interval_sign_bit_flip` (language reference,
+grammar), the planners and closers that recognize the flip
+(`signed_arithmetic_planner.rs`, `smart_closures.rs`,
+`surface_synthesis.rs`, `surface_certificates.rs`), three printers that
+decode it, the difference graph and interval bounds (which have no `uint32`
+node), and the diagnostic kind, which names a `uint32` order "signed
+less-than". Removing it changes certificate syntax and diagnostic wording,
+which needs the maintainer, and needs `uint32` order reasoning first.
+
 ### Stage 3. One term family
 
 - Merge one operator family per PR into `Binary`, `Unary`, `Constant` and
@@ -459,3 +508,24 @@ Maintainer direction, 2026-10-21:
   whose value does not fit is implementation-defined in C (C11 6.3.1.3p3).
   Click reads it as modular, as every supported target defines it, and it
   owes no obligation. A strict mode that asks for one can be added later.
+
+Maintainer direction, 2026-10-24:
+
+- **Unsigned definedness is not a surface predicate.** Surface
+  `defined(...)` is about undefined behavior only, so for C unsigned `+`,
+  `-` and `*` it is always true. The unsigned `Overflows` condition of
+  Stage 2 is kernel-internal: Rust panic checks use it, and it relates a
+  wrapping result to its exact value. No new surface predicate is added;
+  "does not wrap" stays a bound, such as `to_integer(a) + to_integer(b) <=
+  MAX`.
+- **Pure reordering is approved.** Merging node families (Stages 2 and 3)
+  changes the derived order canonical forms use, which may reorder terms
+  in `click expand` output and in diagnostics. A pure reordering needs no
+  further approval. Any change in wording or content still goes to the
+  maintainer.
+- **Generic library bounds.** Generic machine-integer library theorems use
+  the bounds `T: intn` (`int8` to `int128`) and `T: uintn` (`uint8` to
+  `uint128`), with the built-in constants `min(T)`, `max(T)` and `bits(T)`.
+  There is no union bound for now: a fact that holds regardless of
+  signedness is stated twice, or `T: intn | uintn` is added later if it is
+  needed. This is design only; it is not implemented yet.

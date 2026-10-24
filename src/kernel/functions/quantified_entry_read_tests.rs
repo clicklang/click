@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn fixture(
     unrelated: usize,
@@ -102,10 +103,12 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
     assert_eq!(guards.len(), quantities);
     assert!(guards.iter().all(|guard| guard
         == &Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(
-                Box::new(Bitvector32Term::Constant(4)),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(Bitvector32Term::Constant(4)),
+                right: Box::new(Bitvector32Term::Constant(0))
+            },
             true
         )));
     assert!(

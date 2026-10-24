@@ -3,6 +3,8 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::CompareRelation;
+use crate::kernel::MachineIntegerType;
 
 #[test]
 fn cast_identity_reads_interned_integer_operands_without_walking_their_dags() {
@@ -47,10 +49,12 @@ fn computed_index_translation_checks_bounds_and_scales_with_payload() {
         }
         let relation = pointer_eq(p.clone(), add(arr.clone(), scaled(index.clone())));
         let bound = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(index.clone()),
-                Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(index.clone()),
+                right: Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
+            },
             true,
         );
         let goal = pointer_eq(
@@ -290,7 +294,12 @@ fn translation_work_scales_with_explicit_payload() {
         let mut left = p.clone();
         let mut right = add(arr.clone(), scaled(i.clone()));
         let mut premises = vec![Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(Box::new(i.clone()), Box::new(n.clone())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(i.clone()),
+                right: Box::new(n.clone()),
+            },
             true,
         )];
         for index in 0..size {
@@ -298,12 +307,14 @@ fn translation_work_scales_with_explicit_payload() {
             left = add(left, delta.clone());
             right = add(right, delta);
             premises.push(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(Bitvector32Term::Variable(crate::kernel::Variable(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(Bitvector32Term::Variable(crate::kernel::Variable(
                         2000 + index,
                     ))),
-                    Box::new(Bitvector32Term::Constant(100)),
-                ),
+                    right: Box::new(Bitvector32Term::Constant(100)),
+                },
                 true,
             ));
         }
@@ -346,11 +357,21 @@ fn tagged_word_traversal_scales_with_tagged_depth() {
             );
         }
         let relation = Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(Box::new(variable.clone()), Box::new(tagged)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(variable.clone()),
+                right: Box::new(tagged),
+            },
             true,
         );
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(Box::new(variable.clone()), Box::new(variable)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(variable.clone()),
+                right: Box::new(variable),
+            },
             true,
         );
         let certificate = SpecialArithmeticCertificate {
@@ -393,11 +414,21 @@ fn tagged_word_symbolic_tag_chains_scale_without_rewalking_tags() {
             );
         }
         let relation = Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(Box::new(variable.clone()), Box::new(tagged)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(variable.clone()),
+                right: Box::new(tagged),
+            },
             true,
         );
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(Box::new(variable.clone()), Box::new(variable)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(variable.clone()),
+                right: Box::new(variable),
+            },
             true,
         );
         let certificate = SpecialArithmeticCertificate {

@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{MachineIntegerType, OverflowOperation};
 
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
@@ -137,14 +138,18 @@ fn signed_constant_bound_selection_is_flat_in_unrelated_bounds() {
         let b = Bitvector32Term::Variable(Variable(94_002));
         let goal = Proposition::ConditionIs(
             match width {
-                SignedDefinedWidth::Int32 => ConditionTerm::Bitvector32SignedAddOverflows(
-                    Box::new(a.clone()),
-                    Box::new(b.clone()),
-                ),
-                SignedDefinedWidth::Int64 => ConditionTerm::Bitvector64SignedAddOverflows(
-                    Box::new(a.clone()),
-                    Box::new(b.clone()),
-                ),
+                SignedDefinedWidth::Int32 => ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: Box::new(a.clone()),
+                    right: Box::new(b.clone()),
+                },
+                SignedDefinedWidth::Int64 => ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int64,
+                    op: OverflowOperation::Add,
+                    left: Box::new(a.clone()),
+                    right: Box::new(b.clone()),
+                },
             },
             false,
         );

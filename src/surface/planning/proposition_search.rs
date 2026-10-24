@@ -28,6 +28,7 @@
 
 use crate::kernel::planning_api::*;
 use crate::kernel::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
@@ -361,7 +362,7 @@ impl PropositionSearch for PureFactContext {
                     || *value
                         && matches!(
                             condition,
-                            ConditionTerm::Bitvector32Equal(left, right)
+                            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }
                                 if atomic_loads_equal_along_memory_derivations(
                                     left, right, self,
                                 )
@@ -374,7 +375,7 @@ impl PropositionSearch for PureFactContext {
                     || *value
                         && matches!(
                             condition,
-                            ConditionTerm::Bitvector32Equal(left, right)
+                            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }
                                 if canonicalize_atomic_loads(left)
                                         == canonicalize_atomic_loads(right)
                         )
@@ -841,9 +842,15 @@ impl PropositionSearch for PureFactContext {
                 && matches!(
                     proposition,
                     Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32Equal(..)
-                            | ConditionTerm::Bitvector64Equal(..)
-                            | ConditionTerm::PointerOffsetEqual(..),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            ..
+                        } | ConditionTerm::Compare {
+                            format: MachineIntegerType::Int64,
+                            relation: CompareRelation::Equal,
+                            ..
+                        } | ConditionTerm::PointerOffsetEqual(..),
                         _
                     )
                 )
@@ -1504,7 +1511,12 @@ mod monotone_forall_tests {
         let other = Variable(101);
         let equality = |left, right| {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
                 true,
             )
         };
@@ -1628,7 +1640,12 @@ mod condition_premise_tests {
     fn indexed_constant_selection_checks_only_its_cited_premises() {
         let equal = |left, right| {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
                 true,
             )
         };
@@ -1683,15 +1700,22 @@ mod condition_premise_tests {
     }
 
     fn order(left: u64, right: u64) -> ConditionTerm {
-        ConditionTerm::Bitvector32SignedLessThan(Box::new(term(left)), Box::new(term(right)))
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(term(left)),
+            right: Box::new(term(right)),
+        }
     }
 
     fn chain_fact(index: u64) -> ConditionTerm {
         if index == 1 {
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(term(1)),
-                Box::new(Bitvector32Term::Constant(1000)),
-            )
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(term(1)),
+                right: Box::new(Bitvector32Term::Constant(1000)),
+            }
         } else {
             order(index, index - 1)
         }
@@ -1707,10 +1731,12 @@ mod condition_premise_tests {
         for index in 0..unrelated as u64 {
             context = context.assume_condition(order(10_000 + index * 2, 10_001 + index * 2), true);
         }
-        let goal = ConditionTerm::Bitvector32SignedLessThan(
-            Box::new(term(size as u64)),
-            Box::new(Bitvector32Term::Constant(1000)),
-        );
+        let goal = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(term(size as u64)),
+            right: Box::new(Bitvector32Term::Constant(1000)),
+        };
         (context, Proposition::ConditionIs(goal, true))
     }
 
@@ -1786,14 +1812,24 @@ mod condition_premise_tests {
             Box::new(pointer),
             LoadKind::Bits32,
         );
-        let fact = ConditionTerm::Bitvector32Equal(Box::new(load.clone()), Box::new(term(50)));
+        let fact = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(load.clone()),
+            right: Box::new(term(50)),
+        };
         let context = PureFactContext::new()
             .assume_condition(fact.clone(), true)
             .assume_condition(order(40, 41), true)
             .assume_condition(order(70, 71), true)
             .assume_condition(order(90, 91), true);
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(load), Box::new(term(60))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(load),
+                right: Box::new(term(60)),
+            },
             true,
         );
         let selected = connected_condition_premises(&context, &goal, false).unwrap();
@@ -1892,9 +1928,15 @@ pub(crate) fn connected_equalities(
         if matches!(
             fact,
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(..)
-                    | ConditionTerm::Bitvector64Equal(..)
-                    | ConditionTerm::PointerValueEqual(..)
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    ..
+                } | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    ..
+                } | ConditionTerm::PointerValueEqual(..)
                     | ConditionTerm::PointerEqual(..)
                     | ConditionTerm::PointerOffsetEqual(..)
                     | ConditionTerm::IntegerEqual(..)
@@ -2144,30 +2186,41 @@ fn reduce_simp_atomic_premises(
         return Some((context, context_id, evidence));
     }
     let query = match proposition {
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
-            match (left.as_ref(), right.as_ref()) {
-                (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) => {
-                    Some(AtomicReductionQuery::VariableEquality32(*left, *right))
-                }
-                _ => None,
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) => match (left.as_ref(), right.as_ref()) {
+            (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) => {
+                Some(AtomicReductionQuery::VariableEquality32(*left, *right))
             }
-        }
-        Proposition::ConditionIs(ConditionTerm::Bitvector64UnsignedLessThan(left, right), true) => {
-            match (left.as_ref(), right.as_ref()) {
-                (
-                    Bitvector32Term::UInt64Subtract(base, amount),
-                    Bitvector32Term::Variable(upper),
-                ) => match (base.as_ref(), amount.as_ref()) {
+            _ => None,
+        },
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            true,
+        ) => match (left.as_ref(), right.as_ref()) {
+            (Bitvector32Term::UInt64Subtract(base, amount), Bitvector32Term::Variable(upper)) => {
+                match (base.as_ref(), amount.as_ref()) {
                     (Bitvector32Term::Variable(base), Bitvector32Term::UInt64Constant(amount)) => {
                         Some(AtomicReductionQuery::UnsignedSubtractionLessThan(
                             *base, *amount, *upper,
                         ))
                     }
                     _ => None,
-                },
-                _ => None,
+                }
             }
-        }
+            _ => None,
+        },
         Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => Some(
             AtomicReductionQuery::IntegerLessEqual(left.id(), right.id()),
         ),
@@ -2312,7 +2365,12 @@ mod atomic_reduction_tests {
         let left = Bitvector32Term::Variable(Variable(785_001));
         let right = Bitvector32Term::Variable(Variable(785_002));
         let middle = Bitvector32Term::Variable(middle);
-        let equal = |left, right| ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right));
+        let equal = |left, right| ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
         let goal = Proposition::ConditionIs(equal(left.clone(), right.clone()), true);
         let mut context = PureFactContext::new()
             .assume_condition(equal(left.clone(), middle.clone()), true)

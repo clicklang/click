@@ -34,6 +34,7 @@ use crate::kernel::reasoning::order_reasoning::{
     signed_bitvector_constant,
 };
 use crate::kernel::{Bitvector32Term, ConditionTerm, Variable};
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::persistent::{PersistentMap, PersistentSet};
 
 /// The widest bounded interval whose values are checked one by one against
@@ -152,7 +153,13 @@ impl Contradictions {
                 ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone());
             self.adjust_polarity(canonical_contradiction_condition(&address), true, insert);
         }
-        if let ConditionTerm::Bitvector32Equal(left, right) = condition {
+        if let ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = condition
+        {
             if value {
                 self.register(left);
                 self.register(right);
@@ -476,17 +483,44 @@ mod tests {
             let (left, right) = (Box::new(self.term()), Box::new(self.term()));
             let value = !self.next().is_multiple_of(3);
             let condition = match self.next() % 12 {
-                0..=2 => ConditionTerm::Bitvector32SignedLessThan(left, right),
-                3..=5 => ConditionTerm::Bitvector32SignedLessEqual(left, right),
-                6 | 7 => ConditionTerm::Bitvector32SignedGreaterThan(left, right),
-                8 => ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
-                9 | 10 => ConditionTerm::Bitvector32Equal(left, right),
-                _ => ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(Bitvector32Term::Variable(Variable(
+                0..=2 => ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left,
+                    right,
+                },
+                3..=5 => ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left,
+                    right,
+                },
+                6 | 7 => ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left,
+                    right,
+                },
+                8 => ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left,
+                    right,
+                },
+                9 | 10 => ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                _ => ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(Bitvector32Term::Variable(Variable(
                         crate::kernel::eval::LOAD_VARIABLE_RANGE.start + self.next() % 2,
                     ))),
                     right,
-                ),
+                },
             };
             (condition, value)
         }
@@ -558,14 +592,24 @@ mod tests {
 
     fn less(left: Bitvector32Term, right: Bitvector32Term) -> (ConditionTerm, bool) {
         (
-            ConditionTerm::Bitvector32SignedLessThan(Box::new(left), Box::new(right)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
             true,
         )
     }
 
     fn equal(left: Bitvector32Term, right: Bitvector32Term) -> (ConditionTerm, bool) {
         (
-            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
             true,
         )
     }
@@ -616,27 +660,33 @@ mod tests {
             let mut context = PureFactContext::new();
             for index in 0..size {
                 context = context.assume_condition(
-                    ConditionTerm::Bitvector32SignedLessEqual(
-                        Box::new(var(index)),
-                        Box::new(var(index + 1)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        left: Box::new(var(index)),
+                        right: Box::new(var(index + 1)),
+                    },
                     true,
                 );
                 context = context.assume_condition(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(var(10_000 + index)),
-                        Box::new(var(10_001 + index)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(var(10_000 + index)),
+                        right: Box::new(var(10_001 + index)),
+                    },
                     true,
                 );
             }
             assert!(!context.is_inconsistent());
             let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
                 let next = context.assume_condition(
-                    ConditionTerm::Bitvector32SignedLessThan(
-                        Box::new(var(size + 1)),
-                        Box::new(Bitvector32Term::Constant(7)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left: Box::new(var(size + 1)),
+                        right: Box::new(Bitvector32Term::Constant(7)),
+                    },
                     true,
                 );
                 assert!(!next.is_inconsistent());

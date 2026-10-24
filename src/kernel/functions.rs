@@ -10,6 +10,7 @@ use super::prelude::*;
 use super::spec::walk::{SpecNode, Visit, spec_tree_all};
 use super::thread_confinement::confined_resource_name;
 use crate::kernel::ResourceDescription;
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -3924,10 +3925,12 @@ fn execute_verified_function_applications_with_suspension(
             let exchange_quantity = if !events.owns_imported_population_member(&description)
                 && crate::kernel::quantity_condition_holds(
                     &effective_assumptions,
-                    ConditionTerm::Bitvector32Equal(
-                        quantity.clone(),
-                        Box::new(Bitvector32Term::Constant(0)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: quantity.clone(),
+                        right: Box::new(Bitvector32Term::Constant(0)),
+                    },
                 ) {
                 Bitvector32Term::Constant(0)
             } else {
@@ -9038,31 +9041,71 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
             while let Proposition::Implies(premise, body) = specialized {
                 let reversed_order = match premise.as_ref() {
                     Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedGreaterThan(left, right),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::GreaterThan,
+                            left,
+                            right,
+                        },
                         value,
                     ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedLessThan(right.clone(), left.clone()),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessThan,
+                            left: right.clone(),
+                            right: left.clone(),
+                        },
                         *value,
                     )),
                     Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::GreaterEqual,
+                            left,
+                            right,
+                        },
                         value,
                     ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedLessEqual(right.clone(), left.clone()),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessEqual,
+                            left: right.clone(),
+                            right: left.clone(),
+                        },
                         *value,
                     )),
                     Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedLessThan(left, right),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessThan,
+                            left,
+                            right,
+                        },
                         value,
                     ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedGreaterThan(right.clone(), left.clone()),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::GreaterThan,
+                            left: right.clone(),
+                            right: left.clone(),
+                        },
                         *value,
                     )),
                     Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedLessEqual(left, right),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessEqual,
+                            left,
+                            right,
+                        },
                         value,
                     ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32SignedGreaterEqual(right.clone(), left.clone()),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::GreaterEqual,
+                            left: right.clone(),
+                            right: left.clone(),
+                        },
                         *value,
                     )),
                     _ => None,
@@ -9147,7 +9190,15 @@ fn add_normalized_verified_ensure_facts(
     ensure_facts: &(impl ExecutionFactSource + ?Sized),
     ensure_obligations: &[ProofObligation],
 ) {
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = ensure
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
+        true,
+    ) = ensure
     else {
         return;
     };
@@ -9195,7 +9246,12 @@ fn add_normalized_verified_ensure_facts(
         }
         let normalized = wrap_path_context(
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(Box::new(term.clone()), Box::new(constant.clone())),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(term.clone()),
+                    right: Box::new(constant.clone()),
+                },
                 true,
             ),
             ensure_facts,
@@ -9221,10 +9277,12 @@ fn allocation_continuity(
         if int32_values_proven_equal_for_memory_resolution(input_bytes, output_bytes, assumptions) {
             return AllocationContinuity::Same;
         }
-        let condition = ConditionTerm::Bitvector32Equal(
-            Box::new(input_bytes.clone()),
-            Box::new(output_bytes.clone()),
-        );
+        let condition = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(input_bytes.clone()),
+            right: Box::new(output_bytes.clone()),
+        };
         // Two allocation sizes at one base are the same allocation, a
         // refuted one, or an undecided pair. The refutation uses the exact
         // fact index and the frozen condition checker on the bare condition;
@@ -13702,16 +13760,47 @@ fn is_pure_undefined_behavior_condition(proposition: &Proposition) -> bool {
     };
     matches!(
         condition,
-        ConditionTerm::Bitvector32SignedAddOverflows(..)
-            | ConditionTerm::Bitvector32SignedSubtractOverflows(..)
-            | ConditionTerm::Bitvector32SignedMultiplyOverflows(..)
-            | ConditionTerm::Bitvector32SignedDivideOverflows(..)
-            | ConditionTerm::Bitvector32SignedShiftLeftOverflows(..)
-            | ConditionTerm::Bitvector64SignedAddOverflows(..)
-            | ConditionTerm::Bitvector64SignedSubtractOverflows(..)
-            | ConditionTerm::Bitvector64SignedMultiplyOverflows(..)
-            | ConditionTerm::Bitvector64SignedDivideOverflows(..)
-            | ConditionTerm::Bitvector64SignedShiftLeftOverflows(..)
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            ..
+        } | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            ..
+        } | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Multiply,
+            ..
+        } | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Divide,
+            ..
+        } | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::ShiftLeft,
+            ..
+        } | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Add,
+            ..
+        } | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Subtract,
+            ..
+        } | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Multiply,
+            ..
+        } | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::Divide,
+            ..
+        } | ConditionTerm::Overflows {
+            format: MachineIntegerType::Int64,
+            op: OverflowOperation::ShiftLeft,
+            ..
+        }
     )
 }
 
@@ -13882,8 +13971,15 @@ fn resource_body_fact_is_established(
     // packed-word equation. Query only exact 64-bit neighbors of the stated
     // endpoints and captured variables, using checked equality substitution. A
     // candidate must still be established by the original context.
-    if let Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true) =
-        proposition
+    if let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
+        true,
+    ) = proposition
     {
         let mut variables = std::collections::BTreeSet::new();
         crate::kernel::reasoning::variable_collection::collect_proposition_capture_variables(
@@ -13897,10 +13993,12 @@ fn resource_body_fact_is_established(
             for (alias, evidence) in established.exact_uint64_equalities(&endpoint) {
                 crate::instrumentation::record_deterministic_work(1);
                 let equality = Proposition::ConditionIs(
-                    ConditionTerm::Bitvector64Equal(
-                        Box::new(endpoint.clone()),
-                        Box::new(alias.clone()),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(endpoint.clone()),
+                        right: Box::new(alias.clone()),
+                    },
                     true,
                 );
                 let evidence = Proposition::ConditionIs(evidence.clone(), true);
@@ -14497,10 +14595,12 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 return Err("instance body quantity must have type int32".into());
             };
             let fact = Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterEqual(
-                    Box::new(quantity),
-                    Box::new(Bitvector32Term::Constant(0)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left: Box::new(quantity),
+                    right: Box::new(Bitvector32Term::Constant(0)),
+                },
                 true,
             );
             opening_assumptions = opening_assumptions.assume_proposition(fact.clone());
@@ -16068,10 +16168,12 @@ pub(super) fn jointly_consume_returned_resource_units(
 
         let unit = quantity_condition_holds(
             assumptions,
-            ConditionTerm::Bitvector32Equal(
-                quantity.clone(),
-                Box::new(Bitvector32Term::Constant(1)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: quantity.clone(),
+                right: Box::new(Bitvector32Term::Constant(1)),
+            },
         );
         if !active.insert(required.clone()) {
             return None;
@@ -18915,10 +19017,12 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 };
                 if !quantity_condition_holds(
                     assumptions,
-                    ConditionTerm::Bitvector32SignedGreaterEqual(
-                        Box::new(quantity.clone()),
-                        Box::new(Bitvector32Term::Constant(0)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterEqual,
+                        left: Box::new(quantity.clone()),
+                        right: Box::new(Bitvector32Term::Constant(0)),
+                    },
                 ) {
                     return Ok(Err(CRuntimeError::FunctionContract(
                         "declared resource quantity is not known nonnegative; state that the \
@@ -19121,10 +19225,12 @@ pub(crate) fn quantified_resource_requirement_assumptions(
             Err(error) => return Ok(Err(error)),
         };
         propositions.push(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(
-                Box::new(quantity),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(quantity),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         ));
     }
@@ -20771,17 +20877,23 @@ fn contract_exit_outcome_with_boundary_transfer(
                                             (!produce
                                                 || crate::kernel::quantity_condition_holds(
                                                     assumptions,
-                                                    ConditionTerm::Bitvector32Equal(
-                                                        Box::new(actual.clone()),
-                                                        Box::new(Bitvector32Term::Constant(0)),
-                                                    ),
+                                                    ConditionTerm::Compare {
+                                                        format: MachineIntegerType::Int32,
+                                                        relation: CompareRelation::Equal,
+                                                        left: Box::new(actual.clone()),
+                                                        right: Box::new(Bitvector32Term::Constant(
+                                                            0,
+                                                        )),
+                                                    },
                                                 ))
                                                 && crate::kernel::quantity_condition_holds(
                                                     assumptions,
-                                                    ConditionTerm::Bitvector32Equal(
-                                                        Box::new(actual),
-                                                        Box::new(expected.clone()),
-                                                    ),
+                                                    ConditionTerm::Compare {
+                                                        format: MachineIntegerType::Int32,
+                                                        relation: CompareRelation::Equal,
+                                                        left: Box::new(actual),
+                                                        right: Box::new(expected.clone()),
+                                                    },
                                                 )
                                         })
                                 })
@@ -20797,17 +20909,21 @@ fn contract_exit_outcome_with_boundary_transfer(
                                 (actual_produce == produce
                                     || crate::kernel::quantity_condition_holds(
                                         assumptions,
-                                        ConditionTerm::Bitvector32Equal(
-                                            Box::new(actual_quantity.clone()),
-                                            Box::new(Bitvector32Term::Constant(0)),
-                                        ),
+                                        ConditionTerm::Compare {
+                                            format: MachineIntegerType::Int32,
+                                            relation: CompareRelation::Equal,
+                                            left: Box::new(actual_quantity.clone()),
+                                            right: Box::new(Bitvector32Term::Constant(0)),
+                                        },
                                     ))
                                     && crate::kernel::quantity_condition_holds(
                                         assumptions,
-                                        ConditionTerm::Bitvector32Equal(
-                                            Box::new(actual_quantity),
-                                            Box::new(expected_quantity.clone()),
-                                        ),
+                                        ConditionTerm::Compare {
+                                            format: MachineIntegerType::Int32,
+                                            relation: CompareRelation::Equal,
+                                            left: Box::new(actual_quantity),
+                                            right: Box::new(expected_quantity.clone()),
+                                        },
                                     )
                             })
                     } else {

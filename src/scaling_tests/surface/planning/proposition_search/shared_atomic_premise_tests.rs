@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn simp_retains_recorded_equality_edges_instead_of_connected_aliases() {
@@ -11,7 +12,12 @@ fn simp_retains_recorded_equality_edges_instead_of_connected_aliases() {
         let term = |index| Bitvector32Term::Variable(Variable(9_320_000 + index));
         let equality = |left, right| {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(Box::new(term(left)), Box::new(term(right))),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(term(left)),
+                    right: Box::new(term(right)),
+                },
                 true,
             )
         };
@@ -120,7 +126,12 @@ fn simp_retains_recorded_load_address_equality_premises() {
         let first = load(PointerOffsetTerm::Constant(0));
         let equality = |left, right| {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
                 true,
             )
         };
@@ -226,7 +237,12 @@ fn simp_retains_common_base_pointer_equality_for_load_congruence() {
             ))
         };
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(load(0)), Box::new(load(1))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(load(0)),
+                right: Box::new(load(1)),
+            },
             true,
         );
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {

@@ -62,6 +62,7 @@ fn balanced_unit_sum_domain_requires_all_three_original_domains() {
 }
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 // The proposition search is Surface planning now; see
 // `src/surface/planning/proposition_search.rs`. Only these tests reach
 // it from inside the kernel.
@@ -2155,23 +2156,48 @@ fn ground_comparison_premises_check_signed_literals_and_both_polarities() {
             let r = Box::new(Bitvector32Term::Constant(right as u32));
             for (condition, actual) in [
                 (
-                    ConditionTerm::Bitvector32SignedLessThan(l.clone(), r.clone()),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left: l.clone(),
+                        right: r.clone(),
+                    },
                     left < right,
                 ),
                 (
-                    ConditionTerm::Bitvector32SignedLessEqual(l.clone(), r.clone()),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        left: l.clone(),
+                        right: r.clone(),
+                    },
                     left <= right,
                 ),
                 (
-                    ConditionTerm::Bitvector32SignedGreaterThan(l.clone(), r.clone()),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        left: l.clone(),
+                        right: r.clone(),
+                    },
                     left > right,
                 ),
                 (
-                    ConditionTerm::Bitvector32SignedGreaterEqual(l.clone(), r.clone()),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterEqual,
+                        left: l.clone(),
+                        right: r.clone(),
+                    },
                     left >= right,
                 ),
                 (
-                    ConditionTerm::Bitvector32Equal(l.clone(), r.clone()),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: l.clone(),
+                        right: r.clone(),
+                    },
                     left == right,
                 ),
             ] {
@@ -2188,13 +2214,15 @@ fn ground_comparison_premises_check_signed_literals_and_both_polarities() {
     // Literal sums canonicalize when constructed; a symbolic operand
     // keeps this an actual compound term at the checking boundary.
     let symbolic_expression = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Add(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Add(
                 Box::new(Bitvector32Term::Variable(crate::kernel::Variable(990))),
                 Box::new(Bitvector32Term::Constant(1)),
             )),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         true,
     );
     assert!(!ground_comparison_premise_holds(&symbolic_expression));
@@ -2213,17 +2241,21 @@ fn checked_event_premises_require_exact_facts_or_ground_comparisons() {
         ))
     };
     let required = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedGreaterEqual(
-            Box::new(Bitvector32Term::Variable(Variable(991))),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: Box::new(Bitvector32Term::Variable(Variable(991))),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     let stronger = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedGreaterThan(
-            Box::new(Bitvector32Term::Variable(Variable(991))),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left: Box::new(Bitvector32Term::Variable(Variable(991))),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     let empty = ProofFacts::default();
@@ -2254,10 +2286,12 @@ fn checked_event_premises_require_exact_facts_or_ground_comparisons() {
     ));
     for (left, right, accepted) in [(1, 1, true), (0, 1, false)] {
         let premise = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(
-                Box::new(Bitvector32Term::Constant(left)),
-                Box::new(Bitvector32Term::Constant(right)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(Bitvector32Term::Constant(left)),
+                right: Box::new(Bitvector32Term::Constant(right)),
+            },
             true,
         );
         assert_eq!(
@@ -2330,10 +2364,12 @@ fn a_summarized_loop_matches_only_a_less_annotated_source_loop() {
         }
     }
     let clause = Proposition::ConditionIs(
-        crate::kernel::ConditionTerm::Bitvector32SignedGreaterEqual(
-            Box::new(Bitvector32Term::Constant(0)),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        crate::kernel::ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: crate::kernel::CompareRelation::GreaterEqual,
+            left: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     let body = CStatement::Skip;
@@ -2696,14 +2732,16 @@ fn interface_load_definition_rejects_wrong_variable_address_and_snapshot() {
     );
     let equation = |variable, memory, pointer| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(variable)),
-                Box::new(Bitvector32Term::MemoryLoad(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(variable)),
+                right: Box::new(Bitvector32Term::MemoryLoad(
                     memory,
                     Box::new(pointer),
                     crate::kernel::LoadKind::Bits32,
                 )),
-            ),
+            },
             true,
         )
     };

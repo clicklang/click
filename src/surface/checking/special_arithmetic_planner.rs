@@ -7,6 +7,7 @@ use crate::kernel::proof::arithmetic_special::{
     signed_constant_bound_on, signed_definedness_operands,
 };
 use crate::kernel::{CFloatClassification, CFloatCondition, ConditionTerm, Proposition};
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::{ArithmeticCertificate, SpecialArithmeticCertificate, SpecialArithmeticNode};
 
 pub(super) fn plan_special_arithmetic_certificate(
@@ -436,12 +437,42 @@ fn proposition_mentions_pointer(
             Proposition::ConditionIs(condition, _) => {
                 let mut terms = Vec::new();
                 match condition {
-                    ConditionTerm::Bitvector32Equal(left, right)
-                    | ConditionTerm::Bitvector64Equal(left, right)
-                    | ConditionTerm::Bitvector32SignedLessThan(left, right)
-                    | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-                    | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-                    | ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left,
+                        right,
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        left,
+                        right,
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left,
+                        right,
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        left,
+                        right,
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        left,
+                        right,
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterEqual,
+                        left,
+                        right,
+                    } => {
                         terms.push(left.as_ref());
                         terms.push(right.as_ref());
                     }
@@ -583,10 +614,30 @@ fn is_pointer_relation(p: &Proposition) -> bool {
 }
 fn is_signed_scalar_bound(p: &Proposition) -> bool {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessThan(_, _)
-        | ConditionTerm::Bitvector32SignedLessEqual(_, _)
-        | ConditionTerm::Bitvector32SignedGreaterThan(_, _)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(_, _),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: _,
+            right: _,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: _,
+            right: _,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left: _,
+            right: _,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: _,
+            right: _,
+        },
         true,
     ) = p
     else {
@@ -603,10 +654,27 @@ fn is_unsigned64_bound(p: &Proposition) -> bool {
     matches!(
         p,
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector64UnsignedLessThan(_, _)
-                | ConditionTerm::Bitvector64UnsignedLessEqual(_, _)
-                | ConditionTerm::Bitvector64UnsignedGreaterThan(_, _)
-                | ConditionTerm::Bitvector64UnsignedGreaterEqual(_, _),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left: _,
+                right: _
+            } | ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: _,
+                right: _
+            } | ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterThan,
+                left: _,
+                right: _
+            } | ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterEqual,
+                left: _,
+                right: _
+            },
             true,
         )
     )
@@ -614,14 +682,30 @@ fn is_unsigned64_bound(p: &Proposition) -> bool {
 fn is_bitvector64_equality(p: &Proposition) -> bool {
     matches!(
         p,
-        Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(_, _), true)
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: _,
+                right: _
+            },
+            true
+        )
     )
 }
 
 fn is_bitvector64_goal(p: &Proposition) -> bool {
     matches!(
         p,
-        Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(_, _), _)
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: _,
+                right: _
+            },
+            _
+        )
     )
 }
 
@@ -629,7 +713,15 @@ fn is_bitvector64_goal(p: &Proposition) -> bool {
 /// for the tagged-word rule, never the recorded word relation consumed by
 /// `PointerWordEquality`.
 fn is_word_equality(p: &Proposition) -> bool {
-    let Proposition::ConditionIs(condition @ ConditionTerm::Bitvector64Equal(_, _), true) = p
+    let Proposition::ConditionIs(
+        condition @ ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: _,
+            right: _,
+        },
+        true,
+    ) = p
     else {
         return false;
     };
@@ -690,14 +782,42 @@ fn charge_proposition(proposition: &Proposition) -> bool {
         return true;
     };
     match condition {
-        ConditionTerm::Bitvector32Equal(left, right)
-        | ConditionTerm::Bitvector64Equal(left, right)
-        | ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-            bounded_term_work(left) && bounded_term_work(right)
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
         }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        }
+        | ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => bounded_term_work(left) && bounded_term_work(right),
         ConditionTerm::PointerOffsetEqual(left, right) => {
             bounded_offset_work(left) && bounded_offset_work(right)
         }
@@ -866,7 +986,13 @@ fn bounded_u64_constant(term: &Bitvector32Term) -> Option<u64> {
 }
 
 fn alignment_shape(condition: &ConditionTerm) -> Option<(&crate::kernel::Pointer, u64)> {
-    let ConditionTerm::Bitvector64Equal(left, right) = condition else {
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::Int64,
+        relation: CompareRelation::Equal,
+        left,
+        right,
+    } = condition
+    else {
         return None;
     };
     let masked = if bounded_u64_constant(right) == Some(0) {
@@ -986,10 +1112,12 @@ mod tests {
         let mut premises = (0..64)
             .map(|i| {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Variable(Variable(100 + i))),
-                        Box::new(Bitvector32Term::Constant(i as u32)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Variable(Variable(100 + i))),
+                        right: Box::new(Bitvector32Term::Constant(i as u32)),
+                    },
                     true,
                 )
             })

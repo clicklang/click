@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
@@ -45,7 +46,12 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
         assert_eq!(
             lowered,
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(Box::new(term.clone()), Box::new(term.clone()),),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(term.clone()),
+                    right: Box::new(term.clone())
+                },
                 true
             )
         );

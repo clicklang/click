@@ -1,6 +1,7 @@
 //! Admission of calls whose contracts touch populations, mutexes and authority resources: which assumed contracts may update an authority population, and the member, quantity and control effects a verified or preserving contract may have.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 /// Whether any resource the contract moves can touch a population: a
 /// population authority, a mutex protocol resource, an abstract token not
@@ -1153,10 +1154,12 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
             term.as_const() == Some(0)
                 || crate::kernel::quantity_condition_holds(
                     assumptions,
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(term.clone()),
-                        Box::new(Bitvector32Term::Constant(0)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(term.clone()),
+                        right: Box::new(Bitvector32Term::Constant(0)),
+                    },
                 )
         };
         let delta = exit
@@ -1170,10 +1173,12 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
                     && (actual_quantity == *quantity
                         || crate::kernel::quantity_condition_holds(
                             assumptions,
-                            ConditionTerm::Bitvector32Equal(
-                                Box::new(actual_quantity),
-                                quantity.clone(),
-                            ),
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::Equal,
+                                left: Box::new(actual_quantity),
+                                right: quantity.clone(),
+                            },
                         ))
             });
         if !consumed {
@@ -1280,13 +1285,15 @@ pub(super) fn check_quantity_exchange_at_return(
                     };
                     crate::kernel::quantity_condition_holds(
                         assumptions,
-                        ConditionTerm::Bitvector32Equal(
-                            Box::new(actual),
-                            Box::new(Bitvector32Term::Subtract(
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            left: Box::new(actual),
+                            right: Box::new(Bitvector32Term::Subtract(
                                 Box::new((**produced).clone()),
                                 Box::new((**consumed).clone()),
                             )),
-                        ),
+                        },
                     )
                 })
         }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl PureFactContext {
     /// Selects exact premises for two terms pinned to the same signed constant.
@@ -8,8 +9,15 @@ impl PureFactContext {
         &self,
         proposition: &Proposition,
     ) -> Option<Vec<Proposition>> {
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-            proposition
+        let Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) = proposition
         else {
             return None;
         };
@@ -457,15 +465,60 @@ impl PureFactContext {
         // Wide comparisons may use a recorded constant equality. Consult only
         // the queried terms' equality components, never unrelated conditions.
         let wide_comparison = match condition {
-            ConditionTerm::Bitvector64SignedLessThan(a, b) => Some((a, b, 0)),
-            ConditionTerm::Bitvector64SignedLessEqual(a, b) => Some((a, b, 1)),
-            ConditionTerm::Bitvector64SignedGreaterThan(a, b) => Some((a, b, 2)),
-            ConditionTerm::Bitvector64SignedGreaterEqual(a, b) => Some((a, b, 3)),
-            ConditionTerm::Bitvector64UnsignedLessThan(a, b) => Some((a, b, 4)),
-            ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => Some((a, b, 5)),
-            ConditionTerm::Bitvector64UnsignedGreaterThan(a, b) => Some((a, b, 6)),
-            ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b) => Some((a, b, 7)),
-            ConditionTerm::Bitvector64Equal(a, b) => Some((a, b, 8)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            } => Some((a, b, 0)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            } => Some((a, b, 1)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterThan,
+                left: a,
+                right: b,
+            } => Some((a, b, 2)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterEqual,
+                left: a,
+                right: b,
+            } => Some((a, b, 3)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            } => Some((a, b, 4)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            } => Some((a, b, 5)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterThan,
+                left: a,
+                right: b,
+            } => Some((a, b, 6)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterEqual,
+                left: a,
+                right: b,
+            } => Some((a, b, 7)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            } => Some((a, b, 8)),
             _ => None,
         };
         if let Some((left, right, operator)) = wide_comparison {
@@ -568,7 +621,7 @@ impl PureFactContext {
                 if let Some(value) = self.decide_reflexive_float_comparison(condition) {
                     return Some(value);
                 }
-                if let ConditionTerm::Bitvector32Equal(left, right) = condition
+                if let ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right } = condition
                     && (self.int32_values_known_equal(left, right)
                         || super::super::super::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
                             left,
@@ -578,7 +631,12 @@ impl PureFactContext {
                 {
                     return Some(true);
                 }
-                if let ConditionTerm::Bitvector64Equal(left, right) = condition
+                if let ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                } = condition
                     && crate::kernel::memory_provenance::wide_loads_have_same_canonical_value(
                         left, right, self,
                     )
@@ -1054,7 +1112,13 @@ impl PureFactContext {
     /// this answers only the byte questions the index was extended for; it
     /// is one memoized class lookup, not a walk over the facts.
     fn decide_byte_equality_from_constant_class(&self, condition: &ConditionTerm) -> Option<bool> {
-        let ConditionTerm::Bitvector32Equal(left, right) = condition else {
+        let ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = condition
+        else {
             return None;
         };
         let (term, constant) = match (
@@ -1083,7 +1147,13 @@ impl PureFactContext {
         &self,
         condition: &ConditionTerm,
     ) -> Option<bool> {
-        let ConditionTerm::Bitvector32Equal(left, right) = condition else {
+        let ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = condition
+        else {
             return None;
         };
         let (byte, target) = if let Some(byte) = left.signed_byte_operand() {
@@ -1114,10 +1184,30 @@ impl PureFactContext {
         condition: &ConditionTerm,
     ) -> Option<bool> {
         let (left, right, greater, strict) = match condition {
-            ConditionTerm::Bitvector32SignedGreaterThan(left, right) => (left, right, true, true),
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => (left, right, true, false),
-            ConditionTerm::Bitvector32SignedLessThan(left, right) => (left, right, false, true),
-            ConditionTerm::Bitvector32SignedLessEqual(left, right) => (left, right, false, false),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            } => (left, right, true, true),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            } => (left, right, true, false),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            } => (left, right, false, true),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            } => (left, right, false, false),
             _ => return None,
         };
         let (term, bound, greater) = if let Some(bound) = right.as_const() {
@@ -1362,7 +1452,12 @@ impl PureFactContext {
             .get(condition)
             .copied()
             .or_else(|| match condition {
-                ConditionTerm::Bitvector32Equal(left, right) => self
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                } => self
                     .condition_facts
                     .get(&ConditionTerm::equal(
                         right.as_ref().clone(),
@@ -1390,7 +1485,12 @@ impl PureFactContext {
                         left.as_ref().clone(),
                     ))
                     .copied(),
-                ConditionTerm::Bitvector32SignedLessThan(left, right) => self
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left,
+                    right,
+                } => self
                     .condition_facts
                     .get(&ConditionTerm::signed_greater_than(
                         right.as_ref().clone(),
@@ -1405,7 +1505,12 @@ impl PureFactContext {
                             ))
                             .map(|value| !value)
                     }),
-                ConditionTerm::Bitvector32SignedLessEqual(left, right) => self
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left,
+                    right,
+                } => self
                     .condition_facts
                     .get(&ConditionTerm::signed_greater_equal(
                         right.as_ref().clone(),
@@ -1420,7 +1525,12 @@ impl PureFactContext {
                             ))
                             .map(|value| !value)
                     }),
-                ConditionTerm::Bitvector32SignedGreaterThan(left, right) => self
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left,
+                    right,
+                } => self
                     .condition_facts
                     .get(&ConditionTerm::signed_less_than(
                         right.as_ref().clone(),
@@ -1435,7 +1545,12 @@ impl PureFactContext {
                             ))
                             .map(|value| !value)
                     }),
-                ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => self
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left,
+                    right,
+                } => self
                     .condition_facts
                     .get(&ConditionTerm::signed_less_equal(
                         right.as_ref().clone(),
@@ -1956,8 +2071,15 @@ impl PureFactContext {
         for (condition, value) in
             self.condition_facts_with_side(&Bitvector32Term::Variable(variable))
         {
-            if let (ConditionTerm::Bitvector32Equal(fact_left, fact_right), false) =
-                (condition, *value)
+            if let (
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: fact_left,
+                    right: fact_right,
+                },
+                false,
+            ) = (condition, *value)
                 && let Some((fact_variable, excluded)) =
                     bitvector_variable_and_constant(fact_left, fact_right)
                 && fact_variable == variable
@@ -2023,7 +2145,16 @@ impl PureFactContext {
             return Some(value);
         }
         for (condition, value) in self.condition_facts_with_side(term) {
-            let (ConditionTerm::Bitvector32Equal(left, right), true) = (condition, value) else {
+            let (
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) = (condition, value)
+            else {
                 continue;
             };
             let other = if crate::kernel::eval::canonical_term(left)

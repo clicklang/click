@@ -3,24 +3,23 @@
 //! definition of each overflow test: it is true exactly when the exact
 //! result is not representable in the operands' format.
 //!
-//! Only `int32` and `int64` have an overflow test today
-//! (`representation::overflow_condition`); an unsigned, narrow or 128-bit
-//! definedness fact has no condition to be filed as, which is the
-//! representation gap `design/machine-integers.md` Stage 2 closes with
-//! `Overflows { format, op, left, right }`.
+//! Every format has an overflow test, `Overflows { format, op, left,
+//! right }`, and the equivalence holds at each. A definedness fact is filed
+//! only where C arithmetic's overflow is undefined behavior, `int32` and
+//! `int64` (`representation::files_definedness`): an unsigned overflow is a
+//! wrap, which surface `defined(...)` does not ask about, and its test is
+//! kernel-internal (`design/machine-integers.md`, "Decisions", 2026-10-24).
 
 use super::{FORMATS, Operation, range, representation};
 use crate::kernel::{Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition};
 
-/// The formats with an overflow test for `+`, `-` and `*`, narrowest first.
+/// The formats whose definedness facts the kernel files, narrowest first:
+/// those where C arithmetic's overflow is undefined behavior
+/// (`representation::files_definedness`).
 pub(crate) fn defined_formats() -> impl Iterator<Item = MachineIntegerType> {
-    FORMATS.into_iter().filter(|ty| has_overflow_test(*ty))
-}
-
-/// Whether `ty` has an overflow test, so that a definedness fact can be
-/// stated at it.
-pub(crate) fn has_overflow_test(ty: MachineIntegerType) -> bool {
-    representation::has_overflow_test(ty)
+    FORMATS
+        .into_iter()
+        .filter(|ty| representation::files_definedness(*ty))
 }
 
 /// The two Integer bounds a definedness fact is exactly equivalent to:
@@ -58,10 +57,21 @@ pub(crate) fn integer_bounds_of_definedness(proposition: &Proposition) -> Vec<Pr
 }
 
 /// The definedness fact whose Integer bound
-/// ([`integer_bounds_of_definedness`]) is exactly `bound`, if any. The
+/// ([`integer_bounds_of_definedness`]) is exactly `bound`, if any, at a
+/// format whose definedness facts are filed ([`defined_formats`]). The
 /// candidate is recomputed through the forward map, so only an exact
 /// reading is accepted.
 pub(crate) fn definedness_of_integer_bound(bound: &Proposition) -> Option<Proposition> {
+    overflow_fact_of_integer_bound(bound, defined_formats())
+}
+
+/// The fact `not Overflows(F, op, a, b)`, for `F` among `formats`, whose
+/// Integer bound ([`integer_bounds_of_definedness`]) is exactly `bound`,
+/// if any: the converse of the equivalence, at any format.
+pub(crate) fn overflow_fact_of_integer_bound(
+    bound: &Proposition,
+    formats: impl Iterator<Item = MachineIntegerType>,
+) -> Option<Proposition> {
     let Proposition::ConditionIs(
         ConditionTerm::IntegerLessEqual(first, second)
         | ConditionTerm::IntegerGreaterEqual(first, second),
@@ -104,7 +114,7 @@ pub(crate) fn definedness_of_integer_bound(bound: &Proposition) -> Option<Propos
     if !matches!(left, IntegerTerm::Machine(_)) && !matches!(right, IntegerTerm::Machine(_)) {
         return None;
     }
-    defined_formats()
+    formats
         .filter_map(|ty| {
             let (a, b) = (Box::new(carrier(ty, left)?), Box::new(carrier(ty, right)?));
             Some(Operation::ALL.map(|operation| {

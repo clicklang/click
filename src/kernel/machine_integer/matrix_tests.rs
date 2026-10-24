@@ -14,27 +14,22 @@ use crate::kernel::proof::arithmetic_special::{
 };
 use crate::kernel::{
     Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty,
-    Proposition, SharedMachineIntegerTerm, Variable,
+    OverflowOperation, Proposition, SharedMachineIntegerTerm, Variable,
 };
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 
-/// No 128-bit comparison condition exists (Stage 2 adds `Compare`).
-const COMPARISON_GAPS: &[Ty] = &[Ty::Int128, Ty::UInt128];
+/// Every format has a comparison (`Compare`, Stage 2).
+const COMPARISON_GAPS: &[Ty] = &[];
+/// Formats whose Integer comparisons keep their Integer spelling: the
+/// native node exists and reads back exactly, but the kernel's order
+/// reasoning decides 128-bit comparisons as Integers
+/// (`representation::spells_comparison_natively`).
+const INTEGER_SPELLED_COMPARISONS: &[Ty] = &[Ty::Int128, Ty::UInt128];
 /// No 128-bit operator exists (Stage 3 adds `Binary`).
 const OPERATION_GAPS: &[Ty] = &[Ty::Int128, Ty::UInt128];
-/// Only `int32` and `int64` have an overflow test (Stage 2 adds
-/// `Overflows` at every format).
-const DEFINEDNESS_GAPS: &[Ty] = &[
-    Ty::Int8,
-    Ty::UInt8,
-    Ty::Int16,
-    Ty::UInt16,
-    Ty::UInt32,
-    Ty::UInt64,
-    Ty::Int128,
-    Ty::UInt128,
-];
+/// Every format has an overflow test (`Overflows`, Stage 2).
+const DEFINEDNESS_GAPS: &[Ty] = &[];
 /// A narrow quotient is computed on promoted `int` words and so is never a
 /// narrow observation; there are no 128-bit operators (Stage 3).
 const DIVISION_GAPS: &[Ty] = &[
@@ -202,8 +197,16 @@ fn exact_comparison_decides_alike_at_every_format() {
                 assert_eq!(native, None, "{ty:?} {relation:?} has no native comparison");
                 continue;
             }
-            let (native, truth) =
-                native.unwrap_or_else(|| panic!("{ty:?} {relation:?} reads natively"));
+            let (native, truth) = if in_gaps(INTEGER_SPELLED_COMPARISONS, ty) {
+                assert_eq!(
+                    native, None,
+                    "{ty:?} {relation:?} keeps its Integer spelling"
+                );
+                representation::comparison(ty, relation, a.clone(), b.clone())
+                    .unwrap_or_else(|| panic!("{ty:?} {relation:?} has a native comparison"))
+            } else {
+                native.unwrap_or_else(|| panic!("{ty:?} {relation:?} reads natively"))
+            };
             // The converse reading gives the Integer comparison back, with
             // `!=` as a false equality.
             let readings = comparison::integer_observations_of_native_comparison(
@@ -355,19 +358,12 @@ fn folded_overflow(
     left: Bitvector32Term,
     right: Bitvector32Term,
 ) -> ConditionTerm {
-    match (ty, operation) {
-        (Ty::Int32, Operation::Add) => ConditionTerm::signed_add_overflows(left, right),
-        (Ty::Int32, Operation::Subtract) => ConditionTerm::signed_subtract_overflows(left, right),
-        (Ty::Int32, Operation::Multiply) => ConditionTerm::signed_multiply_overflows(left, right),
-        (Ty::Int64, Operation::Add) => ConditionTerm::int64_signed_add_overflows(left, right),
-        (Ty::Int64, Operation::Subtract) => {
-            ConditionTerm::int64_signed_subtract_overflows(left, right)
-        }
-        (Ty::Int64, Operation::Multiply) => {
-            ConditionTerm::int64_signed_multiply_overflows(left, right)
-        }
-        _ => unreachable!("{ty:?} has no overflow test"),
-    }
+    let op = match operation {
+        Operation::Add => OverflowOperation::Add,
+        Operation::Subtract => OverflowOperation::Subtract,
+        Operation::Multiply => OverflowOperation::Multiply,
+    };
+    ConditionTerm::machine_overflows(ty, op, left, right)
 }
 
 #[test]
@@ -375,13 +371,16 @@ fn definedness_is_the_range_of_the_exact_result_at_every_format() {
     for ty in FORMATS {
         let (a, b) = (value(ty, 172_031), value(ty, 172_032));
         assert_eq!(
-            definedness::has_overflow_test(ty),
+            representation::has_overflow_test(ty),
             !in_gaps(DEFINEDNESS_GAPS, ty),
             "{ty:?}"
         );
+        // Definedness facts are filed only where C's overflow is undefined
+        // behavior; an unsigned overflow is a wrap, and its test is
+        // kernel-internal (`design/machine-integers.md`, "Decisions").
         assert_eq!(
             definedness::defined_formats().any(|defined| defined == ty),
-            !in_gaps(DEFINEDNESS_GAPS, ty),
+            matches!(ty, Ty::Int32 | Ty::Int64),
             "{ty:?}"
         );
         for operation in Operation::ALL {
@@ -425,8 +424,15 @@ fn definedness_is_the_range_of_the_exact_result_at_every_format() {
             );
             for bound in &bounds {
                 assert_eq!(
-                    definedness::definedness_of_integer_bound(bound),
+                    definedness::overflow_fact_of_integer_bound(bound, FORMATS.into_iter()),
                     Some(fact.clone()),
+                    "{ty:?} {operation:?}"
+                );
+                // The kernel files the converse only where definedness is
+                // filed.
+                assert_eq!(
+                    definedness::definedness_of_integer_bound(bound).is_some(),
+                    representation::files_definedness(ty),
                     "{ty:?} {operation:?}"
                 );
             }

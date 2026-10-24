@@ -3,6 +3,7 @@ use super::*;
 use crate::kernel::assumptions::load_snapshot_and_pointer;
 use crate::kernel::assumptions::{parameter_alias_bucket, parameter_partition_variable};
 use crate::kernel::reasoning::memories_match_for_pointer_load;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{ConditionTerm, Proposition, PureFunctionArgument};
 use std::collections::BTreeSet;
 
@@ -180,7 +181,13 @@ impl EqualityGraph {
             .get(&(pointer.clone(), kind));
         for condition in candidates.into_iter().flat_map(|sources| sources.iter()) {
             crate::instrumentation::record_deterministic_work(1);
-            let ConditionTerm::Bitvector64Equal(left, right) = condition else {
+            let ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } = condition
+            else {
                 continue;
             };
             for (side, other) in [(left, right), (right, left)] {

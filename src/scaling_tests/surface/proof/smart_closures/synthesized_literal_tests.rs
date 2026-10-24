@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn speculative_simp_premise_spelling_declines_large_components_without_rendering() {
@@ -18,10 +19,12 @@ fn speculative_simp_premise_spelling_declines_large_components_without_rendering
         0,
         &[],
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Constant(0)),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         ),
         ParameterBinding::new(function.parameters(), &[]),
@@ -38,10 +41,12 @@ fn speculative_simp_premise_spelling_declines_large_components_without_rendering
         let premises = (0..size)
             .map(|index| {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Variable(Variable(8_179_000 + index))),
-                        Box::new(Bitvector32Term::Constant(0)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Variable(Variable(8_179_000 + index))),
+                        right: Box::new(Bitvector32Term::Constant(0)),
+                    },
                     true,
                 )
             })
@@ -139,10 +144,12 @@ fn native_signed_certificate_results_do_not_walk_ambient_facts() {
     let x = Bitvector32Term::Variable(Variable(8_172_000));
     let arguments = [CExpression::Value(CValue::Int32(x.clone()))];
     let premise = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessEqual(
-            Box::new(x),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(x),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         true,
     );
     let original = signed_arithmetic_claim(&premise).unwrap();
@@ -185,10 +192,12 @@ fn native_signed_certificate_results_do_not_walk_ambient_facts() {
         let mut facts = (0..size)
             .map(|i| {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Variable(Variable(8_173_000 + i))),
-                        Box::new(Bitvector32Term::Constant(0)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Variable(Variable(8_173_000 + i))),
+                        right: Box::new(Bitvector32Term::Constant(0)),
+                    },
                     true,
                 )
             })

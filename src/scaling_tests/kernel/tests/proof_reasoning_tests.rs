@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 #[test]
 fn nested_simp_derivations_keep_rule_temporaries_off_the_recursive_stack() {
@@ -337,17 +338,21 @@ fn exact_signed_constant_is_a_keyed_lookup_among_unrelated_facts() {
                 true,
             )
             .assume_condition(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Constant(-3_i32 as u32)),
-                    Box::new(reversed.clone()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::Constant(-3_i32 as u32)),
+                    right: Box::new(reversed.clone()),
+                },
                 true,
             )
             .assume_condition(
-                ConditionTerm::Bitvector64Equal(
-                    Box::new(wide.clone()),
-                    Box::new(Bitvector32Term::Int64Constant(1 << 40)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(wide.clone()),
+                    right: Box::new(Bitvector32Term::Int64Constant(1 << 40)),
+                },
                 true,
             );
         PureFactContext::reset_exact_constant_fact_visits();
@@ -1087,10 +1092,12 @@ fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
         let new = Bitvector32Term::Variable(Variable(99_000 + index));
         Proposition::Implies(
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedAddOverflows(
-                    Box::new(old.clone()),
-                    Box::new(delta.clone()),
-                ),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: Box::new(old.clone()),
+                    right: Box::new(delta.clone()),
+                },
                 false,
             )),
             Box::new(Proposition::ConditionIs(
@@ -1174,10 +1181,12 @@ fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
     let x = Bitvector32Term::Variable(Variable(990_000));
     let y = Bitvector32Term::Variable(Variable(990_001));
     let low_word_only = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(x.clone()),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(x.clone()),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         true,
     ));
     assert_eq!(

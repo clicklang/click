@@ -2,6 +2,8 @@
 //! reference assignments and checked memory accesses. Observation labels grant
 //! no permission; optional checked lease plans are separate semantic operations.
 use super::*;
+#[cfg(test)]
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -358,10 +360,12 @@ mod tests {
         assert!(
             !fact
                 .with_proposition(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Constant(0)),
-                        Box::new(Bitvector32Term::Constant(0))
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::Constant(0))
+                    },
                     true
                 ))
                 .reference_observation

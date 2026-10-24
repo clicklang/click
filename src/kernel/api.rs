@@ -13,6 +13,7 @@ use super::prelude::*;
 pub(super) use super::resource_tracker::cell_source::*;
 use crate::instrumentation::ArtifactReuseRejection;
 use crate::kernel::ResourceDescription;
+use crate::kernel::{CompareRelation, OverflowOperation};
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -163,11 +164,12 @@ pub(crate) fn spec_bool_term(term: &Bitvector32Term) -> Option<&Bitvector32Term>
         return None;
     }
     match condition.as_ref() {
-        ConditionTerm::Bitvector32Equal(zero, inner)
-            if zero.as_const() == Some(0) && inner.as_const().is_none() =>
-        {
-            Some(inner)
-        }
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: zero,
+            right: inner,
+        } if zero.as_const() == Some(0) && inner.as_const().is_none() => Some(inner),
         _ => None,
     }
 }
@@ -203,10 +205,12 @@ pub(crate) fn c_bool_range_fact(value: &CValue) -> Option<Proposition> {
     }
     let equals = |constant| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(term.clone()),
-                Box::new(Bitvector32Term::Constant(constant)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(term.clone()),
+                right: Box::new(Bitvector32Term::Constant(constant)),
+            },
             true,
         )
     };
@@ -6180,8 +6184,15 @@ pub(in crate::kernel) fn checked_int32_reassociated_add_domain(
     assumptions: &PureFactContext,
     goal: &Proposition,
 ) -> bool {
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedAddOverflows(left, right), false) =
-        goal
+    let Proposition::ConditionIs(
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left,
+            right,
+        },
+        false,
+    ) = goal
     else {
         return false;
     };
@@ -6205,12 +6216,15 @@ pub(in crate::kernel) fn checked_int32_reassociated_add_domain(
             assumptions,
             &Proposition::ConditionIs(
                 match condition {
-                    ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
-                        ConditionTerm::signed_add_overflows(
-                            right.as_ref().clone(),
-                            left.as_ref().clone(),
-                        )
-                    }
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left,
+                        right,
+                    } => ConditionTerm::signed_add_overflows(
+                        right.as_ref().clone(),
+                        left.as_ref().clone(),
+                    ),
                     _ => unreachable!(),
                 },
                 false,
@@ -7386,7 +7400,12 @@ pub fn prove_int32_le_antisymmetric(left: Bitvector32Term, right: Bitvector32Ter
         true,
     );
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
         true,
     );
     implication([le_premise, reverse_le_premise], conclusion)
@@ -7407,7 +7426,12 @@ pub fn prove_int32_le_and_not_lt_implies_eq(
         false,
     );
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
         true,
     );
     implication([le_premise, not_lt_premise], conclusion)
@@ -7422,7 +7446,12 @@ pub fn prove_int32_le_and_neq_implies_lt(left: Bitvector32Term, right: Bitvector
         true,
     );
     let neq_premise = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left.clone()), Box::new(right.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left.clone()),
+            right: Box::new(right.clone()),
+        },
         false,
     );
     let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(left, right), true);
@@ -7927,10 +7956,12 @@ pub fn prove_int32_increment_below_max_is_defined(value: Bitvector32Term) -> The
         true,
     );
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedAddOverflows(
-            Box::new(value),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: Box::new(value),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         false,
     );
     implication([premise], conclusion)
@@ -8645,11 +8676,27 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
     let mut goal = conclusion.clone();
     for rewrite in rewrites {
         crate::kernel::proof::fact_reasoning::exactly_available_fact(&rewrite, &requirements)?;
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(from, to), true) = rewrite
+        let Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: from,
+                right: to,
+            },
+            true,
+        ) = rewrite
         else {
             return None;
         };
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = goal
+        let Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) = goal
         else {
             return None;
         };
@@ -8659,7 +8706,12 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
             return None;
         }
         goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(rewritten_left), Box::new(rewritten_right)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(rewritten_left),
+                right: Box::new(rewritten_right),
+            },
             true,
         );
     }
@@ -9303,7 +9355,12 @@ pub fn prove_uint64_integer_bridge(
                 true,
             )],
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector64UnsignedGreaterEqual(left.into(), right.into()),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt64,
+                    relation: CompareRelation::GreaterEqual,
+                    left: left.into(),
+                    right: right.into(),
+                },
                 false,
             ),
         ));

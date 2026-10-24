@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::CompareRelation;
 use crate::kernel::effective_type::CAccessClass;
 
 fn integer_to_float_bits(
@@ -997,26 +998,32 @@ fn narrow_integer(
             if checked {
                 let bounds = if source == MachineIntegerType::UInt64 {
                     vec![(
-                        ConditionTerm::Bitvector64UnsignedLessEqual(
-                            term.clone().into(),
-                            Bitvector32Term::UInt64Constant(i32::MAX as u64).into(),
-                        ),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::UInt64,
+                            relation: CompareRelation::LessEqual,
+                            left: term.clone().into(),
+                            right: Bitvector32Term::UInt64Constant(i32::MAX as u64).into(),
+                        },
                         "int32 narrowing upper bound",
                     )]
                 } else {
                     vec![
                         (
-                            ConditionTerm::Bitvector64SignedGreaterEqual(
-                                term.clone().into(),
-                                Bitvector32Term::Int64Constant(i64::from(i32::MIN)).into(),
-                            ),
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int64,
+                                relation: CompareRelation::GreaterEqual,
+                                left: term.clone().into(),
+                                right: Bitvector32Term::Int64Constant(i64::from(i32::MIN)).into(),
+                            },
                             "int32 narrowing lower bound",
                         ),
                         (
-                            ConditionTerm::Bitvector64SignedLessEqual(
-                                term.clone().into(),
-                                Bitvector32Term::Int64Constant(i64::from(i32::MAX)).into(),
-                            ),
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int64,
+                                relation: CompareRelation::LessEqual,
+                                left: term.clone().into(),
+                                right: Bitvector32Term::Int64Constant(i64::from(i32::MAX)).into(),
+                            },
                             "int32 narrowing upper bound",
                         ),
                     ]
@@ -1032,10 +1039,12 @@ fn narrow_integer(
                 add_narrowing_bound_obligation(
                     obligations,
                     assumptions,
-                    ConditionTerm::Bitvector64UnsignedLessEqual(
-                        term.clone().into(),
-                        Bitvector32Term::UInt64Constant(i64::MAX as u64).into(),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::LessEqual,
+                        left: term.clone().into(),
+                        right: Bitvector32Term::UInt64Constant(i64::MAX as u64).into(),
+                    },
                     "int64 narrowing upper bound",
                 )?;
             }

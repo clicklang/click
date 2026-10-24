@@ -38,9 +38,37 @@ fn integer_relation(
 /// format exactly: `to_integer(x)` against `to_integer(y)` of the same
 /// format, or against a constant that format represents. A constant outside
 /// the format's range makes the Integer comparison decided by the range
-/// alone; nothing is returned for it, nor for a format with no native
-/// comparison (`representation::comparison`).
+/// alone; nothing is returned for it, nor for a format whose Integer
+/// comparisons keep their Integer spelling
+/// (`representation::spells_comparison_natively`).
 pub(crate) fn native_comparison_of_integer_observation(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<(ConditionTerm, bool)> {
+    // A 128-bit comparison has a native node, but the kernel's order
+    // reasoning (the difference graph, interval bounds) works on its
+    // Integer form, so an Integer comparison of 128-bit observations keeps
+    // that spelling (`representation::spells_comparison_natively`).
+    let spelled_natively = |side: &IntegerTerm| match side {
+        IntegerTerm::Machine(machine) => representation::spells_comparison_natively(machine.ty()),
+        _ => true,
+    };
+    if let ConditionTerm::IntegerLessThan(left, right)
+    | ConditionTerm::IntegerLessEqual(left, right)
+    | ConditionTerm::IntegerGreaterThan(left, right)
+    | ConditionTerm::IntegerGreaterEqual(left, right)
+    | ConditionTerm::IntegerEqual(left, right)
+    | ConditionTerm::IntegerNotEqual(left, right) = condition
+        && !(spelled_natively(left) && spelled_natively(right))
+    {
+        return None;
+    }
+    native_comparison_at_format(condition, value)
+}
+
+/// [`native_comparison_of_integer_observation`] at every format, whatever
+/// its spelling: the forward map the converse reading checks against.
+fn native_comparison_at_format(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(ConditionTerm, bool)> {
@@ -212,7 +240,7 @@ pub(crate) fn integer_observations_of_native_comparison(
             } else {
                 true
             };
-            if native_comparison_of_integer_observation(&candidate, truth).is_some_and(
+            if native_comparison_at_format(&candidate, truth).is_some_and(
                 |(native, native_truth)| {
                     let native = Proposition::ConditionIs(native, native_truth);
                     &native == proposition || spellings.contains(&native)

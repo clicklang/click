@@ -3,6 +3,7 @@
 // it rather than by a proof that happens to reach it.
 use super::*;
 use crate::kernel::intern_c_memory;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn block(name: &str) -> PointerBlock {
     PointerBlock::Concrete(name.to_string())
@@ -659,10 +660,12 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
     };
     let fact = |memory: &CMemory| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(load(memory)),
-                Box::new(Bitvector32Term::Constant(5)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(load(memory)),
+                right: Box::new(Bitvector32Term::Constant(5)),
+            },
             true,
         )
     };
@@ -683,10 +686,12 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
     assert_eq!(version_mismatch(&fact(&entry), &fact(&entry)), None);
 
     let other = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Constant(5)),
-            Box::new(Bitvector32Term::Constant(5)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Constant(5)),
+            right: Box::new(Bitvector32Term::Constant(5)),
+        },
         true,
     );
     assert_eq!(version_mismatch(&fact(&after), &other), None);

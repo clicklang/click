@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl CParameter {
     pub fn new(name: impl Into<String>, c_type: CType) -> Self {
@@ -2632,17 +2633,42 @@ impl CMemoryRange {
                     pending.push(right);
                 }
                 Proposition::ConditionIs(condition, true) => match (kind, condition) {
-                    (RangeIndexKind::Int32, ConditionTerm::Bitvector32SignedLessEqual(lo, v))
+                    (
+                        RangeIndexKind::Int32,
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessEqual,
+                            left: lo,
+                            right: v,
+                        },
+                    )
                     | (
                         RangeIndexKind::UInt64,
-                        ConditionTerm::Bitvector64UnsignedLessEqual(lo, v),
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::UInt64,
+                            relation: CompareRelation::LessEqual,
+                            left: lo,
+                            right: v,
+                        },
                     ) if is_variable(v) => lower = Some(lo.as_ref().clone()),
-                    (RangeIndexKind::Int32, ConditionTerm::Bitvector32SignedLessThan(v, hi))
-                    | (RangeIndexKind::UInt64, ConditionTerm::Bitvector64UnsignedLessThan(v, hi))
-                        if is_variable(v) =>
-                    {
-                        upper = Some(hi.as_ref().clone())
-                    }
+                    (
+                        RangeIndexKind::Int32,
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessThan,
+                            left: v,
+                            right: hi,
+                        },
+                    )
+                    | (
+                        RangeIndexKind::UInt64,
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::UInt64,
+                            relation: CompareRelation::LessThan,
+                            left: v,
+                            right: hi,
+                        },
+                    ) if is_variable(v) => upper = Some(hi.as_ref().clone()),
                     _ => {}
                 },
                 _ => {}
@@ -4055,10 +4081,12 @@ mod guarded_quantified_cell_tests {
     fn an_unsigned_guard_names_the_range_from_zero() {
         let base = parameter();
         let length = Bitvector32Term::Variable(Variable(8));
-        let guard = holds(ConditionTerm::Bitvector64UnsignedLessThan(
-            variable(index()),
-            Box::new(length.clone()),
-        ));
+        let guard = holds(ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left: variable(index()),
+            right: Box::new(length.clone()),
+        });
         assert_eq!(
             CMemoryRange::guarded_quantified_cells(&wide_cell(&base), index(), &guard, 1),
             Some(CMemoryRange::new_wide(
@@ -4076,31 +4104,37 @@ mod guarded_quantified_cell_tests {
         let cell = wide_cell(&base);
         let length = Box::new(Bitvector32Term::Variable(Variable(8)));
         // A signed comparison does not bound an unsigned 64-bit index.
-        let signed = holds(ConditionTerm::Bitvector32SignedLessThan(
-            variable(index()),
-            length.clone(),
-        ));
+        let signed = holds(ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: variable(index()),
+            right: length.clone(),
+        });
         assert_eq!(
             CMemoryRange::guarded_quantified_cells(&cell, index(), &signed, 1),
             None
         );
         // An upper bound that mentions the binder is not one fixed range.
-        let circular = holds(ConditionTerm::Bitvector64UnsignedLessThan(
-            variable(index()),
-            Box::new(Bitvector32Term::UInt64Add(
+        let circular = holds(ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left: variable(index()),
+            right: Box::new(Bitvector32Term::UInt64Add(
                 variable(index()),
                 length.clone(),
             )),
-        ));
+        });
         assert_eq!(
             CMemoryRange::guarded_quantified_cells(&cell, index(), &circular, 1),
             None
         );
         // A stride other than the read's width is not that range's element.
-        let bound = holds(ConditionTerm::Bitvector64UnsignedLessThan(
-            variable(index()),
-            length,
-        ));
+        let bound = holds(ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left: variable(index()),
+            right: length,
+        });
         assert_eq!(
             CMemoryRange::guarded_quantified_cells(&cell, index(), &bound, 4),
             None

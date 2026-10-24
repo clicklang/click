@@ -2,6 +2,7 @@ use super::primitives::*;
 use super::reasoning::*;
 use super::resource_tracker::cell_source::*;
 use crate::kernel::ExecutionFactSource;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::collections::BTreeSet;
 
 /// Results retained from the actual selected read query, never reconstructed
@@ -2014,8 +2015,18 @@ impl AtomicMemoryLoadEqualityEvidence {
         // construction and the checking side, not something the goal's
         // carrier decides.
         let Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(left, right)
-            | ConditionTerm::Bitvector64Equal(left, right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            }
+            | ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
             true,
         ) = proposition
         else {
@@ -4536,25 +4547,75 @@ pub(crate) fn rewrite_condition_through_certified_stores(
         )
     };
     let rewritten = match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedLessThan(left, right)
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            }
         }
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedLessEqual(left, right)
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            }
         }
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedGreaterThan(left, right)
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            }
         }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            }
         }
-        ConditionTerm::Bitvector32Equal(left, right) => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32Equal(left, right)
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            }
         }
         _ => return fact.clone(),
     };
@@ -5052,10 +5113,12 @@ pub(crate) fn narrow_read_has_recorded_value(
             _ => return false,
         };
         &word == other
-            || assumptions.decide(&ConditionTerm::Bitvector32Equal(
-                Box::new(word),
-                Box::new(other.clone()),
-            )) == Some(true)
+            || assumptions.decide(&ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(word),
+                right: Box::new(other.clone()),
+            }) == Some(true)
     };
     stored_value_matches(origin(left), right) || stored_value_matches(origin(right), left)
 }
@@ -5524,24 +5587,75 @@ pub(crate) fn c_condition_facts_equivalent_for_memory_resolution(
     }
     let operands = match (left, right) {
         (
-            ConditionTerm::Bitvector32SignedLessThan(a, b),
-            ConditionTerm::Bitvector32SignedLessThan(c, d),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            },
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: c,
+                right: d,
+            },
         )
         | (
-            ConditionTerm::Bitvector32SignedLessEqual(a, b),
-            ConditionTerm::Bitvector32SignedLessEqual(c, d),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            },
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: c,
+                right: d,
+            },
         )
         | (
-            ConditionTerm::Bitvector32SignedGreaterThan(a, b),
-            ConditionTerm::Bitvector32SignedGreaterThan(c, d),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: a,
+                right: b,
+            },
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: c,
+                right: d,
+            },
         )
         | (
-            ConditionTerm::Bitvector32SignedGreaterEqual(a, b),
-            ConditionTerm::Bitvector32SignedGreaterEqual(c, d),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: a,
+                right: b,
+            },
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: c,
+                right: d,
+            },
         )
-        | (ConditionTerm::Bitvector32Equal(a, b), ConditionTerm::Bitvector32Equal(c, d)) => {
-            Some((a, b, c, d))
-        }
+        | (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            },
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: c,
+                right: d,
+            },
+        ) => Some((a, b, c, d)),
         _ => None,
     };
     let Some((a, b, c, d)) = operands else {
@@ -5697,14 +5811,16 @@ pub(crate) fn certified_store_equations(
             // What the store wrote is the read of its own kind there.
             let kind = LoadKind::of_value(&store.value)?;
             Some(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::memory_read(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::memory_read(
                         crate::kernel::intern_c_memory(store.after.clone()),
                         store.pointer.clone(),
                         kind,
                     )),
-                    Box::new(value),
-                ),
+                    right: Box::new(value),
+                },
                 true,
             ))
         })
@@ -6831,25 +6947,75 @@ pub(super) fn condition_with_canonicalized_loads(
         )
     };
     Some(match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedLessThan(left, right)
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            }
         }
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedLessEqual(left, right)
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            }
         }
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedGreaterThan(left, right)
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            }
         }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            }
         }
-        ConditionTerm::Bitvector32Equal(left, right) => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Bitvector32Equal(left, right)
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            }
         }
         _ => return None,
     })

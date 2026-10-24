@@ -414,9 +414,13 @@ Stage 1 is done (2026-10-24) for every gap that needs no new node: the rules
 are stated once over a format in `src/kernel/machine_integer/`, a per-format
 matrix checks them at all ten formats, and multiplication identities and
 signed operation bounds are filled
-([kernel](../docs/internals/kernel.md#machine-integer-rules)). Unsigned,
-narrow and 128-bit definedness and 128-bit comparisons wait for Stage 2's
-condition family.
+([kernel](../docs/internals/kernel.md#machine-integer-rules)). Stage 2 is
+done (2026-10-24) except the `uint32` order: conditions are one family,
+`Compare` and `Overflows` with a format, every format has both, and the
+matrix's comparison and definedness gaps are filled. The sign-flip encoding
+of `uint32` order remains, because its readers include the documented
+`interval_sign_bit_flip` certificate step and diagnostic wording
+([design](../design/machine-integers.md#stage-2-one-condition-family)).
 
 ### Naming decisions (maintainer, 2026-10-15)
 

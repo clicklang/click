@@ -55,6 +55,8 @@
 use super::assumptions::{conditions_equal_with_load_atoms, pointers_equal_with_load_atoms};
 use super::primitives::*;
 use super::proof::ProofFacts;
+#[cfg(test)]
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::cell::Cell;
 use std::collections::BTreeSet;
 
@@ -395,8 +397,12 @@ mod wide_condition_tests {
                 kind,
             )
         };
-        let condition =
-            |read, value| ConditionTerm::Bitvector64Equal(Box::new(read), Box::new(value));
+        let condition = |read, value| ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: Box::new(read),
+            right: Box::new(value),
+        };
         let stamp = Bitvector32Term::UInt64Constant(0x1_0000_0001);
         let source = condition(load(&before, LoadKind::Bits64), stamp.clone());
         let target = condition(load(&after, LoadKind::Bits64), stamp.clone());
@@ -424,10 +430,12 @@ mod wide_condition_tests {
         )));
         assert!(!conditions_equal_with_load_atoms(
             &source,
-            &ConditionTerm::Bitvector32Equal(
-                Box::new(load(&after, LoadKind::Bits64)),
-                Box::new(Bitvector32Term::Constant(1)),
-            ),
+            &ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(load(&after, LoadKind::Bits64)),
+                right: Box::new(Bitvector32Term::Constant(1))
+            },
             &|_, _| true,
         ));
     }

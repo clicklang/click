@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::CompareRelation;
 
 /// Whether a memory fact about `base` established in `range_memory` still
 /// describes an available region in `current_memory`: the block must be
@@ -1145,7 +1146,12 @@ fn bare_condition_is_decided(assumptions: &PureFactContext, proposition: &Propos
     let Proposition::ConditionIs(condition, value) = proposition else {
         return false;
     };
-    if let ConditionTerm::Bitvector64Equal(left, right) = condition
+    if let ConditionTerm::Compare {
+        format: MachineIntegerType::Int64,
+        relation: CompareRelation::Equal,
+        left,
+        right,
+    } = condition
         && *value
         && assumptions.uint64_values_known_equal(left, right)
     {
@@ -1174,8 +1180,8 @@ pub(in crate::kernel) fn call_input_fact_is_already_known(
             || matches!(side, Proposition::ConditionIs(condition, value)
                 if PureFactContext::decide_intrinsically(condition) == Some(*value)
                     || !matches!(condition,
-                        ConditionTerm::Bitvector32Equal(..)
-                        | ConditionTerm::Bitvector64Equal(..)
+                        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, .. }
+                        | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, .. }
                         | ConditionTerm::PointerValueEqual(..)
                     | ConditionTerm::PointerEqual(..)
                         | ConditionTerm::PointerOffsetEqual(..))
@@ -1830,7 +1836,7 @@ pub(in crate::kernel) fn decide_with_facts(
                 // their two-holder separation projection. Keep the deferred
                 // policy; other comparisons retain their existing cheap path.
                 if !assumptions.should_defer_non_exact_condition_reasoning()
-                    || matches!(condition, ConditionTerm::Bitvector64Equal(a,b)
+                    || matches!(condition, ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left: a, right: b }
                         if a.address_pointer().is_some() && b.address_pointer().is_some())
                 {
                     assumptions.clone()

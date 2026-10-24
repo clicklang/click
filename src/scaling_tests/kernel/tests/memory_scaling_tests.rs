@@ -7,6 +7,7 @@
 //! numbers in its assertion messages.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 const SIZES: [usize; 5] = [64, 128, 256, 512, 1024];
 
@@ -1387,10 +1388,12 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
         );
         // The body facts: `region->start == start` and `size` unrelated ones.
         let premises = std::iter::once((
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(START_LOAD))),
-                Box::new(Bitvector32Term::Variable(Variable(START_FIELD))),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(START_LOAD))),
+                right: Box::new(Bitvector32Term::Variable(Variable(START_FIELD))),
+            },
             true,
         ))
         .chain((0..size).map(|index| {

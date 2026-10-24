@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn source_reference_selected_observation_merge_does_not_scan_ambient_facts() {
@@ -10,10 +11,12 @@ fn source_reference_selected_observation_merge_does_not_scan_ambient_facts() {
         let mut prefix = ExecutionFacts::new();
         for index in 0..size {
             prefix.push(ExecutionPureFact::condition(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(Variable(index))),
-                    Box::new(Bitvector32Term::Constant(7)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::Variable(Variable(index))),
+                    right: Box::new(Bitvector32Term::Constant(7)),
+                },
                 true,
             ));
         }

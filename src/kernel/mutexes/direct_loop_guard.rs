@@ -2,6 +2,7 @@
 //! Metadata locates an owned carrier; only checked unfolding transfers its guard.
 use super::*;
 use crate::kernel::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 pub(super) struct DirectLoopGuard {
     source: CResourceSpec,
@@ -106,13 +107,15 @@ fn source_condition(
     let held = if expected {
         condition
     } else {
-        ConditionTerm::Bitvector32Equal(
-            Box::new(match &value {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(match &value {
                 CValue::Int32(term) => term.clone(),
                 _ => unreachable!(),
             }),
-            Box::new(1u32.into()),
-        )
+            right: Box::new(1u32.into()),
+        }
     };
     Ok((held, value))
 }

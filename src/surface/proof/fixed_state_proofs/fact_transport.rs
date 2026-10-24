@@ -1,5 +1,8 @@
 use super::*;
 use crate::kernel::ExecutionFactSource;
+#[cfg(test)]
+use crate::kernel::OverflowOperation;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::proof_diagnostics::render;
 
@@ -984,33 +987,61 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
         return None;
     };
     let erased = match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(erase_term(left)),
-                Box::new(erase_term(right)),
-            )
-        }
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(erase_term(left)),
-                Box::new(erase_term(right)),
-            )
-        }
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-            ConditionTerm::Bitvector32SignedGreaterThan(
-                Box::new(erase_term(left)),
-                Box::new(erase_term(right)),
-            )
-        }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-            ConditionTerm::Bitvector32SignedGreaterEqual(
-                Box::new(erase_term(left)),
-                Box::new(erase_term(right)),
-            )
-        }
-        ConditionTerm::Bitvector32Equal(left, right) => {
-            ConditionTerm::Bitvector32Equal(Box::new(erase_term(left)), Box::new(erase_term(right)))
-        }
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        } => ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(erase_term(left)),
+            right: Box::new(erase_term(right)),
+        },
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        } => ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(erase_term(left)),
+            right: Box::new(erase_term(right)),
+        },
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        } => ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left: Box::new(erase_term(left)),
+            right: Box::new(erase_term(right)),
+        },
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: Box::new(erase_term(left)),
+            right: Box::new(erase_term(right)),
+        },
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(erase_term(left)),
+            right: Box::new(erase_term(right)),
+        },
         _ => return None,
     };
     Some(Proposition::ConditionIs(erased, *value))
@@ -1032,21 +1063,31 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
         else {
             return false;
         };
-        use ConditionTerm::{
-            Bitvector32SignedGreaterEqual as Ge, Bitvector32SignedGreaterThan as Gt,
-            Bitvector32SignedLessEqual as Le, Bitvector32SignedLessThan as Lt,
+        use CompareRelation::{
+            GreaterEqual as Ge, GreaterThan as Gt, LessEqual as Le, LessThan as Lt,
         };
-        match (left_condition, right_condition) {
-            (Lt(left, right), Ge(other_left, other_right))
-            | (Ge(left, right), Lt(other_left, other_right))
-            | (Le(left, right), Gt(other_left, other_right))
-            | (Gt(left, right), Le(other_left, other_right)) => {
+        let (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: left_relation,
+                left,
+                right,
+            },
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: right_relation,
+                left: other_left,
+                right: other_right,
+            },
+        ) = (left_condition, right_condition)
+        else {
+            return false;
+        };
+        match (left_relation, right_relation) {
+            (Lt, Ge) | (Ge, Lt) | (Le, Gt) | (Gt, Le) => {
                 left == other_left && right == other_right && left_value != right_value
             }
-            (Lt(left, right), Gt(other_left, other_right))
-            | (Gt(left, right), Lt(other_left, other_right))
-            | (Le(left, right), Ge(other_left, other_right))
-            | (Ge(left, right), Le(other_left, other_right)) => {
+            (Lt, Gt) | (Gt, Lt) | (Le, Ge) | (Ge, Le) => {
                 left == other_right && right == other_left && left_value == right_value
             }
             _ => false,
@@ -1066,8 +1107,18 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
         }
         match (left_condition, right_condition) {
             (
-                ConditionTerm::Bitvector32Equal(left, right),
-                ConditionTerm::Bitvector32Equal(other_left, other_right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: other_left,
+                    right: other_right,
+                },
             ) => left == other_right && right == other_left,
             (
                 ConditionTerm::PointerOffsetEqual(left, right),
@@ -1306,8 +1357,8 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     if matches!(
         (source, target),
         (
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true),
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
+            Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }, true),
+            Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, .. }, true)
         ) if left == right
     ) {
         return crate::kernel::api::c_condition_fact_target_reaches_in_context(
@@ -1372,10 +1423,12 @@ mod path_condition_tests {
             wide: false,
         };
         let guard = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedSubtractOverflows(
-                Box::new(Bitvector32Term::Variable(Variable(7))),
-                Box::new(Bitvector32Term::Constant(1)),
-            ),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Subtract,
+                left: Box::new(Bitvector32Term::Variable(Variable(7))),
+                right: Box::new(Bitvector32Term::Constant(1)),
+            },
             false,
         );
         let target = Proposition::And(Box::new(guard.clone()), Box::new(source.clone()));

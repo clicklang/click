@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn stated_query_work_is_independent_of_unrelated_facts() {
@@ -11,10 +12,12 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
         var: Variable(300),
         sort: Sort::Bitvector32,
         body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(300))),
-                Box::new(Bitvector32Term::Constant(5)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(300))),
+                right: Box::new(Bitvector32Term::Constant(5)),
+            },
             true,
         )),
     };
@@ -23,10 +26,12 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
     for index in 0..128 {
         large = large.assume_proposition(requirement(10_000 + index, "unrelated"));
         large = large.assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(20_000 + index))),
-                Box::new(Bitvector32Term::Constant(index as u32)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(20_000 + index))),
+                right: Box::new(Bitvector32Term::Constant(index as u32)),
+            },
             true,
         ));
     }

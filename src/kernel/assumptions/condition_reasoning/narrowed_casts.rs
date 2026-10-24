@@ -24,6 +24,7 @@
 //! in the source's own comparison. Each is one memoized decision about the
 //! operand; nothing else in the context is visited.
 use super::*;
+use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType as Ty;
 
 /// One bound a narrowing conversion's operand must meet to be unchanged.
@@ -78,51 +79,69 @@ pub(in crate::kernel) fn narrowed_cast_identity(
         || value.uint64_as_const().is_some();
     let signed_ge = |v: &Bitvector32Term, b: i64| {
         if constant {
-            ConditionTerm::Bitvector32SignedGreaterEqual(v.clone().into(), word(b).into())
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: v.clone().into(),
+                right: word(b).into(),
+            }
         } else {
             ConditionTerm::signed_greater_equal(v.clone(), word(b))
         }
     };
     let signed_le = |v: &Bitvector32Term, b: i64| {
         if constant {
-            ConditionTerm::Bitvector32SignedLessEqual(v.clone().into(), word(b).into())
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: v.clone().into(),
+                right: word(b).into(),
+            }
         } else {
             ConditionTerm::signed_less_equal(v.clone(), word(b))
         }
     };
     let unsigned_le = |v: &Bitvector32Term, b: i64| match v.as_const() {
-        Some(c) => ConditionTerm::Bitvector64UnsignedLessEqual(
-            Bitvector32Term::UInt64Constant(u64::from(c)).into(),
-            Bitvector32Term::UInt64Constant(b as u64).into(),
-        ),
+        Some(c) => ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left: Bitvector32Term::UInt64Constant(u64::from(c)).into(),
+            right: Bitvector32Term::UInt64Constant(b as u64).into(),
+        },
         None => ConditionTerm::unsigned_less_equal(v.clone(), word(b)),
     };
     let int64_ge = |v: &Bitvector32Term, b: i64| {
         if constant {
-            ConditionTerm::Bitvector64SignedGreaterEqual(
-                v.clone().into(),
-                Bitvector32Term::Int64Constant(b).into(),
-            )
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterEqual,
+                left: v.clone().into(),
+                right: Bitvector32Term::Int64Constant(b).into(),
+            }
         } else {
             ConditionTerm::int64_signed_greater_equal(v.clone(), Bitvector32Term::Int64Constant(b))
         }
     };
     let int64_le = |v: &Bitvector32Term, b: i64| {
         if constant {
-            ConditionTerm::Bitvector64SignedLessEqual(
-                v.clone().into(),
-                Bitvector32Term::Int64Constant(b).into(),
-            )
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                left: v.clone().into(),
+                right: Bitvector32Term::Int64Constant(b).into(),
+            }
         } else {
             ConditionTerm::int64_signed_less_equal(v.clone(), Bitvector32Term::Int64Constant(b))
         }
     };
     let uint64_le = |v: &Bitvector32Term, b: i64| {
         if constant {
-            ConditionTerm::Bitvector64UnsignedLessEqual(
-                v.clone().into(),
-                Bitvector32Term::UInt64Constant(b as u64).into(),
-            )
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: v.clone().into(),
+                right: Bitvector32Term::UInt64Constant(b as u64).into(),
+            }
         } else {
             ConditionTerm::uint64_less_equal(v.clone(), Bitvector32Term::UInt64Constant(b as u64))
         }

@@ -2,6 +2,7 @@
 //! separation and C comparisons' selected two-holder projections share one
 //! index; larger ownership frames never generate all their possible pairs.
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
 
 fn anchor(range: &CMemoryRange) -> Option<Pointer> {
@@ -79,7 +80,12 @@ impl EqualityGraph {
     ) -> Option<Proposition> {
         let (a, b) = match condition {
             ConditionTerm::PointerEqual(a, b) => (a.as_ref(), b.as_ref()),
-            ConditionTerm::Bitvector64Equal(a, b) => (a.address_pointer()?, b.address_pointer()?),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            } => (a.address_pointer()?, b.address_pointer()?),
             _ => return None,
         };
         let numeric = ConditionTerm::uint64_equal(

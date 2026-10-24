@@ -282,6 +282,33 @@ impl MachineIntegerConstant {
 }
 
 impl MachineIntegerType {
+    /// The byte width of the word a value of this type rides in: 4 for 8 to
+    /// 32 bits, whose values ride in the 32-bit word, 8 for 64 bits and 16
+    /// for 128.
+    pub(crate) const fn carrier_bytes(self) -> u32 {
+        match self {
+            Self::Int8 | Self::UInt8 | Self::Int16 | Self::UInt16 | Self::Int32 | Self::UInt32 => 4,
+            Self::Int64 | Self::UInt64 => 8,
+            Self::Int128 | Self::UInt128 => 16,
+        }
+    }
+
+    /// The Click name of the type.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Int8 => "int8",
+            Self::UInt8 => "uint8",
+            Self::Int16 => "int16",
+            Self::UInt16 => "uint16",
+            Self::Int32 => "int32",
+            Self::UInt32 => "uint32",
+            Self::Int64 => "int64",
+            Self::UInt64 => "uint64",
+            Self::Int128 => "int128",
+            Self::UInt128 => "uint128",
+        }
+    }
+
     pub const fn format(self) -> MachineIntegerFormat {
         use MachineIntegerWidth::*;
         let (width, signed) = match self {

@@ -13,6 +13,7 @@
 //! explain why the width stays implied and is checked here instead.
 
 use super::*;
+use crate::kernel::{CompareRelation, OverflowOperation};
 
 mod narrow;
 pub(crate) use narrow::*;
@@ -410,13 +411,18 @@ fn value_site(value: &CValue) -> &'static str {
 /// Where a condition's operands disagree with the width its comparison
 /// names, or with themselves.
 pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<WidthMismatch> {
-    use CarrierWidth::{Bits32, Bits64};
+    use CarrierWidth::{Bits32, Bits64, Bits128};
     use ConditionTerm as C;
     // A load equation names what a load reads: a store fact `load == v` or a
     // load variable's defining fact `x == load`. It is written with the
     // 32-bit equality whatever the load's width, so its two sides need only
     // agree with each other.
-    if let C::Bitvector32Equal(left, right) = condition
+    if let C::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left,
+        right,
+    } = condition
         && (matches!(left.as_ref(), Bitvector32Term::MemoryLoad(..))
             || matches!(right.as_ref(), Bitvector32Term::MemoryLoad(..)))
     {
@@ -424,41 +430,33 @@ pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<Widt
             .and_then(|left| unify("load equation", left, term_width(right)?))
             .err();
     }
-    let (site, width, left, right) = match condition {
-        C::Bitvector32SignedLessThan(l, r)
-        | C::Bitvector32SignedLessEqual(l, r)
-        | C::Bitvector32SignedGreaterThan(l, r)
-        | C::Bitvector32SignedGreaterEqual(l, r)
-        | C::Bitvector32Equal(l, r)
-        | C::Bitvector32SignedAddOverflows(l, r)
-        | C::Bitvector32SignedSubtractOverflows(l, r)
-        | C::Bitvector32SignedMultiplyOverflows(l, r)
-        | C::Bitvector32SignedDivideOverflows(l, r) => ("32-bit comparison", Bits32, l, r),
-        C::Bitvector32SignedShiftLeftOverflows(l, r) => {
-            return term_width(r)
-                .err()
-                .or_else(|| expect("32-bit shift overflow", Bits32, l).err());
-        }
-        C::Bitvector64SignedLessThan(l, r)
-        | C::Bitvector64SignedLessEqual(l, r)
-        | C::Bitvector64SignedGreaterThan(l, r)
-        | C::Bitvector64SignedGreaterEqual(l, r)
-        | C::Bitvector64UnsignedLessThan(l, r)
-        | C::Bitvector64UnsignedLessEqual(l, r)
-        | C::Bitvector64UnsignedGreaterThan(l, r)
-        | C::Bitvector64UnsignedGreaterEqual(l, r)
-        | C::Bitvector64Equal(l, r)
-        | C::Bitvector64SignedAddOverflows(l, r)
-        | C::Bitvector64SignedSubtractOverflows(l, r)
-        | C::Bitvector64SignedMultiplyOverflows(l, r)
-        | C::Bitvector64SignedDivideOverflows(l, r) => ("64-bit comparison", Bits64, l, r),
-        C::Bitvector64SignedShiftLeftOverflows(l, r) => {
-            return term_width(r)
-                .err()
-                .or_else(|| expect("64-bit shift overflow", Bits64, l).err());
-        }
+    let (format, shift, left, right) = match condition {
+        C::Compare {
+            format,
+            left,
+            right,
+            ..
+        } => (*format, false, left, right),
+        C::Overflows {
+            format,
+            op,
+            left,
+            right,
+        } => (*format, *op == OverflowOperation::ShiftLeft, left, right),
         _ => return None,
     };
+    let (width, site, shift_site) = match CarrierWidth::of_bits(format.format().bits()) {
+        Bits32 => (Bits32, "32-bit comparison", "32-bit shift overflow"),
+        Bits64 => (Bits64, "64-bit comparison", "64-bit shift overflow"),
+        Bits128 => (Bits128, "128-bit comparison", "128-bit shift overflow"),
+    };
+    // A shift count may have any width; the shifted operand has the
+    // format's.
+    if shift {
+        return term_width(right)
+            .err()
+            .or_else(|| expect(shift_site, width, left).err());
+    }
     expect(site, width, left)
         .and_then(|()| expect(site, width, right))
         .err()

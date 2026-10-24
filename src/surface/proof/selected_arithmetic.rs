@@ -17,6 +17,7 @@ use super::wide_arithmetic::{
     Carrier, Relation, have, operation_identity, relate, relation_parts, to_integer, type_range,
 };
 use super::*;
+use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::surface::checking::{IntegerRefutation, refute_integer_goal};
 
 // Arithmetic subgoals reuse the outer memory search. Nested arithmetic
@@ -93,20 +94,46 @@ impl MachineOrder {
         }
         match proposition {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(..)
-                | ConditionTerm::Bitvector32SignedLessEqual(..)
-                | ConditionTerm::Bitvector32SignedGreaterThan(..)
-                | ConditionTerm::Bitvector32SignedGreaterEqual(..),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    ..
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    ..
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    ..
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    ..
+                },
                 _,
             ) => Some(Self::Int32),
             // An `int32` equality; a `uint32` one is refused by the `int32`
             // bridges and left out.
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true) => {
-                Some(Self::Int32)
-            }
-            Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(..), true) => {
-                Some(Self::Equal64)
-            }
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    ..
+                },
+                true,
+            ) => Some(Self::Int32),
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    ..
+                },
+                true,
+            ) => Some(Self::Equal64),
             _ => None,
         }
     }
@@ -540,8 +567,16 @@ impl<'a> Proof<'a> {
             }
             Proposition::ConditionIs(
                 condition @ (ConditionTerm::IntegerEqual(..)
-                | ConditionTerm::Bitvector32Equal(..)
-                | ConditionTerm::Bitvector64Equal(..)),
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    ..
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    ..
+                }),
                 false,
             ) => Proposition::ConditionIs(condition.clone(), true),
             _ => return None,
@@ -813,7 +848,14 @@ impl<'a> Proof<'a> {
         &self,
     ) -> Result<Option<Self>, ClickError> {
         if let (
-            Some(Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(..), true)),
+            Some(Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    ..
+                },
+                true,
+            )),
             Some(ClickProposition::Comparison { left, right, .. }),
         ) = (self.goal(), self.surface_goal())
             && !writes_sum_or_difference(left, right)
@@ -848,7 +890,14 @@ impl<'a> Proof<'a> {
         // bounds would repeat that search for each bound.
         if !plain_32_bit
             && let (
-                Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true),
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        ..
+                    },
+                    true,
+                ),
                 ClickProposition::Comparison { left, right, .. },
             ) = (goal, surface_goal)
             && !writes_sum_or_difference(left, right)
@@ -868,7 +917,14 @@ impl<'a> Proof<'a> {
         }
         let _arithmetic_scope = matches!(
             goal,
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    ..
+                },
+                true
+            )
         )
         .then(MachineEqualityBridgeScope::enter);
         // A native equality is split as its observed reading, so a bound
@@ -1840,7 +1896,14 @@ impl<'a> Proof<'a> {
         };
         let _arithmetic_scope = matches!(
             goal,
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    ..
+                },
+                true
+            )
         )
         .then(MachineEqualityBridgeScope::enter);
         // A machine comparison is the Integer comparison of its operands'
@@ -1886,10 +1949,23 @@ impl<'a> Proof<'a> {
             if !matches!(
                 candidate,
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedAddOverflows(..)
-                        | ConditionTerm::Bitvector32SignedSubtractOverflows(..)
-                        | ConditionTerm::Bitvector64SignedAddOverflows(..)
-                        | ConditionTerm::Bitvector64SignedSubtractOverflows(..),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        ..
+                    } | ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Subtract,
+                        ..
+                    } | ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int64,
+                        op: OverflowOperation::Add,
+                        ..
+                    } | ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int64,
+                        op: OverflowOperation::Subtract,
+                        ..
+                    },
                     false
                 )
             ) {
@@ -2182,10 +2258,12 @@ theorem black_color_is_black(color: Color) {
         let capacity = Bitvector32Term::Variable(Variable(920_002));
         let slots = Bitvector32Term::Variable(Variable(920_003));
         let kernel = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(capacity),
-                Box::new(Bitvector32Term::Add(Box::new(used), Box::new(slots))),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(capacity),
+                right: Box::new(Bitvector32Term::Add(Box::new(used), Box::new(slots))),
+            },
             true,
         );
         let name = |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));

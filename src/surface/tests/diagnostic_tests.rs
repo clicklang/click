@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
@@ -814,15 +815,22 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
     let y = Bitvector32Term::Variable(Variable(2));
     let at_most = |term: &Bitvector32Term, bound: u32| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(term.clone()),
-                Box::new(Bitvector32Term::Constant(bound)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(term.clone()),
+                right: Box::new(Bitvector32Term::Constant(bound)),
+            },
             true,
         )
     };
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessEqual(Box::new(x.clone()), Box::new(y.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(x.clone()),
+            right: Box::new(y.clone()),
+        },
         true,
     );
     let parameters = vec![
@@ -850,10 +858,12 @@ fn verifier_diagnostics_bound_fact_items() {
     let facts = (0..20)
         .map(|index| {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Constant(index)),
-                    Box::new(Bitvector32Term::Constant(index)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::Constant(index)),
+                    right: Box::new(Bitvector32Term::Constant(index)),
+                },
                 true,
             )
         })
@@ -1381,7 +1391,12 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
     let i = Bitvector32Term::Variable(Variable(1));
     let j = Bitvector32Term::Variable(Variable(2));
     let differ = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(j.clone()), Box::new(i.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(j.clone()),
+            right: Box::new(i.clone()),
+        },
         false,
     );
     assert_eq!(
@@ -1398,10 +1413,12 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
          it again will not help."
     );
     let unrelated = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(i.clone()),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(i.clone()),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         false,
     );
     assert_eq!(
@@ -2575,7 +2592,12 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
         )
     };
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector64Equal(Box::new(load(&after)), Box::new(load(&before))),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: Box::new(load(&after)),
+            right: Box::new(load(&before)),
+        },
         true,
     );
     let summary = super::diagnostics::describe_proposition_version_mismatch(
@@ -3129,14 +3151,16 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::MemoryLoad(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Bits32,
             )),
-            Box::new(Bitvector32Term::Constant(7)),
-        ),
+            right: Box::new(Bitvector32Term::Constant(7)),
+        },
         true,
     );
     let source = std::sync::Arc::new(crate::kernel::CallRequirementSource::new(

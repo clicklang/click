@@ -1,12 +1,15 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::cell::Cell;
 
 fn fact(variable: u64, value: i64) -> Proposition {
     Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(variable))),
-            Box::new(Bitvector32Term::Constant(value as _)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(Variable(variable))),
+            right: Box::new(Bitvector32Term::Constant(value as _)),
+        },
         true,
     )
 }

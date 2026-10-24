@@ -1,6 +1,7 @@
 //! Copy-return compatibility and checked construction-destination oracles.
 //! C++ source admission is tested separately from these shared operations.
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 fn node_layout() -> CAggregateLayout {
@@ -707,7 +708,12 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     };
     let equality = |memory: &CMemory| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(read(memory)), Box::new(read(&before))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(read(memory)),
+                right: Box::new(read(&before)),
+            },
             true,
         )
     };

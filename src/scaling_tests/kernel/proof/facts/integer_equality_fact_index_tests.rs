@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn wide_equality_decision_uses_only_its_indexed_component() {
@@ -10,7 +11,12 @@ fn wide_equality_decision_uses_only_its_indexed_component() {
     let middle = Bitvector32Term::Variable(Variable(211_001));
     let equality = |a: Bitvector32Term, b: Bitvector32Term| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(Box::new(a), Box::new(b)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(a),
+                right: Box::new(b),
+            },
             true,
         )
     };
@@ -51,22 +57,31 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
     let left = Bitvector32Term::Variable(Variable(211_000));
     let middle = Bitvector32Term::Variable(Variable(211_001));
     let required = Proposition::ConditionIs(
-        ConditionTerm::Bitvector64Equal(
-            Box::new(left.clone()),
-            Box::new(Bitvector32Term::UInt64Constant(7)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: Box::new(left.clone()),
+            right: Box::new(Bitvector32Term::UInt64Constant(7)),
+        },
         true,
     );
     let narrow = ProofFacts::from_ordered(&[
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(middle.clone())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(left),
+                right: Box::new(middle.clone()),
+            },
             true,
         ),
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(
-                Box::new(middle),
-                Box::new(Bitvector32Term::UInt64Constant(7)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(middle),
+                right: Box::new(Bitvector32Term::UInt64Constant(7)),
+            },
             true,
         ),
     ]);
@@ -200,10 +215,12 @@ fn integer_alpha_index_keeps_one_source_for_renamed_fold_restatements() {
 #[test]
 fn proper_conjunct_index_walks_deep_conjunction_iteratively() {
     let leaf = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Constant(0)),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        },
         true,
     );
     let mut fact = leaf.clone();
@@ -249,19 +266,23 @@ fn snapshot_blind_same_bucket_lookup_scales_without_deep_dedup() {
             .iter()
             .map(|memory| {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(load(memory)),
-                        Box::new(Bitvector32Term::Constant(0)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(load(memory)),
+                        right: Box::new(Bitvector32Term::Constant(0)),
+                    },
                     true,
                 )
             })
             .collect::<Vec<_>>();
         let required = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(load(memories.last().unwrap())),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(load(memories.last().unwrap())),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         let proof_facts = ProofFacts::from_ordered(&facts);

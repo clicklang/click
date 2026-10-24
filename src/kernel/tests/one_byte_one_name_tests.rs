@@ -2,6 +2,7 @@
 //! signed read is the two's-complement conversion of that term.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn byte(offset: i64) -> Pointer {
     Pointer {
@@ -117,14 +118,21 @@ fn byte_load(offset: i64) -> Bitvector32Term {
 }
 
 fn equal(left: Bitvector32Term, right: i64) -> ConditionTerm {
-    ConditionTerm::Bitvector32Equal(
-        Box::new(left),
-        Box::new(Bitvector32Term::Constant(right as i32 as u32)),
-    )
+    ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left: Box::new(left),
+        right: Box::new(Bitvector32Term::Constant(right as i32 as u32)),
+    }
 }
 
 fn equal_terms(left: Bitvector32Term, right: Bitvector32Term) -> ConditionTerm {
-    ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right))
+    ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left: Box::new(left),
+        right: Box::new(right),
+    }
 }
 
 fn fact(condition: ConditionTerm) -> Proposition {

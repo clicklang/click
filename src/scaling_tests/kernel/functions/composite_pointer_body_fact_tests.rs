@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 // A fold's packed-word equation can use a new name for a checked copy.
 // Rewriting that name must remain scoped, full-width, and independent
@@ -19,21 +20,28 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
     );
     let packed = |word: &Bitvector32Term| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(
-                Box::new(word.clone()),
-                Box::new(Bitvector32Term::UInt64Add(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(word.clone()),
+                right: Box::new(Bitvector32Term::UInt64Add(
                     Box::new(address.clone()),
                     Box::new(Bitvector32Term::UInt64BitwiseAnd(
                         Box::new(word.clone()),
                         Box::new(Bitvector32Term::UInt64Constant(1)),
                     )),
                 )),
-            ),
+            },
             true,
         )
     };
     let alias = Proposition::ConditionIs(
-        ConditionTerm::Bitvector64Equal(Box::new(copied.clone()), Box::new(word.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: Box::new(copied.clone()),
+            right: Box::new(word.clone()),
+        },
         true,
     );
     // Force the selected-alias route rather than general condition reasoning.
@@ -62,10 +70,12 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
         let mut padded = context.clone();
         for index in 0..count {
             padded = padded.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::Bitvector64Equal(
-                    Box::new(Bitvector32Term::Variable(Variable(720_000 + index))),
-                    Box::new(Bitvector32Term::UInt64Constant(index)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::Variable(Variable(720_000 + index))),
+                    right: Box::new(Bitvector32Term::UInt64Constant(index)),
+                },
                 true,
             ));
         }
@@ -99,16 +109,18 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
     );
     let packed = |word: &Bitvector32Term| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(
-                Box::new(word.clone()),
-                Box::new(Bitvector32Term::UInt64Add(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(word.clone()),
+                right: Box::new(Bitvector32Term::UInt64Add(
                     Box::new(address.clone()),
                     Box::new(Bitvector32Term::UInt64BitwiseAnd(
                         Box::new(word.clone()),
                         Box::new(Bitvector32Term::UInt64Constant(1)),
                     )),
                 )),
-            ),
+            },
             true,
         )
     };
@@ -116,7 +128,12 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
         .defer_non_exact_condition_reasoning()
         .assume_proposition(packed(&word))
         .assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(copied.clone()), Box::new(word.clone())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(copied.clone()),
+                right: Box::new(word.clone()),
+            },
             true,
         ));
     assert!(!resource_body_fact_is_established(
@@ -157,16 +174,18 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
     ));
     let parent_fact = |pointer: &Pointer, value: u32| {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::ClickFunctionApplication {
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::ClickFunctionApplication {
                     name: "parent_is".into(),
                     arguments: vec![PureFunctionArgument::Value(CValue::typed_pointer(
                         pointer.clone(),
                         CType::Int32Pointer,
                     ))],
                 }),
-                Box::new(Bitvector32Term::Constant(value)),
-            ),
+                right: Box::new(Bitvector32Term::Constant(value)),
+            },
             true,
         )
     };

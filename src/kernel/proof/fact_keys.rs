@@ -4,6 +4,8 @@
 //! A key match is never proof authority: the checked snapshot bridge still
 //! validates every selected candidate.
 
+#[cfg(test)]
+use crate::kernel::CompareRelation;
 use crate::kernel::LoadKind;
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, CPointerValue, CType, CValue,
@@ -438,7 +440,8 @@ fn snapshot_blind_condition_key(condition: &ConditionTerm) -> SnapshotBlindCondi
             snapshot_blind_pointer_key(left),
             snapshot_blind_pointer_key(right),
         ),
-        crate::kernel::binary_bitvector_condition!(_, _) => {
+        crate::kernel::ConditionTerm::Compare { .. }
+        | crate::kernel::ConditionTerm::Overflows { .. } => {
             unreachable!("bitvector comparisons are keyed above")
         }
         crate::kernel::integer_comparison_condition!(_, _) => {
@@ -2674,7 +2677,12 @@ mod proposition_identity_tests {
 
     fn equal(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
             true,
         )
     }
@@ -2995,14 +3003,16 @@ mod proposition_identity_tests {
         let (load_memory, load_pointer) = crate::kernel::registered_load_for_variable(&load)
             .expect("registered load should retain its exact epoch");
         let spelled = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::MemoryLoad(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::MemoryLoad(
                     load_memory,
                     Box::new(load_pointer),
                     crate::kernel::LoadKind::Bits32,
                 )),
-                Box::new(Bitvector32Term::Constant(7)),
-            ),
+                right: Box::new(Bitvector32Term::Constant(7)),
+            },
             true,
         );
         let named = equal(
@@ -3029,14 +3039,16 @@ mod proposition_identity_tests {
             crate::kernel::registered_load_for_variable(&changed_load)
                 .expect("changed registered load should retain its epoch");
         let changed_spelled = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::MemoryLoad(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::MemoryLoad(
                     changed_memory,
                     Box::new(changed_pointer),
                     crate::kernel::LoadKind::Bits32,
                 )),
-                Box::new(Bitvector32Term::Constant(7)),
-            ),
+                right: Box::new(Bitvector32Term::Constant(7)),
+            },
             true,
         );
         let changed_named = equal(
@@ -3946,10 +3958,12 @@ mod snapshot_alpha_tests {
                 var: binder,
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Variable(element_load)),
-                        Box::new(Bitvector32Term::Constant(1)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Variable(element_load)),
+                        right: Box::new(Bitvector32Term::Constant(1)),
+                    },
                     true,
                 )),
             }
@@ -4371,15 +4385,19 @@ mod machine_quantifier_identity_tests {
             sort: Sort::CInt64,
             body: Box::new(Proposition::ConditionIs(
                 if wide {
-                    ConditionTerm::Bitvector64Equal(
-                        Box::new(Bitvector32Term::Variable(Variable(variable))),
-                        Box::new(Bitvector32Term::Int64Constant(bound)),
-                    )
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Variable(Variable(variable))),
+                        right: Box::new(Bitvector32Term::Int64Constant(bound)),
+                    }
                 } else {
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Variable(Variable(variable))),
-                        Box::new(Bitvector32Term::Constant(bound as u32)),
-                    )
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Variable(Variable(variable))),
+                        right: Box::new(Bitvector32Term::Constant(bound as u32)),
+                    }
                 },
                 true,
             )),

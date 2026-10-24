@@ -20,6 +20,7 @@ use super::{Resource, SeparationCheck};
 use crate::kernel::memory_provenance::*;
 use crate::kernel::primitives::*;
 use crate::kernel::reasoning::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 /// What one recorded step does to one resource.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -643,7 +644,12 @@ fn store_cell_effect(
             hop(MemoryDagHopJustification::StoreCommonBaseUnequalConstants { condition })
         } else if assumptions.exact_condition_value(&condition) == Some(false) {
             hop(MemoryDagHopJustification::StoreCommonBaseExactInequality { condition })
-        } else if let ConditionTerm::Bitvector32Equal(left, right) = &condition
+        } else if let ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = &condition
             && let Some(path) = assumptions.exact_signed_order_path_evidence(left, right, true)
         {
             hop(MemoryDagHopJustification::StoreCommonBaseSignedOrder {
@@ -651,7 +657,12 @@ fn store_cell_effect(
                 path,
                 reversed: false,
             })
-        } else if let ConditionTerm::Bitvector32Equal(left, right) = &condition
+        } else if let ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = &condition
             && let Some(path) = assumptions.exact_signed_order_path_evidence(right, left, true)
         {
             hop(MemoryDagHopJustification::StoreCommonBaseSignedOrder {

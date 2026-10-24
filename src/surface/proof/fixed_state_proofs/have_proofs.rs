@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 struct IterativeSpecPropositionDrop(Option<SpecProposition>);
@@ -1242,15 +1243,43 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
 ) -> Option<Proposition> {
     match proposition {
         Proposition::Equal(left, right) => Some(Proposition::Equal(right, left)),
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => Some(
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(right, left), true),
-        ),
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) => Some(Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: right,
+                right: left,
+            },
+            true,
+        )),
         Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => Some(
             Proposition::ConditionIs(ConditionTerm::IntegerEqual(right, left), true),
         ),
-        Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true) => Some(
-            Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(right, left), true),
-        ),
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) => Some(Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: right,
+                right: left,
+            },
+            true,
+        )),
         Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
             Some(Proposition::ConditionIs(
                 ConditionTerm::PointerValueEqual(right.clone(), left.clone()),

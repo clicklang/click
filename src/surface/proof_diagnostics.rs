@@ -1072,10 +1072,12 @@ mod tests {
     }
     fn unspelled_test_fact(variable: crate::kernel::Variable) -> Proposition {
         Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::Bitvector32Equal(
-                Box::new(crate::kernel::Bitvector32Term::Variable(variable)),
-                Box::new(crate::kernel::Bitvector32Term::Constant(0)),
-            ),
+            crate::kernel::ConditionTerm::Compare {
+                format: crate::kernel::MachineIntegerType::Int32,
+                relation: crate::kernel::CompareRelation::Equal,
+                left: Box::new(crate::kernel::Bitvector32Term::Variable(variable)),
+                right: Box::new(crate::kernel::Bitvector32Term::Constant(0)),
+            },
             true,
         )
     }

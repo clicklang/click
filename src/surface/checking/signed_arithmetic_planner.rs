@@ -5,12 +5,14 @@
 //! finite local derivation, and leaves all semantic validation to the kernel
 //! certificate checker.
 
+use crate::kernel::MachineIntegerType;
 use crate::kernel::proof::signed_arithmetic::{
     SignedArithmeticAtom, SignedArithmeticCarrier, SignedArithmeticCertificate,
     SignedArithmeticClaim, SignedArithmeticComparison, SignedArithmeticInterval,
     SignedArithmeticNode, SignedArithmeticRelation, add_claim,
 };
 use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition};
+use crate::kernel::{CompareRelation, OverflowOperation};
 use num_bigint::BigInt;
 use num_traits::{One, ToPrimitive, Zero};
 use std::collections::{BTreeMap, HashMap};
@@ -291,31 +293,87 @@ fn signed_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         _ => return None,
     };
     let (relation, left, right, strict) = match (condition, value) {
-        (ConditionTerm::Bitvector32SignedLessThan(left, right), true) => {
-            (SignedArithmeticRelation::LessEqual, left, right, true)
-        }
-        (ConditionTerm::Bitvector32SignedLessEqual(left, right), true) => {
-            (SignedArithmeticRelation::LessEqual, left, right, false)
-        }
-        (ConditionTerm::Bitvector32SignedGreaterThan(left, right), true) => {
-            (SignedArithmeticRelation::LessEqual, right, left, true)
-        }
-        (ConditionTerm::Bitvector32SignedGreaterEqual(left, right), true) => {
-            (SignedArithmeticRelation::LessEqual, right, left, false)
-        }
-        (ConditionTerm::Bitvector32SignedLessThan(left, right), false) => {
-            (SignedArithmeticRelation::LessEqual, right, left, false)
-        }
-        (ConditionTerm::Bitvector32SignedLessEqual(left, right), false) => {
-            (SignedArithmeticRelation::LessEqual, right, left, true)
-        }
-        (ConditionTerm::Bitvector32SignedGreaterThan(left, right), false) => {
-            (SignedArithmeticRelation::LessEqual, left, right, false)
-        }
-        (ConditionTerm::Bitvector32SignedGreaterEqual(left, right), false) => {
-            (SignedArithmeticRelation::LessEqual, left, right, true)
-        }
-        (ConditionTerm::Bitvector32Equal(left, right), true) => {
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            true,
+        ) => (SignedArithmeticRelation::LessEqual, left, right, true),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+            true,
+        ) => (SignedArithmeticRelation::LessEqual, left, right, false),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            },
+            true,
+        ) => (SignedArithmeticRelation::LessEqual, right, left, true),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            },
+            true,
+        ) => (SignedArithmeticRelation::LessEqual, right, left, false),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            false,
+        ) => (SignedArithmeticRelation::LessEqual, right, left, false),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+            false,
+        ) => (SignedArithmeticRelation::LessEqual, right, left, true),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            },
+            false,
+        ) => (SignedArithmeticRelation::LessEqual, left, right, false),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            },
+            false,
+        ) => (SignedArithmeticRelation::LessEqual, left, right, true),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) => {
             let (terms, constant) = affine_difference(left, right)?;
             return Some(SignedArithmeticClaim {
                 carrier: SignedArithmeticCarrier::SignedInt32,
@@ -324,7 +382,15 @@ fn signed_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
                 constant,
             });
         }
-        (ConditionTerm::Bitvector32Equal(left, right), false) => {
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            false,
+        ) => {
             let (terms, constant) = affine_difference(left, right)?;
             return Some(SignedArithmeticClaim {
                 carrier: SignedArithmeticCarrier::SignedInt32,
@@ -373,31 +439,87 @@ pub(in crate::surface) fn decomposed_signed_claim(
         _ => return None,
     };
     let (relation, left, right, strict) = match (condition, value) {
-        (ConditionTerm::Bitvector32SignedLessThan(left, right), true) => {
-            (SignedArithmeticRelation::LessEqual, left, right, true)
-        }
-        (ConditionTerm::Bitvector32SignedLessEqual(left, right), true) => {
-            (SignedArithmeticRelation::LessEqual, left, right, false)
-        }
-        (ConditionTerm::Bitvector32SignedGreaterThan(left, right), true) => {
-            (SignedArithmeticRelation::LessEqual, right, left, true)
-        }
-        (ConditionTerm::Bitvector32SignedGreaterEqual(left, right), true) => {
-            (SignedArithmeticRelation::LessEqual, right, left, false)
-        }
-        (ConditionTerm::Bitvector32SignedLessThan(left, right), false) => {
-            (SignedArithmeticRelation::LessEqual, right, left, false)
-        }
-        (ConditionTerm::Bitvector32SignedLessEqual(left, right), false) => {
-            (SignedArithmeticRelation::LessEqual, right, left, true)
-        }
-        (ConditionTerm::Bitvector32SignedGreaterThan(left, right), false) => {
-            (SignedArithmeticRelation::LessEqual, left, right, false)
-        }
-        (ConditionTerm::Bitvector32SignedGreaterEqual(left, right), false) => {
-            (SignedArithmeticRelation::LessEqual, left, right, true)
-        }
-        (ConditionTerm::Bitvector32Equal(left, right), true) => {
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            true,
+        ) => (SignedArithmeticRelation::LessEqual, left, right, true),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+            true,
+        ) => (SignedArithmeticRelation::LessEqual, left, right, false),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            },
+            true,
+        ) => (SignedArithmeticRelation::LessEqual, right, left, true),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            },
+            true,
+        ) => (SignedArithmeticRelation::LessEqual, right, left, false),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            false,
+        ) => (SignedArithmeticRelation::LessEqual, right, left, false),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+            false,
+        ) => (SignedArithmeticRelation::LessEqual, right, left, true),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            },
+            false,
+        ) => (SignedArithmeticRelation::LessEqual, left, right, false),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            },
+            false,
+        ) => (SignedArithmeticRelation::LessEqual, left, right, true),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) => {
             let (terms, constant) = decomposed_affine_difference(left, right)?;
             return Some(SignedArithmeticClaim {
                 carrier: SignedArithmeticCarrier::SignedInt32,
@@ -406,7 +528,15 @@ pub(in crate::surface) fn decomposed_signed_claim(
                 constant,
             });
         }
-        (ConditionTerm::Bitvector32Equal(left, right), false) => {
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            false,
+        ) => {
             let (terms, constant) = decomposed_affine_difference(left, right)?;
             return Some(SignedArithmeticClaim {
                 carrier: SignedArithmeticCarrier::SignedInt32,
@@ -1029,11 +1159,36 @@ fn definedness_parts_from_proposition(
         return None;
     };
     Some(match condition {
-        ConditionTerm::Bitvector32SignedAddOverflows(left, right) => (0, left, right),
-        ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => (1, left, right),
-        ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => (2, left, right),
-        ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right) => (3, left, right),
-        ConditionTerm::Bitvector32SignedDivideOverflows(left, right) => (4, left, right),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left,
+            right,
+        } => (0, left, right),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            left,
+            right,
+        } => (1, left, right),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Multiply,
+            left,
+            right,
+        } => (2, left, right),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::ShiftLeft,
+            left,
+            right,
+        } => (3, left, right),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Divide,
+            left,
+            right,
+        } => (4, left, right),
         _ => return None,
     })
 }
@@ -2726,21 +2881,49 @@ fn exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool 
         return false;
     };
     match (condition, term) {
-        (ConditionTerm::Bitvector32SignedAddOverflows(left, right), Bitvector32Term::Add(a, b))
+        (
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left,
+                right,
+            },
+            Bitvector32Term::Add(a, b),
+        )
         | (
-            ConditionTerm::Bitvector32SignedSubtractOverflows(left, right),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Subtract,
+                left,
+                right,
+            },
             Bitvector32Term::Subtract(a, b),
         )
         | (
-            ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Multiply,
+                left,
+                right,
+            },
             Bitvector32Term::Multiply(a, b),
         )
         | (
-            ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::ShiftLeft,
+                left,
+                right,
+            },
             Bitvector32Term::ShiftLeft(a, b),
         )
         | (
-            ConditionTerm::Bitvector32SignedDivideOverflows(left, right),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Divide,
+                left,
+                right,
+            },
             Bitvector32Term::Remainder(a, b),
         ) => terms_equal(left, a) && terms_equal(right, b),
         _ => false,
@@ -2808,30 +2991,98 @@ fn comparison_terms(
         _ => return None,
     };
     match (condition, value) {
-        (ConditionTerm::Bitvector32SignedLessThan(left, right), true) => {
-            Some((left.as_ref(), right.as_ref(), Comparison::LessThan))
-        }
-        (ConditionTerm::Bitvector32SignedLessEqual(left, right), true) => {
-            Some((left.as_ref(), right.as_ref(), Comparison::LessEqual))
-        }
-        (ConditionTerm::Bitvector32Equal(left, right), true) => {
-            Some((left.as_ref(), right.as_ref(), Comparison::Equal))
-        }
-        (ConditionTerm::Bitvector32Equal(left, right), false) => {
-            Some((left.as_ref(), right.as_ref(), Comparison::Disequal))
-        }
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            true,
+        ) => Some((left.as_ref(), right.as_ref(), Comparison::LessThan)),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+            true,
+        ) => Some((left.as_ref(), right.as_ref(), Comparison::LessEqual)),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) => Some((left.as_ref(), right.as_ref(), Comparison::Equal)),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            false,
+        ) => Some((left.as_ref(), right.as_ref(), Comparison::Disequal)),
         // The remaining orderings are the same comparisons read from the
         // other side, in the orientation the kernel's evidence check uses.
-        (ConditionTerm::Bitvector32SignedGreaterThan(left, right), true)
-        | (ConditionTerm::Bitvector32SignedLessEqual(left, right), false)
-        | (ConditionTerm::Bitvector32SignedGreaterEqual(right, left), false) => {
-            Some((right.as_ref(), left.as_ref(), Comparison::LessThan))
-        }
-        (ConditionTerm::Bitvector32SignedGreaterEqual(left, right), true)
-        | (ConditionTerm::Bitvector32SignedLessThan(left, right), false)
-        | (ConditionTerm::Bitvector32SignedGreaterThan(right, left), false) => {
-            Some((right.as_ref(), left.as_ref(), Comparison::LessEqual))
-        }
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            },
+            true,
+        )
+        | (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+            false,
+        )
+        | (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: right,
+                right: left,
+            },
+            false,
+        ) => Some((right.as_ref(), left.as_ref(), Comparison::LessThan)),
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            },
+            true,
+        )
+        | (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            false,
+        )
+        | (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: right,
+                right: left,
+            },
+            false,
+        ) => Some((right.as_ref(), left.as_ref(), Comparison::LessEqual)),
         _ => None,
     }
 }
@@ -2893,10 +3144,12 @@ mod tests {
                 le(remainder.clone(), constant(residue)),
             ];
             let goal = proposition(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(successor.clone()),
-                    Box::new(constant(1 - residue)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(successor.clone()),
+                    right: Box::new(constant(1 - residue)),
+                },
                 true,
             );
             let plan = plan_signed_arithmetic_certificate(&goal, &premises).expect("parity plan");
@@ -2947,7 +3200,12 @@ mod tests {
     fn equality_premise_bounds_its_atom_on_both_sides() {
         let eq = |left: Bitvector32Term, right: Bitvector32Term| {
             proposition(
-                ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
                 true,
             )
         };
@@ -2968,7 +3226,12 @@ mod tests {
 
     fn equal(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
         proposition(
-            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
             true,
         )
     }
@@ -3075,35 +3338,60 @@ mod tests {
 
     fn le(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
         proposition(
-            ConditionTerm::Bitvector32SignedLessEqual(Box::new(left), Box::new(right)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
             true,
         )
     }
 
     fn lt(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
         proposition(
-            ConditionTerm::Bitvector32SignedLessThan(Box::new(left), Box::new(right)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
             true,
         )
     }
 
     fn ge(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
         proposition(
-            ConditionTerm::Bitvector32SignedGreaterEqual(Box::new(left), Box::new(right)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
             true,
         )
     }
 
     fn neq(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
         proposition(
-            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
             false,
         )
     }
 
     fn defined_add(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
         proposition(
-            ConditionTerm::Bitvector32SignedAddOverflows(Box::new(left), Box::new(right)),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
             false,
         )
     }
@@ -3124,7 +3412,12 @@ mod tests {
         for premise in [
             le(var(1), difference.clone()),
             proposition(
-                ConditionTerm::Bitvector32Equal(Box::new(var(1)), Box::new(difference)),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(var(1)),
+                    right: Box::new(difference),
+                },
                 true,
             ),
             le(sum, constant(1000)),
@@ -3265,14 +3558,24 @@ mod tests {
     #[test]
     fn equality_from_bounds_through_a_pinned_constant_is_checked() {
         let goal = proposition(
-            ConditionTerm::Bitvector32Equal(Box::new(var(1)), Box::new(var(2))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(var(1)),
+                right: Box::new(var(2)),
+            },
             true,
         );
         let premises = vec![
             le(constant(0), var(1)),
             le(var(1), var(2)),
             proposition(
-                ConditionTerm::Bitvector32Equal(Box::new(var(2)), Box::new(constant(0))),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(var(2)),
+                    right: Box::new(constant(0)),
+                },
                 true,
             ),
         ];
@@ -3390,10 +3693,12 @@ mod tests {
         let predecessor = Bitvector32Term::Subtract(Box::new(n.clone()), Box::new(constant(1)));
         let goal = lt(predecessor.clone(), n.clone());
         let ge = proposition(
-            ConditionTerm::Bitvector32SignedGreaterEqual(
-                Box::new(n.clone()),
-                Box::new(constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: Box::new(n.clone()),
+                right: Box::new(constant(0)),
+            },
             true,
         );
         let premises = vec![le(constant(0), predecessor), ge];
@@ -3406,7 +3711,12 @@ mod tests {
     fn affine_equality_to_strict_bound_is_explicit() {
         let x = var(1);
         let equality = proposition(
-            ConditionTerm::Bitvector32Equal(Box::new(x.clone()), Box::new(constant(1))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(x.clone()),
+                right: Box::new(constant(1)),
+            },
             true,
         );
         let goal = lt(x, constant(1000));
@@ -3650,10 +3960,12 @@ mod tests {
         let remainder = Bitvector32Term::Remainder(Box::new(x.clone()), Box::new(constant(7)));
         let remainder_goal = le(remainder.clone(), constant(6));
         let remainder_defined = proposition(
-            ConditionTerm::Bitvector32SignedDivideOverflows(
-                Box::new(x.clone()),
-                Box::new(constant(7)),
-            ),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Divide,
+                left: Box::new(x.clone()),
+                right: Box::new(constant(7)),
+            },
             false,
         );
         let remainder_plan = check_plan(
@@ -3670,10 +3982,12 @@ mod tests {
         let shift = Bitvector32Term::ShiftLeft(Box::new(x.clone()), Box::new(constant(2)));
         let shift_goal = le(shift.clone(), constant(40));
         let shift_defined = proposition(
-            ConditionTerm::Bitvector32SignedShiftLeftOverflows(
-                Box::new(x.clone()),
-                Box::new(constant(2)),
-            ),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::ShiftLeft,
+                left: Box::new(x.clone()),
+                right: Box::new(constant(2)),
+            },
             false,
         );
         let shift_plan = check_plan(&shift_goal, &[lower.clone(), upper.clone(), shift_defined]);
@@ -3697,10 +4011,12 @@ mod tests {
         let product = Bitvector32Term::Multiply(Box::new(x.clone()), Box::new(x.clone()));
         let product_goal = le(product.clone(), constant(100));
         let product_defined = proposition(
-            ConditionTerm::Bitvector32SignedMultiplyOverflows(
-                Box::new(x.clone()),
-                Box::new(x.clone()),
-            ),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Multiply,
+                left: Box::new(x.clone()),
+                right: Box::new(x.clone()),
+            },
             false,
         );
         let product_plan = check_plan(

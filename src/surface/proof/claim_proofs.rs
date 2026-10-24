@@ -1,5 +1,7 @@
 use super::proof_object::ProofCheckpoint;
 use super::*;
+#[cfg(test)]
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use std::sync::Arc;
 
@@ -5914,17 +5916,21 @@ mod tests {
         let right = Bitvector32Term::Variable(Variable(2));
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(left.clone()),
-                    Box::new(right.clone()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(left.clone()),
+                    right: Box::new(right.clone()),
+                },
                 true,
             ))
             .assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(right.clone()),
-                    Box::new(left.clone()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(right.clone()),
+                    right: Box::new(left.clone()),
+                },
                 true,
             ));
         let right_term = right;
@@ -5932,10 +5938,12 @@ mod tests {
         // conflict, and the inconsistency guard is what stops that conflict
         // from being read as sibling-path evidence.
         let exactly_refuted = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(right_term.clone()),
-                Box::new(left.clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(right_term.clone()),
+                right: Box::new(left.clone()),
+            },
             false,
         );
         assert_eq!(
@@ -5947,10 +5955,12 @@ mod tests {
         // reason since the general prover left the kernel: the exact routes
         // report no conflict at all rather than deriving one by explosion.
         let unrelated = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(Bitvector32Term::Variable(Variable(2))),
-                Box::new(Bitvector32Term::Constant(10)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(Bitvector32Term::Variable(Variable(2))),
+                right: Box::new(Bitvector32Term::Constant(10)),
+            },
             true,
         );
         assert_eq!(
@@ -5961,10 +5971,12 @@ mod tests {
 
     #[test]
     fn consistent_exact_conflict_remains_sibling_path_evidence() {
-        let condition = ConditionTerm::Bitvector32SignedLessThan(
-            Box::new(Bitvector32Term::Variable(Variable(1))),
-            Box::new(Bitvector32Term::Constant(10)),
-        );
+        let condition = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(Bitvector32Term::Variable(Variable(1))),
+            right: Box::new(Bitvector32Term::Constant(10)),
+        };
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::ConditionIs(condition.clone(), false));
         let fact = Proposition::ConditionIs(condition, true);

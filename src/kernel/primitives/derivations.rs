@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl Theorem {
     pub(in crate::kernel) fn new(proposition: Proposition) -> Self {
@@ -948,7 +949,15 @@ impl SignedConstantEvidence {
         term: &Bitvector32Term,
         source: &Proposition,
     ) -> Option<i64> {
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = source
+        let Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) = source
         else {
             return None;
         };
@@ -1146,8 +1155,15 @@ impl LoadAddressCongruenceEvidence {
         proposition: &Proposition,
         assumptions: &PureFactContext,
     ) -> bool {
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-            proposition
+        let Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) = proposition
         else {
             return false;
         };

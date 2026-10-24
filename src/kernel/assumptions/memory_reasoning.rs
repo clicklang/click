@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[cfg(test)]
 thread_local! {
@@ -727,10 +728,12 @@ impl PureFactContext {
             let left = self.simplify_bitvector_under_assumptions(left);
             let right = self.simplify_bitvector_under_assumptions(right);
             left == right
-                || self.decide(&ConditionTerm::Bitvector32Equal(
-                    Box::new(left.clone()),
-                    Box::new(right.clone()),
-                )) == Some(true)
+                || self.decide(&ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(left.clone()),
+                    right: Box::new(right.clone()),
+                }) == Some(true)
                 || crate::kernel::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
                     &left, &right, self,
                 )
@@ -1260,7 +1263,12 @@ impl PureFactContext {
                     .iter()
                     .all(|guard| match guard {
                         Proposition::ConditionIs(
-                            ConditionTerm::Bitvector32SignedLessEqual(lower, upper),
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessEqual,
+                                left: lower,
+                                right: upper,
+                            },
                             true,
                         ) => self.proves_element_endpoint_order(lower, upper),
                         guard => self.proves_exact(guard),
@@ -1330,7 +1338,12 @@ impl PureFactContext {
             .iter()
             .all(|guard| match guard {
                 Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessEqual(lower, upper),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        left: lower,
+                        right: upper,
+                    },
                     true,
                 ) => self.proves_element_endpoint_order(lower, upper),
                 guard => self.proves_exact(guard),
@@ -2813,8 +2826,17 @@ impl PureFactContext {
     ) -> bool {
         if !matches!(
             condition,
-            ConditionTerm::Bitvector32SignedLessEqual(_, _)
-                | ConditionTerm::Bitvector32SignedLessThan(_, _)
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: _,
+                right: _
+            } | ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: _,
+                right: _
+            }
         ) {
             return false;
         }
@@ -2845,7 +2867,13 @@ impl PureFactContext {
     /// `0 <= len` and `len < cap` requires) decides without the general
     /// prover.
     fn nonnegative_successor_by_exact_facts(&self, condition: &ConditionTerm) -> bool {
-        let ConditionTerm::Bitvector32SignedLessEqual(low, sum) = condition else {
+        let ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: low,
+            right: sum,
+        } = condition
+        else {
             return false;
         };
         if !matches!(low.as_ref(), Bitvector32Term::Constant(0)) {
@@ -2880,7 +2908,7 @@ impl PureFactContext {
                         self.condition_facts.get(fact) == Some(&true)
                             && matches!(
                                 fact,
-                                ConditionTerm::Bitvector32SignedLessThan(left, _)
+                                ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left, right: _ }
                                     if crate::kernel::eval::terms_have_same_canonical_form(
                                         left, form,
                                     )
@@ -4253,12 +4281,18 @@ impl PureFactContext {
             pointer,
             byte_width,
             &|condition| match condition {
-                ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-                    proves_order(left, right, false)
-                }
-                ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-                    proves_order(left, right, true)
-                }
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left,
+                    right,
+                } => proves_order(left, right, false),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left,
+                    right,
+                } => proves_order(left, right, true),
                 ConditionTerm::Constant(value) => *value,
                 _ => false,
             },

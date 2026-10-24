@@ -10,6 +10,7 @@
 //! no escaping borrows, allocation, exceptions, cancellation, or detachment.
 //! Join assumes success only for this context's live, unique, terminating child.
 
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
@@ -315,10 +316,12 @@ impl PendingThreadCreate {
         visible: &CState,
         assumptions: &PureFactContext,
     ) -> Option<CState> {
-        let zero = ConditionTerm::Bitvector32Equal(
-            Box::new(self.storage.status.clone()),
-            Box::new(Bitvector32Term::Constant(0)),
-        );
+        let zero = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(self.storage.status.clone()),
+            right: Box::new(Bitvector32Term::Constant(0)),
+        };
         let success = assumptions.decide(&zero)?;
         let mut selected = visible.clone();
         selected.pending_thread_create = None;

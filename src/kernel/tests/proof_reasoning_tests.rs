@@ -5,6 +5,7 @@ use super::*;
 use crate::kernel::proof::fact_reasoning::{
     ForallInstantiationError, InstanceArgument, check_forall_instantiation, instantiate_universal,
 };
+use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[test]
@@ -1010,10 +1011,12 @@ fn int32_increment_below_max_is_defined_axiom_has_the_exact_implication() {
         true,
     );
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedAddOverflows(
-            Box::new(value),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: Box::new(value),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         false,
     );
 
@@ -1337,7 +1340,12 @@ fn int32_le_and_not_lt_implies_eq_axiom_has_the_exact_implications() {
         false,
     );
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
         true,
     );
 
@@ -1363,7 +1371,12 @@ fn int32_le_and_neq_implies_lt_axiom_has_the_exact_implications() {
         true,
     );
     let neq_premise = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left.clone()), Box::new(right.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left.clone()),
+            right: Box::new(right.clone()),
+        },
         false,
     );
     let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(left, right), true);
@@ -1394,7 +1407,12 @@ fn int32_le_antisymmetric_axiom_has_the_exact_implications() {
         true,
     );
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
         true,
     );
 
@@ -1756,10 +1774,12 @@ fn increment_definedness_derivation_retains_its_exact_max_bound() {
         true,
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedAddOverflows(
-            Box::new(value.clone()),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: Box::new(value.clone()),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         false,
     );
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
@@ -1790,10 +1810,12 @@ fn one_plus_rules_retain_their_exact_max_bound_and_operand_order() {
         Box::new(value.clone()),
     );
     let defined_goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedAddOverflows(
-            Box::new(Bitvector32Term::Constant(1)),
-            Box::new(value.clone()),
-        ),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: Box::new(Bitvector32Term::Constant(1)),
+            right: Box::new(value.clone()),
+        },
         false,
     );
     let strict_goal = Proposition::ConditionIs(
@@ -1844,10 +1866,12 @@ fn symbolic_add_definedness_retains_both_exact_named_theorem_bounds() {
         true,
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedAddOverflows(
-            Box::new(value.clone()),
-            Box::new(amount.clone()),
-        ),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: Box::new(value.clone()),
+            right: Box::new(amount.clone()),
+        },
         false,
     );
     let assumptions = PureFactContext::new()
@@ -1885,10 +1909,12 @@ fn symbolic_subtract_definedness_retains_both_exact_named_theorem_bounds() {
         true,
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedSubtractOverflows(
-            Box::new(value.clone()),
-            Box::new(amount.clone()),
-        ),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Subtract,
+            left: Box::new(value.clone()),
+            right: Box::new(amount.clone()),
+        },
         false,
     );
     let assumptions = PureFactContext::new()
@@ -4385,7 +4411,7 @@ fn forall_int32_instantiation_avoids_capturing_the_argument_variable() {
     assert!(matches!(
         body.as_ref(),
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(left, right),
+            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right },
             true
         ) if left.as_ref() == &Bitvector32Term::Variable(inner)
             && right.as_ref() == &Bitvector32Term::Variable(renamed)
@@ -5500,10 +5526,12 @@ fn symbolic_max_lt_branch_is_native_theorem() {
     let a = Variable(10);
     let b = Variable(11);
     let theorem = prove_c_max_lt_returns_right(a, b).expect("lt branch should prove");
-    let condition = ConditionTerm::Bitvector32SignedLessThan(
-        Box::new(Bitvector32Term::Variable(a)),
-        Box::new(Bitvector32Term::Variable(b)),
-    );
+    let condition = ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::LessThan,
+        left: Box::new(Bitvector32Term::Variable(a)),
+        right: Box::new(Bitvector32Term::Variable(b)),
+    };
     let state = c_max_state(
         int32(Bitvector32Term::Variable(a)),
         int32(Bitvector32Term::Variable(b)),
@@ -5536,10 +5564,12 @@ fn symbolic_max_not_lt_branch_is_native_theorem() {
     let a = Variable(12);
     let b = Variable(13);
     let theorem = prove_c_max_not_lt_returns_left(a, b).expect("false branch should prove");
-    let condition = ConditionTerm::Bitvector32SignedLessThan(
-        Box::new(Bitvector32Term::Variable(a)),
-        Box::new(Bitvector32Term::Variable(b)),
-    );
+    let condition = ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::LessThan,
+        left: Box::new(Bitvector32Term::Variable(a)),
+        right: Box::new(Bitvector32Term::Variable(b)),
+    };
     let state = c_max_state(
         int32(Bitvector32Term::Variable(a)),
         int32(Bitvector32Term::Variable(b)),
@@ -5711,7 +5741,12 @@ fn common_base_offset_distinctness_compares_bare_offsets_of_one_block() {
     let i = Bitvector32Term::Variable(Variable(93_201));
     let j = Bitvector32Term::Variable(Variable(93_202));
     let ordered = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessThan(Box::new(i.clone()), Box::new(j.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(i.clone()),
+            right: Box::new(j.clone()),
+        },
         true,
     ));
 
@@ -5868,10 +5903,12 @@ fn signed_intervals_range_sums_of_any_depth() {
             sum = Bitvector32Term::Add(Box::new(sum), Box::new(x.clone()));
         }
         assert_eq!(
-            assumptions.decide_from_overflow_facts(&ConditionTerm::Bitvector32SignedAddOverflows(
-                Box::new(sum),
-                Box::new(x.clone()),
-            )),
+            assumptions.decide_from_overflow_facts(&ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: Box::new(sum),
+                right: Box::new(x.clone())
+            }),
             Some(false),
             "a {depth}-deep sum of a variable in [0, 1] cannot overflow"
         );
@@ -6070,8 +6107,15 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
     else {
         panic!("wrong upper bound")
     };
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedAddOverflows(x, y), false) =
-        result.as_ref()
+    let Proposition::ConditionIs(
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: x,
+            right: y,
+        },
+        false,
+    ) = result.as_ref()
     else {
         panic!("wrong safety conclusion")
     };
@@ -6109,12 +6153,18 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
         for a in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
             for b in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
                 let exact = match guard {
-                    ConditionTerm::Bitvector32SignedAddOverflows(x, y) => {
-                        i64::from(bits(x, a, b) as i32) + i64::from(bits(y, a, b) as i32)
-                    }
-                    ConditionTerm::Bitvector32SignedSubtractOverflows(x, y) => {
-                        i64::from(bits(x, a, b) as i32) - i64::from(bits(y, a, b) as i32)
-                    }
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: x,
+                        right: y,
+                    } => i64::from(bits(x, a, b) as i32) + i64::from(bits(y, a, b) as i32),
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Subtract,
+                        left: x,
+                        right: y,
+                    } => i64::from(bits(x, a, b) as i32) - i64::from(bits(y, a, b) as i32),
                     _ => panic!("wrong definedness guard"),
                 };
                 let equality = integer(left, a, b) == integer(right, a, b);
@@ -6162,8 +6212,15 @@ fn int32_order_observation_axiom_agrees_with_boundary_model() {
     let Proposition::Implies(guard, conclusion) = theorem.proposition() else {
         panic!("missing order premise")
     };
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessEqual(left, right), true) =
-        guard.as_ref()
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        },
+        true,
+    ) = guard.as_ref()
     else {
         panic!("wrong C order premise")
     };
@@ -6198,7 +6255,15 @@ fn uint32_integer_equality_bridge_matches_independent_unsigned_boundary_values()
     let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = premise.as_ref() else {
         panic!("expected exact Integer equality");
     };
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(x, y), true) = conclusion.as_ref()
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: x,
+            right: y,
+        },
+        true,
+    ) = conclusion.as_ref()
     else {
         panic!("expected exact machine equality");
     };
@@ -7300,11 +7365,27 @@ fn signed_integer_order_bridges_match_independent_full_width_boundary_models() {
             match (width, native.as_ref()) {
                 (
                     32,
-                    Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessEqual(a, b), true),
+                    Proposition::ConditionIs(
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessEqual,
+                            left: a,
+                            right: b,
+                        },
+                        true,
+                    ),
                 )
                 | (
                     64,
-                    Proposition::ConditionIs(ConditionTerm::Bitvector64SignedLessEqual(a, b), true),
+                    Proposition::ConditionIs(
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int64,
+                            relation: CompareRelation::LessEqual,
+                            left: a,
+                            right: b,
+                        },
+                        true,
+                    ),
                 ) => {
                     assert_eq!(a.as_ref(), &left);
                     assert_eq!(b.as_ref(), &right);
@@ -7384,7 +7465,15 @@ fn signed_integer_order_bridges_match_independent_full_width_boundary_models() {
     };
     assert_eq!(a.ty(), MachineIntegerType::Int64);
     assert_eq!(b.ty(), MachineIntegerType::Int64);
-    let Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(a, b), true) = conclusion.as_ref()
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: a,
+            right: b,
+        },
+        true,
+    ) = conclusion.as_ref()
     else {
         panic!("wrong native equality width");
     };
@@ -7401,10 +7490,12 @@ fn int64_subtract_bridge_matches_independent_overflow_boundary_model() {
     let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
         panic!("missing native definedness premise");
     };
-    let native = ConditionTerm::Bitvector64SignedSubtractOverflows(
-        Box::new(left.clone()),
-        Box::new(right.clone()),
-    );
+    let native = ConditionTerm::Overflows {
+        format: MachineIntegerType::Int64,
+        op: OverflowOperation::Subtract,
+        left: Box::new(left.clone()),
+        right: Box::new(right.clone()),
+    };
     assert_eq!(premise.as_ref(), &Proposition::ConditionIs(native, false));
     let Proposition::ConditionIs(ConditionTerm::IntegerEqual(observed, exact), true) =
         conclusion.as_ref()
@@ -7557,8 +7648,15 @@ fn uint32_subtract_bridge_matches_unsigned_underflow_boundary_model() {
     let Proposition::Implies(guard, conclusion) = theorem.proposition() else {
         panic!("missing no-underflow guard");
     };
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessEqual(left, right), true) =
-        guard.as_ref()
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        },
+        true,
+    ) = guard.as_ref()
     else {
         panic!("wrong unsigned guard");
     };
@@ -7714,11 +7812,22 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
         match p {
             // Short-circuiting is essential for the zero-factor branch.
             Proposition::Or(left, right) => holds(left, a, b) || holds(right, a, b),
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
-                machine(left, a, b) == machine(right, a, b)
-            }
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(left, right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) => machine(left, a, b) == machine(right, a, b),
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left,
+                    right,
+                },
                 true,
             ) => (machine(left, a, b) as i32) <= (machine(right, a, b) as i32),
             Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
@@ -7801,7 +7910,12 @@ fn uint32_integer_order_bridges_agree_with_unsigned_boundary_models() {
     fn holds(p: &Proposition, a: u32, b: u32) -> bool {
         match p {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessEqual(left, right),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left,
+                    right,
+                },
                 true,
             ) => (machine(left, a, b) as i32) <= (machine(right, a, b) as i32),
             Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => {
@@ -7929,12 +8043,27 @@ fn uint32_remainder_bound_agrees_with_full_width_models() {
     let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
         panic!("missing nonzero guard")
     };
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(a, b), false) = premise.as_ref()
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: a,
+            right: b,
+        },
+        false,
+    ) = premise.as_ref()
     else {
         panic!("wrong guard")
     };
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessThan(left, right), true) =
-        conclusion.as_ref()
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        },
+        true,
+    ) = conclusion.as_ref()
     else {
         panic!("wrong unsigned order")
     };
@@ -8071,16 +8200,30 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
             ConditionTerm::IntegerLessEqual(a, b) => integer(a) <= integer(b),
             ConditionTerm::IntegerLessThan(a, b) => integer(a) < integer(b),
             ConditionTerm::IntegerEqual(a, b) => integer(a) == integer(b),
-            ConditionTerm::Bitvector64Equal(a, b) => a.uint64_as_const() == b.uint64_as_const(),
-            ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => {
-                a.uint64_as_const() <= b.uint64_as_const()
-            }
-            ConditionTerm::Bitvector64UnsignedLessThan(a, b) => {
-                a.uint64_as_const() < b.uint64_as_const()
-            }
-            ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b) => {
-                a.uint64_as_const() >= b.uint64_as_const()
-            }
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            } => a.uint64_as_const() == b.uint64_as_const(),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            } => a.uint64_as_const() <= b.uint64_as_const(),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            } => a.uint64_as_const() < b.uint64_as_const(),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterEqual,
+                left: a,
+                right: b,
+            } => a.uint64_as_const() >= b.uint64_as_const(),
             _ => panic!("unexpected guard or equality"),
         };
         actual == *expected
@@ -8233,15 +8376,30 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
     let left = Box::new(Bitvector32Term::Variable(Variable(93_002)));
     let right = Box::new(Bitvector32Term::Variable(Variable(93_003)));
     let signed_below = fact(
-        ConditionTerm::Bitvector64SignedLessThan(left.clone(), right.clone()),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::LessThan,
+            left: left.clone(),
+            right: right.clone(),
+        },
         true,
     );
     let signed_above_mirrored = fact(
-        ConditionTerm::Bitvector64SignedGreaterThan(right.clone(), left.clone()),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterThan,
+            left: right.clone(),
+            right: left.clone(),
+        },
         true,
     );
     let signed_not_at_least = fact(
-        ConditionTerm::Bitvector64SignedGreaterEqual(left.clone(), right.clone()),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::GreaterEqual,
+            left: left.clone(),
+            right: right.clone(),
+        },
         false,
     );
     assert!(order_claim_equivalent(
@@ -8255,7 +8413,12 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
         &signed_above_mirrored
     ));
     let unsigned_above_mirrored = fact(
-        ConditionTerm::Bitvector64UnsignedGreaterThan(right.clone(), left.clone()),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterThan,
+            left: right.clone(),
+            right: left.clone(),
+        },
         true,
     );
     assert!(!order_claim_equivalent(
@@ -8263,7 +8426,12 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
         &unsigned_above_mirrored
     ));
     let unsigned_below = fact(
-        ConditionTerm::Bitvector64UnsignedLessThan(left.clone(), right.clone()),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left: left.clone(),
+            right: right.clone(),
+        },
         true,
     );
     assert!(order_claim_equivalent(
@@ -8273,11 +8441,21 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
 
     // Over the 32-bit signed order both judgments agree, as before.
     let below = fact(
-        ConditionTerm::Bitvector32SignedLessThan(left.clone(), right.clone()),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: left.clone(),
+            right: right.clone(),
+        },
         true,
     );
     let above_mirrored = fact(
-        ConditionTerm::Bitvector32SignedGreaterThan(right, left),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left: right,
+            right: left,
+        },
         true,
     );
     assert!(condition_polarity_equivalent(&below, &above_mirrored));
@@ -9028,9 +9206,12 @@ fn uint32_unpacking_rules_retain_bounds_and_recover_all_word_bits() {
                 };
                 let identity_holds = match condition {
                     ConditionTerm::Constant(value) => *value,
-                    ConditionTerm::Bitvector32Equal(extracted, original) => {
-                        evaluate(extracted) == evaluate(original)
-                    }
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: extracted,
+                        right: original,
+                    } => evaluate(extracted) == evaluate(original),
                     _ => panic!("unexpected word identity"),
                 };
                 if low <= 65535 && high <= 65535 {

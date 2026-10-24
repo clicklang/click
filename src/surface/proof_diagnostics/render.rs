@@ -12,6 +12,7 @@ use crate::kernel::{
     IntegerTerm, Pointer, PointerOffsetTerm, Proposition, PureFunctionArgument, Sort,
     SpecCaptureRefusal, Term, Variable,
 };
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::ParameterBinding;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -620,10 +621,12 @@ pub(crate) fn render_read_resolution(
     let _typed = TypedNotationScope::enter();
     let query = render_proposition_labeled(
         &Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(
-                Box::new(resolution.read.clone()),
-                Box::new(resolution.expected.clone()),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(resolution.read.clone()),
+                right: Box::new(resolution.expected.clone()),
+            },
             true,
         ),
         labels,
@@ -2482,13 +2485,15 @@ mod tests {
             );
         }
         let fact = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(988002))),
-                Box::new(Bitvector32Term::Add(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(988002))),
+                right: Box::new(Bitvector32Term::Add(
                     Box::new(Bitvector32Term::Variable(Variable(988001))),
                     Box::new(Bitvector32Term::Constant(1)),
                 )),
-            ),
+            },
             true,
         );
         let ordinary = super::render_proposition_labeled(&fact, &mut SnapshotLabels::default());
@@ -2560,10 +2565,12 @@ mod tests {
         let mut labels = SnapshotLabels::default();
         labels.source_name(Variable(7), "cur".into());
         let proposition = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(Variable(7))),
-                Box::new(Bitvector32Term::Variable(Variable(8))),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(Variable(7))),
+                right: Box::new(Bitvector32Term::Variable(Variable(8))),
+            },
             true,
         );
         let first = render_proposition_labeled(&proposition, &mut labels);
@@ -2606,10 +2613,12 @@ mod tests {
         labels.source_name(Variable(7), "r".into());
         let equality = |variable| {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(variable)),
-                    Box::new(Bitvector32Term::Constant(0)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::Variable(variable)),
+                    right: Box::new(Bitvector32Term::Constant(0)),
+                },
                 false,
             )
         };

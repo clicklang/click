@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 mod contract_claims;
 pub use contract_claims::*;
@@ -2842,7 +2843,7 @@ pub(crate) fn condition_holds_by_memory_resolution(
     value: bool,
 ) -> bool {
     match (condition, value) {
-        (ConditionTerm::Bitvector32Equal(left, right), true) => {
+        (ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }, true) => {
             names_of_one_cell_framed(left, right, assumptions)
                 || int32_values_proven_equal_for_memory_resolution(left, right, assumptions)
                 || assumptions
@@ -2864,7 +2865,7 @@ pub(crate) fn condition_holds_by_memory_resolution(
         // A 64-bit read (an `unsigned long` word) is framed the way a 32-bit
         // one is: the recorded history shows one version of the cell. The
         // remaining 32-bit routes read the int32 graph and stay 32-bit only.
-        (ConditionTerm::Bitvector64Equal(left, right), true) => {
+        (ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, true) => {
             names_of_one_cell_framed(left, right, assumptions)
                 || assumptions.proves_order_condition_for_memory_resolution(condition, value)
                 || assumptions.has_matching_condition_fact_for_memory_resolution(condition, value)
@@ -3022,12 +3023,32 @@ pub(super) fn certification_proves_condition_from_verified_pure_implication(
     let mut substitutions = BTreeMap::new();
     let matched = match (pattern, target) {
         (
-            ConditionTerm::Bitvector32Equal(pattern_left, pattern_right),
-            ConditionTerm::Bitvector32Equal(target_left, target_right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: pattern_left,
+                right: pattern_right,
+            },
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: target_left,
+                right: target_right,
+            },
         )
         | (
-            ConditionTerm::Bitvector32SignedGreaterEqual(pattern_left, pattern_right),
-            ConditionTerm::Bitvector32SignedGreaterEqual(target_left, target_right),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: pattern_left,
+                right: pattern_right,
+            },
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: target_left,
+                right: target_right,
+            },
         ) => {
             match_quantified_int32_term(pattern_left, target_left, &binders, &mut substitutions)
                 && match_quantified_int32_term(

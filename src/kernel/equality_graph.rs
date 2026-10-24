@@ -53,6 +53,7 @@
 //! whole offsets in the term classes.
 
 use super::prelude::*;
+use crate::kernel::CompareRelation;
 
 mod admitted;
 #[cfg(test)]
@@ -1807,9 +1808,15 @@ impl EqualityGraph {
         if value
             && matches!(
                 condition,
-                ConditionTerm::Bitvector32Equal(..)
-                    | ConditionTerm::Bitvector64Equal(..)
-                    | ConditionTerm::PointerEqual(..)
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    ..
+                } | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    ..
+                } | ConditionTerm::PointerEqual(..)
                     | ConditionTerm::PointerValueEqual(..)
                     | ConditionTerm::PointerOffsetEqual(..)
                     | ConditionTerm::AlgebraicEqual(..)
@@ -1843,8 +1850,18 @@ impl EqualityGraph {
                 }
                 ConditionTerm::IntegerEqual(a, b) => return self.are_integer_equal(a, b),
                 ConditionTerm::AlgebraicEqual(a, b) => return self.are_algebraic_equal(a, b),
-                ConditionTerm::Bitvector32Equal(a, b) => return self.are_int32_equal(a, b),
-                ConditionTerm::Bitvector64Equal(a, b) => return self.are_uint64_equal(a, b),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: a,
+                    right: b,
+                } => return self.are_int32_equal(a, b),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left: a,
+                    right: b,
+                } => return self.are_uint64_equal(a, b),
                 ConditionTerm::PointerEqual(a, b) => return self.are_equal(a, b),
                 ConditionTerm::PointerOffsetEqual(a, b) => return self.are_offsets_equal(a, b),
                 _ => {}

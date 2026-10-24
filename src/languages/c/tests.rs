@@ -10419,14 +10419,18 @@ fn c0_clamp_demo_proves_symbolic_branch_specifications() {
         crate::kernel::CExpression::Value(crate::kernel::int32(lo_bits.clone())),
         crate::kernel::CExpression::Value(crate::kernel::int32(hi_bits.clone())),
     ];
-    let below_lo = crate::kernel::ConditionTerm::Bitvector32SignedLessThan(
-        Box::new(x_bits.clone()),
-        Box::new(lo_bits.clone()),
-    );
-    let above_hi = crate::kernel::ConditionTerm::Bitvector32SignedGreaterThan(
-        Box::new(x_bits.clone()),
-        Box::new(hi_bits.clone()),
-    );
+    let below_lo = crate::kernel::ConditionTerm::Compare {
+        format: crate::kernel::MachineIntegerType::Int32,
+        relation: crate::kernel::CompareRelation::LessThan,
+        left: Box::new(x_bits.clone()),
+        right: Box::new(lo_bits.clone()),
+    };
+    let above_hi = crate::kernel::ConditionTerm::Compare {
+        format: crate::kernel::MachineIntegerType::Int32,
+        relation: crate::kernel::CompareRelation::GreaterThan,
+        left: Box::new(x_bits.clone()),
+        right: Box::new(hi_bits.clone()),
+    };
     let cases = vec![
         (
             vec![crate::kernel::Proposition::ConditionIs(

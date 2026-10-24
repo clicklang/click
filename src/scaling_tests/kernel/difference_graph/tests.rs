@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 /// Inserting a fact and answering a question cost the same beside 16 to
 /// 1,024 unrelated bounded values: a constant is not a node, so their
@@ -132,12 +133,42 @@ fn written_order_queries_are_flat_beside_a_high_degree_bound() {
     let order = |domain, strict, left: &Bitvector32Term, right: &Bitvector32Term| {
         let (left, right) = (Box::new(left.clone()), Box::new(right.clone()));
         match (domain, strict) {
-            (Domain::Int32, true) => ConditionTerm::Bitvector32SignedLessThan(left, right),
-            (Domain::Int32, false) => ConditionTerm::Bitvector32SignedLessEqual(left, right),
-            (Domain::Int64, true) => ConditionTerm::Bitvector64SignedLessThan(left, right),
-            (Domain::Int64, false) => ConditionTerm::Bitvector64SignedLessEqual(left, right),
-            (Domain::UInt64, true) => ConditionTerm::Bitvector64UnsignedLessThan(left, right),
-            (Domain::UInt64, false) => ConditionTerm::Bitvector64UnsignedLessEqual(left, right),
+            (Domain::Int32, true) => ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            (Domain::Int32, false) => ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+            (Domain::Int64, true) => ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            (Domain::Int64, false) => ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
+            (Domain::UInt64, true) => ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessThan,
+                left,
+                right,
+            },
+            (Domain::UInt64, false) => ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            },
         }
     };
     for domain in [Domain::Int32, Domain::Int64, Domain::UInt64] {

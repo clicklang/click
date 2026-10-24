@@ -11,6 +11,7 @@
 use crate::kernel::memory_provenance::*;
 use crate::kernel::primitives::*;
 use crate::kernel::reasoning::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 /// Where the memory DAG says the cell at a pointer came from: the
 /// select-over-store answer to "what does this cell hold after these
@@ -276,16 +277,30 @@ pub(in crate::kernel) fn unsigned_index_in_range(
     let end_term = Bitvector32Term::UInt64Constant(end as u64);
     let last = Bitvector32Term::UInt64Constant((end - 1) as u64);
     let guards = vec![
-        ConditionTerm::Bitvector64UnsignedLessThan(
-            Box::new(index.clone()),
-            Box::new(end_term.clone()),
-        ),
-        ConditionTerm::Bitvector64UnsignedGreaterThan(Box::new(end_term), Box::new(index.clone())),
-        ConditionTerm::Bitvector64UnsignedLessEqual(
-            Box::new(index.clone()),
-            Box::new(last.clone()),
-        ),
-        ConditionTerm::Bitvector64UnsignedGreaterEqual(Box::new(last), Box::new(index.clone())),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left: Box::new(index.clone()),
+            right: Box::new(end_term.clone()),
+        },
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterThan,
+            left: Box::new(end_term),
+            right: Box::new(index.clone()),
+        },
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(index.clone()),
+            right: Box::new(last.clone()),
+        },
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::GreaterEqual,
+            left: Box::new(last),
+            right: Box::new(index.clone()),
+        },
     ];
     Some((index, guards))
 }
@@ -557,12 +572,23 @@ impl MemoryDagHopJustification {
                 let CMemoryDerivation::Store { pointer: write, .. } = derivation else {
                     return false;
                 };
-                let Some(ConditionTerm::Bitvector32Equal(left, right)) =
-                    pointer_offsets_with_common_base_distinctness_condition(write, pointer)
+                let Some(ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                }) = pointer_offsets_with_common_base_distinctness_condition(write, pointer)
                 else {
                     return false;
                 };
-                if condition != &ConditionTerm::Bitvector32Equal(left.clone(), right.clone()) {
+                if *condition
+                    != (ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: left.clone(),
+                        right: right.clone(),
+                    })
+                {
                     return false;
                 }
                 let (lower, upper) = if *reversed {
@@ -1061,7 +1087,13 @@ impl RangeBoundEvidence {
                 to_successor,
                 successor_base_to_upper,
             } => {
-                let ConditionTerm::Bitvector32SignedLessThan(left, right) = condition else {
+                let ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left,
+                    right,
+                } = condition
+                else {
                     return false;
                 };
                 if to_successor.lower != **left || !to_successor.strict {
@@ -1947,10 +1979,12 @@ mod unsigned_index_membership_tests {
     }
 
     fn below(index: Variable, end: u64) -> ConditionTerm {
-        ConditionTerm::Bitvector64UnsignedLessThan(
-            Box::new(Bitvector32Term::Variable(index)),
-            Box::new(Bitvector32Term::UInt64Constant(end)),
-        )
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessThan,
+            left: Box::new(Bitvector32Term::Variable(index)),
+            right: Box::new(Bitvector32Term::UInt64Constant(end)),
+        }
     }
 
     fn bytes(base: &Pointer, end: u32) -> CMemoryRange {
@@ -1975,10 +2009,12 @@ mod unsigned_index_membership_tests {
         assert!(!membership.checks(&read, &range, &PureFactContext::new()));
         // `k <= 3` is the same bound written inclusively.
         let inclusive = PureFactContext::new().assume_condition(
-            ConditionTerm::Bitvector64UnsignedLessEqual(
-                Box::new(Bitvector32Term::Variable(k)),
-                Box::new(Bitvector32Term::UInt64Constant(3)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(Bitvector32Term::Variable(k)),
+                right: Box::new(Bitvector32Term::UInt64Constant(3)),
+            },
             true,
         );
         assert!(PointerInRangeEvidence::for_pointer(&read, &range, &inclusive).is_some());

@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
@@ -838,7 +839,12 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
         true,
     );
     let reflexive = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(x.clone()), Box::new(x)),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(x.clone()),
+            right: Box::new(x),
+        },
         true,
     );
     let mut samples = Vec::new();

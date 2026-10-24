@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 #[test]
 fn c_constant_spellings_preserve_declared_identifiers_in_both_source_paths() {
@@ -1478,18 +1479,22 @@ int32 drain(int32 n) {
 #[test]
 fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
     let overflow = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedAddOverflows(
-            Box::new(Bitvector32Term::Variable(Variable(1))),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: Box::new(Bitvector32Term::Variable(Variable(1))),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
         false,
     );
     let constant = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
     let equality = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(2))),
-            Box::new(Bitvector32Term::Constant(7)),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(Variable(2))),
+            right: Box::new(Bitvector32Term::Constant(7)),
+        },
         true,
     );
 
@@ -1510,33 +1515,41 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         assert!(condition_polarity_equivalent(condition, condition));
     }
     let less_than = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessThan(
-            Box::new(Bitvector32Term::Variable(Variable(1))),
-            Box::new(Bitvector32Term::Variable(Variable(2))),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(Bitvector32Term::Variable(Variable(1))),
+            right: Box::new(Bitvector32Term::Variable(Variable(2))),
+        },
         true,
     );
     let greater_equal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedGreaterEqual(
-            Box::new(Bitvector32Term::Variable(Variable(1))),
-            Box::new(Bitvector32Term::Variable(Variable(2))),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: Box::new(Bitvector32Term::Variable(Variable(1))),
+            right: Box::new(Bitvector32Term::Variable(Variable(2))),
+        },
         false,
     );
     assert!(condition_polarity_equivalent(&less_than, &greater_equal));
 
     let greater_equal_true = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedGreaterEqual(
-            Box::new(Bitvector32Term::Variable(Variable(2))),
-            Box::new(Bitvector32Term::Variable(Variable(1))),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: Box::new(Bitvector32Term::Variable(Variable(2))),
+            right: Box::new(Bitvector32Term::Variable(Variable(1))),
+        },
         true,
     );
     let reversed_less_equal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessEqual(
-            Box::new(Bitvector32Term::Variable(Variable(1))),
-            Box::new(Bitvector32Term::Variable(Variable(2))),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(Bitvector32Term::Variable(Variable(1))),
+            right: Box::new(Bitvector32Term::Variable(Variable(2))),
+        },
         true,
     );
     assert!(condition_polarity_equivalent(

@@ -1,5 +1,6 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
+use crate::kernel::CompareRelation;
 
 thread_local! {
     static PRESERVE_INTEGER_COMPARISONS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -2421,7 +2422,15 @@ fn evaluate_spec_integer_expression_paths_in(
 /// interned snapshots uses their O(1) identity equality; arbitrary memory
 /// contents are never traversed here.
 pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition) -> bool {
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = proposition
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
+        true,
+    ) = proposition
     else {
         return false;
     };
@@ -7281,9 +7290,26 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<CRuntimeEr
             continue;
         }
         let comparison = match condition {
-            ConditionTerm::Bitvector32SignedLessEqual(left, right)
-            | ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-                let op = if matches!(condition, ConditionTerm::Bitvector32SignedLessEqual(..)) {
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            }
+            | ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            } => {
+                let op = if matches!(
+                    condition,
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        ..
+                    }
+                ) {
                     "<="
                 } else {
                     ">="
@@ -7292,9 +7318,26 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<CRuntimeEr
                     .zip(right.as_const())
                     .map(|(left, right)| format!("{} {op} {}", left as i32, right as i32))
             }
-            ConditionTerm::Bitvector64SignedLessEqual(left, right)
-            | ConditionTerm::Bitvector64SignedGreaterEqual(left, right) => {
-                let op = if matches!(condition, ConditionTerm::Bitvector64SignedLessEqual(..)) {
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            }
+            | ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::GreaterEqual,
+                left,
+                right,
+            } => {
+                let op = if matches!(
+                    condition,
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::LessEqual,
+                        ..
+                    }
+                ) {
                     "<="
                 } else {
                     ">="
@@ -7303,7 +7346,12 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<CRuntimeEr
                     .zip(right.int64_as_const())
                     .map(|(left, right)| format!("{left} {op} {right}"))
             }
-            ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => left
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            } => left
                 .uint64_as_const()
                 .zip(right.uint64_as_const())
                 .map(|(left, right)| format!("{left} <= {right}")),

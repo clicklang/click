@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn tree_type() -> AlgebraicType {
     let key = AlgebraicValueType::Algebraic {
@@ -215,10 +216,12 @@ fn algebraic_match_normalization_substitutes_integer_fields() {
 
 #[test]
 fn algebraic_conditional_is_one_branch_once_its_condition_is_decided() {
-    let condition = ConditionTerm::Bitvector32Equal(
-        Box::new(Bitvector32Term::Variable(Variable(7))),
-        Box::new(Bitvector32Term::Constant(0)),
-    );
+    let condition = ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left: Box::new(Bitvector32Term::Variable(Variable(7))),
+        right: Box::new(Bitvector32Term::Constant(0)),
+    };
     // The smart constructor never builds a decided or branch-equal conditional.
     assert_eq!(
         AlgebraicTerm::if_then_else(ConditionTerm::Constant(true), empty(), var(1)),

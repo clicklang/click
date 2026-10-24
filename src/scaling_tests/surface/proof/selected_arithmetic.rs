@@ -2,6 +2,7 @@
 // work and proof construction measured at several input sizes.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::proof::pure_theorems::PureTheoremContext;
 
 #[test]
@@ -14,10 +15,12 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
         let mut surfaces = SurfacePropositionMap::default();
         for index in 0..size {
             let fact = Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(value.clone()),
-                    Box::new((100 + index).into()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(value.clone()),
+                    right: Box::new((100 + index).into()),
+                },
                 true,
             );
             let surface = relate(
@@ -131,7 +134,12 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));
         let mut surfaces = SurfacePropositionMap::default();
         let order = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(Box::new(k.clone()), Box::new(j.clone())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(k.clone()),
+                right: Box::new(j.clone()),
+            },
             true,
         );
         surfaces
@@ -142,10 +150,12 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
         // never reads.
         for index in 0..size {
             let fact = Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(y.clone()),
-                    Box::new((100 + index).into()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(y.clone()),
+                    right: Box::new((100 + index).into()),
+                },
                 true,
             );
             let surface = relate(

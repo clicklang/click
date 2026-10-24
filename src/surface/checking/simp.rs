@@ -1,4 +1,6 @@
 use super::*;
+use crate::kernel::CompareRelation;
+use crate::kernel::MachineIntegerType;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -95,18 +97,40 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
         surface: &ClickProposition,
     ) -> Option<(Proposition, ClickProposition)> {
         let kernel = match kernel {
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
-                Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(right.clone(), left.clone()),
-                    true,
-                )
-            }
-            Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true) => {
-                Proposition::ConditionIs(
-                    ConditionTerm::Bitvector64Equal(right.clone(), left.clone()),
-                    true,
-                )
-            }
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) => Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: right.clone(),
+                    right: left.clone(),
+                },
+                true,
+            ),
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                true,
+            ) => Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left: right.clone(),
+                    right: left.clone(),
+                },
+                true,
+            ),
             Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
                 Proposition::ConditionIs(
                     ConditionTerm::PointerValueEqual(right.clone(), left.clone()),
@@ -480,7 +504,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
             Some(left.as_const()? >= right.as_const()?)
         }
         ConditionTerm::Constant(value) => Some(*value),
-        ConditionTerm::Bitvector32Equal(left, right) => {
+        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right } => {
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -489,7 +513,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
                 Some(simp_bitvector_const(&left)? == simp_bitvector_const(&right)?)
             }
         }
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => {
+        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left, right } => {
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -498,7 +522,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
                 Some((simp_bitvector_const(&left)? as i32) < (simp_bitvector_const(&right)? as i32))
             }
         }
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
+        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessEqual, left, right } => {
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -509,7 +533,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
                 )
             }
         }
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
+        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::GreaterThan, left, right } => {
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -518,7 +542,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
                 Some((simp_bitvector_const(&left)? as i32) > (simp_bitvector_const(&right)? as i32))
             }
         }
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
+        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::GreaterEqual, left, right } => {
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -529,7 +553,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
                 )
             }
         }
-        ConditionTerm::Bitvector64SignedLessThan(left, right) => {
+        ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::LessThan, left, right } => {
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -537,7 +561,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
             }
             Some(left.int64_as_const()? < right.int64_as_const()?)
         }
-        ConditionTerm::Bitvector64SignedLessEqual(left, right) => {
+        ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::LessEqual, left, right } => {
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -545,7 +569,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
             }
             Some(left.int64_as_const()? <= right.int64_as_const()?)
         }
-        ConditionTerm::Bitvector64SignedGreaterThan(left, right) => {
+        ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::GreaterThan, left, right } => {
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -553,7 +577,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
             }
             Some(left.int64_as_const()? > right.int64_as_const()?)
         }
-        ConditionTerm::Bitvector64SignedGreaterEqual(left, right) => {
+        ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::GreaterEqual, left, right } => {
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -561,7 +585,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
             }
             Some(left.int64_as_const()? >= right.int64_as_const()?)
         }
-        ConditionTerm::Bitvector64UnsignedLessThan(left, right) => Some({
+        ConditionTerm::Compare { format: MachineIntegerType::UInt64, relation: CompareRelation::LessThan, left, right } => Some({
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -569,7 +593,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
             }
             left.uint64_as_const()? < right.uint64_as_const()?
         }),
-        ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => Some({
+        ConditionTerm::Compare { format: MachineIntegerType::UInt64, relation: CompareRelation::LessEqual, left, right } => Some({
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -577,7 +601,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
             }
             left.uint64_as_const()? <= right.uint64_as_const()?
         }),
-        ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => Some({
+        ConditionTerm::Compare { format: MachineIntegerType::UInt64, relation: CompareRelation::GreaterThan, left, right } => Some({
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -585,7 +609,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
             }
             left.uint64_as_const()? > right.uint64_as_const()?
         }),
-        ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => Some({
+        ConditionTerm::Compare { format: MachineIntegerType::UInt64, relation: CompareRelation::GreaterEqual, left, right } => Some({
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -593,7 +617,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
             }
             left.uint64_as_const()? >= right.uint64_as_const()?
         }),
-        ConditionTerm::Bitvector64Equal(left, right) => {
+        ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right } => {
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {
@@ -610,16 +634,9 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
             Some(left == right)
         }
         ConditionTerm::Variable(_)
-        | ConditionTerm::Bitvector32SignedAddOverflows(_, _)
-        | ConditionTerm::Bitvector32SignedSubtractOverflows(_, _)
-        | ConditionTerm::Bitvector32SignedMultiplyOverflows(_, _)
-        | ConditionTerm::Bitvector32SignedDivideOverflows(_, _)
-        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(_, _)
-        | ConditionTerm::Bitvector64SignedAddOverflows(_, _)
-        | ConditionTerm::Bitvector64SignedSubtractOverflows(_, _)
-        | ConditionTerm::Bitvector64SignedMultiplyOverflows(_, _)
-        | ConditionTerm::Bitvector64SignedDivideOverflows(_, _)
-        | ConditionTerm::Bitvector64SignedShiftLeftOverflows(_, _)
+        // The other formats have no constant folding here.
+        | ConditionTerm::Compare { .. }
+        | ConditionTerm::Overflows { .. }
         | ConditionTerm::Float32(_)
         | ConditionTerm::Float64(_)
         | ConditionTerm::PointerOffsetEqual(_, _)
@@ -855,19 +872,23 @@ mod tests {
             Bitvector32Term::add(sum, variable(index))
         });
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(sum),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(sum),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         let premises = (0..count)
             .map(|index| {
                 let kernel = Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(variable(index)),
-                        Box::new(variable(100 + index)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(variable(index)),
+                        right: Box::new(variable(100 + index)),
+                    },
                     true,
                 );
                 let surface = ClickProposition::Comparison {
@@ -939,10 +960,12 @@ mod tests {
                 &observed,
             );
             let goal = Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(load)),
-                    Box::new(Bitvector32Term::Constant(17)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::Variable(load)),
+                    right: Box::new(Bitvector32Term::Constant(17)),
+                },
                 true,
             );
             let equality =
@@ -999,10 +1022,12 @@ mod tests {
             )
         };
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(read_through(loaded)),
-                Box::new(Bitvector32Term::Constant(5)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(read_through(loaded)),
+                right: Box::new(Bitvector32Term::Constant(5)),
+            },
             true,
         );
         let equality = Proposition::ConditionIs(ConditionTerm::pointer_equal(source, target), true);
@@ -1015,10 +1040,12 @@ mod tests {
         assert_eq!(
             rewritten,
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(read_through(target_loaded)),
-                    Box::new(Bitvector32Term::Constant(5)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(read_through(target_loaded)),
+                    right: Box::new(Bitvector32Term::Constant(5))
+                },
                 true,
             )
         );
@@ -1054,17 +1081,21 @@ mod tests {
         );
         let goal = Proposition::And(
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(field_load(&source, 4)),
-                    Box::new(field_load(&target, 4)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(field_load(&source, 4)),
+                    right: Box::new(field_load(&target, 4)),
+                },
                 true,
             )),
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(field_load(&source, 8)),
-                    Box::new(field_load(&target, 12)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(field_load(&source, 8)),
+                    right: Box::new(field_load(&target, 12)),
+                },
                 true,
             )),
         );
@@ -1081,17 +1112,21 @@ mod tests {
         .expect("one cited equality rewrites both field addresses");
         let expected = Proposition::And(
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(field_load(&target, 4)),
-                    Box::new(field_load(&target, 4)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(field_load(&target, 4)),
+                    right: Box::new(field_load(&target, 4)),
+                },
                 true,
             )),
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(field_load(&target, 8)),
-                    Box::new(field_load(&target, 12)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(field_load(&target, 8)),
+                    right: Box::new(field_load(&target, 12)),
+                },
                 true,
             )),
         );
@@ -1160,17 +1195,21 @@ mod tests {
             PointerOffsetTerm::scale_int32(index.clone(), 4),
         );
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(load(indexed_offset)),
-                Box::new(load(alias_offset.clone())),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(load(indexed_offset)),
+                right: Box::new(load(alias_offset.clone())),
+            },
             true,
         );
         let index_is_zero = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(index),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(index),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
         let data_is_alias = Proposition::ConditionIs(
@@ -1215,7 +1254,12 @@ mod tests {
             right: Box::new(range(source.clone(), source_len.clone())),
         };
         let length_equality = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(source_len), Box::new(target_len.clone())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(source_len),
+                right: Box::new(target_len.clone()),
+            },
             true,
         );
         let base_equality = Proposition::ConditionIs(
@@ -1286,7 +1330,12 @@ mod tests {
             true,
         );
         let equality = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(load), Box::new(Bitvector32Term::Constant(0))),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(load),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
 
@@ -1326,7 +1375,12 @@ mod tests {
             true,
         );
         let equality = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(from), Box::new(to.clone())),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(from),
+                right: Box::new(to.clone()),
+            },
             true,
         );
         let rewritten = rewrite_proposition_by_exact_equality(
@@ -1376,7 +1430,12 @@ mod tests {
             true,
         );
         let equality = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(from), Box::new(to)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(from),
+                right: Box::new(to),
+            },
             true,
         );
         let missing = rewrite_proposition_by_exact_equality(&goal, &equality, &[])
@@ -1425,10 +1484,12 @@ mod tests {
             true,
         );
         let equality = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(first_load),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(first_load),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         );
 

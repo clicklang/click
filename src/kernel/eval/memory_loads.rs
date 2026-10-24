@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::CompareRelation;
 
 #[derive(Default)]
 struct MemoryLoadAliasCache {
@@ -2082,7 +2083,15 @@ pub(crate) fn is_load_variable(variable: &Variable) -> bool {
 /// equations are true by construction, so path wrapping treats them as
 /// ambient truths rather than premises.
 pub(crate) fn is_load_variable_defining_fact(proposition: &Proposition) -> bool {
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = proposition
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
+        true,
+    ) = proposition
     else {
         return false;
     };
@@ -3077,7 +3086,13 @@ pub(crate) fn is_store_fact(condition: &ConditionTerm, value: bool) -> bool {
     if !value {
         return false;
     }
-    let ConditionTerm::Bitvector32Equal(left, right) = condition else {
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::Equal,
+        left,
+        right,
+    } = condition
+    else {
         return false;
     };
     let (load, stored) = match (left.as_ref(), right.as_ref()) {
@@ -3948,10 +3963,12 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
     };
     let defining_load = load.clone();
     let defining_proposition = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(variable)),
-            Box::new(load.clone()),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::Variable(variable)),
+            right: Box::new(load.clone()),
+        },
         true,
     );
     let binding = GeneratedLoadBinding::Exact {
@@ -5185,10 +5202,12 @@ mod tests {
             crate::kernel::LoadKind::Bits32,
         );
         let replacement = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(Bitvector32Term::Variable(variable)),
-                Box::new(second_load),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(Bitvector32Term::Variable(variable)),
+                right: Box::new(second_load),
+            },
             true,
         );
         assert_eq!(fact.proposition(), &replacement);

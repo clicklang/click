@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 /// Unaddressable scalar declarations keep their permissions without growing
 /// the observable pointer frame. Addressable locals must remain observable.
@@ -919,25 +920,31 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
         let mut context = PureFactContext::new()
             .assume_proposition(Proposition::CResourceComposition(resources))
             .assume_condition(
-                ConditionTerm::Bitvector32SignedLessEqual(
-                    Box::new(0.into()),
-                    Box::new(index.clone()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: Box::new(0.into()),
+                    right: Box::new(index.clone()),
+                },
                 true,
             )
             .assume_condition(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(index.clone()),
-                    Box::new(64.into()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(index.clone()),
+                    right: Box::new(64.into()),
+                },
                 true,
             );
         for unrelated in 0..size {
             context = context.assume_condition(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    Box::new(Bitvector32Term::Variable(Variable(100_000 + unrelated))),
-                    Box::new(1000.into()),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: Box::new(Bitvector32Term::Variable(Variable(100_000 + unrelated))),
+                    right: Box::new(1000.into()),
+                },
                 true,
             );
         }

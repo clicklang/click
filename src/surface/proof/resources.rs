@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::planning::proposition_search::holds_by_lookup_or_decision;
 use crate::surface::proof::execution_planning::refuse_or_record_open_obligation;
 use crate::surface::proof_diagnostics::render::{
@@ -32,20 +33,24 @@ fn fold_resource_quantity_activity(
     let zero = holds_by_lookup_or_decision(
         assumptions,
         &Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(quantity.clone()),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(quantity.clone()),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         ),
     );
     let positive = holds_by_lookup_or_decision(
         assumptions,
         &Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterThan(
-                Box::new(quantity.clone()),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: Box::new(quantity.clone()),
+                right: Box::new(Bitvector32Term::Constant(0)),
+            },
             true,
         ),
     );
@@ -1761,10 +1766,12 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             || holds_by_lookup_or_decision(
                 &assumptions,
                 &Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedGreaterThan(
-                        Box::new(quantity.clone()),
-                        Box::new(Bitvector32Term::Constant(0)),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        left: Box::new(quantity.clone()),
+                        right: Box::new(Bitvector32Term::Constant(0)),
+                    },
                     true,
                 ),
             );
@@ -2303,10 +2310,12 @@ fn owned_quantity_is_positive(quantity: &Bitvector32Term, assumptions: &PureFact
         || holds_by_lookup_or_decision(
             assumptions,
             &Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedGreaterThan(
-                    Box::new(quantity.clone()),
-                    Box::new(Bitvector32Term::Constant(0)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left: Box::new(quantity.clone()),
+                    right: Box::new(Bitvector32Term::Constant(0)),
+                },
                 true,
             ),
         )
@@ -3299,7 +3308,12 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         // own; only a symbolic one needs a fact about it.
         let final_by_constant = quantity.as_const() == Some(1);
         let final_unit = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(count), Box::new(quantity)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(count),
+                right: Box::new(quantity),
+            },
             true,
         );
         if !final_by_constant && !holds_by_lookup_or_decision(&assumptions, &final_unit) {
@@ -5628,18 +5642,22 @@ void child_release(struct child* obj) {
         let index_term = || Box::new(Bitvector32Term::Variable(index));
         let below = |end: u32| {
             Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(
-                    index_term(),
-                    Box::new(Bitvector32Term::Constant(end)),
-                ),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: index_term(),
+                    right: Box::new(Bitvector32Term::Constant(end)),
+                },
                 true,
             )
         };
         let at_least_zero = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(Bitvector32Term::Constant(0)),
-                index_term(),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(Bitvector32Term::Constant(0)),
+                right: index_term(),
+            },
             true,
         );
         let quantified = |guard: Proposition| Proposition::ForAll {
@@ -5726,14 +5744,16 @@ void child_release(struct child* obj) {
         let memory =
             CMemory::new().store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(0)));
         let snapshot = crate::kernel::intern_c_memory_ref(&memory);
-        let condition = ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::MemoryLoad(
+        let condition = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(Bitvector32Term::MemoryLoad(
                 snapshot,
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Bits32,
             )),
-            Box::new(Bitvector32Term::Constant(0)),
-        );
+            right: Box::new(Bitvector32Term::Constant(0)),
+        };
         let proposition = if definedness {
             Proposition::CMemoryReadDefined {
                 memory: memory.clone(),
@@ -6027,10 +6047,12 @@ mod fold_quantity_activity_tests {
             let mut assumptions = PureFactContext::new();
             for index in 0..size {
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::Bitvector32SignedLessEqual(
-                        Box::new(Bitvector32Term::Variable(Variable(9_810_000 + index))),
-                        Box::new(100u32.into()),
-                    ),
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        left: Box::new(Bitvector32Term::Variable(Variable(9_810_000 + index))),
+                        right: Box::new(100u32.into()),
+                    },
                     true,
                 );
             }
@@ -6067,7 +6089,12 @@ mod fold_quantity_activity_tests {
             (u32::MAX, (false, false)),
         ] {
             let assumptions = PureFactContext::new().assume_condition(
-                ConditionTerm::Bitvector32Equal(Box::new(count.clone()), Box::new(value.into())),
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(count.clone()),
+                    right: Box::new(value.into()),
+                },
                 true,
             );
             assert_eq!(

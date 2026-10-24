@@ -3,6 +3,7 @@ use super::loans::{
     empty_checked_loan_evidence_sequence,
 };
 use super::prelude::*;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[cfg(test)]
 mod empty_loop_rule_tests;
@@ -2052,18 +2053,42 @@ fn condition_value_is_proven(
 
 fn condition_complement(condition: &ConditionTerm) -> Option<ConditionTerm> {
     match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => Some(
-            ConditionTerm::signed_greater_equal(left.as_ref().clone(), right.as_ref().clone()),
-        ),
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => Some(
-            ConditionTerm::signed_greater_than(left.as_ref().clone(), right.as_ref().clone()),
-        ),
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => Some(
-            ConditionTerm::signed_less_equal(left.as_ref().clone(), right.as_ref().clone()),
-        ),
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => Some(
-            ConditionTerm::signed_less_than(left.as_ref().clone(), right.as_ref().clone()),
-        ),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left,
+            right,
+        } => Some(ConditionTerm::signed_greater_equal(
+            left.as_ref().clone(),
+            right.as_ref().clone(),
+        )),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left,
+            right,
+        } => Some(ConditionTerm::signed_greater_than(
+            left.as_ref().clone(),
+            right.as_ref().clone(),
+        )),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterThan,
+            left,
+            right,
+        } => Some(ConditionTerm::signed_less_equal(
+            left.as_ref().clone(),
+            right.as_ref().clone(),
+        )),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left,
+            right,
+        } => Some(ConditionTerm::signed_less_than(
+            left.as_ref().clone(),
+            right.as_ref().clone(),
+        )),
         _ => None,
     }
 }
@@ -3011,7 +3036,12 @@ fn indexed_loop_exit_load_equality(
         return Some(answer == expected);
     }
     match &condition {
-        ConditionTerm::Bitvector32Equal(left, right) if expected => {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } if expected => {
             if context.int32_values_known_equal(left, right) {
                 return Some(true);
             }
@@ -3023,7 +3053,13 @@ fn indexed_loop_exit_load_equality(
                         .keys()
                         .find_map(|condition| {
                             crate::instrumentation::record_deterministic_work(1);
-                            let ConditionTerm::Bitvector32Equal(a, b) = condition else {
+                            let ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::Equal,
+                                left: a,
+                                right: b,
+                            } = condition
+                            else {
                                 return None;
                             };
                             if a.as_ref() == term {

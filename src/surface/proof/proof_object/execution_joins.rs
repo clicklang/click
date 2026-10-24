@@ -1,6 +1,8 @@
 //! Execution branch preparation, sibling arms, and join merging.
 
 use super::*;
+#[cfg(test)]
+use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn join_arm_loan_evidence(
     parent: &ExecutionProofState,
@@ -4416,10 +4418,12 @@ mod progress_tests {
     use super::*;
     fn indexed_fact(index: u32) -> Proposition {
         Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessThan(
-                Box::new(Bitvector32Term::Variable(Variable(0))),
-                Box::new(Bitvector32Term::Constant(index)),
-            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(Bitvector32Term::Variable(Variable(0))),
+                right: Box::new(Bitvector32Term::Constant(index)),
+            },
             true,
         )
     }
