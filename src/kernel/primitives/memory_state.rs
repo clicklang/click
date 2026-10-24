@@ -5980,6 +5980,34 @@ impl CMemory {
         self.cells.get(pointer)
     }
 
+    /// The integer terms held by the concrete cells this memory changed
+    /// since `earlier`, or by every concrete cell when there is no earlier
+    /// memory: what a recorded point newly names in memory. The walk visits
+    /// only the changed cells of memories derived from one another.
+    pub(crate) fn changed_cell_integers<'a>(
+        &'a self,
+        earlier: Option<&'a Self>,
+    ) -> Vec<&'a Bitvector32Term> {
+        self.cells
+            .changed_concrete_cells(earlier.map(|earlier| earlier.cells.as_ref()))
+            .into_iter()
+            .filter_map(|(_, value)| match value.numeric_value() {
+                CValue::Bool(term)
+                | CValue::Int8(term)
+                | CValue::Int16(term)
+                | CValue::Int32(term)
+                | CValue::UInt8(term)
+                | CValue::UInt16(term)
+                | CValue::UInt32(term)
+                | CValue::Int64(term)
+                | CValue::UInt64(term)
+                | CValue::Int128(term)
+                | CValue::UInt128(term) => Some(term),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub(in crate::kernel) fn has_known_cell_at(&self, pointer: &Pointer) -> bool {
         self.cells.contains_key(pointer) || self.has_union_overlay_at(pointer)
     }

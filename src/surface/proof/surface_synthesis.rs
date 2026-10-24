@@ -593,6 +593,43 @@ fn synthesize_recorded_local(term: &Bitvector32Term) -> Option<ContractExpressio
     })
 }
 
+/// `at(point, e)` for a term a memory cell held at a recorded point, where
+/// `e` spells it in that point's state: the field or element it is there.
+/// The recorded points are cleared for the inner spelling, so it never
+/// nests.
+fn synthesize_recorded_cell_value(
+    term: &Bitvector32Term,
+    parameter_binding: ParameterBinding<'_>,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let candidates = SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        Some(
+            slot.as_ref()?
+                .points_holding_cell_integer(term)
+                .map(|(selector, state)| (selector.clone(), state.clone()))
+                .collect::<Vec<_>>(),
+        )
+    })?;
+    if candidates.is_empty() {
+        return None;
+    }
+    let points = SYNTHESIS_RECORDED_POINTS.with(|slot| slot.replace(None));
+    let spelled = candidates.into_iter().find_map(|(selector, state)| {
+        Some(ContractExpression::At {
+            selector,
+            expression: Box::new(synthesize_surface_bitvector(
+                term,
+                parameter_binding,
+                &state,
+                bound_variables,
+            )?),
+        })
+    });
+    SYNTHESIS_RECORDED_POINTS.with(|slot| slot.replace(points));
+    spelled
+}
+
 struct SurfaceSynthesisScope(Option<SurfaceSynthesisBudget>);
 
 impl SurfaceSynthesisScope {
@@ -2993,6 +3030,10 @@ fn synthesize_surface_bitvector(
         return Some(snapshot);
     }
     if let Some(recorded) = synthesize_recorded_local(term) {
+        return Some(recorded);
+    }
+    if let Some(recorded) = synthesize_recorded_cell_value(term, parameter_binding, bound_variables)
+    {
         return Some(recorded);
     }
     if let Some(count) = synthesize_population_entry_count(term, parameter_binding, state) {

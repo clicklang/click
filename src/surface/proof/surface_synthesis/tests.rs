@@ -2833,3 +2833,43 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
         "the value must be spelled as the instance's field: {spelled:?}"
     );
 }
+
+#[test]
+fn recorded_cells_offer_the_points_that_held_a_value_newest_first() {
+    // A value two stores put in a cell, between which a store overwrote
+    // it, is offered at both points that recorded it there, newest first;
+    // a value no cell held is offered nowhere.
+    let cell = Pointer {
+        block: PointerBlock::Concrete("cell-introduced".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let value = Bitvector32Term::Variable(Variable(940_001));
+    let point = |index| {
+        SnapshotSelector::from(ProgramPointRef {
+            region: CodeRegionRef::Region(index),
+            kind: ProgramPointKind::Exit,
+        })
+    };
+    let entry = CMemory::new()
+        .with_block("cell-introduced", 4)
+        .store(cell.clone(), int32(1));
+    let first = entry
+        .clone()
+        .store(cell.clone(), CValue::Int32(value.clone()));
+    let overwritten = first.clone().store(cell.clone(), int32(9));
+    let again = overwritten
+        .clone()
+        .store(cell, CValue::Int32(value.clone()));
+    let mut recorded_snapshots = RecordedSnapshots::new();
+    for (index, memory) in [entry, first, overwritten, again].into_iter().enumerate() {
+        recorded_snapshots.insert(point(index), CState::new().with_memory(memory));
+    }
+    let offered = |term: &Bitvector32Term| {
+        recorded_snapshots
+            .points_holding_cell_integer(term)
+            .map(|(selector, _)| selector.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(offered(&value), vec![point(3), point(1)]);
+    assert!(offered(&Bitvector32Term::Variable(Variable(940_002))).is_empty());
+}

@@ -2189,6 +2189,29 @@ impl CellStore {
         }
     }
 
+    /// The concrete cells this store holds that `earlier` did not hold with
+    /// the same value, with their values: every concrete cell when there is
+    /// no earlier store. Runs are not visited. For stores derived from one
+    /// another the walk is proportional to the changed cells.
+    pub(crate) fn changed_concrete_cells<'a>(
+        &'a self,
+        earlier: Option<&'a Self>,
+    ) -> Vec<(&'a Pointer, &'a CValue)> {
+        match earlier {
+            Some(earlier) => earlier
+                .concrete
+                .diff(&self.concrete)
+                .filter_map(|change| match change {
+                    SnapshotMapChange::Added(pointer) | SnapshotMapChange::Changed(pointer) => {
+                        self.concrete.get(pointer).map(|value| (pointer, value))
+                    }
+                    SnapshotMapChange::Removed(_) => None,
+                })
+                .collect(),
+            None => self.concrete.iter().collect(),
+        }
+    }
+
     /// The pointers at which the two stores' logical maps differ, ascending,
     /// without laying out a run the other store shares; see
     /// [`Self::differing_cells`].
