@@ -3428,9 +3428,26 @@ impl PureFactContext {
             "resource separation",
             "resource separation: owned resources",
             || {
-                self.resource_compositions
-                    .scan_unindexed()
-                    .any(|resources| resources.proves_owned_resources_separate(left, right, self))
+                // Two memory sides find their owners in their ranges' blocks,
+                // the keys `CompositionMemberIndex` lists a composition
+                // under; other resources are matched by identity, which it
+                // does not index.
+                if let (CResource::Memory(left_range), CResource::Memory(right_range)) =
+                    (left, right)
+                {
+                    self.composition_members
+                        .listed_under([], [&left_range.base().block, &right_range.base().block])
+                        .into_iter()
+                        .any(|resources| {
+                            resources.proves_owned_resources_separate(left, right, self)
+                        })
+                } else {
+                    self.resource_compositions
+                        .scan_unindexed()
+                        .any(|resources| {
+                            resources.proves_owned_resources_separate(left, right, self)
+                        })
+                }
             },
         ) {
             return true;
@@ -4666,21 +4683,10 @@ impl PureFactContext {
     /// cell below the frontier is framed only through a live observation or
     /// an unfold, never by the kernel reading inside a folded body.
     fn frame_frontier_compositions(&self, memory: &CMemory) -> Vec<ResourceContext> {
-        // Cheap gates first: this runs on the store cell-drop path, so a
-        // composition with nothing composite to look through must cost a
-        // scan of its own facts and no more.
-        if self.resource_compositions.is_empty() {
-            return Vec::new();
-        }
-        let has_composite_own = self
-            .resource_compositions
-            .scan_unindexed()
-            .any(|composition| {
-                composition.facts().iter().any(|fact| {
-                    fact.is_own() && matches!(fact.resource(), CResource::Composite { .. })
-                })
-            });
-        if !has_composite_own {
+        // Cheap gate first: this runs on the store cell-drop path, and only
+        // a composition owning a composite has anything to look through (a
+        // composition without one expands to nothing).
+        if self.composite_owning_compositions.is_empty() {
             return Vec::new();
         }
         let Some(definitions) = frame_composite_definitions() else {
@@ -4697,7 +4703,7 @@ impl PureFactContext {
         const EXPANSION_MEMO_LIMIT: usize = 10_000;
         let memory_id = crate::kernel::intern_c_memory_ref(memory).arena_id();
         let mut expanded = Vec::new();
-        for composition in self.resource_compositions.scan_unindexed() {
+        for composition in self.composite_owning_compositions.scan_unindexed() {
             let key = (
                 std::sync::Arc::as_ptr(&composition.storage) as usize,
                 memory_id,
@@ -5306,6 +5312,30 @@ mod shallow_composition_separation_tests {
         assert!(
             samples.iter().all(|(_, work)| *work <= smallest + 4),
             "shallow owned separation grew with unrelated compositions: {samples:?}"
+        );
+    }
+    /// The frame frontier expands only compositions that own a composite,
+    /// read from their own set. Its gate once walked every fact of every
+    /// stated composition on each store's cell drop.
+    #[test]
+    fn frame_frontier_ignores_compositions_without_composites() {
+        let work = [8u64, 32, 128]
+            .into_iter()
+            .map(|size| {
+                let _session = crate::kernel::VerificationSession::enter();
+                let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
+                    facts.assume_proposition(owner_of(&[at(&format!("frontier-{index}"))]))
+                });
+                let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    facts.frame_frontier_compositions(&CMemory::new())
+                });
+                assert!(expanded.is_empty());
+                work
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            work.windows(2).all(|pair| pair[0] == pair[1]),
+            "compositions without composites changed the frame frontier's work: {work:?}"
         );
     }
 }

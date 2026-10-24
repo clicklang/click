@@ -352,11 +352,20 @@ every composition:
 
 - `proves_owned_memory_ranges_separate_by`, which finds members through
   base roots and aliases in other blocks;
-- `proves_owned_resources_separate` and the composition range cover in
-  `proves_resource_separate_inner`;
-- the composite frame frontier (`frame_frontier_compositions`), on the
-  store cell-drop path;
-- `store_compositions` when the writer stated no store owners.
+- `proves_owned_resources_separate` for a non-memory side, matched by
+  resource identity, which the member index does not file (two memory
+  sides read it), and the composition range cover in
+  `proves_resource_separate_inner`, whose owner of the other side may be a
+  composite;
+- the composite frame frontier (`frame_frontier_compositions`), now over
+  the compositions owning a composite only (`composite_owning_compositions`;
+  a composition without one expands to nothing). Its gate once walked
+  every fact of every composition on each store's cell drop
+  (`frame_frontier_ignores_compositions_without_composites`);
+- `store_compositions` when the writer stated no store owners: the
+  owned store footprint collects the member of every composition holding
+  the cell, so its output is as large as the compositions that restate
+  it.
 
 **Accessors.** The callers of `pure_facts`, `condition_fact_pairs` and
 `proposition_facts` read a whole context to copy or describe it, not to

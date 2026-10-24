@@ -7723,6 +7723,9 @@ mod borrow_partition_tests {
         // Retain the candidate index but withdraw its authority.
         let mut withdrawn = context.clone();
         withdrawn.resource_compositions = withdrawn.resource_compositions.without_value(&bound);
+        withdrawn.composite_owning_compositions = withdrawn
+            .composite_owning_compositions
+            .without_value(&bound);
         assert!(!witness.checks(&step, read.base(), 4, &withdrawn));
         assert!(
             typed_store_separated_ranges_evidence(write.base(), 4, read.base(), 4, &withdrawn)
