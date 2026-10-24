@@ -3379,13 +3379,22 @@ impl PureFactContext {
         // side, whose containment can still entail memory separation
         // through a composite body. Any other query shape scans every
         // separation fact: the indexed pass below does not run for it.
+        // A non-memory side's containers are found upward from it
+        // (`separations_with_side_containing`).
         let memory_memory_query =
             matches!((left, right), (CResource::Memory(_), CResource::Memory(_)));
         let scan_facts: &dyn Fn(&dyn Fn(&Proposition) -> bool) -> bool = &|entails| {
             if memory_memory_query {
-                self.nonmemory_separation_facts.iter().any(entails)
+                return self.nonmemory_separation_facts.iter().any(entails);
+            }
+            let keyed = if matches!(left, CResource::Memory(_)) {
+                right
             } else {
-                self.separation_facts.scan_unindexed().any(entails)
+                left
+            };
+            match self.separations_with_side_containing(keyed) {
+                Some(candidates) => candidates.into_iter().any(entails),
+                None => self.separation_facts.scan_unindexed().any(entails),
             }
         };
         let residual_hit = crate::instrumentation::measure_operation(
@@ -5409,6 +5418,57 @@ mod shallow_composition_separation_tests {
             left: Box::new(CResource::Memory(cells(left))),
             right: Box::new(CResource::Memory(cells(right))),
         }
+    }
+
+    fn token(name: &str) -> CResource {
+        CResource::Token {
+            name: name.into(),
+            arguments: Vec::new().into(),
+        }
+    }
+
+    fn separate_resources(left: CResource, right: CResource) -> Proposition {
+        Proposition::CResourceSeparate {
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    }
+
+    /// A non-memory resource is separate from another when a stated
+    /// separation's sides contain the two. The check reads the separations
+    /// filed under the resource's containers, walked upward through the
+    /// containment facts (`separations_with_side_containing`); it once
+    /// scanned every stated separation.
+    #[test]
+    fn token_separation_ignores_unrelated_separations() {
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
+                facts.assume_proposition(separate_resources(
+                    token(&format!("apart-left-{index}")),
+                    token(&format!("apart-right-{index}")),
+                ))
+            });
+            let (left, right) = (token("apart-query-left"), token("apart-query-right"));
+            let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.proves_resource_separate(&left, &right)
+            });
+            assert!(!separate);
+            // A container of the left token, separate from the right one.
+            let held = facts
+                .assume_proposition(Proposition::CResourceContains {
+                    parent: Box::new(token("apart-container")),
+                    child: Box::new(left.clone()),
+                })
+                .assume_proposition(separate_resources(token("apart-container"), right.clone()));
+            assert!(held.proves_resource_separate(&left, &right));
+            samples.push((size, work));
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "token separation grew with unrelated separations: {samples:?}"
+        );
     }
 
     /// A range and a pointer are disjoint by a stated separation whose sides
