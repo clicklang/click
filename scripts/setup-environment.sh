@@ -44,17 +44,24 @@ nextest_installed_version() {
 if ! command -v cargo-nextest >/dev/null 2>&1 || \
     [[ "$(nextest_installed_version)" != "$nextest_version" ]]; then
     case "$(uname -s)/$(uname -m)" in
-        Linux/x86_64) nextest_platform=linux ;;
-        Linux/aarch64) nextest_platform=linux-arm ;;
-        Darwin/*) nextest_platform=mac ;;
+        Linux/x86_64) nextest_platform=linux; nextest_target=x86_64-unknown-linux-gnu ;;
+        Linux/aarch64) nextest_platform=linux-arm; nextest_target=aarch64-unknown-linux-gnu ;;
+        Darwin/*) nextest_platform=mac; nextest_target=universal-apple-darwin ;;
         *) nextest_platform= ;;
     esac
     if [[ -n "$nextest_platform" ]]; then
         nextest_directory="$(mktemp -d)"
         trap 'rm -rf "$nextest_directory"' EXIT
-        curl --fail --location --silent --show-error --retry 3 \
+        if ! curl --fail --location --silent --show-error --retry 3 \
             "https://get.nexte.st/$nextest_version/$nextest_platform" \
-            --output "$nextest_directory/nextest.tar.gz"
+            --output "$nextest_directory/nextest.tar.gz"; then
+            # Restricted cloud networks may allow GitHub releases but not the
+            # download shortcut. Keep the same pinned upstream release.
+            echo "nextest shortcut unavailable; using GitHub release $nextest_version" >&2
+            curl --fail --location --silent --show-error --retry 3 \
+                "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-$nextest_version/cargo-nextest-$nextest_version-$nextest_target.tar.gz" \
+                --output "$nextest_directory/nextest.tar.gz"
+        fi
         tar -xzf "$nextest_directory/nextest.tar.gz" -C "$nextest_directory" cargo-nextest
         cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
         mkdir -p "$cargo_bin"
@@ -156,19 +163,7 @@ if [[ "$docs_only" != true ]]; then
         fi
 
         if [[ ! -f "$llvm_cache" ]]; then
-            llvm_files="$(mktemp)"
-            dpkg-query -L clang-19 libclang-19-dev llvm-19-dev libllvm19 \
-                libclang-cpp19 libclang1-19 libclang-common-19-dev \
-                llvm-19-linker-tools clang-tools-19 llvm-19-runtime llvm-19 \
-                llvm-19-tools libclang-rt-19-dev \
-                | sed 's,^/,,' | sort -u > "$llvm_files"
-            mkdir -p "$(dirname "$llvm_cache")"
-            # --no-recursion prevents package directory entries such as /usr
-            # from accidentally including the rest of the runner filesystem.
-            tar -I 'zstd -T0 -3' --no-recursion -cf "$llvm_cache.tmp" \
-                -C / --verbatim-files-from --files-from "$llvm_files"
-            mv "$llvm_cache.tmp" "$llvm_cache"
-            rm "$llvm_files"
+            scripts/cache-llvm.sh "$llvm_cache"
         fi
     fi
 fi
