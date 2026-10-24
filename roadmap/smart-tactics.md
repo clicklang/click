@@ -441,8 +441,15 @@ four times the work at a quarter of it.
     indexed walk agreed every time; no gate verdict changed, and
     `effect_connection_ignores_unrelated_effect_facts` covers it (the old
     search grew from 116 to 1,316 units at 16 to 256 unrelated effects).
-    Still scanning: the `CMemoryLoadable` route's outer pass over
-    `prop_facts`, which matches a fact's base by memory resolution. Callers include `memory_reasoning.rs:724` and
+    **Fixed:** the `CMemoryLoadable` route's outer pass, which carries a
+    loadable fact across effects, read every proposition fact; it reads the
+    loadable facts filed under the base's block
+    (`memory_loadable_candidates_for_base`). Across the gate it ran 435
+    times over at most 5 facts and never proved a fact another route had
+    not; of its 304 candidates, 2 had a base in another block that memory
+    resolution might have equated, and neither matched.
+    `carried_loadability_ignores_unrelated_loadable_facts` covers it (the
+    old pass read 17, 65, 257 facts at 16, 64, 256 unrelated ones). Callers include `memory_reasoning.rs:724` and
     `contract_certification.rs:429`. Index: effect edges keyed by snapshot,
     and `memory_loadable_object_facts`. **Fixed:** the effect-summary route
     of checked load equality (`memory_provenance.rs`) scanned every

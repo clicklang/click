@@ -355,8 +355,13 @@ impl PureFactContext {
                 self.proves_memory_loadable(memory, base, bytes)
                     // Loadability survives writes: an assumed loadable fact
                     // for the same range transports across any chain of
-                    // recorded effects connecting the snapshots.
-                    || self.prop_facts.iter().any(|fact| {
+                    // recorded effects connecting the snapshots. Its
+                    // candidates are the loadable facts filed under the
+                    // base's block, not every proposition fact.
+                    || self.memory_loadable_candidates_for_base(base).any(|fact| {
+                        #[cfg(test)]
+                        crate::kernel::memory_provenance::CARRIED_LOADABLE_VISITS
+                            .with(|visits| visits.set(visits.get() + 1));
                         let Proposition::CMemoryLoadable {
                             memory: fact_memory,
                             base: fact_base,

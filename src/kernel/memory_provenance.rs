@@ -4086,6 +4086,13 @@ pub(crate) fn write_access_is_disjoint_from_load(
 
 #[cfg(test)]
 thread_local! {
+    /// The loadable facts the carried-loadability route of
+    /// `proves_atomic_without_search` examined.
+    pub(crate) static CARRIED_LOADABLE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+thread_local! {
     /// The effect facts `c_memory_load_is_directly_unchanged` examined.
     static DIRECT_UNCHANGED_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
@@ -7944,6 +7951,44 @@ mod direct_unchanged_scaling_tests {
         assert!(
             samples.iter().all(|(_, work)| *work == smallest),
             "the effect connection grew with unrelated effect facts: {samples:?}"
+        );
+    }
+
+    /// The route carrying a loadable fact across recorded effects to a later
+    /// snapshot reads the loadable facts filed under the base's block, not
+    /// every proposition fact. Across the gate it never proved a fact
+    /// another route had not, so this pins its miss: a stated fact at a
+    /// snapshot no effect connects is the one candidate it reads.
+    #[test]
+    fn carried_loadability_ignores_unrelated_loadable_facts() {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let loadable = |memory: &CMemory, base: Pointer| Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base,
+                bytes: Bitvector32Term::Constant(4),
+                wide: false,
+            };
+            // The queried snapshot holds no target object, so no other
+            // route carries the fact.
+            let stated = CMemory::new().with_block("target", 4);
+            let queried = CMemory::new();
+            let facts = (0..size)
+                .fold(PureFactContext::new(), |facts, index| {
+                    facts.assume_proposition(loadable(&stated, cell(&format!("unrelated-{index}"))))
+                })
+                .assume_proposition(loadable(&stated, cell("target")));
+            CARRIED_LOADABLE_VISITS.with(|visits| visits.set(0));
+            let carried = facts.proves_atomic_without_search(&loadable(&queried, cell("target")));
+            assert!(!carried, "no effect connects the two snapshots");
+            samples.push((size, CARRIED_LOADABLE_VISITS.with(std::cell::Cell::get)));
+        }
+        let (_, smallest) = samples[0];
+        assert!(smallest > 0, "the carried route read no fact: {samples:?}");
+        assert!(
+            samples.iter().all(|(_, visits)| *visits == smallest),
+            "carried loadability read unrelated loadable facts (size, facts read): {samples:?}"
         );
     }
 
