@@ -12341,11 +12341,6 @@ pub struct PureFactContext {
     /// The universal facts filed under each shape their conclusion takes
     /// (`UniversalConclusionKey`), so an instantiation reads the universals
     /// that can conclude its goal, not every universal.
-    /// The existential facts, filed under their bound variable's sort.
-    pub(super) existentials_by_sort: crate::persistent::PersistentMap<
-        Sort,
-        crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
-    >,
     pub(super) universals_by_conclusion: crate::persistent::PersistentMap<
         super::assumptions::UniversalConclusionKey,
         crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,

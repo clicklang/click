@@ -593,14 +593,8 @@ fn instantiate_guard(
     iterated: &CIteratedMemory,
     cell: &Bitvector32Term,
 ) -> PureFactContext {
-    let equal = ConditionTerm::Compare {
-        format: MachineIntegerType::Int32,
-        relation: CompareRelation::Equal,
-        left: Box::new(cell.clone()),
-        right: Box::new(iterated.guard().value().clone()),
-    };
     hypotheses
-        .instantiated_universal_consequents(&equal)
+        .instantiated_universal_consequents(cell, iterated.guard().value())
         .into_iter()
         .fold(hypotheses.clone(), |facts, consequent| {
             facts.assume_proposition(consequent)
