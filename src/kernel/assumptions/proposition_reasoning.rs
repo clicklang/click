@@ -290,6 +290,20 @@ impl PureFactContext {
     }
 
     pub(crate) fn proves_atomic_without_search(&self, proposition: &Proposition) -> bool {
+        self.proves_atomic_without_search_in(proposition, false)
+    }
+
+    /// [`Self::proves_atomic_without_search`] over a context that is a step's
+    /// explicit premises, such as a derivation's retained facts. There a
+    /// condition may also follow from a stated fact up to reasoned equality,
+    /// a conjunct, an implication, or a universal's instance
+    /// (`proves_condition_from_premises`): the work is the premises the step
+    /// names. An ambient context answers a condition by exact lookup only.
+    pub(crate) fn proves_atomic_from_premises(&self, proposition: &Proposition) -> bool {
+        self.proves_atomic_without_search_in(proposition, true)
+    }
+
+    fn proves_atomic_without_search_in(&self, proposition: &Proposition, premises: bool) -> bool {
         match proposition {
             Proposition::ConditionIs(condition, value) => {
                 self.decide(condition) == Some(*value)
@@ -323,7 +337,12 @@ impl PureFactContext {
                                         left, right, self,
                                     )
                         )
-                    || self.proves_condition_from_facts(condition, *value)
+                    || if premises {
+                        self.proves_condition_from_premises(condition, *value)
+                    } else {
+                        self.condition_facts.get(condition) == Some(value)
+                            || self.proves_condition_from_derived_order_facts(condition, *value)
+                    }
             }
             Proposition::Not(body) => match body.as_ref() {
                 Proposition::ConditionIs(condition, value) => {
@@ -532,7 +551,15 @@ impl PureFactContext {
                 other => into.push(other.clone()),
             }
         }
-        let alpha = self.prop_facts.scan_unindexed().any(|fact| {
+        // An alpha-equal existential shares the goal's identity key, so it
+        // is in that key's bucket of the stated-proposition index.
+        let goal = Proposition::Exists {
+            name: String::new(),
+            var,
+            sort: sort.clone(),
+            body: Box::new(body.clone()),
+        };
+        let alpha = self.stated_identity_bucket(&goal).any(|fact| {
             let Proposition::Exists {
                 var: fact_var,
                 sort: fact_sort,
@@ -761,15 +788,15 @@ impl PureFactContext {
         let le_holds = |x: &Bitvector32Term, y: &Bitvector32Term| {
             let condition = ConditionTerm::signed_less_equal(x.clone(), y.clone());
             self.decide(&condition) == Some(true)
-                || self.proves_condition_from_facts(&condition, true)
+                || self.condition_facts.get(&condition) == Some(&true)
         };
         let terms_equal = |x: &Bitvector32Term, y: &Bitvector32Term| {
             x == y
                 || self.decide(&ConditionTerm::equal(x.clone(), y.clone())) == Some(true)
-                || self.proves_condition_from_facts(
-                    &ConditionTerm::equal(x.clone(), y.clone()),
-                    true,
-                )
+                || self
+                    .condition_facts
+                    .get(&ConditionTerm::equal(x.clone(), y.clone()))
+                    == Some(&true)
                 // Antisymmetry: mutual non-strict bounds prove equality.
                 || (le_holds(x, y) && le_holds(y, x))
         };
@@ -1433,10 +1460,10 @@ impl PureFactContext {
                             }
                             _ => self.prop_facts.contains(proposition),
                         },
-                        _ => self.proves_atomic_without_search(proposition),
+                        _ => self.proves_atomic_from_premises(proposition),
                     }
                 } else {
-                    self.proves_atomic_without_search(proposition)
+                    self.proves_atomic_from_premises(proposition)
                 };
                 proved.then_some(AtomicPropositionDerivationEvidence::Legacy)
             });
@@ -2523,19 +2550,40 @@ impl PureFactContext {
         crate::kernel::api::loadable_covered_by_fact(&candidate, &instantiated)
     }
 
+    /// Whether a stated fact proves the condition: a condition fact up to
+    /// [`Self::condition_matches`], a proposition fact through
+    /// [`Self::proposition_proves_condition`] (a conjunct, an implication
+    /// whose antecedent holds, a universal's instance), or the derived order
+    /// facts. It reads every fact, so it serves the proposition search
+    /// only; fast code asks [`Self::proves_atomic_without_search`], and a
+    /// premise context [`Self::proves_atomic_from_premises`].
     pub(crate) fn proves_condition_from_facts(
         &self,
         condition: &ConditionTerm,
         value: bool,
     ) -> bool {
         self.condition_facts
-            .scan_unindexed()
+            .scan_for_search()
             .any(|(fact_condition, fact_value)| {
                 fact_value == &value && self.condition_matches(fact_condition, condition)
             })
             || self
                 .prop_facts
-                .scan_unindexed()
+                .scan_for_search()
+                .any(|proposition| self.proposition_proves_condition(proposition, condition, value))
+            || self.proves_condition_from_derived_order_facts(condition, value)
+    }
+
+    /// [`Self::proves_condition_from_facts`] over a step's explicit premises.
+    fn proves_condition_from_premises(&self, condition: &ConditionTerm, value: bool) -> bool {
+        self.condition_facts
+            .scan_explicit_input()
+            .any(|(fact_condition, fact_value)| {
+                fact_value == &value && self.condition_matches(fact_condition, condition)
+            })
+            || self
+                .prop_facts
+                .scan_explicit_input()
                 .any(|proposition| self.proposition_proves_condition(proposition, condition, value))
             || self.proves_condition_from_derived_order_facts(condition, value)
     }
@@ -3249,20 +3297,36 @@ impl PureFactContext {
         // Keep this deliberately structural and one-hop. Callers use it only
         // to move an already-certified address equality between framed memory
         // snapshots, never to synthesize a new alias relationship.
-        self.condition_facts
-            .scan_unindexed()
-            .any(|(condition, value)| {
-                if !*value {
-                    return false;
-                }
-                let ConditionTerm::PointerOffsetEqual(fact_left, fact_right) = condition else {
-                    return false;
-                };
-                self.pointer_offset_terms_snapshot_equivalent(fact_left, left)
-                    && self.pointer_offset_terms_snapshot_equivalent(fact_right, right)
-                    || self.pointer_offset_terms_snapshot_equivalent(fact_left, right)
-                        && self.pointer_offset_terms_snapshot_equivalent(fact_right, left)
-            })
+        let matches = |condition: &ConditionTerm| {
+            let ConditionTerm::PointerOffsetEqual(fact_left, fact_right) = condition else {
+                return false;
+            };
+            self.pointer_offset_terms_snapshot_equivalent(fact_left, left)
+                && self.pointer_offset_terms_snapshot_equivalent(fact_right, right)
+                || self.pointer_offset_terms_snapshot_equivalent(fact_left, right)
+                    && self.pointer_offset_terms_snapshot_equivalent(fact_right, left)
+        };
+        // A matching fact has a side snapshot-equivalent to `left`, so it is
+        // filed under `left`'s shape.
+        let indexed = self
+            .pointer_offset_equalities_by_shape
+            .get(&crate::kernel::assumptions::offset_snapshot_shape(left))
+            .into_iter()
+            .flat_map(crate::persistent::PersistentSet::iter)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .any(&matches);
+        #[cfg(debug_assertions)]
+        crate::instrumentation::uncharged_debug_check(|| {
+            let scanned = self
+                .condition_facts
+                .scan_for_upkeep()
+                .any(|(condition, value)| *value && matches(condition));
+            assert_eq!(
+                indexed, scanned,
+                "the offset-shape index disagrees with the scan for {left:?} == {right:?}"
+            );
+        });
+        indexed
     }
 
     pub(super) fn bitvector_terms_snapshot_equivalent(

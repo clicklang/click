@@ -2732,8 +2732,7 @@ fn pointer_offsets_equal_with_resolved_atoms(
         return false;
     }
     // Scaled values compare through snapshot-bridged load equality: two
-    // forms of one loaded field, or a recorded PointerOffsetEqual fact
-    // whose sides bridge to the compared values.
+    // forms of one loaded field.
     let scaled_values_bridged = |left: &Bitvector32Term, right: &Bitvector32Term| {
         left == right
             || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
@@ -2773,57 +2772,11 @@ fn pointer_offsets_equal_with_resolved_atoms(
         if left_width != right_width {
             return false;
         }
-        if scaled_values_bridged(left_value, right_value) {
-            return true;
-        }
-        // Walk the PointerOffsetEqual fact graph transitively: each edge's
-        // endpoints connect to the frontier through snapshot-bridged load
-        // equality, so a chain like right->data == left->data == data closes.
-        let edges = assumptions
-            .condition_facts
-            .scan_unindexed()
-            .filter(|(_, value)| **value)
-            .filter_map(|(condition, _)| {
-                let ConditionTerm::PointerOffsetEqual(fact_left, fact_right) = condition else {
-                    return None;
-                };
-                let (
-                    PointerOffsetTerm::Int32Scaled {
-                        value: a_value,
-                        byte_width: a_width,
-                    },
-                    PointerOffsetTerm::Int32Scaled {
-                        value: b_value,
-                        byte_width: b_width,
-                    },
-                ) = (fact_left.as_ref(), fact_right.as_ref())
-                else {
-                    return None;
-                };
-                (a_width == left_width && b_width == left_width)
-                    .then_some((a_value.as_ref().clone(), b_value.as_ref().clone()))
-            })
-            .collect::<Vec<_>>();
-        let mut frontier = vec![left_value.as_ref().clone()];
-        let mut visited = Vec::new();
-        while let Some(current) = frontier.pop() {
-            if visited.contains(&current) {
-                continue;
-            }
-            if scaled_values_bridged(&current, right_value) {
-                return true;
-            }
-            for (a_value, b_value) in &edges {
-                if scaled_values_bridged(&current, a_value) {
-                    frontier.push(b_value.clone());
-                }
-                if scaled_values_bridged(&current, b_value) {
-                    frontier.push(a_value.clone());
-                }
-            }
-            visited.push(current);
-        }
-        false
+        // A chain of stated offset equalities is not walked here: each
+        // stated one is an equality-graph edge the bridged comparison reads,
+        // and chaining them through snapshot-bridged endpoints was a search
+        // over every condition fact.
+        scaled_values_bridged(left_value, right_value)
     };
     for atom in &left_atoms {
         let Some(position) = right_atoms
