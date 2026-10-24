@@ -4924,6 +4924,7 @@ impl PureFactContext {
         self.resource_contains_facts = crate::persistent::PersistentMap::default();
         self.memory_effect_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
+        self.separation_facts = crate::persistent::PersistentSet::default();
         self.separated_address_classes = Default::default();
         self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
         self.separated_anchor_pointers = crate::persistent::PersistentMap::default();
@@ -5526,6 +5527,16 @@ impl PureFactContext {
         )
     }
 
+    /// Every separation proposition fact, in `prop_facts` order, charged
+    /// one unit each: the scan for a query the block-pair index cannot key.
+    pub(in crate::kernel) fn separation_fact_propositions(
+        &self,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.separation_facts
+            .iter()
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    }
+
     pub(in crate::kernel) fn memory_loadable_candidates_for_object(
         &self,
         pointer: &Pointer,
@@ -5684,6 +5695,14 @@ impl PureFactContext {
         self.memory_effect_facts = crate::persistent::PersistentMap::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
+        self.separation_facts = self
+            .prop_facts
+            .iter()
+            .filter(|fact| matches!(fact, Proposition::CResourceSeparate { .. }))
+            .fold(
+                crate::persistent::PersistentSet::default(),
+                |index, fact| index.with_value(fact.clone()),
+            );
         self.separated_address_classes = Default::default();
         let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
         for proposition in facts {
@@ -5873,6 +5892,11 @@ impl PureFactContext {
                     .disjunction_facts
                     .with_value(crate::kernel::clone_proposition_iteratively(&proposition));
             }
+            if matches!(proposition, Proposition::CResourceSeparate { .. }) {
+                self.separation_facts = self
+                    .separation_facts
+                    .with_value(crate::kernel::clone_proposition_iteratively(&proposition));
+            }
             self.adjust_algebraic_constructor_field_equalities(&proposition, true);
             self.adjust_algebraic_constructor_conflict(&proposition, true);
             self.adjust_algebraic_variable_constructor(&proposition, true);
@@ -5898,6 +5922,9 @@ impl PureFactContext {
             self.adjust_stated_proposition_index(proposition, false);
             if matches!(proposition, Proposition::Or(_, _)) {
                 self.disjunction_facts = self.disjunction_facts.without_value(proposition);
+            }
+            if matches!(proposition, Proposition::CResourceSeparate { .. }) {
+                self.separation_facts = self.separation_facts.without_value(proposition);
             }
             self.adjust_algebraic_constructor_field_equalities(proposition, false);
             self.adjust_algebraic_constructor_conflict(proposition, false);

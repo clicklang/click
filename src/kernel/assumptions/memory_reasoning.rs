@@ -2578,7 +2578,7 @@ impl PureFactContext {
         // one side. This gives the other side a single, directed equivalence
         // check instead of exploring both orientations of every separation
         // fact before reaching the structurally relevant certificate.
-        if self.prop_facts.iter().any(|proposition| {
+        if self.separation_fact_propositions().any(|proposition| {
             let Some((fact_left, fact_right)) = proposition.memory_separation() else {
                 return false;
             };
@@ -2594,7 +2594,7 @@ impl PureFactContext {
         }) {
             return true;
         }
-        self.prop_facts.iter().any(|proposition| {
+        self.separation_fact_propositions().any(|proposition| {
             let Some((fact_left, fact_right)) = proposition.memory_separation() else {
                 return false;
             };
@@ -3309,15 +3309,15 @@ impl PureFactContext {
         // the block-pair index and are consulted by the indexed pass below;
         // the linear pass covers only the residual facts with a non-memory
         // side, whose containment can still entail memory separation
-        // through a composite body. Any other query shape keeps the full
-        // scan: the indexed pass below does not run for it.
+        // through a composite body. Any other query shape scans every
+        // separation fact: the indexed pass below does not run for it.
         let memory_memory_query =
             matches!((left, right), (CResource::Memory(_), CResource::Memory(_)));
         let scan_facts: &dyn Fn(&dyn Fn(&Proposition) -> bool) -> bool = &|entails| {
             if memory_memory_query {
                 self.nonmemory_separation_facts.iter().any(entails)
             } else {
-                self.prop_facts.iter().any(entails)
+                self.separation_fact_propositions().any(entails)
             }
         };
         let residual_hit = crate::instrumentation::measure_operation(
@@ -4453,40 +4453,52 @@ impl PureFactContext {
             {
                 return outside;
             }
-            if let Some(proposition) = self.prop_facts.iter().find(|proposition| match proposition
-                .memory_separation()
-            {
-                Some((left_range, right_range)) => {
-                    (memory_range_shallowly_contained_with_facts(range, left_range, self)
-                        && (pointer_in_memory_range_shallow_with_facts(pointer, right_range, self)
-                            || self.pointer_directly_in_memory_range(pointer, right_range))
-                        || memory_range_shallowly_contained_with_facts(range, right_range, self)
+            if let Some(proposition) = self.separation_fact_propositions().find(|proposition| {
+                match proposition.memory_separation() {
+                    Some((left_range, right_range)) => {
+                        (memory_range_shallowly_contained_with_facts(range, left_range, self)
                             && (pointer_in_memory_range_shallow_with_facts(
+                                pointer,
+                                right_range,
+                                self,
+                            ) || self.pointer_directly_in_memory_range(pointer, right_range))
+                            || memory_range_shallowly_contained_with_facts(
+                                range,
+                                right_range,
+                                self,
+                            ) && (pointer_in_memory_range_shallow_with_facts(
                                 pointer, left_range, self,
-                            ) || self.pointer_directly_in_memory_range(pointer, left_range))
-                        || pointer_in_memory_range_shallow_with_facts(pointer, left_range, self)
-                            && memory_range_contained_for_memory_resolution(
+                            ) || self
+                                .pointer_directly_in_memory_range(pointer, left_range))
+                            || pointer_in_memory_range_shallow_with_facts(
+                                pointer, left_range, self,
+                            ) && memory_range_contained_for_memory_resolution(
                                 range,
                                 right_range,
                                 self,
                             )
-                        || pointer_in_memory_range_shallow_with_facts(pointer, right_range, self)
-                            && memory_range_contained_for_memory_resolution(
-                                range, left_range, self,
-                            )
-                        || self.pointer_directly_in_memory_range(pointer, left_range)
-                            && memory_range_contained_for_memory_resolution(
-                                range,
+                            || pointer_in_memory_range_shallow_with_facts(
+                                pointer,
                                 right_range,
                                 self,
-                            )
-                        || self.pointer_directly_in_memory_range(pointer, right_range)
-                            && memory_range_contained_for_memory_resolution(
+                            ) && memory_range_contained_for_memory_resolution(
                                 range, left_range, self,
-                            ))
-                        && !self.memory_ranges_overlap_after_base_equality(left_range, right_range)
+                            )
+                            || self.pointer_directly_in_memory_range(pointer, left_range)
+                                && memory_range_contained_for_memory_resolution(
+                                    range,
+                                    right_range,
+                                    self,
+                                )
+                            || self.pointer_directly_in_memory_range(pointer, right_range)
+                                && memory_range_contained_for_memory_resolution(
+                                    range, left_range, self,
+                                ))
+                            && !self
+                                .memory_ranges_overlap_after_base_equality(left_range, right_range)
+                    }
+                    _ => false,
                 }
-                _ => false,
             }) {
                 record_implicit_reasoning_provenance(self, proposition);
                 return true;
@@ -4771,30 +4783,20 @@ impl PureFactContext {
         {
             return true;
         }
-        if let Some(proposition) =
-            self.prop_facts
-                .iter()
-                .find(|proposition| match proposition.memory_separation() {
-                    Some((left_range, right_range)) => {
-                        (memory_range_shallowly_contained_with_facts(range, left_range, self)
+        if let Some(proposition) = self.separation_fact_propositions().find(|proposition| {
+            match proposition.memory_separation() {
+                Some((left_range, right_range)) => {
+                    (memory_range_shallowly_contained_with_facts(range, left_range, self)
+                        && pointer_in_memory_range_shallow_with_facts(pointer, right_range, self)
+                        || memory_range_shallowly_contained_with_facts(range, right_range, self)
                             && pointer_in_memory_range_shallow_with_facts(
-                                pointer,
-                                right_range,
-                                self,
-                            )
-                            || memory_range_shallowly_contained_with_facts(
-                                range,
-                                right_range,
-                                self,
-                            ) && pointer_in_memory_range_shallow_with_facts(
                                 pointer, left_range, self,
                             ))
-                            && !self
-                                .memory_ranges_overlap_after_base_equality(left_range, right_range)
-                    }
-                    _ => false,
-                })
-        {
+                        && !self.memory_ranges_overlap_after_base_equality(left_range, right_range)
+                }
+                _ => false,
+            }
+        }) {
             record_implicit_reasoning_provenance(self, proposition);
             return true;
         }

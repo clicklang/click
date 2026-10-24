@@ -473,9 +473,15 @@ four times the work at a quarter of it.
     (memory) or the parent itself, plus the blocks of the base's exact
     aliases. The separation-interval cover read every proposition fact; it
     reads the block-pair index for the two bases' blocks and their aliases,
-    and the residual non-memory list. Still listed: the other `prop_facts`
-    scans in `memory_reasoning.rs`, and all compositions at `4280` and
-    `4563` (index: `composition_members`).
+    and the residual non-memory list. The other `prop_facts` scans in
+    `memory_reasoning.rs` (range separation, pointer-outside-range, and
+    non-memory resource separation) read `separation_facts`, every
+    separation fact in `prop_facts` order, so a `find` chooses the same
+    fact. They are not keyed by block pair: across the gate, 2 of 1,329
+    range-separation hits came from a fact between other blocks, matched
+    through memory resolution, and at most 7 separation facts were held.
+    Still listed: all compositions at `4280` and `4563` (index:
+    `composition_members`).
 22. Load evaluation: the unresolved-cell scan (`eval/memory_loads.rs:1162`)
     visits every cell of the memory, charged.
 23. Every composition: `held_range_membership` (`eval/operators.rs`) and
