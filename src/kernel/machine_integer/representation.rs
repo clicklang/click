@@ -7,12 +7,14 @@
 //! operation, comparison or overflow test at a format, or for the format
 //! and operation a node spells, and never match on a width themselves.
 //!
-//! Where a format has no node the answer is `None`, and the rule is
-//! unavailable there: there are no 128-bit operators or comparisons, no
-//! unsigned or narrow overflow tests, and no 32-bit unsigned order other
-//! than the signed order of operands whose sign bit is flipped. These are
-//! the representation gaps that `design/machine-integers.md` Stages 2 and 3
-//! remove; the test matrix names each one.
+//! Conditions carry their format (`ConditionTerm::Compare` and
+//! `ConditionTerm::Overflows`), so a comparison or overflow test exists at
+//! every format. Where a format has no operator node the answer is `None`,
+//! and the rule is unavailable there: there are no 128-bit operators, and
+//! no 32-bit unsigned order other than the signed order of operands whose
+//! sign bit is flipped. These are the representation gaps that
+//! `design/machine-integers.md` Stages 2 and 3 remove; the test matrix
+//! names each one.
 
 use super::{Operation, Relation};
 use crate::kernel::{Bitvector32Term, ConditionTerm, MachineIntegerType};
@@ -145,9 +147,6 @@ pub(crate) fn comparison(
     left: Bitvector32Term,
     right: Bitvector32Term,
 ) -> Option<(ConditionTerm, bool)> {
-    if word(ty) == Word::Bits128 {
-        return None;
-    }
     let compare = match relation {
         Relation::Less => CompareRelation::LessThan,
         Relation::LessEqual => CompareRelation::LessEqual,
@@ -157,6 +156,15 @@ pub(crate) fn comparison(
         ConditionTerm::machine_compare(ty, compare, left, right),
         relation != Relation::NotEqual,
     ))
+}
+
+/// Whether an Integer comparison of exact observations of `ty` is spelled
+/// as its native comparison. Every format has the native node
+/// ([`comparison`]) and reads back from it; a 128-bit comparison keeps its
+/// Integer form, because the kernel's order reasoning (the difference
+/// graph, interval bounds) has no 128-bit nodes and decides it as Integers.
+pub(crate) fn spells_comparison_natively(ty: MachineIntegerType) -> bool {
+    word(ty) != Word::Bits128
 }
 
 /// The operands of a native comparison and the formats whose exact reading
@@ -192,6 +200,9 @@ pub(crate) fn comparison_readings(
         (Ty::Int64, false) => &[Ty::Int64],
         (Ty::Int64, true) => &[Ty::Int64, Ty::UInt64],
         (Ty::UInt64, false) => &[Ty::UInt64],
+        (Ty::Int128, false) => &[Ty::Int128],
+        (Ty::Int128, true) => &[Ty::Int128, Ty::UInt128],
+        (Ty::UInt128, false) => &[Ty::UInt128],
         _ => return None,
     };
     Some((left, right, types))
@@ -233,8 +244,18 @@ pub(crate) fn order_operand(
 }
 
 /// Whether `ty` has an overflow test for `+`, `-` and `*`
-/// ([`overflow_condition`]); a constant-time check, with no node built.
-pub(crate) fn has_overflow_test(ty: MachineIntegerType) -> bool {
+/// ([`overflow_condition`]): every format has one, the `Overflows` node.
+pub(crate) fn has_overflow_test(_ty: MachineIntegerType) -> bool {
+    true
+}
+
+/// Whether C arithmetic at `ty` can overflow its own range, so that its
+/// overflow is undefined behavior a definedness fact is filed for: the
+/// signed formats C computes at, `int32` and `int64`. Narrow operands are
+/// promoted to `int` first, 128-bit values have no arithmetic, and unsigned
+/// arithmetic wraps, which is defined (`design/machine-integers.md`,
+/// "Decisions", 2026-10-24).
+pub(crate) fn files_definedness(ty: MachineIntegerType) -> bool {
     matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::Int64)
 }
 

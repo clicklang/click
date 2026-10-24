@@ -2194,12 +2194,42 @@ impl ConditionTerm {
             (Ty::UInt64, R::LessEqual) => Self::uint64_less_equal(left, right),
             (Ty::UInt64, R::GreaterThan) => Self::uint64_greater_than(left, right),
             (Ty::UInt64, R::GreaterEqual) => Self::uint64_greater_equal(left, right),
-            (Ty::Int128 | Ty::UInt128, relation) => Self::Compare {
-                format,
-                relation,
-                left: Box::new(left),
-                right: Box::new(right),
-            },
+            // Equality reads no sign: it is filed at the signed format.
+            (Ty::Int128 | Ty::UInt128, R::Equal) => {
+                match (
+                    machine_constant_value(format, &left),
+                    machine_constant_value(format, &right),
+                ) {
+                    (Some(left), Some(right)) => Self::Constant(left == right),
+                    _ if left == right => Self::Constant(true),
+                    _ => Self::Compare {
+                        format: Ty::Int128,
+                        relation,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                }
+            }
+            (Ty::Int128 | Ty::UInt128, relation) => {
+                match (
+                    machine_constant_value(format, &left),
+                    machine_constant_value(format, &right),
+                ) {
+                    (Some(left), Some(right)) => Self::Constant(match relation {
+                        R::LessThan => left < right,
+                        R::LessEqual => left <= right,
+                        R::GreaterThan => left > right,
+                        R::GreaterEqual => left >= right,
+                        R::Equal => left == right,
+                    }),
+                    _ => Self::Compare {
+                        format,
+                        relation,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                }
+            }
         }
     }
 
@@ -2224,6 +2254,32 @@ impl ConditionTerm {
             (Ty::Int64, O::Multiply) => Self::int64_signed_multiply_overflows(left, right),
             (Ty::Int64, O::Divide) => Self::int64_signed_divide_overflows(left, right),
             (Ty::Int64, O::ShiftLeft) => Self::int64_signed_shift_left_overflows(left, right),
+            // Every other format folds constant operands by the exact
+            // result's range: an unsigned overflow is a wrap, a narrow one
+            // leaves the narrow range.
+            (format, op @ (O::Add | O::Subtract | O::Multiply)) => {
+                match (
+                    machine_constant_value(format, &left),
+                    machine_constant_value(format, &right),
+                ) {
+                    (Some(a), Some(b)) => {
+                        let exact = match op {
+                            O::Add => a + b,
+                            O::Subtract => a - b,
+                            _ => a * b,
+                        };
+                        let (minimum, maximum) =
+                            crate::kernel::machine_integer::range::range(format);
+                        Self::Constant(exact < minimum || exact > maximum)
+                    }
+                    _ => Self::Overflows {
+                        format,
+                        op,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                }
+            }
             (format, op) => Self::Overflows {
                 format,
                 op,
@@ -3224,6 +3280,27 @@ impl ConditionTerm {
 /// is a multiple of the strides' greatest common divisor, so offsets whose
 /// constants differ modulo it are distinct. `items[x].y` at `x * 8 + 4` is
 /// never the cell at `0` or `8`.
+/// The value of a constant word read at `format`, or `None` for any other
+/// term. Only constant nodes are read, so a symbolic operand costs one match.
+fn machine_constant_value(
+    format: MachineIntegerType,
+    term: &Bitvector32Term,
+) -> Option<num_bigint::BigInt> {
+    if !matches!(
+        term,
+        Bitvector32Term::Constant(_)
+            | Bitvector32Term::Int64Constant(_)
+            | Bitvector32Term::UInt64Constant(_)
+            | Bitvector32Term::MachineIntegerConstant(_)
+    ) {
+        return None;
+    }
+    match IntegerTerm::from_machine(format, term.clone())? {
+        IntegerTerm::Constant(value) => Some(value),
+        _ => None,
+    }
+}
+
 fn pointer_offsets_differ_by_residue(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> bool {
     let (Some((left_scaled, left_constant)), Some((right_scaled, right_constant))) = (
         left.int32_scaled_linear_form(),

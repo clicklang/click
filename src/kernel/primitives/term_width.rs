@@ -411,7 +411,7 @@ fn value_site(value: &CValue) -> &'static str {
 /// Where a condition's operands disagree with the width its comparison
 /// names, or with themselves.
 pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<WidthMismatch> {
-    use CarrierWidth::{Bits32, Bits64};
+    use CarrierWidth::{Bits32, Bits64, Bits128};
     use ConditionTerm as C;
     // A load equation names what a load reads: a store fact `load == v` or a
     // load variable's defining fact `x == load`. It is written with the
@@ -430,161 +430,33 @@ pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<Widt
             .and_then(|left| unify("load equation", left, term_width(right)?))
             .err();
     }
-    let (site, width, left, right) = match condition {
+    let (format, shift, left, right) = match condition {
         C::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left: l,
-            right: r,
-        }
-        | C::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left: l,
-            right: r,
-        }
-        | C::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left: l,
-            right: r,
-        }
-        | C::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left: l,
-            right: r,
-        }
-        | C::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: l,
-            right: r,
-        }
-        | C::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left: l,
-            right: r,
-        }
-        | C::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Subtract,
-            left: l,
-            right: r,
-        }
-        | C::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Multiply,
-            left: l,
-            right: r,
-        }
-        | C::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Divide,
-            left: l,
-            right: r,
-        } => ("32-bit comparison", Bits32, l, r),
+            format,
+            left,
+            right,
+            ..
+        } => (*format, false, left, right),
         C::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::ShiftLeft,
-            left: l,
-            right: r,
-        } => {
-            return term_width(r)
-                .err()
-                .or_else(|| expect("32-bit shift overflow", Bits32, l).err());
-        }
-        C::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::LessThan,
-            left: l,
-            right: r,
-        }
-        | C::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::LessEqual,
-            left: l,
-            right: r,
-        }
-        | C::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::GreaterThan,
-            left: l,
-            right: r,
-        }
-        | C::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::GreaterEqual,
-            left: l,
-            right: r,
-        }
-        | C::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::LessThan,
-            left: l,
-            right: r,
-        }
-        | C::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::LessEqual,
-            left: l,
-            right: r,
-        }
-        | C::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::GreaterThan,
-            left: l,
-            right: r,
-        }
-        | C::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::GreaterEqual,
-            left: l,
-            right: r,
-        }
-        | C::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left: l,
-            right: r,
-        }
-        | C::Overflows {
-            format: MachineIntegerType::Int64,
-            op: OverflowOperation::Add,
-            left: l,
-            right: r,
-        }
-        | C::Overflows {
-            format: MachineIntegerType::Int64,
-            op: OverflowOperation::Subtract,
-            left: l,
-            right: r,
-        }
-        | C::Overflows {
-            format: MachineIntegerType::Int64,
-            op: OverflowOperation::Multiply,
-            left: l,
-            right: r,
-        }
-        | C::Overflows {
-            format: MachineIntegerType::Int64,
-            op: OverflowOperation::Divide,
-            left: l,
-            right: r,
-        } => ("64-bit comparison", Bits64, l, r),
-        C::Overflows {
-            format: MachineIntegerType::Int64,
-            op: OverflowOperation::ShiftLeft,
-            left: l,
-            right: r,
-        } => {
-            return term_width(r)
-                .err()
-                .or_else(|| expect("64-bit shift overflow", Bits64, l).err());
-        }
+            format,
+            op,
+            left,
+            right,
+        } => (*format, *op == OverflowOperation::ShiftLeft, left, right),
         _ => return None,
     };
+    let (width, site, shift_site) = match CarrierWidth::of_bits(format.format().bits()) {
+        Bits32 => (Bits32, "32-bit comparison", "32-bit shift overflow"),
+        Bits64 => (Bits64, "64-bit comparison", "64-bit shift overflow"),
+        Bits128 => (Bits128, "128-bit comparison", "128-bit shift overflow"),
+    };
+    // A shift count may have any width; the shifted operand has the
+    // format's.
+    if shift {
+        return term_width(right)
+            .err()
+            .or_else(|| expect(shift_site, width, left).err());
+    }
     expect(site, width, left)
         .and_then(|()| expect(site, width, right))
         .err()
