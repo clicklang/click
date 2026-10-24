@@ -2571,7 +2571,7 @@ pub(in crate::kernel) fn record_load_access_width(memory: &CMemory, pointer: &Po
         .map(|(_, bytes)| *bytes);
     let declared_at_address = declared.map(|(_, bytes)| bytes);
     // A recorded width can only ever widen, and a name computed under the
-    // narrower one is stale: the epoch walk a narrow access takes crosses
+    // narrower one is stale: the version walk a narrow access takes crosses
     // stores the wider one stops at, so it names the load at an older
     // snapshot. `LOAD_VARIABLE_CACHE` is keyed by the term alone — a term
     // carries its own kind, not the widest access recorded at its address —
@@ -3604,7 +3604,7 @@ fn offset_mentions_a_memory_load(offset: &PointerOffsetTerm) -> bool {
 /// the id is the hash itself unless another load already took that slot in
 /// this session. The registry is never cleared within a session, and
 /// exhausting its capacity is a loud failure rather than a silent reset.
-/// The variable naming a `kind` load of `pointer` in `memory`. The epoch
+/// The variable naming a `kind` load of `pointer` in `memory`. The version
 /// walk that picks the snapshot it is named at is as wide as the widest
 /// access recorded at the address, and never narrower than the read.
 pub(crate) fn load_variable_for_cell(
@@ -3642,7 +3642,7 @@ pub(crate) fn load_variable_for_exact_cell(
 
 /// The variable naming a `kind` load of `pointer` in `memory`.
 ///
-/// `bytes` is the access width the epoch walk uses, and it decides how far
+/// `bytes` is the access width the version walk uses, and it decides how far
 /// back the walk may go: a store lands on this load exactly when it writes
 /// one of these bytes. It is never narrower than the read itself.
 pub(crate) fn load_variable_for_cell_with_origin(
@@ -3653,16 +3653,16 @@ pub(crate) fn load_variable_for_cell_with_origin(
     origin: &SharedCMemory,
 ) -> Variable {
     let bytes = bytes.max(kind.byte_width());
-    // Derive the variable from the cell's DAG epoch when one is recorded:
+    // Derive the variable from the cell's version when one is recorded:
     // snapshots that differ only by effects provably disjoint from this
     // cell then share the variable, so bookkeeping drift and unrelated
     // stores do not mint new identities for one load.
-    let epoch = crate::kernel::resource_tracker::last_same_point(
+    let version = crate::kernel::resource_tracker::last_same_point(
         crate::kernel::resource_tracker::Resource::Cell { pointer, bytes },
         &crate::kernel::resource_tracker::ProgramPoint::at(memory),
     )
     .map(|point| point.snapshot().clone());
-    let memory = epoch.as_ref().unwrap_or(memory);
+    let memory = version.as_ref().unwrap_or(memory);
     mint_load_variable_identity(memory, pointer, kind, origin, bytes)
 }
 
@@ -3846,7 +3846,7 @@ pub(crate) fn load_variable_for_term(
         return None;
     }
     // Naming is deterministic per term, and callers ask per fact atom per
-    // comparison; the epoch walk and canonicalization behind a cold call
+    // comparison; the version walk and canonicalization behind a cold call
     // are not free, so cache by term. Term hashing is cheap: embedded
     // snapshots hash by interned identity.
     if let Some(hit) = LOAD_VARIABLE_CACHE.with(|cache| cache.borrow().get(bits).cloned()) {
@@ -3893,7 +3893,7 @@ fn load_variable_for_term_uncached(bits: &Bitvector32Term) -> Option<(Variable, 
     // materialized cell, and the cell holds a load variable: that variable
     // already names this value, so it is this load's name too. Falling
     // through would mint a second identity for one value whenever the cell's
-    // snapshot cannot be reached by the assumption-free epoch walk — a cell
+    // snapshot cannot be reached by the assumption-free version walk — a cell
     // retained across a call havoc by a `separate` premise, for instance,
     // whose reload would otherwise lose every fact stated about it. The
     // resolution is structural and assumption-free, and the havoc's retention

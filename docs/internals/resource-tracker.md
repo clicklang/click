@@ -931,7 +931,7 @@ things make it the narrow claim it is.
   spent exactly where a typed `separate(..)` is spent — the fact-consulting
   route — and the two naming walks cannot reach it, because both are handed
   `PureFactContext::new()` (`resource_tracker::cell_source_for_naming` and the
-  block-epoch walk) and an empty composition set decides nothing. On the
+  block-version walk) and an empty composition set decides nothing. On the
   querying route the answer is re-derived per query, keyed by the context
   (`resolution_query_memo_id`), and never written onto an interned edge.
 

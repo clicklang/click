@@ -227,8 +227,8 @@ pub(crate) fn canonical_value_load_memory(
     pointer: &Pointer,
     bytes: u32,
 ) -> SharedCMemory {
-    let epoch = cell_version_point(memory, pointer, bytes);
-    canonical_projected_load_memory(epoch.as_ref().unwrap_or(memory), pointer)
+    let version = cell_version_point(memory, pointer, bytes);
+    canonical_projected_load_memory(version.as_ref().unwrap_or(memory), pointer)
 }
 
 fn canonical_projected_load_memory(source: &SharedCMemory, pointer: &Pointer) -> SharedCMemory {
@@ -2624,7 +2624,7 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
 /// facts, and the two naming walks must not read one, because their answers
 /// are embedded in a term's name and memoized across every path that reaches
 /// the same interned snapshot. Both walks pass `PureFactContext::new()`
-/// (`resource_tracker::cell_source_for_naming` and the block-epoch walk in
+/// (`resource_tracker::cell_source_for_naming` and the block-version walk in
 /// `resource_tracker::mod`), so an empty composition set is what this
 /// function is handed there and it can decide nothing; on the querying route
 /// the answer is re-derived per query and keyed by the context
@@ -4221,13 +4221,13 @@ pub(in crate::kernel) fn memories_directly_match_for_pointer_load(
     if memories_match_for_pointer_load(left, right, pointer) {
         return true;
     }
-    // Two snapshots that name the cell by one DAG epoch hold the same
+    // Two snapshots that name the cell by one version hold the same
     // cell: every hop the naming walk crossed is a write proven (without
     // assumptions) to miss the cell. This is how a fact carried unchanged
-    // through earlier steps, and so still named at its mint epoch, meets an
+    // through earlier steps, and so still named at its mint version, meets an
     // effect summary whose `before` is the later live snapshot.
     if !pointer.block.is_local_block()
-        && let (Some(left_epoch), Some(right_epoch)) = (
+        && let (Some(left_version), Some(right_version)) = (
             cell_version_point(
                 &crate::kernel::intern_c_memory(left.clone()),
                 pointer,
@@ -4245,7 +4245,7 @@ pub(in crate::kernel) fn memories_directly_match_for_pointer_load(
                 ),
             ),
         )
-        && left_epoch == right_epoch
+        && left_version == right_version
     {
         return true;
     }
@@ -5175,13 +5175,13 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                             cell_integer_for_read(memory, &canonical_pointer, kind, term)
                                 .or_else(|| cell_integer_for_read(memory, pointer, kind, term));
                         let Some(mut value) = resolved else {
-                            // Name the cell by its DAG epoch before restricting
+                            // Name the cell by its version before restricting
                             // the snapshot: the restriction is a fresh intern
-                            // with no derivation, so an epoch walk over it
+                            // with no derivation, so a version walk over it
                             // could not cross anything. Walking the original
                             // snapshot lets two loads of one unwritten cell at
                             // different points share one canonical form.
-                            let epoch = cell_version_point(
+                            let version = cell_version_point(
                                 memory,
                                 &canonical_pointer,
                                 crate::kernel::load_term_access_width(
@@ -5190,9 +5190,9 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                                     kind,
                                 ),
                             );
-                            let epoch = epoch.as_ref().unwrap_or(memory);
+                            let version = version.as_ref().unwrap_or(memory);
                             results.push(Bitvector32Term::MemoryLoad(
-                                canonical_projected_load_memory(epoch, &canonical_pointer),
+                                canonical_projected_load_memory(version, &canonical_pointer),
                                 Box::new(canonical_pointer),
                                 kind,
                             ));
@@ -5226,7 +5226,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                                 value = next;
                                 continue;
                             }
-                            let epoch = cell_version_point(
+                            let version = cell_version_point(
                                 next_memory,
                                 &canonical_pointer,
                                 crate::kernel::load_term_access_width(
@@ -5235,9 +5235,9 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                                     next_kind,
                                 ),
                             );
-                            let epoch = epoch.as_ref().unwrap_or(next_memory);
+                            let version = version.as_ref().unwrap_or(next_memory);
                             results.push(Bitvector32Term::MemoryLoad(
-                                canonical_projected_load_memory(epoch, &canonical_pointer),
+                                canonical_projected_load_memory(version, &canonical_pointer),
                                 Box::new(canonical_pointer),
                                 next_kind,
                             ));

@@ -1273,7 +1273,7 @@ fn variable_substitution_visits_each_snapshot_once_per_rewrite() {
 /// A pointer cell a snapshot holds materialized is named by the pointer it
 /// holds when that value is exactly what a typed load of the cell produces:
 /// the cell's block, offset `v * 4` for an `int32*`, and `v` registered as a
-/// load of this cell. The epoch walk cannot cross a loop head's havoc, so a
+/// load of this cell. The version walk cannot cross a loop head's havoc, so a
 /// struct field the head copied back would otherwise take a second name.
 /// The same value in another cell, or at another pointee width, is not a
 /// load of this cell and keeps the walk's name.

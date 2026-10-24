@@ -1141,9 +1141,9 @@ fn memory_only_adds_named_cells(
 /// Explains a rejected unnamed-cell addition with bounded, actionable detail.
 ///
 /// Names the held value and the recomputed canonical load, the pre-rewrite
-/// snapshot and epoch identities (compact arena ids, not
+/// snapshot and version identities (compact arena ids, not
 /// memory dumps), and whether the pointer itself embeds an inner load whose own
-/// epoch drift would cascade into this outer name. The epoch lookup is the same
+/// version drift would cascade into this outer name. The version lookup is the same
 /// assumption-free memoized walk the naming itself uses, so this adds no proof
 /// search or ambient-fact scan.
 fn describe_unnamed_cell_addition(
@@ -1155,23 +1155,23 @@ fn describe_unnamed_cell_addition(
     let held = truncate_debug(value, 240);
     let expected = truncate_debug(load, 240);
     let (base_arena, base_id) = base.arena_id();
-    let epoch_note = match crate::kernel::resource_tracker::last_same_point(
+    let version_note = match crate::kernel::resource_tracker::last_same_point(
         crate::kernel::resource_tracker::Resource::Cell {
             pointer,
             bytes: crate::kernel::resource_tracker::widest_scalar_access_bytes(),
         },
         &crate::kernel::resource_tracker::ProgramPoint::at(base),
     ) {
-        Some(epoch) => {
-            let (epoch_arena, epoch_id) = epoch.snapshot().arena_id();
-            format!("epoch snapshot ({epoch_arena},{epoch_id})")
+        Some(version) => {
+            let (version_arena, version_id) = version.snapshot().arena_id();
+            format!("version snapshot ({version_arena},{version_id})")
         }
-        None => "epoch snapshot none (unwritten at a derivation root)".to_string(),
+        None => "version snapshot none (unwritten at a derivation root)".to_string(),
     };
     let mut detail = format!(
         "added a cell at {pointer:?} that is not the canonical load of its own pointer at the pre-rewrite snapshot; \
 held {held} but canonical is {expected}; \
-pre-rewrite snapshot ({base_arena},{base_id}), {epoch_note}"
+pre-rewrite snapshot ({base_arena},{base_id}), {version_note}"
     );
     let embedded: Vec<String> = pointer
         .offset
@@ -1182,7 +1182,7 @@ pre-rewrite snapshot ({base_arena},{base_id}), {epoch_note}"
         .collect();
     if !embedded.is_empty() {
         detail.push_str(&format!(
-            "; pointer embeds {} scaled value(s) such as {} — if that inner load's epoch drifted, this outer name drifts too",
+            "; pointer embeds {} scaled value(s) such as {} — if that inner load's version drifted, this outer name drifts too",
             pointer.offset.scaled_values().len(),
             embedded.join(", "),
         ));

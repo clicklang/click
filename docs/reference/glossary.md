@@ -174,10 +174,10 @@ Conversion of a term to its canonical form. Canonicalization removes only
 representation differences that need no proof; it never consumes an ambient
 equality fact.
 
-### Cell epoch
+### Cell version
 
 The most recent memory-derivation node that might have written one cell. Loads
-from snapshots connected without a possible write share the same cell epoch and
+from snapshots connected without a possible write share the same cell version and
 therefore the same load variable.
 
 ### Certificate
@@ -559,7 +559,7 @@ the remaining load term with its load variable.
 ### Load variable
 
 A kernel variable that serves as the canonical form of an unresolved memory
-load. The loaded cell and its derivation epoch identify the variable, so reads
+load. The loaded cell and its derivation version identify the variable, so reads
 connected by steps proved not to write that cell use the same variable. A
 defining fact equates it to the load it represents. Load variables differ
 from other kernel variables only by a reserved id range, not by type.

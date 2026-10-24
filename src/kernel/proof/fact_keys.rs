@@ -610,7 +610,7 @@ pub(crate) struct QuantifiedEquivalenceKey(AlphaPropositionKey);
 pub(crate) struct PropositionIdentityKey(AlphaPropositionKey);
 
 /// Candidate selector for pointer congruence. Pointer values are holes, but
-/// their types and positions, other arguments, and memory epochs remain in
+/// their types and positions, other arguments, and memory versions remain in
 /// the selector. It is a shallow fingerprint, never evidence: the consumer checks every
 /// non-pointer argument exactly and every typed pointer through the graph.
 pub(in crate::kernel) fn pointer_predicate_selector(proposition: &Proposition) -> Option<u64> {
@@ -2501,7 +2501,7 @@ fn alpha_proposition_key<const ALLOW_LOADS: bool>(
 /// Build the shared identity used for exact stated-requirement lookup and
 /// Surface/kernel goal correspondence. Snapshot-aware load keys make a
 /// registered load and its spelled load agree only when they name the same
-/// memory epoch.
+/// memory version.
 pub(crate) fn proposition_identity_key(
     proposition: &Proposition,
 ) -> Option<PropositionIdentityKey> {
@@ -2581,7 +2581,7 @@ fn implication_chain_depth(proposition: &Proposition) -> usize {
 
 /// Compare propositions up to alpha-renaming of binders, while retaining
 /// exact semantic identity for free variables, sorts, connectives, and memory
-/// epochs. Unsupported proposition forms return `false`.
+/// versions. Unsupported proposition forms return `false`.
 pub(crate) fn propositions_are_alpha_equal(left: &Proposition, right: &Proposition) -> bool {
     if left == right {
         return true;
@@ -2951,12 +2951,12 @@ mod proposition_identity_tests {
     }
 
     #[test]
-    fn alpha_identity_keeps_memory_epochs_distinct() {
+    fn alpha_identity_keeps_memory_versions_distinct() {
         let pointer = Pointer {
-            block: "identity-epoch".into(),
+            block: "identity-version".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let left_memory = CMemory::new().with_block("identity-epoch", 8);
+        let left_memory = CMemory::new().with_block("identity-version", 8);
         let right_memory = left_memory
             .clone()
             .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(9)));
@@ -2983,7 +2983,7 @@ mod proposition_identity_tests {
     }
 
     #[test]
-    fn alpha_identity_matches_registered_and_spelled_load_at_one_epoch() {
+    fn alpha_identity_matches_registered_and_spelled_load_at_one_version() {
         let pointer = Pointer {
             block: "identity-registered-load".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -3001,7 +3001,7 @@ mod proposition_identity_tests {
             &shared_memory,
         );
         let (load_memory, load_pointer) = crate::kernel::registered_load_for_variable(&load)
-            .expect("registered load should retain its exact epoch");
+            .expect("registered load should retain its exact version");
         let spelled = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3037,7 +3037,7 @@ mod proposition_identity_tests {
         );
         let (changed_memory, changed_pointer) =
             crate::kernel::registered_load_for_variable(&changed_load)
-                .expect("changed registered load should retain its epoch");
+                .expect("changed registered load should retain its version");
         let changed_spelled = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -4009,7 +4009,7 @@ mod snapshot_alpha_tests {
         // The load registry keeps the provenance-projected snapshot used by
         // the minted variable.  Use those exact identities for the explicit
         // forms below; the original `memory` may project to a different DAG
-        // epoch even though it names the same source cell.
+        // version even though it names the same source cell.
         let (first_memory, first_registered_pointer) =
             crate::kernel::registered_load_for_variable(&first_load)
                 .expect("first load should have a registry entry");

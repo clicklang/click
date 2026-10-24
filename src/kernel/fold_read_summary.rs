@@ -29,7 +29,7 @@
 //!
 //! **Why this is sound.** The value of `f(array-ref(m, p), args)` is the fold
 //! body evaluated with its reads at `m` (an `unfold` states it at a state whose
-//! block epoch is `m`). Definition checking guarantees the body reads memory
+//! block version is `m`). Definition checking guarantees the body reads memory
 //! only as its typed cell `p + width*k` for the fold item `k`, and the fold
 //! visits exactly `start <= k < end`, so the value is a function of the
 //! arguments and of those cells' contents alone (finite fold induction: equal

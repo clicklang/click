@@ -1740,7 +1740,7 @@ fn equality_aware_pointer_fact_queries_ignore_unrelated_facts_and_old_snapshots(
                 Pointer::symbolic_function(Variable(123_000 + index)),
                 CState::new(),
             ));
-            // Same predicate and pointer, but different memory epochs must
+            // Same predicate and pointer, but different memory versions must
             // not turn a selected query into a scan of snapshot history.
             context = context.assume_proposition(fact(
                 target.clone(),

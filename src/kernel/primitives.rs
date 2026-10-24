@@ -11944,7 +11944,7 @@ pub(crate) struct IndexedSignedOrderBoundEvidence {
 }
 
 /// Evidence that two load variables name one cell because their
-/// registered origins have the same memory epoch and block and congruent
+/// registered origins have the same memory version and block and congruent
 /// offsets. The original variables remain distinct context-free names.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LoadAddressCongruenceEvidence {
@@ -12508,7 +12508,7 @@ pub struct PureFactContext {
     /// only a search path, not the whole set.
     pub(super) prop_facts: super::fact_collections::FactSet<Proposition>,
     /// Alpha/load identity index for propositions that may be stated as a
-    /// call requirement.  The key retains memory epochs and canonicalizes
+    /// call requirement.  The key retains memory versions and canonicalizes
     /// only binders; the persistent buckets keep updates local to one key.
     /// A context built in bulk from a fact list defers the keys until the
     /// index is first asked for (see `StatedPropositionIndex`).

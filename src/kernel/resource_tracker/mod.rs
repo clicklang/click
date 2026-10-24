@@ -858,8 +858,8 @@ fn recorded_steps_between(from: &ProgramPoint, to: &ProgramPoint) -> usize {
 /// The tracker's memo tables, cleared with the other per-verification
 /// canonical-form caches (`VerificationSession`).
 pub(crate) fn clear_version_memos() {
-    CELL_EPOCH_MEMO.with(|memo| memo.borrow_mut().clear());
-    BLOCK_EPOCH_MEMO.with(|memo| memo.borrow_mut().clear());
+    CELL_VERSION_MEMO.with(|memo| memo.borrow_mut().clear());
+    BLOCK_VERSION_MEMO.with(|memo| memo.borrow_mut().clear());
     NAMING_CONTEXT.with(|context| context.borrow_mut().take());
 }
 
@@ -907,10 +907,10 @@ thread_local! {
 /// of [`cell_last_same_point`], which is why a plain `a[k] == 5` survives the
 /// same step today.
 ///
-/// **What the epoch must guarantee.** The function is opaque, so it may read
+/// **What the version must guarantee.** The function is opaque, so it may read
 /// any cell reachable through `p`, and an `unfold` states its defining
 /// equation with the fold lowered at the *live* state while the application
-/// keeps this argument. The epoch is therefore only sound when `memory` and
+/// keeps this argument. The version is therefore only sound when `memory` and
 /// the returned snapshot agree on everything the body can see through `p`:
 /// the contents of every cell of `block`, the union overlays in `block`, the
 /// block's own extent and liveness, and the heap status that decides whether
@@ -947,17 +947,17 @@ thread_local! {
 /// a subject this walk cannot separate from anything simply never crosses.
 ///
 /// The walk is assumption-free and terminates: snapshot ids strictly decrease
-/// along `base`. It always reports an epoch, because a subject it can separate
+/// along `base`. It always reports a version, because a subject it can separate
 /// from nothing crosses nothing and so answers `memory` itself.
 fn block_last_same_point(memory: &SharedCMemory, block: &PointerBlock) -> SharedCMemory {
     let recorded = |key: &(crate::kernel::SharedCMemory, PointerBlock)| {
-        BLOCK_EPOCH_MEMO.with(|memo| memo.borrow().get(key).cloned())
+        BLOCK_VERSION_MEMO.with(|memo| memo.borrow().get(key).cloned())
     };
     let key = (memory.clone(), block.clone());
     if let Some(hit) = recorded(&key) {
         return hit;
     }
-    // Every snapshot on the way to the epoch has the same epoch, so each one
+    // Every snapshot on the way to the version has the same version, so each one
     // is recorded when the walk ends. Without that, a proof that uses one
     // array fact after each of N steps walks the whole chain N times and
     // costs N^2 hops; with it, a walk from a new snapshot meets a recorded
@@ -965,10 +965,10 @@ fn block_last_same_point(memory: &SharedCMemory, block: &PointerBlock) -> Shared
     // `an_array_fact_carried_across_local_stores_scales_linearly` is the
     // regression that tells those apart.
     let mut path = Vec::new();
-    let epoch = crate::instrumentation::measure_operation(
+    let version = crate::instrumentation::measure_operation(
         "kernel",
         "canonical form",
-        "array-ref block epoch walk",
+        "array-ref block version walk",
         || {
             // A block's answer is shared across proof paths, so this walk
             // offers the rule nothing to spend; the `Resource::Block` arm
@@ -1005,21 +1005,21 @@ fn block_last_same_point(memory: &SharedCMemory, block: &PointerBlock) -> Shared
             }
         },
     );
-    BLOCK_EPOCH_MEMO.with(|memo| {
+    BLOCK_VERSION_MEMO.with(|memo| {
         let mut memo = memo.borrow_mut();
         if memo.len().saturating_add(path.len()) >= 100_000 {
             memo.clear();
         }
         for node in path {
-            memo.insert((node, block.clone()), epoch.clone());
+            memo.insert((node, block.clone()), version.clone());
         }
-        memo.insert(key, epoch.clone());
+        memo.insert(key, version.clone());
     });
-    epoch
+    version
 }
 
 thread_local! {
-    static BLOCK_EPOCH_MEMO: std::cell::RefCell<
+    static BLOCK_VERSION_MEMO: std::cell::RefCell<
         std::collections::HashMap<
             (crate::kernel::SharedCMemory, PointerBlock),
             crate::kernel::SharedCMemory,
@@ -1028,8 +1028,8 @@ thread_local! {
 }
 
 #[cfg(test)]
-pub(crate) fn block_epoch_memo_len() -> usize {
-    BLOCK_EPOCH_MEMO.with(|memo| memo.borrow().len())
+pub(crate) fn block_version_memo_len() -> usize {
+    BLOCK_VERSION_MEMO.with(|memo| memo.borrow().len())
 }
 
 /// The point one cell's load variable is named by: the snapshot at which the
@@ -1051,62 +1051,68 @@ fn cell_last_same_point(
     // same unchanged observations separately for every address.
     let memory = memory.unchanged_bytes_source();
     let key = (memory.clone(), pointer.clone(), bytes);
-    if let Some(hit) = CELL_EPOCH_MEMO.with(|memo| memo.borrow().get(&key).cloned()) {
+    if let Some(hit) = CELL_VERSION_MEMO.with(|memo| memo.borrow().get(&key).cloned()) {
         return hit;
     }
     // Naming needs only the endpoint, not a retained path. Reuse a cached
     // prefix and memoize each newly visited node, so the next statement pays
     // for its own memory delta rather than the entire execution history.
-    crate::instrumentation::measure_operation("kernel", "canonical form", "cell epoch walk", || {
-        with_extended_dag_bridging(|| {
-            let assumptions = naming_context();
-            let evidence = step_effect::Evidence {
-                assumptions: &assumptions,
-                cross_loop_havoc: false,
-            };
-            let mut current = memory.clone();
-            let mut visited = Vec::new();
-            let result = loop {
-                let current_key = (current.clone(), pointer.clone(), bytes);
-                if let Some(hit) =
-                    CELL_EPOCH_MEMO.with(|memo| memo.borrow().get(&current_key).cloned())
-                {
-                    break hit;
-                }
-                crate::instrumentation::record_deterministic_work(1);
-                visited.push(current_key);
-                let Some(_lookup) = cell_source::CellLookupGuard::enter(&current, pointer) else {
-                    break None;
+    crate::instrumentation::measure_operation(
+        "kernel",
+        "canonical form",
+        "cell version walk",
+        || {
+            with_extended_dag_bridging(|| {
+                let assumptions = naming_context();
+                let evidence = step_effect::Evidence {
+                    assumptions: &assumptions,
+                    cross_loop_havoc: false,
                 };
-                let Some(derivation) = current.derivation() else {
-                    break Some(current);
+                let mut current = memory.clone();
+                let mut visited = Vec::new();
+                let result = loop {
+                    let current_key = (current.clone(), pointer.clone(), bytes);
+                    if let Some(hit) =
+                        CELL_VERSION_MEMO.with(|memo| memo.borrow().get(&current_key).cloned())
+                    {
+                        break hit;
+                    }
+                    crate::instrumentation::record_deterministic_work(1);
+                    visited.push(current_key);
+                    let Some(_lookup) = cell_source::CellLookupGuard::enter(&current, pointer)
+                    else {
+                        break None;
+                    };
+                    let Some(derivation) = current.derivation() else {
+                        break Some(current);
+                    };
+                    match step_effect::affects(
+                        &derivation,
+                        &current,
+                        Resource::Cell { pointer, bytes },
+                        &evidence,
+                    ) {
+                        step_effect::StepEffect::Separate(step_effect::Separation::Cell(_)) => {
+                            current = derivation.base().unchanged_bytes_source()
+                        }
+                        _ => break Some(current),
+                    }
                 };
-                match step_effect::affects(
-                    &derivation,
-                    &current,
-                    Resource::Cell { pointer, bytes },
-                    &evidence,
-                ) {
-                    step_effect::StepEffect::Separate(step_effect::Separation::Cell(_)) => {
-                        current = derivation.base().unchanged_bytes_source()
+                CELL_VERSION_MEMO.with(|memo| {
+                    let mut memo = memo.borrow_mut();
+                    if memo.len() >= 100_000 {
+                        memo.clear();
                     }
-                    _ => break Some(current),
-                }
-            };
-            CELL_EPOCH_MEMO.with(|memo| {
-                let mut memo = memo.borrow_mut();
-                if memo.len() >= 100_000 {
-                    memo.clear();
-                }
-                if result.is_some() {
-                    for key in visited {
-                        memo.insert(key, result.clone());
+                    if result.is_some() {
+                        for key in visited {
+                            memo.insert(key, result.clone());
+                        }
                     }
-                }
-            });
-            result
-        })
-    })
+                });
+                result
+            })
+        },
+    )
 }
 
 /// The cell walk exactly as naming runs it: no ambient facts, and loop havoc
@@ -1183,7 +1189,7 @@ pub(crate) fn cell_value_on_path(
 }
 
 thread_local! {
-    static CELL_EPOCH_MEMO: std::cell::RefCell<
+    static CELL_VERSION_MEMO: std::cell::RefCell<
         std::collections::HashMap<
             (crate::kernel::SharedCMemory, Pointer, u32),
             Option<crate::kernel::SharedCMemory>,

@@ -119,7 +119,7 @@ Step 3 would connect checked support to application construction and
 statement effects, so an unchanged prefix value is reused without a written
 `transport`. It must not make pure term comparison search for frame proofs,
 and must not put context-dependent results into a global assumption-free term
-cache. It needs reusable range epochs, or equivalent persistent effect
+cache. It needs reusable range versions, or equivalent persistent effect
 summaries, alongside the current whole-block array naming, validated by the
 repeated-store scaling test before it is accepted; an automatic path that
 rescans the memory history per application is not acceptable. Do not add a
@@ -142,7 +142,7 @@ nested folds, and recursion each need separate evidence from real proofs.
   forms), `mdtests/sweep_maintains_a_zero_unmarked_count.md`,
   `mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md`, and the `mdtests/array_fact_does_not_survive_*.md` attacks,
   which state a fact reading a cell the step may write and are refused by
-  both the whole-block epoch and the fold read frame.
+  both the whole-block version and the fold read frame.
 
 Work follows [Verification efficiency](verification-efficiency.md): summary
 checking is linear in the selected body, instantiation is proportional to its

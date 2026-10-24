@@ -118,7 +118,7 @@ impl PropositionDerivation {
     }
 
     /// Return the exact equality paths used to establish that two registered
-    /// load variables address one cell in one memory epoch.
+    /// load variables address one cell in one memory version.
     pub fn load_address_congruence_paths(&self) -> Option<Vec<&[BitvectorEqualityDerivationStep]>> {
         let PropositionDerivationRule::ContextualAtomic {
             evidence: AtomicPropositionDerivationEvidence::LoadAddressCongruence(evidence),

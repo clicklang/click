@@ -171,8 +171,8 @@ their histories; equality also checks their exact arena identities.
 
 A load's name is not usually this snapshot's hash, because
 `load_variable_for_cell_with_origin` first asks the resource tracker for the
-cell's epoch — the last program point at which this cell holds the same value
-— and names the load there. A cell whose epoch the tracker can reach keeps the
+cell's version — the last program point at which this cell holds the same value
+— and names the load there. A cell whose version the tracker can reach keeps the
 name it had; the mark decides the name only where the walk stops. It decides
 the *history* everywhere, which is the point.
 

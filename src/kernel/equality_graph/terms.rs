@@ -1737,7 +1737,7 @@ impl TermClasses {
 
     fn intern_int32(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
         // This interner runs under the graph mutex. Memory canonicalization
-        // can re-enter this graph through a cell-epoch walk; callers perform
+        // can re-enter this graph through a cell-version walk; callers perform
         // it before locking, while raw reads here retain their own snapshot.
         self.intern_machine(term, false)
     }
