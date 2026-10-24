@@ -147,9 +147,19 @@ fn guard_cell_value(
     index: &Bitvector32Term,
     assumptions: &PureFactContext,
 ) -> Result<Bitvector32Term, String> {
+    // A guard cell holding a value is that value (the read-over-write
+    // authority); only an unknown cell is read as a named load.
+    let cell = iterated.guard_cell(index);
+    if let Some(CValue::Int32(value)) = state
+        .memory()
+        .known_value(&cell)
+        .and_then(|stored| iterated.guard().cell_type.read_cell(&stored))
+    {
+        return Ok(value);
+    }
     let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
         state.memory(),
-        iterated.guard_cell(index),
+        cell,
         iterated.guard().cell_type,
         Vec::new().into(),
         Vec::new(),

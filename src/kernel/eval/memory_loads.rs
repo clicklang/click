@@ -285,47 +285,54 @@ fn evaluate_logical_memory_load_paths_unbridged(
         return paths;
     }
     let mut facts = facts;
+    // A read of an integer cell is the read at its version, whatever the
+    // cell holds: the store's fact and the read-over-write authority
+    // (`read_over_write_value`) relate it to the stored value.
+    let named = logical_read_names_its_version(value_type);
     let value = memory
         .known_union_value(&pointer, value_type)
-        .filter(|value| value_type.accepts(value))
+        .filter(|value| !named && value_type.accepts(value))
         .or_else(|| {
-            memory.known_value(&pointer).and_then(|stored| {
-                let complete_pointer = matches!(&stored, CValue::Pointer(_))
-                    || matches!(&stored, CValue::Int32(Bitvector32Term::Variable(variable))
+            memory
+                .known_value(&pointer)
+                .filter(|_| !named)
+                .and_then(|stored| {
+                    let complete_pointer = matches!(&stored, CValue::Pointer(_))
+                        || matches!(&stored, CValue::Int32(Bitvector32Term::Variable(variable))
                         if registered_load_kind_for_variable(variable) == Some(LoadKind::Bits32)
                             && registered_load_bytes_for_variable(variable)
                                 == Some(crate::kernel::C_POINTER_BYTE_WIDTH));
-                canonicalized_pointer_value_from_int_cell(
-                    memory,
-                    &pointer,
-                    &stored,
-                    value_type,
-                    &mut facts,
-                    assumptions,
-                    None,
-                    LoadPurpose::Logical,
-                )
-                .or_else(|| value_type.read_cell(&stored))
-                .inspect(|value| {
-                    if let CValue::Pointer(value) = value {
-                        record_pointer_read_observation(value.pointer(), memory, &pointer);
-                        let current = Pointer::loaded_value(
-                            &crate::kernel::intern_c_memory_ref(memory),
-                            &pointer,
-                        );
-                        if complete_pointer {
-                            // The cached value was selected under this path's
-                            // premises. Carry its current-cell equation with
-                            // the result, rather than treating a global read
-                            // observation as evidence in another context.
-                            facts.push(ExecutionPureFact::logical_read_equation(
-                                value.clone(),
-                                current,
-                            ));
+                    canonicalized_pointer_value_from_int_cell(
+                        memory,
+                        &pointer,
+                        &stored,
+                        value_type,
+                        &mut facts,
+                        assumptions,
+                        None,
+                        LoadPurpose::Logical,
+                    )
+                    .or_else(|| value_type.read_cell(&stored))
+                    .inspect(|value| {
+                        if let CValue::Pointer(value) = value {
+                            record_pointer_read_observation(value.pointer(), memory, &pointer);
+                            let current = Pointer::loaded_value(
+                                &crate::kernel::intern_c_memory_ref(memory),
+                                &pointer,
+                            );
+                            if complete_pointer {
+                                // The cached value was selected under this path's
+                                // premises. Carry its current-cell equation with
+                                // the result, rather than treating a global read
+                                // observation as evidence in another context.
+                                facts.push(ExecutionPureFact::logical_read_equation(
+                                    value.clone(),
+                                    current,
+                                ));
+                            }
                         }
-                    }
+                    })
                 })
-            })
         })
         .or_else(|| {
             canonicalized_symbolic_load_value_with_identity(
@@ -347,6 +354,25 @@ fn evaluate_logical_memory_load_paths_unbridged(
             obligations: obligations.clone(),
         })
         .collect()
+}
+
+/// Whether a logical read of a `value_type` cell lowers to the read at the
+/// cell's version rather than to a value the cell holds
+/// (`docs/internals/spellability.md`). Pointer and other cells still read
+/// their stored value.
+fn logical_read_names_its_version(value_type: CType) -> bool {
+    matches!(
+        value_type,
+        CType::Bool
+            | CType::Int8
+            | CType::UInt8
+            | CType::Int16
+            | CType::UInt16
+            | CType::Int32
+            | CType::UInt32
+            | CType::Int64
+            | CType::UInt64
+    )
 }
 
 /// Name the selected caller read with the existing scalar normalizer.
@@ -794,7 +820,9 @@ fn evaluate_c_memory_load_case(
     // An exact materialized cell is already the authoritative value for this
     // non-union pointer. Avoid proving every other symbolic cell distinct
     // before the direct map lookup.
-    if let Some(value) = memory.known_value(&pointer) {
+    if let Some(value) = memory.known_value(&pointer).filter(|_| {
+        !(purpose == LoadPurpose::Logical && logical_read_names_its_version(value_type))
+    }) {
         if let Some(value) = canonicalized_pointer_value_from_int_cell(
             memory,
             &pointer,
@@ -2275,6 +2303,68 @@ pub(crate) fn clear_load_variable_registry() {
 pub(crate) fn begin_load_origin_epoch() {
     LOAD_ORIGIN_EPOCH.with(|epoch| epoch.set(epoch.get() + 1));
     clear_load_canonicalization_caches();
+}
+
+/// The read-over-write authority: the value a load variable's read
+/// returns when the snapshot it reads records the cell's value at exactly
+/// its address. The variable names the read at its version, so this holds
+/// at every point; it depends on the memory, never on facts.
+pub(crate) fn read_over_write_value(term: &Bitvector32Term) -> Option<Bitvector32Term> {
+    let Bitvector32Term::Variable(variable) = term else {
+        return None;
+    };
+    let Some(Bitvector32Term::MemoryLoad(memory, pointer, kind)) =
+        registered_load_term_for_variable(variable)
+    else {
+        return None;
+    };
+    let stored = memory.known_value(&pointer)?;
+    let read = kind.read_cell(&stored)?;
+    let value = crate::kernel::spec::c_value_bitvector_term(&read)?;
+    (value != *term).then_some(value)
+}
+
+/// `proposition` with each load variable that [`read_over_write_value`]
+/// resolves replaced by its value, or `None` when none does.
+pub(crate) fn read_over_write_resolved(proposition: &Proposition) -> Option<Proposition> {
+    // Memory snapshots stay opaque: only the proposition's own terms are
+    // visited, never the cells of a snapshot a read names.
+    let mut collector =
+        crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::uncharged();
+    collector.collect(proposition);
+    let mut variables = std::collections::BTreeSet::new();
+    collector.extend_into(&mut variables);
+    let mut resolved = proposition.clone();
+    for variable in variables {
+        let read = Bitvector32Term::Variable(variable);
+        let Some(value) = read_over_write_value(&read) else {
+            continue;
+        };
+        let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&read, &value);
+        let rewritten = rewrite.proposition(&resolved);
+        if rewrite.refusal().is_none() {
+            resolved = rewritten;
+        }
+    }
+    (&resolved != proposition).then_some(resolved)
+}
+
+/// `value` with its term read through the read-over-write authority: what a
+/// test compares a logical read with, now that the read names its version.
+#[cfg(test)]
+pub(crate) fn read_over_write_c_value(value: &CValue) -> CValue {
+    let resolve = |term: &Bitvector32Term| read_over_write_value(term).unwrap_or(term.clone());
+    match value {
+        CValue::Int8(term) => CValue::Int8(resolve(term)),
+        CValue::Int16(term) => CValue::Int16(resolve(term)),
+        CValue::Int32(term) => CValue::Int32(resolve(term)),
+        CValue::UInt8(term) => CValue::UInt8(resolve(term)),
+        CValue::UInt16(term) => CValue::UInt16(resolve(term)),
+        CValue::UInt32(term) => CValue::UInt32(resolve(term)),
+        CValue::Int64(term) => CValue::Int64(resolve(term)),
+        CValue::UInt64(term) => CValue::UInt64(resolve(term)),
+        value => value.clone(),
+    }
 }
 
 /// The load represented by a load variable minted on this thread.
@@ -4843,7 +4933,10 @@ mod tests {
             &PureFactContext::new(),
         );
         assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].outcome, CExpressionOutcome::Value(expected));
+        let CExpressionOutcome::Value(value) = &paths[0].outcome else {
+            panic!("a logical read has a value: {:?}", paths[0].outcome);
+        };
+        assert_eq!(read_over_write_c_value(value), expected);
     }
 
     #[test]

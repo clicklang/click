@@ -674,7 +674,11 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
         let CExpressionOutcome::Value(value) = &paths[0].outcome else {
             panic!("logical scalar read")
         };
-        CExpressionOutcome::Value(value.numeric_value().clone())
+        // A read of a stored cell is compared through the read-over-write
+        // authority: it names its version, not the stored value.
+        CExpressionOutcome::Value(crate::kernel::eval::read_over_write_c_value(
+            value.numeric_value(),
+        ))
     };
     // The read keeps its own term (lowering is fact-stable); the alias makes
     // it equal to the stored value in the context's equality graph.

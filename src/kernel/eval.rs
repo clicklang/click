@@ -119,6 +119,9 @@ pub(crate) use memory_loads::{
     loaded_pointer_read_heap_identities, loaded_pointer_read_predates_block, pointer_load_identity,
     record_pointer_load_source, registered_pointer_load, typed_pointer_read_variable,
 };
+pub(crate) use memory_loads::{read_over_write_resolved, read_over_write_value};
+#[cfg(test)]
+pub(crate) use memory_loads::read_over_write_c_value;
 pub(crate) use memory_loads::{
     registered_load_kind_for_variable, registered_load_origin_term_for_variable,
     registered_load_term_for_variable,

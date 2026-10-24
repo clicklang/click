@@ -45,10 +45,16 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
             )
             .unwrap()
         };
+        // The read names its version through a load variable whose naming is
+        // cached by term; warm it so each size measures the same lookup.
+        evaluate(&projection);
         let (values, work) =
             crate::instrumentation::measure_deterministic_work(|| evaluate(&projection));
         assert_eq!(values.len(), 1);
-        assert_eq!(values[0].value, int32(7));
+        assert_eq!(
+            crate::kernel::eval::read_over_write_c_value(&values[0].value),
+            int32(7)
+        );
         assert!(values[0].obligations.is_empty());
         samples.push(work);
         let ordinary = SpecExpression::MemoryLoad {

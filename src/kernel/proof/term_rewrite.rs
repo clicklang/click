@@ -1084,6 +1084,15 @@ impl IntegerSubstitutionVariableCollector {
         }
     }
 
+    /// A collector that records no deterministic work: for a lookup whose
+    /// visit is bounded by the queried proposition itself (memory snapshots
+    /// stay opaque), run beside a check that already charges for it.
+    pub(crate) fn uncharged() -> Self {
+        Self {
+            carriers: CarrierVariables::default(),
+        }
+    }
+
     pub(crate) fn collect(&mut self, proposition: &Proposition) {
         if !self.carriers.exhausted() {
             collect_integer_substitution_variables_with_carriers(proposition, &mut self.carriers);

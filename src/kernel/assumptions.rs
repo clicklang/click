@@ -6707,6 +6707,18 @@ impl PureFactContext {
         if solve_builtin_prop(proposition) {
             return true;
         }
+        // The read-over-write authority: a read of a stored cell is the
+        // value stored there (`eval::read_over_write_value`). Consulted only
+        // when the proposition does not hold as written.
+        self.proves_exact_unresolved(proposition)
+            || crate::kernel::eval::read_over_write_resolved(proposition)
+                .is_some_and(|resolved| self.proves_exact_unresolved(&resolved))
+    }
+
+    fn proves_exact_unresolved(&self, proposition: &Proposition) -> bool {
+        if solve_builtin_prop(proposition) {
+            return true;
+        }
         // An exact full-pointer premise directly supplies its numeric
         // equality. Retain the actual source premise for proof reconstruction; this
         // projection never runs in the reverse direction.

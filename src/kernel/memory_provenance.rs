@@ -5785,46 +5785,72 @@ pub(crate) fn certified_store_equations(
 ) -> Vec<Proposition> {
     facts
         .fact_iter()
-        .filter_map(|fact| {
-            let store = fact.certified_store_data()?;
-            let value = match store.value.numeric_value() {
-                CValue::PointerInteger(_) => unreachable!("numeric projection"),
-                CValue::Int8(term) => term.clone(),
-                CValue::Bool(term)
-                | CValue::Int16(term)
-                | CValue::Int32(term)
-                | CValue::UInt8(term)
-                | CValue::UInt16(term)
-                | CValue::UInt32(term)
-                | CValue::Int64(term)
-                | CValue::UInt64(term)
-                | CValue::Int128(term)
-                | CValue::UInt128(term) => term.clone(),
-                CValue::Void
-                | CValue::Pointer(_)
-                | CValue::Parameter(_)
-                | CValue::Float32(_)
-                | CValue::Float64(_) => {
-                    return None;
-                }
-            };
-            // What the store wrote is the read of its own kind there.
-            let kind = LoadKind::of_value(&store.value)?;
-            Some(Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::memory_read(
-                        crate::kernel::intern_c_memory(store.after.clone()),
-                        store.pointer.clone(),
-                        kind,
-                    )),
-                    right: Box::new(value),
-                },
-                true,
-            ))
-        })
+        .filter_map(|fact| certified_store_equation(fact.certified_store_data()?))
         .collect()
+}
+
+/// The condition fact one certified store proves: the read of the stored
+/// cell at the store's version is the stored value.
+pub(in crate::kernel) fn certified_store_equation(
+    store: &CertifiedMemoryStore,
+) -> Option<Proposition> {
+    let value = match store.value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
+        CValue::Int8(term) => term.clone(),
+        CValue::Bool(term)
+        | CValue::Int16(term)
+        | CValue::Int32(term)
+        | CValue::UInt8(term)
+        | CValue::UInt16(term)
+        | CValue::UInt32(term)
+        | CValue::Int64(term)
+        | CValue::UInt64(term)
+        | CValue::Int128(term)
+        | CValue::UInt128(term) => term.clone(),
+        CValue::Void
+        | CValue::Pointer(_)
+        | CValue::Parameter(_)
+        | CValue::Float32(_)
+        | CValue::Float64(_) => {
+            return None;
+        }
+    };
+    // What the store wrote is the read of its own kind there.
+    let kind = LoadKind::of_value(&store.value)?;
+    let read = Bitvector32Term::memory_read(
+        crate::kernel::intern_c_memory(store.after.clone()),
+        store.pointer.clone(),
+        kind,
+    );
+    // The read is named as a logical read of the cell names it, by
+    // its load variable, so the fact is the one `a[i] == v` lowers to.
+    if let Some((variable, _)) = crate::kernel::load_variable_for_term(&read) {
+        let named = Bitvector32Term::Variable(variable);
+        let equal = match kind {
+            LoadKind::Bits64 => ConditionTerm::int64_equal(named, value),
+            LoadKind::Int8
+            | LoadKind::UInt8
+            | LoadKind::Int16
+            | LoadKind::UInt16
+            | LoadKind::Bits32 => ConditionTerm::equal(named, value),
+            _ => ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(read),
+                right: Box::new(value),
+            },
+        };
+        return Some(Proposition::ConditionIs(equal, true));
+    }
+    Some(Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(read),
+            right: Box::new(value),
+        },
+        true,
+    ))
 }
 
 pub(crate) fn certified_store_loadability_facts(
