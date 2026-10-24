@@ -1445,12 +1445,27 @@ fn clear_bounded_uint64_tag(
     assumptions: &PureFactContext,
 ) -> Bitvector32Term {
     let value = Bitvector32Term::uint64_bitwise_and(left, right);
-    if let Bitvector32Term::UInt64BitwiseAnd(inner, mask) = &value
+    if let Bitvector32Term::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::BitwiseAnd,
+        left: inner,
+        right: mask,
+    } = &value
         && let Some(mask) = mask.uint64_as_const()
     {
         let (a, b, addition) = match inner.as_ref() {
-            Bitvector32Term::UInt64BitwiseOr(a, b) => (a, b, false),
-            Bitvector32Term::UInt64Add(a, b) => (a, b, true),
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::BitwiseOr,
+                left: a,
+                right: b,
+            } => (a, b, false),
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: a,
+                right: b,
+            } => (a, b, true),
             _ => return value,
         };
         for (word, tag) in [(a, b), (b, a)] {

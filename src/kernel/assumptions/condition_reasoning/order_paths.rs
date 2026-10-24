@@ -1456,7 +1456,13 @@ impl PureFactContext {
         } else {
             return None;
         };
-        let Bitvector32Term::UInt64BitwiseAnd(first, second) = masked else {
+        let Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::BitwiseAnd,
+            left: first,
+            right: second,
+        } = masked
+        else {
             return None;
         };
         let (value, mask) = match (first.uint64_as_const(), second.uint64_as_const()) {
@@ -1960,7 +1966,12 @@ impl PureFactContext {
         // `x - c` for a constant `c` fits where `x` does and the
         // difference does not wrap, `c <= x`. Both are 64-bit facts about
         // `x` itself.
-        if let Bitvector32Term::UInt64Subtract(minuend, subtrahend) = term
+        if let Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Subtract,
+            left: minuend,
+            right: subtrahend,
+        } = term
             && subtrahend.uint64_as_const().is_some()
         {
             return self.uint64_index_fits_int32(minuend)

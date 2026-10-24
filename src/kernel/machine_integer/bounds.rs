@@ -100,6 +100,7 @@ pub(crate) fn operation_bound(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::MachineBinaryOp;
     use crate::kernel::{MachineIntegerType, Variable};
 
     fn machine(ty: MachineIntegerType, value: Bitvector32Term) -> SharedMachineIntegerTerm {
@@ -158,10 +159,12 @@ mod tests {
                         Box::new(word.clone()),
                         Box::new(divisor.clone()),
                     ),
-                    _ => Bitvector32Term::Int64Remainder(
-                        Box::new(word.clone()),
-                        Box::new(divisor.clone()),
-                    ),
+                    _ => Bitvector32Term::Binary {
+                        format: MachineIntegerType::Int64,
+                        op: MachineBinaryOp::Remainder,
+                        left: Box::new(word.clone()),
+                        right: Box::new(divisor.clone()),
+                    },
                 },
             );
             let observed = IntegerTerm::Machine(remainder.clone());
@@ -181,10 +184,12 @@ mod tests {
                         Box::new(word.clone()),
                         Box::new(Bitvector32Term::Constant(3)),
                     ),
-                    _ => Bitvector32Term::Int64ArithmeticShiftRight(
-                        Box::new(word.clone()),
-                        Box::new(Bitvector32Term::Constant(3)),
-                    ),
+                    _ => Bitvector32Term::Binary {
+                        format: MachineIntegerType::Int64,
+                        op: MachineBinaryOp::ShiftRight,
+                        left: Box::new(word.clone()),
+                        right: Box::new(Bitvector32Term::Constant(3)),
+                    },
                 },
             );
             assert_eq!(
@@ -205,7 +210,12 @@ mod tests {
     ) -> Bitvector32Term {
         match ty {
             MachineIntegerType::Int32 => Bitvector32Term::Divide(Box::new(word), Box::new(divisor)),
-            _ => Bitvector32Term::Int64Divide(Box::new(word), Box::new(divisor)),
+            _ => Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Divide,
+                left: Box::new(word),
+                right: Box::new(divisor),
+            },
         }
     }
 

@@ -659,10 +659,8 @@ pub(in crate::surface) fn simp_bitvector_const(term: &Bitvector32Term) -> Option
         | Bitvector32Term::Int64FromUInt32(_)
         | Bitvector32Term::UInt64FromInt32(_)
         | Bitvector32Term::UInt64FromInt64(_)
-        | crate::kernel::binary_int64_term!(_, _)
-        | Bitvector32Term::Int64BitwiseNot(_)
-        | crate::kernel::binary_uint64_term!(_, _)
-        | Bitvector32Term::UInt64BitwiseNot(_)
+        | Bitvector32Term::Binary { .. }
+        | Bitvector32Term::Unary { .. }
         | Bitvector32Term::Float32Negate(_)
         | Bitvector32Term::Float32Binary { .. }
         | Bitvector32Term::Float64Negate(_)

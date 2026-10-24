@@ -4077,7 +4077,13 @@ impl PureFactContext {
         // call returned, held equal to the field that bounds the range. The
         // comparison is then `x - c < x`, which the order rules decide.
         let below_equal_spelling = |index: &Bitvector32Term| {
-            let Bitvector32Term::UInt64Subtract(whole, taken) = index else {
+            let Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Subtract,
+                left: whole,
+                right: taken,
+            } = index
+            else {
                 return false;
             };
             let equal = |left: &Bitvector32Term, right: &Bitvector32Term| {
@@ -4099,7 +4105,13 @@ impl PureFactContext {
         // index below `c`, at most `x`, or equal to `x` is below the end. A C string's
         // `[0..len + 1]` footprint has this end.
         let below_unwrapped_successor = |index: &Bitvector32Term| {
-            let Bitvector32Term::UInt64Add(whole, added) = end else {
+            let Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: whole,
+                right: added,
+            } = end
+            else {
                 return false;
             };
             let Some(added) = added.uint64_as_const().filter(|added| *added >= 1) else {

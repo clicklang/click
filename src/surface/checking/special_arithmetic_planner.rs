@@ -2,6 +2,7 @@
 //! The kernel checker, not this selector, is authoritative.
 
 use super::*;
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::proof::arithmetic_special::{
     SpecialArithmeticCertificate as KernelCertificate, SpecialArithmeticNode as KernelNode,
     signed_constant_bound_on, signed_definedness_operands,
@@ -509,13 +510,19 @@ fn term_mentions_pointer(term: &Bitvector32Term, target: &crate::kernel::Pointer
             Bitvector32Term::Add(left, right)
             | Bitvector32Term::Subtract(left, right)
             | Bitvector32Term::Multiply(left, right)
-            | Bitvector32Term::UInt64Add(left, right)
-            | Bitvector32Term::UInt64Subtract(left, right)
-            | Bitvector32Term::UInt64Multiply(left, right)
-            | Bitvector32Term::UInt64Divide(left, right)
-            | Bitvector32Term::UInt64Remainder(left, right)
-            | Bitvector32Term::UInt64BitwiseAnd(left, right)
-            | Bitvector32Term::UInt64BitwiseOr(left, right)
+            | Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op:
+                    MachineBinaryOp::Add
+                    | MachineBinaryOp::Subtract
+                    | MachineBinaryOp::Multiply
+                    | MachineBinaryOp::Divide
+                    | MachineBinaryOp::Remainder
+                    | MachineBinaryOp::BitwiseAnd
+                    | MachineBinaryOp::BitwiseOr,
+                left,
+                right,
+            }
             | Bitvector32Term::Float32Binary { left, right, .. }
             | Bitvector32Term::Float64Binary { left, right, .. } => {
                 pending.push(left);
@@ -871,13 +878,19 @@ fn bounded_term_work(root: &Bitvector32Term) -> bool {
             Bitvector32Term::Add(left, right)
             | Bitvector32Term::Subtract(left, right)
             | Bitvector32Term::Multiply(left, right)
-            | Bitvector32Term::UInt64Add(left, right)
-            | Bitvector32Term::UInt64Subtract(left, right)
-            | Bitvector32Term::UInt64Multiply(left, right)
-            | Bitvector32Term::UInt64Divide(left, right)
-            | Bitvector32Term::UInt64Remainder(left, right)
-            | Bitvector32Term::UInt64BitwiseAnd(left, right)
-            | Bitvector32Term::UInt64BitwiseOr(left, right) => {
+            | Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op:
+                    MachineBinaryOp::Add
+                    | MachineBinaryOp::Subtract
+                    | MachineBinaryOp::Multiply
+                    | MachineBinaryOp::Divide
+                    | MachineBinaryOp::Remainder
+                    | MachineBinaryOp::BitwiseAnd
+                    | MachineBinaryOp::BitwiseOr,
+                left,
+                right,
+            } => {
                 pending.push(left);
                 pending.push(right);
             }
@@ -957,11 +970,14 @@ fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
                     Op::Add
                         | Op::Subtract
                         | Op::Multiply
-                        | Op::UInt64Add
-                        | Op::UInt64Subtract
-                        | Op::UInt64Multiply
-                        | Op::UInt64BitwiseAnd
-                        | Op::UInt64BitwiseOr
+                        | Op::Machine(
+                            MachineIntegerType::UInt64,
+                            MachineBinaryOp::Add
+                                | MachineBinaryOp::Subtract
+                                | MachineBinaryOp::Multiply
+                                | MachineBinaryOp::BitwiseAnd
+                                | MachineBinaryOp::BitwiseOr
+                        )
                         | Op::Float32(_)
                         | Op::Float64(_)
                 );
@@ -1002,7 +1018,13 @@ fn alignment_shape(condition: &ConditionTerm) -> Option<(&crate::kernel::Pointer
     } else {
         return None;
     };
-    let Bitvector32Term::UInt64BitwiseAnd(left, right) = masked else {
+    let Bitvector32Term::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::BitwiseAnd,
+        left,
+        right,
+    } = masked
+    else {
         return None;
     };
     let (pointer, mask) = match (left.as_ref(), right.as_ref()) {

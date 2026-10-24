@@ -2,6 +2,7 @@
 //! Curried application nodes have shallow keys and indexed parent uses. A late
 //! operand merge therefore updates precisely the applications depending on it.
 use super::*;
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::{
     Bitvector32Term as T, BitvectorUnaryOp as U, CType, CValue, CarrierWidth as W,
@@ -423,10 +424,10 @@ impl TermClasses {
                         // than guessing its carrier from the shifted value.
                         if matches!(
                             op,
-                            crate::kernel::BitvectorBinaryOp::Int64ShiftLeft
-                                | crate::kernel::BitvectorBinaryOp::Int64ArithmeticShiftRight
-                                | crate::kernel::BitvectorBinaryOp::UInt64ShiftLeft
-                                | crate::kernel::BitvectorBinaryOp::UInt64LogicalShiftRight
+                            crate::kernel::BitvectorBinaryOp::Machine(
+                                MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                                MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
+                            )
                         ) {
                             pending.push(Work::OpaqueCount(b));
                         } else {
@@ -452,10 +453,8 @@ impl TermClasses {
                             | U::Int64FromUInt32
                             | U::UInt64FromInt32
                             | U::BitwiseNot => W::Bits32,
-                            U::UInt32From64
-                            | U::UInt64FromInt64
-                            | U::Int64BitwiseNot
-                            | U::UInt64BitwiseNot => W::Bits64,
+                            U::UInt32From64 | U::UInt64FromInt64 => W::Bits64,
+                            U::Machine(format, _) => W::of_machine_type(format),
                             U::MachineIntegerCast { source, .. } => W::of_machine_type(source),
                             U::Float32Negate | U::Float64Negate => unreachable!(),
                         };

@@ -2209,16 +2209,20 @@ fn reduce_simp_atomic_premises(
             },
             true,
         ) => match (left.as_ref(), right.as_ref()) {
-            (Bitvector32Term::UInt64Subtract(base, amount), Bitvector32Term::Variable(upper)) => {
-                match (base.as_ref(), amount.as_ref()) {
-                    (Bitvector32Term::Variable(base), Bitvector32Term::UInt64Constant(amount)) => {
-                        Some(AtomicReductionQuery::UnsignedSubtractionLessThan(
-                            *base, *amount, *upper,
-                        ))
-                    }
-                    _ => None,
-                }
-            }
+            (
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Subtract,
+                    left: base,
+                    right: amount,
+                },
+                Bitvector32Term::Variable(upper),
+            ) => match (base.as_ref(), amount.as_ref()) {
+                (Bitvector32Term::Variable(base), Bitvector32Term::UInt64Constant(amount)) => Some(
+                    AtomicReductionQuery::UnsignedSubtractionLessThan(*base, *amount, *upper),
+                ),
+                _ => None,
+            },
             _ => None,
         },
         Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => Some(

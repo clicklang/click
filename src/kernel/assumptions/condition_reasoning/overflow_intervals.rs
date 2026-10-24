@@ -852,7 +852,13 @@ impl PureFactContext {
         else {
             return None;
         };
-        let Bitvector32Term::Int64Add(a, b) = left.as_ref() else {
+        let Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Add,
+            left: a,
+            right: b,
+        } = left.as_ref()
+        else {
             return None;
         };
         let a_operand = Self::widened_unsigned_operand(a)?;
@@ -903,7 +909,13 @@ impl PureFactContext {
         else {
             return None;
         };
-        let Bitvector32Term::Int64Add(a, b) = left.as_ref() else {
+        let Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Add,
+            left: a,
+            right: b,
+        } = left.as_ref()
+        else {
             return None;
         };
         let a_operand = Self::widened_unsigned_operand(a)?;

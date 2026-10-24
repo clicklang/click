@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{MachineBinaryOp, MachineIntegerType};
 
 #[test]
 fn wide_cast_construction_and_validation_do_constant_work_on_large_operands() {
@@ -10,10 +11,12 @@ fn wide_cast_construction_and_validation_do_constant_work_on_large_operands() {
     for size in [16, 64, 256, 1024] {
         let mut operand = Bitvector32Term::Variable(Variable(149_002));
         for _ in 0..size {
-            operand = Bitvector32Term::Int64Add(
-                Box::new(operand),
-                Box::new(Bitvector32Term::Int64Constant(1)),
-            );
+            operand = Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Add,
+                left: Box::new(operand),
+                right: Box::new(Bitvector32Term::Int64Constant(1)),
+            };
         }
         let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {
             MachineIntegerType::Int128.convert_modulo_value(CValue::Int64(operand))
@@ -39,9 +42,19 @@ fn symbolic_modulo_conversion_work_is_independent_of_operand_depth() {
             for _ in 0..size {
                 let one = Bitvector32Term::UInt64Constant(1);
                 term = if right_nested {
-                    Bitvector32Term::UInt64Add(Box::new(one), Box::new(term))
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::Add,
+                        left: Box::new(one),
+                        right: Box::new(term),
+                    }
                 } else {
-                    Bitvector32Term::UInt64Add(Box::new(term), Box::new(one))
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::Add,
+                        left: Box::new(term),
+                        right: Box::new(one),
+                    }
                 };
             }
             let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {

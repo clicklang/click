@@ -9878,7 +9878,12 @@ fn wide_memory_range_covers_window(
         .pointer_at_known_base_with_wide_index(&selected, available.base())
         .unwrap_or_else(|| selected.clone());
     let covers_index = |index: Bitvector32Term| {
-        if let Bitvector32Term::UInt64Subtract(whole, taken) = &index
+        if let Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Subtract,
+            left: whole,
+            right: taken,
+        } = &index
             && (assumptions.decide(&ConditionTerm::uint64_equal(
                 last.clone(),
                 taken.as_ref().clone(),
@@ -9892,7 +9897,12 @@ fn wide_memory_range_covers_window(
             // Both comparisons retain the complete native-width values.
             return start.uint64_as_const() == Some(0) || holds(start.clone(), index);
         }
-        if let Bitvector32Term::UInt64Subtract(whole, skipped) = &last
+        if let Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Subtract,
+            left: whole,
+            right: skipped,
+        } = &last
             && first.uint64_as_const() == Some(0)
             && assumptions.uint64_values_equal_for_range_resolution(&index, skipped)
             && assumptions.uint64_values_equal_for_range_resolution(end, whole)

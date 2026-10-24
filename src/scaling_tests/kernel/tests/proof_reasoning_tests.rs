@@ -1290,10 +1290,12 @@ fn wide_constant_arithmetic_work_scales_with_selected_expression() {
     for size in [4, 16, 64] {
         let mut expression = variable.clone();
         for _ in 0..size {
-            expression = Bitvector32Term::UInt64Divide(
-                Box::new(expression),
-                Box::new(Bitvector32Term::UInt64Constant(1)),
-            );
+            expression = Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Divide,
+                left: Box::new(expression),
+                right: Box::new(Bitvector32Term::UInt64Constant(1)),
+            };
         }
         let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
             facts.wide_constant_from_equalities(&expression)

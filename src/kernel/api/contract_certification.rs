@@ -577,10 +577,8 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             | Bitvector32Term::UInt32From64(_)
             | Bitvector32Term::UInt64FromInt32(_)
             | Bitvector32Term::UInt64FromInt64(_)
-            | crate::kernel::binary_int64_term!(_, _)
-            | Bitvector32Term::Int64BitwiseNot(_)
-            | crate::kernel::binary_uint64_term!(_, _)
-            | Bitvector32Term::UInt64BitwiseNot(_) => {}
+            | Bitvector32Term::Binary { .. }
+            | Bitvector32Term::Unary { .. } => {}
             Bitvector32Term::Variable(variable) => {
                 variables.insert(*variable);
             }

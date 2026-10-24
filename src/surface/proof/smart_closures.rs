@@ -15,6 +15,7 @@ use crate::kernel::proof::{
     PropositionIdentityKey, proposition_identity_key, propositions_are_alpha_equal,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{MachineBinaryOp, MachineIntegerType};
 use crate::surface::checking::{ArithmeticEngine, ArithmeticPlan, plan_arithmetic};
 use crate::surface::checking::{IntegerRefutation, machine_observations, refute_integer_goal};
 use crate::surface::planning::proposition_search::PropositionSearch;
@@ -301,11 +302,14 @@ fn signed_surface_terms_equal(
                     && !matches!(operator, Op::UnsignedDivide | Op::UnsignedRemainder))
                     || matches!(
                         operator,
-                        Op::UInt64Add
-                            | Op::UInt64Subtract
-                            | Op::UInt64Multiply
-                            | Op::UInt64Divide
-                            | Op::UInt64Remainder
+                        Op::Machine(
+                            MachineIntegerType::UInt64,
+                            MachineBinaryOp::Add
+                                | MachineBinaryOp::Subtract
+                                | MachineBinaryOp::Multiply
+                                | MachineBinaryOp::Divide
+                                | MachineBinaryOp::Remainder
+                        )
                     );
                 if operator != other || !signed_or_native {
                     return false;
@@ -7547,8 +7551,11 @@ impl<'a> Proof<'a> {
                     term,
                     Bitvector32Term::Remainder(..)
                         | Bitvector32Term::UnsignedRemainder(..)
-                        | Bitvector32Term::Int64Remainder(..)
-                        | Bitvector32Term::UInt64Remainder(..)
+                        | Bitvector32Term::Binary {
+                            format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                            op: MachineBinaryOp::Remainder,
+                            ..
+                        }
                 )
             }),
             _ => false,

@@ -13,6 +13,7 @@ use super::super::{
 };
 use crate::kernel::MachineIntegerType;
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -93,19 +94,30 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
             | Bitvector32Term::Variable(_) => {}
             // Integer operands are already interned by shallow identity.
             Bitvector32Term::IntegerToMachine { .. } => {}
-            Bitvector32Term::Int64Add(left, right)
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Add,
+                left,
+                right,
+            }
             | Bitvector32Term::BitwiseXor(left, right)
             | Bitvector32Term::Add(left, right)
             | Bitvector32Term::Subtract(left, right)
             | Bitvector32Term::Float32Binary { left, right, .. }
             | Bitvector32Term::Float64Binary { left, right, .. }
-            | Bitvector32Term::UInt64Add(left, right)
-            | Bitvector32Term::UInt64Subtract(left, right)
-            | Bitvector32Term::UInt64Multiply(left, right)
-            | Bitvector32Term::UInt64Divide(left, right)
-            | Bitvector32Term::UInt64Remainder(left, right)
-            | Bitvector32Term::UInt64BitwiseAnd(left, right)
-            | Bitvector32Term::UInt64BitwiseOr(left, right)
+            | Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op:
+                    MachineBinaryOp::Add
+                    | MachineBinaryOp::Subtract
+                    | MachineBinaryOp::Multiply
+                    | MachineBinaryOp::Divide
+                    | MachineBinaryOp::Remainder
+                    | MachineBinaryOp::BitwiseAnd
+                    | MachineBinaryOp::BitwiseOr,
+                left,
+                right,
+            }
             | Bitvector32Term::BitwiseAnd(left, right)
             | Bitvector32Term::BitwiseOr(left, right) => {
                 pending.push(left);
@@ -377,14 +389,17 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
                         | Op::BitwiseAnd
                         | Op::BitwiseOr
                         | Op::BitwiseXor
-                        | Op::Int64Add
-                        | Op::UInt64Add
-                        | Op::UInt64Subtract
-                        | Op::UInt64Multiply
-                        | Op::UInt64Divide
-                        | Op::UInt64Remainder
-                        | Op::UInt64BitwiseAnd
-                        | Op::UInt64BitwiseOr
+                        | Op::Machine(MachineIntegerType::Int64, MachineBinaryOp::Add)
+                        | Op::Machine(
+                            MachineIntegerType::UInt64,
+                            MachineBinaryOp::Add
+                                | MachineBinaryOp::Subtract
+                                | MachineBinaryOp::Multiply
+                                | MachineBinaryOp::Divide
+                                | MachineBinaryOp::Remainder
+                                | MachineBinaryOp::BitwiseAnd
+                                | MachineBinaryOp::BitwiseOr
+                        )
                         | Op::Float32(_)
                         | Op::Float64(_)
                 );
@@ -1936,9 +1951,15 @@ fn pointer_translation(
                     constant = next;
                     continue;
                 }
-                OffsetPart::Scaled64(Bitvector32Term::UInt64Add(left, right), width)
-                    if wide_sum_is_exact(left, right) =>
-                {
+                OffsetPart::Scaled64(
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::Add,
+                        left,
+                        right,
+                    },
+                    width,
+                ) if wide_sum_is_exact(left, right) => {
                     pending.push(OffsetPart::Scaled64(left, width));
                     pending.push(OffsetPart::Scaled64(right, width));
                     continue;
@@ -2228,48 +2249,114 @@ fn bounded_uint64_constants(roots: &[&Bitvector32Term]) -> HashMap<usize, Option
                         _ => (None, None),
                     };
                     match (term, left, right) {
-                        (Bitvector32Term::UInt64Add(_, _), Some(left), Some(right)) => {
-                            Some(left.wrapping_add(right))
-                        }
-                        (Bitvector32Term::UInt64Subtract(_, _), Some(left), Some(right)) => {
-                            Some(left.wrapping_sub(right))
-                        }
-                        (Bitvector32Term::UInt64Multiply(_, _), Some(left), Some(right)) => {
-                            Some(left.wrapping_mul(right))
-                        }
-                        (Bitvector32Term::UInt64Divide(_, _), Some(left), Some(right))
-                            if right != 0 =>
-                        {
-                            Some(left / right)
-                        }
-                        (Bitvector32Term::UInt64Remainder(_, _), Some(left), Some(right))
-                            if right != 0 =>
-                        {
-                            Some(left % right)
-                        }
-                        (Bitvector32Term::UInt64ShiftLeft(_, _), Some(left), Some(right))
-                            if right < 64 =>
-                        {
-                            Some(left.wrapping_shl(right as u32))
-                        }
                         (
-                            Bitvector32Term::UInt64LogicalShiftRight(_, _),
+                            Bitvector32Term::Binary {
+                                format: MachineIntegerType::UInt64,
+                                op: MachineBinaryOp::Add,
+                                left: _,
+                                right: _,
+                            },
+                            Some(left),
+                            Some(right),
+                        ) => Some(left.wrapping_add(right)),
+                        (
+                            Bitvector32Term::Binary {
+                                format: MachineIntegerType::UInt64,
+                                op: MachineBinaryOp::Subtract,
+                                left: _,
+                                right: _,
+                            },
+                            Some(left),
+                            Some(right),
+                        ) => Some(left.wrapping_sub(right)),
+                        (
+                            Bitvector32Term::Binary {
+                                format: MachineIntegerType::UInt64,
+                                op: MachineBinaryOp::Multiply,
+                                left: _,
+                                right: _,
+                            },
+                            Some(left),
+                            Some(right),
+                        ) => Some(left.wrapping_mul(right)),
+                        (
+                            Bitvector32Term::Binary {
+                                format: MachineIntegerType::UInt64,
+                                op: MachineBinaryOp::Divide,
+                                left: _,
+                                right: _,
+                            },
+                            Some(left),
+                            Some(right),
+                        ) if right != 0 => Some(left / right),
+                        (
+                            Bitvector32Term::Binary {
+                                format: MachineIntegerType::UInt64,
+                                op: MachineBinaryOp::Remainder,
+                                left: _,
+                                right: _,
+                            },
+                            Some(left),
+                            Some(right),
+                        ) if right != 0 => Some(left % right),
+                        (
+                            Bitvector32Term::Binary {
+                                format: MachineIntegerType::UInt64,
+                                op: MachineBinaryOp::ShiftLeft,
+                                left: _,
+                                right: _,
+                            },
+                            Some(left),
+                            Some(right),
+                        ) if right < 64 => Some(left.wrapping_shl(right as u32)),
+                        (
+                            Bitvector32Term::Binary {
+                                format: MachineIntegerType::UInt64,
+                                op: MachineBinaryOp::ShiftRight,
+                                left: _,
+                                right: _,
+                            },
                             Some(left),
                             Some(right),
                         ) if right < 64 => Some(left >> right),
-                        (Bitvector32Term::UInt64BitwiseAnd(_, _), Some(left), Some(right)) => {
-                            Some(left & right)
-                        }
-                        (Bitvector32Term::UInt64BitwiseOr(_, _), Some(left), Some(right)) => {
-                            Some(left | right)
-                        }
-                        (Bitvector32Term::UInt64BitwiseXor(_, _), Some(left), Some(right)) => {
-                            Some(left ^ right)
-                        }
+                        (
+                            Bitvector32Term::Binary {
+                                format: MachineIntegerType::UInt64,
+                                op: MachineBinaryOp::BitwiseAnd,
+                                left: _,
+                                right: _,
+                            },
+                            Some(left),
+                            Some(right),
+                        ) => Some(left & right),
+                        (
+                            Bitvector32Term::Binary {
+                                format: MachineIntegerType::UInt64,
+                                op: MachineBinaryOp::BitwiseOr,
+                                left: _,
+                                right: _,
+                            },
+                            Some(left),
+                            Some(right),
+                        ) => Some(left | right),
+                        (
+                            Bitvector32Term::Binary {
+                                format: MachineIntegerType::UInt64,
+                                op: MachineBinaryOp::BitwiseXor,
+                                left: _,
+                                right: _,
+                            },
+                            Some(left),
+                            Some(right),
+                        ) => Some(left ^ right),
                         _ => None,
                     }
                 }
-                Bitvector32Term::UInt64BitwiseNot(value) => values
+                Bitvector32Term::Unary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineUnaryOp::BitwiseNot,
+                    operand: value,
+                } => values
                     .get(&(value.as_ref() as *const _ as usize))
                     .copied()
                     .flatten()
@@ -2302,7 +2389,11 @@ fn bounded_uint64_constants(roots: &[&Bitvector32Term]) -> HashMap<usize, Option
         }
         match term {
             Bitvector32Term::UInt64Constant(_) => pending.push((term, true)),
-            Bitvector32Term::UInt64BitwiseNot(value)
+            Bitvector32Term::Unary {
+                format: MachineIntegerType::UInt64,
+                op: MachineUnaryOp::BitwiseNot,
+                operand: value,
+            }
             | Bitvector32Term::UInt64From32(value)
             | Bitvector32Term::UInt64FromInt32(value)
             | Bitvector32Term::UInt64FromInt64(value) => {
@@ -2438,6 +2529,11 @@ fn bounded_term_hashes(roots: &[&Bitvector32Term]) -> Option<HashMap<usize, u64>
         if expanded {
             let mut hasher = DefaultHasher::new();
             std::mem::discriminant(term).hash(&mut hasher);
+            // One variant spells every format-carrying operator, so its
+            // format and operator are part of the identity.
+            if let Bitvector32Term::Binary { format, op, .. } = term {
+                (format, op).hash(&mut hasher);
+            }
             match term {
                 Bitvector32Term::Constant(value) => value.hash(&mut hasher),
                 Bitvector32Term::Int64Constant(value) => value.hash(&mut hasher),
@@ -2448,10 +2544,16 @@ fn bounded_term_hashes(roots: &[&Bitvector32Term]) -> Option<HashMap<usize, u64>
                 }
                 Bitvector32Term::Add(left, right)
                 | Bitvector32Term::Subtract(left, right)
-                | Bitvector32Term::UInt64Add(left, right)
-                | Bitvector32Term::UInt64Subtract(left, right)
-                | Bitvector32Term::UInt64BitwiseAnd(left, right)
-                | Bitvector32Term::UInt64BitwiseOr(left, right)
+                | Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op:
+                        MachineBinaryOp::Add
+                        | MachineBinaryOp::Subtract
+                        | MachineBinaryOp::BitwiseAnd
+                        | MachineBinaryOp::BitwiseOr,
+                    left,
+                    right,
+                }
                 | Bitvector32Term::BitwiseAnd(left, right)
                 | Bitvector32Term::BitwiseOr(left, right) => {
                     hashes
@@ -2469,10 +2571,16 @@ fn bounded_term_hashes(roots: &[&Bitvector32Term]) -> Option<HashMap<usize, u64>
             match term {
                 Bitvector32Term::Add(left, right)
                 | Bitvector32Term::Subtract(left, right)
-                | Bitvector32Term::UInt64Add(left, right)
-                | Bitvector32Term::UInt64Subtract(left, right)
-                | Bitvector32Term::UInt64BitwiseAnd(left, right)
-                | Bitvector32Term::UInt64BitwiseOr(left, right)
+                | Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op:
+                        MachineBinaryOp::Add
+                        | MachineBinaryOp::Subtract
+                        | MachineBinaryOp::BitwiseAnd
+                        | MachineBinaryOp::BitwiseOr,
+                    left,
+                    right,
+                }
                 | Bitvector32Term::BitwiseAnd(left, right)
                 | Bitvector32Term::BitwiseOr(left, right) => {
                     pending.push((right, false));
@@ -2541,7 +2649,13 @@ fn masked_source_tag<'a>(term: &'a Bitvector32Term) -> Arc<TaggedTag<'a>> {
 }
 
 fn masked_source(term: &Bitvector32Term) -> Option<(&Bitvector32Term, u64)> {
-    let Bitvector32Term::UInt64BitwiseAnd(left, right) = term else {
+    let Bitvector32Term::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::BitwiseAnd,
+        left,
+        right,
+    } = term
+    else {
         return None;
     };
     match (&**left, &**right) {
@@ -2691,7 +2805,12 @@ fn tagged_form_inner<'a>(
                         &mut results,
                         &mut values,
                     ),
-                    Bitvector32Term::UInt64Add(left, right) => {
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::Add,
+                        left,
+                        right,
+                    } => {
                         tasks.push(Task::FinishAdd {
                             term: current,
                             left,
@@ -2699,14 +2818,24 @@ fn tagged_form_inner<'a>(
                         });
                         tasks.push(Task::Visit(left));
                     }
-                    Bitvector32Term::UInt64Subtract(left, right) => {
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::Subtract,
+                        left,
+                        right,
+                    } => {
                         tasks.push(Task::FinishSubtract {
                             term: current,
                             right,
                         });
                         tasks.push(Task::Visit(left));
                     }
-                    Bitvector32Term::UInt64BitwiseAnd(left, right) => {
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::BitwiseAnd,
+                        left,
+                        right,
+                    } => {
                         let (inner, mask) = match (
                             constant_value(left, &constants),
                             constant_value(right, &constants),
@@ -2731,7 +2860,12 @@ fn tagged_form_inner<'a>(
                         });
                         tasks.push(Task::Visit(inner));
                     }
-                    Bitvector32Term::UInt64BitwiseOr(left, right) => {
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::BitwiseOr,
+                        left,
+                        right,
+                    } => {
                         if let Some((pointer, tag, alignment)) = pointer_or_masked_tag(left, right)
                         {
                             tasks.push(Task::FinishPointerOr {
@@ -2856,7 +2990,12 @@ fn tagged_form_inner<'a>(
                         {
                             Arc::new(TaggedTag::Constant(0))
                         } else if let TaggedTag::Source(source) = form.tag.as_ref()
-                            && let Bitvector32Term::UInt64BitwiseAnd(left, right) = source
+                            && let Bitvector32Term::Binary {
+                                format: MachineIntegerType::UInt64,
+                                op: MachineBinaryOp::BitwiseAnd,
+                                left,
+                                right,
+                            } = source
                             && let Some(source_mask) = constant_value(left, &constants)
                                 .or_else(|| constant_value(right, &constants))
                         {
@@ -3642,12 +3781,14 @@ mod tests {
         let variable = Bitvector32Term::Variable(crate::kernel::Variable(394));
         let mut tagged = address;
         for index in 0..tag_depth {
-            tagged = Bitvector32Term::UInt64Add(
-                Box::new(tagged),
-                Box::new(Bitvector32Term::Variable(crate::kernel::Variable(
+            tagged = Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: Box::new(tagged),
+                right: Box::new(Bitvector32Term::Variable(crate::kernel::Variable(
                     (400 + index) as u64,
                 ))),
-            );
+            };
         }
         let alignments = AlignmentIndex::new(&[]).expect("empty alignment index");
         let (form, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -3727,10 +3868,12 @@ mod tests {
 
     #[test]
     fn pointer_scalar_bounds_do_not_admit_native_width_operations() {
-        let wide = Bitvector32Term::UInt64Add(
-            Box::new(Bitvector32Term::Variable(crate::kernel::Variable(1))),
-            Box::new(Bitvector32Term::UInt64Constant(1)),
-        );
+        let wide = Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Add,
+            left: Box::new(Bitvector32Term::Variable(crate::kernel::Variable(1))),
+            right: Box::new(Bitvector32Term::UInt64Constant(1)),
+        };
         let bound = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -4042,13 +4185,15 @@ mod tests {
             let null_condition = ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                    Box::new(Bitvector32Term::PointerAddress(
+                left: Box::new(Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::BitwiseAnd,
+                    left: Box::new(Bitvector32Term::PointerAddress(
                         Box::new(Pointer::null()),
                         crate::kernel::AddressObjectClass::NONE,
                     )),
-                    Box::new(Bitvector32Term::UInt64Constant(alignment - 1)),
-                )),
+                    right: Box::new(Bitvector32Term::UInt64Constant(alignment - 1)),
+                }),
                 right: Box::new(Bitvector32Term::UInt64Constant(0)),
             };
             let null = Proposition::ConditionIs(null_condition.clone(), true);
@@ -4602,12 +4747,14 @@ mod tests {
             let variable = Bitvector32Term::Variable(crate::kernel::Variable(294));
             let mut tagged = address;
             for index in 0..depth {
-                tagged = Bitvector32Term::UInt64Add(
-                    Box::new(tagged),
-                    Box::new(Bitvector32Term::Variable(crate::kernel::Variable(
+                tagged = Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(tagged),
+                    right: Box::new(Bitvector32Term::Variable(crate::kernel::Variable(
                         300 + index,
                     ))),
-                );
+                };
             }
             let form = tagged_form(&variable, (&variable, &tagged), &alignments)
                 .expect("the relation should provide a tagged form");
@@ -4766,22 +4913,26 @@ mod tests {
     fn alignment_masks_are_bounded_before_constant_recognition() {
         let mut mask = Bitvector32Term::UInt64Constant(7);
         for _ in 0..=MAX_TERM_PAYLOAD {
-            mask = Bitvector32Term::UInt64BitwiseOr(
-                Box::new(mask),
-                Box::new(Bitvector32Term::UInt64Constant(0)),
-            );
+            mask = Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::BitwiseOr,
+                left: Box::new(mask),
+                right: Box::new(Bitvector32Term::UInt64Constant(0)),
+            };
         }
         let deep_alignment = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                    Box::new(Bitvector32Term::PointerAddress(
+                left: Box::new(Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::BitwiseAnd,
+                    left: Box::new(Bitvector32Term::PointerAddress(
                         Box::new(heap_pointer(PointerOffsetTerm::Constant(0))),
                         crate::kernel::AddressObjectClass::NONE,
                     )),
-                    Box::new(mask),
-                )),
+                    right: Box::new(mask),
+                }),
                 right: Box::new(Bitvector32Term::UInt64Constant(0)),
             },
             true,
@@ -4838,22 +4989,26 @@ mod tests {
         );
         let mut mask = Bitvector32Term::UInt64Constant(7);
         for _ in 0..=MAX_TERM_PAYLOAD {
-            mask = Bitvector32Term::UInt64BitwiseOr(
-                Box::new(mask),
-                Box::new(Bitvector32Term::UInt64Constant(0)),
-            );
+            mask = Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::BitwiseOr,
+                left: Box::new(mask),
+                right: Box::new(Bitvector32Term::UInt64Constant(0)),
+            };
         }
         let goal = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                    Box::new(Bitvector32Term::PointerAddress(
+                left: Box::new(Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::BitwiseAnd,
+                    left: Box::new(Bitvector32Term::PointerAddress(
                         Box::new(heap_pointer(PointerOffsetTerm::Constant(0))),
                         crate::kernel::AddressObjectClass::NONE,
                     )),
-                    Box::new(mask),
-                )),
+                    right: Box::new(mask),
+                }),
                 right: Box::new(Bitvector32Term::UInt64Constant(0)),
             },
             true,

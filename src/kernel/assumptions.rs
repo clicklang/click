@@ -1660,10 +1660,24 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, has
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value) => hash_memory_blind_bitvector(value, hasher),
-        crate::kernel::binary_wide_term!(left, right) => {
+        | Bitvector32Term::UInt64FromInt64(value) => hash_memory_blind_bitvector(value, hasher),
+        Bitvector32Term::Unary {
+            format,
+            op,
+            operand,
+        } => {
+            std::hash::Hash::hash(format, hasher);
+            std::hash::Hash::hash(op, hasher);
+            hash_memory_blind_bitvector(operand, hasher)
+        }
+        Bitvector32Term::Binary {
+            format,
+            op,
+            left,
+            right,
+        } => {
+            std::hash::Hash::hash(format, hasher);
+            std::hash::Hash::hash(op, hasher);
             hash_memory_blind_bitvector(left, hasher);
             hash_memory_blind_bitvector(right, hasher);
         }
@@ -2063,27 +2077,7 @@ fn collect_bitvector_memory_loads_with_width(
         | Bitvector32Term::Float64Binary { left, right, .. } => {
             let child_width = if matches!(
                 term,
-                Bitvector32Term::Int64Add(..)
-                    | Bitvector32Term::Int64Subtract(..)
-                    | Bitvector32Term::Int64Multiply(..)
-                    | Bitvector32Term::Int64Divide(..)
-                    | Bitvector32Term::Int64Remainder(..)
-                    | Bitvector32Term::Int64ShiftLeft(..)
-                    | Bitvector32Term::Int64ArithmeticShiftRight(..)
-                    | Bitvector32Term::Int64BitwiseAnd(..)
-                    | Bitvector32Term::Int64BitwiseOr(..)
-                    | Bitvector32Term::Int64BitwiseXor(..)
-                    | Bitvector32Term::UInt64Add(..)
-                    | Bitvector32Term::UInt64Subtract(..)
-                    | Bitvector32Term::UInt64Multiply(..)
-                    | Bitvector32Term::UInt64Divide(..)
-                    | Bitvector32Term::UInt64Remainder(..)
-                    | Bitvector32Term::UInt64ShiftLeft(..)
-                    | Bitvector32Term::UInt64LogicalShiftRight(..)
-                    | Bitvector32Term::UInt64BitwiseAnd(..)
-                    | Bitvector32Term::UInt64BitwiseOr(..)
-                    | Bitvector32Term::UInt64BitwiseXor(..)
-                    | Bitvector32Term::Float64Binary { .. }
+                Bitvector32Term::Binary { .. } | Bitvector32Term::Float64Binary { .. }
             ) {
                 Some(8)
             } else {
@@ -2110,8 +2104,7 @@ fn collect_bitvector_memory_loads_with_width(
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::UInt64FromInt32(value)
         | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value)
+        | Bitvector32Term::Unary { operand: value, .. }
         | Bitvector32Term::BitwiseNot(value)
         | Bitvector32Term::Float32Negate(value)
         | Bitvector32Term::Float64Negate(value) => {

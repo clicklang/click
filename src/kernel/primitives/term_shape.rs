@@ -4,7 +4,7 @@
 //! the uniform arithmetic variants through this split and its rebuild.
 
 use super::*;
-use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{CompareRelation, MachineBinaryOp, MachineUnaryOp, OverflowOperation};
 
 /// A two-operand arithmetic [`Bitvector32Term`] operator.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -22,26 +22,8 @@ pub(crate) enum BitvectorBinaryOp {
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,
-    Int64Add,
-    Int64Subtract,
-    Int64Multiply,
-    Int64Divide,
-    Int64Remainder,
-    Int64ShiftLeft,
-    Int64ArithmeticShiftRight,
-    Int64BitwiseAnd,
-    Int64BitwiseOr,
-    Int64BitwiseXor,
-    UInt64Add,
-    UInt64Subtract,
-    UInt64Multiply,
-    UInt64Divide,
-    UInt64Remainder,
-    UInt64ShiftLeft,
-    UInt64LogicalShiftRight,
-    UInt64BitwiseAnd,
-    UInt64BitwiseOr,
-    UInt64BitwiseXor,
+    /// A format-carrying machine operator ([`Bitvector32Term::Binary`]).
+    Machine(MachineIntegerType, MachineBinaryOp),
     Float32(CFloatBinaryOperator),
     Float64(CFloatBinaryOperator),
 }
@@ -50,8 +32,8 @@ pub(crate) enum BitvectorBinaryOp {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum BitvectorUnaryOp {
     BitwiseNot,
-    Int64BitwiseNot,
-    UInt64BitwiseNot,
+    /// A format-carrying machine operator ([`Bitvector32Term::Unary`]).
+    Machine(MachineIntegerType, MachineUnaryOp),
     Int64From32,
     UInt64From32,
     UInt32From64,
@@ -92,58 +74,12 @@ impl Bitvector32Term {
             Self::BitwiseAnd(left, right) => Some((BitvectorBinaryOp::BitwiseAnd, left, right)),
             Self::BitwiseOr(left, right) => Some((BitvectorBinaryOp::BitwiseOr, left, right)),
             Self::BitwiseXor(left, right) => Some((BitvectorBinaryOp::BitwiseXor, left, right)),
-            Self::Int64Add(left, right) => Some((BitvectorBinaryOp::Int64Add, left, right)),
-            Self::Int64Subtract(left, right) => {
-                Some((BitvectorBinaryOp::Int64Subtract, left, right))
-            }
-            Self::Int64Multiply(left, right) => {
-                Some((BitvectorBinaryOp::Int64Multiply, left, right))
-            }
-            Self::Int64Divide(left, right) => Some((BitvectorBinaryOp::Int64Divide, left, right)),
-            Self::Int64Remainder(left, right) => {
-                Some((BitvectorBinaryOp::Int64Remainder, left, right))
-            }
-            Self::Int64ShiftLeft(left, right) => {
-                Some((BitvectorBinaryOp::Int64ShiftLeft, left, right))
-            }
-            Self::Int64ArithmeticShiftRight(left, right) => {
-                Some((BitvectorBinaryOp::Int64ArithmeticShiftRight, left, right))
-            }
-            Self::Int64BitwiseAnd(left, right) => {
-                Some((BitvectorBinaryOp::Int64BitwiseAnd, left, right))
-            }
-            Self::Int64BitwiseOr(left, right) => {
-                Some((BitvectorBinaryOp::Int64BitwiseOr, left, right))
-            }
-            Self::Int64BitwiseXor(left, right) => {
-                Some((BitvectorBinaryOp::Int64BitwiseXor, left, right))
-            }
-            Self::UInt64Add(left, right) => Some((BitvectorBinaryOp::UInt64Add, left, right)),
-            Self::UInt64Subtract(left, right) => {
-                Some((BitvectorBinaryOp::UInt64Subtract, left, right))
-            }
-            Self::UInt64Multiply(left, right) => {
-                Some((BitvectorBinaryOp::UInt64Multiply, left, right))
-            }
-            Self::UInt64Divide(left, right) => Some((BitvectorBinaryOp::UInt64Divide, left, right)),
-            Self::UInt64Remainder(left, right) => {
-                Some((BitvectorBinaryOp::UInt64Remainder, left, right))
-            }
-            Self::UInt64ShiftLeft(left, right) => {
-                Some((BitvectorBinaryOp::UInt64ShiftLeft, left, right))
-            }
-            Self::UInt64LogicalShiftRight(left, right) => {
-                Some((BitvectorBinaryOp::UInt64LogicalShiftRight, left, right))
-            }
-            Self::UInt64BitwiseAnd(left, right) => {
-                Some((BitvectorBinaryOp::UInt64BitwiseAnd, left, right))
-            }
-            Self::UInt64BitwiseOr(left, right) => {
-                Some((BitvectorBinaryOp::UInt64BitwiseOr, left, right))
-            }
-            Self::UInt64BitwiseXor(left, right) => {
-                Some((BitvectorBinaryOp::UInt64BitwiseXor, left, right))
-            }
+            Self::Binary {
+                format,
+                op,
+                left,
+                right,
+            } => Some((BitvectorBinaryOp::Machine(*format, *op), left, right)),
             Self::Float32Binary {
                 operator,
                 left,
@@ -168,8 +104,7 @@ impl Bitvector32Term {
             | Self::PointerAddress(_, _)
             | Self::IntegerToMachine { .. }
             | Self::BitwiseNot(_)
-            | Self::Int64BitwiseNot(_)
-            | Self::UInt64BitwiseNot(_)
+            | Self::Unary { .. }
             | Self::Int64From32(_)
             | Self::UInt64From32(_)
             | Self::UInt32From64(_)
@@ -187,8 +122,11 @@ impl Bitvector32Term {
     pub(crate) fn as_unary(&self) -> Option<(BitvectorUnaryOp, &Self)> {
         match self {
             Self::BitwiseNot(value) => Some((BitvectorUnaryOp::BitwiseNot, value)),
-            Self::Int64BitwiseNot(value) => Some((BitvectorUnaryOp::Int64BitwiseNot, value)),
-            Self::UInt64BitwiseNot(value) => Some((BitvectorUnaryOp::UInt64BitwiseNot, value)),
+            Self::Unary {
+                format,
+                op,
+                operand,
+            } => Some((BitvectorUnaryOp::Machine(*format, *op), operand)),
             Self::Int64From32(value) => Some((BitvectorUnaryOp::Int64From32, value)),
             Self::UInt64From32(value) => Some((BitvectorUnaryOp::UInt64From32, value)),
             Self::UInt32From64(value) => Some((BitvectorUnaryOp::UInt32From64, value)),
@@ -233,39 +171,26 @@ impl BitvectorBinaryOp {
     /// operation share a spelling.
     pub(crate) fn c_symbol(self) -> &'static str {
         match self {
+            Self::Machine(_, op) => op.c_symbol(),
             Self::Add
-            | Self::Int64Add
-            | Self::UInt64Add
             | Self::Float32(CFloatBinaryOperator::Add)
             | Self::Float64(CFloatBinaryOperator::Add) => "+",
             Self::Subtract
-            | Self::Int64Subtract
-            | Self::UInt64Subtract
             | Self::Float32(CFloatBinaryOperator::Subtract)
             | Self::Float64(CFloatBinaryOperator::Subtract) => "-",
             Self::Multiply
-            | Self::Int64Multiply
-            | Self::UInt64Multiply
             | Self::Float32(CFloatBinaryOperator::Multiply)
             | Self::Float64(CFloatBinaryOperator::Multiply) => "*",
             Self::Divide
             | Self::UnsignedDivide
-            | Self::Int64Divide
-            | Self::UInt64Divide
             | Self::Float32(CFloatBinaryOperator::Divide)
             | Self::Float64(CFloatBinaryOperator::Divide) => "/",
-            Self::Remainder
-            | Self::UnsignedRemainder
-            | Self::Int64Remainder
-            | Self::UInt64Remainder => "%",
-            Self::ShiftLeft | Self::Int64ShiftLeft | Self::UInt64ShiftLeft => "<<",
-            Self::ArithmeticShiftRight
-            | Self::LogicalShiftRight
-            | Self::Int64ArithmeticShiftRight
-            | Self::UInt64LogicalShiftRight => ">>",
-            Self::BitwiseAnd | Self::Int64BitwiseAnd | Self::UInt64BitwiseAnd => "&",
-            Self::BitwiseOr | Self::Int64BitwiseOr | Self::UInt64BitwiseOr => "|",
-            Self::BitwiseXor | Self::Int64BitwiseXor | Self::UInt64BitwiseXor => "^",
+            Self::Remainder | Self::UnsignedRemainder => "%",
+            Self::ShiftLeft => "<<",
+            Self::ArithmeticShiftRight | Self::LogicalShiftRight => ">>",
+            Self::BitwiseAnd => "&",
+            Self::BitwiseOr => "|",
+            Self::BitwiseXor => "^",
         }
     }
 
@@ -311,30 +236,7 @@ impl BitvectorBinaryOp {
             Self::BitwiseAnd => Bitvector32Term::bitwise_and(left, right),
             Self::BitwiseOr => Bitvector32Term::bitwise_or(left, right),
             Self::BitwiseXor => Bitvector32Term::bitwise_xor(left, right),
-            Self::Int64Add => Bitvector32Term::int64_add(left, right),
-            Self::Int64Subtract => Bitvector32Term::int64_subtract(left, right),
-            Self::Int64Multiply => Bitvector32Term::int64_multiply(left, right),
-            Self::Int64Divide => Bitvector32Term::int64_divide(left, right),
-            Self::Int64Remainder => Bitvector32Term::int64_remainder(left, right),
-            Self::Int64ShiftLeft => Bitvector32Term::int64_shift_left(left, right),
-            Self::Int64ArithmeticShiftRight => {
-                Bitvector32Term::int64_arithmetic_shift_right(left, right)
-            }
-            Self::Int64BitwiseAnd => Bitvector32Term::int64_bitwise_and(left, right),
-            Self::Int64BitwiseOr => Bitvector32Term::int64_bitwise_or(left, right),
-            Self::Int64BitwiseXor => Bitvector32Term::int64_bitwise_xor(left, right),
-            Self::UInt64Add => Bitvector32Term::uint64_add(left, right),
-            Self::UInt64Subtract => Bitvector32Term::uint64_subtract(left, right),
-            Self::UInt64Multiply => Bitvector32Term::uint64_multiply(left, right),
-            Self::UInt64Divide => Bitvector32Term::uint64_divide(left, right),
-            Self::UInt64Remainder => Bitvector32Term::uint64_remainder(left, right),
-            Self::UInt64ShiftLeft => Bitvector32Term::uint64_shift_left(left, right),
-            Self::UInt64LogicalShiftRight => {
-                Bitvector32Term::uint64_logical_shift_right(left, right)
-            }
-            Self::UInt64BitwiseAnd => Bitvector32Term::uint64_bitwise_and(left, right),
-            Self::UInt64BitwiseOr => Bitvector32Term::uint64_bitwise_or(left, right),
-            Self::UInt64BitwiseXor => Bitvector32Term::uint64_bitwise_xor(left, right),
+            Self::Machine(format, op) => Bitvector32Term::machine_binary(format, op, left, right),
             Self::Float32(operator) => Bitvector32Term::float32_binary(left, right, operator),
             Self::Float64(operator) => Bitvector32Term::float64_binary(left, right, operator),
         }
@@ -362,28 +264,12 @@ impl BitvectorBinaryOp {
             Self::BitwiseAnd => Bitvector32Term::BitwiseAnd(left, right),
             Self::BitwiseOr => Bitvector32Term::BitwiseOr(left, right),
             Self::BitwiseXor => Bitvector32Term::BitwiseXor(left, right),
-            Self::Int64Add => Bitvector32Term::Int64Add(left, right),
-            Self::Int64Subtract => Bitvector32Term::Int64Subtract(left, right),
-            Self::Int64Multiply => Bitvector32Term::Int64Multiply(left, right),
-            Self::Int64Divide => Bitvector32Term::Int64Divide(left, right),
-            Self::Int64Remainder => Bitvector32Term::Int64Remainder(left, right),
-            Self::Int64ShiftLeft => Bitvector32Term::Int64ShiftLeft(left, right),
-            Self::Int64ArithmeticShiftRight => {
-                Bitvector32Term::Int64ArithmeticShiftRight(left, right)
-            }
-            Self::Int64BitwiseAnd => Bitvector32Term::Int64BitwiseAnd(left, right),
-            Self::Int64BitwiseOr => Bitvector32Term::Int64BitwiseOr(left, right),
-            Self::Int64BitwiseXor => Bitvector32Term::Int64BitwiseXor(left, right),
-            Self::UInt64Add => Bitvector32Term::UInt64Add(left, right),
-            Self::UInt64Subtract => Bitvector32Term::UInt64Subtract(left, right),
-            Self::UInt64Multiply => Bitvector32Term::UInt64Multiply(left, right),
-            Self::UInt64Divide => Bitvector32Term::UInt64Divide(left, right),
-            Self::UInt64Remainder => Bitvector32Term::UInt64Remainder(left, right),
-            Self::UInt64ShiftLeft => Bitvector32Term::UInt64ShiftLeft(left, right),
-            Self::UInt64LogicalShiftRight => Bitvector32Term::UInt64LogicalShiftRight(left, right),
-            Self::UInt64BitwiseAnd => Bitvector32Term::UInt64BitwiseAnd(left, right),
-            Self::UInt64BitwiseOr => Bitvector32Term::UInt64BitwiseOr(left, right),
-            Self::UInt64BitwiseXor => Bitvector32Term::UInt64BitwiseXor(left, right),
+            Self::Machine(format, op) => Bitvector32Term::Binary {
+                format,
+                op,
+                left,
+                right,
+            },
             Self::Float32(operator) => Bitvector32Term::Float32Binary {
                 operator,
                 left,
@@ -428,8 +314,7 @@ impl BitvectorUnaryOp {
     pub(crate) fn build(self, value: Bitvector32Term) -> Bitvector32Term {
         match self {
             Self::BitwiseNot => Bitvector32Term::bitwise_not(value),
-            Self::Int64BitwiseNot => Bitvector32Term::int64_bitwise_not(value),
-            Self::UInt64BitwiseNot => Bitvector32Term::uint64_bitwise_not(value),
+            Self::Machine(format, op) => Bitvector32Term::machine_unary(format, op, value),
             Self::Int64From32 => Bitvector32Term::int64_from_32(value),
             Self::UInt64From32 => Bitvector32Term::uint64_from_32(value),
             Self::UInt32From64 => Bitvector32Term::uint32_from_64(value),
@@ -451,8 +336,11 @@ impl BitvectorUnaryOp {
         let value = Box::new(value);
         match self {
             Self::BitwiseNot => Bitvector32Term::BitwiseNot(value),
-            Self::Int64BitwiseNot => Bitvector32Term::Int64BitwiseNot(value),
-            Self::UInt64BitwiseNot => Bitvector32Term::UInt64BitwiseNot(value),
+            Self::Machine(format, op) => Bitvector32Term::Unary {
+                format,
+                op,
+                operand: value,
+            },
             Self::Int64From32 => Bitvector32Term::Int64From32(value),
             Self::UInt64From32 => Bitvector32Term::UInt64From32(value),
             Self::UInt32From64 => Bitvector32Term::UInt32From64(value),
@@ -544,6 +432,25 @@ impl OverflowOperation {
     }
 }
 
+impl MachineBinaryOp {
+    /// The C spelling of the operator. Signed and unsigned forms share a
+    /// spelling.
+    pub(crate) fn c_symbol(self) -> &'static str {
+        match self {
+            Self::Add => "+",
+            Self::Subtract => "-",
+            Self::Multiply => "*",
+            Self::Divide => "/",
+            Self::Remainder => "%",
+            Self::ShiftLeft => "<<",
+            Self::ShiftRight => ">>",
+            Self::BitwiseAnd => "&",
+            Self::BitwiseOr => "|",
+            Self::BitwiseXor => "^",
+        }
+    }
+}
+
 impl BitvectorComparisonOp {
     /// The format whose values the operands are read as.
     pub(crate) fn format(self) -> MachineIntegerType {
@@ -620,6 +527,19 @@ mod tests {
         CFloatBinaryOperator::Divide,
     ];
 
+    const MACHINE_BINARY_OPERATORS: [MachineBinaryOp; 10] = [
+        MachineBinaryOp::Add,
+        MachineBinaryOp::Subtract,
+        MachineBinaryOp::Multiply,
+        MachineBinaryOp::Divide,
+        MachineBinaryOp::Remainder,
+        MachineBinaryOp::ShiftLeft,
+        MachineBinaryOp::ShiftRight,
+        MachineBinaryOp::BitwiseAnd,
+        MachineBinaryOp::BitwiseOr,
+        MachineBinaryOp::BitwiseXor,
+    ];
+
     fn binary_ops() -> Vec<BitvectorBinaryOp> {
         let mut ops = vec![
             BitvectorBinaryOp::Add,
@@ -635,27 +555,12 @@ mod tests {
             BitvectorBinaryOp::BitwiseAnd,
             BitvectorBinaryOp::BitwiseOr,
             BitvectorBinaryOp::BitwiseXor,
-            BitvectorBinaryOp::Int64Add,
-            BitvectorBinaryOp::Int64Subtract,
-            BitvectorBinaryOp::Int64Multiply,
-            BitvectorBinaryOp::Int64Divide,
-            BitvectorBinaryOp::Int64Remainder,
-            BitvectorBinaryOp::Int64ShiftLeft,
-            BitvectorBinaryOp::Int64ArithmeticShiftRight,
-            BitvectorBinaryOp::Int64BitwiseAnd,
-            BitvectorBinaryOp::Int64BitwiseOr,
-            BitvectorBinaryOp::Int64BitwiseXor,
-            BitvectorBinaryOp::UInt64Add,
-            BitvectorBinaryOp::UInt64Subtract,
-            BitvectorBinaryOp::UInt64Multiply,
-            BitvectorBinaryOp::UInt64Divide,
-            BitvectorBinaryOp::UInt64Remainder,
-            BitvectorBinaryOp::UInt64ShiftLeft,
-            BitvectorBinaryOp::UInt64LogicalShiftRight,
-            BitvectorBinaryOp::UInt64BitwiseAnd,
-            BitvectorBinaryOp::UInt64BitwiseOr,
-            BitvectorBinaryOp::UInt64BitwiseXor,
         ];
+        for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+            for op in MACHINE_BINARY_OPERATORS {
+                ops.push(BitvectorBinaryOp::Machine(format, op));
+            }
+        }
         for operator in FLOAT_OPERATORS {
             ops.push(BitvectorBinaryOp::Float32(operator));
             ops.push(BitvectorBinaryOp::Float64(operator));
@@ -666,8 +571,8 @@ mod tests {
     fn unary_ops() -> Vec<BitvectorUnaryOp> {
         vec![
             BitvectorUnaryOp::BitwiseNot,
-            BitvectorUnaryOp::Int64BitwiseNot,
-            BitvectorUnaryOp::UInt64BitwiseNot,
+            BitvectorUnaryOp::Machine(MachineIntegerType::Int64, MachineUnaryOp::BitwiseNot),
+            BitvectorUnaryOp::Machine(MachineIntegerType::UInt64, MachineUnaryOp::BitwiseNot),
             BitvectorUnaryOp::Int64From32,
             BitvectorUnaryOp::UInt64From32,
             BitvectorUnaryOp::UInt32From64,

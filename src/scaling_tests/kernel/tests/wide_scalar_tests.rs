@@ -36,10 +36,12 @@ fn wide_scalar_root_validation_does_not_scan_legacy_operand_trees() {
     for size in [16, 64, 256, 1024] {
         let mut term = Bitvector32Term::Variable(Variable(148_006));
         for _ in 0..size {
-            term = Bitvector32Term::UInt64Add(
-                Box::new(term),
-                Box::new(Bitvector32Term::UInt64Constant(1)),
-            );
+            term = Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: Box::new(term),
+                right: Box::new(Bitvector32Term::UInt64Constant(1)),
+            };
         }
         let (accepted, work) = crate::instrumentation::measure_deterministic_work(|| {
             MachineIntegerType::UInt128.accepts_wide_term(&term)

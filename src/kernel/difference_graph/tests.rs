@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{PureFactContext, Variable};
@@ -965,7 +966,12 @@ fn a_zero_extension_reads_its_operands_bounds() {
     let (x, y) = (variable(0), variable(1));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
     let wide = |term: &Bitvector32Term| T::Int64FromUInt32(boxed(term));
-    let sum = |a: &Bitvector32Term, b: &Bitvector32Term| T::Int64Add(boxed(a), boxed(b));
+    let sum = |a: &Bitvector32Term, b: &Bitvector32Term| T::Binary {
+        format: MachineIntegerType::Int64,
+        op: MachineBinaryOp::Add,
+        left: boxed(a),
+        right: boxed(b),
+    };
     let at_most = |a: &Bitvector32Term, k: i64| ConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::LessEqual,
@@ -1014,7 +1020,12 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
     use Bitvector32Term as T;
     let (x, y) = (variable(0), variable(1));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let quotient = T::UInt64Divide(Box::new(T::UInt64Constant(u64::MAX)), boxed(&y));
+    let quotient = T::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::Divide,
+        left: Box::new(T::UInt64Constant(u64::MAX)),
+        right: boxed(&y),
+    };
     let fits = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
@@ -1075,7 +1086,12 @@ fn a_constant_mask_bounds_an_unsigned_value() {
     use Bitvector32Term as T;
     let x = variable(0);
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let low_half = T::UInt64BitwiseAnd(boxed(&x), Box::new(T::UInt64Constant(65535)));
+    let low_half = T::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::BitwiseAnd,
+        left: boxed(&x),
+        right: Box::new(T::UInt64Constant(65535)),
+    };
     let at_least = |k| ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
@@ -1175,10 +1191,12 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         ),
     ]);
     let divisor = T::Int64From32(boxed(&d));
-    let remainder = T::UInt32From64(Box::new(T::Int64Remainder(
-        boxed(&n),
-        Box::new(divisor.clone()),
-    )));
+    let remainder = T::UInt32From64(Box::new(T::Binary {
+        format: MachineIntegerType::Int64,
+        op: MachineBinaryOp::Remainder,
+        left: boxed(&n),
+        right: Box::new(divisor.clone()),
+    }));
     let positive = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::GreaterThan,
@@ -1200,7 +1218,12 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         }),
         Some(false)
     );
-    let quotient = T::Int64Divide(boxed(&n), Box::new(divisor));
+    let quotient = T::Binary {
+        format: MachineIntegerType::Int64,
+        op: MachineBinaryOp::Divide,
+        left: boxed(&n),
+        right: Box::new(divisor),
+    };
     assert_eq!(
         pinned.decide(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
@@ -1213,7 +1236,12 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
     // A divisor that may be zero bounds nothing, and an undecided condition
     // leaves either branch.
     let unknown = graph(&[]);
-    let any_quotient = T::Int64Divide(boxed(&n), Box::new(T::Int64From32(boxed(&d))));
+    let any_quotient = T::Binary {
+        format: MachineIntegerType::Int64,
+        op: MachineBinaryOp::Divide,
+        left: boxed(&n),
+        right: Box::new(T::Int64From32(boxed(&d))),
+    };
     assert_eq!(
         unknown.decide(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
@@ -1255,8 +1283,18 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
     use Bitvector32Term as T;
     let x = variable(0);
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let remainder = T::UInt64Remainder(boxed(&x), Box::new(T::UInt64Constant(4)));
-    let rounded = T::UInt64Subtract(boxed(&x), Box::new(remainder.clone()));
+    let remainder = T::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::Remainder,
+        left: boxed(&x),
+        right: Box::new(T::UInt64Constant(4)),
+    };
+    let rounded = T::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::Subtract,
+        left: boxed(&x),
+        right: Box::new(remainder.clone()),
+    };
     let unknown = graph(&[]);
     assert_eq!(
         unknown.decide(&ConditionTerm::Compare {
@@ -1615,7 +1653,12 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
     use Bitvector32Term as T;
     let (a, b) = (variable(0), variable(1));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let difference = T::UInt64Subtract(boxed(&a), boxed(&b));
+    let difference = T::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::Subtract,
+        left: boxed(&a),
+        right: boxed(&b),
+    };
     let at_most = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
@@ -1687,8 +1730,18 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
     let address = |pointer: Pointer| {
         T::PointerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
     };
-    let and = |a: &Bitvector32Term, mask| T::UInt64BitwiseAnd(boxed(a), Box::new(u(mask)));
-    let add = |a: &Bitvector32Term, b: &Bitvector32Term| T::UInt64Add(boxed(a), boxed(b));
+    let and = |a: &Bitvector32Term, mask| T::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::BitwiseAnd,
+        left: boxed(a),
+        right: Box::new(u(mask)),
+    };
+    let add = |a: &Bitvector32Term, b: &Bitvector32Term| T::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::Add,
+        left: boxed(a),
+        right: boxed(b),
+    };
     let equal = |a: &Bitvector32Term, b: &Bitvector32Term| ConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,

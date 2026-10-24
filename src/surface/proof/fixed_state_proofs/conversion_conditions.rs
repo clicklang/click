@@ -14,6 +14,7 @@
 //! caller already reached.
 
 use super::*;
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::proof_diagnostics::render;
@@ -381,19 +382,34 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<Bitvector32Term> {
             op: OverflowOperation::Add,
             left,
             right,
-        } => Some(Bitvector32Term::Int64Add(left.clone(), right.clone())),
+        } => Some(Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Add,
+            left: left.clone(),
+            right: right.clone(),
+        }),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Subtract,
             left,
             right,
-        } => Some(Bitvector32Term::Int64Subtract(left.clone(), right.clone())),
+        } => Some(Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Subtract,
+            left: left.clone(),
+            right: right.clone(),
+        }),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Multiply,
             left,
             right,
-        } => Some(Bitvector32Term::Int64Multiply(left.clone(), right.clone())),
+        } => Some(Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Multiply,
+            left: left.clone(),
+            right: right.clone(),
+        }),
         _ => None,
     }
 }

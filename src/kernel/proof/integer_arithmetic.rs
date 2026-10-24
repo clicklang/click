@@ -1078,6 +1078,7 @@ fn add_weight(weights: &mut HashMap<u64, BigInt>, id: u64, weight: BigInt) -> bo
 
 #[cfg(test)]
 mod tests {
+    use crate::kernel::MachineBinaryOp;
     use crate::kernel::Variable;
 
     use super::*;
@@ -1676,7 +1677,12 @@ mod tests {
         let machine = |ty, value| SharedMachineIntegerTerm::intern(ty, value);
         let quotient = machine(
             MachineIntegerType::UInt64,
-            Bitvector32Term::UInt64Divide(x(), Box::new(Bitvector32Term::UInt64Constant(1000))),
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Divide,
+                left: x(),
+                right: Box::new(Bitvector32Term::UInt64Constant(1000)),
+            },
         );
         let observed = IntegerTerm::Machine(quotient.clone());
         let thousand = |term: IntegerTerm| {
@@ -1700,10 +1706,12 @@ mod tests {
         // `x >> 32` is `x / 2^32`.
         let shifted = machine(
             MachineIntegerType::UInt64,
-            Bitvector32Term::UInt64LogicalShiftRight(
-                x(),
-                Box::new(Bitvector32Term::Int64Constant(32)),
-            ),
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::ShiftRight,
+                left: x(),
+                right: Box::new(Bitvector32Term::Int64Constant(32)),
+            },
         );
         let two_to_32 = IntegerTerm::Multiply(
             IntegerTerm::constant_i64(4_294_967_296).into(),
@@ -1716,7 +1724,12 @@ mod tests {
         // A remainder has only its upper bound; the type range is its lower.
         let remainder = machine(
             MachineIntegerType::UInt64,
-            Bitvector32Term::UInt64Remainder(x(), Box::new(Bitvector32Term::UInt64Constant(10))),
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Remainder,
+                left: x(),
+                right: Box::new(Bitvector32Term::UInt64Constant(10)),
+            },
         );
         assert_eq!(
             operation_bound(&remainder, true),
@@ -1733,21 +1746,30 @@ mod tests {
         for value in [
             machine(
                 MachineIntegerType::UInt64,
-                Bitvector32Term::UInt64Divide(x(), Box::new(Bitvector32Term::UInt64Constant(0))),
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Divide,
+                    left: x(),
+                    right: Box::new(Bitvector32Term::UInt64Constant(0)),
+                },
             ),
             machine(
                 MachineIntegerType::UInt64,
-                Bitvector32Term::UInt64LogicalShiftRight(
-                    x(),
-                    Box::new(Bitvector32Term::Int64Constant(64)),
-                ),
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::ShiftRight,
+                    left: x(),
+                    right: Box::new(Bitvector32Term::Int64Constant(64)),
+                },
             ),
             machine(
                 MachineIntegerType::UInt64,
-                Bitvector32Term::UInt64Divide(
-                    x(),
-                    Box::new(Bitvector32Term::Variable(Variable(97202))),
-                ),
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Divide,
+                    left: x(),
+                    right: Box::new(Bitvector32Term::Variable(Variable(97202))),
+                },
             ),
             machine(
                 MachineIntegerType::Int32,

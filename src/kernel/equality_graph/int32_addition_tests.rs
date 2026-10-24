@@ -75,7 +75,12 @@ fn int32_addition_does_not_cancel_commute_or_merge_other_sorts() {
     assert!(!graph.are_int32_equal(&var(1), &var(2)));
     assert!(!graph.are_int32_equal(&add(var(1), var(3)), &add(var(3), var(1))));
     graph.add_int32_equality(&var(1), &var(2));
-    let wide = |v| Bitvector32Term::Int64Add(Box::new(v), Box::new(var(3)));
+    let wide = |v| Bitvector32Term::Binary {
+        format: MachineIntegerType::Int64,
+        op: MachineBinaryOp::Add,
+        left: Box::new(v),
+        right: Box::new(var(3)),
+    };
     assert!(!graph.are_int32_equal(&wide(var(1)), &wide(var(2))));
     assert!(!graph.are_int32_equal(&add(var(1), var(3)), &wide(var(1))));
     let scalar_offset = PointerOffsetTerm::scale_int32(add(var(1), var(3)), 4);

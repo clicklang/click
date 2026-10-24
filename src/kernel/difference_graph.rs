@@ -23,6 +23,7 @@
 use crate::kernel::MachineIntegerType;
 use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, PointerOffsetTerm};
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use crate::persistent::PersistentMap;
 
 /// The integer domain a node's value ranges over.
@@ -1160,7 +1161,15 @@ impl DifferenceGraph {
         };
         // An unsigned `a - b` with `b <= a` does not wrap, so it lies in
         // `[0, a]`: it is at most `a`, and below `a` when `b >= 1`.
-        if let (Domain::UInt64, Bitvector32Term::UInt64Subtract(a, b)) = (domain, lower)
+        if let (
+            Domain::UInt64,
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Subtract,
+                left: a,
+                right: b,
+            },
+        ) = (domain, lower)
             && a.as_ref() == upper
             && let (Some(a), Some(b)) = (self.resolve(domain, a), self.resolve(domain, b))
             && self.difference_bound(a, b) <= 0
@@ -1169,7 +1178,15 @@ impl DifferenceGraph {
             return Some(true);
         }
         // An unsigned remainder is at most its dividend.
-        if let (Domain::UInt64, Bitvector32Term::UInt64Remainder(a, _)) = (domain, lower)
+        if let (
+            Domain::UInt64,
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Remainder,
+                left: a,
+                right: _,
+            },
+        ) = (domain, lower)
             && a.as_ref() == upper
             && !strict
         {
@@ -1273,16 +1290,46 @@ impl DifferenceGraph {
         charge();
         let (low, high) = match (domain, term) {
             (Domain::Int32, T::Add(a, b))
-            | (Domain::Int64, T::Int64Add(a, b))
-            | (Domain::UInt64, T::UInt64Add(a, b)) => {
+            | (
+                Domain::Int64,
+                T::Binary {
+                    format: MachineIntegerType::Int64,
+                    op: MachineBinaryOp::Add,
+                    left: a,
+                    right: b,
+                },
+            )
+            | (
+                Domain::UInt64,
+                T::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Add,
+                    left: a,
+                    right: b,
+                },
+            ) => {
                 let (a_low, a_high) = self.term_interval(domain, a);
                 let (b_low, b_high) = self.term_interval(domain, b);
                 (a_low + b_low, a_high + b_high)
             }
             // `x - x % k` rounds an unsigned `x` down to a multiple of `k`.
-            (Domain::UInt64, T::UInt64Subtract(a, b)) if matches!(b.as_ref(), T::UInt64Remainder(x, _) if x == a) =>
+            (
+                Domain::UInt64,
+                T::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Subtract,
+                    left: a,
+                    right: b,
+                },
+            ) if matches!(b.as_ref(), T::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Remainder, left: x, right: _ } if x == a) =>
             {
-                let T::UInt64Remainder(_, k) = b.as_ref() else {
+                let T::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Remainder,
+                    left: _,
+                    right: k,
+                } = b.as_ref()
+                else {
                     unreachable!("matched above")
                 };
                 let (a_low, a_high) = self.term_interval(domain, a);
@@ -1298,9 +1345,34 @@ impl DifferenceGraph {
                 }
             }
             (Domain::Int32, T::Subtract(a, b))
-            | (Domain::Int64, T::Int64Subtract(a, b))
-            | (Domain::UInt64, T::UInt64Subtract(a, b)) => self.difference_interval(domain, a, b),
-            (Domain::Int32, T::Multiply(a, b)) | (Domain::Int64, T::Int64Multiply(a, b)) => {
+            | (
+                Domain::Int64,
+                T::Binary {
+                    format: MachineIntegerType::Int64,
+                    op: MachineBinaryOp::Subtract,
+                    left: a,
+                    right: b,
+                },
+            )
+            | (
+                Domain::UInt64,
+                T::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Subtract,
+                    left: a,
+                    right: b,
+                },
+            ) => self.difference_interval(domain, a, b),
+            (Domain::Int32, T::Multiply(a, b))
+            | (
+                Domain::Int64,
+                T::Binary {
+                    format: MachineIntegerType::Int64,
+                    op: MachineBinaryOp::Multiply,
+                    left: a,
+                    right: b,
+                },
+            ) => {
                 let (a_low, a_high) = self.term_interval(domain, a);
                 let (b_low, b_high) = self.term_interval(domain, b);
                 let products = [
@@ -1316,7 +1388,16 @@ impl DifferenceGraph {
             // C's truncating remainder by a divisor that cannot be zero:
             // its sign is the dividend's, and its magnitude is below the
             // divisor's and at most the dividend's.
-            (Domain::Int32, T::Remainder(a, b)) | (Domain::Int64, T::Int64Remainder(a, b)) => {
+            (Domain::Int32, T::Remainder(a, b))
+            | (
+                Domain::Int64,
+                T::Binary {
+                    format: MachineIntegerType::Int64,
+                    op: MachineBinaryOp::Remainder,
+                    left: a,
+                    right: b,
+                },
+            ) => {
                 let (a_low, a_high) = self.term_interval(domain, a);
                 let (b_low, b_high) = self.term_interval(domain, b);
                 if b_low <= 0 && b_high >= 0 {
@@ -1336,7 +1417,16 @@ impl DifferenceGraph {
             // C's truncating quotient by a divisor of one sign: monotone in
             // each operand, so the corners bound it. A quotient that leaves
             // the domain (`MIN / -1`) is caught below.
-            (Domain::Int32, T::Divide(a, b)) | (Domain::Int64, T::Int64Divide(a, b)) => {
+            (Domain::Int32, T::Divide(a, b))
+            | (
+                Domain::Int64,
+                T::Binary {
+                    format: MachineIntegerType::Int64,
+                    op: MachineBinaryOp::Divide,
+                    left: a,
+                    right: b,
+                },
+            ) => {
                 let (a_low, a_high) = self.term_interval(domain, a);
                 let (b_low, b_high) = self.term_interval(domain, b);
                 if b_low <= 0 && b_high >= 0 {
@@ -1353,7 +1443,15 @@ impl DifferenceGraph {
                     quotients.iter().max().copied().unwrap_or(i128::MAX),
                 )
             }
-            (Domain::UInt64, T::UInt64Remainder(a, b)) => {
+            (
+                Domain::UInt64,
+                T::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Remainder,
+                    left: a,
+                    right: b,
+                },
+            ) => {
                 let (a_low, a_high) = self.term_interval(domain, a);
                 let (b_low, b_high) = self.term_interval(domain, b);
                 if b_low < 1 {
@@ -1392,9 +1490,15 @@ impl DifferenceGraph {
                 wrap_interval(Domain::Int32, low, high)
             }
             // `x ^ MIN` moves a value of known sign by the modulus's half.
-            (Domain::Int32, T::BitwiseXor(..)) | (Domain::Int64, T::Int64BitwiseXor(..))
-                if sign_flip_base(domain, term).is_some() =>
-            {
+            (Domain::Int32, T::BitwiseXor(..))
+            | (
+                Domain::Int64,
+                T::Binary {
+                    format: MachineIntegerType::Int64,
+                    op: MachineBinaryOp::BitwiseXor,
+                    ..
+                },
+            ) if sign_flip_base(domain, term).is_some() => {
                 let base = sign_flip_base(domain, term).expect("checked above");
                 let (low, high) = self.term_interval(domain, base);
                 if low >= 0 || high < 0 {
@@ -1423,7 +1527,15 @@ impl DifferenceGraph {
             },
             (Domain::Int64, T::Int64From32(inner)) => self.term_interval(Domain::Int32, inner),
             // Unsigned division by a divisor known to be positive.
-            (Domain::UInt64, T::UInt64Divide(a, b)) => {
+            (
+                Domain::UInt64,
+                T::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Divide,
+                    left: a,
+                    right: b,
+                },
+            ) => {
                 let (a_low, a_high) = self.term_interval(domain, a);
                 let (b_low, b_high) = self.term_interval(domain, b);
                 if b_low < 1 {
@@ -1433,10 +1545,17 @@ impl DifferenceGraph {
             }
             // A constant mask: at most the mask and the masked value, and
             // exact for an exactly known value.
-            (Domain::UInt64, T::UInt64BitwiseAnd(a, b))
-                if constant(domain, a)
-                    .or_else(|| constant(domain, b))
-                    .is_some() =>
+            (
+                Domain::UInt64,
+                T::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::BitwiseAnd,
+                    left: a,
+                    right: b,
+                },
+            ) if constant(domain, a)
+                .or_else(|| constant(domain, b))
+                .is_some() =>
             {
                 let (mask, value) = match constant(domain, b) {
                     Some(mask) => (mask, a),
@@ -1850,9 +1969,16 @@ fn narrow_cast_parts(
 fn sign_flip_base(domain: Domain, term: &Bitvector32Term) -> Option<&Bitvector32Term> {
     use Bitvector32Term as T;
     let (a, b) = match (domain, term) {
-        (Domain::Int32, T::BitwiseXor(a, b)) | (Domain::Int64, T::Int64BitwiseXor(a, b)) => {
-            (a.as_ref(), b.as_ref())
-        }
+        (Domain::Int32, T::BitwiseXor(a, b))
+        | (
+            Domain::Int64,
+            T::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::BitwiseXor,
+                left: a,
+                right: b,
+            },
+        ) => (a.as_ref(), b.as_ref()),
         _ => return None,
     };
     let min = Some(domain.range().0);
@@ -1887,15 +2013,24 @@ fn word_domain(term: &Bitvector32Term) -> Domain {
     use Bitvector32Term as T;
     match term {
         T::UInt64Constant(_)
-        | T::UInt64Add(..)
-        | T::UInt64Subtract(..)
-        | T::UInt64Multiply(..)
-        | T::UInt64Divide(..)
-        | T::UInt64Remainder(..)
-        | T::UInt64BitwiseAnd(..)
-        | T::UInt64BitwiseOr(..)
-        | T::UInt64BitwiseXor(..)
-        | T::UInt64BitwiseNot(..)
+        | T::Binary {
+            format: MachineIntegerType::UInt64,
+            op:
+                MachineBinaryOp::Add
+                | MachineBinaryOp::Subtract
+                | MachineBinaryOp::Multiply
+                | MachineBinaryOp::Divide
+                | MachineBinaryOp::Remainder
+                | MachineBinaryOp::BitwiseAnd
+                | MachineBinaryOp::BitwiseOr
+                | MachineBinaryOp::BitwiseXor,
+            ..
+        }
+        | T::Unary {
+            format: MachineIntegerType::UInt64,
+            op: MachineUnaryOp::BitwiseNot,
+            ..
+        }
         | T::UInt64From32(..)
         | T::UInt64FromInt32(..)
         | T::UInt64FromInt64(..) => Domain::UInt64,
@@ -2069,8 +2204,18 @@ impl Residues {
         charge();
         for (side, other) in [(a, b), (b, a)] {
             // `x & (2^k - 1) == c` gives `x ≡ c (mod 2^k)`.
-            if let Bitvector32Term::UInt64BitwiseAnd(x, mask)
-            | Bitvector32Term::Int64BitwiseAnd(x, mask) = side
+            if let Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::BitwiseAnd,
+                left: x,
+                right: mask,
+            }
+            | Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::BitwiseAnd,
+                left: x,
+                right: mask,
+            } = side
                 && let (Some(mask), Some(c)) = (constant64(mask), constant64(other))
                 && mask != 0
                 && mask & mask.wrapping_add(1) == 0
@@ -2114,20 +2259,33 @@ impl Residues {
             }
         }
         let structural = match term {
-            T::UInt64Add(a, b) | T::Int64Add(a, b) => self
+            T::Binary {
+                format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: a,
+                right: b,
+            } => self
                 .residue(a, depth - 1)
                 .zip(self.residue(b, depth - 1))
                 .map(|(a, b)| a.combine(b, u64::wrapping_add)),
-            T::UInt64Subtract(a, b) | T::Int64Subtract(a, b) => self
+            T::Binary {
+                format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Subtract,
+                left: a,
+                right: b,
+            } => self
                 .residue(a, depth - 1)
                 .zip(self.residue(b, depth - 1))
                 .map(|(a, b)| a.combine(b, u64::wrapping_sub)),
-            T::UInt64BitwiseAnd(a, b)
-            | T::Int64BitwiseAnd(a, b)
-            | T::UInt64BitwiseOr(a, b)
-            | T::Int64BitwiseOr(a, b)
-            | T::UInt64BitwiseXor(a, b)
-            | T::Int64BitwiseXor(a, b) => {
+            T::Binary {
+                format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                op:
+                    MachineBinaryOp::BitwiseAnd
+                    | MachineBinaryOp::BitwiseOr
+                    | MachineBinaryOp::BitwiseXor,
+                left: a,
+                right: b,
+            } => {
                 let (operand, c) = match (constant64(a), constant64(b)) {
                     (_, Some(c)) => (a.as_ref(), c),
                     (Some(c), _) => (b.as_ref(), c),
@@ -2135,7 +2293,11 @@ impl Residues {
                 };
                 let x = self.residue(operand, depth - 1);
                 match term {
-                    T::UInt64BitwiseAnd(..) | T::Int64BitwiseAnd(..) => {
+                    T::Binary {
+                        format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::BitwiseAnd,
+                        ..
+                    } => {
                         // A mask within the known bits gives the exact
                         // value; a mask with zero low bits clears them.
                         let cleared = Residue::new(c.trailing_zeros(), 0);
@@ -2148,9 +2310,11 @@ impl Residues {
                         });
                         Residue::better(known, (cleared.bits > 0).then_some(cleared))
                     }
-                    T::UInt64BitwiseOr(..) | T::Int64BitwiseOr(..) => {
-                        x.map(|x| Residue::new(x.bits, x.value | c))
-                    }
+                    T::Binary {
+                        format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::BitwiseOr,
+                        ..
+                    } => x.map(|x| Residue::new(x.bits, x.value | c)),
                     _ => x.map(|x| Residue::new(x.bits, x.value ^ c)),
                 }
             }
@@ -2353,19 +2517,47 @@ fn modular_parts(domain: Domain, term: &Bitvector32Term) -> Option<(&Bitvector32
     use Bitvector32Term as T;
     match (domain, term) {
         (Domain::Int32, T::Add(a, b))
-        | (Domain::Int64, T::Int64Add(a, b))
-        | (Domain::UInt64, T::UInt64Add(a, b)) => {
-            match (constant(domain, a), constant(domain, b)) {
-                (_, Some(k)) => Some((a.as_ref(), k)),
-                (Some(k), _) => Some((b.as_ref(), k)),
-                _ => None,
-            }
-        }
+        | (
+            Domain::Int64,
+            T::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Add,
+                left: a,
+                right: b,
+            },
+        )
+        | (
+            Domain::UInt64,
+            T::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: a,
+                right: b,
+            },
+        ) => match (constant(domain, a), constant(domain, b)) {
+            (_, Some(k)) => Some((a.as_ref(), k)),
+            (Some(k), _) => Some((b.as_ref(), k)),
+            _ => None,
+        },
         (Domain::Int32, T::Subtract(a, b))
-        | (Domain::Int64, T::Int64Subtract(a, b))
-        | (Domain::UInt64, T::UInt64Subtract(a, b)) => {
-            constant(domain, b).map(|k| (a.as_ref(), -k))
-        }
+        | (
+            Domain::Int64,
+            T::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Subtract,
+                left: a,
+                right: b,
+            },
+        )
+        | (
+            Domain::UInt64,
+            T::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Subtract,
+                left: a,
+                right: b,
+            },
+        ) => constant(domain, b).map(|k| (a.as_ref(), -k)),
         _ => None,
     }
 }
@@ -2399,8 +2591,24 @@ fn link_parts(
     use Bitvector32Term as T;
     match (domain, term) {
         (Domain::Int32, T::Add(left, right))
-        | (Domain::Int64, T::Int64Add(left, right))
-        | (Domain::UInt64, T::UInt64Add(left, right)) => {
+        | (
+            Domain::Int64,
+            T::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Add,
+                left,
+                right,
+            },
+        )
+        | (
+            Domain::UInt64,
+            T::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left,
+                right,
+            },
+        ) => {
             if let Some(k) = constant(domain, right) {
                 Some((domain, left, k, false))
             } else {
@@ -2408,10 +2616,24 @@ fn link_parts(
             }
         }
         (Domain::Int32, T::Subtract(left, right))
-        | (Domain::Int64, T::Int64Subtract(left, right))
-        | (Domain::UInt64, T::UInt64Subtract(left, right)) => {
-            constant(domain, right).map(|k| (domain, left.as_ref(), -k, false))
-        }
+        | (
+            Domain::Int64,
+            T::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Subtract,
+                left,
+                right,
+            },
+        )
+        | (
+            Domain::UInt64,
+            T::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Subtract,
+                left,
+                right,
+            },
+        ) => constant(domain, right).map(|k| (domain, left.as_ref(), -k, false)),
         // Sign extension keeps every value.
         (Domain::Int64, T::Int64From32(inner)) => Some((Domain::Int32, inner, 0, false)),
         // Reinterpreting as unsigned keeps a non-negative value.

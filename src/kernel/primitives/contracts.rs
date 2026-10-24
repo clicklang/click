@@ -3031,7 +3031,12 @@ fn collect_stated_loadable_extent_guards(
                 return;
             }
             let (elements, width) = match bytes {
-                Bitvector32Term::UInt64Multiply(elements, width) => {
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Multiply,
+                    left: elements,
+                    right: width,
+                } => {
                     match width
                         .uint64_as_const()
                         .and_then(|width| u32::try_from(width).ok())
@@ -3189,10 +3194,12 @@ pub(crate) fn wide_loadable_byte_count(elements: Bitvector32Term, width: u32) ->
     if width == 1 {
         return elements;
     }
-    Bitvector32Term::UInt64Multiply(
-        Box::new(elements),
-        Box::new(Bitvector32Term::UInt64Constant(u64::from(width))),
-    )
+    Bitvector32Term::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::Multiply,
+        left: Box::new(elements),
+        right: Box::new(Bitvector32Term::UInt64Constant(u64::from(width))),
+    }
 }
 
 /// The element count of a wide liveness fact's byte count, for elements of
@@ -3205,11 +3212,12 @@ pub(crate) fn wide_loadable_element_count(
         return Some(bytes);
     }
     match bytes {
-        Bitvector32Term::UInt64Multiply(elements, by)
-            if by.uint64_as_const() == Some(u64::from(width)) =>
-        {
-            Some(elements)
-        }
+        Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Multiply,
+            left: elements,
+            right: by,
+        } if by.uint64_as_const() == Some(u64::from(width)) => Some(elements),
         _ => None,
     }
 }
@@ -4119,10 +4127,12 @@ mod guarded_quantified_cell_tests {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: variable(index()),
-            right: Box::new(Bitvector32Term::UInt64Add(
-                variable(index()),
-                length.clone(),
-            )),
+            right: Box::new(Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: variable(index()),
+                right: length.clone(),
+            }),
         });
         assert_eq!(
             CMemoryRange::guarded_quantified_cells(&cell, index(), &circular, 1),

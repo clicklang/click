@@ -3224,8 +3224,7 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
         | Bitvector32Term::Int64FromUInt32(value)
         | Bitvector32Term::UInt64FromInt32(value)
         | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value) => {
+        | Bitvector32Term::Unary { operand: value, .. } => {
             collect_bitvector_bound_variables(value, variables)
         }
         crate::kernel::binary_wide_term!(left, right)

@@ -421,10 +421,12 @@ fn pointer_comparison_preserves_base_evidence_through_aliases_and_scopes() {
 fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
     let total = Bitvector32Term::Variable(Variable(2));
     let remaining = Bitvector32Term::Variable(Variable(1_000_002));
-    let after = Bitvector32Term::UInt64Subtract(
-        Box::new(remaining.clone()),
-        Box::new(Bitvector32Term::UInt64Constant(5552)),
-    );
+    let after = Bitvector32Term::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::Subtract,
+        left: Box::new(remaining.clone()),
+        right: Box::new(Bitvector32Term::UInt64Constant(5552)),
+    };
     let prefix = |remaining: Bitvector32Term| Bitvector32Term::ClickFunctionApplication {
         name: "prefix".into(),
         arguments: vec![
@@ -438,7 +440,12 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
         Box::new(first.clone()),
         Box::new(Bitvector32Term::Constant(5552)),
     );
-    let difference = Bitvector32Term::UInt64Subtract(Box::new(total.clone()), Box::new(after));
+    let difference = Bitvector32Term::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::Subtract,
+        left: Box::new(total.clone()),
+        right: Box::new(after),
+    };
     let original = CPointerValue::new(
         Pointer {
             block: PointerBlock::ExternalArgument,
@@ -637,7 +644,12 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
         offset: PointerOffsetTerm::add(
             original.pointer().offset.clone(),
             PointerOffsetTerm::scale_int64(
-                Bitvector32Term::UInt64Add(Box::new(first), Box::new(second)),
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(first),
+                    right: Box::new(second),
+                },
                 1,
                 true,
             ),

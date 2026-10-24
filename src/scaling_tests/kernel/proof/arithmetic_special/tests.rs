@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 
 #[test]
@@ -351,10 +352,12 @@ fn tagged_word_traversal_scales_with_tagged_depth() {
         let variable = Bitvector32Term::Variable(crate::kernel::Variable(94));
         let mut tagged = address;
         for _ in 0..depth {
-            tagged = Bitvector32Term::UInt64Add(
-                Box::new(tagged),
-                Box::new(Bitvector32Term::UInt64Constant(1)),
-            );
+            tagged = Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: Box::new(tagged),
+                right: Box::new(Bitvector32Term::UInt64Constant(1)),
+            };
         }
         let relation = Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -406,12 +409,14 @@ fn tagged_word_symbolic_tag_chains_scale_without_rewalking_tags() {
         let variable = Bitvector32Term::Variable(crate::kernel::Variable(194));
         let mut tagged = address;
         for index in 0..depth {
-            tagged = Bitvector32Term::UInt64Add(
-                Box::new(tagged),
-                Box::new(Bitvector32Term::Variable(crate::kernel::Variable(
+            tagged = Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: Box::new(tagged),
+                right: Box::new(Bitvector32Term::Variable(crate::kernel::Variable(
                     200 + index,
                 ))),
-            );
+            };
         }
         let relation = Proposition::ConditionIs(
             ConditionTerm::Compare {

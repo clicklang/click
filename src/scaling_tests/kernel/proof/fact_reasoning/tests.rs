@@ -122,8 +122,11 @@ fn machine_affine_equality_work_is_linear_in_the_sum() {
         let variable = |index: u64| Bitvector32Term::Variable(Variable(97_000 + index));
         let sum = |order: &mut dyn Iterator<Item = u64>| {
             let first = variable(order.next().unwrap());
-            order.fold(first, |sum, index| {
-                Bitvector32Term::UInt64Add(Box::new(sum), Box::new(variable(index)))
+            order.fold(first, |sum, index| Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: Box::new(sum),
+                right: Box::new(variable(index)),
             })
         };
         let forward = sum(&mut (0..size));

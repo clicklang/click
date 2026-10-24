@@ -12,6 +12,7 @@
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
 
 use super::{AffineOffset, MachineAtom, Pointer, PointerBlock, PointerOffsetTerm, Variable};
+use crate::kernel::{MachineBinaryOp, MachineIntegerType};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
 
@@ -184,14 +185,54 @@ pub(super) fn uint64_binary(
 )> {
     use crate::kernel::Bitvector32Term as T;
     let (op, a, b) = match term {
-        T::UInt64Add(a, b) => (UInt64Binary::Add, a, b),
-        T::UInt64Subtract(a, b) => (UInt64Binary::Subtract, a, b),
-        T::UInt64Multiply(a, b) => (UInt64Binary::Multiply, a, b),
-        T::UInt64Divide(a, b) => (UInt64Binary::Divide, a, b),
-        T::UInt64Remainder(a, b) => (UInt64Binary::Remainder, a, b),
-        T::UInt64BitwiseAnd(a, b) => (UInt64Binary::And, a, b),
-        T::UInt64BitwiseOr(a, b) => (UInt64Binary::Or, a, b),
-        T::UInt64BitwiseXor(a, b) => (UInt64Binary::Xor, a, b),
+        T::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Add,
+            left: a,
+            right: b,
+        } => (UInt64Binary::Add, a, b),
+        T::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Subtract,
+            left: a,
+            right: b,
+        } => (UInt64Binary::Subtract, a, b),
+        T::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Multiply,
+            left: a,
+            right: b,
+        } => (UInt64Binary::Multiply, a, b),
+        T::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Divide,
+            left: a,
+            right: b,
+        } => (UInt64Binary::Divide, a, b),
+        T::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Remainder,
+            left: a,
+            right: b,
+        } => (UInt64Binary::Remainder, a, b),
+        T::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::BitwiseAnd,
+            left: a,
+            right: b,
+        } => (UInt64Binary::And, a, b),
+        T::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::BitwiseOr,
+            left: a,
+            right: b,
+        } => (UInt64Binary::Or, a, b),
+        T::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::BitwiseXor,
+            left: a,
+            right: b,
+        } => (UInt64Binary::Xor, a, b),
         _ => return None,
     };
     Some((op, a, b))

@@ -9,6 +9,7 @@
 
 use super::representation::{self, Division};
 use super::*;
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::proof::arithmetic_special::{
     SpecialArithmeticCertificate, SpecialArithmeticNode,
 };
@@ -506,20 +507,50 @@ fn division_word(
         Division::Quotient => [
             T::Divide(operand.clone(), divisor.clone()),
             T::UnsignedDivide(operand.clone(), divisor.clone()),
-            T::Int64Divide(operand.clone(), divisor.clone()),
-            T::UInt64Divide(operand, divisor),
+            T::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Divide,
+                left: operand.clone(),
+                right: divisor.clone(),
+            },
+            T::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Divide,
+                left: operand,
+                right: divisor,
+            },
         ],
         Division::ShiftRight => [
             T::ArithmeticShiftRight(operand.clone(), divisor.clone()),
             T::LogicalShiftRight(operand.clone(), divisor.clone()),
-            T::Int64ArithmeticShiftRight(operand.clone(), divisor.clone()),
-            T::UInt64LogicalShiftRight(operand, divisor),
+            T::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::ShiftRight,
+                left: operand.clone(),
+                right: divisor.clone(),
+            },
+            T::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::ShiftRight,
+                left: operand,
+                right: divisor,
+            },
         ],
         Division::Remainder => [
             T::Remainder(operand.clone(), divisor.clone()),
             T::UnsignedRemainder(operand.clone(), divisor.clone()),
-            T::Int64Remainder(operand.clone(), divisor.clone()),
-            T::UInt64Remainder(operand, divisor),
+            T::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Remainder,
+                left: operand.clone(),
+                right: divisor.clone(),
+            },
+            T::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Remainder,
+                left: operand,
+                right: divisor,
+            },
         ],
     };
     let mut accepted = candidates.into_iter().filter(|word| {

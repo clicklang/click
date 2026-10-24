@@ -3637,10 +3637,12 @@ fn reinterpreted_unsigned_arithmetic_keeps_signed_operators_and_definedness() {
     );
     let converted = Bitvector32Term::int64_from_uint64_bits(source.clone());
     assert_eq!(converted, source); // Preserve the symbolic 64-bit expression.
-    let wrapped = Bitvector32Term::UInt64Add(
-        Box::new(Bitvector32Term::UInt64Constant(u64::MAX)),
-        Box::new(Bitvector32Term::UInt64Constant(1)),
-    );
+    let wrapped = Bitvector32Term::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::Add,
+        left: Box::new(Bitvector32Term::UInt64Constant(u64::MAX)),
+        right: Box::new(Bitvector32Term::UInt64Constant(1)),
+    };
     assert_eq!(wrapped.int64_as_const(), Some(0));
     let high = Bitvector32Term::UInt64Constant(1u64 << 63);
     assert_eq!(

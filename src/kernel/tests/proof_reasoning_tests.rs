@@ -7530,7 +7530,12 @@ fn int64_subtract_bridge_matches_independent_overflow_boundary_model() {
         panic!("missing typed observation");
     };
     assert_eq!(machine.ty(), MachineIntegerType::Int64);
-    let operation = Bitvector32Term::Int64Subtract(Box::new(left.clone()), Box::new(right.clone()));
+    let operation = Bitvector32Term::Binary {
+        format: MachineIntegerType::Int64,
+        op: MachineBinaryOp::Subtract,
+        left: Box::new(left.clone()),
+        right: Box::new(right.clone()),
+    };
     assert_eq!(machine.value(), &operation);
     let observe = |term| IntegerTerm::from_machine(MachineIntegerType::Int64, term).unwrap();
     let mathematical =
@@ -9023,13 +9028,22 @@ fn unsigned_u16_packing_bridges_match_disjoint_fields_and_retain_both_bounds() {
             Bitvector32Term::Constant(value) => u64::from(*value),
             Bitvector32Term::UInt64Constant(value) => *value,
             Bitvector32Term::Int64Constant(value) => *value as u64,
-            Bitvector32Term::BitwiseOr(a, b) | Bitvector32Term::UInt64BitwiseOr(a, b) => {
-                word(a) | word(b)
-            }
+            Bitvector32Term::BitwiseOr(a, b)
+            | Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::BitwiseOr,
+                left: a,
+                right: b,
+            } => word(a) | word(b),
             Bitvector32Term::ShiftLeft(a, b) => {
                 u64::from((word(a) as u32).wrapping_shl(word(b) as u32))
             }
-            Bitvector32Term::UInt64ShiftLeft(a, b) => word(a).wrapping_shl(word(b) as u32),
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::ShiftLeft,
+                left: a,
+                right: b,
+            } => word(a).wrapping_shl(word(b) as u32),
             _ => panic!("unexpected native packing term"),
         }
     }
