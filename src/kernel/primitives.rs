@@ -12468,6 +12468,10 @@ pub struct PureFactContext {
     /// Each entry carries the fact's own endpoint term first, so evidence
     /// found through the alias can still cite the exact fact. Counts
     /// preserve equivalent condition terms when one source fact is replaced.
+    /// The written order facts by the lower end an order walk follows them
+    /// from, each filed as its own condition so a walk can cite it exactly:
+    /// [`super::assumptions::OrderFactsByLower`].
+    pub(super) order_facts_by_lower: super::assumptions::OrderFactsByLower,
     pub(super) signed_order_bounds: crate::persistent::PersistentMap<
         Bitvector32Term,
         crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,

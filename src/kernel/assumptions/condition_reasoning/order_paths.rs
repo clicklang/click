@@ -708,28 +708,47 @@ impl PureFactContext {
         // proposition that was actually present, not merely the normalized
         // form. This collection is local to derivation construction so
         // the durable evidence remains self-contained.
-        let order_facts = self
-            .condition_facts
-            .scan_unindexed()
-            .filter_map(|(condition, value)| {
-                #[cfg(test)]
-                EXACT_ORDER_EVIDENCE_VISITS.with(|visits| visits.set(visits.get() + 1));
-                condition_as_order_fact(condition, *value).map(|(lower, upper, strict)| {
-                    SignedOrderDerivationStep {
-                        lower,
-                        upper,
-                        strict,
-                        premise: Proposition::ConditionIs(condition.clone(), *value),
-                    }
-                })
+        let step = |condition: &ConditionTerm| {
+            #[cfg(test)]
+            EXACT_ORDER_EVIDENCE_VISITS.with(|visits| visits.set(visits.get() + 1));
+            let value = *self.condition_facts.get(condition)?;
+            condition_as_order_fact(condition, value).map(|(lower, upper, strict)| {
+                SignedOrderDerivationStep {
+                    lower,
+                    upper,
+                    strict,
+                    premise: Proposition::ConditionIs(condition.clone(), value),
+                }
             })
-            .collect::<Vec<_>>();
+        };
+        let bridging = crate::kernel::api::extended_dag_bridging_active();
         let terms_match = |current: &Bitvector32Term, other: &Bitvector32Term| {
             current == other
-                || crate::kernel::api::extended_dag_bridging_active()
+                || bridging
                     && crate::kernel::api::atomic_loads_equal_along_memory_derivations(
                         current, other, self,
                     )
+        };
+        // The edges a node can take: those written from it, those from a
+        // constant at least as large when it is a constant, and, under
+        // bridging, those from another snapshot's load of its cell
+        // (`OrderFactsByLower`). They are visited in the reverse of the
+        // facts' own order, as the walk over every order fact visited them,
+        // so the walk finds the same path.
+        let edges_from = |current: &Bitvector32Term| {
+            let index = &self.order_facts_by_lower;
+            let mut conditions = index.written_from(current).collect::<BTreeSet<_>>();
+            if let Some(constant) = signed_bitvector_constant(current) {
+                conditions.extend(index.constant_at_least(constant));
+            }
+            if bridging && let Bitvector32Term::MemoryLoad(_, pointer, kind) = current {
+                conditions.extend(index.loads_of(pointer, *kind));
+            }
+            conditions
+                .into_iter()
+                .rev()
+                .filter_map(step)
+                .collect::<Vec<_>>()
         };
         let mut stack = vec![(left.clone(), false, Vec::new())];
         let mut seen = BTreeSet::new();
@@ -746,7 +765,7 @@ impl PureFactContext {
             {
                 return Some(path);
             }
-            for edge in order_facts.iter().rev() {
+            for edge in edges_from(&current) {
                 let constant_connection = signed_bitvector_constant(&current)
                     .zip(signed_bitvector_constant(&edge.lower))
                     .and_then(|(current, edge_left)| {
@@ -781,21 +800,28 @@ impl PureFactContext {
         unsigned: bool,
     ) -> Option<Vec<SignedOrderDerivationStep>> {
         let canonical = crate::kernel::eval::canonical_term;
-        let order_facts = self
-            .condition_facts
-            .scan_unindexed()
-            .filter_map(|(condition, value)| {
-                crate::instrumentation::record_deterministic_work(1);
-                wide_order_fact(condition, *value, unsigned).map(|(lower, upper, strict)| {
-                    SignedOrderDerivationStep {
-                        lower,
-                        upper,
-                        strict,
-                        premise: Proposition::ConditionIs(condition.clone(), *value),
-                    }
+        // The facts of this kind filed under the node's canonical form, the
+        // only edges the walk matches (`OrderFactsByLower`), visited in the
+        // reverse of the facts' own order as before.
+        let edges_from = |current: &Bitvector32Term| {
+            self.order_facts_by_lower
+                .wide_from(unsigned, current)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .rev()
+                .filter_map(|condition| {
+                    let value = *self.condition_facts.get(condition)?;
+                    wide_order_fact(condition, value, unsigned).map(|(lower, upper, strict)| {
+                        SignedOrderDerivationStep {
+                            lower,
+                            upper,
+                            strict,
+                            premise: Proposition::ConditionIs(condition.clone(), value),
+                        }
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>()
+        };
         let target = canonical(right);
         let mut stack = vec![(canonical(left), false, Vec::new())];
         let mut seen = BTreeSet::new();
@@ -806,11 +832,8 @@ impl PureFactContext {
             if current == target && (!require_strict || strict_so_far) && !path.is_empty() {
                 return Some(path);
             }
-            for edge in order_facts.iter().rev() {
-                crate::instrumentation::record_deterministic_work(1);
-                if canonical(&edge.lower) != current {
-                    continue;
-                }
+            for edge in edges_from(&current) {
+                debug_assert_eq!(canonical(&edge.lower), current);
                 let mut extended = path.clone();
                 extended.push(edge.clone());
                 stack.push((
@@ -829,11 +852,11 @@ impl PureFactContext {
     /// A non-constant node's edges are read from the endpoint index
     /// (`signed_order_bounds`), which files every written order fact under
     /// its lower endpoint, so a walk costs the edges it follows rather than
-    /// every order fact at every node. Two matches no index key spells read
-    /// the order facts whose lower end has the node's shape, collected once
-    /// per walk: a constant node connects to any edge whose lower end is a
-    /// constant at least as large, and with extended bridging a load connects
-    /// to its forms at other snapshots.
+    /// every order fact at every node. The two matches no endpoint key
+    /// spells read `OrderFactsByLower`: a constant node connects to any edge
+    /// whose lower end is a constant at least as large, one range read, and
+    /// with extended bridging a load connects to its forms at other
+    /// snapshots, filed under its pointer and kind.
     pub(in crate::kernel) fn has_exact_order_path(
         &self,
         left: &Bitvector32Term,
@@ -841,9 +864,6 @@ impl PureFactContext {
         require_strict: bool,
     ) -> bool {
         let bridging = crate::kernel::api::extended_dag_bridging_active();
-        // The order facts whose lower end is a constant or a load: the only
-        // edges a constant node, or a load under bridging, can take.
-        let mut shaped_edges = None;
         // Two forms of one load at different snapshots connect along
         // recorded memory-derivation edges; the walk is deterministic (exact
         // facts plus DAG edges, no ambient condition reasoning), so an exact
@@ -874,30 +894,35 @@ impl PureFactContext {
             // Bridging relates two loads only (`atomic_memory_load_equality_evidence`).
             let bridged_load = bridging && matches!(current, Bitvector32Term::MemoryLoad(..));
             if bridged_load || signed_bitvector_constant(&current).is_some() {
-                let shaped_edges = shaped_edges.get_or_insert_with(|| {
-                    self.condition_order_facts()
-                        .iter()
-                        .filter(|(edge_left, _, _)| {
-                            crate::instrumentation::record_deterministic_work(1);
-                            matches!(
-                                edge_left,
-                                Bitvector32Term::Constant(_) | Bitvector32Term::MemoryLoad(..)
-                            )
-                        })
-                        .cloned()
-                        .collect::<Vec<_>>()
-                });
-                for (edge_left, edge_right, edge_strict) in shaped_edges.iter() {
-                    crate::instrumentation::record_deterministic_work(1);
+                // A constant node takes the edges from a constant at least
+                // as large; a bridged load, those from a load of its cell at
+                // any snapshot (`OrderFactsByLower`). No other edge matches
+                // either node.
+                let index = &self.order_facts_by_lower;
+                let candidates = match (&current, signed_bitvector_constant(&current)) {
+                    (_, Some(constant)) => index.constant_at_least(constant).collect::<Vec<_>>(),
+                    (Bitvector32Term::MemoryLoad(_, pointer, kind), None) => {
+                        index.loads_of(pointer, *kind).collect()
+                    }
+                    _ => Vec::new(),
+                };
+                for condition in candidates {
+                    let Some((edge_left, edge_right, edge_strict)) = self
+                        .condition_facts
+                        .get(condition)
+                        .and_then(|value| condition_as_order_fact(condition, *value))
+                    else {
+                        continue;
+                    };
                     let constant_connection = signed_bitvector_constant(&current)
-                        .zip(signed_bitvector_constant(edge_left))
+                        .zip(signed_bitvector_constant(&edge_left))
                         .and_then(|(current, edge_left)| {
                             (current <= edge_left).then_some(current < edge_left)
                         });
-                    if terms_match(&current, edge_left) || constant_connection.is_some() {
+                    if terms_match(&current, &edge_left) || constant_connection.is_some() {
                         stack.push((
-                            edge_right.clone(),
-                            strict_so_far || *edge_strict || constant_connection == Some(true),
+                            edge_right,
+                            strict_so_far || edge_strict || constant_connection == Some(true),
                         ));
                     }
                 }
@@ -2504,6 +2529,139 @@ mod exact_order_path_tests {
                 );
             }
         }
+    }
+
+    /// The evidence walk as it was before `OrderFactsByLower`: every node
+    /// visits every order fact, in reverse fact order.
+    fn scanned_order_path_evidence(
+        context: &PureFactContext,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+        require_strict: bool,
+    ) -> Option<Vec<SignedOrderDerivationStep>> {
+        let order_facts = context
+            .condition_facts
+            .iter()
+            .filter_map(|(condition, value)| {
+                condition_as_order_fact(condition, *value).map(|(lower, upper, strict)| {
+                    SignedOrderDerivationStep {
+                        lower,
+                        upper,
+                        strict,
+                        premise: Proposition::ConditionIs(condition.clone(), *value),
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut stack = vec![(left.clone(), false, Vec::new())];
+        let mut seen = BTreeSet::new();
+        while let Some((current, strict_so_far, path)) = stack.pop() {
+            if !seen.insert((current.clone(), strict_so_far)) {
+                continue;
+            }
+            let constant_connection = signed_bitvector_constant(&current)
+                .zip(signed_bitvector_constant(right))
+                .and_then(|(current, right)| (current <= right).then_some(current < right));
+            if (&current == right || constant_connection.is_some())
+                && (!require_strict || strict_so_far || constant_connection == Some(true))
+                && !path.is_empty()
+            {
+                return Some(path);
+            }
+            for edge in order_facts.iter().rev() {
+                let constant_connection = signed_bitvector_constant(&current)
+                    .zip(signed_bitvector_constant(&edge.lower))
+                    .and_then(|(current, edge_left)| {
+                        (current <= edge_left).then_some(current < edge_left)
+                    });
+                if current != edge.lower && constant_connection.is_none() {
+                    continue;
+                }
+                let mut extended = path.clone();
+                extended.push(edge.clone());
+                stack.push((
+                    edge.upper.clone(),
+                    strict_so_far || edge.strict || constant_connection == Some(true),
+                    extended,
+                ));
+            }
+        }
+        None
+    }
+
+    /// The indexed evidence walk returns the very path the full scan did,
+    /// not only an answer of the same truth.
+    #[test]
+    fn indexed_evidence_walk_finds_the_scanned_path() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for seed in 0..30u64 {
+            let mut terms = Terms(seed + 101);
+            let mut context = PureFactContext::new();
+            for _ in 0..14 {
+                let (left, right) = (Box::new(terms.term()), Box::new(terms.term()));
+                let condition = match terms.next() % 4 {
+                    0 => ConditionTerm::Bitvector32SignedLessThan(left, right),
+                    1 => ConditionTerm::Bitvector32SignedLessEqual(left, right),
+                    2 => ConditionTerm::Bitvector32SignedGreaterThan(left, right),
+                    _ => ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
+                };
+                context = context.assume_condition(condition, !terms.next().is_multiple_of(3));
+            }
+            for _ in 0..40 {
+                let (left, right) = (terms.term(), terms.term());
+                let strict = terms.next().is_multiple_of(2);
+                let indexed = context
+                    .exact_signed_order_path_evidence(&left, &right, strict)
+                    .map(|path| {
+                        path.into_iter()
+                            .map(|step| step.premise)
+                            .collect::<Vec<_>>()
+                    });
+                let scanned =
+                    scanned_order_path_evidence(&context, &left, &right, strict).map(|path| {
+                        path.into_iter()
+                            .map(|step| step.premise)
+                            .collect::<Vec<_>>()
+                    });
+                assert_eq!(
+                    indexed, scanned,
+                    "seed {seed}: {left:?} to {right:?}, strict {strict}"
+                );
+            }
+        }
+    }
+
+    /// A walk from a constant reads the order facts from a constant at
+    /// least as large, not every order fact. Both walks once collected every
+    /// order fact, so their work grew with unrelated bounds.
+    #[test]
+    fn constant_order_walks_ignore_unrelated_order_facts() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut samples = Vec::new();
+        for size in [16u64, 64, 256] {
+            let mut context = PureFactContext::new()
+                .assume_condition(ConditionTerm::signed_less_than(5u32.into(), var(0)), true);
+            for index in 0..size {
+                context = context.assume_condition(
+                    ConditionTerm::signed_less_than(var(10 + 2 * index), var(11 + 2 * index)),
+                    true,
+                );
+            }
+            let (found, walk) = crate::instrumentation::measure_deterministic_work(|| {
+                context.has_exact_order_path(&3u32.into(), &var(0), true)
+            });
+            assert!(found);
+            let (evidence, evidence_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    context.exact_signed_order_path_evidence(&3u32.into(), &var(0), true)
+                });
+            assert!(evidence.is_some());
+            samples.push((walk, evidence_work));
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "unrelated order facts changed a constant walk's work: {samples:?}"
+        );
     }
 
     /// An order chain of fixed length beside many unrelated order facts:
