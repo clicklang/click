@@ -1678,15 +1678,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // matching, checked 32-to-64-bit cast of the cited constant; the
         // replacement keeps that cast, including its signedness. Never
         // identify a full-width literal by truncating it to 32 bits.
-        if let Bitvector32Term::Constant(source) = from {
-            // Unsigned 32-bit order is encoded by signed order after XOR
-            // with the sign bit. The constant side of that bias is folded.
-            if matches!(term, Bitvector32Term::Constant(value) if *value == source ^ 0x8000_0000) {
-                return Bitvector32Term::bitwise_xor(
-                    to.clone(),
-                    Bitvector32Term::Constant(0x8000_0000),
-                );
-            }
+        if let Bitvector32Term::Constant(_) = from {
             let casts: &[fn(Bitvector32Term) -> Bitvector32Term] = match term {
                 Bitvector32Term::Int64Constant(_) => &[
                     Bitvector32Term::int64_from_32,

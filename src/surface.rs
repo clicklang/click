@@ -5478,6 +5478,10 @@ pub enum SignedInt32Comparison {
     LessEqual,
     Equal,
     Disequal,
+    /// `ult`: the `uint32` order `<` of the two words.
+    UnsignedLessThan,
+    /// `ule`: the `uint32` order `<=` of the two words.
+    UnsignedLessEqual,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5604,10 +5608,6 @@ pub enum SignedArithmeticStep {
     IntervalBitwiseAnd {
         operand: usize,
         mask: u32,
-        result: SignedInt32Interval,
-    },
-    IntervalSignBitFlip {
-        operand: usize,
         result: SignedInt32Interval,
     },
     /// A C conversion of the operand into a one- or two-byte type, with the

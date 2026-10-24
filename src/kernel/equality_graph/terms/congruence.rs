@@ -50,6 +50,10 @@ pub(in crate::kernel::equality_graph) enum ConditionKind {
     IntegerLe,
     IntegerGt,
     IntegerGe,
+    UInt32Lt,
+    UInt32Le,
+    UInt32Gt,
+    UInt32Ge,
 }
 
 /// Shared classification for registration and the opaque-atom lookup fast path.
@@ -1096,6 +1100,16 @@ impl TermClasses {
                 right: b,
             } => (Int32Ge, self.intern_int32(a), self.intern_int32(b)),
             C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation,
+                left: a,
+                right: b,
+            } if *relation != CompareRelation::Equal => (
+                Self::condition_kind(condition)?,
+                self.intern_int32(a),
+                self.intern_int32(b),
+            ),
+            C::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: a,
@@ -1236,6 +1250,26 @@ impl TermClasses {
                 relation: CompareRelation::GreaterEqual,
                 ..
             } => ConditionKind::Int32Ge,
+            C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::LessThan,
+                ..
+            } => ConditionKind::UInt32Lt,
+            C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::LessEqual,
+                ..
+            } => ConditionKind::UInt32Le,
+            C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::GreaterThan,
+                ..
+            } => ConditionKind::UInt32Gt,
+            C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::GreaterEqual,
+                ..
+            } => ConditionKind::UInt32Ge,
             C::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::LessThan,

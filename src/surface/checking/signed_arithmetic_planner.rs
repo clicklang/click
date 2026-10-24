@@ -57,11 +57,15 @@ fn plan_signed_arithmetic_certificate_with_mode(
     // count may still carry a raw memory read here, while another premise
     // names that same value by its registered load variable.
     let goal = crate::kernel::canonical_condition_fact(goal);
-    signed_claim(&goal)?;
     let premises = premises
         .iter()
         .map(crate::kernel::canonical_condition_fact)
         .collect::<Vec<_>>();
+    if unsigned_order_terms(&goal).is_some() {
+        return plan_unsigned_order_goal(&goal, &premises, false)
+            .or_else(|| plan_unsigned_order_goal(&goal, &premises, true));
+    }
+    signed_claim(&goal)?;
     plan_signed_arithmetic_certificate_in_pass(&goal, &premises, allow_weakening, false).or_else(
         || plan_signed_arithmetic_certificate_in_pass(&goal, &premises, allow_weakening, true),
     )
@@ -273,6 +277,16 @@ fn plan_affine_from_selected_claims(
 /// syntactic; the actual certificate remains the kernel's authority.
 pub(in crate::surface) fn signed_arithmetic_premise_supported(proposition: &Proposition) -> bool {
     signed_claim(proposition).is_some_and(|claim| charge_claim_comparison(&claim).is_some())
+        || unsigned_order_terms(proposition).is_some_and(|(lower, upper, _)| {
+            SignedArithmeticAtom::from_term(lower).is_some()
+                && SignedArithmeticAtom::from_term(upper).is_some()
+        })
+}
+
+/// Whether `goal` is a `uint32` order the signed planner reads through its
+/// operands' signed intervals ([`plan_unsigned_order_goal`]).
+pub(in crate::surface) fn is_unsigned_order_goal(goal: &Proposition) -> bool {
+    unsigned_order_terms(goal).is_some()
 }
 
 fn certificate(nodes: Vec<SignedArithmeticNode>, conclusion: usize) -> SignedArithmeticCertificate {
@@ -875,23 +889,8 @@ fn affine_operation_terms(
 }
 
 /// A goal side the affine planner may combine premises over as one opaque
-/// atom: a term with no machine operation, or the sign-bit flip
-/// `v ^ 2^31` of one. The flip is how a 32-bit unsigned order is spelled
-/// (`ConditionTerm::unsigned_less_than` states `x <u n` as
-/// `(x ^ 2^31) <s (n ^ 2^31)`), and it is total: no operand makes it
-/// undefined. So an unsigned chain `x <u n`, `n <=u 4` sums over the flipped
-/// atoms exactly as the signed chain over `x` and `n` sums over theirs. A
-/// flipped atom is a different atom from its operand, so an unsigned bound
-/// never composes with a signed one on the same variable.
+/// atom: a term with no machine operation.
 fn is_affine_planning_atom(term: &Bitvector32Term) -> bool {
-    if let Bitvector32Term::BitwiseXor(left, right) = term {
-        let operand = match (left.as_ref(), right.as_ref()) {
-            (Bitvector32Term::Constant(0x8000_0000), operand)
-            | (operand, Bitvector32Term::Constant(0x8000_0000)) => operand,
-            _ => return false,
-        };
-        return !contains_machine_operation(operand);
-    }
     !contains_machine_operation(term)
 }
 
@@ -2825,52 +2824,6 @@ impl<'a> Planner<'a> {
                     interval,
                 )
             }
-            Bitvector32Term::BitwiseXor(left, right) => {
-                let operand = right_index?;
-                let (operand_term, sign_bit) = if left.as_const() == Some(0x8000_0000) {
-                    (right, left)
-                } else if right.as_const() == Some(0x8000_0000) {
-                    (left, right)
-                } else {
-                    return None;
-                };
-                if sign_bit.as_const()? != 0x8000_0000 {
-                    return None;
-                }
-                // The flipped interval is only as tight as the operand's. A
-                // premise bounding the operand directly on one side only
-                // leaves the other side open; its operands may still close it.
-                let mut operand = operand;
-                let mut op = self.interval_at(operand)?;
-                if (op.lower == SIGNED_MIN || op.upper == SIGNED_MAX)
-                    && matches!(
-                        self.nodes.get(operand),
-                        Some(SignedArithmeticNode::IntervalFromAffineDirect { .. })
-                    )
-                {
-                    operand = self.tighten_one_sided_direct_interval(operand_term, operand);
-                    op = self.interval_at(operand)?;
-                }
-                let (lower, upper) = if op.lower >= 0 {
-                    (op.lower + SIGNED_MIN, op.upper + SIGNED_MIN)
-                } else if op.upper < 0 {
-                    (op.lower - SIGNED_MIN, op.upper - SIGNED_MIN)
-                } else {
-                    (SIGNED_MIN, SIGNED_MAX)
-                };
-                let interval = SignedArithmeticInterval {
-                    carrier: SignedArithmeticCarrier::SignedInt32,
-                    lower,
-                    upper,
-                };
-                self.push_interval(
-                    SignedArithmeticNode::IntervalSignBitFlip {
-                        operand,
-                        result: interval.clone(),
-                    },
-                    interval,
-                )
-            }
             _ => None,
         }
     }
@@ -2963,6 +2916,107 @@ fn plan_interval_goal(
         left: left_node,
         right: right_node,
         comparison: result,
+        result: goal.clone(),
+    })?;
+    Some(certificate(planner.nodes, conclusion))
+}
+
+/// The operands of a held `uint32` order goal, as `(lower, upper, strict)`.
+fn unsigned_order_terms(goal: &Proposition) -> Option<(&Bitvector32Term, &Bitvector32Term, bool)> {
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt32,
+            relation,
+            left,
+            right,
+        },
+        value,
+    ) = goal
+    else {
+        return None;
+    };
+    let (lower_first, strict) = match relation {
+        CompareRelation::LessThan => (true, true),
+        CompareRelation::LessEqual => (true, false),
+        CompareRelation::GreaterThan => (false, true),
+        CompareRelation::GreaterEqual => (false, false),
+        CompareRelation::Equal => return None,
+    };
+    let (lower, upper) = if lower_first {
+        (left.as_ref(), right.as_ref())
+    } else {
+        (right.as_ref(), left.as_ref())
+    };
+    Some(if *value {
+        (lower, upper, strict)
+    } else {
+        (upper, lower, !strict)
+    })
+}
+
+/// A `uint32` order goal from the signed intervals of its two words: each
+/// word's interval is built from the premises as for a signed goal, and the
+/// `interval_compare ... ult|ule` step reads each as unsigned once its sign
+/// is known. A one-sided direct bound on an operation is intersected with
+/// the bound its operands give (`tighten_one_sided_direct_interval`), since
+/// a sign is all the unsigned reading needs from the other side.
+fn plan_unsigned_order_goal(
+    goal: &Proposition,
+    premises: &[Proposition],
+    int32_range_fallback: bool,
+) -> Option<SignedArithmeticCertificate> {
+    if premises.len() > MAX_SELECTED_PREMISES {
+        return None;
+    }
+    let (lower, upper, strict) = unsigned_order_terms(goal)?;
+    let claims = premises
+        .iter()
+        .enumerate()
+        .filter_map(|(index, proposition)| {
+            charge_work(1)?;
+            signed_claim(proposition).map(|claim| (index, claim))
+        })
+        .collect::<Vec<_>>();
+    let mut planner = Planner::new(premises, &claims, int32_range_fallback);
+    let mut side = |term: &Bitvector32Term| -> Option<(usize, (i64, i64))> {
+        let mut node = planner.build_interval(term)?;
+        let mut interval = planner.interval_at(node)?;
+        if (interval.lower == SIGNED_MIN || interval.upper == SIGNED_MAX)
+            && matches!(
+                planner.nodes.get(node),
+                Some(SignedArithmeticNode::IntervalFromAffineDirect { .. })
+            )
+        {
+            node = planner.tighten_one_sided_direct_interval(term, node);
+            interval = planner.interval_at(node)?;
+        }
+        let unsigned = if interval.lower >= 0 {
+            (interval.lower, interval.upper)
+        } else if interval.upper < 0 {
+            (interval.lower + (1 << 32), interval.upper + (1 << 32))
+        } else {
+            return None;
+        };
+        Some((node, unsigned))
+    };
+    let (lower_node, (_, lower_high)) = side(lower)?;
+    let (upper_node, (upper_low, _)) = side(upper)?;
+    let proves = if strict {
+        lower_high < upper_low
+    } else {
+        lower_high <= upper_low
+    };
+    if !proves {
+        return None;
+    }
+    let conclusion = planner.push(SignedArithmeticNode::IntervalCompare {
+        left: lower_node,
+        right: upper_node,
+        comparison: if strict {
+            SignedArithmeticComparison::UnsignedLessThan
+        } else {
+            SignedArithmeticComparison::UnsignedLessEqual
+        },
         result: goal.clone(),
     })?;
     Some(certificate(planner.nodes, conclusion))
@@ -3529,30 +3583,36 @@ mod tests {
         );
     }
 
-    fn biased_extent_bound(term: Bitvector32Term) -> Proposition {
-        le(
-            Bitvector32Term::BitwiseXor(Box::new(constant(i32::MIN)), Box::new(term)),
-            constant(-1073741825),
-        )
-    }
-
+    /// A `uint32` order goal is planned from its operands' signed
+    /// intervals and closed by the unsigned `interval_compare`, here the
+    /// byte-count bound `(uint32)(i + 1) <=u 1073741823` of a loop back edge
+    /// whose premise bounds `i + 1` on one side only.
     #[test]
-    fn sign_bit_flip_on_either_comparison_side_rechecks() {
-        let bounds = [lt(constant(0), var(1)), le(var(1), constant(4))];
-        for constant_first in [false, true] {
-            let flipped = if constant_first {
-                Bitvector32Term::BitwiseXor(Box::new(constant(i32::MIN)), Box::new(var(1)))
-            } else {
-                Bitvector32Term::BitwiseXor(Box::new(var(1)), Box::new(constant(i32::MIN)))
-            };
-            for goal in [
-                le(constant(i32::MIN + 1), flipped.clone()),
-                le(flipped, constant(i32::MIN + 4)),
-            ] {
-                let plan = check_plan(&goal, &bounds);
-                assert!(plan.check(&goal, &[]).is_err());
+    fn an_unsigned_order_goal_reads_its_operands_signed_intervals() {
+        let (i, n) = (var(10), var(11));
+        let next = Bitvector32Term::Add(Box::new(i.clone()), Box::new(constant(1)));
+        let bound = |limit: i32| {
+            proposition(
+                ConditionTerm::unsigned_less_equal(next.clone(), constant(limit)),
+                true,
+            )
+        };
+        let premises = vec![
+            le(constant(0), next.clone()),
+            le(constant(0), i.clone()),
+            lt(i.clone(), n.clone()),
+            le(n.clone(), constant(1073741823)),
+        ];
+        let plan = check_plan(&bound(1073741823), &premises);
+        assert!(plan.nodes.iter().any(|node| matches!(
+            node,
+            SignedArithmeticNode::IntervalCompare {
+                comparison: SignedArithmeticComparison::UnsignedLessEqual,
+                ..
             }
-        }
+        )));
+        // One less is not implied: `i + 1` may be `1073741823`.
+        assert!(plan_signed_arithmetic_certificate(&bound(1073741822), &premises).is_none());
     }
 
     #[test]
@@ -3586,35 +3646,6 @@ mod tests {
             assert!(plan.check(&goal, &unavailable).is_err());
             assert!(plan_signed_arithmetic_certificate(&goal, &unavailable).is_none());
         }
-    }
-
-    #[test]
-    fn one_sided_direct_bound_does_not_hide_the_operand_bound() {
-        // The back edge of `for (i = 0; i < n; i++)`: the new index is
-        // `i0 + 1`, the invariant `0 <= i` bounds it directly from below
-        // only, and the guard `i0 < n` with `n <= 1073741823` bounds its
-        // operands from above. Citing the direct premise must not lose the
-        // certificate the operands alone give.
-        let i0 = var(10);
-        let n = var(11);
-        let next = Bitvector32Term::Add(Box::new(i0.clone()), Box::new(constant(1)));
-        let goal = biased_extent_bound(next.clone());
-        let without_direct = vec![
-            le(constant(0), i0.clone()),
-            lt(i0.clone(), n.clone()),
-            le(n.clone(), constant(1073741823)),
-        ];
-        check_plan(&goal, &without_direct);
-        let mut with_direct = vec![le(constant(0), next.clone())];
-        with_direct.extend(without_direct);
-        check_plan(&goal, &with_direct);
-        // The bound is still owed: with `n` unbounded nothing derives it.
-        let unbounded = vec![
-            le(constant(0), next),
-            le(constant(0), i0.clone()),
-            lt(i0, n),
-        ];
-        assert!(plan_signed_arithmetic_certificate(&goal, &unbounded).is_none());
     }
 
     #[test]
@@ -3952,7 +3983,7 @@ mod tests {
     }
 
     #[test]
-    fn bounded_remainder_shift_mask_product_and_sign_flip_are_planned() {
+    fn bounded_remainder_shift_mask_and_product_are_planned() {
         let x = var(3);
         let lower = le(constant(0), x.clone());
         let upper = le(x.clone(), constant(10));
@@ -4028,17 +4059,6 @@ mod tests {
                 .nodes
                 .iter()
                 .any(|node| matches!(node, SignedArithmeticNode::IntervalMultiply { .. }))
-        );
-
-        let flipped =
-            Bitvector32Term::BitwiseXor(Box::new(x.clone()), Box::new(constant(i32::MIN)));
-        let flip_goal = le(flipped, constant(-2_147_483_638));
-        let flip_plan = check_plan(&flip_goal, &[lower, upper]);
-        assert!(
-            flip_plan
-                .nodes
-                .iter()
-                .any(|node| matches!(node, SignedArithmeticNode::IntervalSignBitFlip { .. }))
         );
     }
 

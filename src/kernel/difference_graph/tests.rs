@@ -356,7 +356,7 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
     pool.push(T::Subtract(boxed(&variables[0]), boxed(&variables[1])));
     pool.push(T::Add(boxed(&variables[1]), boxed(&variables[2])));
     pool.push(T::Multiply(boxed(&variables[0]), boxed(&constant(2))));
-    // C's unsigned order, spelled as a signed one.
+    // A sign-bit flip moves a value of known sign by half the modulus.
     pool.push(T::BitwiseXor(
         boxed(&constant(i32::MIN)),
         boxed(&variables[1]),
@@ -390,6 +390,18 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
                 left: a,
                 right: b,
             } => v(a) == v(b),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            } => (v(a) as u32) < (v(b) as u32),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            } => (v(a) as u32) <= (v(b) as u32),
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
@@ -444,6 +456,11 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
                 relation: CompareRelation::Equal,
                 ..
             } => a == b,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::LessThan,
+                ..
+            } => (a as u32) < (b as u32),
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
@@ -491,10 +508,16 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
         let mut facts = Vec::new();
         for _ in 0..(1 + next(4)) {
             let a = &pool[next(pool.len())];
-            let fact = match next(4) {
+            let fact = match next(6) {
                 0 => lt(a, &constants[next(constants.len())]),
                 1 => le(&constants[next(constants.len())], a),
                 2 => ConditionTerm::equal(variables[next(3)].clone(), constants[next(5)].clone()),
+                // A `uint32` order between pool terms or against a constant.
+                3 => ConditionTerm::unsigned_less_than(a.clone(), pool[next(pool.len())].clone()),
+                4 => ConditionTerm::unsigned_less_equal(
+                    constants[next(constants.len())].clone(),
+                    a.clone(),
+                ),
                 _ => ConditionTerm::Overflows {
                     format: MachineIntegerType::Int32,
                     op: OverflowOperation::Add,
@@ -575,6 +598,12 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
                     },
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left: a.clone(),
+                        right: b.clone(),
+                    },
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt32,
                         relation: CompareRelation::LessThan,
                         left: a.clone(),
                         right: b.clone(),
@@ -741,25 +770,41 @@ fn overflow_facts_shifts_and_products_are_read() {
     );
 }
 
-/// C's unsigned `a < b` reaches the kernel as `(a ^ MIN) < (b ^ MIN)`. With
-/// `0 <= b <= 4`, `b ^ MIN` is `b + MIN`, so `a ^ MIN < MIN + 4` is
-/// negative, which makes `a` non-negative and `a ^ MIN` equal `a + MIN`:
-/// `0 <= a <= 3`.
+/// C's unsigned `a < b` is a `uint32` order, whose nodes read each word as
+/// unsigned. With `0 <= b <= 4`, `b`'s unsigned reading is `b`, so `a <u 4`
+/// puts `a`'s unsigned reading below `2^31`, which makes `a` non-negative
+/// and its two readings one value: `0 <= a <= 3`.
 #[test]
-fn an_unsigned_order_spelled_with_a_sign_flip_bounds_both_sides() {
+fn an_unsigned_order_bounds_both_readings() {
     let (a, b) = (variable(0), variable(1));
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let flip = |term: &Bitvector32Term| {
-        Bitvector32Term::BitwiseXor(boxed(&constant(i32::MIN)), boxed(term))
-    };
     let graph = graph(&[
-        (lt(&flip(&a), &flip(&b)), true),
+        (
+            ConditionTerm::unsigned_less_than(a.clone(), b.clone()),
+            true,
+        ),
         (le(&constant(0), &b), true),
         (le(&b, &constant(4)), true),
     ]);
     assert_eq!(graph.decide(&le(&constant(0), &a)), Some(true));
     assert_eq!(graph.decide(&le(&a, &constant(3))), Some(true));
     assert_eq!(graph.decide(&lt(&a, &b)), Some(true));
+    // A negative word is above every non-negative one as unsigned.
+    let negative = graph_of_negative(&a);
+    assert_eq!(
+        negative.decide(&ConditionTerm::unsigned_less_than(
+            constant(i32::MAX),
+            a.clone()
+        )),
+        Some(true)
+    );
+    assert_eq!(
+        negative.decide(&ConditionTerm::unsigned_less_equal(a.clone(), constant(7))),
+        Some(false)
+    );
+}
+
+fn graph_of_negative(term: &Bitvector32Term) -> DifferenceGraph {
+    graph(&[(lt(term, &constant(0)), true)])
 }
 
 /// A remainder by a constant is bounded by its dividend's sign and the
@@ -1252,8 +1297,8 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
     assert_eq!(small.decide(&at_least_four(&rounded)), None);
 }
 
-/// `x ^ MIN`, an unsigned order spelled as a signed one, is bounded once
-/// `x`'s sign is: `(a - b) ^ MIN <= -1` holds when `a - b >= 0`.
+/// `x ^ MIN` is bounded once `x`'s sign is: `(a - b) ^ MIN <= -1` holds
+/// when `a - b >= 0`.
 #[test]
 fn a_sign_flip_of_known_sign_is_bounded() {
     use Bitvector32Term as T;

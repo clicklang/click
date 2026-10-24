@@ -615,6 +615,9 @@ impl PureFactContext {
                 if let Some(value) = self.decide_exact_signed_constant_order(condition) {
                     return Some(value);
                 }
+                if let Some(value) = self.decide_exact_unsigned32_constant_order(condition) {
+                    return Some(value);
+                }
                 if let Some(value) = self.decide_byte_equality_from_constant_class(condition) {
                     return Some(value);
                 }
@@ -1234,6 +1237,64 @@ impl PureFactContext {
             (false, true) => ConditionTerm::signed_less_equal(term, bound),
             (false, false) => ConditionTerm::signed_less_than(term, bound),
         };
+        self.decide_by_equivalent_order(&equivalent)
+    }
+
+    /// [`Self::decide_exact_signed_constant_order`] for a `uint32` order:
+    /// `x < c` is `x <= c - 1` and `c < x` is `c + 1 <= x`, decided by the
+    /// exact fact of the shifted spelling. A shift past `0` or `UINT32_MAX`
+    /// decides the order by the range alone.
+    pub(super) fn decide_exact_unsigned32_constant_order(
+        &self,
+        condition: &ConditionTerm,
+    ) -> Option<bool> {
+        let ConditionTerm::Compare {
+            format: MachineIntegerType::UInt32,
+            relation,
+            left,
+            right,
+        } = condition
+        else {
+            return None;
+        };
+        let (greater, strict) = match relation {
+            CompareRelation::GreaterThan => (true, true),
+            CompareRelation::GreaterEqual => (true, false),
+            CompareRelation::LessThan => (false, true),
+            CompareRelation::LessEqual => (false, false),
+            CompareRelation::Equal => return None,
+        };
+        let (term, bound, greater) = if let Some(bound) = right.as_const() {
+            (left.as_ref().clone(), bound, greater)
+        } else {
+            let bound = left.as_const()?;
+            (right.as_ref().clone(), bound, !greater)
+        };
+        let shifted = if greater == strict {
+            match bound.checked_add(1) {
+                Some(bound) => bound,
+                None => return Some(!strict),
+            }
+        } else {
+            match bound.checked_sub(1) {
+                Some(bound) => bound,
+                None => return Some(!strict),
+            }
+        };
+        let bound = Bitvector32Term::Constant(shifted);
+        let equivalent = match (greater, strict) {
+            (true, true) => ConditionTerm::unsigned_greater_equal(term, bound),
+            (true, false) => ConditionTerm::unsigned_greater_than(term, bound),
+            (false, true) => ConditionTerm::unsigned_less_equal(term, bound),
+            (false, false) => ConditionTerm::unsigned_less_than(term, bound),
+        };
+        self.decide_by_equivalent_order(&equivalent)
+    }
+
+    /// The exact fact of `equivalent`, an order equivalent to the one asked,
+    /// directly or through an indexed spelling of its sides.
+    fn decide_by_equivalent_order(&self, equivalent: &ConditionTerm) -> Option<bool> {
+        let equivalent = equivalent.clone();
         if let Some(value) = self.exact_condition_value(&equivalent) {
             return Some(value);
         }
@@ -1565,6 +1626,42 @@ impl PureFactContext {
                             ))
                             .map(|value| !value)
                     }),
+                // A `uint32` order's mirrored spelling, and its converse.
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt32,
+                    relation,
+                    left,
+                    right,
+                } => {
+                    let spelled = |relation: CompareRelation,
+                                   left: &Bitvector32Term,
+                                   right: &Bitvector32Term| {
+                        self.condition_facts.get(&ConditionTerm::Compare {
+                            format: MachineIntegerType::UInt32,
+                            relation,
+                            left: Box::new(left.clone()),
+                            right: Box::new(right.clone()),
+                        })
+                    };
+                    let (mirrored, converse) = match relation {
+                        CompareRelation::LessThan => {
+                            (CompareRelation::GreaterThan, CompareRelation::GreaterEqual)
+                        }
+                        CompareRelation::LessEqual => {
+                            (CompareRelation::GreaterEqual, CompareRelation::GreaterThan)
+                        }
+                        CompareRelation::GreaterThan => {
+                            (CompareRelation::LessThan, CompareRelation::LessEqual)
+                        }
+                        CompareRelation::GreaterEqual => {
+                            (CompareRelation::LessEqual, CompareRelation::LessThan)
+                        }
+                        CompareRelation::Equal => return None,
+                    };
+                    spelled(mirrored, right, left)
+                        .copied()
+                        .or_else(|| spelled(converse, left, right).map(|value| !value))
+                }
                 _ => None,
             })
     }

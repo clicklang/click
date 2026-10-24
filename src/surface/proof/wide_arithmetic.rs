@@ -1,5 +1,6 @@
 //! `arithmetic() using { ... }` on a linear `uint64` or `int64` order or
-//! equality goal the certificate families miss.
+//! equality goal, or a linear `uint32` order goal, the certificate families
+//! miss.
 //!
 //! A 64-bit goal is proved through its exact Integer observations, by the
 //! steps a proof would write by hand: each listed 64-bit order premise is
@@ -13,14 +14,38 @@
 use super::*;
 use crate::kernel::CompareRelation;
 
-/// Which 64-bit integers a goal orders.
+/// Which integers a goal orders: the 64-bit ones, or `uint32`, whose order
+/// this route reads only for an order goal ([`Carrier::of_order_goal`]).
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(super) enum Carrier {
     UInt64,
     Int64,
+    UInt32,
 }
 
 impl Carrier {
+    /// [`Carrier::of`], and a `uint32` order: the goals and premises an
+    /// `arithmetic() using` order bridge reads.
+    fn of_order_goal(proposition: &Proposition) -> Option<Self> {
+        Self::of(proposition).or_else(|| {
+            matches!(
+                proposition,
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt32,
+                        relation: CompareRelation::LessThan
+                            | CompareRelation::LessEqual
+                            | CompareRelation::GreaterThan
+                            | CompareRelation::GreaterEqual,
+                        ..
+                    },
+                    _,
+                )
+            )
+            .then_some(Self::UInt32)
+        })
+    }
+
     pub(super) fn of(proposition: &Proposition) -> Option<Self> {
         match proposition {
             Proposition::ConditionIs(
@@ -77,6 +102,7 @@ impl Carrier {
         match self {
             Self::UInt64 => "uint64",
             Self::Int64 => "int64",
+            Self::UInt32 => "uint32",
         }
     }
 
@@ -94,6 +120,10 @@ impl Carrier {
                         .parse::<i64>()
                         .ok()
                         .map(|value| CValue::Int64(Bitvector32Term::Int64Constant(value))),
+                    Self::UInt32 => text
+                        .parse::<u32>()
+                        .ok()
+                        .map(|value| CValue::UInt32(Bitvector32Term::Constant(value))),
                 };
                 value
                     .map(|value| ContractExpression::CFragment(CExpression::Value(value)))
@@ -128,6 +158,7 @@ impl Carrier {
         match self {
             Self::UInt64 => crate::kernel::MachineIntegerType::UInt64,
             Self::Int64 => crate::kernel::MachineIntegerType::Int64,
+            Self::UInt32 => crate::kernel::MachineIntegerType::UInt32,
         }
     }
 
@@ -237,7 +268,8 @@ fn at_operand(selector: &SnapshotSelector, expression: &ContractExpression) -> C
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::CFragment(CExpression::Value(
             CValue::UInt64(Bitvector32Term::UInt64Constant(_))
-            | CValue::Int64(Bitvector32Term::Int64Constant(_)),
+            | CValue::Int64(Bitvector32Term::Int64Constant(_))
+            | CValue::UInt32(Bitvector32Term::Constant(_)),
         ))
         | ContractExpression::At { .. }
         | ContractExpression::Old(_) => expression.clone(),
@@ -313,6 +345,11 @@ pub(super) fn to_integer(expression: &ContractExpression) -> ContractExpression 
     {
         return ContractExpression::IntegerLiteral(constant.to_string());
     }
+    if let ContractExpression::CFragment(CExpression::Value(CValue::UInt32(value))) = expression
+        && let Some(constant) = value.as_const()
+    {
+        return ContractExpression::IntegerLiteral(constant.to_string());
+    }
     ContractExpression::Call {
         name: "to_integer".to_string(),
         arguments: vec![expression.clone()],
@@ -344,6 +381,8 @@ fn collect_atoms(expression: &ContractExpression, atoms: &mut Vec<ContractExpres
         ContractExpression::CFragment(CExpression::Value(
             CValue::UInt64(value) | CValue::Int64(value),
         )) if value.uint64_as_const().is_some() || value.int64_as_const().is_some() => {}
+        ContractExpression::CFragment(CExpression::Value(CValue::UInt32(value)))
+            if value.as_const().is_some() => {}
         atom => {
             if !atoms.contains(atom) {
                 atoms.push(atom.clone());
@@ -472,9 +511,16 @@ impl<'a> Proof<'a> {
         };
         let goal = self.goal();
         if let Some(carrier) = goal.and_then(|goal| match goal {
-            Proposition::ConditionIs(_, true) => Carrier::of(goal),
+            Proposition::ConditionIs(_, true) => Carrier::of_order_goal(goal),
             _ => None,
         }) {
+            // A `uint32` order this route misses keeps the certificate
+            // families' refusal, which names the listed premises.
+            if carrier == Carrier::UInt32 {
+                return self
+                    .wide_arithmetic_with(carrier, surface_premises)
+                    .map_err(|_| None);
+            }
             return self.wide_arithmetic_with(carrier, surface_premises);
         }
         // An equality does not say which 64-bit type it compares, since
@@ -624,7 +670,7 @@ impl<'a> Proof<'a> {
                 }
                 continue;
             }
-            if Carrier::of(&kernel) != Some(carrier) && !equality {
+            if Carrier::of_order_goal(&kernel) != Some(carrier) && !equality {
                 // An Integer premise is used as it is written. One that
                 // compares exact observations still names the sums it
                 // observes, which are carried to Integer as a native
@@ -793,7 +839,7 @@ impl<'a> Proof<'a> {
                         // defined also says that sum is, which is a fact by
                         // now, and `assumption` joins the two.
                         let bounded = match carrier {
-                            Carrier::UInt64 => bounded,
+                            Carrier::UInt64 | Carrier::UInt32 => bounded,
                             Carrier::Int64 => bounded.and_then(|proof| {
                                 let defined = ClickProposition::Defined {
                                     expression: operation.clone(),
@@ -836,7 +882,7 @@ impl<'a> Proof<'a> {
                         // a `uint64`, in the type's range. Stating that
                         // gives the Integer step one fact where it would
                         // otherwise need the ranges of every operand.
-                        if carrier == Carrier::UInt64
+                        if matches!(carrier, Carrier::UInt64 | Carrier::UInt32)
                             && let Pending::Operation(operation) = &item
                         {
                             let (minimum, maximum) = carrier.range();

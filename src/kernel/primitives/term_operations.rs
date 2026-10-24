@@ -2967,17 +2967,16 @@ impl ConditionTerm {
         }
     }
 
+    /// The `uint32` order `left < right`: a native comparison at `uint32`.
+    /// A value whose unsigned bound (a constant, a constant mask) lies below
+    /// a constant bound decides it.
     pub(crate) fn unsigned_less_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         if let Bitvector32Term::Constant(bound) = &right
             && left.unsigned32_upper_bound() < *bound
         {
             return Self::Constant(true);
         }
-        let sign_bit = Bitvector32Term::Constant(0x8000_0000);
-        Self::signed_less_than(
-            Bitvector32Term::bitwise_xor(left, sign_bit.clone()),
-            Bitvector32Term::bitwise_xor(right, sign_bit),
-        )
+        Self::uint32_compare(CompareRelation::LessThan, left, right)
     }
 
     pub(crate) fn unsigned_less_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
@@ -2986,11 +2985,7 @@ impl ConditionTerm {
         {
             return Self::Constant(true);
         }
-        let sign_bit = Bitvector32Term::Constant(0x8000_0000);
-        Self::signed_less_equal(
-            Bitvector32Term::bitwise_xor(left, sign_bit.clone()),
-            Bitvector32Term::bitwise_xor(right, sign_bit),
-        )
+        Self::uint32_compare(CompareRelation::LessEqual, left, right)
     }
 
     pub(crate) fn unsigned_greater_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
@@ -2999,11 +2994,7 @@ impl ConditionTerm {
         {
             return Self::Constant(false);
         }
-        let sign_bit = Bitvector32Term::Constant(0x8000_0000);
-        Self::signed_greater_than(
-            Bitvector32Term::bitwise_xor(left, sign_bit.clone()),
-            Bitvector32Term::bitwise_xor(right, sign_bit),
-        )
+        Self::uint32_compare(CompareRelation::GreaterThan, left, right)
     }
 
     pub(crate) fn unsigned_greater_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
@@ -3012,11 +3003,30 @@ impl ConditionTerm {
         {
             return Self::Constant(false);
         }
-        let sign_bit = Bitvector32Term::Constant(0x8000_0000);
-        Self::signed_greater_equal(
-            Bitvector32Term::bitwise_xor(left, sign_bit.clone()),
-            Bitvector32Term::bitwise_xor(right, sign_bit),
-        )
+        Self::uint32_compare(CompareRelation::GreaterEqual, left, right)
+    }
+
+    /// The `uint32` order node, folded when both operands are constants.
+    fn uint32_compare(
+        relation: CompareRelation,
+        left: Bitvector32Term,
+        right: Bitvector32Term,
+    ) -> Self {
+        match (left.as_const(), right.as_const()) {
+            (Some(left), Some(right)) => Self::Constant(match relation {
+                CompareRelation::LessThan => left < right,
+                CompareRelation::LessEqual => left <= right,
+                CompareRelation::GreaterThan => left > right,
+                CompareRelation::GreaterEqual => left >= right,
+                CompareRelation::Equal => left == right,
+            }),
+            _ => Self::Compare {
+                format: MachineIntegerType::UInt32,
+                relation,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
+        }
     }
 
     pub(in crate::kernel) fn signed_less_than(

@@ -1,7 +1,6 @@
 use super::diagnostics::{
     aligned_sugar, describe_c_expression, describe_contract_expression, describe_contract_segment,
     describe_resource_subject, describe_snapshot_selector, snapshot_aligned_sugar,
-    unsigned_order_sugar,
 };
 use super::*;
 
@@ -77,11 +76,6 @@ pub(super) fn print_proposition(
             describe_snapshot_selector(selector),
             describe_c_expression(pointer)
         );
-    }
-    if mode == PropositionSpelling::Refusal
-        && let Some(unsigned) = unsigned_order_sugar(proposition)
-    {
-        return unsigned;
     }
     match proposition {
         ClickProposition::Comparison {
@@ -1430,10 +1424,6 @@ fn signed_arithmetic_step_text(node: &SignedArithmeticStep) -> String {
             "interval_bitwise_and {operand} {mask} ({}) ({});",
             result.lower, result.upper
         ),
-        SignedArithmeticStep::IntervalSignBitFlip { operand, result } => format!(
-            "interval_sign_bit_flip {operand} ({}) ({});",
-            result.lower, result.upper
-        ),
         SignedArithmeticStep::IntervalNarrowedCast {
             operand,
             source,
@@ -1610,7 +1600,6 @@ fn signed_arithmetic_step_references(node: &mut SignedArithmeticStep) -> Vec<&mu
         | SignedArithmeticStep::IntervalFromAffineDirect { source, .. } => vec![source],
         SignedArithmeticStep::IntervalArithmeticShiftRight { operand, .. }
         | SignedArithmeticStep::IntervalBitwiseAnd { operand, .. }
-        | SignedArithmeticStep::IntervalSignBitFlip { operand, .. }
         | SignedArithmeticStep::IntervalNarrowedCast { operand, .. } => vec![operand],
         SignedArithmeticStep::Add { left, right, .. }
         | SignedArithmeticStep::IntervalIntersect { left, right, .. }
@@ -1727,6 +1716,8 @@ fn signed_comparison_name(comparison: SignedInt32Comparison) -> &'static str {
         SignedInt32Comparison::LessEqual => "le",
         SignedInt32Comparison::Equal => "eq",
         SignedInt32Comparison::Disequal => "ne",
+        SignedInt32Comparison::UnsignedLessThan => "ult",
+        SignedInt32Comparison::UnsignedLessEqual => "ule",
     }
 }
 
@@ -2283,53 +2274,6 @@ mod tests {
         output.clear();
         wrapped_line(&mut output, "", &format!("{long_name} == 0;"));
         assert!(output.contains(&long_name));
-    }
-
-    #[test]
-    fn only_refusal_spelling_prints_unsigned_sugar() {
-        let expression =
-            |text: &str| ContractExpression::CFragment(CExpression::Variable(text.into()));
-        let flipped = ContractExpression::BitwiseXor(
-            Box::new(ContractExpression::CFragment(CExpression::Value(
-                CValue::Int32(Bitvector32Term::Constant(0x8000_0000)),
-            ))),
-            Box::new(expression("x")),
-        );
-        let proposition = ClickProposition::And(
-            Box::new(ClickProposition::Comparison {
-                left: flipped,
-                operator: ComparisonOperator::LessThan,
-                right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                    Bitvector32Term::Constant(0),
-                ))),
-            }),
-            Box::new(ClickProposition::Comparison {
-                left: expression("x"),
-                operator: ComparisonOperator::Equal,
-                right: expression("x"),
-            }),
-        );
-        let conditional = ClickProposition::Comparison {
-            left: ContractExpression::If {
-                condition: Box::new(proposition.clone()),
-                then_branch: Box::new(expression("x")),
-                else_branch: Box::new(expression("y")),
-            },
-            operator: ComparisonOperator::Equal,
-            right: expression("x"),
-        };
-        let conditional_source = source_click_proposition(&conditional);
-        assert!(!conditional_source.contains("(unsigned)"));
-        let source = source_click_proposition(&proposition);
-        assert!(!source.contains("(unsigned)"));
-        assert!(!diagnostics::describe_click_proposition(&proposition).contains("(unsigned)"));
-        let refusal = refusal_click_proposition(&proposition);
-        assert!(refusal.contains("(unsigned)"), "{refusal}");
-        assert!(parser::has_valid_source_tokens(&source));
-        let file = format!(
-            "theorem rendered(x: int32, y: int32) {{ requires {source}; ensures 0 == 0 by simp(); }}"
-        );
-        parser::parse(&file).unwrap();
     }
 
     #[test]

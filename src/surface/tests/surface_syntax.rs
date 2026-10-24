@@ -1392,11 +1392,10 @@ fn signed_int32_arithmetic_certificate_round_trips_every_step_spelling() {
                     interval_shift_left 8 1 10 -2147483648 2147483647;
                     interval_arithmetic_shift_right 8 1 -2147483648 2147483647;
                     interval_bitwise_and 8 255 0 255;
-                    interval_sign_bit_flip 8 -2147483648 2147483647;
                     interval_compare 8, 9 le => n <= n;
                     affine_conclusion 3 8 => n == n;
                     less_than_from_not_equal 4, 5 => n < n;
-                    conclusion 20;
+                    conclusion 19;
                 }
             }
         }
@@ -1411,7 +1410,7 @@ fn signed_int32_arithmetic_certificate_round_trips_every_step_spelling() {
     let ArithmeticCertificateFamily::SignedInt32(certificate) = &certificate.family else {
         panic!("expected the signed_int32 family");
     };
-    assert_eq!(certificate.nodes.len(), 22);
+    assert_eq!(certificate.nodes.len(), 21);
     assert!(
         certificate
             .nodes

@@ -93,14 +93,14 @@ impl PropositionDerivation {
         }
     }
 
-    /// Return the kind (`true` for `uint64`, `false` for `int64`) and the
-    /// exact ordered edges selected by an atomic 64-bit order decision.
-    pub fn wide_order_path(&self) -> Option<(bool, &[SignedOrderDerivationStep])> {
+    /// Return the format and the exact ordered edges selected by an atomic
+    /// 64-bit or `uint32` order decision.
+    pub fn wide_order_path(&self) -> Option<(MachineIntegerType, &[SignedOrderDerivationStep])> {
         match &self.rule {
             PropositionDerivationRule::ContextualAtomic {
-                evidence: AtomicPropositionDerivationEvidence::WideOrderPath { unsigned, path },
+                evidence: AtomicPropositionDerivationEvidence::WideOrderPath { format, path },
                 ..
-            } => Some((*unsigned, path)),
+            } => Some((*format, path)),
             _ => None,
         }
     }

@@ -1495,10 +1495,8 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
     }
 }
 
-/// A conditional term's guard is spelled as the comparison it means. The
-/// kernel states a 32-bit unsigned comparison as a signed one over operands
-/// with their sign bit flipped; rendered context-free, that used to read as
-/// the raw bias.
+/// A conditional term's guard is spelled as the comparison it means: a
+/// `uint32` order reads as an unsigned comparison of its operands.
 #[test]
 fn a_conditional_term_spells_its_unsigned_guard() {
     let x = Bitvector32Term::Variable(crate::kernel::Variable(7));
@@ -1513,6 +1511,40 @@ fn a_conditional_term_spells_its_unsigned_guard() {
     let rendered = super::diagnostics::describe_bitvector(&term);
     assert!(rendered.contains(" < 4 (unsigned)"), "{rendered}");
     assert!(!rendered.contains('^'), "{rendered}");
+}
+
+/// A condition's kind names a `uint32` order as unsigned, as it names a
+/// `uint64` one, and never as the signed order of its operands.
+#[test]
+fn a_uint32_order_is_named_as_unsigned() {
+    let (x, y) = (
+        Bitvector32Term::Variable(crate::kernel::Variable(8)),
+        Bitvector32Term::Variable(crate::kernel::Variable(9)),
+    );
+    for (condition, kind) in [
+        (
+            ConditionTerm::unsigned_less_than(x.clone(), y.clone()),
+            "uint32 less-than",
+        ),
+        (
+            ConditionTerm::unsigned_less_equal(x.clone(), y.clone()),
+            "uint32 less-or-equal",
+        ),
+        (
+            ConditionTerm::unsigned_greater_than(x.clone(), y.clone()),
+            "uint32 greater-than",
+        ),
+        (
+            ConditionTerm::unsigned_greater_equal(x.clone(), y.clone()),
+            "uint32 greater-or-equal",
+        ),
+        (
+            ConditionTerm::uint64_less_than(x.clone(), y.clone()),
+            "uint64 less-than",
+        ),
+    ] {
+        assert_eq!(super::diagnostics::condition_kind(&condition), kind);
+    }
 }
 
 #[test]
