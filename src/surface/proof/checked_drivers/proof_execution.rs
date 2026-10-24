@@ -511,6 +511,16 @@ fn checked_execution_region_end_at(
             } => {
                 let then_end = checked_execution_region_end_at(then_branch, depth + 1, initial)?;
                 let else_end = checked_execution_region_end_at(else_branch, depth + 1, initial)?;
+                // A proof `if` whose cases both reach the shared continuation
+                // rejoins where they end, as a nested `branch` does.
+                if matches!(node, InternalProofNode::If { .. })
+                    && initial == CheckedExecutionRegionEnd::SharedContinuation
+                    && then_end == CheckedExecutionRegionEnd::SharedContinuation
+                    && else_end == CheckedExecutionRegionEnd::SharedContinuation
+                {
+                    node = continuation;
+                    continue;
+                }
                 return (then_end == CheckedExecutionRegionEnd::FunctionExit
                     && else_end == CheckedExecutionRegionEnd::FunctionExit
                     && matches!(continuation.as_ref(), InternalProofNode::Done))
@@ -3772,6 +3782,7 @@ fn advance_focused_execution_region<'a>(
         owning_source_index,
         depth,
         None,
+        false,
     )
 }
 
@@ -3818,6 +3829,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
     owning_source_index: usize,
     depth: usize,
     branch_continuation: Option<&InternalProofNode>,
+    ends_at_join: bool,
 ) -> Driven<Proof<'a>> {
     #[cfg(test)]
     DEEPEST_REGION_DEPTH.with(|deepest| deepest.set(deepest.get().max(depth)));
@@ -4254,9 +4266,15 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     proof_at_if.split_focused_execution_if(condition.clone())?
                 };
                 // As at the top level: each arm runs once, two live arms
-                // must rejoin, and a lone live arm owns the continuation.
+                // must rejoin, and a lone live arm owns the continuation. A
+                // proof `if` that ends a region ending at a join, such as a
+                // `branch` arm, rejoins where its cases end: the region's
+                // end is that join, not the function exit.
                 let must_rejoin = ensuring.is_some();
-                if must_rejoin || !matches!(continuation.as_ref(), InternalProofNode::Done) {
+                if must_rejoin
+                    || ends_at_join
+                    || !matches!(continuation.as_ref(), InternalProofNode::Done)
+                {
                     let mut advanced = split;
                     let mut live = [false, false];
                     for (take_then, branch) in
@@ -4274,7 +4292,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                                 depth + 1,
                             )?
                         } else {
-                            advance_focused_execution_region(
+                            advance_focused_execution_region_with_branch_continuation(
                                 focused,
                                 enclosing_record,
                                 branch,
@@ -4282,6 +4300,8 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                                 proof_site,
                                 owning_source_index,
                                 depth + 1,
+                                None,
+                                true,
                             )?
                         };
                         let next = match next {
@@ -4559,6 +4579,7 @@ fn advance_checked_branch_arms<'a>(
                 owning_source_index,
                 depth + 1,
                 Some(continuation),
+                true,
             )?
         } else {
             advance_focused_execution_region_with_branch_continuation(
@@ -4570,6 +4591,7 @@ fn advance_checked_branch_arms<'a>(
                 owning_source_index,
                 depth + 1,
                 Some(continuation),
+                true,
             )?
         };
         let next = match next {
@@ -5579,6 +5601,42 @@ mod tests {
             else_branch: Box::new(linear(1, InternalProofNode::Done)),
             continuation: Box::new(continuation),
         }
+    }
+
+    fn proof_if(
+        then_branch: InternalProofNode,
+        else_branch: InternalProofNode,
+    ) -> InternalProofNode {
+        InternalProofNode::If {
+            index: 0,
+            source_index: 0,
+            condition: ClickProposition::Comparison {
+                left: ContractExpression::IntegerLiteral("1".into()),
+                operator: ComparisonOperator::Equal,
+                right: ContractExpression::IntegerLiteral("0".into()),
+            },
+            ensuring: None,
+            then_branch: Box::new(then_branch),
+            else_branch: Box::new(else_branch),
+            continuation: Box::new(InternalProofNode::Done),
+        }
+    }
+
+    /// A proof `if` whose cases both end short of the function exit, as in a
+    /// `branch` arm, reaches the shared continuation: its cases rejoin there.
+    #[test]
+    fn a_proof_if_whose_cases_continue_reaches_the_shared_continuation() {
+        let region = linear(
+            1,
+            proof_if(
+                linear(1, InternalProofNode::Done),
+                linear(1, InternalProofNode::Done),
+            ),
+        );
+        assert!(
+            checked_execution_region_end(&region)
+                == Ok(CheckedExecutionRegionEnd::SharedContinuation)
+        );
     }
 
     /// The structural predicates walk a continuation at its region's depth:
