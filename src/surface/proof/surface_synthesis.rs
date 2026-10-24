@@ -1862,7 +1862,7 @@ fn named_pointer_bases<'a>(
 /// spell both sides through the registered pointer, anchored at the snapshot
 /// named by the load.  Keeping this separate from ordinary bitvector
 /// synthesis is important: the latter may deliberately resolve a load to a
-/// current-state value, while this equation must retain its memory epoch.
+/// current-state value, while this equation must retain its memory version.
 fn synthesize_load_defining_equation(
     variable: &Variable,
     memory: &crate::kernel::SharedCMemory,
@@ -3436,7 +3436,7 @@ fn synthesize_surface_bitvector(
                 }))
             }
         }
-        // A load variable names one cell of one memory epoch. It denotes
+        // A load variable names one cell of one memory version. It denotes
         // the source load of that cell from any snapshot whose memory
         // lies in the same epoch; the kernel's own naming law decides that,
         // so the spelling lowers back to exactly this variable there.

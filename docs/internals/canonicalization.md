@@ -106,7 +106,7 @@ stored summary.
 
 The same rule applies to loads at propositionally equal addresses. Their load
 variables remain distinct context-free forms. A target-directed congruence
-derivation checks that both registered origins have the same memory epoch and
+derivation checks that both registered origins have the same memory version and
 pointer block, and retains exact ground-equality paths for the differing
 offset leaves. Smart proof expansion renders those paths as ordinary
 `rewrite` steps followed by `normalize`.
@@ -155,7 +155,7 @@ Two consequences:
 - **Comparison never expands a load variable back into its load.** Doing so
   would reinflate terms with snapshots and make identity depend on snapshot
   size. A target-directed checked rewrite may inspect the two registered
-  origins to establish address congruence, but it preserves the epoch and
+  origins to establish address congruence, but it preserves the version and
   block and retains every equality premise. Registry membership alone is
   never proof that two terms are equal.
 
@@ -236,8 +236,8 @@ refers to one through a snapshot form such as `at(region(3).entry, x)` or
   read authority nor transport across a write
   (`mdtests/unfold_child_preserves_scalar_cell_identity.md`).
   Left unnamed, the unfolded body's facts keep the
-  unfold-time epoch while a later C read of one of those cells walks its own
-  epoch, and the two differ as soon as a store the assumption-free walk cannot
+  unfold-time version while a later C read of one of those cells walks its own
+  version, and the two differ as soon as a store the assumption-free walk cannot
   cross lies between them — a write to a *separate* object, whose separation is
   a resource fact and not a DAG edge. The rbtree refold after
   `*new = *victim; rb_set_parent(victim->rb_left, new);` is exactly that shape:
@@ -312,20 +312,20 @@ viewability witnesses, and the quantified-fact index — see through the
 variable. None of these creation paths chooses a member of a proved equality
 class.
 
-A load variable is identified by its cell and the cell's *epoch*: the
-snapshot the epoch walk (`resource_tracker::last_same_point`, through
+A load variable is identified by its cell and the cell's *version*: the
+snapshot the version walk (`resource_tracker::last_same_point`, through
 `cell_last_same_point`, called from `load_variable_for_cell_with_origin`) reaches from
 the load's snapshot by crossing only edges proven, without assumptions, not
 to write the cell — block declarations, cells forgotten, stores and call
 havocs at constant-disjoint offsets or in distinct blocks. The walk runs on
 the live snapshot before the canonical form restricts it, since the
 restricted snapshot is a fresh intern with no derivation. Two snapshots
-that reach one epoch produce the same load variable, and the frame checks'
+that reach one version produce the same load variable, and the frame checks'
 endpoint matching (`memories_directly_match_for_pointer_load`) accepts
 that identity, so a fact carried unchanged through several steps still
 meets a later effect summary.
 
-Before the epoch walk runs, the load resolves against the snapshot's own
+Before the version walk runs, the load resolves against the snapshot's own
 materialized cells, and a cell holding a load variable answers the naming
 query outright: that variable already names this value, so the load takes
 it. This is what carries a materialized cell across an effect the walk
@@ -347,7 +347,7 @@ unless a step's frame check or an explicit `transport` carries the fact
 across; facts never match across such an effect structurally, and a step
 keeps the pre-step form of a carried fact beside the carried one, since
 both stay true. And `old(x)` denotes the entry value: it is the
-entry-epoch load variable, equal to the current value only where that
+entry-version load variable, equal to the current value only where that
 frame fact is established.
 
 Checked algebraic model equalities also participate in the shared equality

@@ -2199,13 +2199,13 @@ fn a_session_reset_empties_the_block_epoch_memo() {
         &crate::kernel::resource_tracker::ProgramPoint::at(&crate::kernel::intern_c_memory(memory)),
     );
     assert!(
-        crate::kernel::resource_tracker::block_epoch_memo_len() > 0,
+        crate::kernel::resource_tracker::block_version_memo_len() > 0,
         "the walk should have recorded its epoch"
     );
 
     crate::kernel::memory_provenance::clear_canonical_form_caches();
     assert_eq!(
-        crate::kernel::resource_tracker::block_epoch_memo_len(),
+        crate::kernel::resource_tracker::block_version_memo_len(),
         0,
         "a session reset must not leave one verification's epochs for the next"
     );

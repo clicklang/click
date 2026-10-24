@@ -2870,8 +2870,8 @@ id = "glossary.borrow"
 path = "reference/glossary.md#borrow"
 
 [[item]]
-id = "glossary.cell-epoch"
-path = "reference/glossary.md#cell-epoch"
+id = "glossary.cell-version"
+path = "reference/glossary.md#cell-version"
 
 [[item]]
 id = "glossary.consumption"

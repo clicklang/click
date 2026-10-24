@@ -710,12 +710,12 @@ fn a_session_reset_empties_the_version_memos() {
         &point(&memory),
     );
     assert!(
-        block_epoch_memo_len() > 0,
+        block_version_memo_len() > 0,
         "the walk should have recorded its answer"
     );
     crate::kernel::memory_provenance::clear_canonical_form_caches();
     assert_eq!(
-        block_epoch_memo_len(),
+        block_version_memo_len(),
         0,
         "a session reset must not leave one verification's versions for the next"
     );

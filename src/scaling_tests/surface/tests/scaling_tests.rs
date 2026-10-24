@@ -3223,7 +3223,7 @@ fn array_fact_across_local_stores(statement_count: usize) -> (String, String) {
     );
     // One use of the fact after every step: the walk is asked from a fresh
     // snapshot each time, which is the shape that goes quadratic when an
-    // epoch walk cannot reuse the answer it computed one snapshot ago.
+    // version walk cannot reuse the answer it computed one snapshot ago.
     for _ in 0..statement_count {
         click_source.push_str("    step();\n");
         click_source.push_str("    have icount(a, 0, 0) == 0 by { simp(); }\n");
@@ -3274,15 +3274,15 @@ fn array_fact_across_calls(statement_count: usize) -> (String, String) {
     (c_source, click_source)
 }
 
-/// The block epoch walk's own work over one fixture family, for the sizes
+/// The block version walk's own work over one fixture family, for the sizes
 /// given. A missing entry means the fixture stopped exercising the walk, which
 /// would make an assertion about its shape vacuous.
-fn block_epoch_walk_curve(
+fn block_version_walk_curve(
     label: &str,
     file: &str,
     fixture: impl Fn(usize) -> (String, String),
 ) -> Vec<ScalingSample> {
-    const WALK: &str = "operation `array-ref block epoch walk`";
+    const WALK: &str = "operation `array-ref block version walk`";
     [2, 4, 8, 16]
         .into_iter()
         .map(|size| {
@@ -3295,10 +3295,9 @@ fn block_epoch_walk_curve(
             });
             ScalingSample {
                 size: sample.size,
-                work: *sample
-                    .named_work
-                    .get(WALK)
-                    .unwrap_or_else(|| panic!("fixture did not reach the epoch walk: {sample:?}")),
+                work: *sample.named_work.get(WALK).unwrap_or_else(|| {
+                    panic!("fixture did not reach the version walk: {sample:?}")
+                }),
                 named_work: BTreeMap::new(),
             }
         })
@@ -3312,20 +3311,20 @@ fn block_epoch_walk_curve(
 /// them with different evidence -- one object proven distinct for a
 /// declaration, a whole checked write set for a call -- and because a call's
 /// arrival at a fresh snapshot per step is exactly the shape that goes
-/// quadratic when the epoch walk cannot reuse the answer it computed one
+/// quadratic when the version walk cannot reuse the answer it computed one
 /// snapshot ago.
 #[test]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn an_array_fact_carried_across_declarations_and_calls_scales_linearly() {
     assert_near_linear_scaling(
-        "array-ref block epoch walk across declarations",
-        &block_epoch_walk_curve("array-fact-across-declarations", "bump.c", |size| {
+        "array-ref block version walk across declarations",
+        &block_version_walk_curve("array-fact-across-declarations", "bump.c", |size| {
             array_fact_across_declarations(size)
         }),
     );
     assert_near_linear_scaling(
-        "array-ref block epoch walk across calls",
-        &block_epoch_walk_curve("array-fact-across-calls", "keep_h.c", |size| {
+        "array-ref block version walk across calls",
+        &block_version_walk_curve("array-fact-across-calls", "keep_h.c", |size| {
             array_fact_across_calls(size)
         }),
     );
@@ -3334,7 +3333,7 @@ fn an_array_fact_carried_across_declarations_and_calls_scales_linearly() {
 /// Carrying one array fact across N steps that cannot touch the array costs
 /// work linear in N, not quadratic.
 ///
-/// The array argument names a block epoch, and the epoch is a walk back along
+/// The array argument names a block version, and the version is a walk back along
 /// the derivation edges to the last one that could have changed the block. Run
 /// per step with no memo, that walk is N hops at the Nth step and the proof
 /// costs N^2; memoized per interned snapshot and block it is one hop per new
@@ -3364,7 +3363,7 @@ fn an_array_fact_carried_across_local_stores_scales_linearly() {
     // proof's work, so assert on its own measured work rather than on the
     // total it hides inside. A missing entry means the fixture stopped
     // exercising the walk at all, which would make the rest vacuous.
-    const WALK: &str = "operation `array-ref block epoch walk`";
+    const WALK: &str = "operation `array-ref block version walk`";
     let walk = samples
         .iter()
         .map(|sample| ScalingSample {
@@ -3372,11 +3371,11 @@ fn an_array_fact_carried_across_local_stores_scales_linearly() {
             work: *sample
                 .named_work
                 .get(WALK)
-                .unwrap_or_else(|| panic!("fixture did not reach the epoch walk: {sample:?}")),
+                .unwrap_or_else(|| panic!("fixture did not reach the version walk: {sample:?}")),
             named_work: BTreeMap::new(),
         })
         .collect::<Vec<_>>();
-    assert_near_linear_scaling("array-ref block epoch walk", &walk);
+    assert_near_linear_scaling("array-ref block version walk", &walk);
 }
 
 /// One project with `size` stores made while `size` owned ranges are held, so

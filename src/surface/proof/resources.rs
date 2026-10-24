@@ -999,7 +999,7 @@ fn common_possible_instance_arm(
 /// cells one layer deeper and must name them the same way. Without this, the
 /// unfolded child's facts keep the unfold-time epoch while a later C read of
 /// the same cell walks its own epoch, and the two differ as soon as a store
-/// the assumption-free epoch walk cannot cross lies between them — a write to
+/// the assumption-free version walk cannot cross lies between them — a write to
 /// a *separate* object, whose separation is a resource fact and not a DAG
 /// edge. That is exactly the gap between `*new = *victim` and the refold after
 /// `rb_set_parent(victim->rb_left, new)`.
