@@ -6939,6 +6939,11 @@ thread_local! {
 
 /// Starts verifying the Click declaration `name`; no tactic of it has been
 /// addressed yet.
+/// The declaration whose proof is being checked, if any.
+pub(in crate::surface) fn ambient_declaration() -> Option<String> {
+    AMBIENT_PROOF_SOURCE.with(|ambient| ambient.borrow().declaration.clone())
+}
+
 pub(crate) fn enter_ambient_declaration(name: &str) {
     proof_diagnostics::render::clear_ambient_naming();
     diagnostics::enter_rust_spelling(None);
