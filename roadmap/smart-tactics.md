@@ -246,7 +246,74 @@ Which way to take is decided per scan. Most of the kernel scans below have a
 natural index; most of the "simple tactics that search" above are better
 made expandable.
 
-The list comes from an audit of master on 2026-10-20. Each full iteration of
+### Every scan is named
+
+The two main fact collections, `condition_facts` and `prop_facts`
+(`FactMap` and `FactSet` in `src/kernel/fact_collections.rs`), have no
+plain iterator outside tests. Every loop over a whole collection names its
+kind, so the compiler lists every scan and a new one cannot be written
+without classifying it:
+
+- `scan_for_upkeep()`: maintaining the context itself, such as rebuilding
+  an index after a withdrawal, recomputing its fingerprint, copying it
+  whole, a debug consistency check, or rendering a diagnostic after a step
+  failed.
+- `scan_explicit_input()`: the context is a step's own premises, for
+  example the premises a certificate names, so the work is the size of
+  input someone wrote.
+- `scan_for_search()`: a search that `click expand` replaces with explicit
+  steps. Today these are the `simp` scans in
+  `condition_reasoning/simp.rs`, each reached only from
+  `decide_condition_for_simp`.
+- `scan_unindexed()`: fast code that reads every fact. Each use is a bug
+  in the list below, and the count of uses goes down to zero.
+
+The fast/slow line is expansion: anything that still runs while checking an
+expanded proof must be fast. That is every simple tactic and every kernel
+check, not only code outside `simp`.
+
+**Known fast-part scans** (`scan_unindexed`), as of the first classified
+pass:
+
+- Proving a condition from stated facts (`proves_condition_from_facts`).
+  The exact check `settles_exactly` falls into it for a condition its cheap
+  routes miss, and about 25 kernel callers use that check: contract
+  certification, execution, transport premises, call-guard evaluation.
+- The `ForAll` goal's alpha match calls it again per comparison
+  (`propositions_equal_modulo_proven_terms`).
+- Matching an assumed existential (`proves_exists_from_facts`,
+  `certification_proves_exists_obligation_from_facts`).
+- The memory-resolution condition match's fallback
+  (`scanned_matching_condition_fact_for_memory_resolution`), reached from
+  `functions.rs` and contract certification whenever its index declines.
+  Earlier text called the `simp.rs` scans slow part only; this one is not.
+- Order paths: `exact_signed_order_path_evidence` and
+  `exact_wide_order_path_evidence` (used by the resource tracker during
+  execution), and the constant and load edges of `has_exact_order_path`
+  (`condition_order_facts`).
+- Equality and snapshot walks: `bitvector_terms_equal_from_snapshot_facts`,
+  `has_pointer_offset_snapshot_fact`,
+  `pointer_offsets_equal_with_resolved_atoms`, and
+  `nonnegative_successor_by_exact_facts`.
+
+Most of these match facts up to an equivalence (canonical form, memory
+snapshots, load equality). Where that equivalence implies equality of a
+computable key, such as a canonical or snapshot-blind form, an index on
+that key keeps every verdict and reads only the candidates.
+
+Instantiating a universal in fast code reads every universal fact, not
+every fact, after the first pass: `condition_holds_by_instantiated_fact`
+and `quantified_int32_fact_certifies_loadable_cell`. That set is still
+path-sized; it is listed with item 12.
+
+Still to classify the same way: the callers of the accessors that hand out
+a whole collection (`pure_facts`, `condition_fact_pairs`,
+`proposition_facts`), and the other collections (`resource_compositions`,
+`atomic_quantified_facts`, the disjunction, separation and effect sets).
+
+### The 2026-10-20 audit
+
+The list below comes from an audit of master on 2026-10-20. Each full iteration of
 a fact collection now charges one unit per element
 (`src/kernel/fact_collections.rs`), so a scan is no longer invisible to
 scaling tests. "Uncharged" means the

@@ -69,7 +69,7 @@ impl PureFactContext {
         }
         let mut facts = Vec::new();
         let mut complete = true;
-        for (condition, value) in self.order_condition_facts.iter() {
+        for (condition, value) in self.order_condition_facts.scan_unindexed() {
             if crate::kernel::assumptions::reasoning_interrupted() {
                 complete = false;
                 break;
@@ -83,7 +83,7 @@ impl PureFactContext {
             crate::instrumentation::uncharged_debug_check(|| {
                 let scanned = self
                     .condition_facts
-                    .iter()
+                    .scan_for_upkeep()
                     .filter_map(|(condition, value)| condition_as_order_fact(condition, *value))
                     .collect::<Vec<_>>();
                 assert_eq!(

@@ -674,7 +674,7 @@ impl PureFactContext {
         let condition = order_condition(left.clone(), right.clone(), require_strict);
         let graph = self.difference_graph.graph(|| {
             self.condition_facts
-                .iter()
+                .scan_for_upkeep()
                 .map(|(condition, value)| (condition, *value))
                 .collect()
         });
@@ -710,7 +710,7 @@ impl PureFactContext {
         // the durable evidence remains self-contained.
         let order_facts = self
             .condition_facts
-            .iter()
+            .scan_unindexed()
             .filter_map(|(condition, value)| {
                 #[cfg(test)]
                 EXACT_ORDER_EVIDENCE_VISITS.with(|visits| visits.set(visits.get() + 1));
@@ -783,7 +783,7 @@ impl PureFactContext {
         let canonical = crate::kernel::eval::canonical_term;
         let order_facts = self
             .condition_facts
-            .iter()
+            .scan_unindexed()
             .filter_map(|(condition, value)| {
                 crate::instrumentation::record_deterministic_work(1);
                 wide_order_fact(condition, *value, unsigned).map(|(lower, upper, strict)| {

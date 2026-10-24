@@ -2678,10 +2678,10 @@ impl PureFactContext {
 
     fn recompute_content_fingerprint(&mut self) {
         let mut fingerprint = 0;
-        for fact in self.condition_facts.iter() {
+        for fact in self.condition_facts.scan_for_upkeep() {
             fingerprint ^= Self::fingerprint(1, &fact);
         }
-        for fact in self.prop_facts.iter() {
+        for fact in self.prop_facts.scan_for_upkeep() {
             fingerprint ^= Self::fingerprint(2, fact);
         }
         for (variable, definitions) in self
@@ -3034,7 +3034,7 @@ impl PureFactContext {
         self.equality_graph.admitted.algebraic_graph_equalities = Default::default();
         self.rebuild_equality_graph();
         let conditions = self.condition_facts.clone();
-        for (condition, value) in conditions.iter() {
+        for (condition, value) in conditions.scan_for_upkeep() {
             if matches!(condition, ConditionTerm::AlgebraicEqual(..)) {
                 self.adjust_algebraic_graph_equality(
                     &Proposition::ConditionIs(condition.clone(), *value),
@@ -3043,7 +3043,7 @@ impl PureFactContext {
             }
         }
         let propositions = self.prop_facts.clone();
-        for proposition in propositions.iter() {
+        for proposition in propositions.scan_for_upkeep() {
             self.adjust_algebraic_graph_equality(proposition, true);
         }
     }
@@ -4081,7 +4081,7 @@ impl PureFactContext {
         self.null_pointer_offsets = crate::persistent::PersistentMap::default();
         let facts = self
             .condition_facts
-            .iter()
+            .scan_for_upkeep()
             .map(|(condition, value)| (condition.clone(), *value))
             .collect::<Vec<_>>();
         for (condition, value) in facts {
@@ -4195,7 +4195,7 @@ impl PureFactContext {
         self.wide_order_edges = Default::default();
         let facts = self
             .condition_facts
-            .iter()
+            .scan_for_upkeep()
             .map(|(condition, value)| (condition.clone(), *value))
             .collect::<Vec<_>>();
         for (condition, value) in facts {
@@ -4205,7 +4205,12 @@ impl PureFactContext {
 
     pub(super) fn rebuild_memory_load_condition_facts(&mut self) {
         self.memory_load_condition_facts = crate::persistent::PersistentMap::default();
-        let conditions = self.condition_facts.keys().cloned().collect::<Vec<_>>();
+        let conditions = self
+            .condition_facts
+            .scan_for_upkeep()
+            .map(|(key, _)| key)
+            .cloned()
+            .collect::<Vec<_>>();
         for condition in conditions {
             self.adjust_memory_load_condition_index(&condition, true);
         }
@@ -4223,7 +4228,7 @@ impl PureFactContext {
         self.equality_graph.admitted.exact_constant_equalities =
             crate::persistent::PersistentMap::default();
         let conditions = self.condition_facts.clone();
-        for (condition, value) in conditions.iter() {
+        for (condition, value) in conditions.scan_for_upkeep() {
             self.adjust_scalar_evidence_input(condition, *value, true);
             self.adjust_bitvector64_equality(condition, *value, true);
             self.adjust_exact_constant_equality(condition, *value, true);
@@ -4289,7 +4294,7 @@ impl PureFactContext {
         self.equality_graph.admitted.pointer_value_classes = Default::default();
         self.equality_graph.admitted.pointer_value_equalities = Default::default();
         let conditions = self.condition_facts.clone();
-        for (condition, value) in conditions.iter() {
+        for (condition, value) in conditions.scan_for_upkeep() {
             self.adjust_pointer_class_fact(
                 &Proposition::ConditionIs(condition.clone(), *value),
                 true,
@@ -4320,7 +4325,7 @@ impl PureFactContext {
         }
         // Restore typing support by the selected equations' load variables,
         // rather than walking every pointer read in the ambient context.
-        for (condition, value) in conditions.iter() {
+        for (condition, value) in conditions.scan_for_upkeep() {
             if !*value {
                 continue;
             }
@@ -4356,7 +4361,7 @@ impl PureFactContext {
         // the selected context. Add its proposition model edges directly;
         // do not reconstruct those fragments a second time.
         let propositions = self.prop_facts.clone();
-        for proposition in propositions.iter() {
+        for proposition in propositions.scan_for_upkeep() {
             self.adjust_algebraic_graph_equality(proposition, true);
             self.adjust_pointer_class_fact(proposition, true);
             self.adjust_pointer_value_equality(proposition, true);
@@ -4870,10 +4875,10 @@ impl PureFactContext {
             };
             index = adjust_stated_index(&index, key, proposition, true);
         };
-        for (condition, value) in self.condition_facts.iter() {
+        for (condition, value) in self.condition_facts.scan_for_upkeep() {
             add(&Proposition::ConditionIs(condition.clone(), *value));
         }
-        for proposition in self.prop_facts.iter() {
+        for proposition in self.prop_facts.scan_for_upkeep() {
             add(proposition);
         }
         self.stated_proposition_index = StatedPropositionIndex::Built(index);
@@ -5443,8 +5448,8 @@ impl PureFactContext {
             .is_some()
     }
 
-    #[cfg(test)]
-    pub(super) fn memory_loadable_candidates(
+    /// The loadable facts whose base is in `block`, charged one unit each.
+    pub(in crate::kernel) fn memory_loadable_candidates(
         &self,
         block: &PointerBlock,
     ) -> impl Iterator<Item = &Proposition> {
@@ -5452,6 +5457,7 @@ impl PureFactContext {
             .get(block)
             .into_iter()
             .flat_map(|facts| facts.iter())
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
     pub(crate) fn memory_loadable_candidates_for_base(
@@ -6342,7 +6348,7 @@ impl PureFactContext {
         }
         let graph = self.difference_graph.graph(|| {
             self.condition_facts
-                .iter()
+                .scan_for_upkeep()
                 .map(|(condition, value)| (condition, *value))
                 .collect()
         });
@@ -7044,10 +7050,10 @@ impl PureFactContext {
     pub fn pure_facts(&self) -> Vec<Proposition> {
         let mut facts = self
             .condition_facts
-            .iter()
+            .scan_for_upkeep()
             .map(|(condition, value)| Proposition::ConditionIs(condition.clone(), *value))
             .collect::<Vec<_>>();
-        facts.extend(self.prop_facts.iter().cloned());
+        facts.extend(self.prop_facts.scan_for_upkeep().cloned());
         facts
     }
 
@@ -7149,14 +7155,14 @@ impl PureFactContext {
         self.atomic_ground_facts = crate::persistent::PersistentSet::default();
         self.atomic_quantified_facts = crate::persistent::PersistentSet::default();
         let conditions = self.condition_facts.clone();
-        for (condition, value) in conditions.iter() {
+        for (condition, value) in conditions.scan_for_upkeep() {
             self.adjust_atomic_connection_fact(
                 &Proposition::ConditionIs(condition.clone(), *value),
                 true,
             );
         }
         let propositions = self.prop_facts.clone();
-        for proposition in propositions.iter() {
+        for proposition in propositions.scan_for_upkeep() {
             self.adjust_atomic_connection_fact(proposition, true);
         }
     }
@@ -7226,7 +7232,7 @@ impl PureFactContext {
     /// what is available without exposing the index that stores it.
     pub fn condition_fact_pairs(&self) -> impl Iterator<Item = (&ConditionTerm, bool)> {
         self.condition_facts
-            .iter()
+            .scan_for_upkeep()
             .map(|(condition, value)| (condition, *value))
     }
 
@@ -7293,7 +7299,7 @@ impl PureFactContext {
 
     /// The proposition facts of this context, in the index's own order.
     pub fn proposition_facts(&self) -> impl Iterator<Item = &Proposition> {
-        self.prop_facts.iter()
+        self.prop_facts.scan_for_upkeep()
     }
 
     /// Answers whether a requirement is already stated in this context.
@@ -7504,7 +7510,7 @@ impl PureFactContext {
     pub(super) fn includes(&self, required: &Self) -> bool {
         required
             .condition_facts
-            .iter()
+            .scan_explicit_input()
             .all(|(condition, value)| self.condition_facts.get(condition) == Some(value))
             && required
                 .equality_graph
@@ -7524,7 +7530,7 @@ impl PureFactContext {
                 })
             && required
                 .prop_facts
-                .iter()
+                .scan_explicit_input()
                 .all(|proposition| self.prop_facts.contains(proposition))
             && required
                 .resource_compositions
