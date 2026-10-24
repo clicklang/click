@@ -984,15 +984,21 @@ The Integer certificate's `type_range => MIN <= to_integer(v);` (or
 `to_integer(v) <= MAX`) states the range of a machine observation's type,
 with the type's exact endpoint. It needs no premise.
 
-`operation_bound => P;` states the bound an unsigned machine quotient,
-logical shift, or remainder by a constant takes from its operand. Unsigned
+`operation_bound => P;` states the bound a machine quotient, right shift,
+or remainder by a positive constant takes from its operand. Unsigned
 division truncates, which is the floor, so `q = x / c` with constant `c > 0`
 has `c * q <= x` and `x <= c * q + (c - 1)`; `x >> k`, for a constant `k`
-below the width, is `x / 2^k`; and `x % c <= c - 1`. The kernel finds the
-operation among `P`'s machine observations and recomputes the bound
-(`kernel::machine_integer::bounds::operation_bound`). Signed
-operations, a zero or symbolic divisor, and a shift by the width or more give
-none. `excluded_bound N: D => P;` cites premise `N`, a disequality of a
+below the width, is `x / 2^k`; and `x % c <= c - 1`. Signed division
+truncates toward zero, so its remainder has the sign of `x`: `c * q - (c -
+1) <= x <= c * q + (c - 1)`, and `-(c - 1) <= x % c <= c - 1`. A signed
+arithmetic shift is still the floor, with the unsigned form. The kernel
+finds the operation among `P`'s machine observations and recomputes the
+bound (`kernel::machine_integer::bounds::operation_bound`). A divisor that
+is not a positive constant of the operation's format (a signed `0xfffffff8`
+is `-8`), a symbolic divisor, a shift by the width or more, and a narrow or
+128-bit operation give none
+(`mdtests/auto_bounds_a_signed_quotient_by_its_operand.md`).
+`excluded_bound N: D => P;` cites premise `N`, a disequality of a
 machine value with its type's minimum or maximum, as the bound it gives: an
 unsigned `v != 0` is `1 <= to_integer(v)` (`excluded_type_bound`).
 
@@ -1005,7 +1011,7 @@ filing the native comparison beside an Integer fact.
 leave its refutation a
 counterexample, it retries with the facts' native comparisons read as
 Integer ones and with the type range of each machine observation, the
-operation bound of each unsigned quotient, shift, or remainder by a constant,
+operation bound of each quotient, shift, or remainder by a constant,
 and the bound each disequality with a type endpoint gives
 (`mdtests/auto_bounds_an_unsigned_quotient_by_its_operand.md`,
 `mdtests/auto_refuses_a_quotient_bound_past_the_floor.md`). When that

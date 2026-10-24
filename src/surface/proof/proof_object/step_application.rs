@@ -3049,7 +3049,7 @@ impl<'a> Proof<'a> {
                     });
                     let Some((value, upper)) = bound else {
                         return Err(self.step_error(
-                            "integer certificate operation bound must be `c * to_integer(x / c) <= to_integer(x)`, `to_integer(x) <= c * to_integer(x / c) + (c - 1)`, or `to_integer(x % c) <= c - 1` for an unsigned `x` and constant `c`, with `x >> k` as `x / 2^k`",
+                            "integer certificate operation bound must be `c * to_integer(x / c) <= to_integer(x)`, `to_integer(x) <= c * to_integer(x / c) + (c - 1)`, or `to_integer(x % c) <= c - 1` for an unsigned `x` and positive constant `c`, with `x >> k` as `x / 2^k`; for a signed `x` also `c * to_integer(x / c) - (c - 1) <= to_integer(x)` in place of the first, and `-(c - 1) <= to_integer(x % c)`",
                         ));
                     };
                     IntegerArithmeticNode::OperationBound {

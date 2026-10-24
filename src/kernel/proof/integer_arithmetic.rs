@@ -1666,7 +1666,7 @@ mod tests {
     }
 
     #[test]
-    fn operation_bounds_hold_only_for_unsigned_operations_by_constants() {
+    fn operation_bounds_hold_only_for_operations_by_positive_constants() {
         use crate::kernel::{Bitvector32Term, MachineIntegerType, SharedMachineIntegerTerm};
         let x = || Box::new(Bitvector32Term::Variable(Variable(97201)));
         let operand = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -1727,7 +1727,9 @@ mod tests {
         );
         assert_eq!(operation_bound(&remainder, false), None);
         // No bound for a zero divisor, a shift by the width or more, a
-        // symbolic divisor, or a signed quotient.
+        // symbolic divisor, a signed quotient by a negative divisor (the
+        // word `0xfffffc18` is `-1000`), or a quotient read at the other
+        // signedness.
         for value in [
             machine(
                 MachineIntegerType::UInt64,
@@ -1749,6 +1751,10 @@ mod tests {
             ),
             machine(
                 MachineIntegerType::Int32,
+                Bitvector32Term::Divide(x(), Box::new(Bitvector32Term::Constant(-1000i32 as u32))),
+            ),
+            machine(
+                MachineIntegerType::UInt32,
                 Bitvector32Term::Divide(x(), Box::new(Bitvector32Term::Constant(1000))),
             ),
         ] {

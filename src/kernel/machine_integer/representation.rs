@@ -311,15 +311,17 @@ pub(crate) fn overflow_operation(
 pub(crate) enum Division {
     /// `x / d`, truncated toward zero.
     Quotient,
-    /// `x >> k`: the floor of `x / 2^k`.
+    /// `x >> k`: the floor of `x / 2^k`, logical for an unsigned format and
+    /// arithmetic for a signed one.
     ShiftRight,
     /// `x % d`, with the sign of `x`.
     Remainder,
 }
 
 /// The division, operand and divisor (or shift amount) of `value`, a word
-/// read at `ty`: an unsigned quotient, logical shift or remainder at 32 or
-/// 64 bits. Signed, narrow and 128-bit formats have none.
+/// read at `ty`. The operation's signedness is the format's: an unsigned
+/// format's quotient is `UnsignedDivide`, a signed one's `Divide`. Narrow
+/// and 128-bit formats have none.
 pub(crate) fn word_division(
     ty: MachineIntegerType,
     value: &Bitvector32Term,
@@ -328,13 +330,19 @@ pub(crate) fn word_division(
     use MachineIntegerType as Ty;
     let (division, operand, divisor) = match (ty, value) {
         (Ty::UInt32, T::UnsignedDivide(operand, divisor))
-        | (Ty::UInt64, T::UInt64Divide(operand, divisor)) => (Division::Quotient, operand, divisor),
+        | (Ty::UInt64, T::UInt64Divide(operand, divisor))
+        | (Ty::Int32, T::Divide(operand, divisor))
+        | (Ty::Int64, T::Int64Divide(operand, divisor)) => (Division::Quotient, operand, divisor),
         (Ty::UInt32, T::LogicalShiftRight(operand, amount))
-        | (Ty::UInt64, T::UInt64LogicalShiftRight(operand, amount)) => {
+        | (Ty::UInt64, T::UInt64LogicalShiftRight(operand, amount))
+        | (Ty::Int32, T::ArithmeticShiftRight(operand, amount))
+        | (Ty::Int64, T::Int64ArithmeticShiftRight(operand, amount)) => {
             (Division::ShiftRight, operand, amount)
         }
         (Ty::UInt32, T::UnsignedRemainder(operand, divisor))
-        | (Ty::UInt64, T::UInt64Remainder(operand, divisor)) => {
+        | (Ty::UInt64, T::UInt64Remainder(operand, divisor))
+        | (Ty::Int32, T::Remainder(operand, divisor))
+        | (Ty::Int64, T::Int64Remainder(operand, divisor)) => {
             (Division::Remainder, operand, divisor)
         }
         _ => return None,

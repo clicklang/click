@@ -111,7 +111,7 @@ identifiers.
 | `trivial` | Checks a context-free affine identity. |
 | `negated_goal` | Assumes the integer negation of a bound goal in a mathematical `Integer` certificate: `r < l` for the goal `l <= r`, and `r <= l` for `l < r`. |
 | `divide` | Divides a non-strict `Integer` bound by a positive common factor of its coefficients and rounds its constant to the integer bound. |
-| `operation_bound` | States the bound an unsigned quotient, shift, or remainder by a constant takes from its operand in a mathematical `Integer` certificate, such as `c * to_integer(x / c) <= to_integer(x)`. |
+| `operation_bound` | States the bound a quotient, shift, or remainder by a positive constant takes from its operand in a mathematical `Integer` certificate, such as `c * to_integer(x / c) <= to_integer(x)`. |
 | `excluded_bound` | Cites a premise that is a disequality of a machine value with its type's minimum or maximum, as the bound it gives, in a mathematical `Integer` certificate: `excluded_bound N: to_integer(v) != 0 => 1 <= to_integer(v);`. |
 | `int32_range` | States one opaque `int32` term's own range as an affine bound, `t <= 2147483647` or `-2147483648 <= t`. |
 | `interval_from_affine`, `interval_from_affine_direct`, `interval_atom`, `interval_intersect` | Introduce, import, or intersect, checked signed-machine intervals. `interval_from_affine_direct` is required when the cited affine premise already contains a compound machine operation; it does not silently decompose that operation. |

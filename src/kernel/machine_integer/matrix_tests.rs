@@ -36,15 +36,12 @@ const DEFINEDNESS_GAPS: &[Ty] = &[
     Ty::UInt128,
 ];
 /// A narrow quotient is computed on promoted `int` words and so is never a
-/// narrow observation; there are no 128-bit operators (Stage 3). Signed
-/// quotients have no bound yet.
+/// narrow observation; there are no 128-bit operators (Stage 3).
 const DIVISION_GAPS: &[Ty] = &[
     Ty::Int8,
     Ty::UInt8,
     Ty::Int16,
     Ty::UInt16,
-    Ty::Int32,
-    Ty::Int64,
     Ty::Int128,
     Ty::UInt128,
 ];
@@ -736,5 +733,6 @@ fn a_division_reads_only_at_its_own_signedness() {
             other => panic!("{other:?}"),
         }
     };
+    assert!(bounds::operation_bound(&machine(signed.clone(), Ty::Int32), true).is_some());
     assert!(bounds::operation_bound(&machine(signed, Ty::UInt32), true).is_none());
 }
