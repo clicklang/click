@@ -2874,10 +2874,30 @@ mod exact_order_path_tests {
             for _ in 0..14 {
                 let (left, right) = (Box::new(terms.term()), Box::new(terms.term()));
                 let condition = match terms.next() % 4 {
-                    0 => ConditionTerm::Bitvector32SignedLessThan(left, right),
-                    1 => ConditionTerm::Bitvector32SignedLessEqual(left, right),
-                    2 => ConditionTerm::Bitvector32SignedGreaterThan(left, right),
-                    _ => ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
+                    0 => ConditionTerm::Compare {
+                        format: crate::kernel::MachineIntegerType::Int32,
+                        relation: crate::kernel::CompareRelation::LessThan,
+                        left,
+                        right,
+                    },
+                    1 => ConditionTerm::Compare {
+                        format: crate::kernel::MachineIntegerType::Int32,
+                        relation: crate::kernel::CompareRelation::LessEqual,
+                        left,
+                        right,
+                    },
+                    2 => ConditionTerm::Compare {
+                        format: crate::kernel::MachineIntegerType::Int32,
+                        relation: crate::kernel::CompareRelation::GreaterThan,
+                        left,
+                        right,
+                    },
+                    _ => ConditionTerm::Compare {
+                        format: crate::kernel::MachineIntegerType::Int32,
+                        relation: crate::kernel::CompareRelation::GreaterEqual,
+                        left,
+                        right,
+                    },
                 };
                 context = context.assume_condition(condition, !terms.next().is_multiple_of(3));
             }
