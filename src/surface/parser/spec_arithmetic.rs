@@ -5,14 +5,17 @@
 //! exact Integer operations and each machine operand of them is observed
 //! with `to_integer`: an operand of a comparison that reads as Integer, an
 //! argument for an `Integer` parameter of a pure function or theorem, the
-//! value of `let s: Integer`, an `Integer` constructor field, the body of a
-//! `-> Integer` function, and every arm of a `match` in one of those
-//! positions. An `if` is not yet one: the kernel has no Integer
+//! value of `let s: Integer`, an `Integer` constructor field, an `Integer`
+//! resource field's `fold` value, the body of a `-> Integer` function, and
+//! every arm of a `match` in one of those positions. An `if` is not yet one: the kernel has no Integer
 //! conditional, so a conditional keeps its C value and is observed whole,
 //! `to_integer(if ...)`. Where a machine type is expected the
 //! operation is C's at that type, as written. An untyped `let` has no
 //! expected type, so one whose value does arithmetic on a machine value is
-//! refused and names both annotations.
+//! refused and names both annotations. An untyped `let` has its value's
+//! type, and each `let` in scope is an operand of its type, so arithmetic
+//! on an earlier Integer `let` is Integer arithmetic. A typed `let` gives an
+//! unsuffixed literal its machine type.
 //!
 //! The parser decides this because the reading is a rewrite of the parsed
 //! expression (the inserted `to_integer` is what lowering, expansion and
@@ -60,7 +63,119 @@ fn with_locals<T>(
     result
 }
 
+/// What the `let` names in scope at the parse position are as operands: the
+/// contract or theorem lets parsed so far and the enclosing `let ... ;`
+/// expressions, with the machine type of each machine one where its value
+/// shows it.
+#[derive(Clone, Debug, Default)]
+pub(super) struct LetOperands {
+    operands: LocalOperands,
+    machine_types: BTreeMap<String, C0Type>,
+}
+
+/// A `let` binding's previous meaning, restored when its scope ends.
+pub(super) type ShadowedLet = (String, Option<LocalOperand>, Option<C0Type>);
+
 impl Parser {
+    /// What `name` is as an operand: a binding of the expression being
+    /// read, then a `let` in scope.
+    fn local_operand(&self, scope: &LocalOperands, name: &str) -> Option<LocalOperand> {
+        scope
+            .get(name)
+            .or_else(|| self.let_operands.operands.get(name))
+            .copied()
+    }
+
+    /// Records what the `let` binding `name` is as an operand, from its
+    /// annotation or, without one, its value, and returns what the name
+    /// meant before.
+    pub(super) fn bind_let_operand(
+        &mut self,
+        name: &str,
+        click_type: Option<&ClickType>,
+        value: Option<&ContractExpression>,
+    ) -> ShadowedLet {
+        let (operand, machine_type) = match click_type {
+            Some(ClickType::Integer) => (LocalOperand::Integer, None),
+            Some(ClickType::C(c_type))
+                if c_type.is_pointer() || matches!(c_type, C0Type::Float32 | C0Type::Float64) =>
+            {
+                (LocalOperand::COnly, None)
+            }
+            Some(ClickType::C(c_type)) => (LocalOperand::Machine, Some(*c_type)),
+            Some(_) => (LocalOperand::Unknown, None),
+            None => match value {
+                Some(value) if self.integer_operand(value) => (LocalOperand::Integer, None),
+                Some(value) if self.c_only_value(value) => (LocalOperand::COnly, None),
+                Some(value) => (LocalOperand::Machine, self.machine_operand_type(value)),
+                None => (LocalOperand::Unknown, None),
+            },
+        };
+        let previous_operand = self.let_operands.operands.insert(name.to_string(), operand);
+        let previous_type = match machine_type {
+            Some(c_type) => self
+                .let_operands
+                .machine_types
+                .insert(name.to_string(), c_type),
+            None => self.let_operands.machine_types.remove(name),
+        };
+        (name.to_string(), previous_operand, previous_type)
+    }
+
+    /// Records a contract's or theorem's `let`, in scope for the rest of
+    /// the declaration.
+    pub(super) fn bind_contract_let_operand(&mut self, binding: &ContractLetBinding) {
+        let value = match &binding.kind {
+            ContractLetBindingKind::Value(value) => Some(value),
+            _ => None,
+        };
+        self.bind_let_operand(&binding.name, binding.click_type.as_ref(), value);
+    }
+
+    /// Ends the scope of the `let` bindings `shadowed` recorded, latest first.
+    pub(super) fn unbind_let_operands(&mut self, shadowed: Vec<ShadowedLet>) {
+        for (name, operand, machine_type) in shadowed.into_iter().rev() {
+            match operand {
+                Some(operand) => self.let_operands.operands.insert(name.clone(), operand),
+                None => self.let_operands.operands.remove(&name),
+            };
+            match machine_type {
+                Some(c_type) => self.let_operands.machine_types.insert(name, c_type),
+                None => self.let_operands.machine_types.remove(&name),
+            };
+        }
+    }
+
+    /// Replaces the `let` bindings in scope, for a declaration that starts
+    /// its own, and returns the enclosing ones.
+    pub(super) fn take_let_operands(&mut self) -> LetOperands {
+        std::mem::take(&mut self.let_operands)
+    }
+
+    pub(super) fn restore_let_operands(&mut self, previous: LetOperands) {
+        self.let_operands = previous;
+    }
+
+    /// Whether `value` is a value with only a C meaning: a pointer or a
+    /// floating-point value, or arithmetic on one.
+    fn c_only_value(&self, value: &ContractExpression) -> bool {
+        match value {
+            ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name))
+                if self.local_operand(&LocalOperands::new(), name).is_some() =>
+            {
+                self.local_operand(&LocalOperands::new(), name) == Some(LocalOperand::COnly)
+            }
+            _ => {
+                self.has_c_only_operand(value)
+                    || self.machine_operand_type(value).is_some_and(|c_type| {
+                        c_type.is_pointer() || matches!(c_type, C0Type::Float32 | C0Type::Float64)
+                    })
+            }
+        }
+    }
+
     /// A comparison as the file's specification arithmetic reads it. A
     /// comparison that does arithmetic, at the top of an operand or in an
     /// arm of a match there, or that compares an Integer with a machine value,
@@ -142,30 +257,71 @@ impl Parser {
         };
         let machine = self
             .machine_operand_type(operand)
-            .map(|c_type| {
-                let name = describe_c0_type(c_type);
-                if !self.verifies_rust() {
-                    return name;
-                }
-                match name.as_str() {
-                    "int8" => "i8",
-                    "int16" => "i16",
-                    "int32" => "i32",
-                    "int64" => "i64",
-                    "uint8" => "u8",
-                    "uint16" => "u16",
-                    "uint32" => "u32",
-                    "uint64" => "u64",
-                    other => other,
-                }
-                .to_string()
-            })
+            .map(|c_type| self.machine_type_spelling(c_type))
             .unwrap_or_else(|| "<machine type>".to_string());
         Err(self.error(format!(
             "untyped `let {name}` does arithmetic on a machine value; arithmetic takes its \
              meaning from the type its result is used at, so write `let {name}: Integer = ...;` \
              for the exact value or `let {name}: {machine} = ...;` for the C operation"
         )))
+    }
+
+    /// `c_type` as the sidecar's language spells it.
+    fn machine_type_spelling(&self, c_type: C0Type) -> String {
+        let name = describe_c0_type(c_type);
+        if !self.verifies_rust() {
+            return name;
+        }
+        match name.as_str() {
+            "int8" => "i8",
+            "int16" => "i16",
+            "int32" => "i32",
+            "int64" => "i64",
+            "uint8" => "u8",
+            "uint16" => "u16",
+            "uint32" => "u32",
+            "uint64" => "u64",
+            other => other,
+        }
+        .to_string()
+    }
+
+    /// The value of `let name: c_type = value;`: an unsuffixed literal, or
+    /// the negation of one, takes the declared machine type, and one
+    /// outside its range is refused.
+    pub(super) fn typed_let_literal(
+        &self,
+        name: &str,
+        c_type: C0Type,
+        value: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
+        let (digits, negative) = match &value {
+            ContractExpression::IntegerLiteral(digits) => (digits, false),
+            ContractExpression::Negate(inner) => match inner.as_ref() {
+                ContractExpression::IntegerLiteral(digits) => (digits, true),
+                _ => return Ok(value),
+            },
+            _ => return Ok(value),
+        };
+        let Some(suffix) = rust_literals::IntegerSuffix::of_c_type(c_type) else {
+            return Ok(value);
+        };
+        let literal = rust_literals::IntegerLiteral {
+            digits: digits.clone(),
+            suffix: Some(suffix),
+        };
+        match literal.native_value(negative) {
+            Ok(fixed) => Ok(ContractExpression::CFragment(CExpression::Value(fixed))),
+            Err(_) => {
+                let (least, greatest) = suffix.range();
+                let spelling = self.machine_type_spelling(c_type);
+                Err(self.error(format!(
+                    "`let {name}: {spelling}` cannot hold {}{digits}; a `{spelling}` lies in \
+                     {least}..={greatest}",
+                    if negative { "-" } else { "" }
+                )))
+            }
+        }
     }
 
     /// Whether `expression` is already an exact Integer: an Integer
@@ -228,10 +384,12 @@ impl Parser {
             }),
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => match scope.get(name) {
-                Some(operand) => *operand == LocalOperand::Integer,
-                None => self.integer_leaf(expression),
-            },
+            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+                match self.local_operand(scope, name) {
+                    Some(operand) => operand == LocalOperand::Integer,
+                    None => self.integer_leaf(expression),
+                }
+            }
             leaf => self.integer_leaf(leaf),
         }
     }
@@ -319,9 +477,9 @@ impl Parser {
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
             | ContractExpression::CFragment(CExpression::Variable(name))
-                if scope.contains_key(name) =>
+                if self.local_operand(scope, name).is_some() =>
             {
-                scope[name] == LocalOperand::COnly
+                self.local_operand(scope, name) == Some(LocalOperand::COnly)
             }
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
@@ -451,7 +609,7 @@ impl Parser {
             ContractExpression::Binding(ref name)
             | ContractExpression::CBinding(ref name)
             | ContractExpression::CFragment(CExpression::Variable(ref name))
-                if scope.get(name) == Some(&LocalOperand::Unknown) =>
+                if self.local_operand(scope, name) == Some(LocalOperand::Unknown) =>
             {
                 expression
             }
@@ -499,9 +657,10 @@ impl Parser {
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
             | ContractExpression::CFragment(CExpression::Variable(name))
-                if scope.contains_key(name) =>
+                if self.local_operand(scope, name).is_some() =>
             {
-                (scope[name] == LocalOperand::Machine).then_some(expression)
+                (self.local_operand(scope, name) == Some(LocalOperand::Machine))
+                    .then_some(expression)
             }
             leaf if self.integer_operand_in_scope(leaf, scope)
                 || self.has_c_only_operand_in_scope(leaf, scope) =>
@@ -527,6 +686,7 @@ impl Parser {
                 .c_parameter_types
                 .get(name)
                 .or_else(|| self.spec_parameter_types.get(name))
+                .or_else(|| self.let_operands.machine_types.get(name))
                 .copied()
                 .or_else(|| {
                     (name == "result")
@@ -722,6 +882,20 @@ mod tests {
     fn integer_parameters(source: &str) -> Option<Vec<usize>> {
         let (tokens, _) = tokenizer::tokenize(source, None).expect("tokenize");
         written_integer_parameters(&tokens, 0)
+    }
+
+    #[test]
+    fn a_typed_let_literal_out_of_range_names_the_rust_type() {
+        let source = "verifying \"a.rs\";\n\
+                      theorem t() {\n\
+                      let b: u8 = 256;\n\
+                      ensures to_integer(b) == 0 by auto();\n\
+                      }\n";
+        let error = parse(source).expect_err("256 is not a u8").to_string();
+        assert!(
+            error.contains("`let b: u8` cannot hold 256; a `u8` lies in 0..=255"),
+            "{error}"
+        );
     }
 
     #[test]

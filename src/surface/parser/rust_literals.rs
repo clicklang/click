@@ -48,6 +48,33 @@ impl IntegerSuffix {
         }
     }
 
+    /// The suffix of the fixed-width integer type `c_type`; plain `char`
+    /// takes the byte type of its signedness.
+    pub(super) fn of_c_type(c_type: C0Type) -> Option<Self> {
+        use crate::languages::c::syntax::PlainChar;
+        Some(match c_type {
+            C0Type::Int8 | C0Type::Char(PlainChar::Signed) => Self::I8,
+            C0Type::Int16 => Self::I16,
+            C0Type::Int32 => Self::I32,
+            C0Type::Int64(_) => Self::I64,
+            C0Type::UInt8 | C0Type::Char(PlainChar::Unsigned) => Self::U8,
+            C0Type::UInt16 => Self::U16,
+            C0Type::UInt32 => Self::U32,
+            C0Type::UInt64(_) => Self::U64,
+            _ => return None,
+        })
+    }
+
+    /// The least and greatest values of the type.
+    pub(super) fn range(self) -> (i128, i128) {
+        let (signed, width) = self.signed_width();
+        if signed {
+            (-(1i128 << (width - 1)), (1i128 << (width - 1)) - 1)
+        } else {
+            (0, (1i128 << width) - 1)
+        }
+    }
+
     fn signed_width(self) -> (bool, u32) {
         match self {
             Self::I8 => (true, 8),
@@ -126,7 +153,7 @@ impl IntegerLiteral {
         )
     }
 
-    fn native_value(&self, negative: bool) -> Result<CValue, String> {
+    pub(super) fn native_value(&self, negative: bool) -> Result<CValue, String> {
         let suffix = self.suffix.expect("typed literal");
         let (signed, width) = suffix.signed_width();
         if negative && !signed {

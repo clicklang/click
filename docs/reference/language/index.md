@@ -980,11 +980,11 @@ them a machine type
 | --- | --- |
 | an operand of a comparison that does `+`, `-`, `*` or negation, compares an Integer with a machine value, or has a `count(...)` operand | Integer |
 | an argument for an `Integer` parameter of a pure function or theorem, including a library theorem and `truncating_quotient` / `truncating_remainder` | Integer |
-| the value of `let s: Integer = ...`, an `Integer` constructor field, the body of a `-> Integer` function | Integer |
+| the value of `let s: Integer = ...`, an `Integer` constructor field, an `Integer` resource field's value in a `fold` map, the body of a `-> Integer` function | Integer |
 | an arm of a `match` in an Integer position | Integer |
-| a machine-typed parameter, constructor or resource field; `let s: int32 = ...`; an index or memory range; a cast; the argument of `to_integer(...)` or `defined(...)`; an operand of `/ % << >> & \| ^`; a machine fold accumulator or body; a `decreases` measure | that machine type |
+| a machine-typed parameter, constructor or resource field; `let s: int32 = ...`, whose unsuffixed literal value is an `int32` in the type's range; an index or memory range; a cast; the argument of `to_integer(...)` or `defined(...)`; an operand of `/ % << >> & \| ^`; a machine fold accumulator or body; a `decreases` measure | that machine type |
 | a branch of an `if` | the conditional's C type: the kernel has no Integer conditional, so an Integer position observes the whole conditional, `to_integer(if ...)` |
-| an untyped `let s = ...` | none: arithmetic on a machine value in its value is refused |
+| an untyped `let s = ...` | none: arithmetic on a machine value in its value is refused; the binding has its value's type, so one whose value is an Integer is an Integer |
 
 <!-- verified-example: mdtests/a_typed_let_gives_machine_arithmetic_its_meaning.md -->
 ```click
@@ -1005,7 +1005,23 @@ meaning from the type its result is used at, so write `let s: Integer = ...;`
 for the exact value or `let s: int32 = ...;` for the C operation``, naming the
 operand's machine type where its spelling shows it
 (`mdtests/an_untyped_let_of_machine_arithmetic_is_refused.md`). So a value
-never changes meaning when it is moved into a `let`. A contract `let` of a
+never changes meaning when it is moved into a `let`. An untyped `let` has
+its value's type, and an earlier `let` in scope (a contract's or theorem's,
+or an enclosing `let ... ;`) is an operand of that type: after
+`let a = to_integer(x);`, `let b = a + 1;` is Integer arithmetic and needs no
+annotation (`mdtests/an_untyped_let_of_an_integer_has_the_integer_type.md`),
+while after `let t = a;`, `let u = t + 1;` is refused and names `t`'s type
+(`mdtests/an_untyped_let_of_a_machine_let_is_refused.md`). A typed `let`
+gives an unsuffixed literal its machine type: `let m: int64 = 5;` is the
+`int64` 5, for every fixed-width type
+(`mdtests/a_typed_let_gives_a_literal_its_machine_type.md`), and a literal
+outside the range is refused with
+`` `let byte: uint8` cannot hold 300; a `uint8` lies in 0..=255 ``
+(`mdtests/a_typed_let_literal_out_of_range_is_refused.md`). An `Integer`
+resource field's `fold` value is exact
+(`mdtests/an_integer_resource_field_reads_fold_arithmetic_exactly.md`).
+Predicates' `Integer` parameters and `Integer` resource parameters are not
+supported yet, so neither is an Integer position. A contract `let` of a
 machine value is a machine operand where it is used
 (`mdtests/a_c_valued_contract_let_in_integer_arithmetic.md`). Integer
 parameters, fields and results:

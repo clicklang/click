@@ -555,9 +555,15 @@ Maintainer direction, 2026-10-24:
   Integer`, and the arms of a match there) makes `+`, `-`, `*` and negation
   exact over `to_integer` observations; a machine position keeps the C
   operation at that type. An untyped `let` whose value does arithmetic on a
-  machine value is an error that names both annotations. Unsuffixed literals
-  stay Integer. The reason: one rule, read from types, replaces the
+  machine value is an error that names both annotations; an untyped `let`
+  has its value's type, so arithmetic on an earlier Integer `let` is
+  Integer arithmetic. Unsuffixed literals stay Integer, except that a typed
+  `let s: int64 = 5;` gives its literal the declared type, range-checked.
+  The reason: one rule, read from types, replaces the
   syntactic spine rule, and extracting a subexpression into a `let` can no
   longer silently change its meaning. Status: the branches of an `if` are
   not yet Integer positions, because `SpecIntegerExpression` has no
   conditional; an Integer position observes the whole conditional.
+  Predicates' `Integer` parameters and `Integer` resource parameters are
+  not supported by lowering yet, so they are not Integer positions either;
+  an `Integer` resource field's `fold` value is one.

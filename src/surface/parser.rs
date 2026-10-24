@@ -930,6 +930,9 @@ struct Parser {
     /// theorem this module declares or imports, where an argument's
     /// arithmetic is exact.
     integer_parameter_positions: BTreeMap<String, Vec<usize>>,
+    /// What each `let` in scope is as an arithmetic operand, so a later
+    /// binding's arithmetic on it has a meaning.
+    let_operands: spec_arithmetic::LetOperands,
     /// The machine types of the current theorem's or pure function's
     /// parameters, which a diagnostic names.
     spec_parameter_types: BTreeMap<String, C0Type>,
@@ -1539,6 +1542,7 @@ impl Parser {
             pure_function_slices: BTreeMap::new(),
             integer_function_names: BTreeSet::new(),
             integer_parameter_positions: BTreeMap::new(),
+            let_operands: Default::default(),
             spec_parameter_types: BTreeMap::new(),
             address_casts: std::collections::HashSet::new(),
             theorem_pointer_params: BTreeSet::new(),
@@ -3652,6 +3656,7 @@ impl Parser {
         let previous_integer_literal_context =
             std::mem::replace(&mut self.integer_literal_context, false);
         let previous_integer_lets = self.names.take(NameKind::IntegerLet);
+        let previous_let_operands = self.take_let_operands();
         let mut execution_struct_params = BTreeMap::new();
         let mut execution_struct_array_params = BTreeSet::new();
         let mut executed_reference_params = BTreeSet::new();
@@ -3746,6 +3751,7 @@ impl Parser {
                             binding.name
                         )));
                     }
+                    self.bind_contract_let_operand(&binding);
                     let substitutions = contract_let_substitutions(&contract_lets);
                     let kind = match binding.kind {
                         ContractLetBindingKind::Value(value) => ContractLetBindingKind::Value(
@@ -3923,6 +3929,7 @@ impl Parser {
             .replace(NameKind::IntegerParameter, previous_integer_params);
         self.names
             .replace(NameKind::IntegerLet, previous_integer_lets);
+        self.restore_let_operands(previous_let_operands);
         self.integer_literal_context = previous_integer_literal_context;
 
         let requires: Vec<Requirement> = requires
@@ -4180,6 +4187,7 @@ impl Parser {
             .collect::<Vec<_>>();
         let previous_integer_params = self.names.take(NameKind::IntegerParameter);
         let previous_integer_lets = self.names.take(NameKind::IntegerLet);
+        let previous_let_operands = self.take_let_operands();
         let previous_integer_literal_context =
             std::mem::replace(&mut self.integer_literal_context, false);
         let mut contract_lets = Vec::new();
@@ -4306,6 +4314,7 @@ impl Parser {
                             signature.name()
                         )));
                     }
+                    self.bind_contract_let_operand(&binding);
                     if binding.kind == ContractLetBindingKind::Parameter {
                         // A clause would read the value where the body reads
                         // the program's variable.
@@ -4768,6 +4777,7 @@ impl Parser {
             .replace(NameKind::IntegerParameter, previous_integer_params);
         self.names
             .replace(NameKind::IntegerLet, previous_integer_lets);
+        self.restore_let_operands(previous_let_operands);
         self.integer_literal_context = previous_integer_literal_context;
 
         // Flattening an aggregate clause keeps the clause the author wrote
@@ -4912,7 +4922,7 @@ impl Parser {
         self.expect_ident_spelling("let")?;
         let name = self.expect_ident("let binding name")?;
         self.refuse_bool_literal_binder(&name)?;
-        let click_type = if self.peek() == Some(&Token::Colon) {
+        let mut click_type = if self.peek() == Some(&Token::Colon) {
             self.position += 1;
             let (click_type, parsed_type) = self.parse_click_type()?;
             if let Some(parsed_type) = parsed_type
@@ -4938,9 +4948,15 @@ impl Parser {
             // arithmetic on a machine value has no meaning.
             let value = match &click_type {
                 Some(ClickType::Integer) => self.at_integer_position(value),
+                Some(ClickType::C(c_type)) => self.typed_let_literal(&name, *c_type, value)?,
                 Some(_) => value,
                 None => {
                     self.refuse_untyped_machine_arithmetic(&name, &value)?;
+                    // An untyped `let` has its value's type, so one whose
+                    // value is an exact Integer is an Integer binding.
+                    if self.integer_operand(&value) {
+                        click_type = Some(ClickType::Integer);
+                    }
                     value
                 }
             };
@@ -8728,6 +8744,15 @@ impl Parser {
                 let field = self.expect_ident("resource field name")?;
                 self.expect(Token::Colon)?;
                 let value = self.parse_contract_expression()?;
+                // An `Integer` field's value is read where an Integer is
+                // expected.
+                let value = if declared.iter().any(|declared| {
+                    declared.name() == field && declared.click_type() == &ClickType::Integer
+                }) {
+                    self.at_integer_position(value)
+                } else {
+                    value
+                };
                 fields.push((field, value));
                 if self.peek() != Some(&Token::Comma) {
                     break;
@@ -14284,6 +14309,7 @@ impl Parser {
     fn parse_contract_value_let_expression(&mut self) -> Result<ContractExpression, ClickError> {
         let bool_body = std::mem::take(&mut self.bool_value_context);
         let mut bindings = Vec::new();
+        let mut shadowed_lets = Vec::new();
         loop {
             if bindings.len() >= CONTRACT_LET_CHAIN_LIMIT {
                 return Err(self.error(format!(
@@ -14297,6 +14323,11 @@ impl Parser {
             let binding_was_in_scope = !self
                 .names
                 .insert(NameKind::ContractBinding, binding.name.clone());
+            shadowed_lets.push(self.bind_let_operand(
+                &binding.name,
+                binding.click_type.as_ref(),
+                Some(&value),
+            ));
             let previous_integer_context = self.integer_literal_context;
             let click_type = binding.click_type;
             self.integer_literal_context |= matches!(click_type, Some(ClickType::Integer));
@@ -14313,6 +14344,7 @@ impl Parser {
         }
 
         let body = self.parse_branch_value(bool_body);
+        self.unbind_let_operands(shadowed_lets);
         for (name, _, _, binding_was_in_scope, previous_integer_context) in bindings.iter().rev() {
             self.integer_literal_context = *previous_integer_context;
             if !*binding_was_in_scope {
