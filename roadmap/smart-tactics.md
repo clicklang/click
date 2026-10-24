@@ -336,9 +336,12 @@ four times the work at a quarter of it.
     probe bases and blocks, which reach every composition holding both
     members. No gate verdict changed;
     `owned_anchor_distinctness_ignores_unrelated_compositions` covers it.
-    Still scanning: `offsets_distinct_by_separation` reads every composition
-    for two anchored offsets, whose blocks it does not know, so it has no
-    key in that index.
+    `offsets_distinct_by_separation`, asked of two anchored offsets whose
+    blocks it does not know, read every composition too (3,514 calls over
+    up to 23, 477 hits). The index now also lists a composition under its
+    owned members' anchor offsets, and the check reads the compositions
+    listed under the two anchors;
+    `offset_distinctness_ignores_unrelated_compositions` covers it.
 11. **Fixed in part:** `has_condition_fact`'s fallback, run when no key
     the query spells holds a match, read every fact of the query's kind with
     a non-atom side. It now reads the facts filed under the query's

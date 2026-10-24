@@ -7,9 +7,10 @@
 //! such question linear in the path (`roadmap/scaling.md`). This index names
 //! the compositions that can answer instead.
 //!
-//! **Keys.** A composition is listed under the base and the block of owned
-//! memory members, which are exactly the keys a member lookup probes
-//! (`ResourceContext::owned_memory_members_with_base`, the block buckets).
+//! **Keys.** A composition is listed under the base, the block and the
+//! anchor offset of owned memory members, which are exactly the keys a
+//! member lookup probes (`ResourceContext::owned_memory_members_with_base`,
+//! the block buckets, `owned_memory_by_anchor`).
 //!
 //! **Incremental admission.** A snapshot is listed only under the owned
 //! members it holds beyond some earlier admitted snapshot, its predecessor:
@@ -34,7 +35,7 @@
 //! snapshot holding both whenever any stated composition does. The answer it
 //! derives from that snapshot is the one `S` would give: owned members of a
 //! valid composition are disjoint, so each object finds the same member.
-use super::{CMemoryRange, Pointer, PointerBlock, ResourceContext};
+use super::{CMemoryRange, Pointer, PointerBlock, PointerOffsetTerm, ResourceContext};
 use crate::persistent::{PersistentMap, PersistentSet};
 
 /// How far in size a predecessor candidate may be from the snapshot it
@@ -48,6 +49,7 @@ pub(in crate::kernel) struct CompositionMemberIndex {
     compositions: PersistentMap<u32, ResourceContext>,
     by_base: PersistentMap<Pointer, PersistentSet<u32>>,
     by_block: PersistentMap<PointerBlock, PersistentSet<u32>>,
+    by_anchor: PersistentMap<PointerOffsetTerm, PersistentSet<u32>>,
     /// The last snapshot admitted from each storage origin. Holding it keeps
     /// the origin alive, so its address is never reused as a key.
     checkpoints: PersistentMap<usize, ResourceContext>,
@@ -131,6 +133,12 @@ impl CompositionMemberIndex {
         self.by_block = self
             .by_block
             .with_inserted(base.block.clone(), at_block.with_value(ordinal));
+        if let Some(anchor) = crate::kernel::assumptions::memory_range_anchor(range) {
+            let at_anchor = self.by_anchor.get(&anchor).cloned().unwrap_or_default();
+            self.by_anchor = self
+                .by_anchor
+                .with_inserted(anchor, at_anchor.with_value(ordinal));
+        }
     }
 
     /// The admitted compositions listed under any of `bases` or `blocks`, and
@@ -140,18 +148,39 @@ impl CompositionMemberIndex {
         bases: impl IntoIterator<Item = &'k Pointer>,
         blocks: impl IntoIterator<Item = &'k PointerBlock>,
     ) -> Vec<&ResourceContext> {
+        self.listed_in(
+            bases
+                .into_iter()
+                .filter_map(|base| self.by_base.get(base))
+                .chain(
+                    blocks
+                        .into_iter()
+                        .filter_map(|block| self.by_block.get(block)),
+                ),
+        )
+    }
+
+    /// The admitted compositions listed under any of `anchors`, owned
+    /// members' anchor offsets, and the root, in admission order, each once.
+    pub(in crate::kernel) fn listed_under_anchors<'k>(
+        &self,
+        anchors: impl IntoIterator<Item = &'k PointerOffsetTerm>,
+    ) -> Vec<&ResourceContext> {
+        self.listed_in(
+            anchors
+                .into_iter()
+                .filter_map(|anchor| self.by_anchor.get(anchor)),
+        )
+    }
+
+    fn listed_in<'s>(
+        &'s self,
+        listed: impl Iterator<Item = &'s PersistentSet<u32>>,
+    ) -> Vec<&'s ResourceContext> {
         let mut ordinals = self
             .root
             .into_iter()
             .collect::<std::collections::BTreeSet<_>>();
-        let listed = bases
-            .into_iter()
-            .filter_map(|base| self.by_base.get(base))
-            .chain(
-                blocks
-                    .into_iter()
-                    .filter_map(|block| self.by_block.get(block)),
-            );
         for set in listed {
             for ordinal in set.iter() {
                 crate::instrumentation::record_deterministic_work(1);
