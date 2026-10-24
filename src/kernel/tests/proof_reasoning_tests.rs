@@ -9433,3 +9433,61 @@ fn atomic_derivation_memo_is_keyed_by_the_dag_modes() {
         "the answer from outside the scope is still served outside it"
     );
 }
+
+/// Instantiating universals for a condition reads the universal facts, not
+/// every proposition fact: unrelated facts of other kinds cost nothing. The
+/// old scan visited each proposition fact to skip the non-universal ones.
+#[test]
+fn universal_consequents_ignore_unrelated_propositions() {
+    let bound = Variable(94_000);
+    let universal = Proposition::ForAll {
+        name: Default::default(),
+        var: bound,
+        sort: Sort::CInt32,
+        body: Box::new(Proposition::Implies(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::signed_less_than(
+                    Bitvector32Term::Variable(bound),
+                    Bitvector32Term::Constant(0),
+                ),
+                true,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(bound),
+                    Bitvector32Term::Variable(Variable(94_001)),
+                ),
+                true,
+            )),
+        )),
+    };
+    let query = ConditionTerm::equal(
+        Bitvector32Term::Variable(Variable(94_002)),
+        Bitvector32Term::Constant(1),
+    );
+    let work = [16_usize, 64, 256]
+        .into_iter()
+        .map(|unrelated| {
+            let mut assumptions = PureFactContext::new().assume_proposition(universal.clone());
+            for index in 0..unrelated {
+                let unrelated = Pointer {
+                    block: format!("universal-unrelated-{index}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                assumptions = assumptions.assume_proposition(Proposition::CResourceContains {
+                    parent: Box::new(CResource::Memory(memory_range(unrelated.clone(), 0, 2))),
+                    child: Box::new(CResource::Memory(memory_range(unrelated, 0, 1))),
+                });
+            }
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assumptions.instantiated_universal_consequents(&query)
+            });
+            work
+        })
+        .collect::<Vec<_>>();
+    assert!(work[0] > 0);
+    assert!(
+        work.windows(2).all(|pair| pair[0] == pair[1]),
+        "unrelated facts changed the universal instantiation's work: {work:?}"
+    );
+}

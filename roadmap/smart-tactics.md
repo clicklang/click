@@ -372,8 +372,11 @@ four times the work at a quarter of it.
     for an instance. **Fixed in part:** selecting a universal to instantiate
     for a goal (`select_forall_int32_instantiation_evidence`) read every
     proposition fact; it reads `atomic_quantified_facts`, the set of
-    universal facts, so unrelated facts of other kinds cost nothing. Keying
-    universals by their conclusion's shape remains.
+    universal facts, so unrelated facts of other kinds cost nothing. So do
+    the alpha match for a universal goal, the quantified order facts for a
+    condition, and `instantiated_universal_consequents`. Keying universals
+    by their conclusion's shape remains, as do the existential alpha match
+    and `proves_condition_from_facts`, which read every proposition fact.
 13. **Fixed:** the inconsistency check labelled every fact. The context
     now files each fact under its contradiction keys as it is assumed
     (`contradictions.rs`), and the check reads whether any key conflicts.
@@ -482,8 +485,11 @@ four times the work at a quarter of it.
     through memory resolution, and at most 7 separation facts were held.
     Still listed: all compositions at `4280` and `4563` (index:
     `composition_members`).
-22. Load evaluation: the unresolved-cell scan (`eval/memory_loads.rs:1162`)
-    visits every cell of the memory, charged.
+22. **Left as is:** the load's unresolved-cell scan
+    (`eval/memory_loads.rs`) walks the memory the distinct-cell reduction
+    just left: the cells of the load's alias-candidate blocks that it could
+    not prove distinct. It reads no cell that reduction did not, and stops
+    at the first unresolved one.
 23. Every composition: `held_range_membership` (`eval/operators.rs`) and
     `loops.rs:2897`, filtered by block per composition. **Fixed for
     `held_range_membership`:** it surveys the state's resources and the
