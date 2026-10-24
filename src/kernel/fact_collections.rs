@@ -138,16 +138,55 @@ impl<K: Ord, V> FactMap<K, V> {
 
     /// Every entry, in key order, charged one unit each.
     #[track_caller]
-    pub(crate) fn iter(&self) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
+    fn scan(&self) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
         ChargedIter::new(self.0.iter())
     }
 
-    /// Every key, in order, charged one unit each.
+    /// Every entry, for maintaining this context itself: rebuilding an
+    /// index, recomputing an identity, a debug consistency check, copying
+    /// the context whole, or rendering a diagnostic after a step failed.
+    /// Not for answering a query.
     #[track_caller]
-    pub(crate) fn keys(
+    pub(crate) fn scan_for_upkeep(
         &self,
-    ) -> ChargedIter<impl DoubleEndedIterator<Item = &K> + ExactSizeIterator> {
-        ChargedIter::new(self.0.keys())
+    ) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
+        self.scan()
+    }
+
+    /// Every entry, for a search that `click expand` replaces with explicit
+    /// steps (`docs/concepts/smart-and-simple-tactics.md`). Fast code, which
+    /// still runs after expansion, must not reach this.
+    #[track_caller]
+    pub(crate) fn scan_for_search(
+        &self,
+    ) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
+        self.scan()
+    }
+
+    /// Every entry of a context that is itself a step's explicit input, such
+    /// as the premises a certificate names. The work is the input's
+    /// size, which the step's author wrote.
+    #[track_caller]
+    pub(crate) fn scan_explicit_input(
+        &self,
+    ) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
+        self.scan()
+    }
+
+    /// Every entry, in fast code that should read an index instead: a known
+    /// violation of the fast-part rule, listed in `roadmap/smart-tactics.md`.
+    /// Do not add uses; each one is removed by indexing its query.
+    #[track_caller]
+    pub(crate) fn scan_unindexed(
+        &self,
+    ) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
+        self.scan()
+    }
+
+    #[cfg(test)]
+    #[track_caller]
+    pub(crate) fn iter(&self) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
+        self.scan()
     }
 }
 
@@ -162,16 +201,6 @@ impl<K: Ord + Eq, V: Eq> Eq for FactMap<K, V> {}
 impl<K: Ord + Clone, V: Clone> FromIterator<(K, V)> for FactMap<K, V> {
     fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
         Self(iter.into_iter().collect())
-    }
-}
-
-impl<'a, K: Ord, V> IntoIterator for &'a FactMap<K, V> {
-    type Item = (&'a K, &'a V);
-    type IntoIter = ChargedIter<crate::persistent::PersistentMapIter<'a, K, V>>;
-
-    #[track_caller]
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
     }
 }
 
@@ -212,10 +241,54 @@ impl<T: Clone + Ord> FactSet<T> {
 
     /// Every fact, in order, charged one unit each.
     #[track_caller]
+    fn scan(&self) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
+        ChargedIter::new(self.0.iter())
+    }
+
+    /// Every fact, for maintaining this context itself; see
+    /// [`FactMap::scan_for_upkeep`].
+    #[track_caller]
+    pub(crate) fn scan_for_upkeep(
+        &self,
+    ) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
+        self.scan()
+    }
+
+    /// Every fact, for a search `click expand` replaces; see
+    /// [`FactMap::scan_for_search`].
+    #[track_caller]
+    pub(crate) fn scan_for_search(
+        &self,
+    ) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
+        self.scan()
+    }
+
+    /// Every entry of a context that is itself a step's explicit input, such
+    /// as the premises a certificate names; see [`FactMap::scan_explicit_input`]. The work is the input's
+    /// size, which the step's author wrote.
+    #[track_caller]
+    pub(crate) fn scan_explicit_input(
+        &self,
+    ) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
+        self.scan()
+    }
+
+    /// Every entry, in fast code that should read an index instead: a known
+    /// violation of the fast-part rule, listed in `roadmap/smart-tactics.md`.
+    /// Do not add uses; each one is removed by indexing its query.
+    #[track_caller]
+    pub(crate) fn scan_unindexed(
+        &self,
+    ) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
+        self.scan()
+    }
+
+    #[cfg(test)]
+    #[track_caller]
     pub(crate) fn iter(
         &self,
     ) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
-        ChargedIter::new(self.0.iter())
+        self.scan()
     }
 }
 
@@ -230,16 +303,6 @@ impl<T: Clone + Ord> Eq for FactSet<T> {}
 impl<T: Clone + Ord> FromIterator<T> for FactSet<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         Self(iter.into_iter().collect())
-    }
-}
-
-impl<'a, T: Clone + Ord> IntoIterator for &'a FactSet<T> {
-    type Item = &'a T;
-    type IntoIter = ChargedIter<imbl::ordset::Iter<'a, T, imbl::shared_ptr::DefaultSharedPtr>>;
-
-    #[track_caller]
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
     }
 }
 
@@ -260,7 +323,7 @@ mod tests {
         });
         assert_eq!(lookups, 0);
         let (visited, work) = crate::instrumentation::measure_deterministic_work(|| {
-            map.iter().count() + map.keys().count() + set.iter().count()
+            map.scan_for_upkeep().count() + map.scan_unindexed().count() + set.iter().count()
         });
         assert_eq!((visited, work), (80, 80));
         let sites = take_scan_sites();

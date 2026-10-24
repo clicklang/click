@@ -2847,7 +2847,7 @@ impl PureFactContext {
                 ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), form.clone());
             (self.exact_condition_value(&nonnegative) == Some(true)
                 || self.exact_ordering_modulo_canonical_atoms(&nonnegative))
-                && self.condition_facts.iter().any(|(fact, value)| {
+                && self.condition_facts.scan_unindexed().any(|(fact, value)| {
                     *value
                         && matches!(
                             fact,
@@ -3591,7 +3591,7 @@ impl PureFactContext {
             if endpoint_matches(&term, right) {
                 return true;
             }
-            for (condition, value) in self.condition_facts.iter() {
+            for (condition, value) in self.condition_facts.scan_unindexed() {
                 if !*value {
                     continue;
                 }
