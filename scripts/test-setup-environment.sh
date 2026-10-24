@@ -2,6 +2,7 @@
 # Regressions for cached source-built nextest versions and binary installation.
 # Use fake tools so this check never installs packages or reaches the network.
 set -euo pipefail
+platform="$(uname -s)"
 
 repository="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 directory="$(mktemp -d)"
@@ -21,6 +22,12 @@ cat > "$directory/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'download\n' >> "$MOCK_DOWNLOADS"
+if [[ "${MOCK_PRIMARY_DOWNLOAD_FAIL:-}" == 1 && "$*" == *https://get.nexte.st/* ]]; then
+    exit 22
+fi
+if [[ "${MOCK_RELEASE_DOWNLOAD_FAIL:-}" == 1 ]]; then
+    exit 22
+fi
 while [[ $# -gt 0 ]]; do
     if [[ "$1" == --output ]]; then
         cp "$MOCK_RELEASE_ARCHIVE" "$2"
@@ -63,6 +70,19 @@ check_case 'cargo-nextest 0.9.143' 0
 check_case $'cargo-nextest 0.9.143\nrelease: 0.9.143\nhost: x86_64-unknown-linux-gnu' 0
 check_case $'cargo-nextest 0.9.143 (60fa45f63 2026-08-04)\nrelease: 0.9.143' 0
 check_case 'cargo-nextest 0.9.142' 1
+
+# A blocked shortcut can use the same pinned release on GitHub. Failure of
+# both sources must still fail setup rather than accepting the stale binary.
+export MOCK_PRIMARY_DOWNLOAD_FAIL=1
+check_case 'cargo-nextest 0.9.142' 2
+export MOCK_RELEASE_DOWNLOAD_FAIL=1
+export MOCK_NEXTEST_OUTPUT='cargo-nextest 0.9.142'
+cp "$directory/cached-nextest" "$directory/bin/cargo-nextest"
+if "$repository/scripts/setup-environment.sh" --docs-only > "$directory/output" 2>&1; then
+    echo 'error: setup accepted a stale nextest after both downloads failed' >&2
+    exit 1
+fi
+unset MOCK_PRIMARY_DOWNLOAD_FAIL MOCK_RELEASE_DOWNLOAD_FAIL
 
 # Refuse an incorrect downloaded version instead of silently running its tests.
 export MOCK_NEXTEST_OUTPUT='cargo-nextest 0.9.142'
@@ -137,5 +157,98 @@ fi
 if "$repository/scripts/charon-runtime.sh" pack "$directory/missing-runtime.tar.gz" > "$directory/output" 2>&1; then
     echo "error: packed a missing Rust runtime" >&2
     exit 1
+fi
+# Minimal Linux images omit docs/man pages that dpkg still lists. Keep real
+# compiler files in the cache and fail if a required file is missing.
+if [[ "$platform" == Linux ]]; then
+    export MOCK_LLVM_FILE="$directory/libLLVM-test.so"
+    export MOCK_MISSING_LLVM_FILE=""
+    export MOCK_LLVM_LICENSE=""
+    for license in /usr/share/doc/*/copyright; do
+        if [[ -f "$license" ]]; then
+            MOCK_LLVM_LICENSE="$license"
+            break
+        fi
+    done
+    printf 'compiler runtime\n' > "$MOCK_LLVM_FILE"
+    cat > "$directory/bin/dpkg-query" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$MOCK_LLVM_FILE" /usr/share/doc/clang-19/omitted-doc /usr/share/man/man1/omitted-page.1.gz
+[[ -z "$MOCK_LLVM_LICENSE" ]] || printf '%s\n' "$MOCK_LLVM_LICENSE"
+if [[ -n "$MOCK_MISSING_LLVM_FILE" ]]; then
+    printf '%s\n' "$MOCK_MISSING_LLVM_FILE"
+fi
+EOF
+    # Compression is orthogonal to archive membership and missing-file errors.
+    cat > "$directory/bin/zstd" <<'EOF'
+#!/usr/bin/env bash
+exec cat
+EOF
+    chmod +x "$directory/bin/dpkg-query" "$directory/bin/zstd"
+    "$repository/scripts/cache-llvm.sh" "$directory/llvm.tar.zst"
+    members="$(tar -tf "$directory/llvm.tar.zst")"
+    [[ "$members" == *"${MOCK_LLVM_FILE#/}"* ]]
+    [[ "$members" != *omitted-doc* && "$members" != *omitted-page* ]]
+    if [[ -n "$MOCK_LLVM_LICENSE" ]]; then
+        [[ "$members" == *"${MOCK_LLVM_LICENSE#/}"* ]]
+    fi
+    export MOCK_MISSING_LLVM_FILE="$directory/missing-compiler.so"
+    if "$repository/scripts/cache-llvm.sh" "$directory/missing.tar.zst" > "$directory/output" 2>&1; then
+        echo 'error: LLVM cache accepted a missing compiler file' >&2
+        exit 1
+    fi
+    [[ ! -e "$directory/missing.tar.zst" && ! -e "$directory/missing.tar.zst.tmp" ]]
+fi
+# Networks that deny apt.llvm.org use the pinned release archive: it must
+# match the pinned SHA-256, extract only the toolchain subset, and never
+# replace an /usr/lib/llvm-19 it did not create.
+if [[ "$platform" == Linux ]]; then
+    llvm_name=LLVM-19.1.7-Linux-X64
+    llvm_release="$directory/llvm-release/$llvm_name"
+    mkdir -p "$llvm_release/bin" "$llvm_release/include/clang" "$llvm_release/lib" "$directory/llvm-bin"
+    printf 'clang\n' > "$llvm_release/bin/clang-19"
+    ln -s clang-19 "$llvm_release/bin/clang"
+    ln -s clang "$llvm_release/bin/clang++"
+    printf '#!/usr/bin/env bash\necho 19.1.7\n' > "$llvm_release/bin/llvm-config"
+    printf 'debugger\n' > "$llvm_release/bin/lldb"
+    printf 'header\n' > "$llvm_release/include/clang/Basic.h"
+    printf 'library\n' > "$llvm_release/lib/libclang-cpp.so.19.1"
+    chmod +x "$llvm_release/bin/llvm-config"
+    tar -cJf "$directory/llvm.tar.xz" -C "$directory/llvm-release" "$llvm_name"
+    printf '#!/usr/bin/env bash\ncase "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac\n' \
+        > "$directory/llvm-bin/uname"
+    chmod +x "$directory/llvm-bin/uname"
+    export MOCK_RELEASE_ARCHIVE="$directory/llvm.tar.xz"
+    llvm_path="$directory/llvm-bin:$PATH"
+    llvm_root="$directory/llvm-root"
+
+    # The fake archive does not have the pinned digest.
+    if PATH="$llvm_path" "$repository/scripts/install-llvm-release.sh" "$llvm_root" > "$directory/output" 2>&1; then
+        echo 'error: installed an LLVM release without the pinned SHA-256' >&2
+        exit 1
+    fi
+    [[ -z "$(ls -A "$llvm_root/opt")" && ! -e "$llvm_root/usr/lib/llvm-19" ]]
+
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$directory/llvm-bin/sha256sum"
+    chmod +x "$directory/llvm-bin/sha256sum"
+    PATH="$llvm_path" "$repository/scripts/install-llvm-release.sh" "$llvm_root"
+    [[ "$("$llvm_root/usr/lib/llvm-19/bin/llvm-config" --version)" == 19.1.7 ]]
+    [[ -L "$llvm_root/usr/lib/llvm-19/bin/clang++" ]]
+    [[ -f "$llvm_root/usr/lib/llvm-19/include/clang/Basic.h" ]]
+    [[ -f "$llvm_root/usr/lib/llvm-19/lib/libclang-cpp.so.19.1" ]]
+    [[ ! -e "$llvm_root/opt/$llvm_name/bin/lldb" ]]
+    [[ "$(ls -A "$llvm_root/opt")" == "$llvm_name" ]]
+    # A second run reuses the installation without downloading.
+    : > "$MOCK_DOWNLOADS"
+    PATH="$llvm_path" "$repository/scripts/install-llvm-release.sh" "$llvm_root"
+    [[ ! -s "$MOCK_DOWNLOADS" ]]
+
+    other_root="$directory/other-llvm-root"
+    mkdir -p "$other_root/usr/lib/llvm-19"
+    if PATH="$llvm_path" "$repository/scripts/install-llvm-release.sh" "$other_root" > "$directory/output" 2>&1; then
+        echo 'error: replaced an existing /usr/lib/llvm-19' >&2
+        exit 1
+    fi
+    [[ ! -e "$other_root/opt" ]]
 fi
 echo "Environment setup regressions passed"
