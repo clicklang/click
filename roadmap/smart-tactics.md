@@ -401,7 +401,12 @@ four times the work at a quarter of it.
     persistent maps, so a fork that files one fact copies only the path to
     its own block or block pair instead of the whole index. The residual
     separation list (`nonmemory_separation_facts`, `assumptions.rs`) is
-    still a copied `Vec`, and every query scans it.
+    still a copied `Vec`, and every query scans it. **Measured, left as
+    is:** no fact in the gate's mdtests and examples is a separation with a
+    non-memory side, so the list is never filled; its three readers ran
+    12, 1,309 and 2,404 times over an empty list. Its matches go through
+    containment in a composite body, which has no key to index by;
+    revisit it when a proof states such separations in number.
 16. **Fixed:** the memory-load condition index
     (`memory_load_condition_facts`) was reset on every condition insertion
     and rebuilt over all condition facts at the next query. It is now a
@@ -413,9 +418,14 @@ four times the work at a quarter of it.
     next query. It is now persistent by block, then by base fingerprint, and
     updated with the block index. Regression:
     `filing_a_loadable_fact_in_a_fork_shares_every_other_block`.
-18. `recompute_content_fingerprint` (`assumptions.rs:2739`): walks the whole
-    context on clear and restriction (`4956`, `5002`, `7109`, `7219`), mostly
-    from smart search.
+18. `recompute_content_fingerprint` (`assumptions.rs`): walks the whole
+    context on clear and restriction, mostly from smart search. **Measured,
+    left as is:** across the gate it ran 33,226 times over 211,944 facts in
+    all, at most 155 at once. A restriction recomputes over the facts it
+    has just inserted, so its walk is the size of the context it builds;
+    only a clear also walks the condition facts it keeps. The fingerprint
+    is a cache key, so updating it incrementally there must be exact, and
+    the measured walk does not justify that risk.
 
 **Memory and resources:**
 
