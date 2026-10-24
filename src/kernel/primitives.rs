@@ -12139,10 +12139,10 @@ pub(crate) enum AtomicPropositionDerivationEvidence {
     Int32PinnedConstantEquality(Box<DirectBitvectorEqualityEvidence>),
     ForallInt32Instantiation(Box<ForallInt32InstantiationEvidence>),
     SignedOrderPath(Vec<SignedOrderDerivationStep>),
-    /// A chain of exact 64-bit order facts, `uint64` when `unsigned` and
-    /// `int64` otherwise, each step's premise in the context as written.
+    /// A chain of exact order facts at `format`, a 64-bit format or
+    /// `uint32`, each step's premise in the context as written.
     WideOrderPath {
-        unsigned: bool,
+        format: MachineIntegerType,
         path: Vec<SignedOrderDerivationStep>,
     },
     Int32IncrementUpperBound(Box<SignedOrderDerivationStep>),
@@ -12480,6 +12480,13 @@ pub struct PureFactContext {
     /// same insert and remove path over `int64` order facts. It
     /// is kept separate so an `int64` bound is never read as an int32 one.
     pub(super) int64_signed_order_bounds: crate::persistent::PersistentMap<
+        Bitvector32Term,
+        crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
+    >,
+    /// Unsigned 32-bit order facts indexed by either endpoint, as
+    /// `signed_order_bounds` files signed ones; kept separate so a `uint32`
+    /// bound is never read as an `int32` one.
+    pub(super) uint32_order_bounds: crate::persistent::PersistentMap<
         Bitvector32Term,
         crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
     >,

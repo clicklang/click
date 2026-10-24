@@ -1,7 +1,7 @@
 # simp closes single unsigned steps
 
-An unsigned order is the signed order of sign-flipped operands, which
-`simp`'s arithmetic treats as opaque atoms. A goal that is one step of
+An unsigned order is a `uint32` order, whose wrapping steps `simp`'s
+arithmetic does not relate. A goal that is one step of
 `uint32` arithmetic from an exact fact is closed with the lemma that states
 that step, so `simp` does not need the lemma named.
 

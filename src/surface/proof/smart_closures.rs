@@ -1614,30 +1614,7 @@ impl<'a> Proof<'a> {
         term: &crate::kernel::Bitvector32Term,
         candidates: &[&ContractExpression],
     ) -> Option<ContractExpression> {
-        // Unsigned ordering lowers to signed ordering by xoring both sides
-        // with the sign bit.  The transformed bound is not itself present in
-        // source, so reconstruct it from the source uint32 literal while
-        // preserving the typed expression that direct lowering understands.
         if let Some(value) = term.as_const() {
-            for candidate in candidates {
-                let Some(base) = (match *candidate {
-                    ContractExpression::CFragment(crate::kernel::CExpression::Value(
-                        crate::kernel::CValue::UInt32(crate::kernel::Bitvector32Term::Constant(
-                            base,
-                        )),
-                    )) => Some(base),
-                    _ => None,
-                }) else {
-                    continue;
-                };
-                if base ^ 0x8000_0000 == value {
-                    return Some(ContractExpression::CFragment(
-                        crate::kernel::CExpression::Value(crate::kernel::CValue::Int32(
-                            crate::kernel::Bitvector32Term::Constant(value),
-                        )),
-                    ));
-                }
-            }
             // Generated interval nodes can introduce a small machine
             // constant (for example the `+ 1` in a bump function) that has no
             // separate source occurrence.  It is still source-printable as
@@ -1858,6 +1835,10 @@ impl<'a> Proof<'a> {
             SignedArithmeticComparison::LessEqual => SignedInt32Comparison::LessEqual,
             SignedArithmeticComparison::Equal => SignedInt32Comparison::Equal,
             SignedArithmeticComparison::Disequal => SignedInt32Comparison::Disequal,
+            SignedArithmeticComparison::UnsignedLessThan => SignedInt32Comparison::UnsignedLessThan,
+            SignedArithmeticComparison::UnsignedLessEqual => {
+                SignedInt32Comparison::UnsignedLessEqual
+            }
         };
         // The additions of a chain of three or more inequalities: an `Add`
         // whose left input is an `Add` of two inequalities, and that input.
@@ -1929,35 +1910,11 @@ impl<'a> Proof<'a> {
                         // different affine spelling than its opaque source.
                         // The kernel independently checks this exact goal.
                         Some(surface_goal.clone())
-                    } else if surfaces.len() == plan.conclusion
-                        && !result.terms.is_empty()
-                        && result.terms.keys().all(|atom| atom.is_sign_bit_flip())
-                    {
-                        // An unsigned bound weakened by a constant slack is
-                        // affine in sign-bit-flipped atoms. Adding the source
-                        // operands instead would use wrapping uint32 sums,
-                        // and signed constant slack cannot form an unsigned
-                        // transitivity chain. The goal already spells the
-                        // conclusion; the Add checker independently requires
-                        // it to encode the exact child sum.
-                        Some(surface_goal.clone())
                     } else if result.terms.is_empty()
                         && result.constant == BigInt::from(0)
                         && result.relation == SignedArithmeticRelation::LessEqual
                     {
                         integer_surface_zero_claim(left_surface, right_surface)
-                    } else if !result.terms.is_empty()
-                        && result.terms.keys().all(|atom| atom.is_sign_bit_flip())
-                        && let Some(chained) =
-                            integer_surface_transitive(left_surface, right_surface)
-                    {
-                        // A sum over sign-bit-flipped atoms is a step of an
-                        // unsigned chain: `x <u n` and `n <=u 4` add to
-                        // `x <u 4`, which is the source comparison of the
-                        // chain's ends. Summing the source operands instead
-                        // would spell a wrapping `uint32` addition, a
-                        // different value from the flipped atoms' sum.
-                        Some(chained)
                     } else if chain_additions.contains(&surfaces.len())
                         && let Some(chained) =
                             integer_surface_transitive(left_surface, right_surface)
@@ -2036,9 +1993,7 @@ impl<'a> Proof<'a> {
                 left,
                 operator,
                 right,
-            } if !claim.terms.is_empty()
-                && claim.terms.keys().all(|atom| !atom.is_sign_bit_flip()) =>
-            {
+            } if !claim.terms.is_empty() => {
                 // An exact observation's native operand is the value it
                 // observes: `(int32)x`, not `(int32)to_integer(x)`.
                 let native = |operand| ContractExpression::CUnary {
@@ -2284,12 +2239,6 @@ impl<'a> Proof<'a> {
                     mask: *mask,
                     result: interval(result.clone()),
                 },
-                SignedArithmeticNode::IntervalSignBitFlip { operand, result } => {
-                    SignedArithmeticStep::IntervalSignBitFlip {
-                        operand: r(*operand),
-                        result: interval(result.clone()),
-                    }
-                }
                 SignedArithmeticNode::IntervalNarrowedCast {
                     operand,
                     source,
@@ -3989,7 +3938,7 @@ impl<'a> Proof<'a> {
     fn try_restated_constant_upper_bound(&self) -> Result<Option<Self>, ClickError> {
         let Some(Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                 relation: CompareRelation::LessEqual,
                 left: _,
                 right: bound,
@@ -3999,8 +3948,15 @@ impl<'a> Proof<'a> {
         else {
             return Ok(None);
         };
+        let unsigned = *format == MachineIntegerType::UInt32;
         // `c + 1` must not wrap in the order the comparison is made in.
-        let Some(bound) = bound.as_const().filter(|bound| *bound as i32 != i32::MAX) else {
+        let Some(bound) = bound.as_const().filter(|bound| {
+            if unsigned {
+                *bound != u32::MAX
+            } else {
+                *bound as i32 != i32::MAX
+            }
+        }) else {
             return Ok(None);
         };
         let Some(ClickProposition::Comparison {
@@ -4011,17 +3967,16 @@ impl<'a> Proof<'a> {
         else {
             return Ok(None);
         };
-        // The source bound is the kernel bound, or its sign-flipped form
-        // for an unsigned comparison; the successor is spelled in the
-        // operand's own type.
+        // The source bound is the kernel bound; the successor is spelled in
+        // the operand's own type.
         let successor = match &right {
             ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
                 Bitvector32Term::Constant(value),
-            ))) if *value == bound ^ 0x8000_0000 => ContractExpression::CFragment(
+            ))) if unsigned && *value == bound => ContractExpression::CFragment(
                 CExpression::Value(CValue::UInt32(Bitvector32Term::Constant(value + 1))),
             ),
             ContractExpression::IntegerLiteral(literal)
-                if literal.parse::<i32>().ok() == Some(bound as i32) =>
+                if !unsigned && literal.parse::<i32>().ok() == Some(bound as i32) =>
             {
                 ContractExpression::IntegerLiteral((i64::from(bound as i32) + 1).to_string())
             }
@@ -4103,10 +4058,9 @@ impl<'a> Proof<'a> {
         introduced_surfaces: &[ClickProposition],
         allow_function_unfold: bool,
     ) -> Result<Option<Self>, ClickError> {
-        // An unsigned order is the signed order of sign-flipped operands,
-        // which the derivation below treats as opaque atoms. The uint32
-        // lemmas state the steps, so a goal of one of their shapes is closed
-        // by naming the lemma, from the exact premise it requires.
+        // The uint32 lemmas state the wrapping steps of a `uint32` order, so
+        // a goal of one of their shapes is closed by naming the lemma, from
+        // the exact premise it requires.
         if let Some(proof) = self.try_unsigned_order_step() {
             return Ok(Some(proof));
         }
@@ -4133,19 +4087,19 @@ impl<'a> Proof<'a> {
             self.goal(),
             Some(Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::LessThan,
                     ..
                 } | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::LessEqual,
                     ..
                 } | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::GreaterThan,
                     ..
                 } | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::GreaterEqual,
                     ..
                 },
@@ -4168,19 +4122,19 @@ impl<'a> Proof<'a> {
                     self.goal(),
                     Some(Proposition::ConditionIs(
                         ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::LessThan,
                             ..
                         } | ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::LessEqual,
                             ..
                         } | ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::GreaterThan,
                             ..
                         } | ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::GreaterEqual,
                             ..
                         },
@@ -4794,6 +4748,7 @@ impl<'a> Proof<'a> {
         let mut available = BTreeSet::new();
         let mut has_equalities = false;
         let mut visited = BTreeSet::new();
+        let unsigned_goal = crate::surface::checking::is_unsigned_order_goal(goal);
         // Count lowering can leave a read expression where the bounds index
         // names its registered load variable. Seed from that canonical value,
         // not from variables in the read's address or memory snapshot.
@@ -4808,30 +4763,36 @@ impl<'a> Proof<'a> {
             if !visited.insert(variable) {
                 continue;
             }
-            for (endpoint, other, strict, forward) in self
-                .facts()
-                .assumptions()
-                .signed_order_bound_entries(&Bitvector32Term::Variable(variable))
-            {
+            let assumptions = self.facts().assumptions();
+            let term = Bitvector32Term::Variable(variable);
+            // A `uint32` goal's bounds are `uint32` orders, filed in their
+            // own index.
+            let entries = assumptions
+                .signed_order_bound_entries(&term)
+                .map(|entry| (MachineIntegerType::Int32, entry))
+                .chain(
+                    unsigned_goal
+                        .then(|| assumptions.uint32_order_bound_entries(&term))
+                        .into_iter()
+                        .flatten()
+                        .map(|entry| (MachineIntegerType::UInt32, entry)),
+                )
+                .collect::<Vec<_>>();
+            for (format, (endpoint, other, strict, forward)) in entries {
                 let (left, right) = if forward {
                     (endpoint, other)
                 } else {
                     (other, endpoint)
                 };
-                let condition = if strict {
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::LessThan,
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    }
-                } else {
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::LessEqual,
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    }
+                let condition = ConditionTerm::Compare {
+                    format,
+                    relation: if strict {
+                        CompareRelation::LessThan
+                    } else {
+                        CompareRelation::LessEqual
+                    },
+                    left: Box::new(left),
+                    right: Box::new(right),
                 };
                 let fact = Proposition::ConditionIs(condition, true);
                 let mut found = false;
@@ -4918,6 +4879,16 @@ impl<'a> Proof<'a> {
         let goal = self.goal()?;
         let surface_goal = self.surface_goal()?;
         let is_pure = matches!(self.context.as_ref(), ProofContext::Pure(_));
+        // A `uint32` order chain is an atomic derivation over the goal
+        // variables' `uint32` bounds (`x <u n`, `n <=u 4`): its recorded
+        // order path is closed by Integer arithmetic over the path's
+        // premises, the bounds selected here and nothing else.
+        if !is_pure
+            && crate::surface::checking::is_unsigned_order_goal(goal)
+            && let Some(closed) = self.try_indexed_unsigned_order_chain(surfaces, anchor, goal)
+        {
+            return Some(closed);
+        }
         // A variable's literal bounds can settle the goal without admitting
         // every earlier relational claim on that variable to the planner's
         // bounded premise slice. Keep that slice local even in a contract
@@ -4981,6 +4952,37 @@ impl<'a> Proof<'a> {
             family: ArithmeticCertificateFamily::SignedInt32(certificate),
         }))
         .ok()
+    }
+
+    /// [`Self::try_indexed_signed_arithmetic`]'s route for a `uint32` order
+    /// goal: the goal variables' `uint32` bounds, spelled, and the named
+    /// rule or recorded order path a derivation over exactly those selects.
+    fn try_indexed_unsigned_order_chain(
+        &self,
+        surfaces: &SurfacePropositionMap,
+        anchor: Option<&ProgramPointRef>,
+        goal: &Proposition,
+    ) -> Option<Self> {
+        let available = self.indexed_arithmetic_premises(goal, false).0;
+        let mut pairs = Vec::new();
+        for fact in available {
+            let source = self
+                .available_surface_fact(surfaces, anchor, &fact)
+                .or_else(|| self.spelled_comparison_surface(&fact));
+            if let Some(source) = source {
+                pairs.push((fact, source));
+            }
+        }
+        let kernels = pairs
+            .iter()
+            .map(|(fact, _)| fact.clone())
+            .collect::<Vec<_>>();
+        let Some(SimpEvidence::Derivation(derivation)) =
+            plan_simp_certificate(goal, &assumptions_from_propositions(&kernels))
+        else {
+            return None;
+        };
+        self.check_typed_atomic_simp_candidate(goal, &derivation, &pairs)
     }
 
     /// Select only guards actually occurring in the goal, through indexed
@@ -12862,63 +12864,30 @@ enum UnsignedOrder {
     GreaterEqual,
 }
 
-/// A 32-bit unsigned order and its operands, read from the signed order of
-/// sign-flipped operands the kernel states it as. A constant operand arrives
-/// already flipped; at least one operand carries the flip itself, so two
-/// bare constants are an ordinary signed comparison.
+/// A held `uint32` order and its operands.
 fn unsigned_order_parts(
     proposition: &Proposition,
 ) -> Option<(UnsignedOrder, Bitvector32Term, Bitvector32Term)> {
-    const SIGN_BIT: u32 = 0x8000_0000;
-    let Proposition::ConditionIs(condition, true) = proposition else {
+    let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt32,
+            relation,
+            left,
+            right,
+        },
+        true,
+    ) = proposition
+    else {
         return None;
     };
-    let (order, left, right) = match condition {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        } => (UnsignedOrder::Less, left, right),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        } => (UnsignedOrder::LessEqual, left, right),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        } => (UnsignedOrder::Greater, left, right),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
-        } => (UnsignedOrder::GreaterEqual, left, right),
-        _ => return None,
+    let order = match relation {
+        CompareRelation::LessThan => UnsignedOrder::Less,
+        CompareRelation::LessEqual => UnsignedOrder::LessEqual,
+        CompareRelation::GreaterThan => UnsignedOrder::Greater,
+        CompareRelation::GreaterEqual => UnsignedOrder::GreaterEqual,
+        CompareRelation::Equal => return None,
     };
-    let flipped = |term: &Bitvector32Term| match term {
-        Bitvector32Term::BitwiseXor(value, sign) if sign.as_const() == Some(SIGN_BIT) => {
-            Some(value.as_ref().clone())
-        }
-        Bitvector32Term::BitwiseXor(sign, value) if sign.as_const() == Some(SIGN_BIT) => {
-            Some(value.as_ref().clone())
-        }
-        _ => None,
-    };
-    let unflipped = |term: &Bitvector32Term| {
-        flipped(term).or_else(|| {
-            term.as_const()
-                .map(|value| Bitvector32Term::Constant(value ^ SIGN_BIT))
-        })
-    };
-    if flipped(left).is_none() && flipped(right).is_none() {
-        return None;
-    }
-    Some((order, unflipped(left)?, unflipped(right)?))
+    Some((order, left.as_ref().clone(), right.as_ref().clone()))
 }
 
 /// Closes a `have` of a step requirement the way smart execution does: the

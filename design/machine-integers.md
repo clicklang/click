@@ -392,7 +392,7 @@ Done 2026-10-24, for every gap that needs no new node. What changed:
   `uint32` order.
 - 128-bit comparisons join here.
 
-Done 2026-10-24, except the `uint32` order. What changed:
+Done 2026-10-24. What changed:
 
 - `ConditionTerm` has `Compare { format, relation, left, right }` and
   `Overflows { format, op, left, right }` (`CompareRelation`,
@@ -427,16 +427,22 @@ Done 2026-10-24, except the `uint32` order. What changed:
   128-bit test yet: Rust's panic checks still lower to bounds.
 - The matrix has no comparison or definedness gap left.
 
-Left: the `uint32` order is still the `int32` order of sign-flipped
-operands (`order_operand`, `unsigned_less_than`). Its readers include the
-surface certificate step `interval_sign_bit_flip` (language reference,
-grammar), the planners and closers that recognize the flip
-(`signed_arithmetic_planner.rs`, `smart_closures.rs`,
-`surface_synthesis.rs`, `surface_certificates.rs`), three printers that
-decode it, the difference graph and interval bounds (which have no `uint32`
-node), and the diagnostic kind, which names a `uint32` order "signed
-less-than". Removing it changes certificate syntax and diagnostic wording,
-which needs the maintainer, and needs `uint32` order reasoning first.
+- The `uint32` order is native, `Compare { format: UInt32, .. }` of the
+  operands' words, as the `uint64` order is; the sign-flip encoding
+  (`order_operand`, and `unsigned_less_than` building the `int32` order of
+  `x ^ 2^31`) is gone. Its readers were migrated by giving `uint32` the
+  paths `uint64` has: a `UInt32` domain in the difference graph, paired
+  with each word's `Int32` node; a `uint32_order_bounds` endpoint index and
+  a place in the format-indexed order walk (`WIDE_ORDER_FORMATS`); `uint32`
+  rules in the condition checker (`decide_unsigned32_order`); and native
+  readers in the planners, closers and printers. Diagnostics name the
+  order "uint32 less-than" (as "uint64 less-than"), where they said
+  "signed less-than".
+- The `signed_int32` certificate step `interval_sign_bit_flip` is replaced
+  by a direct unsigned comparison, `interval_compare L, R ult|ule`, which
+  reads each operand's signed interval as unsigned once its sign is known.
+  The fixtures that spelled the bias in source were rewritten to the
+  `uint32` order they meant.
 
 ### Stage 3. One term family
 

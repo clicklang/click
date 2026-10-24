@@ -1,7 +1,7 @@
 # arithmetic using closes single unsigned steps
 
-An unsigned order is the signed order of sign-flipped operands, which the
-arithmetic certificates treat as opaque atoms. A goal that is one step of
+An unsigned order is a `uint32` order, whose wrapping steps the arithmetic
+certificates do not relate. A goal that is one step of
 `uint32` arithmetic from a listed premise is closed with the lemma that
 states that step, as `simp` closes it from an available fact. The premise
 must be listed: `arithmetic() using` uses exactly what it is given.

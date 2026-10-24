@@ -158,29 +158,17 @@ fn charge_map_insert(offset: &PointerOffsetTerm, map_len: usize) -> bool {
     })
 }
 
+/// Charges a 32-bit order premise, signed or `uint32`, and refuses any other
+/// premise.
 fn charge_signed_bound(proposition: &Proposition) -> bool {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            relation:
+                CompareRelation::LessThan
+                | CompareRelation::LessEqual
+                | CompareRelation::GreaterThan
+                | CompareRelation::GreaterEqual,
             left,
             right,
         },
@@ -563,6 +551,27 @@ fn condition_identity(left: &ConditionTerm, right: &ConditionTerm) -> bool {
                 right: right_second,
             },
         ) => {
+            charge_bitvector(left_first)
+                && charge_bitvector(left_second)
+                && charge_bitvector(right_first)
+                && charge_bitvector(right_second)
+                && bitvector_equal(left_first, right_first)
+                && bitvector_equal(left_second, right_second)
+        }
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: left_relation,
+                left: left_first,
+                right: left_second,
+            },
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: right_relation,
+                left: right_first,
+                right: right_second,
+            },
+        ) if left_relation == right_relation => {
             charge_bitvector(left_first)
                 && charge_bitvector(left_second)
                 && charge_bitvector(right_first)
@@ -1550,6 +1559,11 @@ fn scalar_bounds(premises: &[&Proposition]) -> Option<BTreeMap<Bitvector32Term, 
                 left,
                 right,
             } => (right.as_ref(), left.as_ref(), false),
+            // A `uint32` order bounds no signed word.
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt32,
+                ..
+            } => continue,
             _ => return None,
         };
         // These bounds are over signed words. A native-width or floating

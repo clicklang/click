@@ -3,7 +3,7 @@
 The signed control for
 `mdtests/an_unsigned_index_below_a_constant_bound_indexes_a_local_array.md`.
 `x < 4` on an `int32` is a signed test and leaves `x` free below zero; only
-the biased spelling of an unsigned test files a lower bound beside it.
+an unsigned test below the sign bit files a lower bound beside it.
 
 ```c filename=a_signed_index_with_only_an_upper_bound_is_refused.c
 int32 write_local(int32 x) {

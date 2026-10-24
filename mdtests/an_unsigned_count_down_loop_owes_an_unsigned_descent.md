@@ -5,8 +5,8 @@ measure. Its bundle owes the constant-true nonnegativity member, since every
 unsigned value is a natural number, and the decrease member
 `x - 1 <u x` at the entry value of `x`, which the guard `x >u 0` makes true.
 
-An unsigned order is the signed order of sign-flipped operands, so the
-closer does not relate `x - 1` to `x` by signed arithmetic. It closes the
+An unsigned order is a `uint32` order, and `x - 1` wraps, so the closer
+does not relate `x - 1` to `x` by order reasoning alone. It closes the
 member with `integer::uint32_positive_predecessor_strictly_decreases`, after reading
 the guard the other way round.
 

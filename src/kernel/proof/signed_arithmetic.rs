@@ -91,20 +91,6 @@ impl SignedArithmeticAtom {
         }
     }
 
-    /// Whether this atom is a sign-bit flip `v ^ 2^31`, the operand form a
-    /// 32-bit unsigned order is spelled with
-    /// (`ConditionTerm::unsigned_less_than`).
-    pub(crate) fn is_sign_bit_flip(&self) -> bool {
-        const SIGN_BIT: SignedArithmeticAtomToken =
-            SignedArithmeticAtomToken::Constant(0x8000_0000);
-        matches!(
-            self.tokens.first(),
-            Some(SignedArithmeticAtomToken::Binary(
-                BitvectorBinaryOp::BitwiseXor
-            ))
-        ) && (self.tokens.get(1) == Some(&SIGN_BIT) || self.tokens.last() == Some(&SIGN_BIT))
-    }
-
     fn is_opaque_root(&self) -> bool {
         matches!(
             self.tokens.first(),
@@ -287,6 +273,11 @@ pub(crate) enum SignedArithmeticComparison {
     LessEqual,
     Equal,
     Disequal,
+    /// The `uint32` order of the two words, decided from their signed
+    /// intervals once each has a known sign: a non-negative word reads the
+    /// same unsigned, a negative one `2^32` more.
+    UnsignedLessThan,
+    UnsignedLessEqual,
 }
 
 /// The checked result of one local node.  It is intentionally private to the
@@ -315,7 +306,6 @@ enum CheckedBinaryOperator {
     ShiftLeft,
     ArithmeticShiftRight,
     BitwiseAnd,
-    BitwiseXor,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -597,9 +587,6 @@ fn explicit_binary(
         (CheckedBinaryOperator::BitwiseAnd, Bitvector32Term::BitwiseAnd(left, right)) => {
             (CheckedBinaryOperator::BitwiseAnd, left, right)
         }
-        (CheckedBinaryOperator::BitwiseXor, Bitvector32Term::BitwiseXor(left, right)) => {
-            (CheckedBinaryOperator::BitwiseXor, left, right)
-        }
         _ => return None,
     };
     Some((actual_operator, left, right))
@@ -754,10 +741,6 @@ pub(crate) enum SignedArithmeticNode {
         operand: usize,
         source: crate::kernel::MachineIntegerType,
         destination: crate::kernel::MachineIntegerType,
-        result: SignedArithmeticInterval,
-    },
-    IntervalSignBitFlip {
-        operand: usize,
         result: SignedArithmeticInterval,
     },
     IntervalCompare {
@@ -1374,31 +1357,6 @@ impl SignedArithmeticCertificate {
                     }
                     let term = terms.cast(*source, *destination, operand_term);
                     let expected = operand.clone();
-                    check_interval_result(&expected, result, node_index)?;
-                    CheckedValue::Interval {
-                        value: expected,
-                        term,
-                    }
-                }
-                SignedArithmeticNode::IntervalSignBitFlip { operand, result } => {
-                    let (operand, operand_term) = interval_at(&checked, *operand)?;
-                    let sign_bit = terms
-                        .atom(Bitvector32Term::Constant(0x8000_0000))
-                        .ok_or(SignedArithmeticCheckError::InvalidOperator(node_index))?;
-                    let term =
-                        terms.binary(CheckedBinaryOperator::BitwiseXor, operand_term, sign_bit);
-                    let (lower, upper) = if operand.lower >= 0 {
-                        (operand.lower + SIGNED_MIN, operand.upper + SIGNED_MIN)
-                    } else if operand.upper < 0 {
-                        (operand.lower - SIGNED_MIN, operand.upper - SIGNED_MIN)
-                    } else {
-                        (SIGNED_MIN, SIGNED_MAX)
-                    };
-                    let expected = SignedArithmeticInterval {
-                        carrier: operand.carrier,
-                        lower,
-                        upper,
-                    };
                     check_interval_result(&expected, result, node_index)?;
                     CheckedValue::Interval {
                         value: expected,
@@ -2679,6 +2637,23 @@ fn comparison_proposition_matches(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return false;
     };
+    if matches!(
+        comparison,
+        SignedArithmeticComparison::UnsignedLessThan
+            | SignedArithmeticComparison::UnsignedLessEqual
+    ) {
+        let strict = comparison == SignedArithmeticComparison::UnsignedLessThan;
+        let Some((lower, upper, held_strict)) = crate::kernel::assumptions::held_order_at(
+            MachineIntegerType::UInt32,
+            condition,
+            *value,
+        ) else {
+            return false;
+        };
+        return held_strict == strict
+            && terms.equivalent_explicit(left, lower)
+            && terms.equivalent_explicit(right, upper);
+    }
     let (expected_left, expected_right) = match (comparison, condition, *value) {
         (
             SignedArithmeticComparison::LessThan,
@@ -2782,38 +2757,8 @@ fn comparison_proposition_matches(
         ) => (right.as_ref(), left.as_ref()),
         _ => return false,
     };
-    equivalent_explicit_with_sign_flip(terms, left, expected_left)
-        && equivalent_explicit_with_sign_flip(terms, right, expected_right)
-}
-
-fn equivalent_explicit_with_sign_flip(
-    terms: &TermArena,
-    reference: usize,
-    explicit: &Bitvector32Term,
-) -> bool {
-    if terms.equivalent_explicit(reference, explicit) {
-        return true;
-    }
-    let (
-        CheckedTerm::Binary {
-            operator: CheckedBinaryOperator::BitwiseXor,
-            left,
-            right,
-        },
-        Bitvector32Term::BitwiseXor(explicit_left, explicit_right),
-    ) = (&terms.terms[reference], explicit)
-    else {
-        return false;
-    };
-    // Sign-bit xor is commutative, but do not generalize this exception to
-    // arbitrary operators: the interval node is specifically the checked
-    // unsigned-order normalization.
-    (explicit_left.as_const() == Some(0x8000_0000)
-        && terms.equivalent_explicit(*right, explicit_left)
-        && terms.equivalent_explicit(*left, explicit_right))
-        || (explicit_right.as_const() == Some(0x8000_0000)
-            && terms.equivalent_explicit(*left, explicit_right)
-            && terms.equivalent_explicit(*right, explicit_left))
+    terms.equivalent_explicit(left, expected_left)
+        && terms.equivalent_explicit(right, expected_right)
 }
 
 fn interval_proves(
@@ -2830,6 +2775,33 @@ fn interval_proves(
         SignedArithmeticComparison::Disequal => {
             left.upper < right.lower || right.upper < left.lower
         }
+        SignedArithmeticComparison::UnsignedLessThan
+        | SignedArithmeticComparison::UnsignedLessEqual => {
+            let (Some((_, left_upper)), Some((right_lower, _))) =
+                (unsigned_interval(left), unsigned_interval(right))
+            else {
+                return false;
+            };
+            if comparison == SignedArithmeticComparison::UnsignedLessThan {
+                left_upper < right_lower
+            } else {
+                left_upper <= right_lower
+            }
+        }
+    }
+}
+
+/// The unsigned reading of a signed 32-bit interval whose sign is known:
+/// itself when non-negative, `2^32` higher when negative. `None` when the
+/// interval holds values of both signs, whose unsigned readings are not one
+/// interval.
+fn unsigned_interval(interval: &SignedArithmeticInterval) -> Option<(i64, i64)> {
+    if interval.lower >= 0 {
+        Some((interval.lower, interval.upper))
+    } else if interval.upper < 0 {
+        Some((interval.lower + (1 << 32), interval.upper + (1 << 32)))
+    } else {
+        None
     }
 }
 
@@ -3136,9 +3108,34 @@ fn conclusion_matches(value: &CheckedValue, goal: &Proposition) -> bool {
             charge_claim_pair_work(&expected, claim)
                 && (expected == *claim || trivially_true_claims(&expected, claim))
         }),
-        CheckedValue::Proposition(proposition) => propositions_match(proposition, goal),
+        CheckedValue::Proposition(proposition) => {
+            propositions_match(proposition, goal) || unsigned_orders_match(proposition, goal)
+        }
         CheckedValue::Interval { .. } | CheckedValue::Defined { .. } => false,
     }
+}
+
+/// Whether two `uint32` orders are one claim: the same held order, in any
+/// of its spellings, of the same operands.
+fn unsigned_orders_match(left: &Proposition, right: &Proposition) -> bool {
+    let (Proposition::ConditionIs(left, left_value), Proposition::ConditionIs(right, right_value)) =
+        (left, right)
+    else {
+        return false;
+    };
+    let held = |condition, value| {
+        crate::kernel::assumptions::held_order_at(MachineIntegerType::UInt32, condition, value)
+    };
+    let (
+        Some((left_lower, left_upper, left_strict)),
+        Some((right_lower, right_upper, right_strict)),
+    ) = (held(left, *left_value), held(right, *right_value))
+    else {
+        return false;
+    };
+    left_strict == right_strict
+        && signed_arithmetic_terms_equal(left_lower, right_lower)
+        && signed_arithmetic_terms_equal(left_upper, right_upper)
 }
 
 fn propositions_match(left: &Proposition, right: &Proposition) -> bool {
@@ -3283,6 +3280,94 @@ mod tests {
             *result = invalid.clone();
             assert!(bad.check(&invalid, &[]).is_err());
         }
+    }
+
+    /// `interval_compare ... ult|ule` reads each signed interval as unsigned
+    /// once its sign is known: a negative word is above every non-negative
+    /// one, and an interval of both signs decides nothing.
+    #[test]
+    fn unsigned_interval_comparisons_read_intervals_of_known_sign() {
+        let word = |value: i32| Bitvector32Term::Constant(value as u32);
+        let atom = |term: &Bitvector32Term| {
+            let (lower, upper) = match term.as_const() {
+                Some(value) => (i64::from(value as i32), i64::from(value as i32)),
+                None => (SIGNED_MIN, SIGNED_MAX),
+            };
+            SignedArithmeticNode::IntervalAtom {
+                carrier: SignedArithmeticCarrier::SignedInt32,
+                term: term.clone(),
+                lower,
+                upper,
+            }
+        };
+        let order = |relation, left: &Bitvector32Term, right: &Bitvector32Term, value| {
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt32,
+                    relation,
+                    left: Box::new(left.clone()),
+                    right: Box::new(right.clone()),
+                },
+                value,
+            )
+        };
+        let check =
+            |left: &Bitvector32Term, right: &Bitvector32Term, comparison, goal: &Proposition| {
+                SignedArithmeticCertificate {
+                    nodes: vec![
+                        atom(left),
+                        atom(right),
+                        SignedArithmeticNode::IntervalCompare {
+                            left: 0,
+                            right: 1,
+                            comparison,
+                            result: goal.clone(),
+                        },
+                    ],
+                    conclusion: 2,
+                }
+                .check(goal, &[])
+            };
+        let ult = SignedArithmeticComparison::UnsignedLessThan;
+        let ule = SignedArithmeticComparison::UnsignedLessEqual;
+        let x = Bitvector32Term::Variable(Variable(41));
+        for (left, right, holds) in [
+            (word(10), word(20), true),
+            // `-1` is `UINT32_MAX`: above every non-negative word.
+            (word(10), word(-1), true),
+            (word(-1), word(10), false),
+            (word(20), word(20), false),
+            // A word of unknown sign has no unsigned interval.
+            (x.clone(), word(20), false),
+        ] {
+            // The mirrored and refuted spellings are the same claim.
+            for goal in [
+                order(CompareRelation::LessThan, &left, &right, true),
+                order(CompareRelation::GreaterThan, &right, &left, true),
+                order(CompareRelation::GreaterEqual, &left, &right, false),
+            ] {
+                assert_eq!(
+                    check(&left, &right, ult, &goal).is_ok(),
+                    holds,
+                    "{left:?} <u {right:?}"
+                );
+            }
+        }
+        let at_most = order(CompareRelation::LessEqual, &word(20), &word(20), true);
+        check(&word(20), &word(20), ule, &at_most).unwrap();
+        // The step's comparison must be the result's: `ult` does not
+        // conclude a non-strict order, nor `ule` a signed one.
+        assert!(check(&word(10), &word(20), ult, &at_most).is_err());
+        let signed = Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(word(10)),
+                right: Box::new(word(20)),
+            },
+            true,
+        );
+        assert!(check(&word(10), &word(20), ule, &signed).is_err());
     }
 
     #[test]

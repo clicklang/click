@@ -987,58 +987,16 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
         return None;
     };
     let erased = match condition {
+        // A 32-bit comparison, signed or `uint32` (equality is filed at
+        // `int32`).
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+            relation,
             left,
             right,
         } => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left: Box::new(erase_term(left)),
-            right: Box::new(erase_term(right)),
-        },
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        } => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left: Box::new(erase_term(left)),
-            right: Box::new(erase_term(right)),
-        },
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        } => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left: Box::new(erase_term(left)),
-            right: Box::new(erase_term(right)),
-        },
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
-        } => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left: Box::new(erase_term(left)),
-            right: Box::new(erase_term(right)),
-        },
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
+            format: *format,
+            relation: *relation,
             left: Box::new(erase_term(left)),
             right: Box::new(erase_term(right)),
         },
@@ -1049,8 +1007,8 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
 
 /// Compares branch facts after erasing the memory snapshot captured at the
 /// branch split. In addition to the kernel's canonical forms, accept the
-/// ordinary complementary and operand-reversed forms of signed order
-/// comparisons (for example, `!(a < b)` and `a >= b`).
+/// ordinary complementary and operand-reversed forms of 32-bit order
+/// comparisons, signed or `uint32` (for example, `!(a < b)` and `a >= b`).
 pub(in crate::surface::proof) fn path_condition_equivalent(
     left: &Proposition,
     right: &Proposition,
@@ -1068,13 +1026,13 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
         };
         let (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: left_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                 relation: left_relation,
                 left,
                 right,
             },
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: right_format,
                 relation: right_relation,
                 left: other_left,
                 right: other_right,
@@ -1083,6 +1041,11 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
         else {
             return false;
         };
+        // An order compares in one signedness: a `uint32` order is never a
+        // signed one.
+        if left_format != right_format {
+            return false;
+        }
         match (left_relation, right_relation) {
             (Lt, Ge) | (Ge, Lt) | (Le, Gt) | (Gt, Le) => {
                 left == other_left && right == other_right && left_value != right_value

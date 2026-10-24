@@ -2382,13 +2382,12 @@ fn a_local_indexes_only_addresses_formed_from_it() {
     );
 }
 
-/// A 32-bit unsigned comparison reaches the kernel as a signed comparison of
-/// sign-flipped operands. Its spelling is the unsigned comparison over the
-/// `uint32` local, never the bias `(-2147483648 ^ x) < -2147483644`, and it
-/// lowers back to the condition it was spelled from. A signed local needs an
-/// explicit uint32 cast to preserve the unsigned interpretation.
+/// A `uint32` order is spelled as the unsigned comparison over the `uint32`
+/// local, and it lowers back to the condition it was spelled from. A signed
+/// local needs an explicit uint32 cast to preserve the unsigned
+/// interpretation.
 #[test]
-fn unsigned_comparison_is_spelled_without_its_sign_bias() {
+fn unsigned_comparison_is_spelled_over_uint32_operands() {
     let x = Bitvector32Term::Variable(Variable(300_000));
     let state = CState::new().with_local("x", CValue::UInt32(x.clone()));
     for (condition, spelling) in [

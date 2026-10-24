@@ -11217,16 +11217,6 @@ impl Parser {
                         result: SignedInt32Interval { lower, upper },
                     }
                 }
-                "interval_sign_bit_flip" => {
-                    let operand = self.expect_index("operand interval")?;
-                    let lower = self.expect_signed_i64("interval lower bound")?;
-                    let upper = self.expect_signed_i64("interval upper bound")?;
-                    self.expect(Token::Semicolon)?;
-                    SignedArithmeticStep::IntervalSignBitFlip {
-                        operand,
-                        result: SignedInt32Interval { lower, upper },
-                    }
-                }
                 "interval_compare" => {
                     let left = self.expect_index("left interval")?;
                     self.expect(Token::Comma)?;
@@ -11236,6 +11226,8 @@ impl Parser {
                         "le" => SignedInt32Comparison::LessEqual,
                         "eq" => SignedInt32Comparison::Equal,
                         "ne" => SignedInt32Comparison::Disequal,
+                        "ult" => SignedInt32Comparison::UnsignedLessThan,
+                        "ule" => SignedInt32Comparison::UnsignedLessEqual,
                         other => {
                             return Err(
                                 self.error(format!("unknown signed_int32 comparison `{other}`"))

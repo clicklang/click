@@ -31,6 +31,9 @@ pub(crate) enum Domain {
     Int32,
     Int64,
     UInt64,
+    /// A 32-bit word read as unsigned. Its node is paired with the word's
+    /// `Int32` node (`readings`).
+    UInt32,
 }
 
 impl Domain {
@@ -39,11 +42,16 @@ impl Domain {
             Domain::Int32 => (i128::from(i32::MIN), i128::from(i32::MAX)),
             Domain::Int64 => (i128::from(i64::MIN), i128::from(i64::MAX)),
             Domain::UInt64 => (0, i128::from(u64::MAX)),
+            Domain::UInt32 => (0, i128::from(u32::MAX)),
         }
     }
 }
 
 type NodeId = u32;
+
+/// `2^32`, the distance between a negative 32-bit word's signed and
+/// unsigned readings.
+const UNSIGNED32_MODULUS: i128 = 1 << 32;
 
 /// A value as `node + offset`, or the constant `offset` when `node` is
 /// `None`.
@@ -78,6 +86,11 @@ pub(crate) struct DifferenceGraph {
     /// open, under both `x` and `t`: `t` is `x + MIN` when `x >= 0` and
     /// `x - MIN` when `x < 0`, so the sign of either decides the link.
     flips: PersistentMap<NodeId, (NodeId, NodeId)>,
+    /// `node -> (s, u)` for each 32-bit word with an `Int32` node `s` and a
+    /// `UInt32` node `u` whose sign case is still open, under both: `u` is
+    /// `s` when `s >= 0` and `s + 2^32` when `s < 0`, so the sign of `s`, or
+    /// which half of the unsigned range `u` lies in, decides the link.
+    readings: PersistentMap<NodeId, (NodeId, NodeId)>,
     /// Nodes whose bound was not pushed along all their edges
     /// (`EDGE_LIMIT`): a neighbour's stored interval may miss it, so reads
     /// pull from these nodes.
@@ -472,7 +485,41 @@ impl DifferenceGraph {
             }
             self.resolve_pending(node);
             self.resolve_flip(node);
+            self.resolve_reading(node);
             self.resolve_casts(node);
+        }
+    }
+
+    /// Settles the sign case of the word `node` reads, as `Int32` and as
+    /// `UInt32`, if either interval now decides it: a known sign of the
+    /// signed reading links the two, and an unsigned reading below or above
+    /// `2^31` bounds the signed one, whose tightening links them in turn.
+    fn resolve_reading(&mut self, node: NodeId) {
+        let Some((signed, unsigned)) = self.readings.get(&node).copied() else {
+            return;
+        };
+        charge();
+        let (signed_low, signed_high) = self.interval(signed);
+        let offset = if signed_low >= 0 {
+            Some(0)
+        } else if signed_high < 0 {
+            Some(UNSIGNED32_MODULUS)
+        } else {
+            None
+        };
+        if let Some(offset) = offset {
+            self.readings.remove(&signed);
+            self.readings.remove(&unsigned);
+            // unsigned = signed + offset
+            self.constrain((Some(signed), 0), (Some(unsigned), 0), offset);
+            self.constrain((Some(unsigned), 0), (Some(signed), 0), -offset);
+            return;
+        }
+        let (low, high) = self.interval(unsigned);
+        if high <= i128::from(i32::MAX) {
+            self.tighten(signed, Some(0), None);
+        } else if low > i128::from(i32::MAX) {
+            self.tighten(signed, None, Some(-1));
         }
     }
 
@@ -655,6 +702,21 @@ impl DifferenceGraph {
                 (Some(_), _) => {}
             }
         }
+        if domain == Domain::UInt32 {
+            match self.affine(Domain::Int32, term) {
+                (None, value) => {
+                    let value = value.rem_euclid(UNSIGNED32_MODULUS);
+                    self.tighten(node, Some(value), Some(value));
+                }
+                (Some(signed), 0) => {
+                    self.readings.insert(signed, (signed, node));
+                    self.readings.insert(node, (signed, node));
+                    self.resolve_reading(node);
+                }
+                // An offset signed reading keeps the word opaque.
+                (Some(_), _) => {}
+            }
+        }
         if let Some((base_domain, base, offset, nonnegative)) = link_parts(domain, term) {
             let base = self.affine(base_domain, base);
             match base {
@@ -711,6 +773,12 @@ impl DifferenceGraph {
                 return flipped;
             }
         }
+        if domain == Domain::UInt32 {
+            let signed = self.affine(Domain::Int32, term);
+            if let Some(unsigned) = self.known_reading(signed) {
+                return unsigned;
+            }
+        }
         (Some(self.node(domain, term)), 0)
     }
 
@@ -759,6 +827,9 @@ impl DifferenceGraph {
         if let Some(base) = sign_flip_base(domain, term) {
             return self.known_flip(domain, self.resolve(domain, base)?);
         }
+        if domain == Domain::UInt32 {
+            return self.known_reading(self.resolve(Domain::Int32, term)?);
+        }
         let (base_domain, base, offset, nonnegative) = link_parts(domain, term)?;
         let base = self.resolve(base_domain, base)?;
         link_fits(self.affine_interval(base), offset, domain, nonnegative)
@@ -776,6 +847,25 @@ impl DifferenceGraph {
                     Some((base.0, base.1 + min))
                 } else if high < 0 {
                     Some((base.0, base.1 - min))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// The `UInt32` reading of a 32-bit word whose `Int32` reading is
+    /// `signed`, when its sign is known: the same value when it is
+    /// non-negative, `2^32` more when it is negative.
+    fn known_reading(&self, signed: Affine) -> Option<Affine> {
+        match signed {
+            (None, value) => Some((None, value.rem_euclid(UNSIGNED32_MODULUS))),
+            (Some(_), _) => {
+                let (low, high) = self.affine_interval(signed);
+                if low >= 0 {
+                    Some(signed)
+                } else if high < 0 {
+                    Some((signed.0, signed.1 + UNSIGNED32_MODULUS))
                 } else {
                     None
                 }
@@ -1145,7 +1235,7 @@ impl DifferenceGraph {
         let (other_low, other_high) = match domain {
             Domain::Int64 => Some(Domain::UInt64),
             Domain::UInt64 => Some(Domain::Int64),
-            Domain::Int32 => None,
+            Domain::Int32 | Domain::UInt32 => None,
         }
         .and_then(|other| self.resolve(other, term))
         .map_or_else(
@@ -1165,6 +1255,17 @@ impl DifferenceGraph {
     fn structural_interval(&self, domain: Domain, term: &Bitvector32Term) -> (i128, i128) {
         use crate::kernel::MachineIntegerType as M;
         use Bitvector32Term as T;
+        if domain == Domain::UInt32 {
+            // A word read as unsigned is its signed reading modulo 2^32:
+            // the same value when that reading is non-negative, 2^32 more
+            // when it is negative.
+            if matches!(term, T::Constant(_)) {
+                return domain.range();
+            }
+            charge();
+            let (low, high) = self.term_interval(Domain::Int32, term);
+            return wrap_interval(domain, low, high);
+        }
         if matches!(term, T::Variable(_) | T::Constant(_)) {
             // No operands to read: nothing to charge.
             return domain.range();
@@ -1579,6 +1680,22 @@ fn expresses(condition: &ConditionTerm) -> bool {
                 relation: CompareRelation::GreaterEqual,
                 ..
             } | C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::LessThan,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::LessEqual,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::GreaterThan,
+                ..
+            } | C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::GreaterEqual,
+                ..
+            } | C::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 ..
@@ -1728,8 +1845,8 @@ fn narrow_cast_parts(
     Some((value, source_range, destination_range, modulus))
 }
 
-/// When `term` is `x ^ MIN` in a signed `domain`, the spelling of an
-/// unsigned order as a signed one: `x`.
+/// When `term` is `x ^ MIN` in a signed `domain`: `x`. Flipping the sign
+/// bit moves a value of known sign by half the modulus.
 fn sign_flip_base(domain: Domain, term: &Bitvector32Term) -> Option<&Bitvector32Term> {
     use Bitvector32Term as T;
     let (a, b) = match (domain, term) {
@@ -2267,6 +2384,7 @@ fn constant(domain: Domain, term: &Bitvector32Term) -> Option<i128> {
         (Domain::Int64, T::Int64Constant(value)) => Some(i128::from(*value)),
         (Domain::UInt64, T::UInt64Constant(value)) => Some(i128::from(*value)),
         (Domain::UInt64, T::Int64Constant(value)) if *value >= 0 => Some(i128::from(*value)),
+        (Domain::UInt32, T::Constant(value)) => Some(i128::from(*value)),
         _ => None,
     }
 }
@@ -2389,6 +2507,30 @@ fn condition_orders(
             left: a,
             right: b,
         } => (Domain::UInt64, b, a, false),
+        C::Compare {
+            format: MachineIntegerType::UInt32,
+            relation: CompareRelation::LessThan,
+            left: a,
+            right: b,
+        } => (Domain::UInt32, a, b, true),
+        C::Compare {
+            format: MachineIntegerType::UInt32,
+            relation: CompareRelation::LessEqual,
+            left: a,
+            right: b,
+        } => (Domain::UInt32, a, b, false),
+        C::Compare {
+            format: MachineIntegerType::UInt32,
+            relation: CompareRelation::GreaterThan,
+            left: a,
+            right: b,
+        } => (Domain::UInt32, b, a, true),
+        C::Compare {
+            format: MachineIntegerType::UInt32,
+            relation: CompareRelation::GreaterEqual,
+            left: a,
+            right: b,
+        } => (Domain::UInt32, b, a, false),
         C::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,

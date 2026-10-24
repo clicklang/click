@@ -4,7 +4,7 @@ The back edge of
 [`loop_initialize_narrows_a_held_range_under_a_universal.md`](loop_initialize_narrows_a_held_range_under_a_universal.md)
 owes the extent bound of `viewable(a[0..k])` for every `k` the quantified
 invariant covers, as its own bundle member
-`forall (k: int32) { 0 <= k and k <= n implies (-2147483648 ^ k) <= -1073741825 }`.
+`forall (k: int32) { 0 <= k and k <= n implies ((uint32)k) <= 1073741823u32 }`.
 The kernel builds that member, so nothing written spells it; the closer
 synthesizes its source form. The synthesized binder used to be a generated
 `__click_q0`, so a proof that focused the member with `both` and introduced

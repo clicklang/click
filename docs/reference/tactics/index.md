@@ -1624,11 +1624,13 @@ arithmetic certificate for the current comparison or equality, in the signed
 
 The family is decided by the goal's own checked terms, never guessed from its
 spelling, and the two never coerce into each other. For `int32`, affine terms
-plus bounded products and constant remainder, shift, bit-mask, and sign-bit-flip
-terms are supported; the latter also checks unsigned constant bounds from
-explicit signed intervals, and sums `uint32` order premises over their
-sign-bit-flipped operands, so `x < n` and `n <= 4u32` give `x < 4u32` as the
-same `int32` chain would.
+plus bounded products and constant remainder, shift, and bit-mask terms are
+supported. A `uint32` order goal is checked in the same family from its
+operands' signed intervals, so explicit signed bounds `0 <= n` and
+`n <= 536870911` give `((uint32)n) <= 1073741823u32`. A chain of `uint32`
+order premises, such as `x < n` and `n <= 4u32` giving `x < 4u32`, is summed
+over the operands' `uint32` observations in the `Integer` family, as a
+`uint64` chain is.
 
 For `Integer`, the goal is a linear comparison or equality over Integer atoms,
 including opaque pure-function applications and range folds.
@@ -1828,7 +1830,10 @@ under these envelope rules common to the three forms:
   `interval_subtract`, `interval_multiply`, `interval_remainder`,
   `interval_remainder_add`, `interval_shift_left`,
   `interval_arithmetic_shift_right`, `interval_bitwise_and`,
-  `interval_sign_bit_flip`, `interval_compare`, and `interval_narrowed_cast`,
+  `interval_compare` (whose `ult` and `ule` comparisons conclude a `uint32`
+  order from the operands' signed intervals once each has a known sign,
+  [`a_signed_certificate_concludes_a_uint32_order_from_intervals_of_known_sign.md`](https://github.com/clicklang/click/blob/master/mdtests/a_signed_certificate_concludes_a_uint32_order_from_intervals_of_known_sign.md)),
+  and `interval_narrowed_cast`,
   which treats a C conversion into `int8`, `uint8`, `int16` or `uint16` of a
   32-bit-word operand as that operand when the operand's checked interval
   lies inside the destination range

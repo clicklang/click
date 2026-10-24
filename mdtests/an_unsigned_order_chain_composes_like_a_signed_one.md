@@ -1,12 +1,9 @@
 # An unsigned order chain composes like a signed one
 
 `x < n` and `n <= 4u32` over `uint32` give `x < 4u32`, as the same chain
-over `int32` gives `x < 4`. Both are signed orders between sign-bit-flipped
-atoms (`(x ^ 2^31) < (n ^ 2^31)` and `(n ^ 2^31) <= (4 ^ 2^31)`), so
-`simp` and `arithmetic() using` sum them the way they sum signed bounds,
-and the certificate spells the sum as the chain's end comparison
-`x < 4u32`. A flipped atom is an opaque value: the sign-bit flip is total,
-so no definedness side condition is owed.
+over `int32` gives `x < 4`. Both premises are `uint32` orders, so `simp` and
+`arithmetic() using` sum them over the operands' `uint32` observations, as
+they sum a `uint64` chain, and no definedness side condition is owed.
 
 ```click
 theorem below_by_simp(x: uint32, n: uint32) {
