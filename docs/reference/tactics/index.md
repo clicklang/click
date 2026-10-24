@@ -647,6 +647,11 @@ proof knows about it (`mdtests/branch_ensuring_named_resource.md`).
 A comparison with `at(mark, ...)` freezes only that marked expression; the
 current side is checked in both arms and the joined state.
 
+An interface fact holds in an arm exactly when a `have` of the same text
+would there, quantified facts over memory included: both arms proving
+`forall k < 2u64 { tmp[k] != 0u8 }` export it
+(`mdtests/a_branch_interface_exports_a_quantified_fact_over_a_local_array.md`).
+
 An arm may split its path with a proof `if`. One that ends the arm rejoins its
 cases where they end, keeping what both establish, and the join checks the
 interface on that rejoined arm; neither case runs to the function exit. One

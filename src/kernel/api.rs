@@ -3375,6 +3375,53 @@ pub(crate) fn c_lower_assumed_interface_proposition_with_checked_obligations(
     lower_checked_proof_proposition(state, proposition, entry_state, assumptions, true)
 }
 
+/// The reasoning policy a proposition a proof states is lowered under: a
+/// `have`, and a `branch ensuring` fact checked in each arm, lower the same
+/// text the same way. A proposition that applies a pure function keeps its
+/// memory reads symbolic, so a read through the application's value reaches
+/// the cell by the equality graph rather than by evaluating the read.
+pub(crate) fn proof_lowering_assumptions(
+    assumptions: &PureFactContext,
+    proposition: &SpecProposition,
+) -> PureFactContext {
+    let assumptions = assumptions
+        .clone()
+        .allow_symbolic_contract_loads()
+        .prefer_symbolic_external_loads()
+        .defer_non_exact_loadability_obligations();
+    if applies_pure_function(proposition) {
+        assumptions.keep_spec_loads_symbolic()
+    } else {
+        assumptions
+    }
+}
+
+/// Whether `proposition` applies a pure function anywhere in its written
+/// body. One visit per spec node.
+fn applies_pure_function(proposition: &SpecProposition) -> bool {
+    use crate::kernel::spec::walk::{SpecNode, Visit, WalkBudget, Walked, walk_spec};
+    let walked = walk_spec(
+        SpecNode::Proposition(proposition),
+        WalkBudget::Unmetered,
+        |node| match node {
+            SpecNode::Expression(SpecExpression::PureFunctionApplication { .. })
+            | SpecNode::Integer(SpecIntegerExpression::PureFunctionApplication { .. }) => {
+                Visit::Stop(())
+            }
+            SpecNode::Algebraic(algebraic)
+                if matches!(
+                    algebraic.node,
+                    SpecAlgebraicExpressionNode::PureFunctionApplication { .. }
+                ) =>
+            {
+                Visit::Stop(())
+            }
+            _ => Visit::Descend,
+        },
+    );
+    matches!(walked, Walked::Stopped(()))
+}
+
 fn lower_checked_proof_proposition(
     state: &CState,
     proposition: &SpecProposition,
@@ -3390,11 +3437,7 @@ fn lower_checked_proof_proposition(
     ),
     LoweringRefusal,
 > {
-    let lowering_assumptions = assumptions
-        .clone()
-        .allow_symbolic_contract_loads()
-        .prefer_symbolic_external_loads()
-        .defer_non_exact_loadability_obligations();
+    let lowering_assumptions = proof_lowering_assumptions(assumptions, proposition);
     let mut budget = ExecutionBudget::beside_live_state();
     let lower = if assumed_interface {
         crate::kernel::spec::lower_assumed_interface_proposition

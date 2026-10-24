@@ -2008,7 +2008,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
         algebraic_types: BTreeMap::new(),
         loop_index: 0,
         statement_index: 0,
-        next_quantifier_variable: 3_300_000,
+        next_quantifier_variable: 2_000_000,
         branch_join_target: Some(branch_join_target),
         snapshots: Some(snapshots),
         loop_records: None,
@@ -3371,8 +3371,14 @@ fn spec_integer_to_term(
 impl AnnotationLowerer<'_> {
     fn declared_pointer_element_type(&self, name: &str) -> Option<CType> {
         self.local_type_state
-            .and_then(|state| state.local_object_type(name))
-            .and_then(|ty| ty.pointee_type())
+            .and_then(|state| {
+                state
+                    .local_object_type(name)
+                    .and_then(|ty| ty.pointee_type())
+                    // A local array, such as `char tmp[12]`, is indexed by
+                    // its element type, as a fixed-state proof reads it.
+                    .or_else(|| state.locals().array_object_element_type(name))
+            })
             .or_else(|| self.pointer_element_types.get(name).copied())
     }
 

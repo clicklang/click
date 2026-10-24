@@ -379,7 +379,13 @@ goes the same way: elaborated into the kernel's spec form exactly as a
 contract clause is (`elaborate_fixed_state_proposition`, with the proof's
 recorded snapshots, `old(...)` as the function entry, `result`, and the
 proof's current locals as fixed values) and lowered by the kernel
-(`c_lower_spec_proposition_at_state`); an expression a proof evaluates goes
+(`c_lower_spec_proposition_at_state`), under one reasoning policy
+(`proof_lowering_assumptions`): a proposition that applies a pure function
+keeps its memory reads symbolic. A `branch ensuring` or proof `if ensuring`
+fact is checked in each arm under that same policy and the arm's facts, and
+its elaboration reads a local array by its element type and binds
+quantifiers as a `have` does, so an arm holds an interface fact exactly when
+a `have` of the same text there would; an expression a proof evaluates goes
 the same way (`elaborate_fixed_state_expression`,
 `c_evaluate_spec_expression_at_state`). Every pure-function call stays a
 typed logical application during lowering, including calls whose arguments
