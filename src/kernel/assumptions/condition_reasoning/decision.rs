@@ -973,9 +973,12 @@ impl PureFactContext {
             return Some(value);
         }
         // Two owned members of one composition, anchored at these offsets.
+        // A composition holding both is listed under each member's anchor
+        // (`CompositionMemberIndex`).
         let resources = self
-            .resource_compositions
-            .iter()
+            .composition_members
+            .listed_under_anchors([left, right])
+            .into_iter()
             .find(|resources| resources.separates_owned_anchors(left, right))?;
         record_implicit_reasoning_provenance(
             self,
@@ -2227,6 +2230,40 @@ mod owned_anchor_tests {
         assert!(
             samples.iter().all(|(_, work)| *work <= smallest + 4),
             "owned-anchor distinctness grew with unrelated compositions: {samples:?}"
+        );
+    }
+
+    /// Two anchored offsets owned as distinct members of one composition's
+    /// block differ. The check reads the compositions listed under the two
+    /// anchors (`CompositionMemberIndex`); it once asked every composition
+    /// the path had stated.
+    #[test]
+    fn offset_distinctness_ignores_unrelated_compositions() {
+        let at = |id: u64| Pointer {
+            block: "anchored-offsets".into(),
+            offset: PointerOffsetTerm::Variable(Variable(992_000 + id)),
+        };
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (left, right) = (at(1), at(2));
+            // The first composition is the index's unlisted root; keep the
+            // pair out of it.
+            let facts = (0..size)
+                .fold(PureFactContext::new(), |facts, index| {
+                    facts.assume_proposition(owner_of(&[pointer(200 + index)]))
+                })
+                .assume_proposition(owner_of(&[left.clone(), right.clone()]));
+            let (distinct, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.offsets_distinct_by_separation(&left.offset, &right.offset)
+            });
+            assert_eq!(distinct, Some(false));
+            samples.push((size, work));
+        }
+        let (_, smallest) = samples[0];
+        assert!(
+            samples.iter().all(|(_, work)| *work <= smallest + 4),
+            "offset distinctness grew with unrelated compositions: {samples:?}"
         );
     }
 }
