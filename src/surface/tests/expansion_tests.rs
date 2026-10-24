@@ -12367,7 +12367,7 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
             .contains("expanded execution branch condition does not match the checked C branch")
             || error
                 .message()
-                .contains("no state snapshot was recorded for `region(6).entry`"),
+                .contains("no state snapshot was recorded for `statement(2).entry`"),
         "the checked Proof split should reject the tamper directly: {error:?}"
     );
 }
