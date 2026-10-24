@@ -199,4 +199,56 @@ EOF
     fi
     [[ ! -e "$directory/missing.tar.zst" && ! -e "$directory/missing.tar.zst.tmp" ]]
 fi
+# Networks that deny apt.llvm.org use the pinned release archive: it must
+# match the pinned SHA-256, extract only the toolchain subset, and never
+# replace an /usr/lib/llvm-19 it did not create.
+if [[ "$platform" == Linux ]]; then
+    llvm_name=LLVM-19.1.7-Linux-X64
+    llvm_release="$directory/llvm-release/$llvm_name"
+    mkdir -p "$llvm_release/bin" "$llvm_release/include/clang" "$llvm_release/lib" "$directory/llvm-bin"
+    printf 'clang\n' > "$llvm_release/bin/clang-19"
+    ln -s clang-19 "$llvm_release/bin/clang"
+    ln -s clang "$llvm_release/bin/clang++"
+    printf '#!/usr/bin/env bash\necho 19.1.7\n' > "$llvm_release/bin/llvm-config"
+    printf 'debugger\n' > "$llvm_release/bin/lldb"
+    printf 'header\n' > "$llvm_release/include/clang/Basic.h"
+    printf 'library\n' > "$llvm_release/lib/libclang-cpp.so.19.1"
+    chmod +x "$llvm_release/bin/llvm-config"
+    tar -cJf "$directory/llvm.tar.xz" -C "$directory/llvm-release" "$llvm_name"
+    printf '#!/usr/bin/env bash\ncase "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac\n' \
+        > "$directory/llvm-bin/uname"
+    chmod +x "$directory/llvm-bin/uname"
+    export MOCK_RELEASE_ARCHIVE="$directory/llvm.tar.xz"
+    llvm_path="$directory/llvm-bin:$PATH"
+    llvm_root="$directory/llvm-root"
+
+    # The fake archive does not have the pinned digest.
+    if PATH="$llvm_path" "$repository/scripts/install-llvm-release.sh" "$llvm_root" > "$directory/output" 2>&1; then
+        echo 'error: installed an LLVM release without the pinned SHA-256' >&2
+        exit 1
+    fi
+    [[ -z "$(ls -A "$llvm_root/opt")" && ! -e "$llvm_root/usr/lib/llvm-19" ]]
+
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$directory/llvm-bin/sha256sum"
+    chmod +x "$directory/llvm-bin/sha256sum"
+    PATH="$llvm_path" "$repository/scripts/install-llvm-release.sh" "$llvm_root"
+    [[ "$("$llvm_root/usr/lib/llvm-19/bin/llvm-config" --version)" == 19.1.7 ]]
+    [[ -L "$llvm_root/usr/lib/llvm-19/bin/clang++" ]]
+    [[ -f "$llvm_root/usr/lib/llvm-19/include/clang/Basic.h" ]]
+    [[ -f "$llvm_root/usr/lib/llvm-19/lib/libclang-cpp.so.19.1" ]]
+    [[ ! -e "$llvm_root/opt/$llvm_name/bin/lldb" ]]
+    [[ "$(ls -A "$llvm_root/opt")" == "$llvm_name" ]]
+    # A second run reuses the installation without downloading.
+    : > "$MOCK_DOWNLOADS"
+    PATH="$llvm_path" "$repository/scripts/install-llvm-release.sh" "$llvm_root"
+    [[ ! -s "$MOCK_DOWNLOADS" ]]
+
+    other_root="$directory/other-llvm-root"
+    mkdir -p "$other_root/usr/lib/llvm-19"
+    if PATH="$llvm_path" "$repository/scripts/install-llvm-release.sh" "$other_root" > "$directory/output" 2>&1; then
+        echo 'error: replaced an existing /usr/lib/llvm-19' >&2
+        exit 1
+    fi
+    [[ ! -e "$other_root/opt" ]]
+fi
 echo "Environment setup regressions passed"
