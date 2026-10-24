@@ -1,68 +1,17 @@
-//! A machine addition or subtraction whose mathematical result lies inside
-//! its type's range is that mathematical result. The certificate names
-//! exactly two bounds on the mathematical result.
+//! A machine addition, subtraction or multiplication whose mathematical
+//! result lies inside its format's range is that mathematical result
+//! (`kernel::machine_integer::identity`). The certificate names exactly two
+//! bounds on the mathematical result.
 
 use super::arithmetic_special::SpecialArithmeticCheckError as Error;
-use crate::kernel::{
-    Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition, SharedIntegerTerm,
-};
+use crate::kernel::machine_integer::{identity::mathematical, range};
+use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
 
 fn order(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm)> {
     match proposition {
         Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => Some((a, b)),
         _ => None,
     }
-}
-
-/// The mathematical value of the machine operation that `observed` reads,
-/// spelled over the operands' own observations in the operation's type.
-/// `to_integer(observed) == value` is the identity this rule proves once
-/// `value` is bounded inside the type.
-pub(crate) fn mathematical(observed: &IntegerTerm) -> Option<(MachineIntegerType, IntegerTerm)> {
-    let IntegerTerm::Machine(machine) = observed else {
-        return None;
-    };
-    let ty = machine.ty();
-    let (left, right, subtract) = match (ty, machine.value()) {
-        // A narrow value's word is its zero- or sign-extension, so a narrow
-        // sum whose bounds premises keep it in its type's range is the 32-bit
-        // sum of those words, which does not wrap.
-        (
-            MachineIntegerType::Int8
-            | MachineIntegerType::Int16
-            | MachineIntegerType::UInt8
-            | MachineIntegerType::UInt16
-            | MachineIntegerType::Int32
-            | MachineIntegerType::UInt32,
-            Bitvector32Term::Add(left, right),
-        )
-        | (MachineIntegerType::Int64, Bitvector32Term::Int64Add(left, right))
-        | (MachineIntegerType::UInt64, Bitvector32Term::UInt64Add(left, right)) => {
-            (left, right, false)
-        }
-        (
-            MachineIntegerType::Int8
-            | MachineIntegerType::Int16
-            | MachineIntegerType::UInt8
-            | MachineIntegerType::UInt16
-            | MachineIntegerType::Int32
-            | MachineIntegerType::UInt32,
-            Bitvector32Term::Subtract(left, right),
-        )
-        | (MachineIntegerType::Int64, Bitvector32Term::Int64Subtract(left, right))
-        | (MachineIntegerType::UInt64, Bitvector32Term::UInt64Subtract(left, right)) => {
-            (left, right, true)
-        }
-        _ => return None,
-    };
-    let left = IntegerTerm::from_machine(ty, left.as_ref().clone())?;
-    let right = IntegerTerm::from_machine(ty, right.as_ref().clone())?;
-    let value = if subtract {
-        IntegerTerm::subtract(left, right)
-    } else {
-        IntegerTerm::add(left, right)
-    };
-    Some((ty, value))
 }
 
 pub(super) fn check(
@@ -111,7 +60,7 @@ pub(super) fn check(
     if crate::instrumentation::deadline_exceeded_with_work(work) {
         return Err(Error::WorkLimitExceeded);
     }
-    let (min, max) = ty.format().bounds();
+    let (min, max) = range::range(ty);
     if lo > hi || lo < &min || hi > &max {
         return Err(invalid());
     }
@@ -121,10 +70,11 @@ pub(super) fn check(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::Variable;
+    use crate::kernel::machine_integer::{Operation, representation};
     use crate::kernel::proof::arithmetic_special::{
         SpecialArithmeticCertificate, SpecialArithmeticNode,
     };
+    use crate::kernel::{Bitvector32Term, IntegerTerm, MachineIntegerType, Variable};
     use MachineIntegerType as Ty;
     use num_bigint::BigInt;
 
@@ -146,21 +96,13 @@ mod tests {
         left: Bitvector32Term,
         right: Bitvector32Term,
     ) -> Bitvector32Term {
-        let (left, right) = (Box::new(left), Box::new(right));
-        match (ty, subtract) {
-            // Narrow values ride in the 32-bit carrier.
-            (Ty::Int8 | Ty::UInt8 | Ty::Int16 | Ty::UInt16 | Ty::Int32 | Ty::UInt32, false) => {
-                Bitvector32Term::Add(left, right)
-            }
-            (Ty::Int8 | Ty::UInt8 | Ty::Int16 | Ty::UInt16 | Ty::Int32 | Ty::UInt32, true) => {
-                Bitvector32Term::Subtract(left, right)
-            }
-            (Ty::Int64, false) => Bitvector32Term::Int64Add(left, right),
-            (Ty::Int64, true) => Bitvector32Term::Int64Subtract(left, right),
-            (Ty::UInt64, false) => Bitvector32Term::UInt64Add(left, right),
-            (Ty::UInt64, true) => Bitvector32Term::UInt64Subtract(left, right),
-            _ => unreachable!(),
-        }
+        let operation = if subtract {
+            Operation::Subtract
+        } else {
+            Operation::Add
+        };
+        representation::operation_word(ty, operation, Box::new(left), Box::new(right))
+            .expect("the format has ring operations")
     }
     /// Premises bounding the mathematical result by `[lo, hi]`, and the
     /// identity `to_integer(a op b) == to_integer(a) op to_integer(b)`.

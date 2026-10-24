@@ -1330,7 +1330,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     {
                         (condition, true)
                     } else {
-                        match crate::kernel::assumptions::native_comparison_of_integer_observation(
+                        match crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
                             &condition, true,
                         ) {
                             Some((ConditionTerm::Constant(_), _)) | None => (condition, true),

@@ -6,6 +6,7 @@
 
 pub(crate) use super::integer_affine_atoms::IntegerAffineAtom;
 use super::integer_affine_atoms::{IntegerFoldAtomRecord, intern_integer_fold_atom};
+use crate::kernel::machine_integer::bounds::operation_bound;
 use crate::kernel::{ConditionTerm, IntegerTerm, Proposition};
 use num_bigint::BigInt;
 use num_traits::{One, Zero};
@@ -520,103 +521,6 @@ fn claims_are_opposites(lower: &IntegerAffineClaim, upper: &IntegerAffineClaim) 
         && -&lower.constant == upper.constant
 }
 
-/// The bound a machine value's type puts on its Integer value:
-/// `MIN <= to_integer(value)`, or with `upper`, `to_integer(value) <= MAX`.
-pub(crate) fn machine_type_range(
-    value: &crate::kernel::SharedMachineIntegerTerm,
-    upper: bool,
-) -> Proposition {
-    let (min, max) = value.ty().format().bounds();
-    let observed = IntegerTerm::Machine(value.clone());
-    let condition = if upper {
-        ConditionTerm::integer_less_equal(observed, IntegerTerm::constant(max))
-    } else {
-        ConditionTerm::integer_less_equal(IntegerTerm::constant(min), observed)
-    };
-    Proposition::ConditionIs(condition, true)
-}
-
-/// The constant a machine term spells, as an Integer.
-fn machine_constant(term: &crate::kernel::Bitvector32Term) -> Option<BigInt> {
-    use crate::kernel::Bitvector32Term;
-    match term {
-        Bitvector32Term::Constant(value) => Some(BigInt::from(*value)),
-        Bitvector32Term::Int64Constant(value) => Some(BigInt::from(*value)),
-        Bitvector32Term::UInt64Constant(value) => Some(BigInt::from(*value)),
-        _ => None,
-    }
-}
-
-/// The bound an unsigned machine quotient, logical shift, or remainder by a
-/// constant takes from its operand, as an Integer comparison. For
-/// `q = x / c`, or `q = x >> k` with `c = 2^k`, the lower bound is
-/// `c * q <= x` and the upper `x <= c * q + (c - 1)`: truncating unsigned
-/// division is the floor. For `r = x % c` only the upper bound
-/// `r <= c - 1` is given; the type range already says `0 <= r`. Any other
-/// value, a signed operation, a zero divisor, or a shift by the width or
-/// more has none.
-pub(crate) fn operation_bound(
-    value: &crate::kernel::SharedMachineIntegerTerm,
-    upper: bool,
-) -> Option<Proposition> {
-    use crate::kernel::{Bitvector32Term, MachineIntegerType};
-    enum Operation<'a> {
-        Quotient(&'a Bitvector32Term, BigInt),
-        Remainder(BigInt),
-    }
-    let ty = value.ty();
-    let width = ty.format().bits();
-    let shift = |amount: &Bitvector32Term| {
-        let amount = usize::try_from(machine_constant(amount)?).ok()?;
-        (amount < usize::try_from(width).ok()?).then(|| BigInt::one() << amount)
-    };
-    let positive = |divisor: &Bitvector32Term| {
-        machine_constant(divisor).filter(|divisor| divisor > &BigInt::zero())
-    };
-    let operation = match (ty, value.value()) {
-        (MachineIntegerType::UInt64, Bitvector32Term::UInt64Divide(operand, divisor))
-        | (MachineIntegerType::UInt32, Bitvector32Term::UnsignedDivide(operand, divisor)) => {
-            Operation::Quotient(operand, positive(divisor)?)
-        }
-        (MachineIntegerType::UInt64, Bitvector32Term::UInt64LogicalShiftRight(operand, amount))
-        | (MachineIntegerType::UInt32, Bitvector32Term::LogicalShiftRight(operand, amount)) => {
-            Operation::Quotient(operand, shift(amount)?)
-        }
-        (MachineIntegerType::UInt64, Bitvector32Term::UInt64Remainder(_, divisor))
-        | (MachineIntegerType::UInt32, Bitvector32Term::UnsignedRemainder(_, divisor)) => {
-            Operation::Remainder(positive(divisor)?)
-        }
-        _ => return None,
-    };
-    let observed = IntegerTerm::Machine(value.clone());
-    let condition = match operation {
-        Operation::Quotient(operand, divisor) => {
-            let operand = IntegerTerm::from_machine(ty, operand.clone())?;
-            let scaled = IntegerTerm::Multiply(
-                IntegerTerm::constant(divisor.clone()).into(),
-                observed.into(),
-            );
-            if upper {
-                ConditionTerm::integer_less_equal(
-                    operand,
-                    IntegerTerm::Add(
-                        scaled.into(),
-                        IntegerTerm::constant(divisor - BigInt::one()).into(),
-                    ),
-                )
-            } else {
-                ConditionTerm::integer_less_equal(scaled, operand)
-            }
-        }
-        Operation::Remainder(divisor) if upper => ConditionTerm::integer_less_equal(
-            observed,
-            IntegerTerm::constant(divisor - BigInt::one()),
-        ),
-        Operation::Remainder(_) => return None,
-    };
-    Some(Proposition::ConditionIs(condition, true))
-}
-
 /// The machine value and constant of a disequality `v != m`, read as an
 /// Integer comparison: natively, `x != 0u64`, or as written,
 /// `to_integer(v) != m`, either side first.
@@ -624,7 +528,9 @@ fn integer_disequality(
     proposition: &Proposition,
 ) -> Option<(crate::kernel::SharedMachineIntegerTerm, BigInt)> {
     let readings =
-        crate::kernel::assumptions::integer_observations_of_native_comparison(proposition);
+        crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+            proposition,
+        );
     let reading = readings.first().unwrap_or(proposition);
     let (left, right) = match reading {
         Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), false)
@@ -669,7 +575,9 @@ pub(crate) fn machine_type_range_claim(
     value: &crate::kernel::SharedMachineIntegerTerm,
     upper: bool,
 ) -> Option<IntegerAffineClaim> {
-    integer_affine_claim(&machine_type_range(value, upper))
+    integer_affine_claim(&crate::kernel::machine_integer::range::range_fact(
+        value, upper,
+    ))
 }
 
 /// The machine values that are atoms of `proposition`'s affine claim, each
@@ -691,7 +599,7 @@ pub(crate) fn integer_affine_machine_values(
         condition,
         crate::kernel::integer_comparison_condition!(_, _)
     ) && let Some(reading) =
-        crate::kernel::assumptions::integer_observations_of_native_comparison(
+        crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
             &Proposition::ConditionIs(condition.clone(), value),
         )
         .into_iter()
@@ -812,7 +720,9 @@ fn integer_affine_claims_with_context(
                 crate::kernel::integer_comparison_condition!(_, _)
             ) =>
         {
-            crate::kernel::assumptions::integer_observations_of_native_comparison(proposition)
+            crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+                proposition,
+            )
         }
         _ => Vec::new(),
     };
@@ -839,14 +749,14 @@ pub(crate) fn written_integer_affine_claim(proposition: &Proposition) -> bool {
     let native = match proposition {
         Proposition::Not(inner) => match inner.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                !crate::kernel::assumptions::integer_observations_of_native_comparison(
+                !crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
                     &Proposition::ConditionIs(condition.clone(), !value),
                 )
                 .is_empty()
             }
             _ => false,
         },
-        _ => !crate::kernel::assumptions::integer_observations_of_native_comparison(proposition)
+        _ => !crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(proposition)
             .is_empty(),
     };
     !native && integer_affine_claim(proposition).is_some()
@@ -876,7 +786,7 @@ fn integer_affine_claim_with_context(
         condition,
         crate::kernel::integer_comparison_condition!(_, _) | ConditionTerm::Constant(_)
     ) && let Some(reading) =
-        crate::kernel::assumptions::integer_observations_of_native_comparison(
+        crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
             &Proposition::ConditionIs(condition.clone(), value),
         )
         .into_iter()
@@ -1756,7 +1666,7 @@ mod tests {
     }
 
     #[test]
-    fn operation_bounds_hold_only_for_unsigned_operations_by_constants() {
+    fn operation_bounds_hold_only_for_operations_by_positive_constants() {
         use crate::kernel::{Bitvector32Term, MachineIntegerType, SharedMachineIntegerTerm};
         let x = || Box::new(Bitvector32Term::Variable(Variable(97201)));
         let operand = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -1817,7 +1727,9 @@ mod tests {
         );
         assert_eq!(operation_bound(&remainder, false), None);
         // No bound for a zero divisor, a shift by the width or more, a
-        // symbolic divisor, or a signed quotient.
+        // symbolic divisor, a signed quotient by a negative divisor (the
+        // word `0xfffffc18` is `-1000`), or a quotient read at the other
+        // signedness.
         for value in [
             machine(
                 MachineIntegerType::UInt64,
@@ -1839,6 +1751,10 @@ mod tests {
             ),
             machine(
                 MachineIntegerType::Int32,
+                Bitvector32Term::Divide(x(), Box::new(Bitvector32Term::Constant(-1000i32 as u32))),
+            ),
+            machine(
+                MachineIntegerType::UInt32,
                 Bitvector32Term::Divide(x(), Box::new(Bitvector32Term::Constant(1000))),
             ),
         ] {

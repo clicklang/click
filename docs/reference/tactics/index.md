@@ -1792,10 +1792,12 @@ under these envelope rules common to the three forms:
   i` and `less_equal_from_equal i reverse`; `equal_from_bounds i, j` from
   opposite bounds, stated in node `i`'s orientation; `trivial` (a claim with
   no atoms left, such as `x + 1 > x`); `type_range` (`MIN <= to_integer(v)` or
-  `to_integer(v) <= MAX` for a machine `v`); `operation_bound` (the bound an
-  unsigned quotient, shift, or remainder by a constant takes from its operand:
-  `c * to_integer(x / c) <= to_integer(x)`, `to_integer(x) <= c * to_integer(x
-  / c) + (c - 1)`, `to_integer(x % c) <= c - 1`, with `x >> k` as `x / 2^k`);
+  `to_integer(v) <= MAX` for a machine `v`); `operation_bound` (the bound a
+  quotient, shift, or remainder by a positive constant takes from its
+  operand: `c * to_integer(x / c) <= to_integer(x)`, `to_integer(x) <= c *
+  to_integer(x / c) + (c - 1)`, `to_integer(x % c) <= c - 1`, with `x >> k`
+  as `x / 2^k`; for a signed `x / c`, `c * to_integer(x / c) - (c - 1) <=
+  to_integer(x)` in place of the first, and `-(c - 1) <= to_integer(x % c)`);
   `excluded_bound N: D` (premise `N`, a disequality `v != MIN` or `v != MAX`
   of a machine `v`, as `MIN + 1 <= to_integer(v)` or `to_integer(v) <= MAX -
   1`) ([`operation_and_excluded_bounds_in_an_arithmetic_certificate.md`](https://github.com/clicklang/click/blob/master/mdtests/operation_and_excluded_bounds_in_an_arithmetic_certificate.md),
@@ -1880,10 +1882,10 @@ must be the goal itself:
   their observations when promoted to a 32-bit word; both source bounds
   remain explicit.
 - `integer_operation_identity bounds [i, j] => to_integer(a + b) ==
-  to_integer(a) + to_integer(b);` (or `-`) checks two named constant bounds
-  on the Integer result against the range of the `int`, `unsigned int`,
-  `int64` or `uint64` operation; see [in-range sums and
-  differences](../../internals/mathematical-integers.md#in-range-machine-sums-and-differences).
+  to_integer(a) + to_integer(b);` (or `-`, `*`) checks two named constant
+  bounds on the Integer result against the range of the operation's format,
+  8 to 64 bits; see [in-range sums, differences and
+  products](../../internals/mathematical-integers.md#in-range-machine-sums-differences-and-products).
 
 **Outside it**, with what to write instead:
 
@@ -2748,8 +2750,10 @@ On an implication `A implies B`, `simp` introduces `A` and closes `B`, with
 this arithmetic and the searches below, as for `result == 1 implies cap ==
 old(cap) + 1` on a path where the antecedent reads `true`
 ([`auto_proves_an_implication_whose_consequent_needs_the_solver.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_an_implication_whose_consequent_needs_the_solver.md)).
-The in-range `+` and `-` identities and integral-cast identities this
-arithmetic uses, nested ones included, are described in [mathematical integers](../../internals/mathematical-integers.md#in-range-machine-sums-and-differences).
+The in-range `+` and `-` identities, `*` identities with a constant factor
+([`auto_observes_a_product_by_a_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_observes_a_product_by_a_constant.md)),
+and integral-cast identities this arithmetic uses, nested ones included, are
+described in [mathematical integers](../../internals/mathematical-integers.md#in-range-machine-sums-differences-and-products).
 
 When its other strategies miss, `simp` searches chains of at most three
 `rewrite` steps by the equalities connected to `P`, machine, `Integer` and

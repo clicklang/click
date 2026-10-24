@@ -963,32 +963,42 @@ and remainder narrowing, modular caller framing, offline artifacts, expansion,
 and retained audit. The source profile remains unchanged; the current artifact schema is 45.
 
 
-## In-range machine sums and differences
+## In-range machine sums, differences and products
 
 The `integer_operation_identity` node in the `rules` family proves that a
-machine `+` or `-` that does not wrap is the same operation on its operands'
-Integer values: `to_integer(a + b) == to_integer(a) + to_integer(b)`, or with
-`-`, in either orientation. The operation is an `int`, `unsigned int`,
-`int64` or `uint64` addition or subtraction, and each operand is observed in
-that same type. Two named premises `lo <= S` and `S <= hi` bound the stated
-Integer result `S` by constants inside the type's range, in that order. The
-kernel recomputes `S` from the observed operation and reads only the two
+machine `+`, `-` or `*` that does not wrap is the same operation on its
+operands' Integer values: `to_integer(a + b) == to_integer(a) +
+to_integer(b)`, or with `-` or `*`, in either orientation. The operation is
+of any format of 8 to 64 bits (`int`, `unsigned int`, `int64`, `uint64`, and
+the narrow formats, whose operations are the 32-bit word's), and each operand
+is observed in that same format. Two named premises `lo <= S` and `S <= hi`
+bound the stated Integer result `S` by constants inside the format's range,
+in that order. The kernel recomputes `S` from the observed operation
+(`kernel::machine_integer::identity::mathematical`) and reads only the two
 named premises (`mdtests/an_in_range_machine_difference_is_its_integer_difference.md`,
-`mdtests/an_operation_identity_bound_outside_its_type_is_refused.md`).
+`mdtests/an_operation_identity_bound_outside_its_type_is_refused.md`,
+`mdtests/integer_operation_identity_of_a_product.md`,
+`mdtests/a_product_identity_bound_outside_its_type_is_refused.md`).
 
 The Integer certificate's `type_range => MIN <= to_integer(v);` (or
 `to_integer(v) <= MAX`) states the range of a machine observation's type,
 with the type's exact endpoint. It needs no premise.
 
-`operation_bound => P;` states the bound an unsigned machine quotient,
-logical shift, or remainder by a constant takes from its operand. Unsigned
+`operation_bound => P;` states the bound a machine quotient, right shift,
+or remainder by a positive constant takes from its operand. Unsigned
 division truncates, which is the floor, so `q = x / c` with constant `c > 0`
 has `c * q <= x` and `x <= c * q + (c - 1)`; `x >> k`, for a constant `k`
-below the width, is `x / 2^k`; and `x % c <= c - 1`. The kernel finds the
-operation among `P`'s machine observations and recomputes the bound
-(`operation_bound` in `src/kernel/proof/integer_arithmetic.rs`). Signed
-operations, a zero or symbolic divisor, and a shift by the width or more give
-none. `excluded_bound N: D => P;` cites premise `N`, a disequality of a
+below the width, is `x / 2^k`; and `x % c <= c - 1`. Signed division
+truncates toward zero, so its remainder has the sign of `x`: `c * q - (c -
+1) <= x <= c * q + (c - 1)`, and `-(c - 1) <= x % c <= c - 1`. A signed
+arithmetic shift is still the floor, with the unsigned form. The kernel
+finds the operation among `P`'s machine observations and recomputes the
+bound (`kernel::machine_integer::bounds::operation_bound`). A divisor that
+is not a positive constant of the operation's format (a signed `0xfffffff8`
+is `-8`), a symbolic divisor, a shift by the width or more, and a narrow or
+128-bit operation give none
+(`mdtests/auto_bounds_a_signed_quotient_by_its_operand.md`).
+`excluded_bound N: D => P;` cites premise `N`, a disequality of a
 machine value with its type's minimum or maximum, as the bound it gives: an
 unsigned `v != 0` is `1 <= to_integer(v)` (`excluded_type_bound`).
 
@@ -1001,11 +1011,12 @@ filing the native comparison beside an Integer fact.
 leave its refutation a
 counterexample, it retries with the facts' native comparisons read as
 Integer ones and with the type range of each machine observation, the
-operation bound of each unsigned quotient, shift, or remainder by a constant,
+operation bound of each quotient, shift, or remainder by a constant,
 and the bound each disequality with a type endpoint gives
 (`mdtests/auto_bounds_an_unsigned_quotient_by_its_operand.md`,
 `mdtests/auto_refuses_a_quotient_bound_past_the_floor.md`). When that
-also fails, it may assume the identity of each machine `+` or `-` it sees;
+also fails, it may assume the identity of each machine `+` or `-` it sees,
+and of each `*` with a constant factor, whose exact value is affine;
 for each identity the refutation uses, it proves the two bounds with the
 same arithmetic, applies `integer_operation_identity`, and then proves the
 goal. So

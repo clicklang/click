@@ -665,9 +665,11 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         // such as one the Integer equality closure derives, is too: at most
         // one lookup per reading.
         let observed_otherwise = || {
-            crate::kernel::assumptions::integer_observations_of_native_comparison(proposition)
-                .iter()
-                .any(&available)
+            crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+                proposition,
+            )
+            .iter()
+            .any(&available)
         };
         if available(proposition) || spelled_otherwise() || observed_otherwise() {
             return Ok(self.closed_focused());
@@ -925,7 +927,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             // listed native fact also supplies it.
             let native = || match premise {
                 Proposition::ConditionIs(condition, value) => {
-                    crate::kernel::assumptions::native_comparison_of_integer_observation(
+                    crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
                         condition, *value,
                     )
                     .is_some_and(|(native, truth)| {
@@ -945,7 +947,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             // bounds of its exact result do, so that listed fact also
             // supplies each bound.
             let definedness = || {
-                crate::kernel::assumptions::definedness_of_integer_bound(premise)
+                crate::kernel::machine_integer::definedness::definedness_of_integer_bound(premise)
                     .is_some_and(|fact| facts.listed_premise_available(&fact, &[], false))
             };
             if !facts.listed_premise_available(premise, &[], false) && !native() && !definedness() {

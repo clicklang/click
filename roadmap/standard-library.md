@@ -410,6 +410,13 @@ Progress: Stage 0 is done (2026-10-23). A narrow value's word is the
 canonical carrier of its format, checked in debug builds, and `auto` and
 `integer_cast_identity` prove 8- and 16-bit widenings without a premise
 ([kernel](../docs/internals/kernel.md#one-meaning-for-a-narrow-value)).
+Stage 1 is done (2026-10-24) for every gap that needs no new node: the rules
+are stated once over a format in `src/kernel/machine_integer/`, a per-format
+matrix checks them at all ten formats, and multiplication identities and
+signed operation bounds are filled
+([kernel](../docs/internals/kernel.md#machine-integer-rules)). Unsigned,
+narrow and 128-bit definedness and 128-bit comparisons wait for Stage 2's
+condition family.
 
 ### Naming decisions (maintainer, 2026-10-15)
 

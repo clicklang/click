@@ -2872,7 +2872,7 @@ impl<'a> Proof<'a> {
                 self.lower_integer_surface_proposition(&order, "`rewrite` equality")
                     .ok()
                     .map(|lowered| {
-                        crate::kernel::assumptions::integer_observations_of_native_comparison(
+                        crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
                             &lowered,
                         )
                         .into_iter()

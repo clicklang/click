@@ -56,6 +56,9 @@ Kernel files:
 - `eval.rs`: C expression/statement evaluation and memory operations.
 - `loops.rs`: loop verification, loop effects, loop havoc, and invariant
   helpers.
+- `machine_integer/`: the correspondences between machine-integer and
+  `Integer` facts, each stated once over a format; see "Machine-integer
+  rules" below.
 - `proof/`: persistent checked proof-object infrastructure. Its `branches.rs`
   owns branch and split identities, allocation, and structural topology;
   `storage.rs` owns the shared persistent containers used by proof forks; and
@@ -690,6 +693,67 @@ value's arms occur once around that guard, rather than being duplicated
 through the logical tree. Lowering remains context independent; explicit
 normalization uses the stated premises to select an arm. Unknown guards keep
 both possibilities (`mdtests/pure_conditional_compound_guards*.md`).
+
+### Machine-integer rules
+
+`src/kernel/machine_integer/` states each correspondence between machine
+and `Integer` facts once, as a function of the format
+(`MachineIntegerType`, a name for a `MachineIntegerFormat`). No caller lists
+the widths a rule supports; it asks the module
+(`design/machine-integers.md`, "Rules stated once over a format").
+
+| Rule | Module function | Statement |
+|---|---|---|
+| Exact comparison | `comparison::native_comparison_of_integer_observation`, `integer_observations_of_native_comparison`, `native_comparison_through_integer_operations` | `to_integer(a) R to_integer(b)` holds exactly when the native comparison of `a` and `b` at their format does |
+| Range | `range::range`, `range_fact`, `constant_word` | `min(F) <= to_integer(v) <= max(F)` |
+| In-range identity | `identity::mathematical`, `machine_operation_of_integer_value` | `to_integer(a op b) == to_integer(a) op to_integer(b)` for `+ - *` when the exact result lies in `F` |
+| Operation bounds | `bounds::operation_bound` | a quotient, right shift or remainder by a positive constant, against its operand |
+| Definedness | `definedness::integer_bounds_of_definedness`, `definedness_of_integer_bound`, `defined_formats` | `not overflows(F, op, a, b)` exactly when the exact result lies in `F` |
+| Modular equality | `modular::wrapped_equality_at`, `wrapped_equality_of_integer_equality` | an `Integer` equality over `+ - *` of observations of width `w` implies the word equality modulo `2^w` |
+| Conversion | `conversion::cast` and the narrow-widening helpers | a cast preserves a value its destination holds; a widening needs no premise |
+
+The term arena still spells each width with its own nodes, so one file,
+`machine_integer/representation.rs`, maps a format and an operation,
+comparison or overflow test to its node, and a node back to its format and
+operation. It is the only place a rule's width dispatch lives. Where a
+format has no node the rule is unavailable there: no 128-bit operators or
+comparisons, no overflow test except at `int32` and `int64`, no narrow
+quotient (C computes it on promoted `int` words), and a `uint32` order spelled
+as the signed order of sign-flipped operands. Those are representation gaps
+that Stages 2 and 3 of the design remove. The test matrix
+(`machine_integer/matrix_tests.rs`) runs every rule at every format, checks on
+constants that it decides as exact arithmetic does wherever the values fit,
+and names each gap; a rule that misses a format, or newly reaches one, fails
+it.
+
+Two statements reach formats or operations they did not before, and each is
+a kernel trust the certificate checkers apply:
+
+- **Product identity.** `integer_operation_identity` accepts a machine `*`
+  at every format with a product node (8 to 64 bits), as it accepts `+` and
+  `-`. A machine product is the product of the operands' words modulo
+  `2^w`, the word's width. Each operand's word is congruent to its value
+  modulo `2^w`: a 32- or 64-bit word is its value's bits, and a narrow word is
+  its canonical extension, congruent modulo `2^32`. Multiplication respects
+  the congruence, so the machine result is congruent to the exact product.
+  The two certified bounds put the exact product inside `F`, where it is the
+  one element of its residue class, and for a narrow format inside the
+  word's canonical range, so the word is that product's canonical carrier.
+  This is the argument the rule already relied on for `+` and `-`.
+- **Signed operation bounds.** `operation_bound` gives bounds for `int32`
+  and `int64` quotients, arithmetic right shifts and remainders by a
+  constant, read at the format: the word `0xfffffff8` is `-8`, which gives
+  nothing. For `q = x / c` with `c > 0`, C's quotient truncates toward zero
+  and `r = x - c * q` has the sign of `x` with `|r| <= c - 1`, so `c * q -
+  (c - 1) <= x <= c * q + (c - 1)` and `-(c - 1) <= r <= c - 1`. With
+  `c > 0` neither division by zero nor `MIN / -1` arises, so the quotient is
+  defined. An arithmetic shift by `k` below the width is the floor of
+  `x / 2^k`, which has the unsigned form `2^k * q <= x <= 2^k * q + (2^k - 1)`.
+
+The modular rule is stated at every width, but the fact context files it at
+32 bits only, as before. A narrow format's operations are 32-bit word
+operations, which do not reduce modulo its own width, so `wrapped_equality_at`
+refuses a narrow modulus.
 
 ## C ABI and memory layout
 

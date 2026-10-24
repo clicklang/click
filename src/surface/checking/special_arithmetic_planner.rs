@@ -361,7 +361,7 @@ fn cited_premises_only(
 /// range facts `x`'s introduction filed, matched exactly as filed.
 fn cast_identity_bounds(goal: &Proposition, premises: &[Proposition]) -> Option<Vec<usize>> {
     use crate::kernel::IntegerTerm;
-    use crate::kernel::proof::integer_cast_identity::{
+    use crate::kernel::machine_integer::conversion::{
         cast_operands, narrow_binder_range_facts, narrow_widening,
     };
     let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = goal else {
@@ -386,7 +386,7 @@ fn cast_identity_bounds(goal: &Proposition, premises: &[Proposition]) -> Option<
             // A bound with an exact native spelling is filed natively, as
             // `x <= 4294967295u64`; its Integer reading is the bound.
             let readings =
-                crate::kernel::assumptions::integer_observations_of_native_comparison(premise);
+                crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(premise);
             std::iter::once(premise).chain(&readings).any(|reading| {
                 let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) =
                     reading

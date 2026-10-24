@@ -61,6 +61,20 @@ Each site lists the widths its rule supports:
 | `Carrier` (`surface/proof/wide_arithmetic.rs`) | int64, uint64 | 32 and below |
 | `signed_arithmetic_planner.rs`, `simp.rs` observations | int32 | all others |
 
+After Stage 1 (2026-10-24) the rules live in `kernel/machine_integer/`,
+and the matrix there checks this coverage:
+
+| Rule | Covers | Omits, and the stage that adds it |
+|---|---|---|
+| exact comparison, both directions | 8 to 64 bits, narrow through a canonical carrier | 128 (Stage 2); a narrow binder (Stage 3) |
+| range and constants | every format | none |
+| in-range identity | `+ - *` at 8 to 64 bits | 128 (Stage 3) |
+| operation bounds | `/ >> %` at 32 and 64 bits, signed and unsigned | narrow, 128 (Stage 3) |
+| definedness as Integer bounds | int32 and int64 `+ - *` | unsigned, narrow, 128 (Stage 2) |
+| modular equality | stated at 32 and 64 bits, filed at 32 | narrow moduli (not sound on 32-bit words), 128 (Stage 3) |
+| conversion identity | every pair of formats | none |
+| `Carrier`, `signed_arithmetic_planner.rs`, `simp.rs` | unchanged | planner heuristics, after Stages 2 and 3 |
+
 **Library.** `library/integer.click` and `library/machine_integer.click`
 hold 138 theorems, most of them one fact restated per width. Coverage is
 uneven: `add_to_integer` exists at four widths, `divide_to_integer` at two,
@@ -329,6 +343,43 @@ Done 2026-10-23. What changed:
 - Add the per-format test matrix.
 - This stage changes no term representation. It removes the width lists
   from callers and makes coverage checkable.
+
+Done 2026-10-24, for every gap that needs no new node. What changed:
+
+- `src/kernel/machine_integer/` holds the six rules, plus the operation
+  bounds, as functions of the format (`docs/internals/kernel.md`,
+  "Machine-integer rules"). Its `representation.rs` is the one map between
+  a format and today's per-width nodes; the rule implementations that
+  listed widths (the native comparison and its converse, the definedness
+  readings, the in-range identity, the operation bounds, the wrapped word
+  equality, the cast recognizer, the aliased-operand overflow question) are
+  moved there and ask it. Surface callers that spelled ranges or signed
+  widths as literals (`selected_arithmetic.rs`, `wide_arithmetic.rs`) ask
+  the module's range and definedness formats. Every verdict is unchanged
+  except where a gap was filled.
+- Filled: multiplication identities at every format with a product node
+  (`mdtests/integer_operation_identity_of_a_product.md`,
+  `mdtests/auto_observes_a_product_by_a_constant.md`), and signed operation
+  bounds at `int32` and `int64`
+  (`mdtests/auto_bounds_a_signed_quotient_by_its_operand.md`). Their
+  soundness arguments are in `docs/internals/kernel.md`.
+- Narrow comparison readings already hold for every canonical carrier, a
+  narrow load or conversion, through `IntegerTerm::from_machine`'s
+  normalization; the matrix now pins them at 8 and 16 bits. A narrow
+  binder's comparison keeps its Integer form, because a variable records no
+  format; that needs the format on the term (Stage 3).
+- The per-format matrix (`src/kernel/machine_integer/matrix_tests.rs`) runs
+  every rule at all ten formats and names each remaining gap with the stage
+  that removes it.
+- Left for Stage 2, because each needs a condition the term type does not
+  have: unsigned, narrow and 128-bit definedness (`Overflows`), and 128-bit
+  comparison readings (`Compare`). Narrow and 128-bit operation bounds and
+  128-bit identities need operator nodes (Stage 3). The modular equality is
+  stated at every width but filed at 32 bits only, as before.
+- Width dispatch outside the rules remains: front-end promotion matrices
+  (Stage 4), value-tag matches, and planner heuristics that name one width
+  (`signed_arithmetic_planner.rs`, `simp.rs`, `Carrier`), which follow the
+  term and condition families.
 
 ### Stage 2. One condition family
 
