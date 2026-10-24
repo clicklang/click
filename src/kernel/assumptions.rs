@@ -5097,11 +5097,11 @@ impl PureFactContext {
         self.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.resource_contains_facts = crate::persistent::PersistentMap::default();
-        self.nonmemory_parent_containments = 0;
         self.memory_effect_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
         self.nonmemory_separations_by_side = crate::persistent::PersistentMap::default();
         self.resource_containers = crate::persistent::PersistentMap::default();
+        self.memory_containers = crate::persistent::PersistentMap::default();
         self.separation_facts = crate::kernel::fact_collections::ScanSet::default();
         self.separation_facts_by_block = crate::persistent::PersistentMap::default();
         self.separated_address_classes = Default::default();
@@ -5827,16 +5827,19 @@ impl PureFactContext {
         let Proposition::CResourceContains { parent, child } = proposition else {
             return;
         };
-        if !matches!(**parent, CResource::Memory(_)) {
-            if insert {
-                self.nonmemory_parent_containments += 1;
-            } else {
-                self.nonmemory_parent_containments -= 1;
+        match &**child {
+            CResource::Memory(range) => {
+                self.memory_containers = with_adjusted_member(
+                    &self.memory_containers,
+                    &range.base().block,
+                    proposition,
+                    insert,
+                );
             }
-        }
-        if !matches!(**child, CResource::Memory(_)) {
-            self.resource_containers =
-                with_adjusted_member(&self.resource_containers, child, proposition, insert);
+            child => {
+                self.resource_containers =
+                    with_adjusted_member(&self.resource_containers, child, proposition, insert);
+            }
         }
         let key = ResourceContainsKey::of(parent);
         let facts = self
@@ -5973,12 +5976,12 @@ impl PureFactContext {
     #[cfg(test)]
     fn rebuild_memory_separation_facts(&mut self) {
         self.resource_contains_facts = crate::persistent::PersistentMap::default();
-        self.nonmemory_parent_containments = 0;
         self.memory_effect_facts = crate::persistent::PersistentMap::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
         self.nonmemory_separations_by_side = crate::persistent::PersistentMap::default();
         self.resource_containers = crate::persistent::PersistentMap::default();
+        self.memory_containers = crate::persistent::PersistentMap::default();
         self.separation_facts = self
             .prop_facts
             .iter()

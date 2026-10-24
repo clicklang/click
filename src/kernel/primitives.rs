@@ -12613,10 +12613,6 @@ pub struct PureFactContext {
         super::assumptions::ResourceContainsKey,
         crate::persistent::PersistentSet<Proposition>,
     >,
-    /// How many containment facts have a parent other than memory. Only
-    /// through one can a non-memory owner contain memory, so while there are
-    /// none a composition's memory owners are all its owners.
-    pub(super) nonmemory_parent_containments: usize,
     pub(super) memory_separation_facts: crate::persistent::PersistentMap<
         (PointerBlock, PointerBlock),
         std::sync::Arc<Vec<(Proposition, CMemoryRange, CMemoryRange)>>,
@@ -12633,6 +12629,12 @@ pub struct PureFactContext {
     /// so the containers of a non-memory resource are walked upward from it.
     pub(super) resource_containers:
         crate::persistent::PersistentMap<CResource, crate::persistent::PersistentSet<Proposition>>,
+    /// The containment facts with a memory child, filed under the child's
+    /// block, so the containers of a range are walked upward from it.
+    pub(super) memory_containers: crate::persistent::PersistentMap<
+        PointerBlock,
+        crate::persistent::PersistentSet<Proposition>,
+    >,
     /// Every separation proposition fact, memory or not, in the
     /// proposition order of `prop_facts`. The provers that cannot key a
     /// separation query by block pair scan these instead of every
