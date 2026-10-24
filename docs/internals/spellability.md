@@ -44,8 +44,9 @@ checked. Each one costs completeness, expansion, or a readable report.
   point and the local it was first given to (`RecordedSnapshots::value_points`
   and `pointer_points`, filled from the locals each recorded state changed),
   and the structural speller writes `at(point, ...)` from that index for a
-  value no nearer state names. A load made in a memory no point records, as
-  inside a call, is read at the nearest recorded memories after it.
+  value no nearer state names. A load or field read made in a memory no point
+  records, inside a call or after the last point, is read at the nearest
+  recorded memory that reads the same bytes.
 - **Every fact kind has syntax.** A kernel fact that a proof state can hold
   has a Surface form. Adding a kernel fact or term form includes adding its
   Surface form and its spelling, in the same change.

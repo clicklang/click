@@ -2713,3 +2713,37 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
         "the spelling must name the pointer `q` held"
     );
 }
+
+#[test]
+fn recorded_memories_near_a_read_are_offered_after_it_then_before_it() {
+    // Memories interned in program order: `first` and `second` are recorded,
+    // `between` is made between them and `last` after both. A read in
+    // `between` is next recorded at `second`; a read in `last` was last
+    // recorded at `second`, then `first`.
+    let memory = |block: &str| {
+        let memory = CMemory::new().with_block(block, 4);
+        crate::kernel::intern_c_memory_ref(&memory)
+    };
+    let point = |index| {
+        SnapshotSelector::from(ProgramPointRef {
+            region: CodeRegionRef::Region(index),
+            kind: ProgramPointKind::Exit,
+        })
+    };
+    let first = memory("near-first");
+    let between = memory("near-between");
+    let second = memory("near-second");
+    let last = memory("near-last");
+    let mut recorded_snapshots = RecordedSnapshots::new();
+    recorded_snapshots.insert(point(0), CState::new().with_memory(first.memory().clone()));
+    recorded_snapshots.insert(point(1), CState::new().with_memory(second.memory().clone()));
+    let near = |memory| {
+        recorded_snapshots
+            .points_near_memory(memory)
+            .map(|(selector, _)| selector.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(near(&between), vec![point(1), point(0)]);
+    assert_eq!(near(&last), vec![point(1), point(0)]);
+    assert_eq!(near(&first), vec![point(0), point(1)]);
+}
