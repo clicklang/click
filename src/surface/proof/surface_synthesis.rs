@@ -510,8 +510,8 @@ impl Drop for SynthesisRecordedPointsScope {
 
 /// The recorded point whose memory holds the cell `variable` names, and
 /// that point's state: the point recording the memory the load was made in,
-/// or, for a memory made between recorded points (inside a call's region),
-/// a recorded memory just after it. The load is checked there with the
+/// or, for a memory no point records (inside a call's region, or after the
+/// last point), a recorded memory near it that reads the same. The load is checked there with the
 /// kernel's naming law, so a spelling built from it lowers back to
 /// `variable`.
 fn recorded_point_of_load(
@@ -524,7 +524,7 @@ fn recorded_point_of_load(
         points
             .point_reading_memory(&memory)
             .into_iter()
-            .chain(points.points_at_or_after_memory(&memory))
+            .chain(points.points_near_memory(&memory))
             .find_map(|(selector, state)| {
                 let load = registered_load_in_state(variable, state)?;
                 Some((selector.clone(), state.clone(), load))
@@ -4508,11 +4508,19 @@ fn recorded_point_of_pointer_read(
     if pointer_read_address_in_state(pointer, state).is_some() {
         return None;
     }
+    // Read where the memory is recorded or, for a memory no point records,
+    // at a recorded memory near it that reads the same, as a load is.
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let (selector, recorded) = slot.as_ref()?.point_reading_memory(&memory)?;
-        pointer_read_address_in_state(pointer, recorded)?;
-        Some((selector.clone(), recorded.clone()))
+        let points = slot.as_ref()?;
+        points
+            .point_reading_memory(&memory)
+            .into_iter()
+            .chain(points.points_near_memory(&memory))
+            .find_map(|(selector, recorded)| {
+                pointer_read_address_in_state(pointer, recorded)?;
+                Some((selector.clone(), recorded.clone()))
+            })
     })
 }
 

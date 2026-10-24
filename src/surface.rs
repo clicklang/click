@@ -2928,8 +2928,9 @@ impl<'a> ContractEnvironment<'a> {
         Self { values, array_refs }
     }
 }
-/// How many recorded memories after a load's own the speller checks for it.
-const MEMORY_POINTS_AFTER: usize = 4;
+/// How many recorded memories on each side of a load's own the speller
+/// checks for it.
+const MEMORY_POINTS_NEAR: usize = 4;
 
 /// How many recorded points holding a pointer's block the speller tries.
 const POINTER_POINTS_OFFERED: usize = 4;
@@ -3344,21 +3345,32 @@ impl RecordedSnapshots {
         self.last_locals = Some(state.locals().clone());
     }
 
-    /// The recorded points whose memories come at or after `memory` in the
-    /// order memories were made, nearest first, with their states: where a
-    /// read made in `memory` between recorded points (inside a call's
-    /// region) is next recorded. A memory equal to an earlier one shares its
-    /// identity, so the nearest may precede the read; the caller checks each
-    /// for the unchanged read. At most [`MEMORY_POINTS_AFTER`] are offered.
-    fn points_at_or_after_memory(
+    /// The recorded points whose memories are nearest `memory` in the order
+    /// memories were made, with their states: those at or after it, nearest
+    /// first, where a read made in `memory` between recorded points (inside
+    /// a call's region) is next recorded, then those before it, newest
+    /// first, where a read made after the last recorded point still read
+    /// the same bytes. A memory equal to an earlier one shares its identity,
+    /// so the order is not exact; the caller checks each for the unchanged
+    /// read. At most [`MEMORY_POINTS_NEAR`] are offered on each side.
+    fn points_near_memory(
         &self,
         memory: &crate::kernel::SharedCMemory,
     ) -> impl Iterator<Item = (&SnapshotSelector, &CState)> {
         let identity = memory.read_identity();
-        self.memory_points
+        let after = self
+            .memory_points
             .range(identity..)
             .take_while(move |(found, _)| found.0 == identity.0)
-            .take(MEMORY_POINTS_AFTER)
+            .take(MEMORY_POINTS_NEAR);
+        let before = self
+            .memory_points
+            .range(..identity)
+            .rev()
+            .take_while(move |(found, _)| found.0 == identity.0)
+            .take(MEMORY_POINTS_NEAR);
+        after
+            .chain(before)
             .filter_map(|(_, selector)| Some((selector, self.get_exact(selector)?)))
     }
 
