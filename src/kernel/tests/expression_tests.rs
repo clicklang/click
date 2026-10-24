@@ -3325,8 +3325,43 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
             &mut obligations,
             &assumptions,
         );
-        assert_eq!(result, Some(int8(value.clone())));
+        // A checked narrowing is the typed conversion node too, the
+        // destination's canonical carrier. Its identity with the operand,
+        // which holds exactly where the obligations do, is the fact the cast
+        // files beside them.
+        let checked = int8(Bitvector32Term::machine_integer_cast(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineIntegerType::Int8,
+            value.clone(),
+        ));
+        assert_eq!(result, Some(checked.clone()));
         assert_eq!(obligations.len(), 2 - mask.count_ones() as usize);
+        // It is filed as values and, since a 32-bit operand is its own
+        // value's extension, as the words a comparison of words uses.
+        assert_eq!(
+            crate::kernel::eval::checked_narrowing_identity(&int32(value.clone()), &checked),
+            vec![
+                Proposition::ConditionIs(
+                    ConditionTerm::integer_equal(
+                        IntegerTerm::from_machine(
+                            crate::kernel::MachineIntegerType::Int8,
+                            checked_term(&checked),
+                        )
+                        .unwrap(),
+                        IntegerTerm::from_machine(
+                            crate::kernel::MachineIntegerType::Int32,
+                            value.clone(),
+                        )
+                        .unwrap(),
+                    ),
+                    true,
+                ),
+                Proposition::ConditionIs(
+                    ConditionTerm::equal(checked_term(&checked), value.clone()),
+                    true,
+                ),
+            ]
+        );
         // C's conversion owes nothing, and its term is the typed conversion
         // node whatever the context knows; the identity inside the range is
         // reasoning (`narrowed_cast_identity`), not a choice made here.
@@ -3962,4 +3997,11 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         CValue::UInt64(Bitvector32Term::pointer_address(stored.pointer().clone())),
     );
     assert!(!context.pointer_designations_match(&read(&numeric, &a), &stored));
+}
+
+fn checked_term(value: &CValue) -> Bitvector32Term {
+    match value {
+        CValue::Int8(term) => term.clone(),
+        other => panic!("{other:?}"),
+    }
 }

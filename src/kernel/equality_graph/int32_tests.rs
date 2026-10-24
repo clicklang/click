@@ -212,6 +212,14 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() 
     };
     let (a, b) = (var(31), var(32));
     let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    // A stored byte is a canonical `uint8` carrier: the conversion of the sum.
+    let byte = |value| {
+        Bitvector32Term::machine_integer_cast(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineIntegerType::UInt8,
+            value,
+        )
+    };
     let before = intern_c_memory(
         CMemory::new()
             .with_block("resolved-int32", 4)
@@ -226,7 +234,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() 
     let byte_memory = intern_c_memory(
         CMemory::new()
             .with_block("resolved-int32", 1)
-            .store(pointer.clone(), CValue::UInt8(sum(a.clone()))),
+            .store(pointer.clone(), CValue::UInt8(byte(sum(a.clone())))),
     );
     let load = |memory: &SharedCMemory| {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
@@ -260,7 +268,10 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() 
     assert!(branch.memory_loads_proven_equal(&target, &old_load));
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
     assert!(!branch.memory_loads_proven_equal(&new_load, &target));
-    assert_eq!(branch.resolve_memory_load_term(&byte_load), Some(sum(a)));
+    assert_eq!(
+        branch.resolve_memory_load_term(&byte_load),
+        Some(byte(sum(a)))
+    );
     assert!(!branch.memory_loads_proven_equal(&byte_load, &target));
     assert!(!parent.memory_loads_proven_equal(&old_load, &target));
     let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
@@ -276,6 +287,14 @@ fn two_resolved_four_byte_loads_compare_values_with_snapshot_scope() {
     };
     let (a, b) = (var(41), var(42));
     let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    // A stored byte is a canonical `uint8` carrier: the conversion of the sum.
+    let byte = |value| {
+        Bitvector32Term::machine_integer_cast(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineIntegerType::UInt8,
+            value,
+        )
+    };
     let left_pointer = pointer(0);
     let right_pointer = pointer(4);
     let before = intern_c_memory(
@@ -291,7 +310,7 @@ fn two_resolved_four_byte_loads_compare_values_with_snapshot_scope() {
     let byte_memory = intern_c_memory(
         CMemory::new()
             .with_block("two-resolved-int32", 8)
-            .store(right_pointer.clone(), CValue::UInt8(sum(b.clone()))),
+            .store(right_pointer.clone(), CValue::UInt8(byte(sum(b.clone())))),
     );
     let load = |memory: &SharedCMemory, pointer: &Pointer, width| {
         let kind = if width == 1 {

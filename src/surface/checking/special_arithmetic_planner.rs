@@ -357,20 +357,29 @@ fn cited_premises_only(
 /// For a goal `to_integer((T)x) == to_integer(x)`, either side first, the
 /// first premises `lo <= to_integer(x)` and `to_integer(x) <= hi`, as written
 /// or as a native comparison's Integer reading, with constant endpoints
-/// inside `T`'s range.
+/// inside `T`'s range. A widening of a narrow binder `x` instead cites the
+/// range facts `x`'s introduction filed, matched exactly as filed.
 fn cast_identity_bounds(goal: &Proposition, premises: &[Proposition]) -> Option<Vec<usize>> {
     use crate::kernel::IntegerTerm;
-    use crate::kernel::proof::integer_cast_identity::cast_operands;
+    use crate::kernel::proof::integer_cast_identity::{
+        cast_operands, narrow_binder_range_facts, narrow_widening,
+    };
     let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = goal else {
         return None;
     };
     let (observed, original): (&IntegerTerm, &IntegerTerm) = [(a, b), (b, a)]
         .into_iter()
         .map(|(observed, original)| (observed.as_ref(), original.as_ref()))
-        .find(|(observed, original)| cast_operands(observed).contains(original))?;
+        .find(|(observed, original)| {
+            narrow_widening(observed, original) || cast_operands(observed).contains(original)
+        })?;
     let IntegerTerm::Machine(machine) = observed else {
         return None;
     };
+    if let Some((lower, upper)) = narrow_binder_range_facts(observed, original) {
+        let cited = |fact: &Proposition| premises.iter().position(|premise| premise == fact);
+        return Some(vec![cited(&lower)?, cited(&upper)?]);
+    }
     let (min, max) = machine.ty().format().bounds();
     let bound = |lower: bool| {
         premises.iter().position(|premise| {

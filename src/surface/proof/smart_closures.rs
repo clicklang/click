@@ -1258,12 +1258,28 @@ type OperationIdentity = (
 /// identity comes after its operation's. A cast whose operand has two
 /// readings (a 64-to-32-bit word narrowing) takes the one observed.
 fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<OperationIdentity> {
-    use crate::kernel::proof::integer_cast_identity::cast_operands;
+    use crate::kernel::proof::integer_cast_identity::{
+        cast_operands, narrow_widening, widened_narrow_word,
+    };
     use crate::kernel::proof::integer_operation_identity::mathematical;
     let observed_ids = observations
         .iter()
         .cloned()
         .collect::<std::collections::HashSet<_>>();
+    // The narrow observations by word, so a wider observation of the same
+    // word finds the value it widens by one lookup.
+    let mut narrow_by_word =
+        std::collections::HashMap::<crate::kernel::Bitvector32Term, Vec<_>>::new();
+    for observation in &observations {
+        if let crate::kernel::IntegerTerm::Machine(machine) = observation
+            && machine.ty().format().bits() < 32
+        {
+            narrow_by_word
+                .entry(machine.value().clone())
+                .or_default()
+                .push(observation.clone());
+        }
+    }
     let mut identities = Vec::new();
     let mut pending = observations;
     let mut seen = std::collections::HashSet::new();
@@ -1278,6 +1294,18 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
                 let operand = operands
                     .iter()
                     .find(|operand| observed_ids.contains(*operand))
+                    // A narrow value read at a containing format widens it
+                    // directly, without the intermediate 32-bit reading a
+                    // legacy 32-to-64-bit conversion also offers.
+                    .or_else(|| {
+                        widened_narrow_word(&observed)
+                            .and_then(|word| narrow_by_word.get(word))
+                            .and_then(|narrow| {
+                                narrow
+                                    .iter()
+                                    .find(|original| narrow_widening(&observed, original))
+                            })
+                    })
                     .or_else(|| (operands.len() == 1).then(|| &operands[0]));
                 let Some(operand) = operand else {
                     continue;
@@ -3401,18 +3429,52 @@ impl<'a> Proof<'a> {
                 }
                 _ => return Ok(Err(failed.clone())),
             };
-            let (min, max) = machine.ty().format().bounds();
-            let lower = ClickProposition::Comparison {
-                left: surface_signed_integer_literal(&min),
-                operator: ComparisonOperator::LessEqual,
-                right: spelled_value.clone(),
+            // A widened narrow binder is a carrier only through the range
+            // its introduction filed, so the certificate cites those facts
+            // as filed, `(int32)x >= lo` and `(int32)x <= hi`, which need
+            // no proof of their own.
+            let binder = if cast {
+                crate::kernel::proof::integer_cast_identity::narrow_binder_word(observed, value)
+            } else {
+                None
             };
-            let upper = ClickProposition::Comparison {
-                left: spelled_value.clone(),
-                operator: ComparisonOperator::LessEqual,
-                right: surface_signed_integer_literal(&max),
+            let (lower, upper) = if let Some((_, source)) = &binder {
+                let (min, max) = source.bounds();
+                let word = native_int32_split_operand(match spelled_value.clone() {
+                    ContractExpression::Call {
+                        name,
+                        mut arguments,
+                    } if name == "to_integer" && arguments.len() == 1 => arguments.remove(0),
+                    operand => operand,
+                });
+                (
+                    ClickProposition::Comparison {
+                        left: word.clone(),
+                        operator: ComparisonOperator::GreaterEqual,
+                        right: surface_signed_integer_literal(&min),
+                    },
+                    ClickProposition::Comparison {
+                        left: word,
+                        operator: ComparisonOperator::LessEqual,
+                        right: surface_signed_integer_literal(&max),
+                    },
+                )
+            } else {
+                let (min, max) = machine.ty().format().bounds();
+                (
+                    ClickProposition::Comparison {
+                        left: surface_signed_integer_literal(&min),
+                        operator: ComparisonOperator::LessEqual,
+                        right: spelled_value.clone(),
+                    },
+                    ClickProposition::Comparison {
+                        left: spelled_value.clone(),
+                        operator: ComparisonOperator::LessEqual,
+                        right: surface_signed_integer_literal(&max),
+                    },
+                )
             };
-            for bound in [&lower, &upper] {
+            for bound in [&lower, &upper].into_iter().filter(|_| binder.is_none()) {
                 let scope = proof.begin_have(bound.clone())?;
                 let Some(closed) = scope.try_selected_arithmetic_without_identities()? else {
                     return Ok(Err(failed.clone()));
