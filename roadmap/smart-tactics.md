@@ -461,8 +461,16 @@ four times the work at a quarter of it.
     `4563` (index: `composition_members`).
 22. Load evaluation: the unresolved-cell scan (`eval/memory_loads.rs:1162`)
     visits every cell of the memory, charged.
-23. Every composition: `held_range_membership` (`eval/operators.rs:3140`) and
-    `loops.rs:2897`, filtered by block per composition.
+23. Every composition: `held_range_membership` (`eval/operators.rs`) and
+    `loops.rs:2897`, filtered by block per composition. **Fixed for
+    `held_range_membership`:** it surveys the state's resources and the
+    compositions `composition_members` lists under the pointer's block,
+    not every composition the path stated. Across the gate its 4,332 calls
+    over up to 9 compositions gave the same answer either way (3,208
+    inside, 1,098 unknown, 14 outside, 12 undecided). A composition that
+    only views the block is no longer read; fewer ranges can only weaken
+    an answer, and none did. `held_range_membership_ignores_unrelated_compositions`
+    covers it. `loops.rs` remains.
 24. `split_focused_call_outcomes` copies all facts on every caught-throw
     split (`execution_joins.rs:4215`).
 
