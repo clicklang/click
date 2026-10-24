@@ -9491,3 +9491,124 @@ fn universal_consequents_ignore_unrelated_propositions() {
         "unrelated facts changed the universal instantiation's work: {work:?}"
     );
 }
+
+/// The fast exact check answers a condition by lookup: it does not read
+/// the stated implications and universals, which only a premise context
+/// (`proves_atomic_from_premises`) or the proposition search consults. It
+/// once scanned every proposition fact on every miss.
+#[test]
+fn exact_condition_check_ignores_unrelated_implications() {
+    let target = ConditionTerm::signed_less_than(
+        Bitvector32Term::Variable(Variable(95_000)),
+        Bitvector32Term::Variable(Variable(95_001)),
+    );
+    let work = [16_u64, 64, 256]
+        .into_iter()
+        .map(|unrelated| {
+            let mut assumptions = PureFactContext::new();
+            for index in 0..unrelated {
+                assumptions = assumptions.assume_proposition(Proposition::Implies(
+                    Box::new(Proposition::ConditionIs(
+                        ConditionTerm::equal(
+                            Bitvector32Term::Variable(Variable(95_100 + index)),
+                            Bitvector32Term::Constant(1),
+                        ),
+                        true,
+                    )),
+                    Box::new(Proposition::ConditionIs(
+                        ConditionTerm::equal(
+                            Bitvector32Term::Variable(Variable(95_500 + index)),
+                            Bitvector32Term::Constant(2),
+                        ),
+                        true,
+                    )),
+                ));
+            }
+            let goal = Proposition::ConditionIs(target.clone(), true);
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assumptions.proves_atomic_without_search(&goal)
+            });
+            assert!(!proved);
+            work
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        work.windows(2).all(|pair| pair[0] == pair[1]),
+        "unrelated implications changed the exact check's work: {work:?}"
+    );
+}
+
+/// A snapshot-equivalent offset fact is read from the facts filed under the
+/// query's offset shape, and an alpha-equal existential from the goal's
+/// identity bucket. Both once scanned every fact, so a miss grew with
+/// unrelated facts.
+#[test]
+fn offset_and_existential_matches_ignore_unrelated_facts() {
+    let memory = CMemory::new();
+    let load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory_ref(&memory),
+        Box::new(Pointer {
+            block: "shape-target".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        }),
+        crate::kernel::LoadKind::Bits32,
+    );
+    let scaled = PointerOffsetTerm::Int32Scaled {
+        value: Box::new(load),
+        byte_width: 4,
+    };
+    let existential = Proposition::Exists {
+        name: String::new(),
+        var: Variable(97_000),
+        sort: Sort::CInt32,
+        body: Box::new(Proposition::ConditionIs(
+            ConditionTerm::signed_less_than(
+                Bitvector32Term::Variable(Variable(97_000)),
+                Bitvector32Term::Variable(Variable(97_001)),
+            ),
+            true,
+        )),
+    };
+    let work = [16_u64, 64, 256]
+        .into_iter()
+        .map(|unrelated| {
+            let mut context = PureFactContext::new();
+            for index in 0..unrelated {
+                context = context
+                    .assume_condition(
+                        ConditionTerm::pointer_offset_equal(
+                            PointerOffsetTerm::Variable(Variable(97_100 + index)),
+                            PointerOffsetTerm::Constant(index as i64),
+                        ),
+                        true,
+                    )
+                    .assume_proposition(Proposition::Exists {
+                        name: String::new(),
+                        var: Variable(97_000),
+                        sort: Sort::CInt32,
+                        body: Box::new(Proposition::ConditionIs(
+                            ConditionTerm::equal(
+                                Bitvector32Term::Variable(Variable(97_000)),
+                                Bitvector32Term::Variable(Variable(97_600 + index)),
+                            ),
+                            true,
+                        )),
+                    });
+            }
+            // Keying the facts assumed since the last query is index upkeep.
+            context.build_stated_proposition_index();
+            let (offset, offset_work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.has_pointer_offset_snapshot_fact(&scaled, &PointerOffsetTerm::Constant(4))
+            });
+            let (exists, exists_work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.proves_atomic_without_search(&existential)
+            });
+            assert_eq!((offset, exists), (false, false));
+            (offset_work, exists_work)
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        work.windows(2).all(|pair| pair[0] == pair[1]),
+        "unrelated facts changed the offset and existential matches' work: {work:?}"
+    );
+}

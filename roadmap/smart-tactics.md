@@ -272,25 +272,48 @@ The fast/slow line is expansion: anything that still runs while checking an
 expanded proof must be fast. That is every simple tactic and every kernel
 check, not only code outside `simp`.
 
-**Known fast-part scans** (`scan_unindexed`), as of the first classified
-pass:
+**Known fast-part scans** (`scan_unindexed`) still open:
 
-- Proving a condition from stated facts (`proves_condition_from_facts`).
-  The exact check `settles_exactly` falls into it for a condition its cheap
-  routes miss, and about 25 kernel callers use that check: contract
-  certification, execution, transport premises, call-guard evaluation.
-- The `ForAll` goal's alpha match calls it again per comparison
-  (`propositions_equal_modulo_proven_terms`).
-- Matching an assumed existential (`proves_exists_from_facts`,
-  `certification_proves_exists_obligation_from_facts`).
+- Certifying an existential obligation from an assumed existential
+  (`certification_proves_exists_obligation_from_facts`). It tries each
+  existential fact of the obligation's sort as the witness source, a
+  search for which fact to use.
 - The memory-resolution condition match's fallback
   (`scanned_matching_condition_fact_for_memory_resolution`), reached from
   `functions.rs` and contract certification whenever its index declines.
-  Earlier text called the `simp.rs` scans slow part only; this one is not.
-- Equality and snapshot walks: `bitvector_terms_equal_from_snapshot_facts`,
-  `has_pointer_offset_snapshot_fact`,
-  `pointer_offsets_equal_with_resolved_atoms`, and
-  `nonnegative_successor_by_exact_facts`.
+  It matches up to memory-resolution equality, which no key spells, and
+  `mdtests/call_step_retains_old_array_bound.md` needs it: the call's
+  `0 <= old(left[cur])` requirement holds by a fact about the same cell at
+  another snapshot named through an equality.
+
+**Fixed: the exact check is exact.** Measured across the gate, the
+condition scan `settles_exactly` fell into (`proves_condition_from_facts`)
+ran 18,636 times in fast code and found a fact 27 times, none of which a
+gate proof needed. `proves_atomic_without_search` now answers a condition
+by lookup in an ambient context; the full match, through reasoned
+equality, conjuncts, implications and universal instances, is
+`proves_atomic_from_premises` over a context that is a step's explicit
+premises, as derivations and their checks are, and
+`proves_condition_from_facts` for the proposition search. The `ForAll`
+goal's alpha match compares operands by lookup too.
+`exact_condition_check_ignores_unrelated_implications` covers it.
+
+**Fixed:** equality and snapshot walks.
+`bitvector_terms_equal_from_snapshot_facts` chained stated equalities
+through snapshot-aware endpoints over every condition fact at every step;
+it ran 6,956 times across the gate and never matched. A stated equality
+is an equality-graph edge already, so only the loads' own snapshot
+comparison remains. The chain walk in
+`pointer_offsets_equal_with_resolved_atoms` is gone for the same reason.
+`has_pointer_offset_snapshot_fact` reads the offset equalities filed
+under the query's snapshot shape (`offset_snapshot_shape`: structure with
+each load as its kind, sums in either order), which every
+snapshot-equivalent side shares. `nonnegative_successor_by_exact_facts`
+reads the order facts filed under the term's canonical form. An assumed
+existential alpha-equal to the goal is read from the goal's identity
+bucket of the stated-proposition index (`stated_identity_bucket`).
+`offset_and_existential_matches_ignore_unrelated_facts` and
+`successor_rule_ignores_unrelated_condition_facts` cover them.
 
 **Fixed:** the exact order walks. `exact_signed_order_path_evidence`
 and `exact_wide_order_path_evidence`, used by the resource tracker during
@@ -305,9 +328,8 @@ candidates in the order the scan did, so it returns the same path;
 `constant_order_walks_ignore_unrelated_order_facts` the scaling.
 `condition_order_facts` now serves only `simp`.
 
-Most of these match facts up to an equivalence (canonical form, memory
-snapshots, load equality). Where that equivalence implies equality of a
-computable key, such as a canonical or snapshot-blind form, an index on
+Where a match is up to an equivalence that implies equality of a
+computable key, such as a canonical form or a snapshot shape, an index on
 that key keeps every verdict and reads only the candidates.
 
 Instantiating a universal in fast code reads every universal fact, not

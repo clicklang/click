@@ -12472,6 +12472,11 @@ pub struct PureFactContext {
     /// from, each filed as its own condition so a walk can cite it exactly:
     /// [`super::assumptions::OrderFactsByLower`].
     pub(super) order_facts_by_lower: super::assumptions::OrderFactsByLower,
+    /// True `PointerOffsetEqual` facts by each side's snapshot shape
+    /// (`offset_snapshot_shape`), the candidates
+    /// `has_pointer_offset_snapshot_fact` checks.
+    pub(super) pointer_offset_equalities_by_shape:
+        crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<ConditionTerm>>,
     pub(super) signed_order_bounds: crate::persistent::PersistentMap<
         Bitvector32Term,
         crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
