@@ -1908,13 +1908,6 @@ fn apply_post_execution_arithmetic_using<'a>(
     })())
 }
 
-/// Closes claims after execution with a written `simp`, `simp() using` or
-/// `auto`, or with the implicit `auto` that ends a proof: a claim proof the
-/// earlier tactics opened, a divergent path's claims, the claims of a
-/// grouped proof together, and then each claim on its own. `Ok(())` means
-/// the path's tactics continue after this closer; a closer that leaves a
-/// claim it acts on open is refused.
-#[allow(clippy::too_many_arguments)]
 /// Folds each open resource claim of a returned path whose fold checks on
 /// the path's outcome `Proof`, recording the fold for expansion as a
 /// written `fold` after execution is recorded.
@@ -1959,6 +1952,13 @@ fn fold_produced_resources<'a>(
     Ok(())
 }
 
+/// Closes claims after execution with a written `simp`, `simp() using` or
+/// `auto`, or with the implicit `auto` that ends a proof: a claim proof the
+/// earlier tactics opened, a divergent path's claims, the claims of a
+/// grouped proof together, and then each claim on its own. `Ok(())` means
+/// the path's tactics continue after this closer; a closer that leaves a
+/// claim it acts on open is refused.
+#[allow(clippy::too_many_arguments)]
 fn close_post_execution_claims_with_simp<'a, 'e>(
     post_tactic: &PostExecutionTactic,
     deferred: &DeferredPostExecutionTactic,
