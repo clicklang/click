@@ -4957,13 +4957,13 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "simp",
-        syntax: "simp()",
+        id: "solve",
+        syntax: "solve()",
         class: "smart",
     },
     PublicTacticForm {
-        id: "simp-using",
-        syntax: "simp() using",
+        id: "solve-using",
+        syntax: "solve() using",
         class: "smart",
     },
 ];

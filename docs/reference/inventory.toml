@@ -1623,10 +1623,10 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.instantiate-using"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic-form.simp"
+id = "tactic-form.solve"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic-form.simp-using"
+id = "tactic-form.solve-using"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]

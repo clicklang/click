@@ -793,6 +793,20 @@ Decided by the maintainer on 2026-10-20.
      and `arithmetic`, or are dropped. It does not leave open goals: Click
      has no general open-goal stack inside a loop body, and
      `close_invariants() by {…}` is already the explicit form.
+6. **One closer, and the proof at one program point** (2026-10-25; phase F).
+   - `simp` and `auto` become one tactic, `solve`, which closes one goal and
+     never runs C. On a single goal the two already run the same search;
+     they differ only in which goals a written form acts on after execution.
+   - What an omitted proof means, and what follows the last written tactic
+     of any script, is one implicit loop: `solve` an open goal, `step` a
+     statement with one successor, split at one with several and run the
+     loop on each arm, and stop at function exit with every goal closed. An
+     omitted proof is the empty script.
+   - The proof is at exactly one program point at a time. `execute()` is the
+     only tactic that breaks this today: it leaves every exit path at once
+     and applies the rest of the script to each.
+   - `by solve();` stays accepted although it is redundant: it is a handy
+     place holder to replace with another tactic.
 
 ## Plan
 
@@ -1057,8 +1071,72 @@ verdict change.
     and removes its line from the list. A scan in a simple tactic that
     searches waits for its phase C step.
 
+### Phase F: one closer, one program point
+
+The measurements below are from master on 2026-10-25, over the gate's
+mdtests and examples.
+
+- Mapping `simp` and a written `auto();` to one single-goal closer changed
+  three mdtests, each about written `auto` itself: two write `auto();` with
+  C still to run, which executed the rest, and one checks that `auto();`
+  closed every claim. No example changed.
+- Of 5,063 function proofs, 553 end with more than one exit path, mostly
+  two. 820 do work other than a closer after exit; 557 of them have one
+  path, so a single program point already holds there. Of the 263 with
+  several paths, 237 begin with a proof `if` that tells the paths apart
+  again (`execute(); if result == tail { … } else { … }`), which a `branch`
+  at the C `if` writes directly. Only 26 do the same work on every path
+  (`have` 13, `fold` 9, `unfold` 3, `match`, `open` and `outcomes` 2 each).
+- A written script that stops with C left is refused, with "no checked
+  proof driver accepts this proof script's shape … remove tactics from the
+  end", where the cause is that execution has not reached exit.
+
+19. **`solve`.** Add `solve()` and `solve() using { … }` as the single-goal
+    closer, today's `simp`, and accept `simp` as its alias. `by solve();`
+    is accepted wherever `by simp();` is. No verdict changes.
+    Done: the tactic reference lists `solve()` and `solve() using`, with
+    `simp` named as the older spelling, `click docs simp` shows `solve`, and
+    `mdtests/solve_closes_one_goal.md` checks all three spellings.
+20. **The implicit tail.** Every script, the empty one included, ends with
+    the loop of decision 6. A script that stops with C left is finished by
+    it instead of refused; an omitted proof is the empty script. This only
+    accepts more proofs. Expansion writes the loop's steps, splits and
+    closers, as it writes `execute`'s today. The misleading refusal above
+    goes with it.
+21. **A written `auto();` is `solve();`.** It closes the first open goal; the
+    implicit tail closes the rest and runs any C left. Migrate the three
+    mdtests. `SmartTacticKind` becomes `Arithmetic`, `Solve` and `Execute`,
+    with the four classification stores, profiling and trace labels.
+22. **`execute_until` is `step_until`.** It is repeated `step()` and never
+    forks: it refuses at an undecided branch, and each requirement it
+    crosses is proved by `solve`. Rename it, keeping the old spelling as an
+    alias, and give its refusals one tactic name (today the same miss is
+    reported as `step()` refused by `execute_until`, or as `execute()`).
+23. **`execute()` keeps one program point.** It refuses when execution
+    would leave more than one exit path and names the `branch` to write.
+    Migrate the 263 multi-path proofs: the 237 path-selecting `if`s become
+    `branch` arms, and the 26 that repeat work repeat it in each arm.
+    *Verdicts* only where a migration misses; each is explained in the PR.
+24. **Spelling migration.** Rewrite `simp()` as `solve()` across the corpus
+    and library, and drop the `by auto();` and `by simp();` that only
+    restate the omitted proof. Printing, expansion and diagnostics spell
+    `solve`.
+25. **Documentation review.** Read every page that describes proof tactics
+    and update it for this phase: `docs/concepts/` (smart and simple
+    tactics, tracing, proof-failure triage), `docs/reference/tactics/` and
+    `click docs` text, the CLI reference for `expand`, `profile` and
+    `audit`, the language reference, the tracing skill, example and mdtest
+    prose, `README.md`, and this roadmap. No page may still describe
+    `simp` and `auto` as different tactics, an omitted proof as
+    `execute(); auto();`, or a proof that holds several exit paths.
+
+Out of scope: a default join at C branches. The implicit tail splits each
+branch to exit as `execute` does today, so `n` sequential undecided `if`s
+still give `2^n` paths, and `branch ensuring` stays the written join.
+
 Phase A can start at once, and phase B does not depend on it. Phase E can
-run beside any other phase. Within phase C, step 10 comes before 11–13,
+run beside any other phase. Phase F's steps go in order, except that 22
+can go at any time and 25 is last. Within phase C, step 10 comes before 11–13,
 because those steps need its messages. Step 14's pieces are independent of
 one another. Phase D follows the steps whose behavior it documents. The
 tracing work in step 15 can start once step 10 lands.
@@ -1084,7 +1162,9 @@ tracing work in step 15 can start once step 10 lands.
 
 - **Exactly four smart tactics remain,** and each is documented as one
   comprehensible engine or wrapper: `auto` wraps `execute` and `simp`, and
-  `simp` wraps `arithmetic`.
+  `simp` wraps `arithmetic`. After phase F, three remain: `solve`, which
+  wraps `arithmetic`; `execute`; and `arithmetic`. An omitted proof is the
+  implicit loop over `step`, `branch` and `solve`, not a fourth tactic.
 - **Every search outside those four is a helper** for an elided argument of a
   simple tactic. `click expand` writes the helper's result into that tactic,
   and the written form checks with no search.

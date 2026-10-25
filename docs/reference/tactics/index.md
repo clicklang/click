@@ -959,8 +959,8 @@ step is still checked.
 | --- | --- | --- | --- | --- |
 | `both { ... } and { ... }` | control | Expansion output | Prove both sides of a conjunction. | [Reference](#conjunctions) |
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
-| `simp()` | smart | Core | Search available facts and bounded simplification rules. | [Reference](#simplification) |
-| `simp() using { P; ... }` | smart | Specialized | Restrict simplification to written premises. | [Reference](#simplification-with-selected-premises) |
+| `solve()` | smart | Core | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
+| `solve() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
 | `assumption()` | simple | Expansion output | Close a goal directly from available facts. | [Reference](#available-facts) |
 | `extract(P)` | simple | Expansion output | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
@@ -1158,9 +1158,14 @@ state. Expansion preserves both certificates.
 
 ### Simplification
 
-**Form:** `simp()`
+**Form:** `solve()`, also spelled `simp()`
 
-**Core.** On a proposition goal, search ambient pure facts and bounded rules for
+`solve()` closes one goal and runs no C. `simp()` is an older spelling of the
+same tactic, still accepted. `by solve();` restates what an omitted proof of a
+`have` or a pure theorem's `ensures` does, but it is accepted: it marks a place
+to write a different tactic later.
+
+**Core. On a proposition goal, search ambient pure facts and bounded rules for
 a simple proof. A signed `int32` goal over variables is tried with one
 arithmetic certificate from the indexed bounds reachable from those variables (a
 bound `i < n` leads on to `n`'s bounds, up to eight variables), the same way in
@@ -1281,9 +1286,9 @@ search plus leaves.
 
 ### Simplification with selected premises
 
-**Form:** `simp() using { P; ... }`
+**Form:** `solve() using { P; ... }`, also spelled `simp() using { P; ... }`
 
-**Specialized.** Write it when `simp` picks the wrong premises or searches too
+**Specialized.** Write it when `solve` picks the wrong premises or searches too
 long, to restrict it to the named facts. On a proposition goal, including a
 contract claim after function exit, search using exactly the listed proposition
 facts. A preceding `have` is available on each outcome where it was proved;
