@@ -1810,7 +1810,7 @@ mod condition_premise_tests {
         let load = Bitvector32Term::MemoryLoad(
             intern_c_memory(memory),
             Box::new(pointer),
-            LoadKind::Bits32,
+            LoadKind::Int32,
         );
         let fact = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,

@@ -3244,7 +3244,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
             left: Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(pointer),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
             right: Box::new(Bitvector32Term::Constant(7)),
         },
@@ -3387,7 +3387,7 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots(
                         Box::new(Bitvector32Term::MemoryLoad(
                             intern_c_memory(memory),
                             Box::new(read.clone()),
-                            LoadKind::Bits32,
+                            LoadKind::Int32,
                         )),
                         Box::new(Bitvector32Term::Variable(Variable(993451))),
                     ),

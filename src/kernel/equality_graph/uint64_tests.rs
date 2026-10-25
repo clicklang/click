@@ -219,7 +219,7 @@ fn wide_reads_preserve_snapshot_width_and_value_sort() {
     let narrow = Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         &before,
         &q,
-        LoadKind::Bits32,
+        LoadKind::Int32,
         4,
     ));
     assert!(!graph.are_uint64_equal(&a, &narrow));

@@ -8,11 +8,11 @@ fn reversed_negative_history_queries_do_not_walk_again() {
         let (before, after, pointer) = changed_history(size);
         let assumptions = PureFactContext::new();
         let (first, cold) = crate::instrumentation::measure_deterministic_work(|| {
-            recorded_load_history(&before, &after, &pointer, LoadKind::Bits32, &assumptions)
+            recorded_load_history(&before, &after, &pointer, LoadKind::Int32, &assumptions)
         });
         assert!(matches!(first, LoadHistory::DifferentVersions));
         let (reversed, warm) = crate::instrumentation::measure_deterministic_work(|| {
-            recorded_load_history(&after, &before, &pointer, LoadKind::Bits32, &assumptions)
+            recorded_load_history(&after, &before, &pointer, LoadKind::Int32, &assumptions)
         });
         assert!(matches!(reversed, LoadHistory::DifferentVersions));
         assert!(cold > 0);

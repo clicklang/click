@@ -200,7 +200,7 @@ mod certificate_tests {
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(CMemory::new()),
             Box::new(pointer),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
 
         assert!(bitvector_term_is_load_free(&Bitvector32Term::Add(
@@ -286,7 +286,7 @@ mod certificate_tests {
                     left: Box::new(Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(target_memory.clone()),
                         Box::new(pointer),
-                        crate::kernel::LoadKind::Bits32,
+                        crate::kernel::LoadKind::Int32,
                     )),
                     right: Box::new(Bitvector32Term::Variable(Variable(7))),
                 },
@@ -330,7 +330,7 @@ mod certificate_tests {
                 left: Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(target_memory),
                     Box::new(pointer),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
                 right: Box::new(Bitvector32Term::Constant(0)),
             },

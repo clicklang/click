@@ -16,7 +16,7 @@ fn verified_read_ensure_normalization_preserves_snapshot_and_load_type() {
     for (memory, kind, expected) in [
         (&before, LoadKind::UInt8, Some(3)),
         (&after, LoadKind::UInt8, Some(9)),
-        (&before, LoadKind::Bits32, None),
+        (&before, LoadKind::Int32, None),
         (&unknown, LoadKind::UInt8, None),
         (&before, LoadKind::UInt8, Some(3)),
     ] {

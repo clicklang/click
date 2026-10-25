@@ -229,7 +229,7 @@ fn naming_an_uninitialized_heap_cell_does_not_initialize_it() {
     let name = canonical_form_of_load(
         intern_c_memory(memory.clone()),
         address.clone(),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let named = allocated.with_memory(memory.materialize_named_cell(address, CValue::Int32(name)));
     let read = evaluate_c_expression_paths(
@@ -268,7 +268,7 @@ fn naming_an_initialized_heap_cell_preserves_its_initialization() {
     let name = canonical_form_of_load(
         intern_c_memory(havoc.clone()),
         address.clone(),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let named = havoc
         .clone()
@@ -2095,7 +2095,7 @@ fn naming_an_uninitialized_local_cell_does_not_initialize_it() {
     let name = canonical_form_of_load(
         intern_c_memory(memory.clone()),
         address.clone(),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let named = memory.materialize_named_cell(address.clone(), CValue::Int32(name));
     let state = CState::new()

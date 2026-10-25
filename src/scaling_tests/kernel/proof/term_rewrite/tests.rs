@@ -179,7 +179,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
                     byte_width: 4,
                 },
             },
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
         );
         for _ in 0..depth {
@@ -198,7 +198,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
                         }),
                     ),
                 },
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
             );
         }
@@ -657,7 +657,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let replacement_payload =
-            Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Bits32);
+            Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
         let replacement = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
             replacement_payload,
@@ -713,7 +713,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
         let mut mixed_c_payload = Bitvector32Term::MemoryLoad(
             memory.clone(),
             Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         for _ in 0..depth {
             mixed_c_payload = Bitvector32Term::Add(
@@ -811,7 +811,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
         let math_capture = *math_accumulators.last().unwrap();
         let c_item_capture = *mixed_c_items.last().unwrap();
         let mut c_replacement =
-            Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Bits32);
+            Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
         for _ in 0..depth {
             c_replacement = Bitvector32Term::Add(
                 Box::new(c_replacement),
@@ -875,7 +875,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
         let mut load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &leaf_pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
         );
         for _ in 0..depth {
@@ -885,7 +885,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
                     block: PointerBlock::Concrete("array".into()),
                     offset: PointerOffsetTerm::Variable(load),
                 },
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
             );
         }

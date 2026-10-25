@@ -48,7 +48,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         );
         let cell = endpoint(memory.clone());
         let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
-            pointer_value_at_stopping_store(&cell, &address, LoadKind::Bits32, 8, &context)
+            pointer_value_at_stopping_store(&cell, &address, LoadKind::Int32, 8, &context)
         });
         assert_eq!(
             value,
@@ -56,8 +56,8 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         );
         samples.push(work);
         for (kind, bytes) in [
-            (LoadKind::Bits32, 4),
-            (LoadKind::Bits32, 16),
+            (LoadKind::Int32, 4),
+            (LoadKind::Int32, 16),
             (LoadKind::Bits64, 8),
         ] {
             assert!(
@@ -68,7 +68,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
             pointer_value_at_stopping_store(
                 &cell,
                 &address,
-                LoadKind::Bits32,
+                LoadKind::Int32,
                 8,
                 &context.without_exact_fact(&alias)
             )
@@ -78,7 +78,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
             pointer_value_at_stopping_store(
                 &cell,
                 &address.offset_by_bytes(4),
-                LoadKind::Bits32,
+                LoadKind::Int32,
                 8,
                 &context
             )
@@ -89,7 +89,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
             pointer_value_at_stopping_store(
                 &cell,
                 &Pointer::symbolic(Variable(190_000 + count)).offset_by_bytes(8),
-                LoadKind::Bits32,
+                LoadKind::Int32,
                 8,
                 &context
             )
@@ -100,11 +100,11 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
             CValue::typed_pointer(Pointer::null(), CType::Int32Pointer),
         ));
         assert_eq!(
-            pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Bits32, 8, &context),
+            pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Int32, 8, &context),
             Some(CPointerValue::new(Pointer::null(), CType::Int32Pointer))
         );
         assert_ne!(
-            pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Bits32, 8, &context),
+            pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Int32, 8, &context),
             Some(CPointerValue::new(stored, CType::Int32Pointer))
         );
         for offset in [0, 4, 32] {
@@ -113,7 +113,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
                 CValue::Int32(Bitvector32Term::Constant(1)),
             ));
             assert!(
-                pointer_value_at_stopping_store(&changed, &address, LoadKind::Bits32, 8, &context)
+                pointer_value_at_stopping_store(&changed, &address, LoadKind::Int32, 8, &context)
                     .is_none()
             );
         }

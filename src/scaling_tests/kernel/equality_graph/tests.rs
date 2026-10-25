@@ -398,7 +398,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
         crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             address,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             8,
             &memory,
         )
@@ -473,7 +473,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_snapshots() {
         PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
             memory,
             &address,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             8,
             memory,
         ))
@@ -582,7 +582,7 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
                         crate::kernel::load_variable_for_cell_with_origin(
                             &memory,
                             address,
-                            crate::kernel::LoadKind::Bits32,
+                            crate::kernel::LoadKind::Int32,
                             8,
                             &memory,
                         ),
@@ -734,7 +734,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
             Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 pointer,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
             ))
         };

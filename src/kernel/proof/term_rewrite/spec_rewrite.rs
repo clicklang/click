@@ -2094,7 +2094,7 @@ mod tests {
         let load = crate::kernel::eval::load_variable_for_cell(
             &memory,
             &pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let source = Variable(100);
         let binder = Variable(99);

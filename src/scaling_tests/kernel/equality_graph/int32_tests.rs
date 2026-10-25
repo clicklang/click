@@ -72,7 +72,7 @@ fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
         let load = Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             &memory,
             &pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &memory,
         ));
@@ -111,7 +111,7 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
             Bitvector32Term::Variable(load_variable_for_cell_with_origin(
                 &memory,
                 &pointer(offset),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
                 &memory,
             ))
@@ -349,7 +349,7 @@ fn scalar_support_tracking_does_not_compare_unrelated_snapshot_contents_across_a
             let load = Bitvector32Term::MemoryLoad(
                 memory,
                 Box::new(address),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             );
             crate::instrumentation::measure_deterministic_work(|| {
                 PureFactContext::new()

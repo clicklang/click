@@ -655,7 +655,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         Bitvector32Term::MemoryLoad(
             intern_c_memory(memory.clone()),
             Box::new(cell.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     let fact = |memory: &CMemory| {

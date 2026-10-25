@@ -248,7 +248,7 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
             Pointer::loaded(&Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(field.clone()),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             ))
             .unwrap()
         };

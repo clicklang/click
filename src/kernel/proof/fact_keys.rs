@@ -2796,7 +2796,7 @@ mod proposition_identity_tests {
                 Bitvector32Term::MemoryLoad(
                     CMemory::new().with_block("alpha-array", 8).into(),
                     Box::new(pointer),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 ),
                 Bitvector32Term::Constant(0),
             )),
@@ -3017,7 +3017,7 @@ mod proposition_identity_tests {
         let load = crate::kernel::load_variable_for_cell_with_origin(
             &shared_memory,
             &pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             crate::kernel::load_access_width_or_widest(&shared_memory, &pointer),
             &shared_memory,
         );
@@ -3030,7 +3030,7 @@ mod proposition_identity_tests {
                 left: Box::new(Bitvector32Term::MemoryLoad(
                     load_memory,
                     Box::new(load_pointer),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
                 right: Box::new(Bitvector32Term::Constant(7)),
             },
@@ -3052,7 +3052,7 @@ mod proposition_identity_tests {
         let changed_load = crate::kernel::load_variable_for_cell_with_origin(
             &changed_shared,
             &pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             crate::kernel::load_access_width_or_widest(&changed_shared, &pointer),
             &changed_shared,
         );
@@ -3066,7 +3066,7 @@ mod proposition_identity_tests {
                 left: Box::new(Bitvector32Term::MemoryLoad(
                     changed_memory,
                     Box::new(changed_pointer),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
                 right: Box::new(Bitvector32Term::Constant(7)),
             },
@@ -3753,7 +3753,7 @@ mod snapshot_alpha_tests {
                     block: "snapshot-alpha".into(),
                     offset: PointerOffsetTerm::Variable(item),
                 }),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             ),
         ))
     }
@@ -3866,7 +3866,7 @@ mod snapshot_alpha_tests {
                         block: "snapshot-alpha".into(),
                         offset: PointerOffsetTerm::Variable(unknown_load),
                     }),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 ),
             )),
         );
@@ -3888,14 +3888,14 @@ mod snapshot_alpha_tests {
         let before_load = crate::kernel::load_variable_for_cell_with_origin(
             &before,
             &pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &before,
         );
         let after_load = crate::kernel::load_variable_for_cell_with_origin(
             &after,
             &pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &after,
         );
@@ -3951,14 +3951,14 @@ mod snapshot_alpha_tests {
         let loaded = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &field(0),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             8,
             &memory,
         );
         let other = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &field(8),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             8,
             &memory,
         );
@@ -3970,7 +3970,7 @@ mod snapshot_alpha_tests {
             let element_load = crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
                 &element,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
                 &memory,
             );
@@ -4012,7 +4012,7 @@ mod snapshot_alpha_tests {
         let first_load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &first_pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &memory,
         );
@@ -4023,7 +4023,7 @@ mod snapshot_alpha_tests {
         let nested_load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &nested_pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &memory,
         );
@@ -4052,7 +4052,7 @@ mod snapshot_alpha_tests {
         let explicit_first: SharedIntegerTerm = fold_with_body(Bitvector32Term::MemoryLoad(
             first_memory,
             Box::new(first_registered_pointer),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         ))
         .into();
         let registered_first: SharedIntegerTerm =
@@ -4060,7 +4060,7 @@ mod snapshot_alpha_tests {
         let explicit_nested: SharedIntegerTerm = fold_with_body(Bitvector32Term::MemoryLoad(
             nested_memory,
             Box::new(nested_registered_pointer),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         ))
         .into();
         let registered_nested: SharedIntegerTerm =
@@ -4210,7 +4210,7 @@ mod snapshot_alpha_tests {
         let mut load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &memory,
         );
@@ -4222,7 +4222,7 @@ mod snapshot_alpha_tests {
             load = crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
                 &pointer,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
                 &memory,
             );
@@ -4240,7 +4240,7 @@ mod snapshot_alpha_tests {
         let mut load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &memory,
         );
@@ -4255,7 +4255,7 @@ mod snapshot_alpha_tests {
             load = crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
                 &pointer,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
                 &memory,
             );
@@ -4341,7 +4341,7 @@ mod snapshot_alpha_tests {
                             block: block.into(),
                             offset: PointerOffsetTerm::Constant(0),
                         }),
-                        crate::kernel::LoadKind::Bits32,
+                        crate::kernel::LoadKind::Int32,
                     ),
                 )),
             )
@@ -4376,7 +4376,7 @@ mod snapshot_alpha_tests {
                             block: block.into(),
                             offset: PointerOffsetTerm::Constant(0),
                         }),
-                        crate::kernel::LoadKind::Bits32,
+                        crate::kernel::LoadKind::Int32,
                     ),
                 )),
             )

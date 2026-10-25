@@ -259,7 +259,7 @@ fn snapshot_blind_same_bucket_lookup_scales_without_deep_dedup() {
                     block: "same-bucket-facts".into(),
                     offset: PointerOffsetTerm::Constant(0),
                 }),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         let facts = memories[..size]

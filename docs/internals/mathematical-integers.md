@@ -527,9 +527,27 @@ subterm is built, interned or keyed.
 Because operators and comparisons read words, σ stays visible only on a
 value at rest: a local, a stored cell, a returned value, or an argument.
 Printed facts and steps show it as `((uint32)x)` or `((int32)x)` there and
-nowhere else. A load still has the erased `Bits32` kind, so a load after a
-store of the other signedness returns the stored σ unchanged; giving loads
-a signedness is a later step.
+nowhere else.
+
+A 32-bit load carries its signedness, `LoadKind::Int32` or
+`LoadKind::UInt32`, taken from the lvalue's type in every front end (C, C++
+and Rust lower a read to a typed load of the source type). Rule K5
+(2026-10-25): a typed read at signedness F of a cell holding a value stored
+at the other signedness S returns σ_{S→F} of the stored word
+(`CType::read_cell`), so `4294967295u` stored and read through `int *` is
+`-1` (`mdtests/a_32_bit_cell_read_at_the_other_signedness_is_its_sign_cast.md`,
+`mdtests/cpp_an_unsigned_cell_read_as_int_is_its_sign_cast.md`,
+`rust_a_u32_cell_read_as_i32_is_its_sign_cast` in `tests/rust_import.rs`).
+Soundness: the read returns the same four bytes in F, which is the modular
+conversion. A load *term* is a word, so a route that answers a load term
+from a cell reads the stored word whichever signedness stored it
+(`LoadKind::reads_value` and `LoadKind::read_cell` compare word kinds,
+`LoadKind::word_kind`), which K1 makes the same word. One word, one name:
+a load variable has no format, so a `UInt32` read is named and defined by
+its word's `Int32` read (`load_variable_for_term`,
+`mint_load_variable_identity`), and the reader's tag gives it its
+signedness. Kernel-internal reads (index arithmetic, pointer words) are
+`Int32`.
 
 ## Wide runtime scalars
 

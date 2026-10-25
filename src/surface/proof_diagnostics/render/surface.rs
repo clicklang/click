@@ -1600,7 +1600,8 @@ impl Printer<'_> {
                         base.c_type()
                             .pointee_type()
                             .and_then(crate::kernel::LoadKind::of_type)
-                            == Some(kind)
+                            .map(crate::kernel::LoadKind::word_kind)
+                            == Some(kind.word_kind())
                     }
                     _ => true,
                 })
@@ -2497,7 +2498,8 @@ fn load_type_spelling(kind: crate::kernel::LoadKind) -> &'static str {
         K::UInt8 => "uint8",
         K::Int16 => "int16",
         K::UInt16 => "uint16",
-        K::Bits32 => "int32",
+        K::Int32 => "int32",
+        K::UInt32 => "uint32",
         K::Bits64 => "int64",
         K::Int128 => "int128",
         K::UInt128 => "uint128",
@@ -2934,11 +2936,11 @@ mod tests {
             ))
         };
         assert_eq!(
-            render(&load(before.memory(), LoadKind::Bits32), &mut labels),
+            render(&load(before.memory(), LoadKind::Int32), &mut labels),
             Some("at(pre, cells[0]) == 0".into())
         );
         assert_eq!(
-            render(&load(after.memory(), LoadKind::Bits32), &mut labels),
+            render(&load(after.memory(), LoadKind::Int32), &mut labels),
             Some("cells[0] == 0".into())
         );
         assert_eq!(
@@ -2946,15 +2948,15 @@ mod tests {
             None
         );
         let unknown = CMemory::new().with_block("global:cells", 16);
-        assert_eq!(render(&load(&unknown, LoadKind::Bits32), &mut labels), None);
+        assert_eq!(render(&load(&unknown, LoadKind::Int32), &mut labels), None);
         // The source policy names the unknown memory instead of refusing, so
         // the two reads of `cells[0]` stay distinct.
         assert_eq!(
-            source(&load(&unknown, LoadKind::Bits32), &mut labels),
+            source(&load(&unknown, LoadKind::Int32), &mut labels),
             "at(<state A>, cells[0]) == 0"
         );
         assert_eq!(
-            source(&load(after.memory(), LoadKind::Bits32), &mut labels),
+            source(&load(after.memory(), LoadKind::Int32), &mut labels),
             "cells[0] == 0"
         );
         assert!(labels.trace_legend().contains("<state A> is "));
@@ -2981,7 +2983,7 @@ mod tests {
             equality(Bitvector32Term::MemoryLoad(
                 SharedCMemory::from(memory.clone()),
                 Box::new(heap.clone()),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             ))
         };
         assert_eq!(
@@ -3052,7 +3054,7 @@ mod resource_tests {
                 vec![CValue::Int32(Bitvector32Term::MemoryLoad(
                     SharedCMemory::from(memory.clone()),
                     Box::new(pointer.clone()),
-                    LoadKind::Bits32,
+                    LoadKind::Int32,
                 ))],
             )
         };

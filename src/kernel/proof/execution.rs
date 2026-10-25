@@ -1125,7 +1125,7 @@ fn memory_only_adds_named_cells(
             }
             continue;
         }
-        let Some(kind) = LoadKind::of_value(&value) else {
+        let Some(kind) = LoadKind::of_value(&value).map(LoadKind::word_kind) else {
             return Err("added a cell no load reads".into());
         };
         let load = crate::kernel::canonical_form_of_load(base.clone(), pointer.clone(), kind);

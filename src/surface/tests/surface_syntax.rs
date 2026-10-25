@@ -2654,7 +2654,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             left: Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::new()),
                 Box::new(owner.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
             right: Box::new(Bitvector32Term::Constant(0)),
         },
@@ -2681,7 +2681,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     let data_pointer = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(CMemory::new()),
         Box::new(owner.offset_by_bytes(8)),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let first_data_cell = Pointer {
         block: "arg-memory".into(),
@@ -2697,7 +2697,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             left: Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::new()),
                 Box::new(first_data_cell),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
             right: Box::new(Bitvector32Term::Constant(0)),
         },

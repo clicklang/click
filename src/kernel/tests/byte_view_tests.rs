@@ -409,6 +409,55 @@ fn a_one_byte_cell_is_read_as_its_own_access() {
     );
 }
 
+/// Rule K5: a typed 32-bit read of a cell of the other signedness is the
+/// sign cast σ of the stored word, which folds a constant (`4294967295u`
+/// reads as `-1`) and keeps an explicit σ of a symbolic word; a read at the
+/// stored signedness is the stored value. A load term reads the word, so
+/// both 32-bit kinds read either cell's term, and name one word.
+#[test]
+fn a_32_bit_read_of_the_other_signedness_is_the_sign_cast_of_the_word() {
+    use MachineIntegerType::{Int32, UInt32};
+    let constant = Bitvector32Term::Constant(u32::MAX);
+    let variable = Bitvector32Term::Variable(Variable(613_101));
+    for term in [constant, variable] {
+        for (stored, read, cast) in [
+            (Int32, Int32, None),
+            (UInt32, UInt32, None),
+            (Int32, UInt32, Some((Int32, UInt32))),
+            (UInt32, Int32, Some((UInt32, Int32))),
+        ] {
+            let cell = stored.value_from_term(term.clone());
+            let expected = match cast {
+                None => term.clone(),
+                Some((source, destination)) => {
+                    Bitvector32Term::sign_cast32(source, destination, term.clone())
+                }
+            };
+            assert_eq!(
+                read.c_type().read_cell(&cell),
+                Some(read.value_from_term(expected.clone())),
+                "{stored:?} cell read at {read:?}"
+            );
+            let kind = LoadKind::of_type(read.c_type()).unwrap();
+            assert_eq!(kind.word_kind(), LoadKind::Int32);
+            assert!(
+                kind.reads_value(&cell),
+                "{stored:?} cell, {read:?} load term"
+            );
+            assert_eq!(kind.read_cell(&cell), Some(cell.clone()));
+            if matches!(term, Bitvector32Term::Constant(_)) && cast.is_some() {
+                assert!(matches!(expected, Bitvector32Term::Constant(u32::MAX)));
+            }
+        }
+    }
+    assert_eq!(LoadKind::of_type(CType::UInt32), Some(LoadKind::UInt32));
+    assert_eq!(LoadKind::of_type(CType::Int32), Some(LoadKind::Int32));
+    assert_eq!(
+        LoadKind::of_type(CType::Int32Pointer),
+        Some(LoadKind::Int32)
+    );
+}
+
 /// C11 6.5p7: a character load of a one-byte cell of the other signedness
 /// reads the same eight bits. Constants fold to the reinterpreted value in
 /// both directions; a symbolic cell keeps an explicit modular conversion of

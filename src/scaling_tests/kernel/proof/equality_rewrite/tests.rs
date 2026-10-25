@@ -445,7 +445,7 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(memory),
             Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     let premise = equality(load(&before), Bitvector32Term::Constant(42));
@@ -737,7 +737,7 @@ fn rewrite_capture_collection_does_not_visit_snapshot_contents() {
                 right: Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
                     Box::new(Pointer::symbolic(address)),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
             },
             true,

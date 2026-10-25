@@ -3035,7 +3035,7 @@ mod tests {
             let kind = if wide {
                 LoadKind::Bits64
             } else {
-                LoadKind::Bits32
+                LoadKind::Int32
             };
             crate::kernel::eval::declare_load_access_width(&pointer, if wide { 8 } else { 4 });
             let load = |memory: &CMemory, pointer: Pointer, kind| {
@@ -3110,7 +3110,7 @@ mod tests {
                     &after,
                     pointer.clone(),
                     if wide {
-                        LoadKind::Bits32
+                        LoadKind::Int32
                     } else {
                         LoadKind::Bits64
                     },
@@ -3240,7 +3240,7 @@ mod tests {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(pointer.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         let x = Bitvector32Term::Variable(Variable(931));

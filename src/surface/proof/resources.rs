@@ -5753,7 +5753,7 @@ void child_release(struct child* obj) {
             left: Box::new(Bitvector32Term::MemoryLoad(
                 snapshot,
                 Box::new(pointer.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
             right: Box::new(Bitvector32Term::Constant(0)),
         };

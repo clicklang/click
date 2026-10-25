@@ -2890,7 +2890,7 @@ pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
     // load variable, matching arithmetic, or a different pointee stride.
     let read = |value: &Pointer| {
         value.as_loaded_value().or_else(|| {
-            let Bitvector32Term::MemoryLoad(memory, address, LoadKind::Bits32) =
+            let Bitvector32Term::MemoryLoad(memory, address, LoadKind::Int32) =
                 crate::kernel::equality_graph::logical_pointer_read_term(value)?
             else {
                 return None;
@@ -2976,8 +2976,8 @@ fn pointer_read_domains_equal(
     if a.node() == b.node() {
         return true;
     }
-    let a_value = a.resolved_value(&left.defining_address, LoadKind::Bits32);
-    let b_value = b.resolved_value(&left.defining_address, LoadKind::Bits32);
+    let a_value = a.resolved_value(&left.defining_address, LoadKind::Int32);
+    let b_value = b.resolved_value(&left.defining_address, LoadKind::Int32);
     if matches!(&a_value, Some(CValue::Pointer(stored)) if if extent { stored.extent().is_none() && !stored.extent_is_known() && stored.opaque_extent() == Some(right_origin) } else { stored.designation() == right_origin })
         || matches!(&b_value, Some(CValue::Pointer(stored)) if if extent { stored.extent().is_none() && !stored.extent_is_known() && stored.opaque_extent() == Some(left_origin) } else { stored.designation() == left_origin })
     {
@@ -4495,8 +4495,9 @@ pub(crate) fn rewrite_condition_through_certified_stores(
             | CValue::UInt32(term) => term.clone(),
             _ => continue,
         };
-        // The store's value is the read of its own kind at its own address.
-        let Some(kind) = LoadKind::of_value(&store.value) else {
+        // The store's value is the read of its own kind at its own address,
+        // as a word: a 32-bit read's word is its `Int32` read's (rule K5).
+        let Some(kind) = LoadKind::of_value(&store.value).map(LoadKind::word_kind) else {
             continue;
         };
         equations.push((
@@ -5088,11 +5089,7 @@ pub(crate) fn narrow_read_has_recorded_value(
         };
         if !matches!(
             kind,
-            LoadKind::Int8
-                | LoadKind::UInt8
-                | LoadKind::Int16
-                | LoadKind::UInt16
-                | LoadKind::Bits32
+            LoadKind::Int8 | LoadKind::UInt8 | LoadKind::Int16 | LoadKind::UInt16 | LoadKind::Int32
         ) {
             return false;
         }
@@ -5689,7 +5686,7 @@ mod condition_fact_graph_equivalence_tests {
             Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &pointer(index),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
                 memory,
             ))
@@ -5808,8 +5805,9 @@ pub(crate) fn certified_store_equations(
                     return None;
                 }
             };
-            // What the store wrote is the read of its own kind there.
-            let kind = LoadKind::of_value(&store.value)?;
+            // What the store wrote is the read of its own kind there, as a
+            // word (rule K5).
+            let kind = LoadKind::of_value(&store.value)?.word_kind();
             Some(Proposition::ConditionIs(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
@@ -6585,7 +6583,7 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                         // kind: an `int32` cell is not a byte read's value.
                         let resolved = match memory.known_value(pointer) {
                             Some(CValue::Int32(value))
-                                if *kind == LoadKind::Bits32 && value != load =>
+                                if *kind == LoadKind::Int32 && value != load =>
                             {
                                 Some(value)
                             }
@@ -6658,7 +6656,7 @@ mod exact_load_normalization_tests {
             Bitvector32Term::MemoryLoad(
                 intern_c_memory(memory),
                 Box::new(pointer.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         })
     }
@@ -6701,7 +6699,7 @@ mod exact_load_normalization_tests {
         for (memory, own, other, value) in [
             (
                 &word,
-                LoadKind::Bits32,
+                LoadKind::Int32,
                 LoadKind::UInt8,
                 Bitvector32Term::Constant(256),
             ),
@@ -6784,7 +6782,7 @@ fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
         value: Box::new(Bitvector32Term::MemoryLoad(
             intern_c_memory(memory),
             Box::new(pointer),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )),
         byte_width: 4,
     };
@@ -7075,7 +7073,7 @@ mod opaque_pointer_frame_tests {
             CValue::UInt64(Bitvector32Term::UInt64Constant(2)),
         ));
         let cell_bits = |memory: &SharedCMemory| {
-            Bitvector32Term::MemoryLoad(memory.clone(), Box::new(field.clone()), LoadKind::Bits32)
+            Bitvector32Term::MemoryLoad(memory.clone(), Box::new(field.clone()), LoadKind::Int32)
         };
         let read = |memory: &SharedCMemory| Pointer::loaded(&cell_bits(memory)).unwrap();
         let a = read(&left);
@@ -7360,7 +7358,7 @@ mod opaque_pointer_frame_tests {
         let (field, _, argument, _, separation) = setup();
         let before = intern_c_memory(CMemory::default().with_block("local:opaque-frame", 8));
         let read =
-            Bitvector32Term::MemoryLoad(before.clone(), Box::new(field.clone()), LoadKind::Bits32);
+            Bitvector32Term::MemoryLoad(before.clone(), Box::new(field.clone()), LoadKind::Int32);
         let variable = crate::kernel::eval::load_variable_for_term(&read)
             .unwrap()
             .0;
@@ -7441,7 +7439,7 @@ mod opaque_pointer_frame_tests {
         let narrow = Bitvector32Term::MemoryLoad(
             right_memory,
             Box::new(right_pointer.clone()),
-            LoadKind::Bits32,
+            LoadKind::Int32,
         );
         assert!(!wide_read_has_recorded_value(&left, &narrow, &context));
         let overwritten_source = intern_c_memory(source.memory().clone().store(
@@ -7684,7 +7682,7 @@ mod canonical_numeric_run_tests {
                 value: Box::new(Bitvector32Term::MemoryLoad(
                     source.clone(),
                     Box::new(index_cell),
-                    LoadKind::Bits32,
+                    LoadKind::Int32,
                 )),
                 byte_width: 1,
             },
@@ -7964,29 +7962,24 @@ mod reversed_history_queries {
         let _explicit = ExplicitReadScope(EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true)));
         with_extended_dag_bridging(|| {
             for (left, right) in [(&before, &after), (&after, &before)] {
-                let history = recorded_load_history(left, right, &pointer, LoadKind::Bits32, &weak);
+                let history = recorded_load_history(left, right, &pointer, LoadKind::Int32, &weak);
                 assert!(
                     !matches!(history, LoadHistory::OneVersion(_)),
                     "{history:?}"
                 );
                 assert_eq!(
                     history,
-                    recorded_load_history_uncached(left, right, &pointer, LoadKind::Bits32, &weak)
+                    recorded_load_history_uncached(left, right, &pointer, LoadKind::Int32, &weak)
                 );
             }
-            let reference = recorded_load_history_uncached(
-                &after,
-                &before,
-                &pointer,
-                LoadKind::Bits32,
-                &strong,
-            );
+            let reference =
+                recorded_load_history_uncached(&after, &before, &pointer, LoadKind::Int32, &strong);
             assert!(
                 matches!(reference, LoadHistory::OneVersion(_)),
                 "uncached: {reference:?}"
             );
             let unchanged =
-                recorded_load_history(&after, &before, &pointer, LoadKind::Bits32, &strong);
+                recorded_load_history(&after, &before, &pointer, LoadKind::Int32, &strong);
             assert!(
                 matches!(unchanged, LoadHistory::OneVersion(_)),
                 "{unchanged:?}"
@@ -8155,7 +8148,7 @@ mod direct_unchanged_scaling_tests {
                     &before,
                     &after,
                     &target,
-                    LoadKind::Bits32,
+                    LoadKind::Int32,
                     &facts,
                 )
             });

@@ -881,7 +881,7 @@ fn both_and_preserves_exact_binders_and_saved_snapshots() {
                 left: Box::new(Bitvector32Term::MemoryLoad(
                     memory.clone().into(),
                     Box::new(pointer.clone()),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
                 right: Box::new(Bitvector32Term::Variable(Variable(binder))),
             },
@@ -11185,7 +11185,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
             crate::kernel::Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(conflicting_pointer),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             ),
             &mut producer_facts,
         );
@@ -11350,7 +11350,7 @@ fn generated_load_source_event_fixture(
             load: Bitvector32Term::MemoryLoad(
                 CMemory::new().into(),
                 Box::new(pointer),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             ),
             typed_pointer_value: None,
             observed_pointer_read: None,

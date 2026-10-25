@@ -674,7 +674,11 @@ words. A conversion between `int32` and `uint32` is the sign cast σ, a
 `MachineIntegerCast` node, not a reuse of the word; the kernel reads σ(x) as
 `x`'s word in every 32-bit operator, comparison, observation, the e-graph,
 the difference graph and element indices
-(`docs/internals/mathematical-integers.md`, "The 32-bit sign cast"). Unsigned division and
+(`docs/internals/mathematical-integers.md`, "The 32-bit sign cast"). A
+32-bit load has the reader's signedness (`LoadKind::Int32`, `UInt32`; a
+pointer read is `Int32`), and a typed read of a cell stored at the other
+signedness returns σ of the stored word (rule K5); both reads name one word
+and one load variable. Unsigned division and
 remainder have distinct term nodes so high-bit operands do not inherit signed
 division, and unsigned right shift has a distinct logical-shift node. Equality
 and ordered comparisons select the unsigned conditions. Stores and function

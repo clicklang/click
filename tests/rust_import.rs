@@ -2160,6 +2160,31 @@ fn rust_boolean_return_and_local_initialization_verify() {
     C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
 }
 
+/// A `u32` read through a reference takes its 32-bit kind from the
+/// reference's type, and `as i32` is the sign cast σ: `4294967295u32` read
+/// so is `-1`; the plain `u32` read is the control. Rust raw-pointer
+/// reinterpretation is not imported (raw pointers are later work), so the
+/// conversion is the only way a Rust program reads a cell at the other
+/// signedness.
+#[test]
+fn rust_a_u32_cell_read_as_i32_is_its_sign_cast() {
+    let p = Project::new(
+        "pub fn read_signed(value: &u32) -> i32 { *value as i32 }\n\
+         pub fn read_unsigned(value: &u32) -> u32 { *value }\n\
+         pub fn store_and_read_signed(value: &mut u32) -> i32 { *value = 4294967295; *value as i32 }\n",
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let claim = "verifying \"borrow.rs\";\n\
+        fn read_signed(value: &u32) -> i32 { views *value; requires *value == 4294967295u32; ensures result == -1; } by { execute(); simp(); }\n\
+        fn read_unsigned(value: &u32) -> u32 { views *value; requires *value == 4294967295u32; ensures result == 4294967295u32; } by { execute(); simp(); }\n\
+        fn store_and_read_signed(value: &mut u32) -> i32 { owns *value; ensures result == -1; ensures *value == 4294967295u32; } by { execute(); simp(); }\n";
+    C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
+    let wrong = claim.replace("ensures result == -1; } by", "ensures result == 1; } by");
+    assert_ne!(wrong, claim);
+    assert!(C0VerificationSession::new_program_prepared(&wrong, &prepared).is_err());
+}
+
 const MOVE_SOURCE: &str = include_str!("../examples/rust-move-drop/guard.rs");
 const MOVE_SIDECAR: &str = include_str!("../examples/rust-move-drop/guard.click");
 fn moves_project(source: &str) -> (Project, String) {

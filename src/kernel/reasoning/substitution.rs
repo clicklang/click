@@ -5155,7 +5155,7 @@ fn substitute_through_load_variable(
     };
     // Instantiation preserves the original read's byte dependency. Without
     // it, a four-byte scalar at the rewritten address falls back to the
-    // eight-byte footprint also used by Bits32 pointer coordinates.
+    // eight-byte footprint also used by 32-bit (`Int32`) pointer coordinates.
     if let Some(bytes) = crate::kernel::registered_load_bytes_for_variable(&variable) {
         crate::kernel::eval::record_load_access_width(
             substituted_memory.memory(),
@@ -7885,7 +7885,7 @@ mod integer_mixed_quantifier_tests {
                     byte_width: 4,
                 },
             },
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
         );
         let replacement = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -8397,7 +8397,7 @@ mod integer_range_fold_substitution_tests {
             let original = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 &pointer,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 bytes,
             );
             let substituted = substitute_bitvector_variable(
@@ -8441,7 +8441,7 @@ mod integer_range_fold_substitution_tests {
         let load_variable = crate::kernel::eval::load_variable_for_cell(
             &memory,
             &pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let (source_snapshot, _) =
             crate::kernel::eval::registered_load_for_variable(&load_variable)
@@ -8489,7 +8489,7 @@ mod integer_range_fold_substitution_tests {
         let load_variable = crate::kernel::eval::load_variable_for_cell(
             &memory,
             &pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let (source_snapshot, _) =
             crate::kernel::eval::registered_load_for_variable(&load_variable)

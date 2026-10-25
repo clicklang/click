@@ -2728,7 +2728,7 @@ fn interface_load_definition_rejects_wrong_variable_address_and_snapshot() {
     let variable = crate::kernel::eval::load_variable_for_cell(
         &memory,
         &pointer,
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let equation = |variable, memory, pointer| {
         Proposition::ConditionIs(
@@ -2739,7 +2739,7 @@ fn interface_load_definition_rejects_wrong_variable_address_and_snapshot() {
                 right: Box::new(Bitvector32Term::MemoryLoad(
                     memory,
                     Box::new(pointer),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
             },
             true,

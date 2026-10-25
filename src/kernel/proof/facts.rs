@@ -133,7 +133,7 @@ mod disjunction_projection_tests {
                     Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(memory),
                         Box::new(pointer.clone()),
-                        LoadKind::Bits32,
+                        LoadKind::Int32,
                     ),
                     Bitvector32Term::Constant(0),
                 ),
@@ -663,7 +663,7 @@ impl ProofFacts {
                                     | LoadKind::UInt8
                                     | LoadKind::Int16
                                     | LoadKind::UInt16
-                                    | LoadKind::Bits32
+                                    | LoadKind::Int32
                                     | LoadKind::Bits64
                             )
                         };
@@ -3356,7 +3356,7 @@ mod integer_equality_fact_index_tests {
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(read.offset_by_bytes(4)),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 ),
                 Bitvector32Term::Constant(42),
             ),
@@ -3444,7 +3444,7 @@ mod integer_equality_fact_index_tests {
                         block: "snapshot-alpha-facts".into(),
                         offset: PointerOffsetTerm::Constant(0),
                     }),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 ),
             )),
         )

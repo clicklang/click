@@ -413,7 +413,7 @@ mod wide_condition_tests {
         };
         assert!(carried(&target));
         assert!(!carried(&condition(
-            load(&after, LoadKind::Bits32),
+            load(&after, LoadKind::Int32),
             stamp.clone()
         )));
         assert!(!carried(&condition(

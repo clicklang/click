@@ -956,7 +956,7 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
 /// something other than this load's value.
 ///
 /// *Width.* The variable's load must be a four-byte integer read
-/// (`LoadKind::Bits32`, which its registered term carries), and the cell must
+/// (`LoadKind::Int32`, which its registered term carries), and the cell must
 /// be a `CValue::Int32`, which is a four-byte value: a cell answers only a read
 /// of its own kind. Every scaled term in the pointer's own offset must also
 /// scale by four, which makes the address an element address of a four-byte
@@ -979,7 +979,7 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
 fn materialized_registered_load_value(variable: Variable) -> Option<Bitvector32Term> {
     let (memory, pointer) = crate::kernel::eval::registered_load_for_variable(&variable)?;
     if crate::kernel::eval::registered_load_kind_for_variable(&variable)
-        != Some(crate::kernel::LoadKind::Bits32)
+        != Some(crate::kernel::LoadKind::Int32)
         || !pointer_addresses_four_byte_elements(&pointer)
     {
         return None;
@@ -5810,7 +5810,7 @@ mod tests {
                 left: Box::new(Bitvector32Term::MemoryLoad(
                     memory.into(),
                     Box::new(pointer.clone()),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
                 right: Box::new(right),
             }

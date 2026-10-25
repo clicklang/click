@@ -1626,7 +1626,7 @@ fn materialized_pointer(source: &CMemory, cell: &Pointer) -> CValue {
         Pointer::loaded(&Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(source),
             Box::new(cell.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         ))
         .unwrap(),
         CType::Int32Pointer,

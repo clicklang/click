@@ -3145,7 +3145,7 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
         LoadKind::UInt8 => "an unsigned byte",
         LoadKind::Int16 => "a signed two-byte integer",
         LoadKind::UInt16 => "an unsigned two-byte integer",
-        LoadKind::Bits32 => "a four-byte word",
+        LoadKind::Int32 | LoadKind::UInt32 => "a four-byte word",
         LoadKind::Bits64 => "an eight-byte word",
         LoadKind::Int128 => "a signed sixteen-byte integer",
         LoadKind::UInt128 => "an unsigned sixteen-byte integer",
@@ -4062,7 +4062,8 @@ pub(in crate::surface) fn diagnostic_model_load_cell(
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     if let Some((cell, value_type)) = cpp_model::describe_model_field_at(pointer, parameter_binding)
-        && crate::kernel::LoadKind::of_type(value_type) == Some(kind)
+        && crate::kernel::LoadKind::of_type(value_type).map(crate::kernel::LoadKind::word_kind)
+            == Some(kind.word_kind())
     {
         return Some(cell);
     }
@@ -5716,7 +5717,9 @@ pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
         object_fields::ambient_struct_layout(&pointee_struct_at(&address, parameter_binding)?)?;
     let mut fields = layout.fields().iter().filter(|(_, field)| {
         u64::from(field.offset_bytes()) == offset
-            && crate::kernel::LoadKind::of_type(field.c_type().to_kernel_type()) == Some(kind)
+            && crate::kernel::LoadKind::of_type(field.c_type().to_kernel_type())
+                .map(crate::kernel::LoadKind::word_kind)
+                == Some(kind.word_kind())
     });
     let (Some((name, _)), None) = (fields.next(), fields.next()) else {
         return None;

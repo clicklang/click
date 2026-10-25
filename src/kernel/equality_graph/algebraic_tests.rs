@@ -354,7 +354,7 @@ fn scalar_read_conflicts_require_the_same_snapshot() {
         Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &p,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &memory,
         ))

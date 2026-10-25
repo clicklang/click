@@ -147,9 +147,9 @@ impl PureFactContext {
         // four-byte integer read may use the int32 graph for its value.
         let is_four_byte_load = |load: &Bitvector32Term| match load {
             Bitvector32Term::Variable(variable) => {
-                crate::kernel::registered_load_kind_for_variable(variable) == Some(LoadKind::Bits32)
+                crate::kernel::registered_load_kind_for_variable(variable) == Some(LoadKind::Int32)
             }
-            Bitvector32Term::MemoryLoad(_, _, kind) => *kind == LoadKind::Bits32,
+            Bitvector32Term::MemoryLoad(_, _, kind) => *kind == LoadKind::Int32,
             _ => false,
         };
         let graph_proves_resolved_int32 =
@@ -490,7 +490,8 @@ impl PureFactContext {
             LoadKind::UInt8 => Some(memory.symbolic_uint8_load(pointer)),
             LoadKind::Int16 => Some(memory.symbolic_int16_load(pointer)),
             LoadKind::UInt16 => Some(memory.symbolic_uint16_load(pointer)),
-            LoadKind::Bits32 => Some(memory.symbolic_int32_load(pointer)),
+            LoadKind::Int32 => Some(memory.symbolic_int32_load(pointer)),
+            LoadKind::UInt32 => Some(memory.symbolic_uint32_load(pointer)),
             LoadKind::Bits64 => Some(memory.symbolic_int64_load(pointer)),
             LoadKind::Int128 => {
                 memory.symbolic_wide_integer_load(pointer, MachineIntegerType::Int128)

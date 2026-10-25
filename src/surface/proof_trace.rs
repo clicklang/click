@@ -329,7 +329,7 @@ pub(super) fn pointer_definition(pointer: &Pointer) -> Option<Bitvector32Term> {
             Bitvector32Term::MemoryLoad(
                 read.defining_memory,
                 Box::new(read.defining_address),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         })
     })
@@ -1735,7 +1735,7 @@ mod tests {
         let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
             memory.clone(),
             pointer.clone(),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         ) else {
             panic!("an unresolved external read has a load variable");
         };
@@ -1747,7 +1747,7 @@ mod tests {
                 right: Box::new(Bitvector32Term::MemoryLoad(
                     memory,
                     Box::new(pointer),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
             },
             true,

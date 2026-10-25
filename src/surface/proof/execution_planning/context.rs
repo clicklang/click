@@ -1161,7 +1161,7 @@ mod tests {
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             crate::kernel::load_access_width_or_widest(&memory, &pointer),
             &memory,
         );
@@ -1191,7 +1191,7 @@ mod tests {
                 left: Box::new(Bitvector32Term::MemoryLoad(
                     memory.clone(),
                     Box::new(pointer.clone()),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
                 right: Box::new(Bitvector32Term::Constant(0)),
             },
@@ -1214,7 +1214,7 @@ mod tests {
         let dynamic_variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &dynamic_pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             crate::kernel::load_access_width_or_widest(&memory, &dynamic_pointer),
             &memory,
         );

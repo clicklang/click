@@ -1930,7 +1930,7 @@ impl Renderer<'_> {
         if let Bitvector32Term::MemoryLoad(snapshot, pointer, kind) = v {
             // `memory` prints its own `snapshot=` prefix.
             if self.trace_facts {
-                self.fmt(format_args!("read<{kind:?}>("));
+                self.fmt(format_args!("read<{}>(", trace_load_kind(*kind)));
             } else {
                 self.push("load(");
             }
@@ -1954,7 +1954,7 @@ impl Renderer<'_> {
             let name = self.variable_name(*variable, "load");
             if self.trace_facts {
                 let kind = crate::kernel::registered_load_kind_for_variable(variable)
-                    .map(|kind| format!("{kind:?}"))
+                    .map(trace_load_kind)
                     .unwrap_or_else(|| "unrecorded type".into());
                 self.fmt(format_args!("{name}=read<{kind}>("));
             } else {
@@ -2427,6 +2427,17 @@ impl Renderer<'_> {
             crate::kernel::CFunctionOutcome::UndefinedBehavior(_) => "undefined-behavior",
             crate::kernel::CFunctionOutcome::RuntimeError(_) => "runtime-error",
         });
+    }
+}
+
+/// A read's kind as a proof trace spells it. A 32-bit read of either
+/// signedness reads one word, which the trace names `Bits32`; its
+/// signedness is the reader's tag, as for any variable.
+fn trace_load_kind(kind: crate::kernel::LoadKind) -> String {
+    if kind.is_word32() {
+        "Bits32".into()
+    } else {
+        format!("{kind:?}")
     }
 }
 

@@ -208,7 +208,7 @@ fn allocation_size_continuity_uses_graph_with_snapshot_scope() {
         Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             memory,
         ))

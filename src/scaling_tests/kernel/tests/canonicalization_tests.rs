@@ -58,7 +58,7 @@ fn variable_collection_after_a_store_costs_the_store() {
         crate::kernel::reasoning::variable_collection::clear_shared_memory_variables();
         let mut variables = BTreeSet::new();
         crate::kernel::reasoning::collect_bitvector_variables(
-            &Bitvector32Term::MemoryLoad(before, Box::new(at(0)), crate::kernel::LoadKind::Bits32),
+            &Bitvector32Term::MemoryLoad(before, Box::new(at(0)), crate::kernel::LoadKind::Int32),
             &mut variables,
         );
         assert_eq!(variables.len(), cells);
@@ -69,7 +69,7 @@ fn variable_collection_after_a_store_costs_the_store() {
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(after),
             Box::new(at(4)),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let (variables, work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut variables = BTreeSet::new();
@@ -123,7 +123,7 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
                 &Bitvector32Term::MemoryLoad(
                     before,
                     Box::new(at(0)),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 ),
                 &mut variables,
             );
@@ -145,7 +145,7 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(after),
             Box::new(at(4)),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let registered = crate::kernel::eval::load_variable_registry_len();
         let (variables, store_work) = crate::instrumentation::measure_deterministic_work(|| {

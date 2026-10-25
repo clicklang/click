@@ -428,7 +428,7 @@ fn a_registered_zero_index_keeps_null_pointer_formation_unchanged() {
     let memory = crate::kernel::intern_c_memory(CMemory::new());
     let address = Pointer::symbolic(Variable(933_100));
     let load =
-        crate::kernel::eval::load_variable_for_exact_cell(&memory, &address, LoadKind::Bits32, 4);
+        crate::kernel::eval::load_variable_for_exact_cell(&memory, &address, LoadKind::Int32, 4);
     let facts = PureFactContext::new().assume_condition(
         ConditionTerm::equal(Bitvector32Term::Variable(load), 0u32.into()),
         true,
@@ -436,7 +436,7 @@ fn a_registered_zero_index_keeps_null_pointer_formation_unchanged() {
     let result = pointer_offset_by_elements_paths(
         &CState::new(),
         CPointerValue::new(Pointer::null(), CType::Int32Pointer),
-        Bitvector32Term::MemoryLoad(memory, Box::new(address), LoadKind::Bits32),
+        Bitvector32Term::MemoryLoad(memory, Box::new(address), LoadKind::Int32),
         4,
         false,
         false,

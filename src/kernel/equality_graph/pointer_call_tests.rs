@@ -121,7 +121,7 @@ fn nested_pointer_calls_feed_scalar_calls_and_checked_reads() {
         Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &p,
-            LoadKind::Bits32,
+            LoadKind::Int32,
             4,
         ))
     };

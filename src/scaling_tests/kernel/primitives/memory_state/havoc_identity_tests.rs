@@ -42,7 +42,7 @@ fn call_frame_retains_a_view_without_scanning_other_views() {
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(memory),
             Box::new(target.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     let assumptions = PureFactContext::new();

@@ -24,7 +24,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
             let variable = crate::kernel::load_variable_for_cell_with_origin(
                 &snapshot,
                 address,
-                LoadKind::Bits32,
+                LoadKind::Int32,
                 C_POINTER_BYTE_WIDTH,
                 &snapshot,
             );

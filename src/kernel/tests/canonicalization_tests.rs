@@ -357,7 +357,7 @@ fn unresolved_canonicalization_test_load() -> Bitvector32Term {
             block: "canonical-shapes".into(),
             offset: PointerOffsetTerm::Constant(0),
         }),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     )
 }
 
@@ -567,12 +567,12 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
     let load_at_base = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(base.clone()),
         Box::new(pointer.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let load_at_drifted = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(drifted),
         Box::new(pointer.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
 
     let canonical = crate::kernel::eval::canonical_term(&load_at_base);
@@ -593,7 +593,7 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
     let resolved = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(stored),
         Box::new(pointer),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     assert_eq!(
         crate::kernel::eval::canonical_term(&resolved),
@@ -613,7 +613,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
         Box::new(pointer),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let overflow = Bitvector32Term::If {
         condition: Box::new(ConditionTerm::Overflows {
@@ -669,12 +669,12 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
     let mut left = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(base),
         Box::new(pointer.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let mut right = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(drifted),
         Box::new(pointer),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     for value in 0..128 {
         left = Bitvector32Term::Add(Box::new(left), Box::new(Bitvector32Term::Constant(value)));
@@ -708,7 +708,7 @@ fn offsets_have_same_canonical_form_through_the_canonical_form() {
         value: Box::new(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(memory),
             Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )),
         byte_width: 4,
     };
@@ -732,7 +732,7 @@ fn offsets_have_same_canonical_form_through_the_canonical_form() {
         value: Box::new(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(base.clone()),
             Box::new(other),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )),
         byte_width: 4,
     };
@@ -807,7 +807,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
                 byte_width: 4,
             },
         }),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let first = Bitvector32Term::MemoryLoad(
         memory.clone(),
@@ -815,7 +815,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
             block: "data".into(),
             offset: PointerOffsetTerm::Constant(0),
         }),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let indexed_load_variable = crate::kernel::eval::canonical_term(&indexed);
     let first_load_variable = crate::kernel::eval::canonical_term(&first);
@@ -875,7 +875,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
             block: "data".into(),
             offset: PointerOffsetTerm::Constant(0),
         }),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     ));
     let other_epoch_goal = Proposition::ConditionIs(
         ConditionTerm::equal(indexed_load_variable.clone(), other_epoch_load),
@@ -893,7 +893,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
             block: "other-data".into(),
             offset: PointerOffsetTerm::Constant(0),
         }),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     ));
     let other_block_goal = Proposition::ConditionIs(
         ConditionTerm::equal(indexed_load_variable, other_block_load),
@@ -921,7 +921,7 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
                 block: "p".into(),
                 offset,
             }),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     let indexed_load_variable =
@@ -967,7 +967,7 @@ fn load_variables_compare_as_loads_under_bounds_pinned_indices() {
                 block: "p".into(),
                 offset,
             }),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         ))
     };
     let indexed = cell(PointerOffsetTerm::Int32Scaled {
@@ -1016,7 +1016,7 @@ fn load_variable_free_variables_include_its_snapshot_cells() {
             block: "p".into(),
             offset: PointerOffsetTerm::Constant(8),
         }),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     ));
     assert!(matches!(load_variable, Bitvector32Term::Variable(_)));
     let mut variables = BTreeSet::new();
@@ -1095,7 +1095,7 @@ fn nested_snapshot_load_named(
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(memory),
             Box::new(at(offset)),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let load = name(load);
         memory = level_memory(CellStore::from_iter([
@@ -1106,7 +1106,7 @@ fn nested_snapshot_load_named(
     Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
         Box::new(at(8 * depth as i64)),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     )
 }
 
@@ -1308,7 +1308,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
     let Bitvector32Term::Variable(loaded) = crate::kernel::canonical_form_of_load(
         intern_c_memory(entry.clone()),
         field.clone(),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     ) else {
         panic!("a load of an opaque cell is named by a load variable");
     };
@@ -1319,7 +1319,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         crate::kernel::canonical_form_of_load(
             intern_c_memory(memory),
             cell.clone(),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
 

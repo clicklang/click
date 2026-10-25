@@ -87,7 +87,7 @@ fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
         let name = crate::kernel::canonical_form_of_load(
             crate::kernel::intern_c_memory(before.clone()),
             target.clone(),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let after = before
             .clone()

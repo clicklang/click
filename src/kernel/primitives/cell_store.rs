@@ -799,7 +799,7 @@ pub(crate) fn cell_run_value(element_type: CType, load: Bitvector32Term) -> CVal
                 _ => None,
             };
             let value = Pointer::loaded(&load).expect("a pointer cell's canonical read is a load");
-            if let Some(Bitvector32Term::MemoryLoad(snapshot, address, LoadKind::Bits32)) =
+            if let Some(Bitvector32Term::MemoryLoad(snapshot, address, LoadKind::Int32)) =
                 definition
             {
                 crate::kernel::equality_graph::EqualityGraph::default()

@@ -19,7 +19,7 @@ fn exact_load(memory: &SharedCMemory, pointer: &Pointer) -> Variable {
     crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
         4,
     )
 }

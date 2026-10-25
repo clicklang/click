@@ -1454,7 +1454,7 @@ fn exact_materialized_load_fixed_point(term: &Bitvector32Term) -> Bitvector32Ter
     let mut visited = std::collections::HashSet::new();
     while visited.insert(current.clone()) {
         crate::instrumentation::record_deterministic_work(1);
-        let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits32) = &current else {
+        let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Int32) = &current else {
             break;
         };
         let Some(CValue::Int32(value)) = memory.known_value(pointer) else {
@@ -1479,7 +1479,7 @@ mod exact_materialization_tests {
             Bitvector32Term::MemoryLoad(
                 intern_c_memory(memory),
                 Box::new(pointer.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         })
     }
@@ -10349,7 +10349,7 @@ mod dynamic_current_load_tests {
         let load = Bitvector32Term::MemoryLoad(
             snapshot,
             Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let value = Term::CValue(CValue::Int64(load.clone()));
         assert_eq!(
@@ -11227,7 +11227,7 @@ mod execution_variable_ceiling_tests {
             left: Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(&memory),
                 Box::new(word(4)),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
             right: Box::new(Bitvector32Term::Constant(0)),
         }

@@ -79,7 +79,7 @@ fn snapshot_blind_surface_selection_scales_by_index_height() {
                 left: Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
                     Box::new(pointer.clone()),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
                 right: Box::new(Bitvector32Term::Constant(upper)),
             },
@@ -257,7 +257,7 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
                 left: Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(pointer.clone()),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
                 right: Box::new(Bitvector32Term::UInt64Constant(u64::from(index))),
             },
