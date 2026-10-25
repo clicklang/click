@@ -6711,8 +6711,10 @@ impl PureFactContext {
         // value stored there (`eval::read_over_write_value`). Consulted only
         // when the proposition does not hold as written.
         self.proves_exact_unresolved(proposition)
-            || crate::kernel::eval::read_over_write_resolved(proposition)
-                .is_some_and(|resolved| self.proves_exact_unresolved(&resolved))
+            || crate::kernel::eval::read_over_write_resolved(proposition).is_some_and(|resolved| {
+                self.proves_exact_unresolved(&resolved)
+                    || crate::kernel::proof::fact_reasoning::normalizes_context_free_leaf(&resolved)
+            })
     }
 
     fn proves_exact_unresolved(&self, proposition: &Proposition) -> bool {

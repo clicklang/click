@@ -286,8 +286,9 @@ fn evaluate_logical_memory_load_paths_unbridged(
     }
     let mut facts = facts;
     // A read of an integer cell is the read at its version, whatever the
-    // cell holds: the store's fact and the read-over-write authority
-    // (`read_over_write_value`) relate it to the stored value.
+    // cell holds: the read-over-write authority (`read_over_write_value`)
+    // relates it to the stored value. A cell seeded with its own read holds
+    // that read's name, which is the read.
     let named = logical_read_names_its_version(value_type);
     let value = memory
         .known_union_value(&pointer, value_type)
@@ -295,7 +296,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
         .or_else(|| {
             memory
                 .known_value(&pointer)
-                .filter(|_| !named)
+                .filter(|stored| !named || holds_its_own_read(stored, &pointer))
                 .and_then(|stored| {
                     let complete_pointer = matches!(&stored, CValue::Pointer(_))
                         || matches!(&stored, CValue::Int32(Bitvector32Term::Variable(variable))
@@ -354,6 +355,20 @@ fn evaluate_logical_memory_load_paths_unbridged(
             obligations: obligations.clone(),
         })
         .collect()
+}
+
+/// Whether `stored`, the value a cell at `pointer` holds, is the load
+/// variable naming a read of that same cell: a cell seeded with its own read.
+/// That variable is the read's version name, so the read is it.
+fn holds_its_own_read(stored: &CValue, pointer: &Pointer) -> bool {
+    let Some(Bitvector32Term::Variable(variable)) =
+        crate::kernel::spec::c_value_bitvector_term(stored)
+    else {
+        return false;
+    };
+    is_load_variable(&variable)
+        && registered_load_for_variable(&variable)
+            .is_some_and(|(_, registered)| registered == *pointer)
 }
 
 /// Whether a logical read of a `value_type` cell lowers to the read at the
@@ -820,8 +835,9 @@ fn evaluate_c_memory_load_case(
     // An exact materialized cell is already the authoritative value for this
     // non-union pointer. Avoid proving every other symbolic cell distinct
     // before the direct map lookup.
-    if let Some(value) = memory.known_value(&pointer).filter(|_| {
+    if let Some(value) = memory.known_value(&pointer).filter(|stored| {
         !(purpose == LoadPurpose::Logical && logical_read_names_its_version(value_type))
+            || holds_its_own_read(stored, &pointer)
     }) {
         if let Some(value) = canonicalized_pointer_value_from_int_cell(
             memory,
@@ -2340,6 +2356,14 @@ pub(crate) fn read_over_write_resolved(proposition: &Proposition) -> Option<Prop
         let Some(value) = read_over_write_value(&read) else {
             continue;
         };
+        // The term rewriter reaches Integer observations of the read; plain
+        // substitution reaches the resource forms (a separation's ranges)
+        // the rewriter declines. Each leaves what the other covers unchanged.
+        let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&read, &value);
+        let rewritten = rewrite.proposition(&resolved);
+        if rewrite.refusal().is_none() {
+            resolved = rewritten;
+        }
         resolved = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
             &resolved, variable, &value,
         );
