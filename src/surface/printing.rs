@@ -60,7 +60,131 @@ fn comparison_operand(expression: &ContractExpression, mode: PropositionSpelling
     {
         return rendered;
     }
+    // C arithmetic read at a snapshot is a machine value, but the parser
+    // reads arithmetic inside `at(...)` or `old(...)` as Integer arithmetic,
+    // so the comparison would reparse as an Integer one. The cast keeps the
+    // machine type.
+    if mode == PropositionSpelling::Source
+        && let Some(machine_type) = snapshot_machine_arithmetic(expression)
+    {
+        return format!(
+            "({machine_type}){}",
+            describe_contract_expression(expression)
+        );
+    }
     describe_contract_expression(expression)
+}
+
+/// The C type of a snapshot of C arithmetic, `at(p, a - 1)` or
+/// `old(a - 1)`, or `None` when the snapshot holds no arithmetic or some
+/// Integer arithmetic. C arithmetic is a C fragment, or an operation whose
+/// operands include a typed C constant; the type is that of its typed
+/// constants, `int32` when they are all `int32`.
+fn snapshot_machine_arithmetic(expression: &ContractExpression) -> Option<&'static str> {
+    let mut inner = expression;
+    let mut snapshot = false;
+    while let ContractExpression::Old(next)
+    | ContractExpression::At {
+        expression: next, ..
+    } = inner
+    {
+        snapshot = true;
+        inner = next;
+    }
+    if !snapshot {
+        return None;
+    }
+    fn c_arithmetic(expression: &CExpression) -> bool {
+        matches!(
+            expression,
+            CExpression::Add(..)
+                | CExpression::Subtract(..)
+                | CExpression::Multiply(..)
+                | CExpression::Divide(..)
+                | CExpression::Remainder(..)
+                | CExpression::ShiftLeft(..)
+                | CExpression::ShiftRight(..)
+                | CExpression::BitwiseAnd(..)
+                | CExpression::BitwiseOr(..)
+                | CExpression::BitwiseXor(..)
+                | CExpression::BitwiseNot(..)
+        )
+    }
+    // The operation's operands, read under the same snapshot.
+    let mut machine = false;
+    let mut c_types = Vec::new();
+    let mut contract_pending = vec![inner];
+    let mut c_pending = Vec::new();
+    let mut top = true;
+    while let Some(expression) = contract_pending.pop() {
+        match expression {
+            ContractExpression::Add(left, right)
+            | ContractExpression::Subtract(left, right)
+            | ContractExpression::Multiply(left, right)
+            | ContractExpression::Divide(left, right)
+            | ContractExpression::Remainder(left, right)
+            | ContractExpression::ShiftLeft(left, right)
+            | ContractExpression::ShiftRight(left, right)
+            | ContractExpression::BitwiseAnd(left, right)
+            | ContractExpression::BitwiseOr(left, right)
+            | ContractExpression::BitwiseXor(left, right) => {
+                contract_pending.push(left);
+                contract_pending.push(right);
+            }
+            ContractExpression::Negate(operand) | ContractExpression::BitwiseNot(operand) => {
+                contract_pending.push(operand)
+            }
+            ContractExpression::IntegerLiteral(_) => return None,
+            ContractExpression::CFragment(CExpression::Value(value)) if !top => {
+                machine = true;
+                c_types.push(value.clone());
+            }
+            ContractExpression::CFragment(fragment) => {
+                if top && !c_arithmetic(fragment) {
+                    return None;
+                }
+                machine |= top;
+                c_pending.push(fragment);
+            }
+            _ if top => return None,
+            _ => {}
+        }
+        top = false;
+    }
+    if !machine {
+        return None;
+    }
+    while let Some(expression) = c_pending.pop() {
+        match expression {
+            CExpression::Value(value) => c_types.push(value.clone()),
+            CExpression::Add(left, right)
+            | CExpression::Subtract(left, right)
+            | CExpression::Multiply(left, right)
+            | CExpression::Divide(left, right)
+            | CExpression::Remainder(left, right)
+            | CExpression::ShiftLeft(left, right)
+            | CExpression::ShiftRight(left, right)
+            | CExpression::BitwiseAnd(left, right)
+            | CExpression::BitwiseOr(left, right)
+            | CExpression::BitwiseXor(left, right) => {
+                c_pending.push(left);
+                c_pending.push(right);
+            }
+            CExpression::BitwiseNot(operand) => c_pending.push(operand),
+            _ => {}
+        }
+    }
+    let mut machine_type = "int32";
+    for value in c_types {
+        machine_type = match value {
+            CValue::Int32(_) => continue,
+            CValue::UInt32(_) => "uint32",
+            CValue::Int64(_) => "int64",
+            CValue::UInt64(_) => "uint64",
+            _ => return None,
+        };
+    }
+    Some(machine_type)
 }
 
 pub(super) fn print_proposition(

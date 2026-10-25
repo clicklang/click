@@ -134,8 +134,10 @@ pub(crate) use eval::canonical_condition_fact;
 pub(crate) use eval::canonical_form_of_load;
 pub(crate) use eval::canonical_term;
 pub(crate) use eval::canonicalized_offset_index_term;
+pub(crate) use eval::comparison_form;
 #[cfg(test)]
 pub(crate) use eval::count_canonical_at_creation_violations;
+pub(crate) use eval::holds_by_read_over_write;
 pub(crate) use eval::is_load_variable;
 pub(crate) use eval::is_load_variable_defining_fact;
 pub(crate) use eval::is_store_fact;
@@ -148,6 +150,8 @@ pub(crate) use eval::load_variable_for_term;
 pub(crate) use eval::offsets_have_same_canonical_form;
 pub(crate) use eval::proposition_mentions_load_variable;
 pub(crate) use eval::proposition_mentions_registered_load_variable;
+pub(crate) use eval::read_over_write_c_value;
+pub(crate) use eval::read_over_write_value;
 #[cfg(test)]
 pub(crate) use eval::record_load_variable_defining_fact;
 pub(crate) use eval::registered_load_bytes_for_variable;

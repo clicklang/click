@@ -372,6 +372,16 @@ impl PureFactContext {
     }
 
     fn decide_inner(&self, condition: &ConditionTerm) -> Option<bool> {
+        // The read-over-write authority: a read of a stored cell is the
+        // value stored there (`eval::read_over_write_value`). Consulted only
+        // when the condition is undecided as written.
+        self.decide_as_written(condition).or_else(|| {
+            read_over_write_condition(condition)
+                .and_then(|resolved| self.decide_as_written(&resolved))
+        })
+    }
+
+    fn decide_as_written(&self, condition: &ConditionTerm) -> Option<bool> {
         // A cited full pointer value equality also supplies the C address
         // comparison. Keep this projection indexed and positive only.
         if matches!(
@@ -2410,6 +2420,16 @@ impl PureFactContext {
         let left = self.signed_constant_known_equal(left)?;
         let right = self.signed_constant_known_equal(right)?;
         Some(compare(left, right))
+    }
+}
+
+/// `condition` with each read of a stored cell replaced by its stored value
+/// (`eval::comparison_form`).
+fn read_over_write_condition(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    match crate::kernel::eval::comparison_form(&Proposition::ConditionIs(condition.clone(), true))?
+    {
+        Proposition::ConditionIs(resolved, true) if &resolved != condition => Some(resolved),
+        _ => None,
     }
 }
 

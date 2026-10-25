@@ -2575,7 +2575,9 @@ fn fold_over_a_hidden_record_names_the_failed_fact() {
                   let { first: c } = unfold(x); execute(); let x = fold(pair(p), { first: c }); simp(); }";
     let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
     let report = error.concise_report();
-    assert!(report.contains("goal: -1 == "), "{report}");
+    // The instance reads the field the body stored to; the read keeps its
+    // name rather than the stored `-1` (`docs/internals/spellability.md`).
+    assert!(report.contains("goal: p->n == "), "{report}");
     assert!(!report.contains("first.v == first.v"), "{report}");
 }
 
@@ -2616,7 +2618,8 @@ fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
             .lines()
             .find_map(|line| line.trim().strip_prefix("goal: "))
             .unwrap_or_else(|| panic!("{report}"));
-        assert!(goal.contains('9'), "{report}");
+        // The instance reads the stored cell by name, not the stored `9`.
+        assert!(goal.starts_with("p[0] == "), "{report}");
         assert_eq!(report.matches("\ngoal: ").count(), 1, "{report}");
         assert!(!report.contains("snapshot#"), "{report}");
         with_proof_trace("f", || {
@@ -2627,8 +2630,10 @@ fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
                 .find_map(|line| line.trim().strip_prefix("goal: "))
                 .unwrap_or_else(|| panic!("{report}"));
             assert_eq!(report.matches("goal: ").count(), 1, "{report}");
-            assert!(required.contains('9'), "{report}");
-            assert!(report.contains('9'), "{report}");
+            // The trace states the read, and its label definitions show the
+            // store of `9` that read reads.
+            assert!(required.contains("read<Bits32>"), "{report}");
+            assert!(report.contains("store 9"), "{report}");
             assert!(
                 !report.contains("goal has no exact Click spelling"),
                 "{report}"
@@ -2894,8 +2899,12 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
             let error = crate::instrumentation::with_tactic_work_limits(
                 crate::instrumentation::TacticWorkLimits {
                     simple: 1_000_000,
-                    smart: 128,
-                    control: if nested { 128 } else { 1_000_000 },
+                    // Enough for the `have`, whose nested script searches
+                    // and so is charged to the smart budget, to lower its
+                    // read of the stored cell by name before `simp` exhausts
+                    // the budget.
+                    smart: if nested { 160 } else { 128 },
+                    control: if nested { 160 } else { 1_000_000 },
                 },
                 || {
                     verify_c0_sources(
@@ -3599,8 +3608,10 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
             assert!(message.contains("checked target (wanted):"), "{message}");
             assert!(message.contains("read<Bits32>"), "{message}");
             assert!(message.contains("snapshot#"), "{message}");
+            // The target names the read of the overwritten cell, not the
+            // value the store left there.
             assert!(
-                message.contains("checked target (wanted): false"),
+                message.contains("checked target (wanted): int32 =(load"),
                 "{message}"
             );
             assert!(

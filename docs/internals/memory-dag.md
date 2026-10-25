@@ -277,7 +277,9 @@ unchanged store. In particular:
 - allocation and free preserve unrelated locations but don't preserve a load
   through the affected allocation;
 - havoc marker blocks remain attached during materialization-source
-  canonicalization, so materialized sibling cells can't hide a havoc.
+  canonicalization, so materialized sibling cells can't hide a havoc, and the
+  source's cells survive only where the projected snapshot still holds them,
+  so the source can't restore a cell the havoc erased.
 
 These rules are soundness boundaries, not search heuristics.
 

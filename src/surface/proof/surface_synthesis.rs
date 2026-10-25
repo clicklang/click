@@ -81,6 +81,9 @@ pub(in crate::surface) struct SynthesisStructOwners {
     locals: BTreeMap<String, syntax::C0StructLayout>,
     cast_parameters: BTreeMap<String, (String, syntax::C0StructLayout)>,
     callback_sources: std::sync::Arc<BTreeMap<String, syntax::C0Expression>>,
+    /// The function's `static` arrays by kernel and source name: the source name and
+    /// declared shape an element read is spelled with.
+    static_arrays: BTreeMap<String, (String, Vec<u32>)>,
 }
 
 /// Installs the function's struct owners for synthesis while the guard
@@ -109,10 +112,24 @@ impl LocalStructLayoutScope {
                 ))
             })
             .collect::<BTreeMap<_, _>>();
+        // The slot index names an array by its source name, or by its
+        // kernel name where another object shadows the source name.
+        let static_arrays = function
+            .static_arrays()
+            .values()
+            .flat_map(|array| {
+                let spelling = (array.name().to_string(), array.shape().to_vec());
+                [
+                    (array.kernel_name().to_string(), spelling.clone()),
+                    (array.name().to_string(), spelling),
+                ]
+            })
+            .collect();
         let owners = SynthesisStructOwners {
             locals,
             cast_parameters,
             callback_sources: function.callback_statement_sources().clone(),
+            static_arrays,
         };
         Self(SYNTHESIS_STRUCT_OWNERS.with(|slot| slot.replace(Some(std::sync::Arc::new(owners)))))
     }
@@ -3352,6 +3369,13 @@ fn synthesize_surface_bitvector(
                 bound_variables,
             ) {
                 Some(indexed_field)
+            } else if let Some(element) = synthesize_static_array_element_load(
+                kernel_pointer,
+                parameter_binding,
+                state,
+                bound_variables,
+            ) {
+                Some(element)
             } else if let Some(indexed_local) = synthesize_local_indexed_int32_load(
                 kernel_pointer,
                 parameter_binding,
@@ -3385,20 +3409,30 @@ fn synthesize_surface_bitvector(
                 // An unsigned byte read is spelled as one whatever the
                 // pointer's own element type: through a signed plain `char`
                 // pointer it is the byte's one name, not the pointer's read.
+                // A `static` array's name has its own element type (a struct
+                // array's is bytes), which the legacy `load` would read; a
+                // 32-bit read through it states its own type.
+                let typed_word = value_type.is_none()
+                    && *kind == crate::kernel::LoadKind::Bits32
+                    && kernel_pointer.block.is_static_block();
                 let value_type = if *kind == crate::kernel::LoadKind::UInt8 {
                     Some(CType::UInt8)
+                } else if typed_word {
+                    Some(CType::Int32)
                 } else {
                     value_type
                 };
                 Some(ContractExpression::CFragment(match value_type {
-                    Some(CType::UInt8) => CExpression::TypedLoad {
-                        pointer: Box::new(pointer),
-                        value_type: CType::UInt8,
-                        volatile: false,
-                        pointee_constant: false,
-                        access_class: None,
-                        source: Default::default(),
-                    },
+                    Some(value_type) if value_type == CType::UInt8 || typed_word => {
+                        CExpression::TypedLoad {
+                            pointer: Box::new(pointer),
+                            value_type,
+                            volatile: false,
+                            pointee_constant: false,
+                            access_class: None,
+                            source: Default::default(),
+                        }
+                    }
                     _ => CExpression::Load(Box::new(pointer)),
                 }))
             }
@@ -4062,6 +4096,72 @@ fn synthesize_local_indexed_int32_load(
     })
 }
 
+/// A 32-bit element read of a function's `static` array, spelled by the
+/// array's source name with one subscript per declared dimension, as the
+/// parser reads it back: the array is found by its slot's block, and its
+/// shape from the function's declarations. A multidimensional element needs
+/// a constant index to split into subscripts.
+fn synthesize_static_array_element_load(
+    pointer: &Pointer,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    if !pointer.block.is_static_block() {
+        return None;
+    }
+    let owners = SYNTHESIS_STRUCT_OWNERS.with(|slot| slot.borrow().clone())?;
+    state
+        .locals()
+        .array_objects_with_slot_in(&pointer.block)
+        .into_iter()
+        .find_map(|(name, element_type, slot)| {
+            crate::instrumentation::record_deterministic_work(1);
+            if element_type.byte_width() != 4 || element_type.pointee_type().is_some() {
+                return None;
+            }
+            let (source, shape) = owners.static_arrays.get(name)?;
+            let index = pointer.element_index_from_base_with_width(slot, 4)?;
+            let base = CExpression::Variable(source.clone());
+            if shape.len() <= 1 {
+                if !bitvector_term_is_load_free(&index) {
+                    return None;
+                }
+                return Some(ContractExpression::Index(
+                    Box::new(ContractExpression::CFragment(base)),
+                    Box::new(synthesize_surface_bitvector(
+                        &index,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?),
+                ));
+            }
+            let mut remaining = index.as_const()?;
+            let mut indexes = vec![CExpression::Value(int32(0)); shape.len()];
+            for (subscript, dimension) in indexes.iter_mut().zip(shape).rev() {
+                *subscript = CExpression::Value(int32(remaining % dimension));
+                remaining /= dimension;
+            }
+            let lowered = CExpression::Index(
+                Box::new(base.clone()),
+                Box::new(crate::surface::parser::flatten_array_indices(
+                    indexes.clone(),
+                    shape,
+                )),
+            );
+            Some(ContractExpression::ArrayIndex {
+                base: Box::new(ContractExpression::CFragment(base)),
+                indexes: indexes
+                    .into_iter()
+                    .map(ContractExpression::CFragment)
+                    .collect(),
+                dimensions: shape.clone(),
+                lowered,
+            })
+        })
+}
+
 fn synthesize_parameter_field_load(
     pointer: &Pointer,
     value_type: CType,
@@ -4373,6 +4473,34 @@ fn synthesize_surface_pointer(
             };
             Some(CExpression::Add(Box::new(base), Box::new(index)))
         })
+    {
+        return Some(expression);
+    }
+    // A pointer into a function's `static` array, at a constant byte offset
+    // from the array's slot: the array's name, displaced by those bytes.
+    if pointer.block.is_static_block()
+        && let Some(expression) = state
+            .locals()
+            .array_objects_with_slot_in(&pointer.block)
+            .into_iter()
+            .find_map(|(name, _, slot)| {
+                crate::instrumentation::record_deterministic_work(1);
+                let (PointerOffsetTerm::Constant(at), PointerOffsetTerm::Constant(start)) =
+                    (&pointer.offset, &slot.offset)
+                else {
+                    return None;
+                };
+                let bytes = u32::try_from(at.checked_sub(*start)?).ok()?;
+                let base = CExpression::Variable(surface_local_name(name).to_string());
+                Some(if bytes == 0 {
+                    base
+                } else {
+                    CExpression::PointerOffsetBytes {
+                        pointer: Box::new(base),
+                        bytes,
+                    }
+                })
+            })
     {
         return Some(expression);
     }

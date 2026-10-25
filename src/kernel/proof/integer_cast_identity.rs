@@ -18,6 +18,22 @@ pub(super) fn check(
     premises: &[Proposition],
     result: &Proposition,
 ) -> Result<(), Error> {
+    // A read of a cell holding the cast is that cast (the read-over-write
+    // authority), so the identity also sees the cast a store wrote.
+    check_as_written(node, bounds, premises, result).or_else(|error| {
+        match crate::kernel::comparison_form(result) {
+            Some(resolved) => check_as_written(node, bounds, premises, &resolved),
+            None => Err(error),
+        }
+    })
+}
+
+fn check_as_written(
+    node: usize,
+    bounds: &[usize],
+    premises: &[Proposition],
+    result: &Proposition,
+) -> Result<(), Error> {
     let invalid = || Error::InvalidIntegerCastIdentity(node);
     if crate::instrumentation::deadline_exceeded_with_work(5) {
         return Err(Error::WorkLimitExceeded);

@@ -5613,17 +5613,22 @@ mod ranking_member_tests {
         .expect("a pure measure reads at both ends");
 
         assert_eq!(obligations.len(), 2);
+        // Each member reads a stored cell, which names its version; compare
+        // through the read-over-write authority.
+        let resolved = |proposition: &Proposition| {
+            crate::kernel::eval::comparison_form(proposition).unwrap_or_else(|| proposition.clone())
+        };
         assert_eq!(
-            obligations[0].proposition(),
-            &Proposition::ConditionIs(
+            resolved(obligations[0].proposition()),
+            Proposition::ConditionIs(
                 ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), post.clone()),
                 true,
             ),
             "the nonnegativity member reads the back-edge state"
         );
         assert_eq!(
-            obligations[1].proposition(),
-            &Proposition::ConditionIs(ConditionTerm::signed_less_than(post, value), true),
+            resolved(obligations[1].proposition()),
+            Proposition::ConditionIs(ConditionTerm::signed_less_than(post, value), true),
             "the decrease member compares the back edge against the iteration entry"
         );
         // A pure component has no source spelling of its own once lowered, so

@@ -1518,6 +1518,9 @@ fn close_claim_directly_from_outcome<'a>(
                     &BTreeSet::new(),
                 )
                 .ok()
+                // What a read of a stored cell evaluates to is the value
+                // stored there (the read-over-write authority).
+                .map(|value| crate::kernel::read_over_write_c_value(&value))
             };
             match (evaluate(left), evaluate(right)) {
                 (Some(kernel_left), Some(kernel_right)) => {

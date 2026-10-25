@@ -1435,21 +1435,33 @@ impl SignedArithmeticCertificate {
                 } => {
                     let source = affine_at(&checked, *source)?;
                     let _ = interval_at(&checked, *evidence)?;
-                    let expected = affine_claim_from_interval_evidence_refs(
-                        &self.nodes,
-                        &checked,
-                        &mut terms,
-                        Some(*evidence),
-                        Some(*evidence),
-                        result,
-                    )
-                    .ok_or(SignedArithmeticCheckError::NodeResultMismatch(node_index))?;
-                    if !charge_claim_work(&expected) {
-                        return Err(SignedArithmeticCheckError::Overflow(node_index));
-                    }
-                    if !same_int32_claim(&expected, source) {
-                        return Err(SignedArithmeticCheckError::NodeResultMismatch(node_index));
-                    }
+                    // A conclusion reading a stored cell states the claim
+                    // over the value stored there (the read-over-write
+                    // authority): the derivation is checked against that
+                    // form when the written one does not match.
+                    let resolved = crate::kernel::comparison_form(result);
+                    let mut derives = |stated: &Proposition| {
+                        let expected = affine_claim_from_interval_evidence_refs(
+                            &self.nodes,
+                            &checked,
+                            &mut terms,
+                            Some(*evidence),
+                            Some(*evidence),
+                            stated,
+                        )
+                        .ok_or(SignedArithmeticCheckError::NodeResultMismatch(node_index))?;
+                        if !charge_claim_work(&expected) {
+                            return Err(SignedArithmeticCheckError::Overflow(node_index));
+                        }
+                        if !same_int32_claim(&expected, source) {
+                            return Err(SignedArithmeticCheckError::NodeResultMismatch(node_index));
+                        }
+                        Ok(())
+                    };
+                    derives(result).or_else(|error| match &resolved {
+                        Some(resolved) => derives(resolved),
+                        None => Err(error),
+                    })?;
                     CheckedValue::Proposition(result.clone())
                 }
                 SignedArithmeticNode::AffineConclusionWithEvidence {

@@ -6184,6 +6184,18 @@ pub(in crate::kernel) fn checked_int32_reassociated_add_domain(
     assumptions: &PureFactContext,
     goal: &Proposition,
 ) -> bool {
+    // The rule reads the goal's shape, so it also reads its comparison form:
+    // a read of a cell holding a sum is that sum.
+    checked_int32_reassociated_add_domain_as_written(assumptions, goal)
+        || crate::kernel::comparison_form(goal).is_some_and(|comparison| {
+            checked_int32_reassociated_add_domain_as_written(assumptions, &comparison)
+        })
+}
+
+fn checked_int32_reassociated_add_domain_as_written(
+    assumptions: &PureFactContext,
+    goal: &Proposition,
+) -> bool {
     let Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,

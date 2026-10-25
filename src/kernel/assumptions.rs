@@ -6742,6 +6742,20 @@ impl PureFactContext {
         if solve_builtin_prop(proposition) {
             return true;
         }
+        // The read-over-write authority: a read of a stored cell is the
+        // value stored there (`eval::read_over_write_value`). Consulted only
+        // when the proposition does not hold as written.
+        self.proves_exact_unresolved(proposition)
+            || crate::kernel::eval::comparison_form(proposition).is_some_and(|resolved| {
+                self.proves_exact_unresolved(&resolved)
+                    || crate::kernel::proof::fact_reasoning::normalizes_context_free_leaf(&resolved)
+            })
+    }
+
+    fn proves_exact_unresolved(&self, proposition: &Proposition) -> bool {
+        if solve_builtin_prop(proposition) {
+            return true;
+        }
         // An exact full-pointer premise directly supplies its numeric
         // equality. Retain the actual source premise for proof reconstruction; this
         // projection never runs in the reverse direction.
@@ -6992,6 +7006,19 @@ impl PureFactContext {
                     }
                 }
             }
+        }
+        // A fact that reads a stored cell also files its form over the value
+        // stored there (the read-over-write authority,
+        // `eval::read_over_write_value`), as a narrowing above files its
+        // carrier: one bounded rewrite of this fact, nothing else visited.
+        if let Some(Proposition::ConditionIs(resolved, resolved_value)) =
+            crate::kernel::eval::comparison_form(&Proposition::ConditionIs(
+                condition.clone(),
+                value,
+            ))
+            && resolved != condition
+        {
+            self = self.assume_condition_uncharged(resolved, resolved_value);
         }
         // The graph derives a same-block comparison's offset view. Do not
         // publish it as an independent premise: it must disappear when the

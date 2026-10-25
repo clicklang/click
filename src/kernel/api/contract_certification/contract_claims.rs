@@ -2454,10 +2454,17 @@ pub fn c_verified_function_contract_claims(
 /// Whether a lowered ensure folded to a constant truth: the kernel's own
 /// evaluation at the outcome decided it, so it needs no completion.
 fn lowered_goal_is_constant_true(proposition: &Proposition) -> bool {
-    matches!(
-        completion_key(proposition),
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-    )
+    let constant_true = |proposition: &Proposition| {
+        matches!(
+            completion_key(proposition),
+            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+        )
+    };
+    // Evaluation includes the read-over-write authority: a read of a
+    // stored cell is the value stored there.
+    constant_true(proposition)
+        || crate::kernel::eval::comparison_form(proposition)
+            .is_some_and(|resolved| constant_true(&resolved))
 }
 
 /// The form in which a completed proposition is matched against a lowered

@@ -1494,6 +1494,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let ProofObligation::Proposition(goal) = &branch.obligation else {
             return Err(PropositionSplitError::NotProposition);
         };
+        // Membership is by comparison form, so a written disjunction reading
+        // stored cells finds the one over the values stored there, and each
+        // written disjunct is equivalent to its stored-value form.
         if !branch.state.facts.contains(&disjunction) {
             return Err(PropositionSplitError::MissingDisjunction);
         }

@@ -24,7 +24,9 @@ pub(crate) fn mathematical(observed: &IntegerTerm) -> Option<(MachineIntegerType
         return None;
     };
     let ty = machine.ty();
-    let (operation, left, right) = representation::word_operation(ty, machine.value())?;
+    let resolved = crate::kernel::eval::read_over_write_value(machine.value());
+    let (operation, left, right) =
+        representation::word_operation(ty, resolved.as_ref().unwrap_or(machine.value()))?;
     let left = IntegerTerm::from_machine(ty, left.clone())?;
     let right = IntegerTerm::from_machine(ty, right.clone())?;
     Some((ty, operation.exact(left, right)))
@@ -38,7 +40,11 @@ pub(crate) fn additive_mathematical(
     let IntegerTerm::Machine(machine) = observed else {
         return None;
     };
-    match representation::word_operation(machine.ty(), machine.value())? {
+    let resolved = crate::kernel::eval::read_over_write_value(machine.value());
+    match representation::word_operation(
+        machine.ty(),
+        resolved.as_ref().unwrap_or(machine.value()),
+    )? {
         (Operation::Add | Operation::Subtract, _, _) => mathematical(observed),
         (Operation::Multiply, _, _) => None,
     }

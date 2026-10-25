@@ -1615,6 +1615,24 @@ impl CLocalEnvironment {
         self.slots.get(pointer).map(String::as_str)
     }
 
+    /// The array objects whose slots lie in `block`, with their element
+    /// types and slots, found through the slot index as
+    /// [`Self::names_with_slot_in`] finds them.
+    pub(crate) fn array_objects_with_slot_in(
+        &self,
+        block: &PointerBlock,
+    ) -> Vec<(&str, CType, &Pointer)> {
+        self.names_with_slot_in(block)
+            .into_iter()
+            .filter_map(|name| match self.binding(name)? {
+                CLocalBinding::ArrayObject {
+                    element_type, slot, ..
+                } => Some((name, *element_type, slot)),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// The names whose slots lie in `block`, found through the slot index:
     /// pointers order by block first, so they are one run of slot keys.
     pub(in crate::kernel) fn names_with_slot_in(&self, block: &PointerBlock) -> Vec<&str> {
@@ -9120,6 +9138,11 @@ impl CState {
             return None;
         }
         let name = self.locals.name_for_slot(pointer)?;
+        // An array or aggregate's name denotes the object, not its first
+        // element, though its slot is that element's address.
+        if self.locals.is_array_object(name) || self.locals.is_aggregate_object(name) {
+            return None;
+        }
         (self.memory.cells.bitvector_variable_at(pointer) == Some(variable)).then_some(name)
     }
 

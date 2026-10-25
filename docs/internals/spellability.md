@@ -111,10 +111,50 @@ under the same policy with no facts (`kernel::fact_stability`) and records
 every lowering whose term differs. `scripts/fact-stability.sh` runs the
 mdtest corpus under it and groups the differences by where the two terms
 first diverge. The corpus still has fact-dependent lowerings: comparisons
-folded to constants, reads and pointer reads resolved through known values
-or aliases, comparison kinds chosen by known provenance, and decided guards
+folded to constants, pointer reads and aliased reads resolved through known
+values or aliases, comparison kinds chosen by known provenance, and decided guards
 and disjuncts dropped. Each is a defect to remove, by moving the equality
 into the check that needs it.
+
+## A read names its version
+
+A Click read of an integer cell lowers to the read at the cell's version,
+never to the value a store left there: after `a[i] = 5`, `a[i]` lowers to the
+read, not to `5` (`logical_read_names_its_version` in
+`kernel::eval::memory_loads`). A read lowered to its stored value has no
+spelling of its own: no Click text lowers back to it there, so `lower(raise(x))
+== x` fails for terms that contain it, and a rewrite that moves the read
+(`rewrite(j == i)` on `a[j] == 5`) yields `true` instead of `a[i] == 5`
+(`mdtests/a_read_of_a_stored_cell_stays_a_read.md`). The one exception is a
+cell holding its own read (a materialization), which reads as that read. C
+evaluation still computes with stored values: a function's `result` is the
+value its statements produced.
+
+The read-over-write authority relates a read to the stored value:
+`kernel::eval::read_over_write_value` returns, for a load variable whose
+snapshot records a value at exactly its address, that value. It reads the
+memory, never facts, so it holds at every program point. It enters checking
+only through the comparison form (`kernel::comparison_form`): the proposition
+with each read of a stored cell replaced by the value stored there.
+
+- The fact stores file each fact under its comparison form too
+  (`ProofFacts::with_fact`, `PureFactContext::assume_condition_once`), and an
+  exact lookup also looks up the comparison form of what it looks up.
+- A kernel rule that compares a stated term with one it derives compares
+  their comparison forms (identity, cast identity, affine conclusions).
+- `simp` tries a goal that reads stored cells over its stored values first
+  (`try_stored_value_goal`), the search the goal had before reads kept their
+  names, and searches over the reads only when that misses.
+
+Code does not resolve reads anywhere else. A comparison form is a fact like
+any other: a smart step that cites one spells it, and its spelling must lower
+back to it. The printer casts C arithmetic read at a snapshot,
+`(int32)at(p, a - 1)`, because the parser reads arithmetic inside `at(...)`
+and `old(...)` as Integer arithmetic.
+
+Two projections of one memory can still name one read twice: a read is named
+at its snapshot projected for that read, and the comparison form does not join
+two names whose snapshots differ only by projection.
 
 ## When a fact has no spelling
 

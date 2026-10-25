@@ -83,6 +83,7 @@ pub(crate) use memory_loads::load_variable_for_term;
 pub(crate) use memory_loads::loaded_pointer_predates_block;
 pub(crate) use memory_loads::offsets_have_same_canonical_form;
 pub(crate) use memory_loads::proposition_mentions_registered_load_variable;
+pub(crate) use memory_loads::read_over_write_c_value;
 pub(in crate::kernel) use memory_loads::record_load_access_width;
 #[cfg(test)]
 pub(crate) use memory_loads::record_load_variable_defining_fact;
@@ -108,6 +109,7 @@ pub(super) use memory_loads::{
     canonical_offset_term, evaluate_c_memory_load_paths, evaluate_logical_memory_load_paths,
     evaluate_spec_memory_load_paths, symbolic_load_value,
 };
+pub(crate) use memory_loads::{comparison_form, holds_by_read_over_write, read_over_write_value};
 pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};
 #[cfg(test)]
 pub(super) use memory_loads::{load_substitution_term_visits, reset_load_substitution_term_visits};

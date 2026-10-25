@@ -6105,13 +6105,14 @@ fn cpp_reference_parameters_are_declared_and_named_as_their_referents() {
         "{dereferenced}"
     );
 
-    // A fact about the referent names it as the sidecar does.
+    // A fact about the referent names it as the sidecar does: the read of
+    // the stored referent keeps its name (`docs/internals/spellability.md`).
     let false_claim = refusal(&SIDECAR.replace(
         "ensures value == old(value) + 1;",
         "ensures value == old(value) + 2;",
     ));
     assert!(
-        false_claim.contains("goal: to_integer(old(value) + 1) == to_integer(old(value)) + 2"),
+        false_claim.contains("goal: to_integer(value) == to_integer(old(value)) + 2"),
         "{false_claim}"
     );
     assert!(

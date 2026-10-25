@@ -3893,6 +3893,14 @@ impl<'a> Proof<'a> {
             scope.succeed();
             return Ok(Some(proof));
         }
+        // A goal that reads stored cells is first tried over the stored
+        // values, the goal the search saw before reads kept their version
+        // names; the full search over the reads follows only when that
+        // misses.
+        if let Some(proof) = self.try_stored_value_goal()? {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
         let result = match self.try_simp_closure_after_direct(false)? {
             Some(proof) => Some(proof),
             None => match self.try_restated_constant_upper_bound()? {
@@ -3907,6 +3915,47 @@ impl<'a> Proof<'a> {
             scope.succeed();
         }
         Ok(result)
+    }
+
+    /// The premise speller's spelling of a goal a search states, as
+    /// `Proof::spelled_goal` spells a refined one, without its exemption for
+    /// a smart tactic: the search writes a `have` of it.
+    fn spelled_goal_for_search(&self, goal: &Proposition) -> Option<ClickProposition> {
+        let recorded = self.premise_surface_facts()?;
+        self.available_surface_fact(recorded, None, goal)
+            .or_else(|| self.available_surface_fact(self.local_surface_facts(), None, goal))
+    }
+
+    /// A goal that reads stored cells, proved over the values stored there:
+    /// `have` the goal's read-over-write form (`kernel::comparison_form`)
+    /// by `simp`, then close the goal by `assumption`, which matches a read
+    /// through the value its cell holds. The stored-value form is the goal
+    /// `simp` would have seen had the reads been folded, so this recovers
+    /// what its rules prove about the stored values. One level: the inner
+    /// `simp` does not take this route again.
+    fn try_stored_value_goal(&self) -> Result<Option<Self>, ClickError> {
+        let Some(goal) = self.goal() else {
+            return Ok(None);
+        };
+        let Some(resolved) = crate::kernel::comparison_form(goal) else {
+            return Ok(None);
+        };
+        let Some(_scope) = SimpFallbackScope::enter(SimpFallback::StoredValue) else {
+            return Ok(None);
+        };
+        let Some(surface) = self.spelled_goal_for_search(&resolved) else {
+            return Ok(None);
+        };
+        let Some(scope) = attempt::candidate_outcome(self.begin_have(surface))? else {
+            return Ok(None);
+        };
+        let Some(closed) = scope.try_simp_closure()? else {
+            return Ok(None);
+        };
+        let Some(proof) = attempt::candidate_outcome(closed.join())? else {
+            return Ok(None);
+        };
+        attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))
     }
 
     /// `simp`'s last strategy, over the facts connected to the goal: read
@@ -11651,6 +11700,7 @@ enum SimpFallback {
     FunctionUnfold = 2,
     ConnectedFacts = 4,
     ArithmeticSubgoal = 8,
+    StoredValue = 16,
 }
 
 /// A candidate can try the other fallback and descend through logical

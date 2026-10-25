@@ -1967,12 +1967,18 @@ impl CreationEvents {
                 }
                 AlgebraicValue::C(CValue::pointer(address))
             }
-            AlgebraicValue::C(CValue::Int32(value)) => AlgebraicValue::C(CValue::Int32(
-                value
-                    .as_const()
-                    .map(Bitvector32Term::Constant)
-                    .unwrap_or_else(|| value.clone()),
-            )),
+            AlgebraicValue::C(CValue::Int32(value)) => {
+                // A read of a stored cell is the index stored there (the
+                // read-over-write authority), as the index was when the
+                // member was created.
+                let value = crate::kernel::read_over_write_value(value).unwrap_or(value.clone());
+                AlgebraicValue::C(CValue::Int32(
+                    value
+                        .as_const()
+                        .map(Bitvector32Term::Constant)
+                        .unwrap_or(value),
+                ))
+            }
             other => other.clone(),
         })
     }

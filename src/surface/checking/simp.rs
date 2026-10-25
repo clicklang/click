@@ -974,10 +974,19 @@ mod tests {
                 std::slice::from_ref(&equality),
             )
             .expect("rewrite the registered load at its observed snapshot");
+            // The rewritten goal reads the target at the observed snapshot,
+            // named as a read: the read-over-write authority relates it to
+            // the latest overwrite stored there.
+            let Proposition::ConditionIs(ConditionTerm::Compare { left, right, .. }, true) =
+                &rewritten
+            else {
+                panic!("the rewrite keeps the comparison: {rewritten:?}");
+            };
+            assert_eq!(right.as_ref(), &Bitvector32Term::Constant(17));
+            assert_ne!(left.as_ref(), &Bitvector32Term::Variable(load));
             assert_eq!(
-                rewritten,
-                // The rewritten comparison of two constants is decided.
-                Proposition::ConditionIs(ConditionTerm::Constant(stored == 17), true)
+                crate::kernel::read_over_write_value(left),
+                Some(Bitvector32Term::Constant(stored))
             );
         }
     }
