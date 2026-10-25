@@ -947,7 +947,12 @@ fn build_internal_proof_with_source(
     source: ProofTacticSource,
 ) -> Result<InternalProofNode, ClickError> {
     match source {
-        ProofTacticSource::SourceSyntax => build_internal_proof(tactics, claim_label),
+        ProofTacticSource::SourceSyntax => {
+            // The tail's site follows the script's last written tactic, so
+            // its execution and closing are charged to a smart budget there.
+            let (tactics, _) = claim_proofs::with_implicit_tail(tactics);
+            build_internal_proof(&tactics, claim_label)
+        }
         ProofTacticSource::GeneratedBy { source_index } => {
             build_generated_certificate_proof(tactics, claim_label, source_index)
         }
