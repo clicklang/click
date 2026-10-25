@@ -25,7 +25,7 @@ int32 count() {
         invariant i >= 0 and i <= 3;
         preserve by {
             mark outer_head;
-            have at(outer_head, i) < 3 by { simp(); }
+            have at(outer_head, i) < 3 by { solve(); }
             execute_until(loop(1));
             loop {
                 decreases 2 - j;
@@ -38,12 +38,12 @@ int32 count() {
                     close_invariants();
                 }
             }
-            have at(inner_head, j) <= 2 by { simp(); }
+            have at(inner_head, j) <= 2 by { solve(); }
             execute_until(back_edge());
             close_invariants();
         }
     }
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

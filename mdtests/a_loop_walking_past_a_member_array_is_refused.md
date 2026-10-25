@@ -48,7 +48,7 @@ int32 walk(struct Rec* r, int32 n) {
                     at(region(5).entry, i) < at(region(5).entry, n);
                 };
             }
-            close_invariants() by simp();
+            close_invariants() by solve();
         }
     }
 }

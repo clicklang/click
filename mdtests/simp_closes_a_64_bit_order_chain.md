@@ -15,19 +15,19 @@ import click::integer;
 theorem two_links(a: uint64, b: uint64, c: uint64) {
     requires a < b;
     requires b <= c;
-    ensures a < c by { simp(); }
+    ensures a < c by { solve(); }
 }
 theorem three_links(a: uint64, b: uint64, c: uint64, d: uint64) {
     requires a < b;
     requires b <= c;
     requires c <= d;
-    ensures a < d by { simp(); }
+    ensures a < d by { solve(); }
 }
 theorem signed_links(a: int64, b: int64, c: int64, d: int64) {
     requires a < b;
     requires c >= b;
     requires c <= d;
-    ensures a < d by { simp(); }
+    ensures a < d by { solve(); }
 }
 theorem written_from_the_other_side(a: uint64, b: uint64, c: uint64) {
     requires a < b;

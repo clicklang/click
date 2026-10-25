@@ -47,7 +47,7 @@ struct cell* adopt(struct cell* p, struct cell* q) {
             step();
             let b = fold(holds(p), { model: Maybe::Some(value) });
             step();
-            simp();
+            solve();
         },
     }
 }

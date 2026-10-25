@@ -39,7 +39,7 @@ theorem clear_cell_is_sets_zero() {
     ensures SetsZero(&clear_cell) by {
         unfold(SetsZero);
         unfold(IsZero);
-        simp();
+        solve();
     }
 }
 

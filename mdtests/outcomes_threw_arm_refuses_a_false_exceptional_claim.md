@@ -30,11 +30,11 @@ int32 caller(int32 x) throws int32 {
             step();
             step();
             step();
-            simp();
+            solve();
         }
         threw => {
             step();
-            simp();
+            solve();
         }
     }
 }

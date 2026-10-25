@@ -65,7 +65,7 @@ int32 same_node(struct node* a, struct node* b) {
                     let x = fold(cell_at(a), { model: Cell::Present(xi) });
                     let y = fold(cell_at(b), { model: Cell::Present(yi) });
                     execute();
-                    simp();
+                    solve();
                 },
             }
         },

@@ -93,7 +93,7 @@ int32 for_count_invariant(int32 n) {
         invariant i >= 0 and i <= n;
     }
     step();
-    simp();
+    solve();
 }
 
 int32 for_continue_concrete() {

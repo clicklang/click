@@ -36,7 +36,7 @@ void retain(struct object* left, struct object* right) {
             execute();
         }
     }
-    simp();
+    solve();
 }
 ```
 

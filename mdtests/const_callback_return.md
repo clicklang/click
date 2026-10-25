@@ -30,10 +30,10 @@ int nested(int *p) {
 ```click
 verifying "view.c";
 verifying "caller.c";
-const int *view(int *p) { ensures result == p; } by { execute(); simp(); }
-const int *relay(int *p) { ensures result == p; } by { execute(); simp(); }
-int read_view(int *p) { views p[0..1]; ensures result == p[0]; } by { execute(); simp(); }
-int nested(int *p) { views p[0..1]; ensures result == p[0]; } by { execute(); simp(); }
+const int *view(int *p) { ensures result == p; } by { execute(); solve(); }
+const int *relay(int *p) { ensures result == p; } by { execute(); solve(); }
+int read_view(int *p) { views p[0..1]; ensures result == p[0]; } by { execute(); solve(); }
+int nested(int *p) { views p[0..1]; ensures result == p[0]; } by { execute(); solve(); }
 ```
 
 ```expect

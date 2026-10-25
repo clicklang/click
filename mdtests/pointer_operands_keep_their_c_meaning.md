@@ -25,7 +25,7 @@ int32* advance(struct S* s, int32 n) {
     ensures result == s->p + n;
 } by {
     step(); step(); step();
-    have q == s->p + n by simp();
+    have q == s->p + n by solve();
 }
 ```
 

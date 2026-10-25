@@ -31,7 +31,7 @@ int32 increment_after_other_write(struct pair* pair) {
     have pair->value == old(pair->value) by {
         normalize();
     }
-    simp();
+    solve();
 }
 ```
 

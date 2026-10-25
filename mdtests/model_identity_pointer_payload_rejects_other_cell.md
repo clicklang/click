@@ -54,7 +54,7 @@ int cell_same(struct cell* p, struct cell* q) {
             have identity == q;
             execute();
             let c = fold(cell_at(p), { model: old(c.model) });
-            simp();
+            solve();
         },
     }
 }

@@ -4,7 +4,7 @@
 theorem mixed(i: Integer, m: int32) {
     requires i == 0;
     requires m == m;
-    ensures m == m by simp();
+    ensures m == m by solve();
 }
 
 theorem use_mixed(i: Integer, m: int32) {

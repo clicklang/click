@@ -44,7 +44,7 @@ int32 flip(int32 n) {
         decreases n - i;
         invariant 0 <= i and i <= n;
         invariant 0 <= x and x <= 1;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             branch ensuring {
                 fact 0 <= x and x <= 1;
@@ -58,7 +58,7 @@ int32 flip(int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

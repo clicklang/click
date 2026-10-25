@@ -57,13 +57,13 @@ int32 tree_spin(struct node* root) {
             unfold(t);
             execute();
             let t = fold(tree_at(root), { model: HeapTree::Empty });
-            simp();
+            solve();
         },
         HeapTree::Node(identity, value, left_model, right_model) => {
-            branch { step(); simp(); } else {}
+            branch { step(); solve(); } else {}
             step(tree_spin, { t: t });
             step();
-            simp();
+            solve();
         },
     }
 }

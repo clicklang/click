@@ -31,7 +31,7 @@ void cut(uint8* s, uint64 n) {
         contradiction(false);
     }
     have s[0u64] == '\0' by {
-        simp();
+        solve();
     }
     have forall (k: uint64) { 0u64 <= k and k < 0u64 + 1u64 implies defined(s[k]) } by {
         intro();
@@ -42,7 +42,7 @@ void cut(uint8* s, uint64 n) {
             };
         }
         rewrite(k == 0u64);
-        simp();
+        solve();
     }
     fold(cstr_at(s, 0u64));
 }

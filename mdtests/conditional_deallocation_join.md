@@ -49,7 +49,7 @@ int32 conditional_deallocation_join(int32* p, int32 error) {
         fold(maybe_allocated(p, error));
     }
     step();
-    simp();
+    solve();
 }
 ```
 

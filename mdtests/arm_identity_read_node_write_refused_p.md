@@ -41,7 +41,7 @@ void roundtrip(struct node* p, struct node* q) {
             have p->right == at(m, p->right);
             let t = fold(tree(p), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
             execute();
-            simp();
+            solve();
         },
     }
 }

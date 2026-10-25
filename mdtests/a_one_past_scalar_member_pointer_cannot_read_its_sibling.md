@@ -16,7 +16,7 @@ int32 probe(struct Pair* p) {
     views p->first;
     views p->second;
     ensures result == p->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

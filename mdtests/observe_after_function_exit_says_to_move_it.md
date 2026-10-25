@@ -20,7 +20,7 @@ int32 f(int32* p) {
 } by {
     execute();
     observe(cell1(p));
-    simp();
+    solve();
 }
 ```
 

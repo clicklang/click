@@ -33,7 +33,7 @@ int32 bump(struct cell* p) {
     step();
     let c = fold(counted(p), { v: 7 });
     step();
-    simp();
+    solve();
 }
 ```
 

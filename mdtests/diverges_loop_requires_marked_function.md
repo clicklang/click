@@ -19,14 +19,14 @@ int32 wait_for_zero(int32 x) {
 } by {
     loop diverges {
         invariant x == x;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             step();
-            close_invariants() by { simp(); }
+            close_invariants() by { solve(); }
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

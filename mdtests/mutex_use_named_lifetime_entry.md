@@ -25,7 +25,7 @@ void caller(struct holder *holder) {
     step(helper, { access: lifetime });
     step(helper, { access: lifetime });
     step();
-    simp();
+    solve();
 }
 ```
 

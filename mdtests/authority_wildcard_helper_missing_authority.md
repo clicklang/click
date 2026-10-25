@@ -11,10 +11,10 @@ verifying "wildcard_helper_missing_authority.c";
 void inspect(int32* pool, int32* member) {
     owns authority(slot(pool, _));
     owns slot(pool, member);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void caller(int32* pool, int32* member) {
     owns slot(pool, member);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

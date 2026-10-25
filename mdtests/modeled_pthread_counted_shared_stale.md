@@ -25,7 +25,7 @@ verifying "modeled_pthread_counted_shared_stale.c";
 authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns ticket(argument);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 run(void* p, void* q) {
     owns authority(ticket(p));
     owns authority(ticket(q));
@@ -43,7 +43,7 @@ int32 run(void* p, void* q) {
         have count(ticket(p)) == 2;
         unfold(ticket(p));
         unfold(ticket(p));
-        step(); simp();
+        step(); solve();
     } else {}
     step();
     branch {
@@ -51,14 +51,14 @@ int32 run(void* p, void* q) {
         unfold(ticket(p));
         unfold(ticket(p));
         have count(ticket(q)) == 1;
-        step(); simp();
+        step(); solve();
     } else {}
     step();
     unfold(ticket(p));
     step();
     unfold(ticket(p));
     have count(ticket(p)) == 2;
-    step(); simp();
+    step(); solve();
 }
 ```
 

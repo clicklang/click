@@ -60,7 +60,7 @@ void clear(struct cell* c, struct cell* other) {
             unfold(t);
             execute();
             let u = fold(cell_at(c), { model: Owned::Held(other, 0) });
-            simp();
+            solve();
         },
     }
 }

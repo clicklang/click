@@ -6,7 +6,7 @@ theorem opened_wide() {
     ensures exists (y: int64) { y == 4294967296i64 } by {
         obtain (candidate: int64) { candidate == 4294967296i64 }
         witness { y: candidate };
-        simp();
+        solve();
     }
 }
 
@@ -15,7 +15,7 @@ theorem opened_byte() {
     ensures exists (y: uint8) { y == 'a' } by {
         obtain (candidate: uint8) { candidate == 'a' }
         witness { y: candidate };
-        simp();
+        solve();
     }
 }
 ```

@@ -40,7 +40,7 @@ int32 nest(int32 n) {
                     have n < 100 by { arithmetic() using { n < 10; }; }
                     have to_integer(n + 1) <= 100 by auto();
                     step();
-                    close_invariants() by { simp(); }
+                    close_invariants() by { solve(); }
                 }
             }
             step();
@@ -48,7 +48,7 @@ int32 nest(int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -11,7 +11,7 @@ int32 probe(int32* q, struct Pair* pair) {
     requires q == &pair->first;
     views pair->first;
     views pair->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

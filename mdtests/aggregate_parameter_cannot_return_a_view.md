@@ -10,7 +10,7 @@ verifying "aggregate_parameter_cannot_return_a_view.c";
 void leak(struct packet input, int32** out) {
     owns out[0..1];
     ensures viewable(out[0][0..1]);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

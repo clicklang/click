@@ -43,7 +43,7 @@ int32 invoke(int32 (*callback)()) {
     apply(lift(callback));
     step(Progress, { counter: first });
     execute();
-    simp();
+    solve();
 }
 ```
 

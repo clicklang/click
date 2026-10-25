@@ -54,7 +54,7 @@ void consume_population(struct owner* owner, int32 amount) {
     }
     execute();
     unfold(valid_capacity);
-    simp();
+    solve();
 }
 ```
 

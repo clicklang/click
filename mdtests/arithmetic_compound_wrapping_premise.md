@@ -27,7 +27,7 @@ int32 bounds(int32 left, int32 right) {
             to_integer(left) <= to_integer(-2147483648 - right);
         };
     }
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

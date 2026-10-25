@@ -10,7 +10,7 @@ import click::list::{length};
 
 theorem t(x: int32) {
     requires x == 3;
-    ensures length(x) == 3 by { unfold(length); simp(); }
+    ensures length(x) == 3 by { unfold(length); solve(); }
 }
 ```
 

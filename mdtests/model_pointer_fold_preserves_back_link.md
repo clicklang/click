@@ -35,7 +35,7 @@ void recombine(struct node *p) {
 } by {
  match tree.model { Triple::At(pid,qid,rid) => {
  unfold(tree);
- have p->left == qid by { simp(); }
+ have p->left == qid by { solve(); }
  fold(links(qid,pid));
  unfold(links(qid,pid));
  have qid->left == pid by { assumption(); }

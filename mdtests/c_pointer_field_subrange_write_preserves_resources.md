@@ -122,12 +122,12 @@ void arena_write(struct region* region, int32 index, int32 value) {
     let { live: n, capacity: c } = unfold(st);
     let { start: s, end: e } = unfold(r);
     have defined(s + index) by {
-        simp() using {
+        solve() using {
             defined(s + index) and to_integer(s + index) < to_integer(e);
         };
     }
     have to_integer(s + index) < to_integer(e) by {
-        simp() using {
+        solve() using {
             defined(s + index) and to_integer(s + index) < to_integer(e);
         };
     }
@@ -147,17 +147,17 @@ void arena_write(struct region* region, int32 index, int32 value) {
         };
     }
     have region->arena->capacity == c by {
-        simp();
+        solve();
     }
     have to_integer(region->start + index) < to_integer(region->arena->capacity) by auto();
     have separate(
         memory(*region),
         memory(*(region->arena->data + (region->start + index)))
-    ) by { simp(); }
+    ) by { solve(); }
     mark w;
     step_until(function.exit);
-    have region->arena == old(region->arena) by { simp(); }
-    have region->arena->data == old(region->arena->data) by { simp(); }
+    have region->arena == old(region->arena) by { solve(); }
+    have region->arena->data == old(region->arena->data) by { solve(); }
 
     have forall (k: int32) {
         0 <= k and k < at(w, region->arena->capacity) implies
@@ -180,7 +180,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
     }
     let r = fold(arena_region(region), { start: s, end: e });
     let st = fold(arena_state(region->arena), { live: n, capacity: c });
-    simp();
+    solve();
 }
 
 ```

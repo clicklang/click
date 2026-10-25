@@ -31,7 +31,7 @@ int32 local_array_loop_frame() {
         invariant i <= 3;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

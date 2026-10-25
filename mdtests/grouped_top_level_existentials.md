@@ -20,7 +20,7 @@ int32 identity(int32 x) {
     obtain (k: int32) { k == x }
     execute();
     witness { j: k };
-    simp();
+    solve();
 }
 ```
 

@@ -25,7 +25,7 @@ int32 f(struct cell* root) {
     ensures result == old(child.number);
     ensures child.number == old(child.number);
     ensures root->value == old(child.number);
-} by { unfold(child); execute(); fold(child); simp(); }
+} by { unfold(child); execute(); fold(child); solve(); }
 ```
 ```expect
 pass

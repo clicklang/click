@@ -23,7 +23,7 @@ int32 write_local(uint32 x) {
     ensures result == result;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

@@ -81,7 +81,7 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
     step();
     unfold(sorted);
     unfold(sorted_range);
-    simp();
+    solve();
 }
 ```
 

@@ -29,7 +29,7 @@ int32 stop_with_one(int32 flag) {
         invariant flag >= 0;
         decreases flag;
     }
-    simp();
+    solve();
 }
 ```
 

@@ -44,12 +44,12 @@ void touch(int32 n) {
             }
             step();
             step();
-            simp();
+            solve();
         },
         Walk::Done => {
             step();
             step();
-            simp();
+            solve();
         },
     }
 }

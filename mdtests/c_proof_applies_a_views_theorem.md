@@ -35,7 +35,7 @@ theorem element_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
     requires k < hi;
     ensures element(v, k) == to_integer(v[k]) by {
         unfold(element(v, k));
-        simp();
+        solve();
     }
 }
 
@@ -47,7 +47,7 @@ int32 second(int32 a[]) {
     apply(element_of_a_viewed_range(a, 0, 3, 1)) using {
         viewable(a[0..3]);
     };
-    simp();
+    solve();
 }
 ```
 

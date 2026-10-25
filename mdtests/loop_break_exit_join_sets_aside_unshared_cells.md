@@ -77,7 +77,7 @@ int32 inspect(struct node* p) {
         owns x: cell_at(p);
         invariant seen == 0;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match x.model {
                 Cell::Missing => {
@@ -106,7 +106,7 @@ int32 inspect(struct node* p) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

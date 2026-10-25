@@ -25,7 +25,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
     step();
     have viewable(a[0..n]);
     have viewable(a[0..k]) by assumption();
-    simp();
+    solve();
 }
 ```
 

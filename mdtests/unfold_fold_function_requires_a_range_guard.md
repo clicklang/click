@@ -18,7 +18,7 @@ theorem icount_needs_a_range_guard(p: int32[], lo: int32, hi: int32) {
         peel(icount(p, lo, hi)) using {
             to_integer(lo) <= to_integer(hi - 1);
         };
-        simp();
+        solve();
     }
 }
 ```

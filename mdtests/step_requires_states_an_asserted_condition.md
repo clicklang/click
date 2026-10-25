@@ -27,14 +27,14 @@ int32 f(int32 x) {
     step() {
         requires x >= 0 and x < 4 by {
             cases {
-                x == 1 => { simp(); }
-                x == 2 => { simp(); }
+                x == 1 => { solve(); }
+                x == 2 => { solve(); }
             }
         }
     }
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

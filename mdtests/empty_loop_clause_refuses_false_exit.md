@@ -15,13 +15,13 @@ int spin(int x) {
 verifying "r.c";
 int32 poll(int32 x) {
     ensures result == x;
-} by { step(); simp(); }
+} by { step(); solve(); }
 int32 spin(int32 x) diverges {
     ensures result == 2;
 } by {
     loop diverges { }
     step();
-    simp();
+    solve();
 }
 ```
 

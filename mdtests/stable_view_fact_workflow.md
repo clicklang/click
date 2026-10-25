@@ -23,7 +23,7 @@ int32 stable_view_fact_reader(int32 p[]) {
 } by {
     open(stable_cell(p)) {
         execute();
-        simp();
+        solve();
     }
 }
 ```

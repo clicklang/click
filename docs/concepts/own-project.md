@@ -304,7 +304,7 @@ uint64 label_fit(uint64 length) {
 } by {
     execute();
     have result <= length by auto();
-    simp();
+    solve();
 }
 ```
 
@@ -353,7 +353,7 @@ uint64 label_fit(uint64 length) {
 } by {
     execute();
     have result <= length by auto();
-    simp();
+    solve();
 }
 
 uint64 label_measure(const char* src) {

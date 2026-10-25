@@ -38,11 +38,11 @@ int32 f(char buf[], int32 len, uint32 flags) {
     if (flags & 1u32) != 0u32 {
         step(snprintf, { n0: 0u64 });
         execute();
-        simp();
+        solve();
     } else {
         let { result: count } = step(snprintf, { n0: 0u64 });
         execute();
-        simp();
+        solve();
     }
 }
 ```

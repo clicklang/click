@@ -45,9 +45,9 @@ int32 count_up(int32 *a, int32 n) {
                 intro();
                 extract(0 <= k);
                 extract(k <= n);
-                simp();
+                solve();
             }
-            simp();
+            solve();
         }
         preserve by {
             step();
@@ -57,11 +57,11 @@ int32 count_up(int32 *a, int32 n) {
                 intro();
                 extract(0 <= k);
                 extract(k <= n);
-                simp();
+                solve();
             }
             close_invariants() by {
-                both { simp(); } and {
-                    both { simp(); } and {
+                both { solve(); } and {
+                    both { solve(); } and {
                         both {
                             intro();
                             intro();

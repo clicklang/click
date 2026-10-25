@@ -42,7 +42,7 @@ void stamp(struct cell* p) {
             step();
             let d = fold(cell_at(id), { model: Cell::At(id) });
             step();
-            simp();
+            solve();
         },
     }
 }

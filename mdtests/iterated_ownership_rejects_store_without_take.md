@@ -35,11 +35,11 @@ void poke(int32* data, int32* occupied, int32 capacity, int32 index) {
     if occupied[index] != 0 {
         execute();
         fold(arena_cells(data, occupied, capacity));
-        simp();
+        solve();
     } else {
         execute();
         fold(arena_cells(data, occupied, capacity));
-        simp();
+        solve();
     }
 }
 ```

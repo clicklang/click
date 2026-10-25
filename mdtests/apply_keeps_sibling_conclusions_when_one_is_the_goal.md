@@ -16,17 +16,17 @@ theorem three_bounds(x: int32) {
 
     ensures x >= 0 by {
         unfold(small);
-        simp();
+        solve();
     }
 
     ensures x <= 10 by {
         unfold(small);
-        simp();
+        solve();
     }
 
     ensures x != 11 by {
         unfold(small);
-        simp();
+        solve();
     }
 }
 
@@ -34,7 +34,7 @@ theorem needs_upper(x: int32) {
     requires x <= 10;
 
     ensures x <= 20 by {
-        simp();
+        solve();
     }
 }
 

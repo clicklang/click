@@ -27,7 +27,7 @@ int32 fill_too_many() {
 } by {
     step(); step(); step();
     loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

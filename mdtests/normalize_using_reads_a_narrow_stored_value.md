@@ -35,9 +35,9 @@ int32 s(int32 j) {
         have t[3u64] == 0u8 by { normalize() using { j == 2; }; }
         have defined(t[3u64]) by { normalize() using { j == 2; }; }
         execute();
-        simp();
+        solve();
     } else {
-        if j == 1 { execute(); simp(); } else { execute(); simp(); }
+        if j == 1 { execute(); solve(); } else { execute(); solve(); }
     }
 }
 ```

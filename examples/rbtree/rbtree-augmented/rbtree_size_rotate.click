@@ -67,7 +67,7 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                 }
                 step(compute_size, { parent: source, left: left, right: right });
                 step();
-                simp();
+                solve();
             } else {
                 have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) by {
                     cases {
@@ -83,7 +83,7 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                 }
                 step(compute_size, { parent: source, left: left, right: right });
                 step();
-                simp();
+                solve();
             }
         } else {
             if ((struct sized_node*)(void*)rb_old)->rb.rb_right != 0 {
@@ -101,11 +101,11 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                 }
                 step(compute_size, { parent: source, left: left, right: right });
                 step();
-                simp();
+                solve();
             } else {
                 step(compute_size, { parent: source, left: left, right: right });
                 step();
-                simp();
+                solve();
             }
         }
 }
@@ -171,7 +171,7 @@ theorem sized_rotate_has_size_contract()
                     }
                 }
                 step(sized_rotate, { source: s, target: t, left: l, right: r });
-                simp();
+                solve();
             } else {
                 have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) by {
                     cases {
@@ -186,7 +186,7 @@ theorem sized_rotate_has_size_contract()
                     }
                 }
                 step(sized_rotate, { source: s, target: t, left: l, right: r });
-                simp();
+                solve();
             }
         } else {
             if ((struct sized_node*)(void*)rb_old)->rb.rb_right != 0 {
@@ -203,10 +203,10 @@ theorem sized_rotate_has_size_contract()
                     }
                 }
                 step(sized_rotate, { source: s, target: t, left: l, right: r });
-                simp();
+                solve();
             } else {
                 step(sized_rotate, { source: s, target: t, left: l, right: r });
-                simp();
+                solve();
             }
         }
     }

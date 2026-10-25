@@ -41,7 +41,7 @@ uint32 count_nodes(struct node* node) {
 } by {
     if node == 0 {
         execute();
-        simp();
+        solve();
     } else {
         unfold(marked_list(node));
     }

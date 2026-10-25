@@ -17,7 +17,7 @@ void sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
     step_until(function.exit);
     fold(source);
     let target = fold(size_metadata(rb_new), { value: old(source.value) });
-    simp();
+    solve();
 }
 
 contract void CopySize(struct rb_node* rb_old, struct rb_node* rb_new) {
@@ -31,6 +31,6 @@ theorem sized_copy_has_size_contract()
     executes sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
     ensures CopySize(&sized_copy) as { source: s, target: t } by {
         step(sized_copy, { source: s, target: t });
-        simp();
+        solve();
     }
 }

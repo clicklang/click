@@ -121,7 +121,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.phase == SizedInsertContextMiddlePhase::Before(g, p, m, above, nv, pv, gv, left, right);
                 invariant old(state.phase) == SizedInsertContextMiddlePhase::Before(g, p, m, above, nv, pv, gv, left, right);
                 invariant state.model == sized_context_middle_before(g, p, m, node, above, nv, pv, gv, left, right);
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     let { tree: loop_tree, link: link } = unfold(state);
                     unfold(sized_context_middle_before(g, p, m, node, above, nv, pv, gv, left, right));
@@ -198,7 +198,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(sized_reparent(SizedTree::Node(m, p, Color::Black, 1, SizedTree::Empty, SizedTree::Empty), g));
                     unfold(sized_recolor(SizedTree::Node(m, g, Color::Black, 1, SizedTree::Empty, SizedTree::Empty), Color::Black));
                     have p_right.model == SizedTree::Node(m, g, Color::Black, 1, SizedTree::Empty, SizedTree::Empty) by { assumption(); }
-                    have gparent->__rb_parent_color == address(above) + 1 by { simp(); }
+                    have gparent->__rb_parent_color == address(above) + 1 by { solve(); }
                     unfold(g_size);
                     have sized_context_parent_word(link.model, g->__rb_parent_color) == 1 by {
                         apply(sized_context_parent_word_black(link.model, above, g->__rb_parent_color));
@@ -211,7 +211,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         };
                     }
                     transport(at(before_link_writes, parent->rb_left == node), parent->rb_left == node);
-                    have parent->rb_right == gparent by { simp(); }
+                    have parent->rb_right == gparent by { solve(); }
                     mark before_parent_update;
                     have at(before_parent_update, g->rb_left == m) by { assumption(); }
                     have at(before_parent_update, parent->rb_left == node) by { assumption(); }
@@ -229,7 +229,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     let g_size = fold(size_metadata(g), { value: gv });
                     transport(at(before_parent_update, g->rb_left == m), g->rb_left == m);
-                    have g->rb_right == 0 by { simp(); }
+                    have g->rb_right == 0 by { solve(); }
                     let g_right = fold(sized_at(g->rb_right), { model: SizedTree::Empty });
                     unfold(sized_parent_is(SizedTree::Node(m, g, Color::Black, 1, SizedTree::Empty, SizedTree::Empty), g));
                     let demoted = fold(sized_recompute_at(g), {
@@ -347,17 +347,17 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have state.context == old(state.context) by { assumption(); }
                     have state.whole_model == sized_plug(old(state.context), state.model) by { assumption(); }
                     have state.phase == sized_context_middle_finish(old(state.phase)) by {
-                        unfold(sized_context_middle_finish(SizedInsertContextMiddlePhase::Before(g, p, m, above, nv, pv, gv, left, right))); simp();
+                        unfold(sized_context_middle_finish(SizedInsertContextMiddlePhase::Before(g, p, m, above, nv, pv, gv, left, right))); solve();
                     }
                     have sized_shape(state.model) == sized_context_middle_expected(old(state.phase), node) by {
                         rewrite(old(state.phase) == SizedInsertContextMiddlePhase::Before(g, p, m, above, nv, pv, gv, left, right));
-                        unfold(sized_context_middle_expected(SizedInsertContextMiddlePhase::Before(g, p, m, above, nv, pv, gv, left, right), node)); simp();
+                        unfold(sized_context_middle_expected(SizedInsertContextMiddlePhase::Before(g, p, m, above, nv, pv, gv, left, right), node)); solve();
                     }
                     step();
                 }
             }
             have node == old(node) by { assumption(); }
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -373,7 +373,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_context_middle_expected(old(state.phase), node);
 } by {
     step(insert::__rb_insert, { state: state });
-    execute(); simp();
+    execute(); solve();
 }
 
 void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -388,5 +388,5 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_context_middle_expected(old(state.phase), node);
 } by {
     step(insert::__rb_insert_augmented, { state: state });
-    execute(); simp();
+    execute(); solve();
 }

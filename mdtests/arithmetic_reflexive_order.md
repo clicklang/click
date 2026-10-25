@@ -35,7 +35,7 @@ int32 lower(int32 p) {
         };
     }
     step();
-    simp();
+    solve();
 }
 
 int32 upper(int32 p) {
@@ -52,7 +52,7 @@ int32 upper(int32 p) {
         };
     }
     step();
-    simp();
+    solve();
 }
 ```
 

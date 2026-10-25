@@ -19,7 +19,7 @@ void byte_prefix(const uint8* p, uint64 held, uint64 requested) {
 } by {
     have requested <= 9223372036854775807u64 by auto();
     step_until(function.exit);
-    simp() using { requested <= held; viewable(p[0u64..held]); requested <= 9223372036854775807u64; };
+    solve() using { requested <= held; viewable(p[0u64..held]); requested <= 9223372036854775807u64; };
 }
 void word_prefix(const uint32* p, uint64 held, uint64 requested) {
     requires held <= 2305843009213693951u64;
@@ -30,13 +30,13 @@ void word_prefix(const uint32* p, uint64 held, uint64 requested) {
 } by {
     have requested <= 2305843009213693951u64 by auto();
     step_until(function.exit);
-    simp() using { to_integer(requested * 4u64) <= to_integer(held * 4u64); viewable(p[0u64..held]); requested <= 2305843009213693951u64; };
+    solve() using { to_integer(requested * 4u64) <= to_integer(held * 4u64); viewable(p[0u64..held]); requested <= 2305843009213693951u64; };
 }
 void first_byte(const uint8* p, uint64 held) {
     requires 1u64 <= held;
     views p[0u64..held];
     ensures viewable(p[0u64..1u64]);
-} by { execute(); simp() using { 1u64 <= held; viewable(p[0u64..held]); }; }
+} by { execute(); solve() using { 1u64 <= held; viewable(p[0u64..held]); }; }
 ```
 
 ```expect

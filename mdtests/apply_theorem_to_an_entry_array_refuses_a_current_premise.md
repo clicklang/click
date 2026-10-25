@@ -27,7 +27,7 @@ theorem head_small_doubles(a: int32[]) {
     requires a[0] < 1;
 
     ensures to_integer(a[0] + a[0]) < 2 by {
-        simp();
+        solve();
     }
 }
 
@@ -38,10 +38,10 @@ int32 clear_head(int32 box[2]) {
     ensures false_old_head_doubled: to_integer(old(box[0]) + old(box[0])) < 2 by {
         execute();
         have to_integer(0 - 1) < to_integer(box[0]) by {
-            simp();
+            solve();
         }
         have box[0] < 1 by {
-            simp();
+            solve();
         }
         apply(head_small_doubles(old(box))) using {
             to_integer(0 - 1) < to_integer(box[0]);

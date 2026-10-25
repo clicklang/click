@@ -28,7 +28,7 @@ void probe(int32 n) {
 } by {
     step_until(function.exit);
     unfold(widened(n));
-    simp();
+    solve();
 }
 ```
 

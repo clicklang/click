@@ -29,7 +29,7 @@ void clear_cell(int32* cell) {
 theorem clear_cell_is_sets_zero() {
     ensures SetsZero(&clear_cell) by {
         unfold(SetsZero);
-        simp();
+        solve();
     }
 }
 ```

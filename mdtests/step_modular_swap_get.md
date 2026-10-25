@@ -55,7 +55,7 @@ int32 swap_get(int32 data[]) {
     have data[0] == old(data[1]);
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

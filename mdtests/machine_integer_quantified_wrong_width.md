@@ -4,7 +4,7 @@
 theorem bad(n: int32) {
     ensures exists (x: int64) { x == x } by {
         witness { x: n };
-        simp();
+        solve();
     }
 }
 ```

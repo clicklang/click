@@ -18,10 +18,10 @@ uint64 f(uint8 bytes[], uint64 n) {
 
     ensures result == 0u64 by {
         have viewable(bytes[0..n]) by {
-            simp();
+            solve();
         }
         have viewable(bytes[0..3u64]) by {
-            simp();
+            solve();
         }
     }
 }

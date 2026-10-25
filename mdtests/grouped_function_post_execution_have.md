@@ -41,14 +41,14 @@ int32 identity(int32 x) {
     execute();
     have exists (j: int32) { j == result } by {
         witness { j: result };
-        simp();
+        solve();
     }
     have exists (j: int32) { j == x } by {
         obtain (k: int32) { k == x }
         witness { j: k };
-        simp();
+        solve();
     }
-    simp();
+    solve();
 }
 
 int32 branch_value(int32 flag) {
@@ -56,7 +56,7 @@ int32 branch_value(int32 flag) {
 } by {
     execute();
     have result >= 0;
-    simp();
+    solve();
 }
 
 int32 current_have(int32 x) {
@@ -64,7 +64,7 @@ int32 current_have(int32 x) {
 } by {
     have exists (j: int32) { j == x } by {
         witness { j: x };
-        simp();
+        solve();
     }
 }
 ```

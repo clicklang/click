@@ -64,13 +64,13 @@ void overwrite(struct node* p) {
             unfold(s);
             execute();
             let s = fold(slot_at(p), { model: Slot::Empty });
-            simp();
+            solve();
         },
         Slot::Full(v) => {
             let { rest: r } = unfold(s);
             execute();
             let s = fold(slot_at(p), { model: Slot::Full(v) }, { rest: r });
-            simp();
+            solve();
         },
     }
 }
@@ -82,7 +82,7 @@ int32 caller(struct node* p) {
 } by {
     let { rest: r } = unfold(s);
     step();
-    have p->value == 0 by simp();
+    have p->value == 0 by solve();
     let s = fold(slot_at(p), { model: Slot::Full(3) }, { rest: r });
     mark before;
     step(overwrite, { s: s });
@@ -95,7 +95,7 @@ int32 caller(struct node* p) {
     }
     step();
     let s = fold(slot_at(p), { model: Slot::Full(3) }, { rest: r2 });
-    simp();
+    solve();
 }
 ```
 

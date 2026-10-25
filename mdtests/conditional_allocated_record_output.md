@@ -23,12 +23,12 @@ resource box(p: struct box*) {
 }
 struct box* create(int32 value) {
     produces box(result);
-} by { execute(); fold(box(result)); simp(); }
+} by { execute(); fold(box(result)); solve(); }
 void dispose(struct box* p) {
     consumes box(p);
 } by {
-    if p != 0 { unfold(box(p)); execute(); simp(); }
-    else { unfold(box(p)); execute(); simp(); }
+    if p != 0 { unfold(box(p)); execute(); solve(); }
+    else { unfold(box(p)); execute(); solve(); }
 }
 int32 probe(int32 value) {
     ensures result == 0;

@@ -31,7 +31,7 @@ void swap_pair(int32* cells) {
 theorem swap_is_permutation() {
     ensures PairPermutation(&swap_pair) by {
         unfold(PairPermutation);
-        simp();
+        solve();
     }
 }
 

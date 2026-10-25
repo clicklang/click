@@ -31,14 +31,14 @@ int32 drain(int32 box[4]) {
     loop {
         decreases old(head(box));
         invariant 0 <= box[0];
-        initialize by simp();
+        initialize by solve();
         preserve by {
             step();
-            simp();
+            solve();
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -21,7 +21,7 @@ resource lifetime(holder: struct holder*) {
 }
 
 verifying "mutex_scope_folded_owner.c";
-int32 run() { ensures result == 0; } by { step(); step(); let life = fold(lifetime(&holder), { tag: 0 }); execute(); simp(); }
+int32 run() { ensures result == 0; } by { step(); step(); let life = fold(lifetime(&holder), { tag: 0 }); execute(); solve(); }
 ```
 
 ```expect

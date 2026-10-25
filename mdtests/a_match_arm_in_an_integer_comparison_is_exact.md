@@ -19,7 +19,7 @@ theorem a_signed_arm_does_not_overflow(a: int32) {
         Step::Stay(x) => x,
     } > a by {
         normalize();
-        simp();
+        solve();
     }
 }
 
@@ -30,7 +30,7 @@ theorem an_unsigned_arm_does_not_wrap(a: uint32) {
         Step::Stay(x) => a,
     } > a by {
         normalize();
-        simp();
+        solve();
     }
 }
 ```

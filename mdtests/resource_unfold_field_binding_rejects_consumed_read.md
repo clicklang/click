@@ -53,7 +53,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         decreases p - i;
         invariant 0 <= i and i <= old(before.prefix);
         owns occupied[0..capacity];
-        initialize by simp();
+        initialize by solve();
         preserve by {
             mark iteration;
             have i < p by {
@@ -159,7 +159,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             have k <= p by auto();
             have k == p by auto();
             rewrite(k == p);
-            simp();
+            solve();
         }
     }
     have forall (k: int32) {
@@ -195,7 +195,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
     }
     let after = fold(claimed_prefix(data, occupied, capacity), { prefix: p + 1 });
     step();
-    simp();
+    solve();
 }
 ```
 

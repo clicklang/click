@@ -14,13 +14,13 @@ verifying "cast.c";
 int32* probe(int32* p) {
     views ((uint8*)(void*)p)[0..12];
     ensures true;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32* caller(struct Pair* p) {
     views p->first;
     views p->second;
     views p->third;
     ensures true;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

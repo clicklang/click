@@ -49,7 +49,7 @@ int32 clear_other_then_read(int32 n) {
         invariant 0 <= i and i <= n;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

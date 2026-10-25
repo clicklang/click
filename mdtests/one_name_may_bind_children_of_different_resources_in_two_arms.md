@@ -49,17 +49,17 @@ void f(int32* q) {
     match r.sel {
         Sel::A => {
             let { k: x, u: ru } = unfold(r);
-            have x.v == ru by { simp(); }
+            have x.v == ru by { solve(); }
             execute();
             let r = fold(root(q), { sel: Sel::A, u: ru }, { k: x });
-            simp();
+            solve();
         },
         Sel::B => {
             let { m: x, u: ru } = unfold(r);
-            have x.v == ru by { simp(); }
+            have x.v == ru by { solve(); }
             execute();
             let r = fold(root(q), { sel: Sel::B, u: ru }, { m: x });
-            simp();
+            solve();
         },
     }
 }

@@ -49,11 +49,11 @@ int32 run(struct cell *p) {
     step();
     branch {
         step();
-        simp();
+        solve();
     } else {}
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

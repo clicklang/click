@@ -62,13 +62,13 @@ void recolor(struct rb_node* child, uint64 color, struct rb_node* parent,
             unfold(c);
             execute();
             let d = fold(ctx_at(child, parent, root), { model: Ctx::Top }, {});
-            simp();
+            solve();
         },
         Ctx::Left => {
             unfold(c);
             execute();
             let d = fold(ctx_at(child, parent, root), { model: Ctx::Left }, {});
-            simp();
+            solve();
         },
     }
 }

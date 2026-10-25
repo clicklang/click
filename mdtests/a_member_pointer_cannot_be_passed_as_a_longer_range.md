@@ -16,12 +16,12 @@ verifying "probe.c";
 int32 arr(int32* p) {
     views p[0..2];
     ensures result == p[1];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 caller(struct Pair* p) {
     views p->first;
     views p->second;
     ensures result == p->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

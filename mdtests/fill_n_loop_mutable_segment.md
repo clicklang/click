@@ -35,7 +35,7 @@ int32 fill_n_loop_mutable_segment(int32 p[], int32 n) {
         invariant i <= n;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

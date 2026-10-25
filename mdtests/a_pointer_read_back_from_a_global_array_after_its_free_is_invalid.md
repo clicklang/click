@@ -24,7 +24,7 @@ int32 read_after_free(int32 *q) {
     owns q[0..1];
     owns ptrs[0..100];
     ensures result == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

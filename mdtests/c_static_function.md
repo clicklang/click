@@ -43,7 +43,7 @@ int32 run(int32 value) {
     have r < 100 by { arithmetic() using { to_integer(r) == to_integer(value + 1); to_integer(value + 1) <= 99; }; }
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

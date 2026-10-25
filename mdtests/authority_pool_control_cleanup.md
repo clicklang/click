@@ -56,7 +56,7 @@ void pool_destroy(struct pool* pool) {
     step();
     unfold(authority(pool_slot(pool)));
     unfold(authority(pool_object(pool, _)));
-    execute(); unfold(valid_pool); simp();
+    execute(); unfold(valid_pool); solve();
 }
 ```
 

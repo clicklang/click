@@ -35,15 +35,15 @@ int32 count_down(int32 n) {
     loop {
         invariant i >= 0;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
-            have i < 0 by simp();
+            have i < 0 by solve();
             step();
             close_invariants();
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

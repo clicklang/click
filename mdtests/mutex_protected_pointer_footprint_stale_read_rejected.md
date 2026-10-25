@@ -58,7 +58,7 @@ int32 read_twice(struct box *b) {
     let second_restored = fold(box_state(b), { v: *b->slot }, { held: second_target });
     step(pthread_mutex_unlock, { access: access, guard: second_guard, state: second_restored });
     step();
-    simp();
+    solve();
 }
 ```
 

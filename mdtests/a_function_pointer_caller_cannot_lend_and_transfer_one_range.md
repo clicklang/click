@@ -31,13 +31,13 @@ void split(int32* a, int32* b) {
     owns a[0..1];
     views b[0..1];
     ensures a[0] == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 void caller(void (*f)(int32*, int32*)) {
     requires Split(f);
     owns g[0..4];
     ensures g[0] == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

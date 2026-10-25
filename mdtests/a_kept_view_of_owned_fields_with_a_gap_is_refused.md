@@ -25,7 +25,7 @@ void keep(struct S* p) {
     owns p->x;
     owns p->b;
     ensures p->b == old(p->b);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

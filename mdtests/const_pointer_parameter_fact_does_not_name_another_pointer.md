@@ -42,7 +42,7 @@ int32 peek(const struct node* p, const struct node* q) {
     let x = fold(here(p), { tag: 0 });
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

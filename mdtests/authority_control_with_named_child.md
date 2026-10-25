@@ -44,7 +44,7 @@ int32 run() {
 } by {
     step();
     step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     step();
     step();
     fold(authority(ticket(b)));
@@ -62,7 +62,7 @@ int32 run() {
     unfold(authority(ticket(b)));
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -31,44 +31,44 @@ function unwrap_constructed(value: int32, fallback: int32) -> int32 {
 }
 
 theorem maybe_some_reflexive(value: int32) {
-    ensures Maybe<int32>::Some(value) == Maybe<int32>::Some(value) by simp();
+    ensures Maybe<int32>::Some(value) == Maybe<int32>::Some(value) by solve();
 }
 
 theorem maybe_variants_are_distinct(value: int32) {
-    ensures Maybe<int32>::None != Maybe<int32>::Some(value) by simp();
+    ensures Maybe<int32>::None != Maybe<int32>::Some(value) by solve();
 }
 
 theorem maybe_payloads_compare_structurally() {
-    ensures Maybe<int32>::Some(0) != Maybe<int32>::Some(1) by simp();
+    ensures Maybe<int32>::Some(0) != Maybe<int32>::Some(1) by solve();
 }
 
 theorem maybe_accepts_pointer_type_arguments(value: int32*) {
-    ensures Maybe<int32*>::Some(value) == Maybe<int32*>::Some(value) by simp();
+    ensures Maybe<int32*>::Some(value) == Maybe<int32*>::Some(value) by solve();
 }
 
 theorem maybe_works_through_predicates(value: int32) {
     ensures wrapped_equal(value, value) by {
         unfold(wrapped_equal);
-        simp();
+        solve();
     }
 }
 
 theorem maybe_works_in_pure_functions(value: int32, fallback: int32) {
-    ensures unwrap_constructed(value, fallback) == value by simp();
+    ensures unwrap_constructed(value, fallback) == value by solve();
 }
 
 theorem maybe_match_some(value: int32, fallback: int32) {
     ensures match Maybe<int32>::Some(value) {
         Maybe::None => fallback,
         Maybe::Some(inner) => inner,
-    } == value by simp();
+    } == value by solve();
 }
 
 theorem maybe_match_none(value: int32, fallback: int32) {
     ensures match Maybe<int32>::None {
         Maybe::None => fallback,
         Maybe::Some(inner) => inner,
-    } == fallback by simp();
+    } == fallback by solve();
 }
 
 int32 identity(int32 value) {

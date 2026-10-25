@@ -22,7 +22,7 @@ void fill_short(uint8* dst) {
 } by {
     execute();
     assumption();
-    simp();
+    solve();
 }
 ```
 

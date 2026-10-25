@@ -77,7 +77,7 @@ void release(struct node* p) {
         owns x: list_at(p);
         decreases links_len(x.model);
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match x.model {
                 Links::Nil => { contradiction(x.model == Links::Nil); },
@@ -111,7 +111,7 @@ void release(struct node* p) {
     }
     unfold(x);
     step();
-    simp();
+    solve();
 }
 ```
 

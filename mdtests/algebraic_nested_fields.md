@@ -61,19 +61,19 @@ theorem nested_constructors_reduce(value: int32, fallback: int32) {
     ensures flatten_nested(wrap_nested(value)) == Maybe<int32>::Some(value) by {
         unfold(flatten_nested(wrap_nested(value)));
         unfold(wrap_nested(value));
-        simp();
+        solve();
     }
     ensures value_or_nested(wrap_nested(value), fallback) == value by {
         unfold(value_or_nested(wrap_nested(value), fallback));
         unfold(wrap_nested(value));
-        simp();
+        solve();
     }
 }
 
 theorem nested_symbolic_reconstruction(envelope: Envelope<int32>) {
     ensures rebuild_nested(envelope) == envelope by {
         unfold(rebuild_nested(envelope));
-        simp();
+        solve();
     }
 }
 
@@ -81,7 +81,7 @@ theorem algebraic_type_argument_round_trip(maybe: Maybe<int32>) {
     ensures release_maybe(hold_maybe(maybe)) == maybe by {
         unfold(release_maybe(hold_maybe(maybe)));
         unfold(hold_maybe(maybe));
-        simp();
+        solve();
     }
 }
 ```

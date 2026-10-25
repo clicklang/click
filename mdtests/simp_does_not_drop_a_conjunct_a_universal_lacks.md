@@ -19,7 +19,7 @@ void keep(uint8* dst) {
 } by {
     execute();
     assumption();
-    simp();
+    solve();
 }
 ```
 

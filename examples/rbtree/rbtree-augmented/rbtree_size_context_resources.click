@@ -97,7 +97,7 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
                     unfold(sub);
                     let whole = fold(sized_at(root), { model: SizedTree::Empty });
                     unfold(sized_plug(SizedContext::Top, SizedTree::Empty));
-                    have whole.model == sized_plug(old(path.model), old(sub.model)) by { simp(); }
+                    have whole.model == sized_plug(old(path.model), old(sub.model)) by { solve(); }
                     have sized_parent_is(whole.model, stop) == 1 by {
                         rewrite(whole.model == SizedTree::Empty);
                         unfold(sized_parent_is(SizedTree::Empty, stop)); normalize();
@@ -107,7 +107,7 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
                     let { metadata: metadata, left: left, right: right } = unfold(sub);
                     let whole = fold(sized_at(root), { model: SizedTree::Node(node, parent, color, value, left_model, right_model) }, { metadata: metadata, left: left, right: right });
                     unfold(sized_plug(SizedContext::Top, SizedTree::Node(node, parent, color, value, left_model, right_model)));
-                    have whole.model == sized_plug(old(path.model), old(sub.model)) by { simp(); }
+                    have whole.model == sized_plug(old(path.model), old(sub.model)) by { solve(); }
                     have sized_parent_is(whole.model, stop) == 1 by {
                         rewrite(whole.model == SizedTree::Node(node, parent, color, value, left_model, right_model));
                         rewrite(SizedTree::Node(node, parent, color, value, left_model, right_model) == old(sub.model));
@@ -159,7 +159,7 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
             have whole.model == sized_plug(old(path.model), old(sub.model)) by {
                 rewrite(old(path.model) == SizedContext::Left(node, parent, color, value, sibling_model, up_model));
                 rewrite(sized_plug(SizedContext::Left(node, parent, color, value, sibling_model, up_model), old(sub.model)) == sized_plug(up_model, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model)));
-                simp();
+                solve();
             }
             have sized_parent_is(whole.model, stop) == 1 by { assumption(); }
         },
@@ -206,7 +206,7 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
             have whole.model == sized_plug(old(path.model), old(sub.model)) by {
                 rewrite(old(path.model) == SizedContext::Right(node, parent, color, value, sibling_model, up_model));
                 rewrite(sized_plug(SizedContext::Right(node, parent, color, value, sibling_model, up_model), old(sub.model)) == sized_plug(up_model, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model))));
-                simp();
+                solve();
             }
             have sized_parent_is(whole.model, stop) == 1 by { assumption(); }
         },
@@ -284,7 +284,7 @@ tactic restore_sized_path(child: struct rb_node*, stop: struct rb_node*, previou
                 assumption();
             }
             let { whole: repaired } = restore_sized_context(child, root, stop, previous, { path: frames, sub: sub });
-            have repaired.model == sized_plug(context, old(sub.model)) by { simp(); }
+            have repaired.model == sized_plug(context, old(sub.model)) by { solve(); }
             have sized_parent_is(sized_plug(context, old(sub.model)), stop) == 1 by {
                 rewrite(sized_plug(context, old(sub.model)) == repaired.model);
                 assumption();

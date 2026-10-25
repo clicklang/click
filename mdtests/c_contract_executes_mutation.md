@@ -21,7 +21,7 @@ theorem lift(callback: void (*)(int32*)) executes callback(int32* cell) {
      rewrite(to_integer(cell[0]) == to_integer(old(cell[0]) + 1));
      assumption();
  }
- fold(Buffer(cell)); simp();
+ fold(Buffer(cell)); solve();
  }
 }
 ```

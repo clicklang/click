@@ -41,7 +41,7 @@ void increment(int32* state) {
 theorem increment_is_progress() {
     ensures Progress(&increment) by {
         unfold(Progress);
-        simp();
+        solve();
     }
 }
 

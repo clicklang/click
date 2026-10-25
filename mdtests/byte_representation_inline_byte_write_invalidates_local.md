@@ -18,7 +18,7 @@ int64 mutate(int64 value) {
 verifying "inline_byte_write.c";
 int64 mutate(int64 value) {
     ensures result == value;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

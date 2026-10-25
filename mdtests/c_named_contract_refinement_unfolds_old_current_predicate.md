@@ -33,7 +33,7 @@ theorem increment_cell_makes_progress() {
     ensures MakesProgress(&increment_cell) by {
         unfold(MakesProgress);
         unfold(Increased);
-        simp();
+        solve();
     }
 }
 ```

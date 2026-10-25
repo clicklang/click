@@ -30,7 +30,7 @@ void clear(int32* values) {
         decreases 4 - x;
         invariant x <= 4;
         owns values[0..4];
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             step();
             step();

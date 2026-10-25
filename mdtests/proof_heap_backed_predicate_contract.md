@@ -25,7 +25,7 @@ int32 proof_heap_backed_predicate_contract(int32 p[2]) {
     ensures remains_ordered: ordered_pair(p);
 } by {
     step();
-    simp();
+    solve();
 }
 ```
 

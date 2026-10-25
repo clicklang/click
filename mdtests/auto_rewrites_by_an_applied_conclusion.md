@@ -36,7 +36,7 @@ theorem append_nil(xs: IntList) {
         induct(xs) as ih {
             IntList::Nil => {
                 unfold(append(IntList::Nil, IntList::Nil));
-                simp();
+                solve();
             }
             IntList::Cons(head, tail) => {
                 apply(ih(tail));

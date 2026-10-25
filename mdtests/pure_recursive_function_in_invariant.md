@@ -32,7 +32,7 @@ int32 count_up(int32 n) {
         invariant countdown(n) == countdown(n);
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -44,7 +44,7 @@ int32 execute_preserves_derived_call_premise(struct owner* owner) {
     ensures result == owner->length;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

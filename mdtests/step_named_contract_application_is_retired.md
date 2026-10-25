@@ -19,7 +19,7 @@ int read_view(const int *(*f)(const int *), const int *p) {
     requires Exact(f);
     views p[0..1];
     ensures result == p[0];
-} by { step(Exact()); execute(); simp(); }
+} by { step(Exact()); execute(); solve(); }
 ```
 
 ```expect

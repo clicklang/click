@@ -36,7 +36,7 @@ void wipe(int32 a[], int32 n) {
         peel(icount(a, 0, 0)) using { 0 <= 0; };
         normalize();
     }
-    have to_integer(a[0]) == 5 by { simp() using { a[0] == 5; }; }
+    have to_integer(a[0]) == 5 by { solve() using { a[0] == 5; }; }
     have icount(a, 0, 1) == 5 by {
         peel(icount(a, 0, 1)) using { 0 <= 0; 0 < 2147483647; };
         arithmetic() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; };
@@ -47,7 +47,7 @@ void wipe(int32 a[], int32 n) {
         invariant 0 <= i;
         invariant i <= n;
         owns a[0..n];
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             step();
             step();

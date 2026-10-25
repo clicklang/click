@@ -117,7 +117,7 @@ void* increment_counter(void* argument) {
         access: access, guard: guard, state: restored
     });
     step();
-    simp();
+    solve();
 }
 
 int32 increment_twice(struct mutex_counter* counter) {
@@ -145,7 +145,7 @@ int32 increment_twice(struct mutex_counter* counter) {
         unfold(credit(counter));
         unfold(credit(counter));
         step();
-        simp();
+        solve();
     } else {}
     step();
     branch {
@@ -154,7 +154,7 @@ int32 increment_twice(struct mutex_counter* counter) {
         unfold(credit(counter));
         unfold(credit(counter));
         step();
-        simp();
+        solve();
     } else {}
     step();
     branch {
@@ -164,7 +164,7 @@ int32 increment_twice(struct mutex_counter* counter) {
         unfold(contribution(counter));
         unfold(credit(counter));
         step();
-        simp();
+        solve();
     } else {}
     step();
     step();
@@ -196,7 +196,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     unfold(contribution(counter));
     unfold(contribution(counter));
     step();
-    simp();
+    solve();
 }
 ```
 

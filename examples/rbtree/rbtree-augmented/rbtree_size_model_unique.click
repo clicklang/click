@@ -52,7 +52,7 @@ theorem sized_model_unique(a: SizedTree, b: SizedTree) {
                                 to_integer(sized_value(ar)) == to_integer(sized_value(br));
                             };
                         }
-                        simp();
+                        solve();
                     },
                 }
             },

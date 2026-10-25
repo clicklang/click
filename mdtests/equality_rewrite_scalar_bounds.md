@@ -30,7 +30,7 @@ theorem wide_signed(x: int64, y: int64) {
 theorem observed_bound(x: uint32, y: uint32) {
  requires x == 0u32;
  requires to_integer(y) <= 4294967295;
- ensures to_integer(x) + to_integer(y) <= 4294967295 by { rewrite(x == 0u32); simp(); }
+ ensures to_integer(x) + to_integer(y) <= 4294967295 by { rewrite(x == 0u32); solve(); }
 }
 ```
 

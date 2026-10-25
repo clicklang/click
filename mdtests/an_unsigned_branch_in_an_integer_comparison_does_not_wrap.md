@@ -19,11 +19,11 @@ uint32 keep_unsigned(uint32 u, int32 c) {
     ensures (if c > 0 { u + 1 } else { u }) > result - 1 by {
         step_until(function.exit);
         if c > 0 {
-            have (if c > 0 { u + 1 } else { u }) == u + 1 by simp();
-            simp();
+            have (if c > 0 { u + 1 } else { u }) == u + 1 by solve();
+            solve();
         } else {
-            have (if c > 0 { u + 1 } else { u }) == u by simp();
-            simp();
+            have (if c > 0 { u + 1 } else { u }) == u by solve();
+            solve();
         }
     }
 }

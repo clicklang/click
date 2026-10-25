@@ -24,11 +24,11 @@ int32* read_unchecked(int32* (*acquire)(), int32* value) {
         unfold(MaybeCell(c(cell)));
         unfold(Cell(c(cell)));
         execute();
-        fold(Cell(result)); fold(MaybeCell(result)); simp();
+        fold(Cell(result)); fold(MaybeCell(result)); solve();
     } else {
         unfold(MaybeCell(c(cell)));
         execute();
-        fold(MaybeCell(result)); simp();
+        fold(MaybeCell(result)); solve();
     }
 }
 ```

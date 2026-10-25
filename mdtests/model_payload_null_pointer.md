@@ -78,7 +78,7 @@ void detach(struct node* n) {
                 rewrite(u.model == Tree::Node(identity, 0, value));
                 assumption();
             }
-            simp();
+            solve();
         },
     }
 }

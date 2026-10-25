@@ -45,7 +45,7 @@ uint8 last(const uint8* bytes, uint64 length) {
                 arithmetic() using { i <= length; to_integer(i + 2u64) <= to_integer(length); length <= 2147483647u64; };
             }
             step(); step();
-            simp();
+            solve();
         }
     }
 }

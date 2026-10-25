@@ -33,13 +33,13 @@ int32 drain(int32 n) {
 } by {
     step();
     branch {
-        have 0 <= level(n) by { unfold(level(n)); simp(); }
+        have 0 <= level(n) by { unfold(level(n)); solve(); }
         step();
         step();
-        simp();
+        solve();
     } else {}
     step();
-    simp();
+    solve();
 }
 ```
 

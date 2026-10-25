@@ -21,10 +21,10 @@ theorem payload_identity(item: Payload<Shade>) {
                 rewrite(item == Payload<Shade>::Link(pointer, wide, count, shade));
                 match shade {
                     Shade::Red => {
-                        unfold(rebuild_payload(Payload<Shade>::Link(pointer, wide, count, Shade::Red))); simp();
+                        unfold(rebuild_payload(Payload<Shade>::Link(pointer, wide, count, Shade::Red))); solve();
                     },
                     Shade::Black => {
-                        unfold(rebuild_payload(Payload<Shade>::Link(pointer, wide, count, Shade::Black))); simp();
+                        unfold(rebuild_payload(Payload<Shade>::Link(pointer, wide, count, Shade::Black))); solve();
                     },
                 }
             },

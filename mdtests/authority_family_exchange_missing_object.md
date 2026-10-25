@@ -34,7 +34,7 @@ void checkout(int32* pool, struct payload* p) {
 } by {
     unfold(capacity(pool));
     fold(item(pool, p));
-    execute(); simp();
+    execute(); solve();
 }
 void caller(int32* pool, struct payload* p) {
     owns authority(capacity(pool));
@@ -43,7 +43,7 @@ void caller(int32* pool, struct payload* p) {
     requires defined(count(item(pool, _)) + 1);
     produces item(pool, p);
     ensures p->value == old(p->value);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 ```
 

@@ -26,7 +26,7 @@ uint32 gcd(uint32 a, uint32 b) {
 } by {
     branch {
         step();
-        simp();
+        solve();
     } else {}
     have a % b < b by {
         apply(integer::uint32_remainder_less_than_divisor(a, b)) using {
@@ -35,7 +35,7 @@ uint32 gcd(uint32 a, uint32 b) {
     }
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

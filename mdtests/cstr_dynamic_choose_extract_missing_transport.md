@@ -36,18 +36,18 @@ uint64 read_terminator(uint8 bytes[]) {
                 both {
                     both {
                         both {
-                            simp();
+                            solve();
                         } and {
-                            simp();
+                            solve();
                         }
                     } and {
-                        simp();
+                        solve();
                     }
                 } and {
-                    simp();
+                    solve();
                 }
             } and {
-                simp();
+                solve();
             }
         }
     }

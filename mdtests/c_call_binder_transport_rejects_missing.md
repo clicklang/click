@@ -24,7 +24,7 @@ void increment(int32* state) {
     execute();
     let first = fold(Counter(), { revision: 1 });
     let second = fold(Counter(), { revision: 1 });
-    simp();
+    solve();
 }
 
 void caller(int32* state) {

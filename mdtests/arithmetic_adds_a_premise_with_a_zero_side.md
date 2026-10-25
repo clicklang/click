@@ -23,7 +23,7 @@ int32 pass(int32 u, int32 v) {
 } by {
     have 0 <= v by { arithmetic() using { 0 <= u; u <= v; }; }
     step();
-    simp();
+    solve();
 }
 ```
 

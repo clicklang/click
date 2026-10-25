@@ -19,11 +19,11 @@ function same(x: int64) -> Seq<int64> {
 theorem literal_fields() {
     ensures same(2) == Seq<int64>::Cons(2, Seq<int64>::Nil) by {
         unfold(same(2));
-        simp();
+        solve();
     }
     ensures same(-2) == Seq<int64>::Cons(-2, Seq<int64>::Nil) by {
         unfold(same(-2));
-        simp();
+        solve();
     }
 }
 ```

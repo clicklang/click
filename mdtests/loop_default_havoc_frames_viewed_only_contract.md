@@ -40,7 +40,7 @@ void loop_default_havoc_frames_viewed_only_contract(int32 r[], int32 n) {
         invariant i >= 0 and i <= n;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

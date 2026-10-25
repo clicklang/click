@@ -52,10 +52,10 @@ int32 drain(int32 n) {
         }
         step();
         step();
-        simp();
+        solve();
     } else {}
     step();
-    simp();
+    solve();
 }
 ```
 

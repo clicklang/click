@@ -50,7 +50,7 @@ int32 drain_to_zero(int32 value) {
     loop {
         decreases value;
         invariant value >= 0;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             have 0 <= to_integer(value - 1) by auto();
             step();
@@ -64,7 +64,7 @@ int32 drain_to_zero(int32 value) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

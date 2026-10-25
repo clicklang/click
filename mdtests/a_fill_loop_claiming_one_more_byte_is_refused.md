@@ -49,7 +49,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                     }
                     have k == at(before, i) by auto();
                     rewrite(k == at(before, i));
-                    simp();
+                    solve();
                 }
             }
         }

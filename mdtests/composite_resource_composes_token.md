@@ -49,7 +49,7 @@ int32 use_server(int32 fd, int32 state[]) {
         unfold(live_server(fd, state));
         step_until(function.exit);
         fold(live_server(fd, state));
-        simp();
+        solve();
     }
 }
 ```

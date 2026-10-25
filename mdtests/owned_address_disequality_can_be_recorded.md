@@ -24,7 +24,7 @@ int32 inspect(struct node *a, struct node *b) {
     have separate(memory(a->word), memory(b->word)) by assumption();
     have a != b by assumption();
     have a != tmp by assumption();
-    have address(a) != address(b) by simp();
+    have address(a) != address(b) by solve();
     step();
 }
 ```

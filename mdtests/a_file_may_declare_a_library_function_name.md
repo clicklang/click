@@ -11,7 +11,7 @@ function append(x: int32) -> int32 {
 theorem own_append() {
     ensures append(1) == 2 by {
         unfold(append(1));
-        simp();
+        solve();
     }
 }
 

@@ -83,7 +83,7 @@ void destroy(struct tree* t) {
         decreases tree_size(x.model);
         invariant tree_size(x.model) <= tree_size(old(x.model));
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match x.model {
                 Tree::Leaf => { contradiction(x.model == Tree::Leaf); },
@@ -143,7 +143,7 @@ void destroy(struct tree* t) {
     }
     unfold(x);
     step();
-    simp();
+    solve();
 }
 ```
 

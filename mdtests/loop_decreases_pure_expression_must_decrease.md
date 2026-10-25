@@ -34,15 +34,15 @@ int32 drain(int32 box[4]) {
         invariant 0 <= box[0];
         invariant 0 <= box[1];
         invariant head(box) == box[0];
-        initialize by { unfold(head(box)); simp(); }
+        initialize by { unfold(head(box)); solve(); }
         preserve by {
             have 0 <= to_integer(box[1] - 1) by auto();
             step();
-            close_invariants() by { unfold(head(box)); simp(); }
+            close_invariants() by { unfold(head(box)); solve(); }
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

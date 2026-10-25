@@ -16,7 +16,7 @@ int32 execute_until_backward(int32 x) {
         step();
         execute_until(region(0));
         execute();
-        simp();
+        solve();
     }
 }
 ```

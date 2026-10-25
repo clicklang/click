@@ -21,18 +21,18 @@ verifying "execute_until_statement.c";
 int32 f(int32 v) {
     requires v < 1000;
     ensures result == v + 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 probe(int32 x) {
     requires x < 10;
     ensures result == x + 3;
 } by {
     execute_until(statement(1));
-    have y == x + 1 by simp();
+    have y == x + 1 by solve();
     execute_until(statement(1).call(f, 1));
-    have y == x + 1 by simp();
+    have y == x + 1 by solve();
     execute();
-    simp();
+    solve();
 }
 ```
 

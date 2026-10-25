@@ -717,10 +717,10 @@ theorem rb_erase_no_fixup_successor_splice(erased: struct rb_node*, successor: s
             apply(plug_parent_consistent_ctx(up, rb_successor_splice(successor, parent, color, left, right), root_parent));
             rewrite(rb_successor_child_splice(successor, parent, color, left, right)
                 == rb_successor_splice(successor, parent, color, left, right));
-            simp();
+            solve();
         } else {
             apply(rb_erase_nonempty_successor_splice(erased, successor, parent, color, left, right, up, root_parent, min_color, child));
-            simp();
+            solve();
         }
     }
 }

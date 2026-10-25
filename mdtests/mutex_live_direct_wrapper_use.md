@@ -38,7 +38,7 @@ void keep(struct holder *holder) {
     step(wrapped, { life: next });
     unfold(next);
     step();
-    simp();
+    solve();
 }
 ```
 

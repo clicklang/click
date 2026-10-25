@@ -13,10 +13,10 @@ runtime "modeled-pthread";
 verifying "mutex_use_missing.c";
 void helper(struct holder *holder) {
     owns mutex_use(&holder->mu);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void caller(struct holder *holder) {
     ensures 1 == 1;
-} by { step(helper, {}); execute(); simp(); }
+} by { step(helper, {}); execute(); solve(); }
 ```
 
 ```expect

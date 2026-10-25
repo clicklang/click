@@ -45,7 +45,7 @@ int32* pick_then_allocate(int32* left, int32* right, int32 flag) {
     step();
     have fresh == picked;
     step();
-    simp();
+    solve();
 }
 ```
 

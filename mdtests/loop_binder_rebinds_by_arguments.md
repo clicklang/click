@@ -47,9 +47,9 @@ void bump_n(struct cell* p, int32 n) {
         invariant i <= n;
         invariant to_integer(c.count) == to_integer(old(c.count) + i);
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
-            have c.count == i by { simp() using { to_integer(c.count) == to_integer(old(c.count) + i); old(c.count) == 0; }; }
+            have c.count == i by { solve() using { to_integer(c.count) == to_integer(old(c.count) + i); old(c.count) == 0; }; }
             unfold(c);
             step();
             step();
@@ -70,7 +70,7 @@ void bump_n(struct cell* p, int32 n) {
                         both {
                             intro();
                             intro();
-                            simp();
+                            solve();
                         } and {
                             both {
                                 arithmetic_certificate signed_int32 {

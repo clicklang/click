@@ -34,24 +34,24 @@ int32 stuck_phase(int32 n) {
         invariant i >= 0;
         invariant j >= 0;
         invariant j <= 2;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             if j > 0 {
                 step();
                 step();
-                simp();
+                solve();
             } else {
                 have 0 <= to_integer(i - 1) by auto();
                 step();
                 step();
                 step();
                 have i >= 0 by { arithmetic() using { 0 <= i; }; }
-                simp();
+                solve();
             }
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

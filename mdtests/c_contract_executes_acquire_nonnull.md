@@ -22,7 +22,7 @@ theorem lift(acquire: int32* (*)()) executes acquire() {
         step(Raw);
         unfold(MaybeCell(result));
         fold(Cell(result));
-        simp();
+        solve();
     }
 }
 ```

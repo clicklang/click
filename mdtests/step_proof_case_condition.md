@@ -20,10 +20,10 @@ int32 wrong_selected_branch(int32 x) {
     ensures result >= 0 by {
         branch {
             step();
-            simp();
+            solve();
         } else {
             step();
-            simp();
+            solve();
         }
     }
 }

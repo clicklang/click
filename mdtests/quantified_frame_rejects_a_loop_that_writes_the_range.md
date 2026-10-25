@@ -28,7 +28,7 @@ void wipe(int32 a[], int32 n) {
         invariant 0 <= i;
         invariant i <= n;
         owns a[0..n];
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             step();
             step();

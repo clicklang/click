@@ -15,7 +15,7 @@ verifying "int32_division_by_a_nonzero_divisor.c";
 int32 quotient(int32 x, int32 y) {
     requires y != 0;
     ensures result == x / y;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

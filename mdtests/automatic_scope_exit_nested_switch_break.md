@@ -25,7 +25,7 @@ int32 nested_break_dangling() {
 
 ```click
 verifying "automatic_scope_exit_nested_switch_break.c";
-int32 nested_break_dangling() { ensures 0 <= result; } by { execute(); simp(); }
+int32 nested_break_dangling() { ensures 0 <= result; } by { execute(); solve(); }
 ```
 
 ```expect

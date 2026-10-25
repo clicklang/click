@@ -40,7 +40,7 @@ int32 put(struct pair* p, int32 x) {
         step();
     }
     step();
-    simp();
+    solve();
 }
 ```
 

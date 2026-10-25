@@ -28,7 +28,7 @@ theorem lift(callback: int32 (*)(int32)) {
             instantiate(forall (k: int32) { k == x implies k >= 0 }, result);
             assumption();
         }
-        simp();
+        solve();
     }
 }
 ```

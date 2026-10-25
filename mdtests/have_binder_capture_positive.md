@@ -28,7 +28,7 @@ int32 good(int32 x) {
         assumption();
     }
     step();
-    simp();
+    solve();
 }
 ```
 

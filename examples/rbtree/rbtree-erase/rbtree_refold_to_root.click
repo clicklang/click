@@ -23,7 +23,7 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
             have whole.model == plug(old(c.model), old(t.model)) by {
                 rewrite(old(c.model) == Context::Top);
                 rewrite(plug(Context::Top, old(t.model)) == old(t.model));
-                simp();
+                solve();
             }
         },
         Context::Left(identity, grandparent, color, sibling_model, up_model) => {

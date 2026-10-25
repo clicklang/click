@@ -26,9 +26,9 @@ int32 run(struct holder *holder) {
     step();
     step();
     step();
-    have held(&holder->mu) by simp();
+    have held(&holder->mu) by solve();
     step();
-    simp();
+    solve();
 }
 ```
 

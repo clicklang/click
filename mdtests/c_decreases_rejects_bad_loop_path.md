@@ -34,12 +34,12 @@ int32 sometimes_stuck(int32 n, int32 choose) {
                 }
             } else {
                 step(); step();
-                close_invariants() by { simp(); }
+                close_invariants() by { solve(); }
             }
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

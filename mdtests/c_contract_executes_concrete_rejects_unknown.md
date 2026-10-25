@@ -22,7 +22,7 @@ contract void Quiet(int32* state) {
 theorem increment_is_quiet() executes increment(int32* state) {
     ensures Quiet(&increment) by {
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -31,7 +31,7 @@ int32 accept(void (*callback)(int32*)) {
     ensures result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 caller() {
@@ -39,7 +39,7 @@ int32 caller() {
 } by {
     apply(increment_is_quiet());
     execute();
-    simp();
+    solve();
 }
 ```
 

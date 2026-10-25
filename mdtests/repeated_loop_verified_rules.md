@@ -42,7 +42,7 @@ int32 repeated_loop(int32 n) {
         invariant i <= 3;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

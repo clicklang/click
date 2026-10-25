@@ -16,12 +16,12 @@ int32 before(int32 n) {
     ensures result <= 1;
 } by {
     have 0 <= n by {
-        cases { n == 0 => { simp(); } n == 1 => { simp(); } }
+        cases { n == 0 => { solve(); } n == 1 => { solve(); } }
     }
     have n <= 1 by {
-        cases { n == 0 => { simp(); } n == 1 => { simp(); } }
+        cases { n == 0 => { solve(); } n == 1 => { solve(); } }
     }
-    execute(); simp();
+    execute(); solve();
 }
 int32 after(int32 n) {
     requires n == 0 or n == 1;
@@ -30,12 +30,12 @@ int32 after(int32 n) {
 } by {
     execute();
     have 0 <= result by {
-        cases { n == 0 => { simp(); } n == 1 => { simp(); } }
+        cases { n == 0 => { solve(); } n == 1 => { solve(); } }
     }
     have result <= 1 by {
-        cases { n == 0 => { simp(); } n == 1 => { simp(); } }
+        cases { n == 0 => { solve(); } n == 1 => { solve(); } }
     }
-    simp();
+    solve();
 }
 ```
 

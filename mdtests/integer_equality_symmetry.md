@@ -39,7 +39,7 @@ void unchanged(int32 x) {
 } by {
     step_until(function.exit);
     apply(equal_arguments(10, old(to_integer(x)))) using { old(to_integer(x)) == 10; };
-    simp();
+    solve();
 }
 ```
 

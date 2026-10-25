@@ -17,7 +17,7 @@ unsigned int decode(void) {
 verifying "partial_word.c";
 uint32 decode() {
     ensures result == result;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

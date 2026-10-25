@@ -18,7 +18,7 @@ int32 increment(int32 x) {
 
     ensures to_integer(result) == to_integer(x + 1) by {
         execute();
-        simp();
+        solve();
     }
 }
 ```

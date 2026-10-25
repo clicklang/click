@@ -28,7 +28,7 @@ int32 f(int32 n) {
     } else {
         have n <= 10 by assumption();
     }
-    simp();
+    solve();
 }
 ```
 

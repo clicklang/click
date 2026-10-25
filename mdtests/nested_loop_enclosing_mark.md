@@ -25,7 +25,7 @@ int32 count() {
         invariant i >= 0 and i <= 3;
         preserve by {
             mark outer_head;
-            have at(outer_head, i) < 3 by { simp(); }
+            have at(outer_head, i) < 3 by { solve(); }
             execute_until(loop(1));
             loop {
                 decreases 2 - j;

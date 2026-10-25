@@ -15,11 +15,11 @@ int32 probe(struct Pair* pair) {
 verifying "probe.c";
 int32 read_equal(int32* q, int32* p) {
     views p[0..1];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 probe(struct Pair* pair) {
     views pair->first;
     views pair->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

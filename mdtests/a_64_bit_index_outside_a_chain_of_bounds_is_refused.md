@@ -21,7 +21,7 @@ uint8 get(const uint8* bytes, uint64 length, uint64 n, uint64 m, uint64 i) {
     requires i < n;
     views bytes[0..length];
     ensures result == result;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

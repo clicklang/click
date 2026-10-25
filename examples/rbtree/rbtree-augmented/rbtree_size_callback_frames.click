@@ -22,7 +22,7 @@ executes sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
         source_tree: source_tree, target_tree: target_tree, source: source, target: target
     } by {
         step(sized_copy, { source: source, target: target });
-        simp();
+        solve();
     }
 }
 
@@ -97,7 +97,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                 step(sized_rotate, {
                     source: source, target: target, left: left, right: right
                 });
-                simp();
+                solve();
             } else {
                 have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) by {
                     cases {
@@ -114,7 +114,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                 step(sized_rotate, {
                     source: source, target: target, left: left, right: right
                 });
-                simp();
+                solve();
             }
         } else {
             if ((struct sized_node*)(void*)rb_old)->rb.rb_right != 0 {
@@ -133,12 +133,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                 step(sized_rotate, {
                     source: source, target: target, left: left, right: right
                 });
-                simp();
+                solve();
             } else {
                 step(sized_rotate, {
                     source: source, target: target, left: left, right: right
                 });
-                simp();
+                solve();
             }
         }
     }

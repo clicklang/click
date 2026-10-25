@@ -19,10 +19,10 @@ void inspect(struct pool* pool) {
     requires pool->checked_out == 2147483647;
 } by {
     open(control(pool)) {
-        have count(item(pool, _)) == 2147483647 by simp();
-        have defined(count(item(pool, _)) + 1) by simp();
+        have count(item(pool, _)) == 2147483647 by solve();
+        have defined(count(item(pool, _)) + 1) by solve();
     }
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

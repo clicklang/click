@@ -20,7 +20,7 @@ int spin(int n) {
     ensures n >= 0;
 } by {
     have n + 1 > 500 by {
-        simp();
+        solve();
         normalize();
     }
 }

@@ -15,13 +15,13 @@ void init(struct buffer* owner, int32* data) {
     consumes data[0..1];
     produces buffer(owner);
     ensures owner->data == data;
-} by { execute(); fold(buffer(owner)); simp(); }
+} by { execute(); fold(buffer(owner)); solve(); }
 void probe(struct buffer* owner, int32* data) {
     consumes *owner;
     consumes data[0..1];
     produces buffer(owner);
     ensures owner->data == data;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 ```expect
 fail: missing resource fact `owns owner->data[0..1]`

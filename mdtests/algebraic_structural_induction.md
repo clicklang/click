@@ -44,7 +44,7 @@ theorem append_right_identity(xs: TestList<int32>) {
         induct(xs) as ih {
             TestList::Nil => {
                 unfold(append(TestList<int32>::Nil, TestList<int32>::Nil));
-                simp();
+                solve();
             }
             TestList::Cons(head, tail) => {
                 apply(ih(tail));
@@ -64,7 +64,7 @@ theorem copy_tree_identity(tree: Tree<int32>) {
         induct(tree) as ih {
             Tree::Empty => {
                 unfold(copy_tree(Tree<int32>::Empty));
-                simp();
+                solve();
             }
             Tree::Node(left, value, right) => {
                 apply(ih(left));

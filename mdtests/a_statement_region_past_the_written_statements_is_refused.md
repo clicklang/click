@@ -19,15 +19,15 @@ verifying "statement_path_bounds.c";
 int32 f(int32 v) {
     requires v < 1000;
     ensures result == v + 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 probe(int32 x) {
     requires x < 10;
     ensures result == x + 1;
 } by {
     step(); step();
-    have at(statement(0).call(f, 1).exit, y) == x + 1 by simp();
-    simp();
+    have at(statement(0).call(f, 1).exit, y) == x + 1 by solve();
+    solve();
 }
 ```
 

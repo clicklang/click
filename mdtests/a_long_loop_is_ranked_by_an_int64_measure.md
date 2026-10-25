@@ -61,7 +61,7 @@ uint8 last(const uint8* bytes, int64 length) {
                 arithmetic() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
             }
             step(); step();
-            simp();
+            solve();
         }
     }
 }

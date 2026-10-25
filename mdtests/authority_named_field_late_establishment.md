@@ -11,7 +11,7 @@ int32 run() { ensures result == 0; } by {
     step(); step();
     let first = fold(ticket(&pool), { serial: 1 });
     fold(authority(ticket(&pool)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

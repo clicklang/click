@@ -31,7 +31,7 @@ int32 two_haves(int32 x) {
             normalize();
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

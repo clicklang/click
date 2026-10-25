@@ -20,7 +20,7 @@ int32_t probe() {
 ```click
 verifying "data.c";
 verifying "probe.c";
-int32 probe() { ensures result == 6; } by { execute(); simp(); }
+int32 probe() { ensures result == 6; } by { execute(); solve(); }
 ```
 
 ```expect

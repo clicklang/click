@@ -21,7 +21,7 @@ int64 add_byte(uint32 sum, uint8 byte) {
 } by {
     step_until(function.exit);
     have result <= 4294967295i64 by {
-        simp() using { ((uint32)byte) <= 255u32; sum <= 4294967040u32; };
+        solve() using { ((uint32)byte) <= 255u32; sum <= 4294967040u32; };
     }
     have result <= 4294967295i64 by {
         arithmetic_certificate rules {
@@ -31,7 +31,7 @@ int64 add_byte(uint32 sum, uint8 byte) {
             conclusion 0;
         }
     }
-    simp();
+    solve();
 }
 ```
 

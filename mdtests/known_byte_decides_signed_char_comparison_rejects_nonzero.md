@@ -13,7 +13,7 @@ int32 first_is_nul(char* p) {
     views p[0..1];
     requires ((uint8*)p)[0] == 1;
     ensures result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

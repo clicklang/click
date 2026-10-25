@@ -60,7 +60,7 @@ int32 stepped(int32 v) {
     step();
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

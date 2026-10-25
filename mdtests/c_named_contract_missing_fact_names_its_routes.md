@@ -40,7 +40,7 @@ void arm(int32* cell) {
 } by {
     execute();
     fold(Hooked(cell));
-    simp();
+    solve();
 }
 ```
 

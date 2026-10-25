@@ -22,7 +22,7 @@ int32 sharpen(int32 n) {
 } by {
     have 0 < n by { arithmetic() using { n >= 0; n != 0; }; }
     step();
-    simp();
+    solve();
 }
 ```
 

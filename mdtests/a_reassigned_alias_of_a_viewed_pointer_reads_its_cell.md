@@ -37,7 +37,7 @@ int read_twice(int *p, int n) {
 verifying "view.c";
 verifying "caller.c";
 
-const int *view(int *p) { ensures result == p; } by { execute(); simp(); }
+const int *view(int *p) { ensures result == p; } by { execute(); solve(); }
 
 int read_twice(int *p, int n) {
     views p[0..n];

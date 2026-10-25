@@ -36,7 +36,7 @@ int32 add3(int32 x) {
 theorem add3_adds_three() executes add3(int32 x) {
     ensures Adds(&add3, { amount: 3 }) by {
         step();
-        simp();
+        solve();
     }
 }
 
@@ -44,7 +44,7 @@ theorem adds_three_shifts_three(f: int32 (*)(int32)) executes f(int32 x) {
     requires Adds(f, { amount: 3 });
     ensures Shifts(f, { offset: 3 }) by {
         step(Adds);
-        simp();
+        solve();
     }
 }
 ```

@@ -47,7 +47,7 @@ int32 do_break_flag(int32 flag) {
         invariant i >= 0;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

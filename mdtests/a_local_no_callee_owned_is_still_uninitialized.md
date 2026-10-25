@@ -23,11 +23,11 @@ verifying "unlent_local.c";
 void nop(int32* p) {
     owns uninitialized(p[0..1]);
     ensures true;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 after_nop() {
     ensures true;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

@@ -32,7 +32,7 @@ theorem an_integer_parameter_takes_the_exact_sum(a: int32) {
     requires a == 2147483647;
     ensures twice(a + 1) == 4294967296 by {
         unfold(twice(a + 1));
-        simp();
+        solve();
     }
 }
 
@@ -40,7 +40,7 @@ theorem an_integer_result_is_exact(a: int32) {
     requires a == 2147483647;
     ensures successor(a) == 2147483648 by {
         unfold(successor(a));
-        simp();
+        solve();
     }
 }
 
@@ -48,7 +48,7 @@ theorem an_integer_field_holds_the_exact_sum(a: int32) {
     requires a == 2147483647;
     ensures total_value(Total::Sum(a + 1)) == 2147483648 by {
         unfold(total_value(Total::Sum(a + 1)));
-        simp();
+        solve();
     }
 }
 

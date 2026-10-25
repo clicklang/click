@@ -50,7 +50,7 @@ void bump_n(struct cell* p, int32 n) {
         invariant i <= n;
         invariant c.count == old(c.count) + i;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             have c.count == i by auto();
             unfold(c);
@@ -73,7 +73,7 @@ void bump_n(struct cell* p, int32 n) {
                         both {
                             intro();
                             intro();
-                            simp();
+                            solve();
                         } and {
                             both {
                                 arithmetic_certificate signed_int32 {

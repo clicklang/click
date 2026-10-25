@@ -23,9 +23,9 @@ int32 clamp_positive(int32 a) {
 } by {
     execute();
     if a == 5 {
-        simp();
+        solve();
     } else {
-        simp();
+        solve();
     }
 }
 ```

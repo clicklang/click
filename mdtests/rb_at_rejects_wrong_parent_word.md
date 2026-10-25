@@ -92,7 +92,7 @@ void set_parent_elsewhere(struct rb_node* node, struct rb_node* old_parent,
             let { left: l, right: r } = unfold(t);
             execute();
             let u = fold(rb_at(node), { model: old(t.model) }, { left: l, right: r });
-            simp();
+            solve();
         },
     }
 }

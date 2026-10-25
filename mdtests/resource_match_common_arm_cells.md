@@ -58,13 +58,13 @@ int32 read_value(struct cell* p) {
             unfold(c);
             execute();
             let c = fold(cell_at(p), { model: Shape::Left(value) });
-            simp();
+            solve();
         },
         Shape::Right(value) => {
             unfold(c);
             execute();
             let c = fold(cell_at(p), { model: Shape::Right(value) });
-            simp();
+            solve();
         },
     }
 }

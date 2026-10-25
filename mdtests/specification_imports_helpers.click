@@ -27,7 +27,7 @@ void imported_keep(int32* p) {
     unfold(before);
     step_until(function.exit);
     let after = fold(imported_cell(p), { value: *p });
-    simp();
+    solve();
 }
 
 tactic imported_rename(p: int32*) {

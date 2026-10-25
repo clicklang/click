@@ -36,7 +36,7 @@ void touch(int32* flags, int32* data, int32 n) {
     unfold(cells(flags, data, n));
     take(data[0..1]);
     step();
-    have flags[0] == 0 by simp();
+    have flags[0] == 0 by solve();
     give(data[0..1]);
     fold(cells(flags, data, n));
 }

@@ -29,7 +29,7 @@ void create() {
 } by {
     step_until(function.exit);
     let model = fold(account(), { total: 18446744073709551616 });
-    simp();
+    solve();
 }
 
 void change() {
@@ -41,7 +41,7 @@ void change() {
     unfold(model);
     step_until(function.exit);
     let model = fold(account(), { total: 18446744073709551617 });
-    simp();
+    solve();
 }
 ```
 

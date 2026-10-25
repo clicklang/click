@@ -28,7 +28,7 @@ int32 stored() {
     have x == 3;
     step();
     have x == 4;
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

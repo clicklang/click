@@ -12,7 +12,7 @@ int32 unchanged(int32 x) { return x; }
 import click::integer;
 
 theorem integer_reflexive(z: Integer) {
-    ensures z == z by simp();
+    ensures z == z by solve();
 }
 
 theorem observe64(x: int64) {
@@ -31,7 +31,7 @@ int32 unchanged(int32 x) {
     apply(integer::truncation_identity(to_integer(x), 3));
     step_until(function.exit);
     apply(integer_reflexive(to_integer(result)));
-    simp();
+    solve();
 }
 ```
 

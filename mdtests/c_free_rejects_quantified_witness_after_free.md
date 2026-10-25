@@ -35,7 +35,7 @@ int32 zero_one(int32 p[]) {
     ensures forall (k: int32) { 0 <= k and k < 1 implies p[k] == 0 };
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32* uaf_local(int32 fallback[], int32 j) {
@@ -45,7 +45,7 @@ int32* uaf_local(int32 fallback[], int32 j) {
     ensures defined(result[j]);
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

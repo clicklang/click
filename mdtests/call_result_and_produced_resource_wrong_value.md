@@ -23,7 +23,7 @@ int32 set(int32* p) {
     unfold(input);
     execute();
     let output = fold(Cell(p), { value: 1 });
-    simp();
+    solve();
 }
 void caller(int32* p) {
     consumes input: Cell(p);

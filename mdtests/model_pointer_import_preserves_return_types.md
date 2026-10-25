@@ -20,8 +20,8 @@ int32 caller(struct node* p) {
     step(); step();
     if q != 0 {
         have node_type(q) == 1;
-        execute(); simp();
-    } else { execute(); simp(); }
+        execute(); solve();
+    } else { execute(); solve(); }
 }
 ```
 

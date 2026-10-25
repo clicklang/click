@@ -115,11 +115,11 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                     unfold(n);
                     unfold(u);
                     step();
-                    have ((struct rb_node*)(g->__rb_parent_color & ~3)) == xid by simp();
+                    have ((struct rb_node*)(g->__rb_parent_color & ~3)) == xid by solve();
                     step();
                     step();
                     step();
-                    simp();
+                    solve();
                 },
             }
         },

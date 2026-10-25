@@ -15,7 +15,7 @@ contract int32 One() { ensures result == 1; }
 int32 one() { ensures result == 1; } by { execute(); normalize(); }
 int32 two() { ensures result == 2; } by { execute(); normalize(); }
 theorem one_contract() {
-    ensures One(&one) by { unfold(One); simp(); }
+    ensures One(&one) by { unfold(One); solve(); }
 }
 resource callback_table(p: const struct callbacks*) {
     views p->run;
@@ -24,14 +24,14 @@ resource callback_table(p: const struct callbacks*) {
 int32 invoke(const struct callbacks* p) {
     views callback_table(p);
     ensures result == 1;
-} by { open(callback_table(p)) { execute(); simp(); } }
+} by { open(callback_table(p)) { execute(); solve(); } }
 int32 caller() {
     views table.run;
     ensures result == 1;
 } by {
     apply(one_contract());
     fold(callback_table(&table));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

@@ -30,7 +30,7 @@ void f(int32 a[], int32 n) {
     views a[0..n];
     owns g[0..1];
     ensures g[0] == 5;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

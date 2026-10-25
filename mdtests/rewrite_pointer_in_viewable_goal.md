@@ -33,7 +33,7 @@ void keep(struct cell* c) {
             }
             let h = fold(Cell(c), { model: Link::Node(q) });
             execute();
-            simp();
+            solve();
         },
     }
 }

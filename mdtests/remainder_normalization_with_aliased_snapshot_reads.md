@@ -24,11 +24,11 @@ uint32 observe(uint32 *p, uint32 divisor) {
  step_until(function.exit);
  have p[0] < divisor;
  apply(integer::uint32_less_than_divisor_implies_remainder_is_value(p[0], divisor)) using { p[0] < divisor; };
- have p[0] == at(before, p[0]) % divisor by simp() using { p[0] % divisor == p[0]; };
+ have p[0] == at(before, p[0]) % divisor by solve() using { p[0] % divisor == p[0]; };
  have p[0] == at(before, p[0]) % 65521u32 by {
-  simp() using { p[0] == at(before, p[0]) % divisor; divisor == 65521u32; };
+  solve() using { p[0] == at(before, p[0]) % divisor; divisor == 65521u32; };
  }
- simp();
+ solve();
 }
 ```
 ```expect

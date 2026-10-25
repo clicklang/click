@@ -29,12 +29,12 @@ int32 pick(int32 x) {
     } else {
         step();
         step();
-        simp();
+        solve();
     }
     step();
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

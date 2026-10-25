@@ -37,10 +37,10 @@ int32 f(int32 u, int32 w) {
     step();
     if buf == 0 {
         execute();
-        simp();
+        solve();
     } else {
         execute();
-        simp();
+        solve();
     }
 }
 ```

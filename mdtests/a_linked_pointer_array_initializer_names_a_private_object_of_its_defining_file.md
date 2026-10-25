@@ -28,7 +28,7 @@ int read_cell(int *p) {
     ensures result == old(p[0]);
 }
 int main() { ensures result == 11; }
-by { execute(); simp(); }
+by { execute(); solve(); }
 ```
 
 ```expect

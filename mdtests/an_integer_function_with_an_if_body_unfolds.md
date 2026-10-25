@@ -20,11 +20,11 @@ theorem pick_is_at_least_its_argument(n: Integer, c: bool) {
     ensures pick(n, c) >= n by {
         unfold(pick(n, c));
         if c {
-            have (if c { n + 1 } else { n }) == n + 1 by simp();
-            simp();
+            have (if c { n + 1 } else { n }) == n + 1 by solve();
+            solve();
         } else {
-            have (if c { n + 1 } else { n }) == n by simp();
-            simp();
+            have (if c { n + 1 } else { n }) == n by solve();
+            solve();
         }
     }
 }

@@ -19,7 +19,7 @@ verifying "a_stored_global_array_element_is_not_its_entry_value.c";
 void write_one() {
     owns buf[1..2];
     ensures buf[1] == old(buf[1]);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

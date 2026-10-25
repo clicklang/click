@@ -54,7 +54,7 @@ int32 read_counter(struct counter *counter) {
     step();
     step(pthread_mutex_destroy, { lifetime: mutex_lifetime });
     step();
-    simp();
+    solve();
 }
 ```
 

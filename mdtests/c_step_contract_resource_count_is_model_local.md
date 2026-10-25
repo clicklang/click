@@ -34,7 +34,7 @@ int32 invoke(int32 (*callback)(int32), int32 x) {
     owns A(x);
     requires model.remaining == 1;
     ensures result == 1;
-} by { step(Keep, { model: model }); execute(); simp(); }
+} by { step(Keep, { model: model }); execute(); solve(); }
 ```
 
 ```expect

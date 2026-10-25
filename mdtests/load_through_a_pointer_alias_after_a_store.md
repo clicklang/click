@@ -54,7 +54,7 @@ void set_up_word(struct node* c) {
             have id->word == 5;
             let g = fold(frame_at(c), { model: Frame::Up(id, 5) });
             step();
-            simp();
+            solve();
         },
     }
 }

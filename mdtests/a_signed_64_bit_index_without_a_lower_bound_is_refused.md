@@ -18,7 +18,7 @@ int64 get(const int64* cells, int64 i) {
     requires i < 8i64;
     views cells[0..8];
     ensures result == result;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

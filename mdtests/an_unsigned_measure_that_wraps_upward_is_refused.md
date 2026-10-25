@@ -26,7 +26,7 @@ int32 fill(uint32 x) {
 } by {
     loop {
         decreases 3 - x;
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             step();
             close_invariants();

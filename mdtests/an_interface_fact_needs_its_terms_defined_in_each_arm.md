@@ -47,7 +47,7 @@ int32 bubble_pass3(int32 p[3]) {
         invariant all_le_range(p, 0, j, p[j]);
         initialize by {
             unfold(all_le_range);
-            simp();
+            solve();
         }
         preserve by {
             branch ensuring {
@@ -60,13 +60,13 @@ int32 bubble_pass3(int32 p[3]) {
                 have p[j] <= p[j + 1];
                 have all_le_range(p, 0, j, p[j + 1]) by {
                     unfold(all_le_range);
-                    simp();
+                    solve();
                 }
             } else {
                 have p[j] <= p[j + 1];
                 have all_le_range(p, 0, j, p[j + 1]) by {
                     unfold(all_le_range);
-                    simp();
+                    solve();
                 }
             }
             step();
@@ -77,7 +77,7 @@ int32 bubble_pass3(int32 p[3]) {
     }
     step();
     unfold(all_le_range);
-    simp();
+    solve();
 }
 ```
 

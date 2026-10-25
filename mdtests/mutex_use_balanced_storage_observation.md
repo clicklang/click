@@ -27,7 +27,7 @@ runtime "modeled-pthread";
 verifying "mutex_use_balanced_storage_observation.c";
 void helper(struct holder *holder) {
     owns mutex_use(&holder->mu);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 run(struct holder *holder) {
     owns holder->mu;
     requires aligned(&holder->mu, 8);
@@ -43,7 +43,7 @@ int32 run(struct holder *holder) {
     step();
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

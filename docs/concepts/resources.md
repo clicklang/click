@@ -117,7 +117,7 @@ the same symbolic value: nothing that could change the cell is allowed to run.
 int32 peek(int32 p[]) {
     views p[0..1];
     ensures reads_agree: result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 Here the C body reads `p[0]` twice and returns `a == b`; the two loads are one
@@ -1030,7 +1030,7 @@ int32 complete_once(int32 flag[]) {
         unfold(uncalled(flag));
         execute();
         fold(called(flag));
-        simp();
+        solve();
     }
 }
 ```

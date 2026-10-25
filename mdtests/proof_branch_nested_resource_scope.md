@@ -45,7 +45,7 @@ int32 branch_nested_resource_scope(int32* p, int32 flag) {
             }
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

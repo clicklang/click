@@ -22,7 +22,7 @@ theorem far_witness(a: uint8[], n: uint64) {
     requires a[4294967296u64] == 7u8;
     ensures (0u64..n).any(|k| { a[k] == 7u8 }) by {
         witness { k: 4294967296u64 };
-        simp();
+        solve();
     }
 }
 ```

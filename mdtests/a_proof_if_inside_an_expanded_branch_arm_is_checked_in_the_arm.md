@@ -59,7 +59,7 @@ int32 nested(int32 x, int32 y) {
         step();
         step();
     }
-    simp();
+    solve();
 }
 ```
 

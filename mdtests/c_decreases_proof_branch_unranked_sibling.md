@@ -24,15 +24,15 @@ int32 f(int32 n) {
             invariant n <= 0;
         }
         execute();
-        simp();
+        solve();
     } else {
-        have n > 0 by simp();
+        have n > 0 by solve();
         have n >= 0 by { arithmetic() using { n > 0; }; }
         loop {
             invariant n >= 0;
         }
         execute();
-        simp();
+        solve();
     }
 }
 ```

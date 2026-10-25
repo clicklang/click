@@ -17,7 +17,7 @@ void set(struct node *p, struct node *q, struct node *r) {
 ```
 ```click
 verifying "stored_pointer_child.c";
-struct node* same(struct node* p) { ensures result == p; } by { execute(); simp(); }
+struct node* same(struct node* p) { ensures result == p; } by { execute(); solve(); }
 resource leaf(p: struct node*) {
     field tag: int32;
     owns p->next;
@@ -50,7 +50,7 @@ void set(struct node* p, struct node* q, struct node* r) {
     let { whole: packaged } = pack(p, tmp, { child: child });
     let { child: returned } = unfold(packaged);
     let whole = fold(box(p), { tag: returned.tag }, { child: returned });
-    step(); simp();
+    step(); solve();
 }
 ```
 ```expect

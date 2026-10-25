@@ -13,11 +13,11 @@ int32 echo(int32 x) {
     owns marker: Marker();
     ensures marker.value == old(marker.value);
     ensures result == x;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 theorem echo_is_echo() executes echo(int32 x) {
     ensures Echo(&echo) as { cell: c } by {
         step(echo, { marker: c });
-        simp();
+        solve();
     }
 }
 ```

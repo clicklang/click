@@ -44,14 +44,14 @@ int classify(int x) {
             unfold(classified(x));
             normalize() using { x == 0; };
         }
-        simp();
+        solve();
     } else {}
     step();
     have result == classified(x) by {
         unfold(classified(x));
         normalize() using { not(x == 0); };
     }
-    simp();
+    solve();
 }
 
 int has_class(int x) {
@@ -62,15 +62,15 @@ int has_class(int x) {
     branch {
         step();
         have classified(x) != 0 by {
-            simp() using { r != 0; r == classified(x); };
+            solve() using { r != 0; r == classified(x); };
         }
-        simp();
+        solve();
     } else {}
     step();
     have classified(x) == 0 by {
-        simp() using { r == 0; r == classified(x); };
+        solve() using { r == 0; r == classified(x); };
     }
-    simp();
+    solve();
 }
 
 int forward_class(int x) {
@@ -82,7 +82,7 @@ int forward_class(int x) {
         rewrite(r == classified(x));
         normalize();
     }
-    simp();
+    solve();
 }
 ```
 

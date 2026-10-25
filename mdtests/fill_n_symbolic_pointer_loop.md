@@ -33,7 +33,7 @@ int32 fill_n_symbolic_pointer_loop(int32 p[], int32 n) {
         invariant i <= n;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

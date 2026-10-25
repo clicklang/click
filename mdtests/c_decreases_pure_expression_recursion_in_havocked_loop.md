@@ -44,17 +44,17 @@ int32 walk(int32 n) {
         invariant n >= 0;
         invariant n <= old(n);
         invariant result == 0;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             have 0 <= level(n - 1) by {
                 unfold(level(n - 1));
-                simp();
+                solve();
             }
             have level(n - 1) < level(old(n)) by {
                 unfold(level(n - 1));
                 unfold(level(old(n)));
                 have n - 1 < n by auto();
-                simp();
+                solve();
             }
             step();
             step();
@@ -62,7 +62,7 @@ int32 walk(int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

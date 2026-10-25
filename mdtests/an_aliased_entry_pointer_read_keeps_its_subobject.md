@@ -16,7 +16,7 @@ int32 probe(struct Holder* first, struct Holder* alias, struct Pair* pair) {
     views first->link;
     views pair->first;
     views pair->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

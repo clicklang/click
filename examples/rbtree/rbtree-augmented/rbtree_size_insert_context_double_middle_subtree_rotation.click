@@ -158,7 +158,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.phase == SizedInsertContextDoubleMiddleSubtreePhase::Before(g, p, above, pv, gv, far, m, mv, middle_left, middle_right, nv);
                 invariant old(state.phase) == SizedInsertContextDoubleMiddleSubtreePhase::Before(g, p, above, pv, gv, far, m, mv, middle_left, middle_right, nv);
                 invariant state.model == sized_context_double_middle_subtree_before(g, p, node, above, pv, gv, far, m, mv, middle_left, middle_right, nv);
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     let { tree: loop_tree, link: link } = unfold(state);
                     unfold(sized_context_double_middle_subtree_before(g, p, node, above, pv, gv, far, m, mv, middle_left, middle_right, nv));
@@ -496,7 +496,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         at(before_parent_update, g->rb_left == 0);
                     };
                     let g_left = fold(sized_at(g->rb_left), { model: SizedTree::Empty });
-                    have g->rb_right == 0 by { simp(); }
+                    have g->rb_right == 0 by { solve(); }
                     let g_right = fold(sized_at(g->rb_right), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, node, Color::Red, gv, SizedTree::Empty, SizedTree::Empty)
@@ -504,14 +504,14 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     transport(at(before_parent_update, node->rb_left == p), node->rb_left == p) using {
                         at(before_parent_update, node->rb_left == p);
                     };
-                    have parent->rb_right == gparent by { simp(); }
+                    have parent->rb_right == gparent by { solve(); }
                     have node->rb_right == g by {
                         rewrite(node == parent);
                         rewrite(g == gparent);
                         assumption();
                     }
                     have parent == node by { assumption(); }
-                    have node->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { simp(); }
+                    have node->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { solve(); }
                     have node->__rb_parent_color == address(above) + (node->__rb_parent_color & 1) by {
                         rewrite(node->__rb_parent_color == at(before_parent_update, g->__rb_parent_color));
                         assumption();
@@ -623,17 +623,17 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have state.context == old(state.context) by { assumption(); }
                     have state.whole_model == sized_plug(old(state.context), state.model) by { assumption(); }
                     have state.phase == sized_context_double_middle_subtree_finish(old(state.phase)) by {
-                        unfold(sized_context_double_middle_subtree_finish(SizedInsertContextDoubleMiddleSubtreePhase::Before(g, p, above, pv, gv, far, m, mv, middle_left, middle_right, nv))); simp();
+                        unfold(sized_context_double_middle_subtree_finish(SizedInsertContextDoubleMiddleSubtreePhase::Before(g, p, above, pv, gv, far, m, mv, middle_left, middle_right, nv))); solve();
                     }
                     have sized_shape(state.model) == sized_context_double_middle_subtree_expected(old(state.phase), node) by {
                         rewrite(old(state.phase) == SizedInsertContextDoubleMiddleSubtreePhase::Before(g, p, above, pv, gv, far, m, mv, middle_left, middle_right, nv));
-                        unfold(sized_context_double_middle_subtree_expected(SizedInsertContextDoubleMiddleSubtreePhase::Before(g, p, above, pv, gv, far, m, mv, middle_left, middle_right, nv), node)); simp();
+                        unfold(sized_context_double_middle_subtree_expected(SizedInsertContextDoubleMiddleSubtreePhase::Before(g, p, above, pv, gv, far, m, mv, middle_left, middle_right, nv), node)); solve();
                     }
                     step();
                 }
             }
             have node == old(node) by { assumption(); }
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -650,7 +650,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_context_double_middle_subtree_expected(old(state.phase), node);
 } by {
     step(insert::__rb_insert, { state: state });
-    execute(); simp();
+    execute(); solve();
 }
 
 void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -666,5 +666,5 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_context_double_middle_subtree_expected(old(state.phase), node);
 } by {
     step(insert::__rb_insert_augmented, { state: state });
-    execute(); simp();
+    execute(); solve();
 }

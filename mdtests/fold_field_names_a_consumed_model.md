@@ -29,7 +29,7 @@ void touch(int32* p) {
     unfold(c);
     execute();
     let c = fold(cell(p), { rank: c.rank });
-    simp();
+    solve();
 }
 ```
 

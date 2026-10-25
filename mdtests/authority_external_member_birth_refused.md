@@ -20,7 +20,7 @@ extern void mint(int32* p) {
 
 void caller(int32* p) {
     produces ticket(p);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

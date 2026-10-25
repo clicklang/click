@@ -10,8 +10,8 @@ verifying "wildcard_private_member_cannot_count.c";
 void inspect(int32* pool, int32* p) {
     owns slot(pool, p);
 } by {
-    have count(slot(pool, _)) == 1 by simp();
-    execute(); simp();
+    have count(slot(pool, _)) == 1 by solve();
+    execute(); solve();
 }
 ```
 

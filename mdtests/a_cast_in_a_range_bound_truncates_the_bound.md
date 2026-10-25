@@ -23,7 +23,7 @@ uint8 read(const uint8* bytes, uint64 length, uint64 index) {
     requires index < length;
     views bytes[0..(int32)length];
     ensures result == bytes[index];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

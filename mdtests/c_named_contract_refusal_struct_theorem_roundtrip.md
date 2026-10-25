@@ -44,7 +44,7 @@ void bump(struct node* p) {
 theorem bump_is_augment_rotate() executes bump(struct node* p) {
     ensures AugmentRotate(&bump) as { t: r } by {
         step(bump, { tree: r });
-        simp();
+        solve();
     }
 }
 

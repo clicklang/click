@@ -16,7 +16,7 @@ void invoke(void (*callback)(int32*), int32* pool) {
     requires Keep(callback);
     owns token(pool);
     ensures count(token(pool)) == old(count(token(pool)));
-} by { step(Keep); execute(); simp(); }
+} by { step(Keep); execute(); solve(); }
 ```
 
 ```expect

@@ -69,7 +69,7 @@ int32 peek(struct holder* h, int32 x) {
     }
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

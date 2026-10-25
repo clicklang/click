@@ -125,7 +125,7 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                     step();
                     step();
                     step();
-                    simp();
+                    solve();
                 },
             }
         },

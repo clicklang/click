@@ -22,7 +22,7 @@ int h(void) {
 
 ```click
 verifying "fresh_memset.c";
-int h() { ensures true; } by { execute(); simp(); }
+int h() { ensures true; } by { execute(); solve(); }
 ```
 
 ```expect

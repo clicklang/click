@@ -25,7 +25,7 @@ int32 drain(int32 n) {
     loop {
         decreases n;
         invariant n >= 0;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             have 0 <= to_integer(n - 1) by auto();
             step();
@@ -39,7 +39,7 @@ int32 drain(int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

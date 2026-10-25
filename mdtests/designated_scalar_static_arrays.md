@@ -113,30 +113,30 @@ int32 run() {
     requires private_file::read_private::local_table[3] < 1000;
     ensures result == 29;
 } by {
-    have shared_table[0] == 0 by simp();
-    have shared_table[1] == 3 by simp();
-    have shared_table[2] == 6 by simp();
-    have shared_table[3] == 0 by simp();
-    have shared_table[4] == 9 by simp();
+    have shared_table[0] == 0 by solve();
+    have shared_table[1] == 3 by solve();
+    have shared_table[2] == 6 by solve();
+    have shared_table[3] == 0 by solve();
+    have shared_table[4] == 9 by solve();
     step();
-    have private_file::private_table[0] == 0 by simp();
-    have private_file::private_table[2] == 5 by simp();
-    have private_file::read_private::local_table[0] == 0 by simp();
-    have private_file::read_private::local_table[1] == 2 by simp();
-    have private_file::read_private::local_table[2] == 0 by simp();
-    have private_file::read_private::local_table[3] == 4 by simp();
-    have private_file::private_table[0] > -1000 by simp();
-    have private_file::private_table[0] < 1000 by simp();
-    have private_file::private_table[2] > -1000 by simp();
-    have private_file::private_table[2] < 1000 by simp();
-    have private_file::read_private::local_table[0] > -1000 by simp();
-    have private_file::read_private::local_table[0] < 1000 by simp();
-    have private_file::read_private::local_table[1] > -1000 by simp();
-    have private_file::read_private::local_table[1] < 1000 by simp();
-    have private_file::read_private::local_table[2] > -1000 by simp();
-    have private_file::read_private::local_table[2] < 1000 by simp();
-    have private_file::read_private::local_table[3] > -1000 by simp();
-    have private_file::read_private::local_table[3] < 1000 by simp();
+    have private_file::private_table[0] == 0 by solve();
+    have private_file::private_table[2] == 5 by solve();
+    have private_file::read_private::local_table[0] == 0 by solve();
+    have private_file::read_private::local_table[1] == 2 by solve();
+    have private_file::read_private::local_table[2] == 0 by solve();
+    have private_file::read_private::local_table[3] == 4 by solve();
+    have private_file::private_table[0] > -1000 by solve();
+    have private_file::private_table[0] < 1000 by solve();
+    have private_file::private_table[2] > -1000 by solve();
+    have private_file::private_table[2] < 1000 by solve();
+    have private_file::read_private::local_table[0] > -1000 by solve();
+    have private_file::read_private::local_table[0] < 1000 by solve();
+    have private_file::read_private::local_table[1] > -1000 by solve();
+    have private_file::read_private::local_table[1] < 1000 by solve();
+    have private_file::read_private::local_table[2] > -1000 by solve();
+    have private_file::read_private::local_table[2] < 1000 by solve();
+    have private_file::read_private::local_table[3] > -1000 by solve();
+    have private_file::read_private::local_table[3] < 1000 by solve();
 }
 ```
 

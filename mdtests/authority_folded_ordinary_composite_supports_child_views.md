@@ -83,7 +83,7 @@ int32 select_guarded(int32 key, int32 choose_left) {
             fold(ready_bundle(key));
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

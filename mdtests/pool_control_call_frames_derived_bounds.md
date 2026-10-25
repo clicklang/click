@@ -48,7 +48,7 @@ int32 pool_used(struct pool* pool) {
     owns control(pool);
 } by {
     open(control(pool)) { execute(); }
-    simp();
+    solve();
 }
 int32 forward(struct pool* pool) {
     owns control(pool);

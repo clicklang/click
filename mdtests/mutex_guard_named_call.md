@@ -20,7 +20,7 @@ void outer(struct counter *counter) {
     step(inner, { guard: g });
     step(inner, { guard: g });
     step();
-    simp();
+    solve();
 }
 ```
 

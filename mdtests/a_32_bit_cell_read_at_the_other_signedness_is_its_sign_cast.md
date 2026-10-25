@@ -62,7 +62,7 @@ int stated_unsigned_read_signed(unsigned *u, int i) {
     ensures result == -1;
 } by {
     step_until(function.exit);
-    simp();
+    solve();
 }
 ```
 

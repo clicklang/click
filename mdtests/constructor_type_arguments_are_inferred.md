@@ -40,7 +40,7 @@ theorem append_nothing(xs: List<int32>) {
 theorem singleton_contains(x: int32) {
     ensures list::contains(List::Cons(x, List::Nil), x) by {
         unfold(list::contains(List::Cons(x, List::Nil), x));
-        simp();
+        solve();
     }
 }
 ```

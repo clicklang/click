@@ -22,7 +22,7 @@ int32 sorted_pair_unfold_requirement(int32 p[2]) {
     ensures consequence: p[0] <= p[1] by {
         step_until(function.exit);
         unfold(sorted_pair);
-        simp();
+        solve();
     }
 }
 ```

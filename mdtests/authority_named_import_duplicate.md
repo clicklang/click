@@ -15,19 +15,19 @@ void preserve(int32* pool) {
     ensures left.serial == old(left.serial);
     ensures right.serial == old(right.serial);
     ensures count(ticket(pool)) == old(count(ticket(pool)));
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool)));
     let first = fold(ticket(&pool), { serial: 1 });
     let second = fold(ticket(&pool), { serial: 2 });
     step(preserve, { left: first, right: first });
-    have first.serial == 1 by simp();
-    have second.serial == 2 by simp();
-    have count(ticket(&pool)) == 2 by simp();
+    have first.serial == 1 by solve();
+    have second.serial == 2 by solve();
+    have count(ticket(&pool)) == 2 by solve();
     unfold(first); unfold(second);
     unfold(authority(ticket(&pool)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

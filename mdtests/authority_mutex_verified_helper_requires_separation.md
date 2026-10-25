@@ -21,11 +21,11 @@ void touch(struct holder *holder, int *data) {
     owns mutex_live(&holder->mu);
     owns data[0..1];
     requires separate(memory(data[0..1]), memory(holder->mu));
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void write_value(struct holder *holder, int *data) {
     owns mutex_live(&holder->mu);
     owns data[0..1];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

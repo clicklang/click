@@ -40,7 +40,7 @@ int32 advance_sequential_joins(int32 x) {
             step();
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

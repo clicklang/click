@@ -33,7 +33,7 @@ int32 f(int32* p) {
             }
             execute();
             let after = fold(Cell(p), { model: Link::Node(q) });
-            simp();
+            solve();
         },
     }
 }

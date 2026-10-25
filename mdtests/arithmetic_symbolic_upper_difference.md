@@ -17,7 +17,7 @@ int32 f(int32 a, int32 b) {
         arithmetic() using { a <= 1000 - b; b >= 1; b <= 1000; };
     }
     step();
-    simp();
+    solve();
 }
 ```
 

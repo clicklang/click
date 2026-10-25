@@ -32,7 +32,7 @@ int32 q(int32 j) {
         have forall (k: uint64) { 0u64 <= k and k < (uint64) j + 1u64 implies tmp[k] != 0u8 } by {
             intro();
             intro();
-            have k < 1u64 by { simp(); }
+            have k < 1u64 by { solve(); }
             instantiate(forall (k: uint64) { 0u64 <= k and k < 1u64 implies tmp[k] != 0u8 }, k);
             assumption();
         }
@@ -43,7 +43,7 @@ int32 q(int32 j) {
         have forall (k: uint64) { 0u64 <= k and k < (uint64) j + 1u64 implies tmp[k] != 0u8 } by {
             intro();
             intro();
-            have k < 2u64 by { simp(); }
+            have k < 2u64 by { solve(); }
             instantiate(forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 }, k);
             assumption();
         }

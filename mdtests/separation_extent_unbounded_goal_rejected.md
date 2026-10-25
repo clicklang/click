@@ -10,7 +10,7 @@ int32 identity(int32 n) { return n; }
 verifying "separation_extent_unbounded_goal_rejected.c";
 int32 identity(int32 n) {
     ensures separate(memory(a[0..n]), memory(b[0..1]));
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

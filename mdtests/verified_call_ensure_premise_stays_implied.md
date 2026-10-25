@@ -30,10 +30,10 @@ int32 set_when_positive(int32 flag, int32* cell) {
 } by {
     if flag > 0 {
         execute();
-        simp();
+        solve();
     } else {
         execute();
-        simp();
+        solve();
     }
 }
 

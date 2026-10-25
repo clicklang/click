@@ -43,7 +43,7 @@ void set_sign(struct cell* node, int32 x) {
         let c = fold(cell(node), { model: 2 });
     }
     step();
-    simp();
+    solve();
 }
 ```
 

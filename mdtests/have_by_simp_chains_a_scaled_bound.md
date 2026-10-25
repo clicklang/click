@@ -11,7 +11,7 @@ theorem simp_chains_scaled_bound(i: Integer, n: Integer, total: Integer) {
     requires n <= 1000;
     requires total <= 255 * i;
     ensures total <= 255000 by {
-        have total <= 255000 by simp();
+        have total <= 255000 by solve();
         assumption();
     }
 }

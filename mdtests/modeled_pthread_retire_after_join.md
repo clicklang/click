@@ -36,7 +36,7 @@ int32 run() {
 } by {
     step();
     step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     fold(authority(reference(obj)));
     step();
     step();
@@ -44,13 +44,13 @@ int32 run() {
         unfold(authority(reference(obj)));
         step();
         step();
-        simp();
+        solve();
     } else {}
     step();
     unfold(authority(reference(obj)));
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

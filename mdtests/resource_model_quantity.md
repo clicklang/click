@@ -35,7 +35,7 @@ void keep(int32* p) {
     let { amount: n } = unfold(s);
     step_until(function.exit);
     let s = fold(bundle(p), { amount: n });
-    simp();
+    solve();
 }
 void package(int32* p) {
     consumes 2 of credit(p);
@@ -57,7 +57,7 @@ void keep_wrapper(int32* p) {
     let { amount: n, label: l } = unfold(s);
     step_until(function.exit);
     let s = fold(wrapper(p), { amount: n }, { label: l });
-    simp();
+    solve();
 }
 ```
 

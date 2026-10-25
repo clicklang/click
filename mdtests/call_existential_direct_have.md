@@ -32,7 +32,7 @@ int32 parent(int32 x) {
         assumption();
     }
     step();
-    simp();
+    solve();
 }
 ```
 

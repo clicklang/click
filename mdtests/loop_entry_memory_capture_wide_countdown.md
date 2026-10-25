@@ -23,7 +23,7 @@ uint64 inspect(const uint8* p, uint64 n) {
   decreases to_integer(n);
   views p[0u64..n];
   invariant to_integer(n) <= 15;
-  initialize by { have to_integer(n) <= to_integer(15u64) by auto(); simp(); }
+  initialize by { have to_integer(n) <= to_integer(15u64) by auto(); solve(); }
   preserve by {
    have n > 0u64 by assumption();
    have 0u64 < n by {
@@ -47,7 +47,7 @@ uint64 inspect(const uint8* p, uint64 n) {
    have to_integer(n) <= 15 by arithmetic() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; at(before_decrement, to_integer(n)) <= 15; };
    have 0 <= to_integer(n) by arithmetic() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; to_integer(1u64) <= at(before_decrement, to_integer(n)); };
    have to_integer(n) < at(before_decrement, to_integer(n)) by arithmetic() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; };
-   close_invariants() by { simp(); }
+   close_invariants() by { solve(); }
   }
  }
  have n <= 0u64 by assumption();

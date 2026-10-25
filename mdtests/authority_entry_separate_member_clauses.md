@@ -22,7 +22,7 @@ int32 run(void* p) {
     unfold(ticket(p));
     have count(ticket(p)) == 1;
     step();
-    simp();
+    solve();
 }
 ```
 

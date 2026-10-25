@@ -14,10 +14,10 @@ void symbolic(int *p, const struct callbacks *cb) { cb->call(p); }
 ```click
 verifying "callbacks.c";
 contract void Invoke(int32* p) { ensures true; }
-void target(int32* p) { ensures true; } by { execute(); simp(); }
+void target(int32* p) { ensures true; } by { execute(); solve(); }
 theorem target_has_contract()
 executes target(int32* p) {
-    ensures Invoke(&target) by { execute(); simp(); }
+    ensures Invoke(&target) by { execute(); solve(); }
 }
 void symbolic(int32* p, const struct callbacks* cb) {
     views cb->call;
@@ -28,7 +28,7 @@ void symbolic(int32* p, const struct callbacks* cb) {
     apply(target_has_contract());
     have Invoke(cb->call) by { assumption(); }
     step(Invoke);
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

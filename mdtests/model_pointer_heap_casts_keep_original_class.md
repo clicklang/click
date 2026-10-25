@@ -15,8 +15,8 @@ int32 allocated() {
 
 ```click
 verifying "heap.c";
-int32 accept(struct node* p) { ensures result == 7; } by { execute(); simp(); }
-int32 allocated() { ensures result == 7; } by { execute(); simp(); }
+int32 accept(struct node* p) { ensures result == 7; } by { execute(); solve(); }
+int32 allocated() { ensures result == 7; } by { execute(); solve(); }
 ```
 
 ```expect

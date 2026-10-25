@@ -27,7 +27,7 @@ int32 f(int32* p, int32* q) {
     open(borrowed(p)) {
         execute();
         let output = fold(cell(q), { value: 8 });
-        simp();
+        solve();
     }
 }
 ```

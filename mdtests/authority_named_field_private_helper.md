@@ -29,7 +29,7 @@ void bump(int32* pool, int32* p) {
 } by { unfold(member); step(); fold(member); }
 int32 run() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { execute(); simp(); } else {}
+    branch { execute(); solve(); } else {}
     step(); step();
     fold(authority(ticket(&pool, _)));
     let first = fold(ticket(&pool, p), { serial: 1 });

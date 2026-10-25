@@ -17,18 +17,18 @@ verifying "returned_member.c";
 int32* first(struct Pair* p) {
     views p->first;
     ensures result == &p->first;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 second_of(int32* q) {
     views q[0..2];
     ensures result == q[1];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 probe(struct Pair* p) {
     views p->first;
     views p->second;
     ensures result == p->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

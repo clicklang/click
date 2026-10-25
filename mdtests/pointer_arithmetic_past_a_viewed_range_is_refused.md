@@ -17,7 +17,7 @@ verifying "pointer_arithmetic_past_a_viewed_range_is_refused.c";
 int32 f(int32 *p) {
     views p[0..4];
     ensures result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

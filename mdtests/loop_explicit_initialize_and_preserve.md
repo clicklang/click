@@ -31,7 +31,7 @@ theorem nonnegative_is_acceptable(x: int32) {
 
     ensures acceptable(x) by {
         unfold(acceptable);
-        simp();
+        solve();
     }
 }
 
@@ -44,18 +44,18 @@ int32 loop_explicit_initialize_and_preserve(int32 x) diverges {
 
         initialize by {
             apply(nonnegative_is_acceptable(x));
-            simp();
+            solve();
         }
 
         preserve by {
             step();
             apply(nonnegative_is_acceptable(x));
-            simp();
+            solve();
         }
     }
     step();
     unfold(acceptable);
-    simp();
+    solve();
 }
 ```
 

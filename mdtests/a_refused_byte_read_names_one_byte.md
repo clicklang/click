@@ -12,7 +12,7 @@ verifying "a_refused_byte_read_names_one_byte.c";
 uint8 one(const uint8* bytes) {
     views bytes[1..2];
     ensures result == bytes[0];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

@@ -12,10 +12,10 @@ void touch(int32* p) {
     ensures p[0] == 1;
 } by {
     open(cell(p)) {
-        have p[0] == 0 by simp();
+        have p[0] == 0 by solve();
         step();
     }
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

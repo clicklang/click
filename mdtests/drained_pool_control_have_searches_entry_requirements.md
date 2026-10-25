@@ -34,7 +34,7 @@ int32 pool_spare(struct pool* pool) {
     have pool->capacity == count(pool_slot(pool));
     fold(pool_control(pool));
     open(pool_control(pool)) { execute(); }
-    simp();
+    solve();
 }
 ```
 

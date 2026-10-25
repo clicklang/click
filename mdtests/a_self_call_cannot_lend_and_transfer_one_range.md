@@ -25,7 +25,7 @@ void f(int32 a[], int32 n) {
     views a[0..1];
     owns g[0..1];
     ensures g[0] == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

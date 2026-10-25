@@ -31,7 +31,7 @@ void keep(int32 bound) {
     unfold(c);
     execute();
     fold(c);
-    simp();
+    solve();
 }
 ```
 

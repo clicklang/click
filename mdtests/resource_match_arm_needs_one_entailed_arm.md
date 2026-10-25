@@ -47,7 +47,7 @@ int32 read_cell(struct cell* node) {
             unfold(c);
             execute();
             let c = fold(cell(node), { model: Slot::Filled(value) });
-            simp();
+            solve();
         },
     }
 }

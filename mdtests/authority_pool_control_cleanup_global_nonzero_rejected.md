@@ -49,12 +49,12 @@ void pool_destroy(struct pool* pool) {
     ensures valid_pool(pool);
 } by {
     unfold(pool_control(pool));
-    have count(pool_object(pool, _)) == 0 by simp();
-    have pool->capacity == count(pool_slot(pool)) by simp();
+    have count(pool_object(pool, _)) == 0 by solve();
+    have pool->capacity == count(pool_slot(pool)) by solve();
     step();
     unfold(authority(pool_slot(pool)));
     unfold(authority(pool_object(pool, _)));
-    execute(); unfold(valid_pool); simp();
+    execute(); unfold(valid_pool); solve();
 }
 ```
 

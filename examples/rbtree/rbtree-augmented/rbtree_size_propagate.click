@@ -39,13 +39,13 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
         invariant links.word == old(links.word);
         invariant rb == old(rb) or rb == stop;
         invariant metadata.value == 1 or rb == old(rb);
-        initialize by simp();
+        initialize by solve();
         preserve by {
             have rb == old(rb) by {
                 cases {
                     rb == old(rb) => { assumption(); }
                     rb == stop => {
-                        have address(rb) == address(stop) by { rewrite(rb == stop); simp(); }
+                        have address(rb) == address(stop) by { rewrite(rb == stop); solve(); }
                         contradiction(address(rb) == address(stop));
                     }
                 }

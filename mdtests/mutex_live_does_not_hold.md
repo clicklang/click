@@ -22,16 +22,16 @@ verifying "mutex_live_does_not_hold.c";
 
 void need_guard(struct holder *holder) {
     owns mutex_guard(&holder->mu);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void inner(struct holder *holder) {
     owns mutex_live(&holder->mu);
-} by { step(need_guard, {}); execute(); simp(); }
+} by { step(need_guard, {}); execute(); solve(); }
 void keep(struct holder *holder) {
     owns mutex_live(&holder->mu);
 } by {
     step(inner, {});
     step();
-    simp();
+    solve();
 }
 int32 run(struct holder *holder) {
     owns holder->mu;
@@ -42,7 +42,7 @@ int32 run(struct holder *holder) {
     step(keep, {});
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

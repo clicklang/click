@@ -30,7 +30,7 @@ int32 spent_count() {
 } by {
     step();
     step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     step();
     fold(authority(reference(obj)));
     fold(control(obj));

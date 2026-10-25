@@ -33,13 +33,13 @@ void increment(int32* state) {
     unfold(first);
     execute();
     let first = fold(Counter(), { model: Mark::Set, revision: 1 });
-    simp();
+    solve();
 }
 
 theorem increment_is_exact() executes increment(int32* state) {
     ensures Exact(&increment) as { cell: c } by {
         step(increment, { first: c });
-        simp();
+        solve();
     }
 }
 
@@ -51,7 +51,7 @@ void invoke(void (*callback)(int32*), int32* state) {
 } by {
     step(Exact, { cell: k });
     execute();
-    simp();
+    solve();
 }
 
 void concrete_caller(int32* state) {
@@ -62,7 +62,7 @@ void concrete_caller(int32* state) {
     apply(increment_is_exact());
     step(invoke, { k: mine });
     execute();
-    simp();
+    solve();
 }
 ```
 

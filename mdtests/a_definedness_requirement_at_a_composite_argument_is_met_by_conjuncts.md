@@ -26,20 +26,20 @@ theorem needs_def(t: int32, pos: int32) {
  requires defined((t + pos) + 4);
  ensures to_integer((t + pos) + 4) == to_integer(t + pos) + 4 by {
   have to_integer((t + pos) + 4) == to_integer((t + pos)) + to_integer(4) by auto();
-  simp();
+  solve();
  }
 }
 theorem caller(t: int32, r: int32, x: int32) {
  requires 0 <= t; requires t <= 1000; requires 0 <= x; requires x <= r; requires r <= 1000;
  ensures true by {
   have defined(r - x) by auto();
-  have 0 <= to_integer(r - x) by simp();
-  have to_integer(r - x) <= 1000 by simp();
+  have 0 <= to_integer(r - x) by solve();
+  have to_integer(r - x) <= 1000 by solve();
   apply(lemma_def(t, r - x));
   have defined(t + (r - x)) by assumption();
   have defined((t + (r - x)) + 4) by assumption();
   apply(needs_def(t, r - x)) using { defined(t + (r - x)); defined((t + (r - x)) + 4); };
-  simp();
+  solve();
  }
 }
 ```

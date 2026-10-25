@@ -18,7 +18,7 @@ void copy4(uint8* dst, const uint8* src) {
     requires viewable(src[0..4]);
     owns dst[0..4];
     requires separate(memory(dst[0..4]), memory(src[0..4]));
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

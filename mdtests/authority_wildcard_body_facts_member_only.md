@@ -10,7 +10,7 @@ verifying "wildcard_body_facts_consumption.c";
 int32 take(int32* pool, int32* p) {
     owns slot(pool, p);
     ensures 0 <= result;
-} by { open(slot(pool, p)) { step(); } simp(); }
+} by { open(slot(pool, p)) { step(); } solve(); }
 ```
 
 ```expect

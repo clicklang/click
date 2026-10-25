@@ -17,14 +17,14 @@ theorem byte_arithmetic(n: uint8) {
     ensures exists (x: uint8) { x + 1 == n + 1 } by {
         have defined(n + 1);
         witness { x: n };
-        simp();
+        solve();
     }
 }
 
 theorem high_word() {
     ensures exists (x: int64) { x == 4294967296i64 and x != 0i64 } by {
         witness { x: 4294967296i64 };
-        simp();
+        solve();
     }
 }
 
@@ -46,7 +46,7 @@ theorem mixed() {
         intro();
         intro();
         witness { a: x, b: y };
-        simp();
+        solve();
     }
 }
 ```

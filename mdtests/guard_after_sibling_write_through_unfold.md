@@ -85,7 +85,7 @@ void run_frame(struct link* x, struct link* y, struct link* z, int32* out) {
     have x->next == z by assumption();
     step_until(function.exit);
     let g = fold(frame_at(z), { model: old(f.model) }, {});
-    simp();
+    solve();
 }
 ```
 

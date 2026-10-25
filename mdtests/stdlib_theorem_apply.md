@@ -11,7 +11,7 @@ theorem user_reuses_cstr_len_has_prefix(bytes: uint8[], len: uint64) {
 
     ensures cstr::prefix(bytes, len) by {
         apply(cstr::len_has_prefix(bytes, len));
-        simp();
+        solve();
     }
 }
 ```

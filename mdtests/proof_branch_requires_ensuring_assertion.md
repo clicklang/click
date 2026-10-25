@@ -26,7 +26,7 @@ int32 advance_missing_fact(int32 x) {
             step();
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

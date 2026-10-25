@@ -28,7 +28,7 @@ int32 wrapper(int32* p) {
     step();
     unfold(data);
     let data = fold(segment(p), { value: 0 });
-    simp();
+    solve();
 }
 ```
 

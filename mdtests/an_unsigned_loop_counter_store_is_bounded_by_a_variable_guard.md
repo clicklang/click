@@ -38,7 +38,7 @@ void clear(int32* values, uint32 n) {
         decreases 4 - x;
         invariant x <= n;
         owns values[0..4];
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             step();
             step();

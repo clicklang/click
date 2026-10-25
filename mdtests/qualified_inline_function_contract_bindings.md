@@ -24,7 +24,7 @@ void first::helper(int32* p) {
     ensures after.value == 1;
 } by {
     unfold(before); execute();
-    let after = fold(cell(p), { value: 1 }); simp();
+    let after = fold(cell(p), { value: 1 }); solve();
 }
 void second::helper(int32* p) {
     consumes before: cell(p);
@@ -32,7 +32,7 @@ void second::helper(int32* p) {
     ensures after.value == 2;
 } by {
     unfold(before); execute();
-    let after = fold(cell(p), { value: 2 }); simp();
+    let after = fold(cell(p), { value: 2 }); solve();
 }
 void run(int32* p) {
     consumes input: cell(p);

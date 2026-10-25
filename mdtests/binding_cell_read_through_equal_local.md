@@ -88,7 +88,7 @@ int32 read_through_equal_local(struct cell* node, struct cell* parent) {
                 unfold(holder_reroot(Holder::Full(identity, value), parent));
                 normalize();
             }
-            have identity == parent by simp();
+            have identity == parent by solve();
             have holder_value(Holder::Full(identity, value)) == value by {
                 unfold(holder_value(Holder::Full(identity, value)));
                 normalize();
@@ -103,7 +103,7 @@ int32 read_through_equal_local(struct cell* node, struct cell* parent) {
             step();
             let g = fold(holder_at(node), { model: Holder::Full(identity, value) });
             step();
-            simp();
+            solve();
         },
     }
 }

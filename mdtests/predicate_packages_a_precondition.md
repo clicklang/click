@@ -22,7 +22,7 @@ int32 find_zero(int32 p[], int32 n) {
     ensures body: (0..n).any(|k| { p[k] == 0 }) by {
         step_until(function.exit);
         unfold(has_zero);
-        simp();
+        solve();
     }
 }
 ```

@@ -54,7 +54,7 @@ int32 spin(struct cell* node, int32 n) {
         invariant c.model == old(c.model);
         invariant c.model != Maybe::None;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match c.model {
                 Maybe::None => { contradiction(c.model == Maybe::None); },
@@ -65,7 +65,7 @@ int32 spin(struct cell* node, int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

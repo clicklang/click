@@ -20,11 +20,11 @@ verifying "c_pointer_null_distance_is_undefined.c";
 int32 distance(int32* left, int32* right) {
     requires defined(right - left);
     ensures result == (right - left);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 distance_nulls() {
     ensures result == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

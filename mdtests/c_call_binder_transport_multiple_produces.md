@@ -34,7 +34,7 @@ void split_cells(int32* left, int32* right) {
     step_until(function.exit);
     let first = fold(cell(left), { value: 1 });
     let second = fold(cell(right), { value: 2 });
-    simp();
+    solve();
 }
 
 void caller(int32* left, int32* right) {
@@ -47,7 +47,7 @@ void caller(int32* left, int32* right) {
 } by {
     let { first: a, second: b } = step(split_cells, {});
     step();
-    simp();
+    solve();
 }
 ```
 

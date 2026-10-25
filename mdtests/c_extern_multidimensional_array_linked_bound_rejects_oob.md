@@ -17,7 +17,7 @@ int32_t probe() { return weights[2][0]; }
 ```click
 verifying "data.c";
 verifying "probe.c";
-int32 probe() { ensures result == 0; } by { execute(); simp(); }
+int32 probe() { ensures result == 0; } by { execute(); solve(); }
 ```
 
 ```expect

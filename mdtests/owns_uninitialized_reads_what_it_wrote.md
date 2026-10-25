@@ -26,11 +26,11 @@ int32 set_then_get(int32* p) {
     ensures result == 1;
     ensures p[0] == 1;
     ensures defined(p[0]);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 caller() {
     ensures result == 2;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

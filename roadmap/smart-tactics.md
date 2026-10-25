@@ -1215,6 +1215,12 @@ mdtests and examples.
     `arithmetic` from the parser, with a refusal that names the
     replacement. Printing, expansion and diagnostics spell `solve` and
     `step_until`.
+    Done in part: written `simp()` is now `solve()` in mdtests, examples, the
+    standard library and documentation examples, 4846 uses in
+    2165 files. Left as `simp()`: files imported from Rust or C++,
+    files Rust tests name, the fixtures that check the older spelling, and
+    documentation examples that quote one of them; documentation prose,
+    which names `simp` as the older spelling, changes in step 25.
 
     Measured 2026-10-25, with every `arithmetic()` read as `solve() using {}`
     and every `arithmetic() using { … }` as `solve() using { … }`. At first

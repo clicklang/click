@@ -27,7 +27,7 @@ void shrink(int32* counter) {
     step();
     fold(member(counter));
     fold(control(counter));
-    execute(); simp();
+    execute(); solve();
 }
 void lifecycle(int32* counter) {
     owns counter[0..1];
@@ -39,10 +39,10 @@ void lifecycle(int32* counter) {
     fold(3 of member(counter));
     fold(control(counter));
     step();
-    have count(member(counter)) == 2 by simp();
+    have count(member(counter)) == 2 by solve();
     unfold(control(counter));
     unfold(3 of member(counter));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

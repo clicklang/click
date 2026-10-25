@@ -18,7 +18,7 @@ theorem distinct_variants_through_a_shared_value(x: Box, a: int32) {
 theorem distinct_nested_variants_through_a_shared_value(x: Wrap, a: int32) {
     requires x == Wrap::Wrap(Box::Full(a));
     requires Wrap::Wrap(Box::Empty) == x;
-    ensures 0 == 1 by simp();
+    ensures 0 == 1 by solve();
 }
 ```
 

@@ -15,7 +15,7 @@ void retire(int32* pool) {
     consumes left: ticket(pool);
     consumes right: ticket(pool);
     ensures count(ticket(pool)) == old(count(ticket(pool))) ;
-} by { unfold(left); unfold(right); execute(); simp(); }
+} by { unfold(left); unfold(right); execute(); solve(); }
 ```
 
 ```expect

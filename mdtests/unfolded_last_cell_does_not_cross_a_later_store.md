@@ -34,7 +34,7 @@ void mark_twice(int32 a[], int32 n, int32 i) {
             0 <= i;
             i < 2147483647;
         };
-        simp();
+        solve();
     }
     step();
     have icount(a, 0, i + 1) == icount(a, 0, i) + 1;
