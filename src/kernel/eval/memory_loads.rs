@@ -1878,10 +1878,17 @@ fn canonicalized_symbolic_load_value_with_identity(
     {
         return Some(complete_loaded_word(value, memory, &address));
     }
+    // A logical pointer read names the cell's version, whatever pointer the
+    // cell holds (`docs/internals/spellability.md`).
+    let names_version = purpose == LoadPurpose::Logical
+        && logical_read_names_its_version(value_type)
+        && value_type.pointee_type().is_some()
+        && !matches!(value_type, CType::FunctionPointer(_));
     // Canonical address selection can expose a materialized pointer cell that
     // the original spelling did not name. Reuse its complete stored value;
     // manufacturing another read here would discard the selected designation.
-    if let Some(value @ CValue::Pointer(_)) = memory.known_value(&address)
+    if !names_version
+        && let Some(value @ CValue::Pointer(_)) = memory.known_value(&address)
         && value_type.accepts(&value)
     {
         let CValue::Pointer(stored) = &value else {
@@ -1901,7 +1908,12 @@ fn canonicalized_symbolic_load_value_with_identity(
     {
         return Some(value);
     }
-    let value = symbolic_load_value(memory, &address, value_type)?;
+    let value = if names_version {
+        record_load_access_width(memory, &address, value_type.byte_width());
+        memory.symbolic_pointer_version_load(&address, value_type)
+    } else {
+        symbolic_load_value(memory, &address, value_type)?
+    };
     // Terms are canonical at creation: an int or byte load evaluates to its
     // load variable, with the defining fact beside it, so every fact,
     // offset, and range built from the value is canonical.
@@ -1987,7 +1999,10 @@ fn canonicalized_symbolic_load_value_with_identity(
         &crate::kernel::intern_c_memory_ref(memory),
         &address,
     );
-    if !assumptions.should_force_symbolic_external_loads()
+    // A logical read names its version; the stored pointer is what the
+    // read-over-write authority relates it to, not what it lowers to.
+    if !names_version
+        && !assumptions.should_force_symbolic_external_loads()
         && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
             complete_read.designation(),
             assumptions,

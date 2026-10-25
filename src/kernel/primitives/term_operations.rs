@@ -4742,6 +4742,41 @@ impl Pointer {
         ))
     }
 
+    /// The pointer a logical read of `address` in `memory` reads, named by
+    /// the cell's version as every logical read is
+    /// (`docs/internals/spellability.md`): never by a pointer the cell
+    /// holds, which the read-over-write authority relates to the read
+    /// (`eval::pointer_read_over_write_value`). A cell holding its own read
+    /// is that read.
+    pub(crate) fn version_read(memory: &SharedCMemory, address: &Pointer) -> Self {
+        let source = memory.unchanged_bytes_source();
+        let canonical = crate::kernel::intern_c_memory(
+            crate::kernel::reasoning::memory_resolution::canonical_memory_for_pointer_load(
+                source.memory(),
+                address,
+            ),
+        );
+        if let Some(CValue::Pointer(stored)) = canonical.memory().known_value(address)
+            && stored.pointer().as_loaded_value().is_some_and(|read| {
+                read.defining_address == *address
+                    && read.displacement == PointerOffsetTerm::Constant(0)
+            })
+        {
+            return stored.pointer().clone();
+        }
+        let variable = crate::kernel::load_variable_for_cell_with_origin(
+            &canonical,
+            address,
+            LoadKind::Bits32,
+            crate::kernel::C_POINTER_BYTE_WIDTH,
+            memory,
+        );
+        match canonical_pointer_read(&Bitvector32Term::Variable(variable)) {
+            Some(named) => named_pointer_read(named),
+            None => Self::loaded_value(&source, address),
+        }
+    }
+
     pub(crate) fn symbolic_function(variable: Variable) -> Self {
         Self {
             block: PointerBlock::FunctionSymbolic(variable),

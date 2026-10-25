@@ -655,11 +655,7 @@ fn rewrite_through_loaded_pointer_block(
                 rewrite_through_loaded_pointer_block(&address, rewrite_pointer, depth - 1)?
             }
         };
-        let read = Pointer::loaded(&Bitvector32Term::MemoryLoad(
-            memory,
-            Box::new(rewritten_address),
-            crate::kernel::LoadKind::Bits32,
-        ))?;
+        let read = Pointer::version_read(&memory, &rewritten_address);
         return Some(Pointer {
             block: read.block,
             offset: pointer.offset.clone(),
