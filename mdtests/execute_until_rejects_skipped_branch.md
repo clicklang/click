@@ -27,5 +27,5 @@ int32 execute_until_skipped_branch(int32 flag) {
 ```
 
 ```expect
-fail: `execute_until(region(2))` target is not reachable from the current execution path
+fail: `step_until(region(2))` target is not reachable from the current execution path
 ```

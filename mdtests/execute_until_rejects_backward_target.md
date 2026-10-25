@@ -22,5 +22,5 @@ int32 execute_until_backward(int32 x) {
 ```
 
 ```expect
-fail: `execute_until(region(0))` cannot move backward from region(1)
+fail: `step_until(region(0))` cannot move backward from region(1)
 ```

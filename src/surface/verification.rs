@@ -1046,7 +1046,7 @@ fn first_executing_tactic(tactics: &[ProofTactic]) -> Option<&'static str> {
         | ProofTactic::StepCall(_)
         | ProofTactic::StepProved { .. } => Some("step"),
         ProofTactic::SmartExecute => Some("execute"),
-        ProofTactic::ExecuteUntil(_) => Some("execute_until"),
+        ProofTactic::ExecuteUntil(_) => Some("step_until"),
         ProofTactic::Loop(_) => Some("loop"),
         ProofTactic::Branch(_) => Some("branch"),
         ProofTactic::CallOutcomes(_) => Some("outcomes"),

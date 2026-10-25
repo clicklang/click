@@ -3146,12 +3146,11 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn unsupported_operation_error(&self, name: &str) -> ClickError {
         let context = self.proof_context_description();
-        let reason =
-            if self.goal().is_some() && matches!(name, "execute" | "execute_until" | "step") {
-                "this proof establishes a proposition; C execution cannot advance inside it"
-            } else {
-                "this operation is not available in this proof context"
-            };
+        let reason = if self.goal().is_some() && matches!(name, "execute" | "step_until" | "step") {
+            "this proof establishes a proposition; C execution cannot advance inside it"
+        } else {
+            "this operation is not available in this proof context"
+        };
         self.step_error(format!(
             "unsupported proof operation `{name}` in a {context}: {reason}"
         ))

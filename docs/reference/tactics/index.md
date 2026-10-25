@@ -4,7 +4,7 @@ This page is the reference inventory of the tactics in Click's specification
 language. A tactic is either **smart**, **simple**, or **control**:
 
 - Smart tactics search. They are the four smart tactics, `simp()`,
-  `arithmetic()`, `execute()` (with `execute_until`), and `auto` (with the
+  `arithmetic()`, `execute()` (with `step_until`), and `auto` (with the
   implicit `auto` at a `step()` or `fold`), and the elided forms whose search
   fills one argument a simple form writes: `apply(theorem(args))`,
   `apply(ih(m))`, and a bare `transport(P, Q)`. They are the tactics that
@@ -82,7 +82,7 @@ Several tactics overlap. Start with the default, and reach for another only
 when the default misses or when a proof must not search.
 
 - **Running C.** `execute()` is the default. Write `step()` lines where proof
-  steps must come between statements, and `execute_until(...)` to run to one
+  steps must come between statements, and `step_until(...)` to run to one
   point. `branch` and `loop` are what `execute()` does at a C `if` or loop,
   written out to state what each arm or iteration proves.
 - **Closing a proposition: `simp`, `assumption`, `normalize`, `arithmetic`,
@@ -283,7 +283,7 @@ the one execution transition that fails.
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
 | `let { result: name } = step()` | simple | Specialized | Bind the checked value of a scalar assignment. | [Reference](#binding-a-statement-result) |
 | `execute()` | smart | Core | Execute through the function and split undecided paths. | [Reference](#execution-to-function-exit) |
-| `execute_until(statement(i))` | smart | Specialized | Execute up to a selected source point. | [Reference](#execution-to-a-program-point) |
+| `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point. | [Reference](#execution-to-a-program-point) |
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
@@ -295,12 +295,12 @@ the one execution transition that fails.
 The boundaries are intentional: `step` is one concrete transition, `branch`
 and `loop` unpack the corresponding C control flow at the current frontier,
 `loop` constructs and applies one verified abstract loop transition,
-`execute_until` repeats transitions to a program point, and `execute` runs to function
+`step_until` repeats transitions to a program point, and `execute` runs to function
 exit. A branch continuation executes once after its arm states have joined.
 
 Marks are local to one proof and their names cannot be rebound. They remember
 an already-reached state; they are not source labels, execution targets, or
-saved states that can be restored. In particular, `execute_until(name)` does
+saved states that can be restored. In particular, `step_until(name)` does
 not target a proof mark.
 
 Expansion of execution automation emits one `step();` line per executed
@@ -341,8 +341,8 @@ state under that name and changes nothing else:
   Mark before the last step, or name the final values directly.
 - Inside a `have ... by { ... }` body or a pure theorem, `mark` is refused.
   Write the mark in the execution script.
-- `mark` does not label a program point. `execute_until(name)` does not target
-  a mark; use `execute_until(statement(i))`.
+- `mark` does not label a program point. `step_until(name)` does not target
+  a mark; use `step_until(statement(i))`.
 
 **Failure, checking, and tools:**
 
@@ -446,7 +446,7 @@ The step produces one successor state:
 - At function exit (`cannot run after execution already reached function
   exit`), or inside a `have` body or a pure theorem: close the goals, or move
   the step into the execution script.
-- Running several statements: use `execute_until(...)` or `execute()`.
+- Running several statements: use `step_until(...)` or `execute()`.
 
 When the caller holds exactly one instance of a binder's resource, a plain
 `step()` binds the binder to that instance. Also, `return x > 3;` executes
@@ -586,29 +586,33 @@ script leaves an open claim to the report that names it
 
 ### Execution to a program point
 
-**Form:** `execute_until(statement(i))`
+**Form:** `step_until(statement(i))`, also spelled `execute_until(statement(i))`
+
+`step_until` repeats `step()` up to the target, walking any loop the facts
+decide, and never splits: an undecided branch before the target refuses it, as
+it refuses `step()`. `execute_until` is its older spelling, still accepted.
 
 **Specialized.** Write it to stop execution at a chosen statement, loop, or read
 and do proof work there, instead of a run of `step();` lines. From a live
 frontier, execute forward to the selected region's entry without creating a
 proof interface. Any statement region names a target:
-`execute_until(statement(i).statement(j))` stops before a nested statement and
-`execute_until(statement(i).call(f, j))` stops just before one of its calls
-(`mdtests/execute_until_runs_to_a_statement_region.md`);
+`step_until(statement(i).statement(j))` stops before a nested statement and
+`step_until(statement(i).call(f, j))` stops just before one of its calls
+(`mdtests/step_until_runs_to_a_statement_region.md`);
 `.assignment(x, j)` and `.read(j)` end a chain the same way, at the
 statement's `j`th own store to `x` or memory load
 (`mdtests/a_chained_region_ends_in_an_assignment_or_read.md`).
-`execute_until(region(N))` stops before the `N`th atomic region;
-`execute_until(loop(N))` selects the indexed loop entry;
-`execute_until(assignment(local, N))` selects the Nth static local assignment
+`step_until(region(N))` stops before the `N`th atomic region;
+`step_until(loop(N))` selects the indexed loop entry;
+`step_until(assignment(local, N))` selects the Nth static local assignment
 of the function before it executes.
 
-`execute_until(read(N))` stops before the Nth statement of the function
-containing an explicit scalar memory read. `execute_until(back_edge())`
+`step_until(read(N))` stops before the Nth statement of the function
+containing an explicit scalar memory read. `step_until(back_edge())`
 finishes the current loop preservation region with checked steps; invariant
-and ranking closure are separate. `execute_until(loop(i).back_edge())` does the
+and ranking closure are separate. `step_until(loop(i).back_edge())` does the
 same and is refused outside `loop(i)`'s preservation region
-(`mdtests/execute_until_refuses_another_loop_s_back_edge.md`).
+(`mdtests/step_until_refuses_another_loop_s_back_edge.md`).
 
 **Failure, checking, and tools:**
 
@@ -617,7 +621,7 @@ The indexed source layout resolves loop entries. Click checks every crossed
 transition; expansion prints those steps, and profiling reports the selected
 site.
 
-**Checked examples:** [`execute_until_runs_to_a_statement_region.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_runs_to_a_statement_region.md), [`execute_until_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_current_frontier.md), [`execute_until_selects_loop_entry.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_selects_loop_entry.md), [`execute_until_assignment.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_assignment.md), [`execute_until_read.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_read.md), [`execute_until_back_edge.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_back_edge.md), [`execute_until_back_edge_of_a_named_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_back_edge_of_a_named_loop.md), [`a_chained_region_ends_in_an_assignment_or_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_chained_region_ends_in_an_assignment_or_read.md)
+**Checked examples:** [`step_until_runs_to_a_statement_region.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_runs_to_a_statement_region.md), [`step_until_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_current_frontier.md), [`step_until_selects_loop_entry.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_selects_loop_entry.md), [`step_until_assignment.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_assignment.md), [`step_until_read.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_read.md), [`step_until_back_edge.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_back_edge.md), [`step_until_back_edge_of_a_named_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_back_edge_of_a_named_loop.md), [`a_chained_region_ends_in_an_assignment_or_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_chained_region_ends_in_an_assignment_or_read.md)
 
 ### Source branches
 

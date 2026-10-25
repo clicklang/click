@@ -1053,7 +1053,7 @@ impl<'a> Proof<'a> {
         region: &CodeRegionRef,
     ) -> Result<usize, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("`execute_until` requires an execution proof"));
+            return Err(self.step_error("`step_until` requires an execution proof"));
         };
         if let CodeRegionRef::Assignment { local, occurrence } = region {
             return context
