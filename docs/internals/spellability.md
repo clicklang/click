@@ -158,10 +158,15 @@ version has one name. A cell of the canonical snapshot that holds the cell's
 own read (a materialization) names the read by that read, so a read through
 an unchanged-bytes source keeps the name it had there. Two reads the kernel's
 assumption-free load equality proves equal must share a name;
-`kernel::duplicate_read_names::capture` audits that in tests. Two names remain
-where only facts relate the reads (a call the walk cannot cross without a
-separation premise): a name cannot depend on facts, each read is spelled at
-its own point, and the frame fact relates them. Two writes of one stored value
+`kernel::duplicate_read_names::capture` audits that in tests, and the nightly
+`every_mdtest_names_each_read_once` runs it over every C mdtest. Two names
+remain where only facts relate the reads (a call the walk cannot cross without
+a separation premise): a name cannot depend on facts, each read is spelled at
+its own point, and the frame fact relates them. A loop havoc is the same case:
+the naming walk never crosses one, since the loop's checked footprint comes
+from the proof's own annotation, so a read on either side keeps its own name
+and the footprint relates them. The nightly audit lists the mdtests where the
+load equality crosses such a footprint, and fails when one stops reporting. Two writes of one stored value
 are two versions, related by the read-over-write authority.
 
 ## When a fact has no spelling
