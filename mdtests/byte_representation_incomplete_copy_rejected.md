@@ -37,9 +37,6 @@ verifying "incomplete_struct_memcpy.c";
 
 int f() {
     ensures result == 7 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

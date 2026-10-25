@@ -52,8 +52,6 @@ void discard(int32 a[], int32 n) {
     consumes allocated_int32s(a, n);
 } by {
     unfold(allocated_int32s(a, n));
-    execute();
-    simp();
 }
 
 int32 caller(int32 a[], int32 n) {
@@ -77,8 +75,6 @@ int32 caller(int32 a[], int32 n) {
     } else {
     }
     have icount(a, 0, 0) == 0;
-    execute();
-    simp();
 }
 ```
 

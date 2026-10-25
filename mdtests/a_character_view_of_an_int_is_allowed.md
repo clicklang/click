@@ -17,9 +17,6 @@ verifying "bytes.c";
 
 uint8 low_byte() {
     ensures result == 2u8;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -35,9 +35,6 @@ abstract resource credit();
 int32 identity(int32 value) {
     owns 2 of credit();
     ensures result == value;
-} by {
-    execute();
-    simp();
 }
 
 theorem ordinary_pure_law(x: int32) {

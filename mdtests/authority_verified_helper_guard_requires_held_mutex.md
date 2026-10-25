@@ -42,8 +42,6 @@ void inner(struct counter *counter) {
     owns mutex_guard(&counter->mu);
 } by {
     have held(&counter->mu) by simp();
-    execute();
-    simp();
 }
 
 void keep(struct counter *counter) {

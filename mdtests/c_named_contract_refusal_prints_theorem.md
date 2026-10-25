@@ -32,24 +32,15 @@ contract void AugmentRotate(int32* p) {
 void bump(int32* p) {
     owns tree: tree_at(p);
     ensures tree.tag == old(tree.tag);
-} by {
-    execute();
-    simp();
 }
 
 int32 accept(void (*step)(int32*)) {
     requires AugmentRotate(step);
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 caller() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

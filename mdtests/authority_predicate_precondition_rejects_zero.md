@@ -26,8 +26,6 @@ void inspect(struct pool* pool) {
     ensures pool->checked_out == 0;
 } by {
     unfold(valid_pool);
-    execute();
-    simp();
 }
 ```
 

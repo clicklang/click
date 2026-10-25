@@ -20,8 +20,6 @@ verifying "bytes.c";
 
 uint32 bytes() {
     ensures true;
-} by {
-    execute();
 }
 ```
 

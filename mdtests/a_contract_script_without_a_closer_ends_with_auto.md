@@ -30,8 +30,6 @@ void touch(int32 n) {
     requires c.model == Walk::At(to_integer(n), Walk::Done);
     requires black(c.model) == 1;
     ensures black(Walk::At(to_integer(n), Walk::Done)) == 1;
-} by {
-    execute();
 }
 ```
 

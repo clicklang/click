@@ -20,17 +20,11 @@ resource Counter() { field revision: int32; }
 
 void take(int32* state) {
     consumes t: Counter();
-} by {
-    execute();
-    simp();
 }
 
 void advance(int32* state) {
     owns first: Counter();
     ensures first.revision == old(first.revision);
-} by {
-    execute();
-    simp();
 }
 
 void take_then_advance(int32* state) {
@@ -38,8 +32,6 @@ void take_then_advance(int32* state) {
 } by {
     step(take, { t: c });
     step(advance, { first: c });
-    execute();
-    simp();
 }
 ```
 

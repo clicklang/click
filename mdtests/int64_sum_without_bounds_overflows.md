@@ -17,9 +17,6 @@ verifying "int64_sum_without_bounds_overflows.c";
 
 int64 unbounded_sum(int64 a, int64 b) {
     ensures result == a + b;
-} by {
-    execute();
-    simp();
 }
 ```
 

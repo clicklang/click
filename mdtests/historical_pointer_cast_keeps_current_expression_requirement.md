@@ -11,9 +11,6 @@ int *identity(int *p) { return p; }
 verifying "historical_pointer.c";
 int32* identity(int32* p) {
     ensures result == ((int32*)old(p));
-} by {
-    execute();
-    simp();
 }
 ```
 

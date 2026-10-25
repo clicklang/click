@@ -37,8 +37,6 @@ int32 walk(int32 n) {
         intro();
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

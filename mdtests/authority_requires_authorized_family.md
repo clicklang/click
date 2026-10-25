@@ -40,8 +40,6 @@ int32 spent_count() {
     have count(reference(obj)) == 0 by simp();
     step();
     have count(reference(obj)) == 0 by simp();
-    execute();
-    simp();
 }
 ```
 

@@ -39,8 +39,6 @@ int32 first(int32 p[]) {
 } by {
     fold(cell(p));
     unfold(cell(p));
-    execute();
-    simp();
 }
 
 int32 lend(int32* p) {
@@ -50,7 +48,6 @@ int32 lend(int32* p) {
     fold(cell(p));
     step();
     unfold(cell(p));
-    execute();
 }
 ```
 

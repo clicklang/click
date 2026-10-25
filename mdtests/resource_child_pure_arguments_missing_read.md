@@ -18,7 +18,6 @@ int32 read_other(int32* p, int32* other) {
 } by {
     let { child: child } = unfold(root);
     unfold(child);
-    execute();
 }
 ```
 ```expect

@@ -26,9 +26,6 @@ verifying "a_bounded_symbolic_read_of_an_initialized_local_array_has_one_of_its_
 int32 f(int32 x) {
     ensures result >= 0;
     ensures result <= 4;
-} by {
-    execute();
-    simp();
 }
 ```
 

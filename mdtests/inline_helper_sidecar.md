@@ -26,16 +26,10 @@ verifying "main.c";
 int32 add_one(int32 value) {
     requires value < 2147483647;
     ensures to_integer(result) == to_integer(value + 1);
-} by {
-    execute();
-    simp();
 }
 
 int32 run() {
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

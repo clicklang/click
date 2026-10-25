@@ -22,9 +22,6 @@ verifying "heap_double_free.c";
 
 int32 heap_double_free() {
     ensures result == -1 or result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

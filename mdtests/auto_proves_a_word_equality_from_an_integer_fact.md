@@ -33,8 +33,6 @@ int32 r(int32 i) {
         have i == 1 by { auto(); }
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

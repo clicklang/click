@@ -21,15 +21,11 @@ verifying "calls.c";
 int32 read_b(struct b *p) {
     views p->y;
     ensures true;
-} by {
-    execute();
 }
 
 int32 caller_struct(struct a *pa) {
     views pa->x;
     ensures true;
-} by {
-    execute();
 }
 ```
 

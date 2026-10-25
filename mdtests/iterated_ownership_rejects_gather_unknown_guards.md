@@ -31,8 +31,6 @@ void adopt(int32* data, int32* occupied, int32 capacity) {
 } by {
     gather(arena_cells(data, occupied, capacity));
     fold(arena_cells(data, occupied, capacity));
-    execute();
-    simp();
 }
 ```
 

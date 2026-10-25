@@ -33,8 +33,6 @@ int32 drain(uint32 x) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

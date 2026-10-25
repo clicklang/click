@@ -39,7 +39,6 @@ void follow(struct node* p, int32 more) {
             close_invariants() by simp();
         }
     }
-    execute();
 }
 ```
 ```expect

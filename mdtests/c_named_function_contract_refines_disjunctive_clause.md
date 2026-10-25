@@ -32,9 +32,6 @@ void increment(int32* state) {
     requires state[0] < 1000;
     owns state[0..1];
     ensures state[0] == old(state[0]) + 1;
-} by {
-    execute();
-    simp();
 }
 
 theorem increment_is_stable() {
@@ -49,9 +46,6 @@ void apply_step(void (*step)(int32*), int32* cell) {
     requires cell[0] < 100;
     owns cell[0..1];
     ensures cell[0] == old(cell[0]) or old(cell[0]) < cell[0];
-} by {
-    execute();
-    simp();
 }
 
 void disjunctive_clause_caller(int32* cell) {
@@ -60,8 +54,6 @@ void disjunctive_clause_caller(int32* cell) {
     ensures cell[0] == old(cell[0]) or old(cell[0]) < cell[0];
 } by {
     apply(increment_is_stable());
-    execute();
-    simp();
 }
 ```
 

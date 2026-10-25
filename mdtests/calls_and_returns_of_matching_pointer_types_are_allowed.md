@@ -25,16 +25,10 @@ verifying "calls.c";
 long read_l(long *q) {
     views q[0..1];
     ensures result == q[0];
-} by {
-    execute();
-    simp();
 }
 
 long caller_ok() {
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 
 struct a *same(struct a *pa) {

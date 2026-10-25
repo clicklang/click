@@ -41,7 +41,6 @@ void user(struct slot* root) {
     produces out: leaf(root->p);
 } by {
     let { out: out } = expose(root, { state: state });
-    execute();
 }
 
 tactic expose_reversed(root: struct slot*) {
@@ -60,7 +59,6 @@ void reversed(struct slot* root) {
     produces root->p;
 } by {
     let { out: out } = expose_reversed(root, { state: state });
-    execute();
 }
 
 void expose_c(struct slot* root) {
@@ -79,7 +77,6 @@ void call_c(struct slot* root) {
     produces root->p;
 } by {
     let { out: out } = step(expose_c, { state: state });
-    execute();
 }
 
 resource chain_bundle(root: struct slot*) {
@@ -118,7 +115,6 @@ void chained(struct slot* root) {
     produces root->next;
 } by {
     let { out: out } = expose_chain(root, { state: state });
-    execute();
 }
 ```
 

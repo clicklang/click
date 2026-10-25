@@ -20,8 +20,6 @@ verifying "globals.c";
 long long read_counter() {
     owns counter;
     ensures true;
-} by {
-    execute();
 }
 ```
 

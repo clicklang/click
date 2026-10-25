@@ -32,8 +32,6 @@ void touch(int32* data, int32* occupied, int32 capacity, int32 index) {
     unfold(arena_cells(data, occupied, capacity));
     take(data[index..index + 2]);
     fold(arena_cells(data, occupied, capacity));
-    execute();
-    simp();
 }
 ```
 

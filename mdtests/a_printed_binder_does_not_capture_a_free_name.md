@@ -17,9 +17,6 @@ void f(int32* p, int32 k) {
     let j = k;
     requires k == 5;
     ensures forall (k: int32) { k == j };
-} by {
-    execute();
-    simp();
 }
 ```
 

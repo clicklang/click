@@ -30,9 +30,6 @@ int64 bounded_sum(int64 a, int64 b) {
     requires -1000 <= b;
     requires b < 1000;
     ensures to_integer(result) == to_integer(a + b);
-} by {
-    execute();
-    simp();
 }
 
 int64 bounded_difference(int64 a, int64 b) {
@@ -41,9 +38,6 @@ int64 bounded_difference(int64 a, int64 b) {
     requires -4611686018427387904 <= b;
     requires b <= 4611686018427387904;
     ensures to_integer(result) == to_integer(a - b);
-} by {
-    execute();
-    simp();
 }
 ```
 

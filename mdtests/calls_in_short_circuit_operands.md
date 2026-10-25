@@ -45,9 +45,6 @@ verifying "short_circuit_calls.c";
 int32 unavailable_call() {
     requires 0 == 1;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 increment_counter() {
@@ -55,9 +52,6 @@ int32 increment_counter() {
     owns counter;
     ensures result == 1;
     ensures counter == old(counter) + 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 skip_and(int32 condition) {
@@ -65,9 +59,6 @@ int32 skip_and(int32 condition) {
     owns counter;
     ensures result == 0;
     ensures counter == old(counter);
-} by {
-    execute();
-    simp();
 }
 
 int32 skip_or(int32 condition) {
@@ -75,9 +66,6 @@ int32 skip_or(int32 condition) {
     owns counter;
     ensures result == 1;
     ensures counter == old(counter);
-} by {
-    execute();
-    simp();
 }
 
 int32 skip_in_loop(int32 condition) {
@@ -85,9 +73,6 @@ int32 skip_in_loop(int32 condition) {
     owns counter;
     ensures result == 0;
     ensures counter == old(counter);
-} by {
-    execute();
-    simp();
 }
 
 int32 selected_and(int32 condition) {
@@ -95,9 +80,6 @@ int32 selected_and(int32 condition) {
     owns counter;
     ensures result == 1;
     ensures counter == old(counter) + 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 selected_or(int32 condition) {
@@ -105,9 +87,6 @@ int32 selected_or(int32 condition) {
     owns counter;
     ensures result == 1;
     ensures counter == old(counter) + 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

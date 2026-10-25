@@ -23,9 +23,6 @@ verifying "tagged_pointer_carry_rejected.c";
 struct node* carry_into_address(struct node* next) {
     requires aligned(next, 8);
     ensures result == next;
-} by {
-    execute();
-    simp();
 }
 ```
 

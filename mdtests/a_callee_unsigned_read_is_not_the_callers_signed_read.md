@@ -34,9 +34,6 @@ int get_u(unsigned char* u, int i) {
     requires i < 4;
     views u[0..4];
     ensures result == u[i];
-} by {
-    execute();
-    simp();
 }
 
 int compare(signed char* s, int i) {
@@ -44,9 +41,6 @@ int compare(signed char* s, int i) {
     requires i < 4;
     views s[0..4];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -44,26 +44,20 @@ verifying "package_one_ref.c";
 int32 drop_ref(int32 object) {
     consumes object_ref(object);
 
-    ensures result == object by {
-        execute();
-    }
+    ensures result == object;
 }
 
 int32 use_ref(int32 object) {
     consumes object_ref(object);
 
-    ensures result == object by {
-        execute();
-    }
+    ensures result == object;
 }
 
 int32 use_two_refs(int32 object) {
     consumes object_ref(object);
     consumes object_ref(object);
 
-    ensures result == object by {
-        execute();
-    }
+    ensures result == object;
 }
 
 int32 package_one_ref(int32 object) {

@@ -36,7 +36,6 @@ void mk(uint8* p) {
     produces zt2(p);
 } by {
     unfold(zt(p));
-    execute();
 }
 
 uint8 use(uint8* p) {
@@ -46,8 +45,6 @@ uint8 use(uint8* p) {
 } by {
     step();
     unfold(zt2(p));
-    execute();
-    simp();
 }
 ```
 

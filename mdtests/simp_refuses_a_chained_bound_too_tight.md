@@ -34,8 +34,6 @@ int32 count_to(int32 n) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

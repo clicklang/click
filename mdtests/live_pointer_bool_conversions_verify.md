@@ -50,24 +50,15 @@ verifying "live_bool.c";
 int present(bool flag) {
     requires flag == 1;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 bool returned(int *p) {
     requires p != 0;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int passed() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

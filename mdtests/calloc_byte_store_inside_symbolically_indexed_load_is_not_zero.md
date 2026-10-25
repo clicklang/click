@@ -24,9 +24,6 @@ int32 f(int32 k) {
     requires 0 <= k;
     requires k < 4;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -27,8 +27,6 @@ int32 choose(int32 x, int32 flag) {
         } else {
             step();
         }
-        execute();
-        simp();
     }
 }
 ```

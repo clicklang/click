@@ -7,9 +7,6 @@ void sequence_copy3(int32 destination[], int32 source[]) {
 
     ensures [destination[0], destination[1], destination[2]]
         == old([source[0], source[1], source[2]]);
-} by {
-    execute();
-    simp();
 }
 
 void sequence_concatenate2(
@@ -26,9 +23,6 @@ void sequence_concatenate2(
     ensures [destination[0], destination[1]]
             ++ [destination[2], destination[3]]
         == old([left[0], left[1]] ++ [right[0], right[1]]);
-} by {
-    execute();
-    simp();
 }
 
 void sequence_reverse3(int32 values[]) {
@@ -36,9 +30,6 @@ void sequence_reverse3(int32 values[]) {
 
     ensures [values[0], values[1], values[2]]
         == old([values[2], values[1], values[0]]);
-} by {
-    execute();
-    simp();
 }
 
 int32 sequence_contains3(int32 values[], int32 target) {
@@ -46,7 +37,4 @@ int32 sequence_contains3(int32 values[], int32 target) {
 
     ensures result != 0 implies target in old([values[0], values[1], values[2]]);
     ensures target in old([values[0], values[1], values[2]]) implies result != 0;
-} by {
-    execute();
-    simp();
 }

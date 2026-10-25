@@ -15,8 +15,6 @@ void package(int32* p) {
     produces s: bundle(p);
 } by {
     let s = fold(bundle(p), { amount: -1 });
-    execute();
-    simp();
 }
 ```
 

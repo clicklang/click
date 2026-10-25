@@ -31,8 +31,6 @@ int32 preserve_sorted(int32 p[3]) {
     step();
     step();
     transport(at(function.entry, sorted(p, 3)), sorted(p, 3));
-    execute();
-    simp();
 }
 ```
 

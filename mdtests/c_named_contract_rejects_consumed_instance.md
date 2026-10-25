@@ -26,8 +26,6 @@ int32 invoke(int32 (*callback)()) {
 } by {
     step(Take, { first: c });
     step(Take, { first: c });
-    execute();
-    simp();
 }
 ```
 

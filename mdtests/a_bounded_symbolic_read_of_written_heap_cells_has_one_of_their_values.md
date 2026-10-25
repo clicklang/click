@@ -30,9 +30,6 @@ verifying "a_bounded_symbolic_read_of_written_heap_cells_has_one_of_their_values
 int32 h(int32 x) {
     ensures result >= 0;
     ensures result <= 4;
-} by {
-    execute();
-    simp();
 }
 ```
 

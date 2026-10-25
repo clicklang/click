@@ -22,9 +22,6 @@ verifying "union.c";
 
 long long punned() {
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

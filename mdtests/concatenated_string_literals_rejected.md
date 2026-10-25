@@ -13,9 +13,6 @@ verifying "concatenated_string_literals_rejected.c";
 
 uint8* invalid_string() {
     ensures result != 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

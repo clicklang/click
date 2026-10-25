@@ -37,17 +37,11 @@ verifying "literal_and_array.c";
 
 int32 literal_after_int_store() {
     ensures result == 97;
-} by {
-    execute();
-    simp();
 }
 
 int32 literal_after_char_store(int32 i) {
     requires i == 9;
     ensures result == 85;
-} by {
-    execute();
-    simp();
 }
 ```
 

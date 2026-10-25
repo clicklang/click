@@ -37,8 +37,6 @@ void dispose(int32* data, int32 n) {
     ensures data[0] == old(data[0]);
 } by {
     unfold(cell(data, n));
-    execute();
-    simp();
 }
 ```
 

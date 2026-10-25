@@ -21,9 +21,6 @@ void observe_parent(struct parent* p) {
     owns p->kid[0..1];
     requires separate(memory(*p), memory(p->kid[0..1]));
     ensures old(p->kid)->payload == old(p->kid->payload);
-} by {
-    execute();
-    simp();
 }
 ```
 

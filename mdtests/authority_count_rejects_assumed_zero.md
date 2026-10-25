@@ -23,8 +23,6 @@ void assumed_zero(struct object* obj) {
     owns control(obj);
 } by {
     have count(reference(obj)) == 0 by simp();
-    execute();
-    simp();
 }
 ```
 

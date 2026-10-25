@@ -37,8 +37,6 @@ uint32 narrow_unsigned(uint64 x) {
     step();
     have 1u32 <= y by { auto(); }
     have y <= 999u32 by { auto(); }
-    execute();
-    simp();
 }
 
 int32 narrow_signed(int64 x) {
@@ -50,8 +48,6 @@ int32 narrow_signed(int64 x) {
     step();
     have -5 <= y by { auto(); }
     have y <= 5 by { auto(); }
-    execute();
-    simp();
 }
 
 uint32 narrow_by_arithmetic(uint64 x) {
@@ -67,8 +63,6 @@ uint32 narrow_by_arithmetic(uint64 x) {
         arithmetic() using { 0 <= to_integer(x); to_integer(x) <= 4294967295; }
     }
     have 1u32 <= y by { auto(); }
-    execute();
-    simp();
 }
 ```
 

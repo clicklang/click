@@ -29,9 +29,6 @@ extern uint64 string_length(const char* s, uint64 n) {
 uint64 measure(const char* src, uint64 n) {
     views cstr_at(src, n);
     ensures result == n + 1u64;
-} by {
-    execute();
-    simp();
 }
 ```
 

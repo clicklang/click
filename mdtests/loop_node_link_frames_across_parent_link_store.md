@@ -102,7 +102,6 @@ void rotate(struct node* parent) {
             }
         }
     }
-    execute();
 }
 ```
 

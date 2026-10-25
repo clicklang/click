@@ -40,8 +40,6 @@ void through_equal(int32 *a, int32 n, int32 i, int32 j, int32 m) {
 } by {
     step();
     step();
-    execute();
-    simp();
 }
 
 void through_reversed_equal(int32 *a, int32 n, int32 i, int32 j, int32 m) {
@@ -54,8 +52,6 @@ void through_reversed_equal(int32 *a, int32 n, int32 i, int32 j, int32 m) {
 } by {
     step();
     step();
-    execute();
-    simp();
 }
 
 void through_constant(int32 *a, int32 n, int32 i, int32 j) {
@@ -67,8 +63,6 @@ void through_constant(int32 *a, int32 n, int32 i, int32 j) {
 } by {
     step();
     step();
-    execute();
-    simp();
 }
 ```
 

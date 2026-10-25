@@ -21,8 +21,6 @@ int32 count_to_three_bad_assert() {
     have i == 1 by {
         simp();
     }
-    execute();
-    simp();
 }
 ```
 

@@ -26,8 +26,6 @@ int32 keep(int32 p[3]) {
     have p[0] == 5 by {
         transport(at(function.entry, p[0] == 5), p[0] == 5);
     }
-    execute();
-    simp();
 }
 ```
 

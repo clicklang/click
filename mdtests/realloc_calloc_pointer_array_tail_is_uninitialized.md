@@ -23,9 +23,6 @@ verifying "realloc_calloc_pointer_array_tail_is_uninitialized.c";
 
 int32* realloc_calloc_pointer_array_tail_is_uninitialized() {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

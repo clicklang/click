@@ -40,9 +40,6 @@ struct pair choose(int32 choose_left, struct pair left, struct pair right) {
 
 int32 read_chosen() {
     ensures result == 4;
-} by {
-    execute();
-    simp();
 }
 ```
 

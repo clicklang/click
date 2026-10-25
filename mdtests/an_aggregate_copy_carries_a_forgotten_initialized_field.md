@@ -60,8 +60,6 @@ int32 copy_after_loop() {
         invariant i >= 0;
         invariant i <= 2;
     }
-    execute();
-    simp();
 }
 ```
 

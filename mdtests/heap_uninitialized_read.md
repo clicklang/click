@@ -22,9 +22,6 @@ verifying "heap_uninitialized_read.c";
 
 int32 heap_uninitialized_read() {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

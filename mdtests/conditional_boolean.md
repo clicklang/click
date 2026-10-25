@@ -43,30 +43,18 @@ verifying "main.c";
 
 int32 feature_path() {
     ensures result == 4;
-} by {
-    execute();
-    simp();
 }
 
 int32 fallback_path() {
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 
 int32 grouped_path() {
     ensures result == 6;
-} by {
-    execute();
-    simp();
 }
 
 int32 precedence_path() {
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

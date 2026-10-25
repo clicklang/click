@@ -45,7 +45,6 @@ void pool_init(struct pool* pool, int32 capacity) {
     step(); step();
     fold(capacity of pool_slot(pool));
     fold(pool_control(pool));
-    execute();
 }
 ```
 

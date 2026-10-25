@@ -18,9 +18,6 @@ verifying "a_store_over_a_zero_element_of_a_million_element_array_replaces_it.c"
 
 int main() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

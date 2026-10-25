@@ -23,9 +23,6 @@ verifying "an_adjacent_wide_cell_survives_a_neighbouring_store.c";
 int64 keep_first(int64* q) {
     owns q[0..2];
     ensures result == old(q[0]);
-} by {
-    execute();
-    simp();
 }
 ```
 

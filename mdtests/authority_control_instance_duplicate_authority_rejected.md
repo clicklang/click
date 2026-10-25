@@ -24,8 +24,6 @@ void helper(struct object* obj) {
     owns c: control(obj);
 } by {
     unfold(c);
-    execute();
-    simp();
 }
 ```
 

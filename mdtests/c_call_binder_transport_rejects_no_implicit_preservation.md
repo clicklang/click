@@ -29,8 +29,6 @@ void caller(int32* state) {
     ensures c.created == old(c.created);
 } by {
     step(increment, { first: c });
-    execute();
-    simp();
 }
 ```
 

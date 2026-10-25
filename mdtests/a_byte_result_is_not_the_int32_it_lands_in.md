@@ -27,9 +27,6 @@ int low_byte(int32_t* q, int i) {
     requires i < 4;
     views q[0..4];
     ensures result == q[i];
-} by {
-    execute();
-    simp();
 }
 ```
 

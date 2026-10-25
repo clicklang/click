@@ -37,8 +37,6 @@ void bump(int32 a[], int32 n) {
     step();
     have a[0] == 5;
     have icount(a, 0, 0) == 0;
-    execute();
-    simp();
 }
 ```
 

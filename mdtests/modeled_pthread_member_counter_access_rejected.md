@@ -32,9 +32,6 @@ verifying "modeled_pthread_member_counter_access_rejected.c";
 
 void *worker(void *argument) {
     owns reference((struct cell *)argument);
-} by {
-    execute();
-    simp();
 }
 
 int32 run(struct cell *cell) {
@@ -42,9 +39,6 @@ int32 run(struct cell *cell) {
     owns reference(cell);
     owns cell->refs;
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

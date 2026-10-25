@@ -18,9 +18,6 @@ verifying "an_unwritten_element_of_a_million_element_uninitialized_automatic_arr
 
 int32 read() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

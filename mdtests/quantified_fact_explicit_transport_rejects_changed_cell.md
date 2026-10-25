@@ -43,8 +43,6 @@ void clear(int32 *a) {
         };
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

@@ -26,8 +26,6 @@ verifying "heap.c";
 
 int32 structs() {
     ensures true;
-} by {
-    execute();
 }
 ```
 

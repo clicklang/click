@@ -43,29 +43,18 @@ verifying "own.c";
 int32 ptrs_own(int32 **a) {
     views a[0..1];
     ensures true;
-} by {
-    execute();
 }
 
 int32 local_cell() {
     ensures result == 3;
-} by {
-    execute();
-    simp();
 }
 
 long struct_array() {
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 
 uint8 byte_view() {
     ensures result == 7u8;
-} by {
-    execute();
-    simp();
 }
 ```
 

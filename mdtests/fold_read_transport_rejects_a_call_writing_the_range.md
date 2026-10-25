@@ -23,9 +23,6 @@ function zeros(v: int32[], lo: int32, hi: int32) -> Integer {
 void fill(int32 *v, int32 n) {
     requires 0 < n;
     owns v[0..n];
-} by {
-    execute();
-    simp();
 }
 
 void caller(int32 *v, int32 i, int32 n) {
@@ -46,8 +43,6 @@ void caller(int32 *v, int32 i, int32 n) {
         };
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

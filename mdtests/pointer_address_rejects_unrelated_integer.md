@@ -22,9 +22,6 @@ verifying "pointer_address_rejects_unrelated_integer.c";
 
 struct node* forge(unsigned long word) {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 int32 read_forged(unsigned long word) {
     ensures result == result;

@@ -34,8 +34,6 @@ void inspect(struct pool* pool) {
         rewrite(pool->checked_out == count(pool_object(pool, _)));
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

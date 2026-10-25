@@ -17,9 +17,6 @@ int32 identity(int32 x) {
     ensures forall (k: int32) {
         ((0 <= k and k < 3) implies 0 <= k) and ((0 <= k and k < 10) implies k < 10)
     };
-} by {
-    execute();
-    simp();
 }
 ```
 

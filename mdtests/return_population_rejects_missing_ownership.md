@@ -23,8 +23,6 @@ struct object* retain(struct object* obj) {
 } by {
     step();
     fold(reference(obj));
-    execute();
-    simp();
 }
 ```
 

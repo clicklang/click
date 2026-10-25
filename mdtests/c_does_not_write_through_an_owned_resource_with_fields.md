@@ -24,8 +24,6 @@ verifying "c_does_not_write_through_an_owned_resource_with_fields.c";
 
 void poke(struct cell* p) {
     owns c: counted(p);
-} by {
-    execute();
 }
 ```
 

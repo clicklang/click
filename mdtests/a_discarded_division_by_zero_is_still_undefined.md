@@ -18,9 +18,6 @@ verifying "discarded_division.c";
 int32 discard(int32 x) {
     requires x == 0;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

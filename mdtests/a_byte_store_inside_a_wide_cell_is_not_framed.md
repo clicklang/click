@@ -43,9 +43,6 @@ verifying "a_byte_store_inside_a_wide_cell_is_not_framed.c";
 int64 stale_wide_read(int64* q) {
     owns q[0..1];
     ensures result == old(q[0]);
-} by {
-    execute();
-    simp();
 }
 ```
 

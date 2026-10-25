@@ -31,9 +31,6 @@ void maybe_progress(int32* state) {
     requires state[0] < 100;
     owns state[0..1];
     ensures to_integer(state[0]) == to_integer(old(state[0]) + 1) or state[0] == old(state[0]);
-} by {
-    execute();
-    simp();
 }
 
 void apply_step(void (*step)(int32*), int32* cell) {
@@ -41,18 +38,12 @@ void apply_step(void (*step)(int32*), int32* cell) {
     requires cell[0] < 100;
     owns cell[0..1];
     ensures old(cell[0]) < cell[0];
-} by {
-    execute();
-    simp();
 }
 
 void weak_stateful_refinement_caller(int32* cell) {
     requires cell[0] < 100;
     owns cell[0..1];
     ensures old(cell[0]) < cell[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

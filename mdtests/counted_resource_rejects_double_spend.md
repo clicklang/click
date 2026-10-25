@@ -26,17 +26,13 @@ verifying "spend_ref_twice.c";
 int32 spend_ref(int32 object) {
     consumes object_ref(object);
 
-    ensures result == object by {
-        execute();
-    }
+    ensures result == object;
 }
 
 int32 spend_ref_twice(int32 object) {
     consumes object_ref(object);
 
-    ensures result == object by {
-        execute();
-    }
+    ensures result == object;
 }
 ```
 

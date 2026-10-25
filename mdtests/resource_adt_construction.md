@@ -45,8 +45,6 @@ void preserve(int32* p) {
 } by {
     unfold(c);
     let c = fold(cell(p), { model: old(c.model) });
-    execute();
-    simp();
 }
 ```
 

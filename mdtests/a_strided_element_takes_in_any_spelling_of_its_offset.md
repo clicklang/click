@@ -29,8 +29,6 @@ void f(int32* data, int32* occupied, int32 capacity, int32 index) {
     take(data[2 * index..2 * index + 2]);
     give(data[index + index..index + index + 2]);
     fold(pairs(data, occupied, capacity));
-    execute();
-    simp();
 }
 ```
 

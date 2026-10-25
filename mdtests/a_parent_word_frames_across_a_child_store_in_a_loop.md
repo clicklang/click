@@ -67,7 +67,6 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
             step();
         }
     }
-    execute();
 }
 ```
 

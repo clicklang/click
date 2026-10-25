@@ -28,7 +28,6 @@ void make(int32* data, int32 capacity) {
     produces suffix: zero_suffix(data, capacity);
 } by {
     let suffix = fold(zero_suffix(data, capacity), { start: capacity + 1 });
-    execute();
 }
 ```
 

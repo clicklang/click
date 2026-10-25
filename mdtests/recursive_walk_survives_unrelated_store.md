@@ -182,8 +182,6 @@ void mark(int32 *next, int32 *visited) {
                 == walk(next, 0, Nat::Succ(Nat::Zero));
         };
     }
-    execute();
-    simp();
 }
 ```
 

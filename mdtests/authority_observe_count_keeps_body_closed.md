@@ -17,8 +17,6 @@ int32 probe(int32* p) {
     ensures result == 0;
 } by {
     observe(permit(p));
-    execute();
-    simp();
 }
 ```
 

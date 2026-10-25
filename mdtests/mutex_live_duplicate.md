@@ -37,8 +37,6 @@ int32 run(struct holder *holder) {
     let duplicate = fold(lifetime(holder), { tag: 0 });
     step(keep, { life: life });
     unfold(life);
-    execute();
-    simp();
 }
 ```
 

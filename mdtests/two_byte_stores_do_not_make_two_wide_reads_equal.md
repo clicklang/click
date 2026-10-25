@@ -35,17 +35,11 @@ verifying "two_byte_stores_do_not_make_two_wide_reads_equal.c";
 int32 same(int32 a, int32 b) {
     requires a == b;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 two_reads(int16* q, int16 y) {
     owns q[0..1];
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

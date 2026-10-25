@@ -15,8 +15,6 @@ int32 identity(int32 x) {
     ensures result == x by {
         mark start;
         mark start;
-        execute();
-        simp();
     }
 }
 ```

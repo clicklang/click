@@ -26,9 +26,6 @@ int32 count(int32 n) {
     requires 1 <= n;
     decreases n;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

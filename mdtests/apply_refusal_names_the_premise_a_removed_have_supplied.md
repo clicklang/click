@@ -44,8 +44,6 @@ int32 first(int32 *a, int32 n) {
 } by {
     have n >= 0;
     apply(head_nonnegative(a, n));
-    execute();
-    simp();
 }
 ```
 

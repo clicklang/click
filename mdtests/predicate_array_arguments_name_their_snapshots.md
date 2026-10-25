@@ -23,8 +23,6 @@ void copy_t(char* dst, const char* src) {
     have bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
         transport(at(copied, bytes::equal(dst, 0u64, src, 0u64, 4u64)), bytes::equal(dst, 0u64, src, 0u64, 4u64));
     }
-    execute();
-    simp();
 }
 ```
 

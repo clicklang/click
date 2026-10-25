@@ -58,25 +58,16 @@ int32 write_first(int32* r, int32 start, int32 end, int32 value) {
     requires start < end;
     consumes r[start..end];
     ensures result == value;
-} by {
-    execute();
-    simp();
 }
 
 int32 writes_its_own_first_element(int32* p) {
     consumes p[0..1];
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 
 int32 below_the_range(int32* p) {
     consumes p[0..1];
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

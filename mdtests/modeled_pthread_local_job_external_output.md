@@ -38,18 +38,12 @@ void *worker(void *argument) {
     owns ((struct job *)argument)->output[0..1];
     requires separate(memory(*((struct job *)argument)), memory(((struct job *)argument)->output[0..1]));
     ensures ((struct job *)argument)->output[0] == ((struct job *)argument)->value;
-} by {
-    execute();
-    simp();
 }
 
 int run(int output[1]) {
     owns output[0..1];
     ensures result == 0 or result == 1;
     ensures result == 1 implies output[0] == 11;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -40,9 +40,6 @@ int32 sum_through_pointers(int32* p, int32* q) {
     requires p[0] == 1;
     requires q[0] == 2;
     ensures result == 4;
-} by {
-    execute();
-    simp();
 }
 
 int32 two_levels(int32** pp, int32** qq) {
@@ -53,9 +50,6 @@ int32 two_levels(int32** pp, int32** qq) {
     requires pp[0][0] == 3;
     requires qq[0][0] == 4;
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

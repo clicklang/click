@@ -23,8 +23,6 @@ verifying "container.c";
 int32 size_of(struct rb_node *rb) {
     views rb[0..2];
     ensures true;
-} by {
-    execute();
 }
 ```
 

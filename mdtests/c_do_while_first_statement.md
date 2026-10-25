@@ -51,9 +51,6 @@ int32 store(int32* p) {
 
 int32 executed(int32 v) {
     ensures result == v;
-} by {
-    execute();
-    simp();
 }
 
 int32 stepped(int32 v) {

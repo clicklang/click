@@ -41,9 +41,6 @@ int32 difference(int32 a, int32 b) {
     requires b <= 100;
     ensures result >= 0;
     ensures result <= 10;
-} by {
-    execute();
-    simp();
 }
 
 int32 product(int32 a, int32 b) {
@@ -53,9 +50,6 @@ int32 product(int32 a, int32 b) {
     requires b <= 100;
     ensures result >= 0;
     ensures result <= 10;
-} by {
-    execute();
-    simp();
 }
 ```
 

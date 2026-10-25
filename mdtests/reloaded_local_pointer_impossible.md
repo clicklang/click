@@ -27,10 +27,7 @@ void keep(int32** pp) {
 
 int32 reloaded_store_hits_local(int32** pp) {
     owns pp[0..1];
-    ensures result == 7 by {
-        execute();
-        simp();
-    }
+    ensures result == 7;
 }
 ```
 

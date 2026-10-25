@@ -35,9 +35,6 @@ verifying "calls_keep_an_uncached_field_the_caller_views.c";
 
 void touch(int32* flags, int32* data, int32 n) {
     owns cells(flags, data, n);
-} by {
-    execute();
-    simp();
 }
 
 int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
@@ -53,8 +50,6 @@ int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
             at(m0, b->v) == old(b->v);
         };
     }
-    execute();
-    simp();
 }
 ```
 

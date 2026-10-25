@@ -25,8 +25,6 @@ verifying "heap.c";
 long long rank(uint32 i) {
     requires i < 4;
     ensures true;
-} by {
-    execute();
 }
 ```
 

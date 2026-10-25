@@ -42,8 +42,6 @@ int32 red_bit(int32 n) {
         unfold(red_bit_value());
         normalize();
     }
-    execute();
-    simp();
 }
 ```
 

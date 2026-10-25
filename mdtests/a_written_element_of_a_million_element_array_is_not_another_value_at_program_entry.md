@@ -18,9 +18,6 @@ verifying "a_written_element_of_a_million_element_array_is_not_another_value_at_
 
 int main() {
     ensures result == 8;
-} by {
-    execute();
-    simp();
 }
 ```
 

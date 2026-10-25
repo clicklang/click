@@ -45,8 +45,6 @@ void pool_destroy(struct pool* pool) {
     have count(pool_slot(pool)) == 0;
     step();
     unfold(authority(pool_slot(pool)));
-    execute();
-    simp();
 }
 
 void empty(struct pool* pool) {
@@ -59,8 +57,6 @@ void empty(struct pool* pool) {
     unfold(pool_control(pool));
     have pool->capacity == count(pool_slot(pool));
     fold(pool_control(pool));
-    execute();
-    simp();
 }
 ```
 

@@ -46,9 +46,6 @@ void keep(struct counter *counter) {
     owns counter->mu;
     requires aligned(&counter->mu, 8);
     owns h: holding(counter);
-} by {
-    execute();
-    simp();
 }
 
 int32 read_counter(struct counter *counter) {

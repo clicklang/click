@@ -38,8 +38,6 @@ void mark_twice(int32 a[], int32 n, int32 i) {
     }
     step();
     have icount(a, 0, i + 1) == icount(a, 0, i) + 1;
-    execute();
-    simp();
 }
 ```
 

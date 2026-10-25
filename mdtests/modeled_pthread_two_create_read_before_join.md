@@ -40,9 +40,6 @@ verifying "modeled_pthread_two_create_read_before_join.c";
 
 void *worker(void *p) {
     owns ((struct cell *)p)->value;
-} by {
-    execute();
-    simp();
 }
 
 int32 run(struct cell *first_task, struct cell *second_task) {

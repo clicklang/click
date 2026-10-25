@@ -41,34 +41,22 @@ contract int32 InspectBundle(int32 key) {
 int32 inspect_bundle(int32 key) {
     views bundle(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_inspect(int32 (*callback)(int32), int32 key) {
     requires InspectBundle(callback);
     owns bundle(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 spend_bundle(int32 key) {
     consumes bundle(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 borrow_then_spend_bundle(int32 key) {
     consumes bundle(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 ```
 

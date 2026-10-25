@@ -30,9 +30,6 @@ uint64 measure(const uint8* src, uint64 n) {
     views cstr_at(src, n);
     requires n < 1000u64;
     ensures result == n + 1u64;
-} by {
-    execute();
-    simp();
 }
 ```
 

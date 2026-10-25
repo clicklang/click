@@ -18,9 +18,6 @@ verifying "mutex_use_balanced_double_lock.c";
 
 void helper(struct holder *holder) {
     owns mutex_use(&holder->mu);
-} by {
-    execute();
-    simp();
 }
 ```
 

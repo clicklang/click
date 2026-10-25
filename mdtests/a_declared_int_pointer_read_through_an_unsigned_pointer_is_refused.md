@@ -19,9 +19,6 @@ verifying "pointers.c";
 
 int32 local_ptr() {
     ensures result == 3;
-} by {
-    execute();
-    simp();
 }
 ```
 

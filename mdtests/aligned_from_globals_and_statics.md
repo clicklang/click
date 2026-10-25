@@ -33,23 +33,14 @@ verifying "aligned_from_globals_and_statics.c";
 
 int32 global_is_aligned() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 global_struct_is_aligned() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 static_is_aligned() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -29,9 +29,6 @@ function icount(p: int32[], lo: int32, hi: int32) -> Integer {
 
 void touch_g() {
     owns g[0..1];
-} by {
-    execute();
-    simp();
 }
 
 int32 keep_h() {

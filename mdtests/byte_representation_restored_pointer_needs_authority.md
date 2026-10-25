@@ -57,9 +57,6 @@ int32 g(uint32 tag, int32 *p, int32 **restored) {
     owns restored[0..1];
     requires tag <= 1000;
     ensures result == -1 or restored[0] == p;
-} by {
-    execute();
-    simp();
 }
 ```
 

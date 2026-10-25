@@ -35,9 +35,6 @@ void increment(int32* state) {
     requires state[0] < 1000;
     owns state[0..1];
     ensures state[0] == old(state[0]) + 1;
-} by {
-    execute();
-    simp();
 }
 
 void apply_step(void (*step)(int32*), int32* cell) {
@@ -46,9 +43,6 @@ void apply_step(void (*step)(int32*), int32* cell) {
     requires cell[0] < 100;
     owns cell[0..1];
     ensures cell[0] < old(cell[0]);
-} by {
-    execute();
-    simp();
 }
 
 void rewritten_increase_caller(int32* cell) {
@@ -56,9 +50,6 @@ void rewritten_increase_caller(int32* cell) {
     requires cell[0] < 100;
     owns cell[0..1];
     ensures cell[0] < old(cell[0]);
-} by {
-    execute();
-    simp();
 }
 ```
 

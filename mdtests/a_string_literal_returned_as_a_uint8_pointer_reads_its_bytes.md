@@ -22,9 +22,6 @@ uint8* string_literal() {
     ensures first_byte: result[0] == 'o';
     ensures second_byte: result[1] == 107;
     ensures terminator: result[2] == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

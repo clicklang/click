@@ -18,8 +18,6 @@ void remember(int32* p) {
 } by {
     let { revision: p } = unfold(target);
     let target = fold(cell(p), { revision: p });
-    execute();
-    simp();
 }
 ```
 

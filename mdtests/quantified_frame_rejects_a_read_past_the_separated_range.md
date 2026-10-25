@@ -24,8 +24,6 @@ void mark(int32 *left, int32 *visited, int32 n, int32 m, int32 cur) {
 } by {
     step();
     have forall (k: int32) { 0 <= k and k < m implies left[k] == old(left[k]) };
-    execute();
-    simp();
 }
 ```
 

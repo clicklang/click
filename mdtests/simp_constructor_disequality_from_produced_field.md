@@ -53,8 +53,6 @@ void parent_attach(struct parent* p, struct child* kid) {
 } by {
     step();
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
-    execute();
-    simp();
 }
 struct child* parent_detach(struct parent* p) {
     consumes link: parent(p);

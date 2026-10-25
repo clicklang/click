@@ -21,18 +21,12 @@ bool is_positive(int32 x) {
     ensures result == true;
     ensures result;
     ensures result != false;
-} by {
-    execute();
-    simp();
 }
 
 bool is_negative(int32 x) {
     requires x >= 0;
     ensures result == false;
     ensures not result;
-} by {
-    execute();
-    simp();
 }
 ```
 

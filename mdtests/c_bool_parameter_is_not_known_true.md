@@ -16,9 +16,6 @@ verifying "bool_not_true.c";
 
 int32 present(bool flag) {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

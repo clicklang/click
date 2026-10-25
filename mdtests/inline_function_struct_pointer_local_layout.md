@@ -60,8 +60,6 @@ void inline_reader(struct box* b) {
     step();
     step();
     have first->word == 4294967296;
-    execute();
-    simp();
 }
 
 void ordinary_reader(struct box* b) {
@@ -73,8 +71,6 @@ void ordinary_reader(struct box* b) {
     step();
     step();
     have first->word == 4294967296;
-    execute();
-    simp();
 }
 
 void call_the_inline_one(struct box* b) {
@@ -82,9 +78,6 @@ void call_the_inline_one(struct box* b) {
     requires b != 0;
     requires b->word == 4294967296;
     ensures b->word == 4294967296;
-} by {
-    execute();
-    simp();
 }
 ```
 

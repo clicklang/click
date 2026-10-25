@@ -16,9 +16,6 @@ verifying "missing_release.c";
 void release(struct holder *p) {
     owns access: mutex_use(&p->mu);
     consumes guard: mutex_guard(&p->mu);
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -23,9 +23,6 @@ verifying "heap_leak.c";
 
 int32 heap_leak() {
     ensures result == -1 or result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -27,7 +27,6 @@ void probe(int32 amount, int32 n) {
 } by {
     observe(amount of bundle(n));
     observe(inner(n));
-    execute();
 }
 void probe_have(int32 amount, int32 n) {
     requires 0 <= amount and (amount == 1 or amount == 2);
@@ -37,7 +36,6 @@ void probe_have(int32 amount, int32 n) {
     have 0 < amount;
     observe(amount of bundle(n));
     observe(inner(n));
-    execute();
 }
 ```
 

@@ -46,24 +46,15 @@ verifying "heap.c";
 
 long own() {
     ensures result == 7 or result == 0;
-} by {
-    execute();
-    simp();
 }
 
 long retype() {
     ensures result == 2 or result == 0;
-} by {
-    execute();
-    simp();
 }
 
 long retype_at(uint32 i) {
     requires i < 4;
     ensures result == 2 or result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

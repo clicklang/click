@@ -49,26 +49,17 @@ verifying "opaque_calls_preserve_separated_field.c";
 int32 increment_changed(struct owner* owner) {
     owns owner->changed;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 clear_changed(struct owner* owner) {
     owns owner->changed;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 opaque_calls_preserve_separated_field(struct owner* owner) {
     views owner->stable;
     owns owner->changed;
     ensures result == old(owner->stable);
-} by {
-    execute();
-    simp();
 }
 ```
 

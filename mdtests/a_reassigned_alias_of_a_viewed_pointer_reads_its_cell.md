@@ -43,9 +43,6 @@ int read_twice(int *p, int n) {
     views p[0..n];
     requires 0 < n;
     ensures result == p[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -19,9 +19,6 @@ verifying "store.c";
 
 long store_own() {
     ensures result == 4;
-} by {
-    execute();
-    simp();
 }
 ```
 

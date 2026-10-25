@@ -23,8 +23,6 @@ int32 loaded(struct node *n) {
     views n->next;
     views *n->next;
     ensures true;
-} by {
-    execute();
 }
 ```
 

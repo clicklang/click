@@ -33,9 +33,6 @@ verifying "builtin_limits.c";
 
 int limits_sum() {
     ensures result == 60;
-} by {
-    execute();
-    simp();
 }
 ```
 

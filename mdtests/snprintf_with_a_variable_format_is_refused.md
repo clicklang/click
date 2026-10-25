@@ -20,9 +20,6 @@ verifying "variable_format.c";
 int32 render(char buf[], const char* fmt, uint32 n) {
     owns buf[0..8];
     ensures true;
-} by {
-    execute();
-    simp();
 }
 ```
 

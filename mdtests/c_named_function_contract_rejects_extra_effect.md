@@ -35,9 +35,6 @@ contract int32 Store(int32 value, int32* output) {
 int32 store_with_scratch(int32 value, int32* output) {
     owns output[0..2];
     ensures result == value;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_store(

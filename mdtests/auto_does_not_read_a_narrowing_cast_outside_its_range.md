@@ -20,8 +20,6 @@ uint32 narrow_wide(uint64 x) {
     step();
     step();
     have 1u32 <= y by { auto(); }
-    execute();
-    simp();
 }
 ```
 

@@ -31,7 +31,6 @@ int32 f(char buf[], int32 len) {
     step();
     step();
     step(snprintf, { n0: 0u64 });
-    execute();
 }
 ```
 

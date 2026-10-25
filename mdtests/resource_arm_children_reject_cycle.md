@@ -55,9 +55,6 @@ resource down_at(node: struct tree_node*) {
 void empty(struct tree_node* node) {
     requires node != 0;
     ensures node != 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

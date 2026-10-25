@@ -20,9 +20,6 @@ verifying "counted_resource_retained_control.c";
 void keep_control(struct object* first) {
     owns object_control(first);
     owns object_ref(first);
-} by {
-    execute();
-    simp();
 }
 ```
 

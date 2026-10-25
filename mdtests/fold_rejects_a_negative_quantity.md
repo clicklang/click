@@ -30,8 +30,6 @@ int32 mint_zero(struct s* o) {
     ensures result == 0;
 } by {
     fold(0 of ref(o));
-    execute();
-    simp();
 }
 
 int32 mint(struct s* o) {
@@ -42,8 +40,6 @@ int32 mint(struct s* o) {
     ensures result == 0;
 } by {
     fold(-1 of ref(o));
-    execute();
-    simp();
 }
 ```
 

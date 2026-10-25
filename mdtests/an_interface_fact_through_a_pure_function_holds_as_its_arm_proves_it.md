@@ -43,8 +43,6 @@ int32 n(int32 j) {
         have tl(j) == 3u64 by { unfold(tl(j)); simp(); }
         have tmp[tl(j)] == 0u8 by { normalize(); }
     }
-    execute();
-    simp();
 }
 ```
 

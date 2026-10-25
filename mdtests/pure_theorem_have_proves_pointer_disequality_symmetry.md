@@ -22,9 +22,6 @@ theorem pointer_disequality_symmetry(a: int32*, b: int32*) {
 
 int nothing() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

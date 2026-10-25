@@ -29,25 +29,16 @@ verifying "main.c";
 int first(triple values) {
     views values[0];
     ensures result == values[0];
-} by {
-    execute();
-    simp();
 }
 
 void clear(triple values) {
     owns values[2];
     ensures values[2] == 0;
-} by {
-    execute();
-    simp();
 }
 
 unsigned char last_byte(digest bytes) {
     views bytes[3];
     ensures result == bytes[3];
-} by {
-    execute();
-    simp();
 }
 ```
 

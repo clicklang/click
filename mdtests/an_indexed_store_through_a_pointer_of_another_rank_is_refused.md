@@ -18,8 +18,6 @@ verifying "store.c";
 void store_param(long *p) {
     requires viewable(p[0..1]);
     ensures true;
-} by {
-    execute();
 }
 ```
 

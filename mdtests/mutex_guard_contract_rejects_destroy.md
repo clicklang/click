@@ -40,9 +40,6 @@ verifying "guarded_resource_mutex_flow.c";
 
 void keep(struct counter *counter) {
     owns h: holding(counter);
-} by {
-    execute();
-    simp();
 }
 
 int32 read_counter(struct counter *counter) {

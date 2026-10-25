@@ -25,8 +25,6 @@ void spend(void* argument) {
     ensures count(ticket(argument)) == old(count(ticket(argument))) - 1;
 } by {
     unfold(ticket(argument));
-    execute();
-    simp();
 }
 int32 run(void* p, void* q) {
     owns authority(ticket(p));
@@ -34,9 +32,6 @@ int32 run(void* p, void* q) {
     consumes ticket(q);
     requires count(ticket(p)) == 2;
     ensures count(ticket(p)) == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

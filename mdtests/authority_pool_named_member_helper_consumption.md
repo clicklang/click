@@ -28,8 +28,6 @@ void remove_member(int32* pool, int32* cell) {
     ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
 } by {
     unfold(member);
-    execute();
-    simp();
 }
 ```
 

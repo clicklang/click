@@ -31,8 +31,6 @@ void caller(int32* state) {
     have at(region(0).exit, c.revision) < 1000 by {
         arithmetic() using { c.revision == 1; };
     }
-    execute();
-    simp();
 }
 ```
 

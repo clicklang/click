@@ -90,8 +90,6 @@ void release_and_free(struct object *obj) {
     produces permit(obj);
 } by {
     step(object_release, { access: access });
-    execute();
-    simp();
 }
 ```
 

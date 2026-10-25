@@ -32,9 +32,6 @@ int32 read_after_a_field_write(struct Node* n, int32* a, int32 i, int32 j, int32
     requires m < 8;
     requires m != j;
     ensures result == old(a[m]);
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -33,18 +33,12 @@ void tally(int32 *count, int32 n) {
     requires 0 <= n and n < 100;
     owns count[0..1];
     ensures to_integer(count[0]) == to_integer(old(count[0]) + 2 + n);
-} by {
-    execute();
-    simp();
 }
 
 int32 advance(int32 pos, int32 n) {
     requires 0 <= pos and pos < 100;
     requires 0 <= n and n < 100;
     ensures to_integer(result) == to_integer(pos + n - 1);
-} by {
-    execute();
-    simp();
 }
 ```
 

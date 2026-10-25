@@ -43,9 +43,6 @@ int32 planned(int32 u) {
     requires g[0] < 100;
     owns g[0..4];
     ensures result == 8 or to_integer(result) == to_integer(old(g[0]) + 1);
-} by {
-    execute();
-    simp();
 }
 
 int32 stepped(int32 u) {

@@ -50,18 +50,12 @@ int32 below(int32 u) {
     requires 1 <= u;
     requires u < 2;
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 
 int32 above(int32 u) {
     requires 0 <= u;
     requires u < 2;
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 
 int32 through_parameter(int32* a, int32 u) {
@@ -69,9 +63,6 @@ int32 through_parameter(int32* a, int32 u) {
     requires u < 2;
     consumes a[0..2];
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

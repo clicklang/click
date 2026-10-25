@@ -37,8 +37,6 @@ void mark_at(int32 *v, int32 *m, int32 n) {
         };
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

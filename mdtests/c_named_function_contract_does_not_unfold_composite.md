@@ -36,26 +36,17 @@ contract int32 UseFoldedBundle(int32 key) {
 int32 use_permit(int32 key) {
     owns permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_bundle(int32 (*callback)(int32), int32 key) {
     requires UseFoldedBundle(callback);
     owns bundle(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 unfolded_bundle_caller(int32 key) {
     owns bundle(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 ```
 

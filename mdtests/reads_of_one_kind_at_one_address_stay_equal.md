@@ -64,9 +64,6 @@ int get_u(unsigned char* u, int i) {
     requires i < 4;
     views u[0..4];
     ensures result == u[i];
-} by {
-    execute();
-    simp();
 }
 
 int same_signed_twice(signed char* s, int i) {
@@ -74,9 +71,6 @@ int same_signed_twice(signed char* s, int i) {
     requires i < 4;
     views s[0..4];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int same_through_alias(signed char* s, int i) {
@@ -84,9 +78,6 @@ int same_through_alias(signed char* s, int i) {
     requires i < 4;
     views s[0..4];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int unsigned_across_call(unsigned char* u, int i) {
@@ -94,9 +85,6 @@ int unsigned_across_call(unsigned char* u, int i) {
     requires i < 4;
     views u[0..4];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int returns_own_read(unsigned char* u, int i) {
@@ -104,9 +92,6 @@ int returns_own_read(unsigned char* u, int i) {
     requires i < 4;
     views u[0..4];
     ensures result == u[i];
-} by {
-    execute();
-    simp();
 }
 
 int int32_bits_as_uint32(int32_t* q, int i) {
@@ -114,9 +99,6 @@ int int32_bits_as_uint32(int32_t* q, int i) {
     requires i < 4;
     views q[0..4];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

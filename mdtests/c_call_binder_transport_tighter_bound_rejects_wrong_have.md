@@ -36,8 +36,6 @@ void advance_once(int32* state) {
 } by {
     have c.revision < 500;
     step(advance, { first: c });
-    execute();
-    simp();
 }
 ```
 

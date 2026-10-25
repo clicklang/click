@@ -12,8 +12,6 @@ verifying "viewed_uint64_store_at_index_zero.c";
 
 void poke(uint64* s) {
     views s[0..3];
-} by {
-    execute();
 }
 ```
 

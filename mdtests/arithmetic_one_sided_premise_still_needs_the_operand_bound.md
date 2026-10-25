@@ -34,8 +34,6 @@ int32 next_index(int32 i, int32 n) {
             n <= 1073741824;
         };
     }
-    execute();
-    simp();
 }
 ```
 

@@ -29,9 +29,6 @@ uint64 cstr_loadable_witness(uint8 source[], uint64 len) {
     requires viewable(source[0..len + 1u64]);
 
     ensures result == len;
-} by {
-    execute();
-    simp();
 }
 ```
 

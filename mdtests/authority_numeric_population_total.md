@@ -33,8 +33,6 @@ void mint_n(int32* o, int32 n) {
     ensures count(tok(o)) == old(count(tok(o))) + n;
 } by {
     fold(n of tok(o));
-    execute();
-    simp();
 }
 
 void counts_a_total_it_can_state(int32* o) {
@@ -44,9 +42,6 @@ void counts_a_total_it_can_state(int32* o) {
     produces 4 of tok(o);
 
     ensures count(tok(o)) == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

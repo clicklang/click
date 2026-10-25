@@ -29,26 +29,17 @@ contract int32 BorrowedRead(int32* cell) {
 int32 claims_ownership(int32* state) {
     owns state[0..1];
     ensures result == state[0];
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_read(int32 (*read)(int32*), int32* cell) {
     requires BorrowedRead(read);
     views cell[0..1];
     ensures result == cell[0];
-} by {
-    execute();
-    simp();
 }
 
 int32 ownership_from_view_caller(int32* cell) {
     views cell[0..1];
     ensures result == cell[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

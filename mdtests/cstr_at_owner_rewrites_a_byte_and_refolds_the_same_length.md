@@ -61,7 +61,6 @@ void poke(uint8* s, uint64 n) {
         }
     }
     fold(cstr_at(s, n));
-    execute();
 }
 ```
 

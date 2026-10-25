@@ -57,9 +57,6 @@ int32 set_and_get(struct cell* c, int32 x) {
     owns cell: cell_at(c);
     ensures result == x;
     ensures cell.value == x;
-} by {
-    execute();
-    simp();
 }
 ```
 

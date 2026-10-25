@@ -36,10 +36,7 @@ verifying "int8_conversion.c";
 
 int promote(signed char value) { ensures to_integer(result) == to_integer(value + 1) by auto(); }
 int negative_ops(int8_t value) {
-    ensures to_integer(result) == to_integer(value * 2 - 1) by {
-        execute();
-        simp();
-    }
+    ensures to_integer(result) == to_integer(value * 2 - 1);
 }
 int complement(signed char value) { ensures result == ~value by auto(); }
 int compare(signed char value) { requires value == -1; ensures result == 1 by auto(); }

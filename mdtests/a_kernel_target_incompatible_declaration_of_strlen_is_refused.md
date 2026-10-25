@@ -22,9 +22,6 @@ verifying "main.c";
 
 int32 length_of(int32 s) {
     ensures result >= 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

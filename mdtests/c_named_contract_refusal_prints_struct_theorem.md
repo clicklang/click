@@ -38,24 +38,15 @@ contract void AugmentRotate(struct node* p) {
 void bump(struct node* p) {
     owns tree: tree_at(p);
     ensures tree.tag == old(tree.tag);
-} by {
-    execute();
-    simp();
 }
 
 int32 accept(void (*step)(struct node*)) {
     requires AugmentRotate(step);
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 caller() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -23,7 +23,6 @@ int spin(int n) {
         simp();
         normalize();
     }
-    execute();
 }
 ```
 

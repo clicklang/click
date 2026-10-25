@@ -47,8 +47,6 @@ int32 list_head(struct node* node) {
     ensures result == node->value;
 } by {
     observe(allocated_list(node));
-    execute();
-    simp();
 }
 
 struct node* list_drop_front(struct node* node) {
@@ -59,8 +57,6 @@ struct node* list_drop_front(struct node* node) {
     ensures result == old(node->next);
 } by {
     unfold(allocated_list(node));
-    execute();
-    simp();
 }
 
 void list_destroy(struct node* node) {
@@ -80,7 +76,4 @@ void list_destroy(struct node* node) {
 
 int32 list_pipeline(int32 first, int32 second) {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }

@@ -13,10 +13,7 @@ int32 identity(int32 x) {
 verifying "proof_mark_unknown.c";
 
 int32 identity(int32 x) {
-    ensures result == at(start, x) by {
-        execute();
-        simp();
-    }
+    ensures result == at(start, x);
 }
 ```
 

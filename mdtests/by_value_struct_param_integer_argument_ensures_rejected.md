@@ -34,16 +34,10 @@ function low(z: Integer) -> int32 {
 
 int32 bump(struct pair value) {
     ensures low(to_integer(value.first)) == 5;
-} by {
-    execute();
-    simp();
 }
 
 int32 call_bump() {
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -19,9 +19,6 @@ void put(int32* a, int32 k) {
     owns a[0..1000];
     requires 5 <= k and k < 1000;
     ensures a[0] == old(a[0]);
-} by {
-    execute();
-    simp();
 }
 ```
 

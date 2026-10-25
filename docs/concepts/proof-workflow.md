@@ -43,9 +43,6 @@ int32 set_first(int32 p[], int32 value) {
     owns p[0..1];
     ensures result == value;
     ensures p[0] == value;
-} by {
-    execute();
-    simp();
 }
 ```
 

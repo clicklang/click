@@ -65,9 +65,6 @@ verifying "byte_mutation.c";
 
 int f() {
     ensures result == 8 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

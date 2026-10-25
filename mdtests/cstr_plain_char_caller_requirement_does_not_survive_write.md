@@ -29,9 +29,6 @@ uint64 measure(const char* src) {
     views click::cstr::cstr_at(src, len);
     ensures result == len;
     ensures src[result] == '\0';
-} by {
-    execute();
-    simp();
 }
 
 uint64 outer(char* src) {
@@ -40,8 +37,6 @@ uint64 outer(char* src) {
     ensures src[result] == '\0';
 } by {
     unfold(click::cstr::cstr_at(src, len));
-    execute();
-    simp();
 }
 ```
 

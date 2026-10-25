@@ -36,8 +36,6 @@ void mark_other(int32 *a, int32 *b, int32 *c, int32 n) {
         };
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

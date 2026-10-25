@@ -51,8 +51,6 @@ void f(int32 a[], int32 n) {
     }
     step();
     have icount(a, 0, 1) == 5;
-    execute();
-    simp();
 }
 ```
 

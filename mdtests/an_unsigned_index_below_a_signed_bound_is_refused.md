@@ -22,9 +22,6 @@ verifying "an_unsigned_index_below_a_signed_bound_is_refused.c";
 void store_signed_bound(int32* values, uint32 x, int32 n) {
     requires n <= 4;
     owns values[0..4];
-} by {
-    execute();
-    simp();
 }
 ```
 

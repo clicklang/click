@@ -24,10 +24,7 @@ verifying "grouped_proof_covers_claims_without_their_own.c";
 
 int32 inc(int32 x) {
     requires x >= 0 and x <= 100;
-    ensures result >= 1 by {
-        execute();
-        simp();
-    }
+    ensures result >= 1;
     ensures result <= 101;
     ensures result != 0;
 } by auto();

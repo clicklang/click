@@ -43,35 +43,20 @@ int static_round_trip(int *value) {
 verifying "pointer_arrays.c";
 int round_trip(int *value) {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 int brace_copy(int *value) {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 int local_array(int *value) {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 int global_round_trip(int *value) {
     owns global_values[0..2];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 int static_round_trip(int *value) {
     owns saved[0..2];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

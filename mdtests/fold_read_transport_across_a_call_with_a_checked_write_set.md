@@ -26,9 +26,6 @@ void fill(int32 *v, int32 lo, int32 n) {
     requires 0 <= lo;
     requires lo < n;
     owns v[lo..n];
-} by {
-    execute();
-    simp();
 }
 
 void caller(int32 *v, int32 i, int32 n) {
@@ -51,8 +48,6 @@ void caller(int32 *v, int32 i, int32 n) {
         };
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

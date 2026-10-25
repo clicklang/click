@@ -37,8 +37,6 @@ void object_finish_one(struct object* finished, struct object* kept) {
     unfold(object_control(finished));
     unfold(object_ref(finished));
     unfold(authority(object_ref(finished)));
-    execute();
-    simp();
 }
 ```
 

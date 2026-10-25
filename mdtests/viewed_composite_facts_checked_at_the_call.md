@@ -35,9 +35,6 @@ verifying "viewed_composite_facts_checked_at_the_call.c";
 int32 counter_len(struct counter* c) {
     views counter_storage(c);
     ensures result == c->len;
-} by {
-    execute();
-    simp();
 }
 
 int32 counter_len_caller(struct counter* c) {
@@ -45,9 +42,6 @@ int32 counter_len_caller(struct counter* c) {
     owns c->cap;
     requires c->len <= c->cap;
     ensures result == c->len;
-} by {
-    execute();
-    simp();
 }
 ```
 

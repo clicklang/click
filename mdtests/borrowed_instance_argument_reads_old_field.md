@@ -74,8 +74,6 @@ int32 caller(struct arena* arena, struct region* a) {
     }
     step(use, { r: r, st: st });
     unfold(r);
-    execute();
-    simp();
 }
 ```
 

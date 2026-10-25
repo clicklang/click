@@ -12,8 +12,6 @@ verifying "viewed_byte_store_at_index_0.c";
 
 void poke(uint8* s) {
     views s[0..3];
-} by {
-    execute();
 }
 ```
 

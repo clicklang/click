@@ -37,8 +37,6 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
 } by {
     step();
     have (if a[m] > 0 { 1 } else { 0 }) == 1 by simp();
-    execute();
-    simp();
 }
 
 void mark_odd(int32 a[], int32 n, int32 i, int32 m) {
@@ -54,8 +52,6 @@ void mark_odd(int32 a[], int32 n, int32 i, int32 m) {
 } by {
     step();
     have (a[m] & 1) == 1 by simp();
-    execute();
-    simp();
 }
 ```
 

@@ -18,7 +18,6 @@ verifying "use_token.c";
 int32 use_token(int32 fd) {
     owns socket_open(fd) by {
         unfold(socket_open(fd));
-        execute();
     }
 }
 ```

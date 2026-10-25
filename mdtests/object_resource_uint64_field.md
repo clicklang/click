@@ -26,9 +26,6 @@ unsigned long read_word(struct node* node) {
     requires node != 0;
     views node_storage(node);
     ensures result == node->word;
-} by {
-    execute();
-    simp();
 }
 ```
 

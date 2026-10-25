@@ -19,9 +19,6 @@ verifying "userspace_plain_char.c";
 
 int32 negative_byte() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -18,9 +18,6 @@ verifying "userspace_char_narrowing.c";
 int32 narrow(int32 x) {
     requires x == 200;
     ensures result == -56;
-} by {
-    execute();
-    simp();
 }
 ```
 

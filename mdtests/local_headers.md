@@ -45,9 +45,6 @@ int32 increment(int32 value) {
 
 int32 run() {
     ensures result == 9;
-} by {
-    execute();
-    simp();
 }
 ```
 

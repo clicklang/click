@@ -38,9 +38,6 @@ int32 read_after_a_pruned_store(int32* a, int32 n, int32 i, int32 j, int32 m) {
     requires m < n;
     requires m != j;
     ensures result == old(a[m]);
-} by {
-    execute();
-    simp();
 }
 ```
 

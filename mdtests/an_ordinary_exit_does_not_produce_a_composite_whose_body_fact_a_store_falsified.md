@@ -30,8 +30,6 @@ verifying "exit_produces_unchecked_composite.c";
 void mk(uint8* p) {
     consumes p[0..6];
     produces zt(p);
-} by {
-    execute();
 }
 
 uint8 use(uint8* p) {
@@ -40,8 +38,6 @@ uint8 use(uint8* p) {
 } by {
     step();
     unfold(zt(p));
-    execute();
-    simp();
 }
 ```
 

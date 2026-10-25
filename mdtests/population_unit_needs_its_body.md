@@ -16,8 +16,6 @@ int32 mint(struct s* o) {
     produces 1 of ref(o);
 } by {
     fold(1 of ref(o));
-    execute();
-    simp();
 }
 ```
 

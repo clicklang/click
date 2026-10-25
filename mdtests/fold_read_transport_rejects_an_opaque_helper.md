@@ -38,8 +38,6 @@ void set_end(int32 *v, int32 i, int32 n) {
         };
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

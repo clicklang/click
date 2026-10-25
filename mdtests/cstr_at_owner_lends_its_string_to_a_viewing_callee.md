@@ -27,9 +27,6 @@ extern uint64 string_length(const uint8* s, uint64 n) {
 uint64 measure(uint8* src, uint64 n) {
     owns cstr_at(src, n);
     ensures result == n;
-} by {
-    execute();
-    simp();
 }
 ```
 

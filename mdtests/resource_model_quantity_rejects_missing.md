@@ -18,8 +18,6 @@ void package(int32* p) {
     ensures s.amount == 2;
 } by {
     let s = fold(bundle(p), { amount: 2 });
-    execute();
-    simp();
 }
 ```
 

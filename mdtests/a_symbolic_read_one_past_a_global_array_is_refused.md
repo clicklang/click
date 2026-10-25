@@ -25,9 +25,6 @@ verifying "a_symbolic_read_one_past_a_global_array_is_refused.c";
 int32 global_past(int32 x) {
     owns values[0..4];
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

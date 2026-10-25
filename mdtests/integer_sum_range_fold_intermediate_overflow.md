@@ -27,9 +27,6 @@ verifying "integer_sum_range_fold_intermediate_overflow.c";
 
 int32 sum_prefix_overflow() {
     ensures result == 2147483647;
-} by {
-    execute();
-    simp();
 }
 ```
 

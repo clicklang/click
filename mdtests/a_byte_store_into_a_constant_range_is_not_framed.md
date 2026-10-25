@@ -32,17 +32,11 @@ verifying "a_byte_store_into_a_constant_range_is_not_framed.c";
 int32 untouched_element(int32* a) {
     owns a[0..1000000];
     ensures result == old(a[2]);
-} by {
-    execute();
-    simp();
 }
 
 int32 stale_element(int32* a) {
     owns a[0..1000000];
     ensures result == old(a[1]);
-} by {
-    execute();
-    simp();
 }
 ```
 

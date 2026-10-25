@@ -27,9 +27,6 @@ verifying "a_byte_store_invalidates_the_wide_cell_it_covers.c";
 int64 read_after_byte_write(int64* value) {
     owns value[0..1];
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

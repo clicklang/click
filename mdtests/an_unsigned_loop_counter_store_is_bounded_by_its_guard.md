@@ -41,8 +41,6 @@ void clear(int32* values) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

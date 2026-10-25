@@ -34,9 +34,6 @@ int32 tag_round_trip(struct node* node, struct node* next) {
     views next->value;
     ensures result == next->value;
     ensures node->word == address(next) + 3;
-} by {
-    execute();
-    simp();
 }
 ```
 

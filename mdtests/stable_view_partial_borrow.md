@@ -21,9 +21,6 @@ int32 stable_view_partial_borrow(int32 p[]) {
     views p[0..1];
     owns p[1..2];
     ensures result == old(p[0]) + 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

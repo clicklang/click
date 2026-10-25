@@ -37,8 +37,6 @@ int32 first_stop(int32 n, int32 limit) {
         decreases n - i;
         invariant 0 <= i and i <= n and i <= limit;
     }
-    execute();
-    simp();
 }
 ```
 

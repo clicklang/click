@@ -29,23 +29,15 @@ verifying "calls.c";
 long long read_ll(long long *q) {
     views q[0..1];
     ensures result == q[0];
-} by {
-    execute();
-    simp();
 }
 
 long read_l(long *q) {
     views q[0..1];
     ensures result == q[0];
-} by {
-    execute();
-    simp();
 }
 
 long long caller() {
     ensures true;
-} by {
-    execute();
 }
 ```
 

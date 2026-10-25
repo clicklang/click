@@ -24,9 +24,6 @@ int32 heap_free_requires_complete_access(struct item* item) {
     consumes item->first;
 
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -31,17 +31,11 @@ verifying "modeled_pthread_composite_resource_transfer.c";
 
 void *worker(void *argument) {
     owns cell_at((struct cell *)argument);
-} by {
-    execute();
-    simp();
 }
 
 int32 run(struct cell *cell) {
     owns cell_at(cell);
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

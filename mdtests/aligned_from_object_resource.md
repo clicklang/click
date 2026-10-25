@@ -34,18 +34,12 @@ int32 object_is_aligned(struct pair* p) {
     requires p != 0;
     views pair_storage(p);
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 struct pair* pass_through(struct pair* p) {
     consumes *p;
     produces *result;
     ensures result == p;
-} by {
-    execute();
-    simp();
 }
 ```
 

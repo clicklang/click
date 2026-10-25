@@ -31,7 +31,6 @@ uint64 count(uint64 n) {
             close_invariants() by auto();
         }
     }
-    execute();
 }
 ```
 

@@ -38,8 +38,6 @@ int32 ident(int32 x) {
             apply(needs_upper(x)) using { x <= 10; };
             assumption();
         }
-        execute();
-        simp();
     }
 }
 ```

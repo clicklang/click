@@ -21,9 +21,6 @@ verifying "heap_use_after_free.c";
 
 int32 heap_use_after_free() {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

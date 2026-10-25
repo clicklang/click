@@ -18,9 +18,6 @@ verifying "a_stored_over_element_of_a_million_element_automatic_array_is_not_its
 
 int32 read() {
     ensures result == 2;
-} by {
-    execute();
-    simp();
 }
 ```
 

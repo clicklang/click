@@ -27,8 +27,6 @@ void indirect(int32 (*callback)(int32*), int32* x) {
     ensures done.value == 1;
 } by {
     step(Repair);
-    execute();
-    simp();
 }
 ```
 

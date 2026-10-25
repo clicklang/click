@@ -31,8 +31,6 @@ void advance(int32* rb, int32* stop) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 ```expect

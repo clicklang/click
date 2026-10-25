@@ -20,9 +20,6 @@ contract int32 Increment(int32 input) {
 int32 increment(int32 value) {
     requires value < 2147483647;
     ensures result == value + 1;
-} by {
-    execute();
-    simp();
 }
 
 theorem increment_implements_increment() {

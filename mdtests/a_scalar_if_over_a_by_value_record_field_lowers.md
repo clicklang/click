@@ -32,16 +32,10 @@ verifying "a_scalar_if_over_a_by_value_record_field_lowers.c";
 
 uint32 pick(struct pair p) {
     ensures result == (if p.flag != 0 { p.value } else { 0 });
-} by {
-    execute();
-    simp();
 }
 
 uint8 flag_or_one(struct pair p) {
     ensures result == (if p.flag != 0 { p.flag } else { (uint8)1 });
-} by {
-    execute();
-    simp();
 }
 ```
 

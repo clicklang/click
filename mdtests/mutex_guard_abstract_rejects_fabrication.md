@@ -42,8 +42,6 @@ void keep(struct counter *counter) {
     owns h: holding(counter);
 } by {
     let duplicate = fold(holding(counter), { tag: 0 });
-    execute();
-    simp();
 }
 
 int32 read_counter(struct counter *counter) {

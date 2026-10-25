@@ -30,7 +30,6 @@ void pool_grow(struct pool* pool, int32 amount) {
     produces amount of pool_slot(pool);
 } by {
     open(pool_control(pool)) { step(); }
-    execute();
 }
 ```
 

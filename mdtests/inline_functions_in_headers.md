@@ -42,16 +42,10 @@ verifying "right.c";
 
 int32 run_left() {
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 
 int32 run_right() {
     ensures result == 6;
-} by {
-    execute();
-    simp();
 }
 ```
 

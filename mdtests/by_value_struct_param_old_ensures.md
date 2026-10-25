@@ -19,9 +19,6 @@ verifying "t.c";
 
 int32 bump(struct pair value) {
     ensures old(value.first) == old(value.first);
-} by {
-    execute();
-    simp();
 }
 ```
 

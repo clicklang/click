@@ -99,16 +99,10 @@ verifying "byte_read.c";
 
 int f() {
     ensures result == 11 or result == -1;
-} by {
-    execute();
-    simp();
 }
 
 int g() {
     ensures result == 0 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

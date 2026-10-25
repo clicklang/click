@@ -24,9 +24,6 @@ verifying "iterated_ownership_rejects_unowned_guard.c";
 
 void keep(int32* data, int32* flags, int32 capacity) {
     owns loose_cells(data, flags, capacity);
-} by {
-    execute();
-    simp();
 }
 ```
 

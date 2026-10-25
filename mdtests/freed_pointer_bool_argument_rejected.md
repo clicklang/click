@@ -31,16 +31,10 @@ verifying "freed_bool_argument.c";
 
 int present(bool flag) {
     ensures result == flag;
-} by {
-    execute();
-    simp();
 }
 
 int f() {
     ensures result == 1 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

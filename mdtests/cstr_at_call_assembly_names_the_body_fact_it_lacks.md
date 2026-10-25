@@ -28,8 +28,6 @@ uint64 fixed_string_length(uint8 bytes[]) {
 } by {
     execute_until(region(1));
     step(strlen, { n: 2u64 });
-    execute();
-    simp();
 }
 ```
 

@@ -29,18 +29,12 @@ contract int Increments(int x) {
 int increment(int x) {
     requires x <= 1000;
     ensures to_integer(result) == to_integer(x + 1);
-} by {
-    execute();
-    simp();
 }
 
 int apply(unary f, int x) {
     requires Increments(f);
     requires x <= 1000;
     ensures to_integer(result) == to_integer(x + 1);
-} by {
-    execute();
-    simp();
 }
 ```
 

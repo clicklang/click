@@ -19,8 +19,6 @@ verifying "returns.c";
 
 struct b *as_b(struct a *pa) {
     ensures true;
-} by {
-    execute();
 }
 ```
 

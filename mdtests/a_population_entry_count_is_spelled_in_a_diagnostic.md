@@ -53,7 +53,6 @@ void pool_checkout(struct pool* pool, struct object* object) {
         have to_integer(pool->capacity)
             == to_integer(pool->checked_out) + to_integer(count(pool_slot(pool))) + 1 by auto();
     }
-    execute();
 }
 ```
 

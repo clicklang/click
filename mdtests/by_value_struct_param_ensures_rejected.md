@@ -26,16 +26,10 @@ verifying "t.c";
 
 int32 bump(struct pair value) {
     ensures value.first == 5;
-} by {
-    execute();
-    simp();
 }
 
 int32 call_bump() {
     ensures result == 999;
-} by {
-    execute();
-    simp();
 }
 ```
 

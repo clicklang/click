@@ -47,8 +47,6 @@ void retain_double(struct child* obj) {
     fold(child_ref(obj));
     fold(child_ref(obj));
     fold(child_control(obj));
-    execute();
-    simp();
 }
 ```
 

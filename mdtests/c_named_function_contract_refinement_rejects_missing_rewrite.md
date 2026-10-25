@@ -34,9 +34,6 @@ void decrement(int32* state) {
     requires 0 < state[0];
     owns state[0..1];
     ensures state[0] == old(state[0]) - 1;
-} by {
-    execute();
-    simp();
 }
 
 theorem decrement_is_decrease() {
@@ -63,9 +60,6 @@ void apply_step(void (*step)(int32*), int32* cell) {
     requires cell[0] < 100;
     owns cell[0..1];
     ensures cell[0] < old(cell[0]);
-} by {
-    execute();
-    simp();
 }
 
 void rewritten_decrease_caller(int32* cell) {
@@ -75,8 +69,6 @@ void rewritten_decrease_caller(int32* cell) {
     ensures cell[0] < old(cell[0]);
 } by {
     apply(decrement_is_decrease());
-    execute();
-    simp();
 }
 ```
 

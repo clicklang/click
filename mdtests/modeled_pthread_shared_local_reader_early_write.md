@@ -37,16 +37,10 @@ verifying "modeled_pthread_shared_local_reader_early_write.c";
 
 void *reader(void *p) {
     views ((struct cell *)p)->value;
-} by {
-    execute();
-    simp();
 }
 
 int32 run() {
     ensures result == 0 or result == 9;
-} by {
-    execute();
-    simp();
 }
 ```
 

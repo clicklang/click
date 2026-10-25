@@ -43,7 +43,6 @@ void caller(struct root* root) {
     produces leaf: cell(root->node);
 } by {
     let { leaf: leaf } = step(release, { state: state });
-    execute();
 }
 ```
 

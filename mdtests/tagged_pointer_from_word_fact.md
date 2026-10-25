@@ -27,18 +27,12 @@ int32 recovers_parent(unsigned long word, struct node* next) {
     requires aligned(next, 8);
     requires word == address(next) + 1;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 color_is_black(unsigned long word, struct node* next) {
     requires aligned(next, 8);
     requires word == address(next) + 1;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

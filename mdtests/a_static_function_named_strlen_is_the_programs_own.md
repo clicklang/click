@@ -23,9 +23,6 @@ verifying "main.c";
 
 uint64 last_index(const char* s) {
     ensures result == 0u64;
-} by {
-    execute();
-    simp();
 }
 ```
 

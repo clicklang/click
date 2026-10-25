@@ -34,9 +34,6 @@ int32 set_pointer(struct holder* owner, int32* data) {
     owns *owner;
     ensures result == 0;
     ensures owner->data == data;
-} by {
-    execute();
-    simp();
 }
 
 int32 call_set_pointer(struct holder* owner, int32* data) {
@@ -45,8 +42,6 @@ int32 call_set_pointer(struct holder* owner, int32* data) {
 } by {
     execute_until(region(2));
     have owner->data == data;
-    execute();
-    simp();
 }
 ```
 

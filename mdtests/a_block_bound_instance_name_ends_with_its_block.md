@@ -36,7 +36,6 @@ void f(int32* q) {
         let { k: kk } = unfold(b);
     }
     let b = fold(box(q), { v: 3 }, { k: kk });
-    execute();
 }
 ```
 

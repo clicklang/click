@@ -18,9 +18,6 @@ contract int32 Positive() {
 
 int32 return_zero() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 theorem zero_is_positive() {

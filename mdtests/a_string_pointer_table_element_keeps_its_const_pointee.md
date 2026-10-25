@@ -22,9 +22,6 @@ verifying "discard_table_const.c";
 char first_letter(int32 i) {
     requires i == 1;
     ensures result == 107;
-} by {
-    execute();
-    simp();
 }
 ```
 

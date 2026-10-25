@@ -39,9 +39,6 @@ verifying "a_million_element_automatic_array_initializer_holds_its_elements.c";
 
 int32 sum() {
     ensures result == 34;
-} by {
-    execute();
-    simp();
 }
 ```
 

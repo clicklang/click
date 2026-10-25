@@ -32,9 +32,6 @@ verifying "call_keeps_caller_cell_flat.c";
 void touch(int32* flags, int32* data, int32 n) {
     owns flags[0..n];
     owns data[0..n];
-} by {
-    execute();
-    simp();
 }
 
 int32 keep_box(int32* flags, int32* data, int32 n, struct box* b) {
@@ -42,9 +39,6 @@ int32 keep_box(int32* flags, int32* data, int32 n, struct box* b) {
     owns data[0..n];
     owns *b;
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

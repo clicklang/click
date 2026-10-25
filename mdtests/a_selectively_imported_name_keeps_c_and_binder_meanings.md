@@ -32,8 +32,6 @@ void user(int32* p) {
 } by {
     unfold(length);
     let y = fold(marker(p), { v: 0 });
-    execute();
-    simp();
 }
 
 theorem appended(xs: List<int32>) {

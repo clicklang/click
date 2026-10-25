@@ -64,8 +64,6 @@ int32 read_terminator(uint8 bytes[], uint64 known_len) {
             witness { len: known_len };
             simp();
         }
-        execute();
-        simp();
     }
 }
 ```

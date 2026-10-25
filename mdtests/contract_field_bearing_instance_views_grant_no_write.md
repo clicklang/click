@@ -38,8 +38,6 @@ void relink(struct node* node) {
     requires node != 0;
     owns links: pair(node);
     owns node->right->augmented;
-} by {
-    execute();
 }
 ```
 

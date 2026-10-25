@@ -21,9 +21,6 @@ verifying "tagged_pointer_unmasked_cast_rejected.c";
 struct node* forget_the_mask(struct node* next) {
     requires aligned(next, 8);
     ensures result == next;
-} by {
-    execute();
-    simp();
 }
 ```
 

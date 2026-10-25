@@ -25,9 +25,6 @@ verifying "leak_at_return.c";
 
 int32 leak_at_return() {
     ensures result == -1 or result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

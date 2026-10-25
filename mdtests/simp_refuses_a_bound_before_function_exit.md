@@ -16,8 +16,6 @@ int32 inc(int32 x) {
     requires x >= 0 and x <= 100;
     ensures result >= 0 by {
         have to_integer(x + 1) >= 2;
-        execute();
-        simp();
     }
 }
 ```

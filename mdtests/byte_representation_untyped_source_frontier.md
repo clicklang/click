@@ -26,9 +26,6 @@ verifying "scalar_untyped_memcpy.c";
 int h(uint8 raw[]) {
     views raw[0..4];
     ensures result == 0 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -24,7 +24,6 @@ void unsigned_at_zero(uint64 x) {
     ensures x == 0u64;
 } by {
     have x == 0u64 by auto();
-    execute();
 }
 
 theorem unsigned_at_zero_by_auto(x: uint64) {
@@ -38,7 +37,6 @@ void signed_pinned(int64 a, int64 b) {
     ensures a == b;
 } by {
     have a == b by auto();
-    execute();
 }
 ```
 

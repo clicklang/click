@@ -27,8 +27,6 @@ int32 put(int32 p[3], int32 i) {
     have p[1] == 6 by {
         transport(at(function.entry, p[1] == 6), p[1] == 6);
     }
-    execute();
-    simp();
 }
 ```
 

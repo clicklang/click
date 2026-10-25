@@ -33,8 +33,6 @@ void caller(int32* state) {
     ensures c.revision == 1;
 } by {
     step(increment, { first: c });
-    execute();
-    simp();
 }
 ```
 

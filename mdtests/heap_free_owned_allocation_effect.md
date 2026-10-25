@@ -30,8 +30,6 @@ int32 heap_free_owned_allocation_effect(int32 data[], int32 count, int32 flag[])
     ensures result == 9;
 } by {
     unfold(allocated_int32s(data, count));
-    execute();
-    simp();
 }
 ```
 

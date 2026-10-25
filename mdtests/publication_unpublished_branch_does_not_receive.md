@@ -27,9 +27,6 @@ resource ready_payload(channel: struct channel*) {
 }
 int32 try_consume(struct channel* channel) {
     owns subscriber(&channel->ready, ready_payload(channel));
-} by {
-    execute();
-    simp();
 }
 ```
 

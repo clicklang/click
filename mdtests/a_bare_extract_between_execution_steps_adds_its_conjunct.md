@@ -26,8 +26,6 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
 } by {
     mark entry;
     extract(m != i);
-    execute();
-    simp();
 }
 ```
 

@@ -91,10 +91,7 @@ int32 fraction(char tmp[], uint32 remainder) {
             };
         }
     }
-    ensures tmp[0] == 46 by {
-        execute();
-        simp();
-    }
+    ensures tmp[0] == 46;
 }
 ```
 

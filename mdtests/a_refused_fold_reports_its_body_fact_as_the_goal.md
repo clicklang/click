@@ -30,7 +30,6 @@ void probe(int32* p) {
     ensures true;
 } by {
     let wrong = fold(cell(p), { model: Model::Node(4) });
-    execute();
 }
 ```
 

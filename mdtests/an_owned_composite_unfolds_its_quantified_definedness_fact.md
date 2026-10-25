@@ -30,7 +30,6 @@ uint8 last(uint8* p) {
     produces p[0u64..4u64];
 } by {
     unfold(bytes_set(p, 4u64));
-    execute();
 }
 ```
 

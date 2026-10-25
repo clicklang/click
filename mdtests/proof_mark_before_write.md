@@ -21,8 +21,6 @@ int32 bump(int32* p) {
     mark before_write;
     step();
     have p[0] == at(before_write, p[0]) + 1 by auto();
-    execute();
-    simp();
 }
 ```
 

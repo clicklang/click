@@ -28,9 +28,6 @@ verifying "declared.c";
 
 long long read_local() {
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

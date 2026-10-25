@@ -37,34 +37,22 @@ contract int32 Inspect(int32 key) {
 int32 inspect_token(int32 key) {
     views permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_inspect(int32 (*callback)(int32), int32 key) {
     requires Inspect(callback);
     owns permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 spend_token(int32 key) {
     consumes permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 borrow_then_spend(int32 key) {
     consumes permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 ```
 

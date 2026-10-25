@@ -45,8 +45,6 @@ int32 broken(struct object* obj) {
         step();
         step();
     }
-    execute();
-    simp();
 }
 ```
 

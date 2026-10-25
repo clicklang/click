@@ -22,8 +22,6 @@ void fill_t(uint8* dst) {
         at(filled, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })),
         (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })
     );
-    execute();
-    simp();
 }
 ```
 

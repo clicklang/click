@@ -25,9 +25,6 @@ contract void ProducesPositive(int32* cell) {
 void choose_nonnegative(int32* cell) {
     owns cell[0..1];
     ensures cell[0] >= 0;
-} by {
-    execute();
-    simp();
 }
 
 theorem nonnegative_is_positive() {
