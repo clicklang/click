@@ -84,6 +84,39 @@ classification all read that one mapping.
 Making a proposition kind authority is a design decision, never a way to
 avoid spelling a fact a proof could need to cite.
 
+## Lowering is structural
+
+A lowered term has the structure of the surface text it lowers: each
+operator, call, and read lowers to the corresponding kernel node over the
+lowerings of its operands. Lowering never replaces a term by a different
+term known to equal it, whether the equality comes from a fact or from a
+value a store left in memory. Lowering `a[i]` to `5` because `a[i] = 5` was
+stored, or `p->next` to `q` because `q` was stored there, makes the term a
+proof states differ from the term it proves: a goal `X == Y` is discharged
+as `lower(raise(X)) == Y`, and rewriting tactics move a term that is not
+the one the text names.
+
+- Required: `lower(raise(x)) == x` for every kernel term a proof state
+  holds.
+- Allowed: `raise(lower(s))` may normalize surface syntax, collapsing
+  spellings of one structure; the kernel need not produce every surface
+  form. In particular `at(term, location)` raises at one location per
+  version: when two locations share a version, both lower to the same
+  term, and raising picks one of them.
+- Allowed: identifying two places whose values are structurally equal by a
+  fact-free walk, which names one place twice rather than substituting a
+  value. The version walk below is that case.
+- Not allowed: substituting a known-equal term, constant-folding a
+  comparison the facts decide, dropping a decided guard or disjunct, or
+  choosing a term by known provenance. Equalities stay in the equality graph
+  and the comparison form, which every check consults.
+
+Known violations, each a defect to remove: pointer reads lower to the
+pointer stored at the cell, both in C-level propositions and in resource
+arguments (`complete_pointer_read_value` and the stored-pointer fold in
+`Pointer::loaded`); comparisons folded to constants; decided guards and
+disjuncts dropped; and comparison kinds chosen by known provenance.
+
 ## Lowering is fact-stable
 
 Facts may decide whether lowering succeeds, discharge its obligations, and
