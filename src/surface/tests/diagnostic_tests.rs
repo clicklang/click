@@ -365,6 +365,52 @@ fn auto_have_budget_failure_keeps_the_exhaustion_reason() {
     );
 }
 
+/// A smart closer inside a nested `have` script, `have P by { auto(); }`
+/// within another `have`'s proof, spends a smart tactic's search: its work
+/// is charged to the smart budget and a miss gets the smart advice. It was
+/// once charged to the `have`'s control budget and reported as an engine
+/// bug.
+#[test]
+fn smart_closer_inside_a_have_script_spends_the_smart_budget() {
+    let source = r#"
+        verifying "bound.c";
+        uint64 bound(uint64 a, uint64 b) { ensures result == a; } by {
+            have a <= b - b % 4u64 by {
+                have a <= b - b % 4u64 by { auto(); }
+                assumption();
+            }
+            execute(); simp();
+        }
+    "#;
+    let error = crate::instrumentation::with_tactic_work_limits(
+        crate::instrumentation::TacticWorkLimits {
+            simple: 1_000_000,
+            smart: 1,
+            control: 1_000_000,
+        },
+        || {
+            verify_c0_sources(
+                source,
+                &[(
+                    "bound.c",
+                    "unsigned long bound(unsigned long a, unsigned long b) { return a; }",
+                )],
+            )
+        },
+    )
+    .expect_err("the nested auto must exhaust the smart budget");
+    assert!(
+        error.message().contains(
+            "tactic `have` in `bound.contract` exhausted its deterministic smart work budget"
+        ),
+        "{error:?}"
+    );
+    assert!(
+        error.message().contains("smart search is heuristic"),
+        "{error:?}"
+    );
+}
+
 /// The uint64 bridge creates nested `have` proofs. A missing listed premise
 /// must return the arithmetic goal's diagnostic, not panic while wrapping
 /// the nested bridge's already-rendered diagnostic inside a new summary.
@@ -1495,10 +1541,8 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
     }
 }
 
-/// A conditional term's guard is spelled as the comparison it means. The
-/// kernel states a 32-bit unsigned comparison as a signed one over operands
-/// with their sign bit flipped; rendered context-free, that used to read as
-/// the raw bias.
+/// A conditional term's guard is spelled as the comparison it means: a
+/// `uint32` order reads as an unsigned comparison of its operands.
 #[test]
 fn a_conditional_term_spells_its_unsigned_guard() {
     let x = Bitvector32Term::Variable(crate::kernel::Variable(7));
@@ -1513,6 +1557,40 @@ fn a_conditional_term_spells_its_unsigned_guard() {
     let rendered = super::diagnostics::describe_bitvector(&term);
     assert!(rendered.contains(" < 4 (unsigned)"), "{rendered}");
     assert!(!rendered.contains('^'), "{rendered}");
+}
+
+/// A condition's kind names a `uint32` order as unsigned, as it names a
+/// `uint64` one, and never as the signed order of its operands.
+#[test]
+fn a_uint32_order_is_named_as_unsigned() {
+    let (x, y) = (
+        Bitvector32Term::Variable(crate::kernel::Variable(8)),
+        Bitvector32Term::Variable(crate::kernel::Variable(9)),
+    );
+    for (condition, kind) in [
+        (
+            ConditionTerm::unsigned_less_than(x.clone(), y.clone()),
+            "uint32 less-than",
+        ),
+        (
+            ConditionTerm::unsigned_less_equal(x.clone(), y.clone()),
+            "uint32 less-or-equal",
+        ),
+        (
+            ConditionTerm::unsigned_greater_than(x.clone(), y.clone()),
+            "uint32 greater-than",
+        ),
+        (
+            ConditionTerm::unsigned_greater_equal(x.clone(), y.clone()),
+            "uint32 greater-or-equal",
+        ),
+        (
+            ConditionTerm::uint64_less_than(x.clone(), y.clone()),
+            "uint64 less-than",
+        ),
+    ] {
+        assert_eq!(super::diagnostics::condition_kind(&condition), kind);
+    }
 }
 
 #[test]

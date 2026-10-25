@@ -173,7 +173,14 @@ a distribution update that moves the libstdc++ runtime forward without its
 headers is the usual cause of a sudden `<algorithm>` not found. The build
 script checks this first and names the missing package. On Ubuntu 24.04,
 `scripts/setup-environment.sh` installs the pinned development packages,
-including those headers, before the network-free gate runs.
+including those headers, before the network-free gate runs. Where the network
+denies `apt.llvm.org`, as in Claude Code cloud sessions, it instead installs
+the official LLVM 19.1.7 Linux x86-64 release with
+`scripts/install-llvm-release.sh`. The archive must match its pinned SHA-256,
+and only Clang, `llvm-config`, headers, and libraries are extracted, to
+`/opt/LLVM-19.1.7-Linux-X64`. Ubuntu's packages supply GCC and the headers.
+`/usr/lib/llvm-19` links to that directory, and setup accepts a pinned LLVM
+there, not only `llvm-config-19` on `PATH`.
 
 The C++ fixtures refresh typed artifacts for C++20 functions in a translation
 unit or one selected included project header through one exact JSON
@@ -366,6 +373,189 @@ minutes on four cores, from one example: `examples/rbtree/rbtree-augmented` grew
 from 259 to 5,467 proof lines in a day and verified in 261 seconds of the
 examples harness's 317, so it joined the other rbtree examples in nightly.
 
+## Gate timing baselines
+
+The **gate timing baselines** are the reference for expected gate speed. When
+asked to compare a run with the baselines, use this section and match the
+environment, cache state, command, and source revision before interpreting a
+difference. These observations are separate from the ten-minute gate budget;
+first-time prerequisite installation is outside that budget.
+
+Distinguish three scenarios:
+
+1. **Fresh machine:** start with a supported OS and an empty checkout, tool,
+   Cargo download, build, and incremental cache. Count prerequisite setup plus
+   the first full gate. Exclude provisioning the VM or pulling its OS image.
+2. **Edit and rerun:** retain tools, downloaded dependencies, and compiled
+   dependencies; make a Rust change and run the full gate. Record the change
+   and whether Click's own incremental state was retained: adding one test
+   and rebuilding all of Click are different workloads.
+3. **Unchanged rerun:** immediately repeat the full gate with the same source
+   and build artifacts. This measures the test-execution floor, not editing
+   performance.
+
+All local measurements use plain `scripts/check.sh`, with both compiler
+frontends installed and no test filters. These are single-run observations,
+not medians or timing guarantees. Unknown cells mean unmeasured; do not
+substitute the ten-minute target or a partial-cache measurement.
+
+| Environment | Fresh setup + first gate | Edit and rerun | Unchanged rerun |
+| --- | --- | --- | --- |
+| Codex cloud, 4 CPU cores / 16 GiB, Linux x86-64 | 15m09s of commands: 6m01s setup + 9m08s gate | 5m25s for one added Rust test; 7m00s for a full Click rebuild | 4m50s |
+| GitHub Actions, `ubuntu-24.04`, sharded workflow | Unmeasured with all Click caches empty | 6m11s with build and tool caches restored | 6m15s for a same-source merge-queue workflow |
+| Claude Code cloud, 4 vCPUs / 15.7 GiB, Linux x86-64 | 24m19s of commands: 4m32s setup + 19m47s gate | 10m56s for one added Rust test; 17m13s for a full Click rebuild | 9m37s |
+
+The CI unchanged case tests an identical Git tree in a new workflow, not the
+same executable in the same working directory. It includes fresh checkouts,
+remote cache restores, compilation as needed, artifact transfers, and runner
+startup. Its few seconds of difference from the edited case are not evidence
+that an unchanged source tree is slower. A fully cold CI measurement remains
+missing; the 9m40s comparison below must not fill that cell.
+
+The Claude Code cloud machine runs every phase about twice as long as Codex
+cloud, not only edits. At `929f45018`, with no compilation in either run, its
+unit/API tests took 1.97 times as long (248.61s against 126.50s) and its
+fixture tests 2.00 times (306.87s against 153.29s); the same added test's
+incremental build took 2.10 times (79s against 37.59s). Both machines run
+four CPUs' worth of work and the tests use every core, so the ratio measures
+per-core speed: a 2.1 GHz Intel Xeon VM against an AMD EPYC 9V45 host.
+Steal time was under 1% of the session's CPU time. Compare a gate run with
+the row for its own environment; a Claude Code cloud gate near ten minutes is
+its unchanged floor, not a regression.
+
+### Environment resource profile
+
+The Codex cloud resource profile was inspected on **2026-10-24**. The fresh,
+small-edit, and unchanged timings were measured on that date using verifier
+commit **`929f45018944c9443be3b29199e091f27f7ae93e`**, plus the provisioning fixes
+described below and the documented temporary test for the small-edit case.
+The earlier full Click rebuild used that same verifier commit on **2026-10-23**.
+The Claude Code cloud profile was inspected on **2026-10-24**, the date of
+all its timings; the evidence below gives each timing's revision.
+
+| Resource | Codex cloud measurement environment | Claude Code cloud measurement environment |
+| --- | --- | --- |
+| CPU allocation | **4 CPU cores of effective quota** (`cpu.max = 400000 100000`); CPU affinity exposes 5 logical CPUs | **4 vCPUs** of a KVM virtual machine, one thread per core; no cgroup CPU quota (`cpu.cfs_quota_us = -1`), affinity 0-3 |
+| CPU model / architecture | AMD EPYC 9V45 96-Core Processor; `x86_64` | Intel Xeon Processor @ 2.10GHz (family 6, model 207); `x86_64` |
+| Memory | **16 GiB** cgroup limit (`memory.max = 17179869184`), including the benchmark container; no configured swap | **15.7 GiB** VM memory (`MemTotal: 16477348 kB`), no memory cgroup limit; no configured swap |
+| Storage | Approximately **31.5 GiB** shared ephemeral overlay filesystem, with about 16 GiB free before the fresh benchmark; Cargo and Docker used this same storage | Per-session writable allowance on a 252 GB virtual disk, with about 18 GiB free before the fresh benchmark; the gate's `target/` reached 5.9 GiB |
+| Operating system | Host: Debian GNU/Linux 13.6, kernel 6.18.55; clean benchmark container: Ubuntu 24.04 | Ubuntu 24.04.5 VM, kernel 6.18.44; no nested container |
+| Build concurrency | **5 Cargo jobs**; ordinary gate defaults for test and fixture workers; no competing benchmark builds | **4 Cargo jobs** (the default); ordinary gate defaults; no competing builds |
+| Compiler/frontends | Rust and Cargo **1.98.1**; LLVM/Clang **19.1.7**; Charon's pinned **nightly-2026-09-17** Rust toolchain | Same versions |
+| Test/docs tools | Clean benchmark: nextest **0.9.143**, mdBook **0.4.52**; the host's later documentation-validation check used nextest 0.9.146 | Clean benchmark: nextest **0.9.143**, mdBook **0.4.52** |
+
+The nested benchmark container had the same four-core quota and 16 GiB limit;
+it did not add resources to the host's allowance. The CPU model names the host
+processor, not the number of cores allocated to this task. Compare effective
+CPU and memory limits rather than host-wide totals reported by `/proc`.
+The GitHub Actions samples use standard `ubuntu-24.04` hosted runners; their
+logs do not establish an exact CPU model or memory allocation, so the cloud
+resource values above must not be attributed to those runners. Their dates,
+checked-out revisions, and workflow links are recorded below.
+
+### Measurement evidence
+
+- **Codex cloud fresh setup:** measured on 2026-10-24 at `929f45018`, with
+  this change's provisioning fixes and no verifier changes. The host is Debian
+  13; the isolated container is Ubuntu 24.04, with a four-core CPU quota,
+  16 GiB memory limit, and five Cargo jobs. No host compiler, tool, Cargo, or
+  build cache was mounted into it. The 6m01s setup sum includes base build tools,
+  rustup, the pinned Rust and LLVM toolchains, nextest, mdBook, repository
+  checkout, and failed setup attempts. The first plain gate then passed in
+  9m08s, including exporter builds and all 6,476 unit/API tests and four corpus
+  tests. The 15m09s total sums timed commands and excludes the agent's diagnostic
+  pauses; it was not one uninterrupted setup invocation. Provisioning the OS
+  image is also excluded.
+- **Fresh-setup fixes:** the cloud network denied `get.nexte.st`, so the
+  pinned nextest release was obtained from its official GitHub asset. Setup now
+  falls back to that URL automatically. Ubuntu's minimal image also omitted
+  manual files still listed by dpkg; the LLVM cache writer now skips missing
+  documentation while preserving installed documentation and failing on
+  missing compiler files. All setup attempts are counted above; no compiled
+  artifacts were imported to recover from those failures.
+- **Codex cloud unchanged run:** immediately following the fresh gate, using
+  the same Ubuntu container, compiler artifacts, verifier, and corpus, the
+  full gate passed in 4m50s. Nextest's cached build took 0.12s; unit/API tests
+  took 126.50s and the four fixture tests took 153.29s.
+- **Codex cloud small edit:** in that same container, with incremental state
+  retained, appending one temporary unit test to `src/lib.rs` made the next
+  full gate take 5m25s. The test asserts that `std::hint::black_box(2) + 2`
+  equals 4; it changes no verifier logic or proof input. The incremental test
+  build took 37.59s, and all 6,477 unit/API tests and four fixture tests passed.
+  The temporary test is a benchmark edit, not part of the repository.
+- **Codex cloud rebuild:** measured on 2026-10-23 at `929f45018` in
+  [PR #1920](https://github.com/clicklang/click/pull/1920). Rust 1.98.1,
+  five Cargo jobs, dependencies already compiled, Click rebuilt. The full gate
+  passed in 7m00s; compiler-process RSS peaked at 8.48 GiB. This is a substantial
+  rebuild observation, not a promise that every one-line edit takes seven
+  minutes.
+- **Claude Code cloud fresh setup:** measured on 2026-10-24 at `333383d71`,
+  in a Claude Code on the web session. A separate worktree had its own empty
+  `RUSTUP_HOME`, `CARGO_HOME`, `CLICK_TOOL_ROOT`, Cargo registry, and
+  `target/`. The 4m32s setup sum is rustup 0.5s, Rust 1.98.1 12.4s, Charon's
+  nightly toolchain 24.4s, nextest 0.9.143 from its GitHub release 1.0s,
+  mdBook built by `scripts/install-tools.sh` 80.7s, and the official LLVM
+  19.1.7 Linux x86-64 release tarball downloaded and unpacked (8.2 GiB) in
+  152.9s. At that revision, `scripts/setup-environment.sh` could not complete
+  there because the session network denies `apt.llvm.org`; setup now installs
+  the same release, extracting 2.5 GiB of it, in 161s. The exporter was then
+  built against the image's preinstalled `/usr/lib/llvm-19`, the same release;
+  GCC came with the image. About 3s of benchmark-script errors are excluded. The first plain
+  gate passed in 19m47s: Charon build 1m24s, test build including crate
+  downloads 5m58s, 6,524 unit/API tests 316.06s, four fixture tests 340.41s.
+- **Claude Code cloud rebuild, unchanged, and small edit:** measured on
+  2026-10-24 in the same worktree at `929f45018`, starting from the
+  `333383d71` build state. Only `clicklang` recompiled; the gate passed in
+  17m13s with a 6m46s test build. The immediately repeated gate passed in
+  9m37s: test build 0.17s, 6,476 unit/API tests 248.61s, four fixture tests
+  306.87s. Appending the same temporary `black_box` test as the Codex small
+  edit to `src/lib.rs` made the next gate take 10m56s, with a 79s incremental
+  test build and 6,477 unit/API tests. At `333383d71`, the unchanged gate took
+  10m06s, and appending one unused function to `src/kernel/spec.rs` took
+  11m21s with a 56.92s incremental build.
+- **GitHub Actions cached edit:** the successful
+  [tests run for PR #1963](https://github.com/clicklang/click/actions/runs/40110835408)
+  on 2026-10-24 took 6m11s from the first `scope` job log to the final `test`
+  check, testing merge commit `9588023c0`. It restored tool caches and the
+  compatible `master` build snapshot.
+  Preparation took 3m41s, including cache restore, exporter work, a 51.80s test
+  build, and artifact upload. Shards and orchestration completed the remaining
+  time. The interval excludes initial runner queue time but includes waits
+  between jobs and artifact transfers.
+- **GitHub Actions unchanged source:** the successful
+  [merge-queue run for PR #1960](https://github.com/clicklang/click/actions/runs/40110304932)
+  on 2026-10-24 took 6m15s by the same clock. Its checked-out commit
+  `7c8dfce80` and the preceding PR run's checked-out merge commit `879f26cb5`
+  both have Git tree `0ab69065245b88683a3c519f17edf64107f73ba1`.
+  Tool caches hit and the build snapshot came from `master` at `10cb3a2e7`.
+  Preparation took 3m53s, including a 27.52s test build. This is a measured
+  same-source workflow, rather than an assumption that a queue run has the
+  same source as its PR run.
+- **GitHub Actions Cargo-cold comparison:** the successful
+  [tests run for PR #1920](https://github.com/clicklang/click/actions/runs/40022592662)
+  on 2026-10-23 took 9m40s by the same clock. Its Cargo build-cache lookup
+  missed, but LLVM, Charon compiler-runtime, nextest, and documentation-tool
+  caches hit. This is **not** a fully fresh-machine measurement. Preparation
+  took 7m12s, including a 3m50s test build and artifact upload.
+
+### Updating the baselines
+
+Pin one revision for a comparison. Record the OS, architecture, effective CPU
+quota, memory limit, Rust/tool versions, Cargo job count, frontend availability,
+source diff, exact commands, cache state, elapsed wall time, and exit status.
+Keep measured results distinct from estimates. Do not measure competing builds
+at the same time, silently omit unavailable frontends, increase stack or work
+limits, or treat an interrupted or failing run as a passing baseline.
+
+For a fresh measurement, isolate the checkout and all caches in a disposable
+machine or container; do not clear another developer's working caches. Time
+setup and the gate separately, then add them for the first-run total. Retain
+those caches for the unchanged and edit measurements. For CI, inspect cache-hit
+logs and the complete workflow interval; summing parallel job durations does
+not measure how long a user waits. Record a fresh row only when tools as well
+as Cargo artifacts were absent. A retry of CI still uses a new hosted runner
+and can restore remote caches; it is not equivalent to a local unchanged run.
+
 ## One verifier build in the budgeted gate
 
 The ordinary `scripts/check.sh` gate compiles only the library test target,
@@ -513,7 +703,8 @@ prerequisites for the full gate once per machine with
 use `scripts/setup-environment.sh --docs-only` to skip the LLVM packages used
 only by the full gate. The setup script installs the Rust toolchain pinned in
 `rust-toolchain.toml`, cargo-nextest, the pinned mdBook, and (on Ubuntu 24.04)
-the pinned LLVM development packages. `scripts/check.sh` only looks tools up
+the pinned LLVM development packages, or the pinned LLVM release where
+`apt.llvm.org` is unreachable. `scripts/check.sh` only looks tools up
 and never reaches the network. Then run:
 
 ```console

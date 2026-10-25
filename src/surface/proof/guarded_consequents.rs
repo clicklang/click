@@ -16,6 +16,7 @@
 //! exactly available (`try_discharged_consequent_closure`).
 
 use super::*;
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use std::cell::Cell;
 
@@ -582,23 +583,34 @@ impl GuardedTermSpeller<'_, '_> {
         let binary = |left: &Bitvector32Term, right: &Bitvector32Term| {
             Some((Box::new(self.term(left)?), Box::new(self.term(right)?)))
         };
-        let composite =
-            match term {
-                Bitvector32Term::Add(left, right) => {
-                    binary(left, right).map(|(left, right)| ContractExpression::Add(left, right))
-                }
-                Bitvector32Term::Subtract(left, right) => binary(left, right)
-                    .map(|(left, right)| ContractExpression::Subtract(left, right)),
-                Bitvector32Term::Multiply(left, right)
-                | Bitvector32Term::Int64Multiply(left, right) => binary(left, right)
-                    .map(|(left, right)| ContractExpression::Multiply(left, right)),
-                Bitvector32Term::Int64Add(left, right) => {
-                    binary(left, right).map(|(left, right)| ContractExpression::Add(left, right))
-                }
-                Bitvector32Term::Int64Subtract(left, right) => binary(left, right)
-                    .map(|(left, right)| ContractExpression::Subtract(left, right)),
-                _ => None,
-            };
+        let composite = match term {
+            Bitvector32Term::Add(left, right) => {
+                binary(left, right).map(|(left, right)| ContractExpression::Add(left, right))
+            }
+            Bitvector32Term::Subtract(left, right) => {
+                binary(left, right).map(|(left, right)| ContractExpression::Subtract(left, right))
+            }
+            Bitvector32Term::Multiply(left, right)
+            | Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Multiply,
+                left,
+                right,
+            } => binary(left, right).map(|(left, right)| ContractExpression::Multiply(left, right)),
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Add,
+                left,
+                right,
+            } => binary(left, right).map(|(left, right)| ContractExpression::Add(left, right)),
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Subtract,
+                left,
+                right,
+            } => binary(left, right).map(|(left, right)| ContractExpression::Subtract(left, right)),
+            _ => None,
+        };
         composite
             .or_else(|| {
                 synthesize_surface_machine_expression(

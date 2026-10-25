@@ -3074,6 +3074,10 @@ pub(crate) fn canonicalized_offset_index_term(
     bits: Bitvector32Term,
     facts: &mut ExecutionFacts,
 ) -> Bitvector32Term {
+    // An element index is a 32-bit word in `int32` index coordinates, so
+    // the address takes the index's word: a sign-cleared `unsigned` index's
+    // σ to `int32` indexes by the word itself (rule K3).
+    let bits = bits.into_word32();
     if !term_mentions_a_memory_load(&bits) {
         return bits;
     }
@@ -5852,10 +5856,12 @@ mod tests {
         for kind in [PointerIntegerKind::Exact, PointerIntegerKind::Tagged] {
             let bits = Bitvector32Term::pointer_address(target.clone());
             let bits = if kind == PointerIntegerKind::Tagged {
-                Bitvector32Term::UInt64BitwiseOr(
-                    Box::new(bits),
-                    Box::new(Bitvector32Term::UInt64Constant(1)),
-                )
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::BitwiseOr,
+                    left: Box::new(bits),
+                    right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                }
             } else {
                 bits
             };

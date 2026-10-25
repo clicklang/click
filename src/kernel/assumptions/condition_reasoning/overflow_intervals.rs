@@ -75,6 +75,96 @@ impl PureFactContext {
         bounded.then_some((lower, upper))
     }
 
+    /// The `uint32` counterpart of [`Self::indexed_constant_interval`]: the
+    /// unsigned range of `term` its own recorded constant `uint32` order
+    /// bounds give, read from `uint32_order_bounds` at the term's canonical
+    /// form. `None` when no constant bound is filed there.
+    pub(in crate::kernel) fn indexed_unsigned32_constant_interval(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Option<(i64, i64)> {
+        let term = crate::kernel::eval::canonical_term(term);
+        let bounds = self.uint32_order_bounds.get(&term)?;
+        let mut lower = 0;
+        let mut upper = i64::from(u32::MAX);
+        let mut bounded = false;
+        for (_, other, strict, is_upper) in bounds.keys() {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(value) = other.as_const().map(i64::from) else {
+                continue;
+            };
+            bounded = true;
+            match (is_upper, strict) {
+                (true, true) => upper = upper.min(value - 1),
+                (true, false) => upper = upper.min(value),
+                (false, true) => lower = lower.max(value + 1),
+                (false, false) => lower = lower.max(value),
+            }
+        }
+        bounded.then_some((lower, upper))
+    }
+
+    /// The exact `uint32` order facts that bound `term` by a constant,
+    /// indexed under `term` itself, each returned as the condition fact the
+    /// context holds so a certificate can cite it: the `uint32` counterpart
+    /// of [`Self::signed_constant_bound_facts`]'s order bounds. Keyed lookups
+    /// on `term` only.
+    pub(crate) fn unsigned32_constant_bound_facts(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Vec<Proposition> {
+        let mut facts = Vec::new();
+        let Some(bounds) = self.uint32_order_bounds.get(term) else {
+            return facts;
+        };
+        for (endpoint, other, strict, is_upper) in bounds.keys() {
+            crate::instrumentation::record_deterministic_work(1);
+            if endpoint != term || other.as_const().is_none() {
+                continue;
+            }
+            let (lower, upper) = if *is_upper {
+                (endpoint.clone(), other.clone())
+            } else {
+                (other.clone(), endpoint.clone())
+            };
+            let order = |relation: CompareRelation, reversed: bool| {
+                let (left, right) = if reversed {
+                    (upper.clone(), lower.clone())
+                } else {
+                    (lower.clone(), upper.clone())
+                };
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::UInt32,
+                    relation,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                }
+            };
+            let forms = if *strict {
+                [
+                    (order(CompareRelation::LessThan, false), true),
+                    (order(CompareRelation::GreaterThan, true), true),
+                    (order(CompareRelation::LessEqual, true), false),
+                    (order(CompareRelation::GreaterEqual, false), false),
+                ]
+            } else {
+                [
+                    (order(CompareRelation::LessEqual, false), true),
+                    (order(CompareRelation::GreaterEqual, true), true),
+                    (order(CompareRelation::LessThan, true), false),
+                    (order(CompareRelation::GreaterThan, false), false),
+                ]
+            };
+            if let Some((condition, value)) = forms
+                .into_iter()
+                .find(|(condition, value)| self.condition_facts.get(condition) == Some(value))
+            {
+                facts.push(Proposition::ConditionIs(condition, value));
+            }
+        }
+        facts
+    }
+
     /// The tightest constant bound on `term` that a chain of recorded int32
     /// order facts reaches: an upper bound (`upper`) from `term <= a < b <= c`
     /// ending at a constant, or a lower bound from a chain ending below
@@ -726,11 +816,9 @@ impl PureFactContext {
             return (value as i64, value as i64);
         }
         let mut range = (0, u32::MAX as i64);
-        let biased =
-            Bitvector32Term::bitwise_xor(term.clone(), Bitvector32Term::Constant(0x8000_0000));
-        if let Some((lo, hi)) = self.indexed_constant_interval(&biased) {
-            range.0 = range.0.max(lo + 0x8000_0000);
-            range.1 = range.1.min(hi + 0x8000_0000);
+        if let Some((lo, hi)) = self.indexed_unsigned32_constant_interval(term) {
+            range.0 = range.0.max(lo);
+            range.1 = range.1.min(hi);
         }
         if let Some((lo, hi)) = self.indexed_constant_interval(term)
             && (lo >= 0 || range.1 <= i32::MAX as i64)
@@ -764,18 +852,21 @@ impl PureFactContext {
         else {
             return None;
         };
-        let Bitvector32Term::Int64Add(a, b) = left.as_ref() else {
+        let Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Add,
+            left: a,
+            right: b,
+        } = left.as_ref()
+        else {
             return None;
         };
         let a_operand = Self::widened_unsigned_operand(a)?;
         let b_operand = Self::widened_unsigned_operand(b)?;
         let mut premises = Vec::new();
         for operand in [a_operand, b_operand].into_iter().flatten() {
-            let biased = crate::kernel::eval::canonical_term(&Bitvector32Term::bitwise_xor(
-                operand.clone(),
-                Bitvector32Term::Constant(0x8000_0000),
-            ));
-            let unsigned = self.signed_constant_bound_facts(SignedDefinedWidth::Int32, &biased);
+            let unsigned =
+                self.unsigned32_constant_bound_facts(&crate::kernel::eval::canonical_term(operand));
             let signed = self.signed_constant_bound_facts(
                 SignedDefinedWidth::Int32,
                 &crate::kernel::eval::canonical_term(operand),
@@ -784,8 +875,8 @@ impl PureFactContext {
                 premises.extend(signed);
             } else {
                 let unsigned_upper = self
-                    .indexed_constant_interval(&biased)
-                    .map_or(u32::MAX as i64, |(_, upper)| upper + 0x8000_0000);
+                    .indexed_unsigned32_constant_interval(operand)
+                    .map_or(u32::MAX as i64, |(_, upper)| upper);
                 premises.extend(unsigned);
                 premises.extend(signed.into_iter().filter(|premise| {
                     if unsigned_upper > i32::MAX as i64 {
@@ -818,7 +909,13 @@ impl PureFactContext {
         else {
             return None;
         };
-        let Bitvector32Term::Int64Add(a, b) = left.as_ref() else {
+        let Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Add,
+            left: a,
+            right: b,
+        } = left.as_ref()
+        else {
             return None;
         };
         let a_operand = Self::widened_unsigned_operand(a)?;

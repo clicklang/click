@@ -147,11 +147,8 @@ impl PureFactContext {
     }
 
     /// Whether a signed bound between a plain variable `t` and a constant
-    /// follows from an unsigned order chain on `t`, read in the biased
-    /// encoding [`ConditionTerm::unsigned_less_than`] writes unsigned order
-    /// in: `t <u n` is `(t ^ 2^31) <s (n ^ 2^31)`, so an unsigned chain
-    /// `t <u n`, `n <=u 4` is the signed chain `t ^ 2^31 < n ^ 2^31 <=
-    /// 4 ^ 2^31`, which the order walk composes as it does any signed chain.
+    /// follows from a `uint32` order chain on `t`, which the difference graph
+    /// composes in its unsigned domain (`t <u n`, `n <=u 4` gives `t <u 4`):
     ///
     /// * `c <= t` for `c <= 0` (or `c < t` for `c < 0`) holds when
     ///   `t <=u INT_MAX`: the sign bit of `t` is clear, so `0 <= t`.
@@ -159,20 +156,17 @@ impl PureFactContext {
     ///   `t <=u c` (or `t <u c`): `t` lies in `0..=c` (or `0..c`), where the
     ///   unsigned and signed readings agree.
     ///
-    /// Only the flipped spelling `t ^ 2^31` is walked, and the walk matches
-    /// endpoints by spelling, so a signed fact on `t` itself is a different
-    /// endpoint: a chain mixing `t <u n` with a signed `n < 4` does not
-    /// compose here. A wrapped bound (`t <u n - 1u` with `n` possibly zero)
-    /// is the flipped atom `(n - 1) ^ 2^31`, which no rule relates to
-    /// `n ^ 2^31`. One difference-graph query from `t ^ 2^31`
-    /// ([`Self::difference_graph_proves_order`]).
+    /// The chain is walked over unsigned facts alone: a chain mixing
+    /// `t <u n` with a signed `n < 4` does not compose here. A wrapped bound
+    /// (`t <u n - 1u` with `n` possibly zero) is a different value from `n`.
+    /// One difference-graph query from `t`
+    /// ([`Self::difference_graph_proves`]).
     fn signed_bound_from_unsigned_order(
         &self,
         lower: &Bitvector32Term,
         upper: &Bitvector32Term,
         strict: bool,
     ) -> bool {
-        const SIGN_BIT: u32 = 0x8000_0000;
         let (term, target, walk_strict) = match (
             signed_bitvector_constant(lower),
             signed_bitvector_constant(upper),
@@ -190,22 +184,20 @@ impl PureFactContext {
         {
             return false;
         }
-        let flipped =
-            Bitvector32Term::bitwise_xor(term.clone(), Bitvector32Term::Constant(SIGN_BIT));
-        // A walk needs an edge out of the flipped atom: an unsigned upper
-        // bound on `t`. Asked by key first, so a signed question about a
-        // variable no unsigned bound names costs one lookup, not the filing
-        // of the fact set the walk reads.
+        // A walk needs an unsigned upper bound on `t`. Asked by key first,
+        // so a signed question about a variable no unsigned bound names
+        // costs one lookup, not the filing of the fact set the walk reads.
         let has_unsigned_bound = self
-            .signed_order_bounds
-            .get(&crate::kernel::eval::canonical_term(&flipped))
+            .uint32_order_bounds
+            .get(&crate::kernel::eval::canonical_term(term))
             .is_some_and(|bounds| bounds.iter().any(|((_, _, _, below), _)| *below));
+        let target = Bitvector32Term::Constant(target);
         has_unsigned_bound
-            && self.difference_graph_proves_order(
-                &flipped,
-                &Bitvector32Term::Constant(target ^ SIGN_BIT),
-                walk_strict,
-            )
+            && self.difference_graph_proves(&if walk_strict {
+                ConditionTerm::unsigned_less_than(term.clone(), target)
+            } else {
+                ConditionTerm::unsigned_less_equal(term.clone(), target)
+            })
     }
 
     fn decide_from_order_rules(&self, condition: &ConditionTerm) -> Option<bool> {
@@ -406,6 +398,11 @@ impl PureFactContext {
                     None
                 }
             }
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt32,
+                relation,
+                ..
+            } if *relation != CompareRelation::Equal => self.decide_unsigned32_order(condition),
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -693,6 +690,65 @@ impl PureFactContext {
         }
     }
 
+    /// The order rules of a `uint32` order: equal operands, constants an
+    /// equality pins, the extremes `0` and `UINT32_MAX`, the difference
+    /// graph's unsigned domain, the fact itself in any of its spellings, and
+    /// one recorded bound of either operand ([`Self::has_unsigned32_bound_between`]).
+    /// Each is tried for the order and for its converse, which refutes it.
+    fn decide_unsigned32_order(&self, condition: &ConditionTerm) -> Option<bool> {
+        let (lower, upper, strict) = held_order_at(MachineIntegerType::UInt32, condition, true)?;
+        if lower == upper {
+            return Some(!strict);
+        }
+        if let (Some(lower), Some(upper)) = (
+            self.signed_constant_known_equal(lower),
+            self.signed_constant_known_equal(upper),
+        ) {
+            let (lower, upper) = (lower as u32, upper as u32);
+            return Some(if strict {
+                lower < upper
+            } else {
+                lower <= upper
+            });
+        }
+        let holds = |lower: &Bitvector32Term, upper: &Bitvector32Term, strict: bool| {
+            let (low, high) = (lower.as_const(), upper.as_const());
+            if !strict && (low == Some(0) || high == Some(u32::MAX)) {
+                return true;
+            }
+            if strict && (high == Some(0) || low == Some(u32::MAX)) {
+                return false;
+            }
+            let order = OrderKind::Unsigned32.order(lower.clone(), upper.clone(), strict);
+            self.difference_graph_proves(&order)
+                || crate::kernel::proof::fact_reasoning::order_claim_forms(
+                    &Proposition::ConditionIs(order, true),
+                )
+                .iter()
+                .any(|form| {
+                    matches!(form, Proposition::ConditionIs(condition, value)
+                        if self.condition_facts.get(condition) == Some(value))
+                })
+                || (strict
+                    && self.has_condition_fact(
+                        ConditionTerm::unsigned_less_equal(lower.clone(), upper.clone()),
+                        true,
+                    )
+                    && self.has_condition_fact(
+                        ConditionTerm::equal(lower.clone(), upper.clone()),
+                        false,
+                    ))
+                || self.has_unsigned32_bound_between(lower, upper, strict)
+        };
+        if holds(lower, upper, strict) {
+            Some(true)
+        } else if holds(upper, lower, !strict) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
     /// Query equality already known to the trusted graph. This performs no
     /// arithmetic proof search, alias-component walk, or resource check.
     /// `false` means unknown, not unequal. Memory consumers must retain their
@@ -728,14 +784,23 @@ impl PureFactContext {
         right: &Bitvector32Term,
         require_strict: bool,
     ) -> bool {
-        let condition = order_condition(left.clone(), right.clone(), require_strict);
+        self.difference_graph_proves(&order_condition(
+            left.clone(),
+            right.clone(),
+            require_strict,
+        ))
+    }
+
+    /// Whether the difference graph of these facts proves `condition`
+    /// ([`Self::difference_graph_proves_order`]), at any format it orders.
+    pub(in crate::kernel) fn difference_graph_proves(&self, condition: &ConditionTerm) -> bool {
         let graph = self.difference_graph.graph(|| {
             self.condition_facts
                 .scan_for_upkeep()
                 .map(|(condition, value)| (condition, *value))
                 .collect()
         });
-        graph.decide(&condition) == Some(true)
+        graph.decide(condition) == Some(true)
     }
 
     #[cfg(test)]
@@ -843,9 +908,8 @@ impl PureFactContext {
         None
     }
 
-    /// The exact 64-bit order facts that chain `left` up to `right`, of one
-    /// kind: unsigned `uint64` facts when `unsigned`, signed `int64` ones
-    /// otherwise. Each step keeps the proposition the context holds, as
+    /// The exact order facts at `format`, one of [`WIDE_ORDER_FORMATS`], that
+    /// chain `left` up to `right`. Each step keeps the proposition the context holds, as
     /// [`Self::exact_signed_order_path_evidence`] does for `int32`. The chain
     /// meets `right` at the same canonical term; a constant connection is
     /// left to other rules, since `simp` writes no lemma for it.
@@ -854,7 +918,7 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
         require_strict: bool,
-        unsigned: bool,
+        format: MachineIntegerType,
     ) -> Option<Vec<SignedOrderDerivationStep>> {
         let canonical = crate::kernel::eval::canonical_term;
         // The facts of this kind filed under the node's canonical form, the
@@ -862,13 +926,13 @@ impl PureFactContext {
         // reverse of the facts' own order as before.
         let edges_from = |current: &Bitvector32Term| {
             self.order_facts_by_lower
-                .wide_from(unsigned, current)
+                .wide_from(format, current)
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .rev()
                 .filter_map(|condition| {
                     let value = *self.condition_facts.get(condition)?;
-                    wide_order_fact(condition, value, unsigned).map(|(lower, upper, strict)| {
+                    wide_order_fact(condition, value, format).map(|(lower, upper, strict)| {
                         SignedOrderDerivationStep {
                             lower,
                             upper,
@@ -1011,8 +1075,8 @@ impl PureFactContext {
         if value && self.decide_from_variable_chain(condition) == Some(true) {
             return true;
         }
-        // The biased spelling of an unsigned bound below the sign bit is the
-        // signed pair `0 <= term` and `term <= bound`, read the same way the
+        // A `uint32` bound below the sign bit is the signed pair
+        // `0 <= term` and `term <= bound`, read the same way the
         // condition checker reads it (`unsigned_upper_bound_below_sign_bit`),
         // so the two provers agree on what a range's extent guard means.
         if value
@@ -1392,7 +1456,13 @@ impl PureFactContext {
         } else {
             return None;
         };
-        let Bitvector32Term::UInt64BitwiseAnd(first, second) = masked else {
+        let Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::BitwiseAnd,
+            left: first,
+            right: second,
+        } = masked
+        else {
             return None;
         };
         let (value, mask) = match (first.uint64_as_const(), second.uint64_as_const()) {
@@ -1502,14 +1572,9 @@ fn split_constant_displacement(
     (base, displacement)
 }
 
-/// The operand, inclusive bound, and source strictness of an unsigned upper
-/// bound `x <=u c` (or `x <u c + 1`) whose bound `c` lies below the sign bit,
-/// read back from the
-/// biased encoding [`ConditionTerm::unsigned_less_equal`] builds:
-/// `(x ^ 2^31) <=s (c ^ 2^31)`, held with `value`: the mirrored
-/// `(c ^ 2^31) >s (x ^ 2^31)` and the refuted converses (a false
-/// `(x ^ 2^31) >s c'`) read the same way [`condition_as_order_fact`] reads
-/// them.
+/// The operand, inclusive bound, and source strictness of a `uint32` upper
+/// bound `x <=u c` (or `x <u c + 1`) held with `value`, in either
+/// orientation or polarity, whose bound `c` lies below the sign bit.
 ///
 /// Such a bound means exactly `0 <= x` and `x <= c` in signed arithmetic: a
 /// word no larger than `c < 2^31` as unsigned has a clear sign bit, and for a
@@ -1523,96 +1588,13 @@ pub(in crate::kernel) fn unsigned_upper_bound_below_sign_bit(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(&Bitvector32Term, u32, bool)> {
-    const SIGN_BIT: u32 = 0x8000_0000;
-    // `(lower, upper, strict)`: the held fact is `lower < upper` when
-    // strict and `lower <= upper` otherwise.
-    let (left, right, strict) = match (condition, value) {
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left: a,
-                right: b,
-            },
-            true,
-        )
-        | (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left: a,
-                right: b,
-            },
-            false,
-        ) => (a, b, false),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left: a,
-                right: b,
-            },
-            true,
-        )
-        | (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left: a,
-                right: b,
-            },
-            false,
-        ) => (a, b, true),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left: a,
-                right: b,
-            },
-            true,
-        )
-        | (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left: a,
-                right: b,
-            },
-            false,
-        ) => (b, a, false),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left: a,
-                right: b,
-            },
-            true,
-        )
-        | (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left: a,
-                right: b,
-            },
-            false,
-        ) => (b, a, true),
-        _ => return None,
-    };
-    let term = match left.as_ref() {
-        Bitvector32Term::BitwiseXor(a, b) => match (a.as_ref(), b.as_ref()) {
-            (Bitvector32Term::Constant(SIGN_BIT), term)
-            | (term, Bitvector32Term::Constant(SIGN_BIT)) => term,
-            _ => return None,
-        },
-        _ => return None,
-    };
-    let biased = right.as_const()?;
-    let bound = biased ^ SIGN_BIT;
+    let (left, right, strict) = held_order_at(MachineIntegerType::UInt32, condition, value)?;
+    if left.as_const().is_some() {
+        return None;
+    }
+    let bound = right.as_const()?;
     let bound = if strict { bound.checked_sub(1)? } else { bound };
-    (bound <= i32::MAX as u32).then_some((term, bound, strict))
+    (bound <= i32::MAX as u32).then_some((left, bound, strict))
 }
 
 /// The operand, inclusive bound, and source strictness of a sixty-four-bit
@@ -1888,41 +1870,38 @@ thread_local! {
     static EXACT_ORDER_EVIDENCE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-pub(in crate::kernel) fn condition_as_uint64_order_fact(
+/// An order fact at `format`, held with `value`, as the references
+/// `(lower, upper, strict)` for `lower < upper` (strict) or `lower <=
+/// upper`: `>` and `>=` swap their operands, and a false order is the
+/// reversed order with the opposite strictness. Constant-size match.
+pub(in crate::kernel) fn held_order_at(
+    format: MachineIntegerType,
     condition: &ConditionTerm,
     value: bool,
-) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
-    let (left, right, lower_first, strict) = match condition {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::LessThan,
-            left: a,
-            right: b,
-        } => (a, b, true, true),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::LessEqual,
-            left: a,
-            right: b,
-        } => (a, b, true, false),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::GreaterThan,
-            left: a,
-            right: b,
-        } => (a, b, false, true),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::GreaterEqual,
-            left: a,
-            right: b,
-        } => (a, b, false, false),
-        _ => return None,
+) -> Option<(&Bitvector32Term, &Bitvector32Term, bool)> {
+    let ConditionTerm::Compare {
+        format: condition_format,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    if *condition_format != format {
+        return None;
+    }
+    let (lower_first, strict) = match relation {
+        CompareRelation::LessThan => (true, true),
+        CompareRelation::LessEqual => (true, false),
+        CompareRelation::GreaterThan => (false, true),
+        CompareRelation::GreaterEqual => (false, false),
+        CompareRelation::Equal => return None,
     };
     let (lower, upper) = if lower_first {
-        (left.as_ref().clone(), right.as_ref().clone())
+        (left.as_ref(), right.as_ref())
     } else {
-        (right.as_ref().clone(), left.as_ref().clone())
+        (right.as_ref(), left.as_ref())
     };
     Some(if value {
         (lower, upper, strict)
@@ -1931,18 +1910,42 @@ pub(in crate::kernel) fn condition_as_uint64_order_fact(
     })
 }
 
-/// A 64-bit order fact of one kind as `(lower, upper, strict)`: an unsigned
-/// `uint64` comparison when `unsigned`, a signed `int64` one otherwise.
+pub(in crate::kernel) fn condition_as_uint64_order_fact(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
+    held_order_at(MachineIntegerType::UInt64, condition, value)
+        .map(|(lower, upper, strict)| (lower.clone(), upper.clone(), strict))
+}
+
+/// The `uint32` counterpart of [`condition_as_uint64_order_fact`].
+pub(in crate::kernel) fn condition_as_uint32_order_fact(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
+    held_order_at(MachineIntegerType::UInt32, condition, value)
+        .map(|(lower, upper, strict)| (lower.clone(), upper.clone(), strict))
+}
+
+/// The formats whose order facts the format-indexed order walk
+/// ([`PureFactContext::exact_wide_order_path_evidence`]) follows: the 64-bit
+/// orders and the `uint32` order. The `int32` order has its own walk
+/// ([`PureFactContext::exact_signed_order_path_evidence`]).
+pub(in crate::kernel) const WIDE_ORDER_FORMATS: [MachineIntegerType; 3] = [
+    MachineIntegerType::UInt64,
+    MachineIntegerType::Int64,
+    MachineIntegerType::UInt32,
+];
+
+/// An order fact at `format`, one of [`WIDE_ORDER_FORMATS`], as `(lower,
+/// upper, strict)`.
 pub(in crate::kernel) fn wide_order_fact(
     condition: &ConditionTerm,
     value: bool,
-    unsigned: bool,
+    format: MachineIntegerType,
 ) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
-    if unsigned {
-        condition_as_uint64_order_fact(condition, value)
-    } else {
-        crate::kernel::reasoning::order_reasoning::condition_as_int64_order_fact(condition, value)
-    }
+    held_order_at(format, condition, value)
+        .map(|(lower, upper, strict)| (lower.clone(), upper.clone(), strict))
 }
 
 impl PureFactContext {
@@ -1963,7 +1966,12 @@ impl PureFactContext {
         // `x - c` for a constant `c` fits where `x` does and the
         // difference does not wrap, `c <= x`. Both are 64-bit facts about
         // `x` itself.
-        if let Bitvector32Term::UInt64Subtract(minuend, subtrahend) = term
+        if let Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Subtract,
+            left: minuend,
+            right: subtrahend,
+        } = term
             && subtrahend.uint64_as_const().is_some()
         {
             return self.uint64_index_fits_int32(minuend)

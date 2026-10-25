@@ -24,6 +24,30 @@ thread_local! {
 /// when a decision is already open under a bound search.
 struct NestedBoundSearch;
 
+/// The 32-bit order a bound search reads: signed, from
+/// `signed_order_bounds`, or unsigned, from `uint32_order_bounds`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::kernel) enum OrderKind {
+    Signed32,
+    Unsigned32,
+}
+
+impl OrderKind {
+    /// The order condition `lower < upper` (strict) or `lower <= upper`.
+    pub(in crate::kernel) fn order(
+        self,
+        lower: Bitvector32Term,
+        upper: Bitvector32Term,
+        strict: bool,
+    ) -> ConditionTerm {
+        match (self, strict) {
+            (Self::Signed32, _) => order_condition(lower, upper, strict),
+            (Self::Unsigned32, true) => ConditionTerm::unsigned_less_than(lower, upper),
+            (Self::Unsigned32, false) => ConditionTerm::unsigned_less_equal(lower, upper),
+        }
+    }
+}
+
 impl NestedBoundSearch {
     fn enter() -> Option<Self> {
         (!BOUND_SEARCH_DECIDING.with(|deciding| deciding.replace(true))).then_some(Self)
@@ -227,6 +251,30 @@ impl PureFactContext {
             );
             values.pop();
         }
+    }
+
+    /// Whether a recorded `uint32` bound proves `lower < upper` (strict) or
+    /// `lower <= upper`: an upper bound of `lower` at or below `upper`, or a
+    /// lower bound of `upper` at or above `lower`, each judged as
+    /// [`Self::bound_proves_order_in`] judges, so the search never recurses
+    /// along a chain of bounds.
+    pub(in crate::kernel) fn has_unsigned32_bound_between(
+        &self,
+        lower: &Bitvector32Term,
+        upper: &Bitvector32Term,
+        strict: bool,
+    ) -> bool {
+        let kind = OrderKind::Unsigned32;
+        self.bounds_for_search(kind, lower, true)
+            .into_iter()
+            .any(|(bound, bound_strict)| {
+                self.bound_proves_order_in(kind, &bound, upper, strict && !bound_strict)
+            })
+            || self.bounds_for_search(kind, upper, false).into_iter().any(
+                |(bound, bound_strict)| {
+                    self.bound_proves_order_in(kind, lower, &bound, strict && !bound_strict)
+                },
+            )
     }
 
     /// Whether a recorded upper bound of `left` lies at or below `right`
@@ -511,27 +559,7 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> Vec<(Bitvector32Term, bool)> {
-        let canonical = crate::kernel::eval::canonical_term(term);
-        let keys = if canonical == *term {
-            vec![canonical]
-        } else {
-            vec![term.clone(), canonical]
-        };
-        let mut bounds = Vec::new();
-        for key in keys {
-            let Some(entries) = self.signed_order_bounds.get(&key) else {
-                continue;
-            };
-            for (_, other, strict, own_is_lower) in entries.keys() {
-                crate::instrumentation::record_deterministic_work(1);
-                #[cfg(test)]
-                LOWER_BOUND_CANDIDATE_VISITS.with(|visits| visits.set(visits.get() + 1));
-                if !*own_is_lower && !bounds.contains(&(other.clone(), *strict)) {
-                    bounds.push((other.clone(), *strict));
-                }
-            }
-        }
-        bounds
+        self.bounds_for_search(OrderKind::Signed32, term, false)
     }
 
     /// The upper bounds of `term` as `(upper, strict)` for each true order
@@ -541,6 +569,23 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> Vec<(Bitvector32Term, bool)> {
+        self.bounds_for_search(OrderKind::Signed32, term, true)
+    }
+
+    /// The bounds of `term` in the order of `kind`, upper bounds when
+    /// `upper` and lower bounds otherwise, from that order's endpoint index
+    /// (`signed_order_bounds`, `uint32_order_bounds`) at `term` and its
+    /// canonical form.
+    pub(super) fn bounds_for_search(
+        &self,
+        kind: OrderKind,
+        term: &Bitvector32Term,
+        upper: bool,
+    ) -> Vec<(Bitvector32Term, bool)> {
+        let index = match kind {
+            OrderKind::Signed32 => &self.signed_order_bounds,
+            OrderKind::Unsigned32 => &self.uint32_order_bounds,
+        };
         let canonical = crate::kernel::eval::canonical_term(term);
         let keys = if canonical == *term {
             vec![canonical]
@@ -549,12 +594,16 @@ impl PureFactContext {
         };
         let mut bounds = Vec::new();
         for key in keys {
-            let Some(entries) = self.signed_order_bounds.get(&key) else {
+            let Some(entries) = index.get(&key) else {
                 continue;
             };
             for (_, other, strict, own_is_lower) in entries.keys() {
                 crate::instrumentation::record_deterministic_work(1);
-                if *own_is_lower && !bounds.contains(&(other.clone(), *strict)) {
+                #[cfg(test)]
+                if !upper {
+                    LOWER_BOUND_CANDIDATE_VISITS.with(|visits| visits.set(visits.get() + 1));
+                }
+                if *own_is_lower == upper && !bounds.contains(&(other.clone(), *strict)) {
                     bounds.push((other.clone(), *strict));
                 }
             }
@@ -574,19 +623,36 @@ impl PureFactContext {
         upper: &Bitvector32Term,
         strict: bool,
     ) -> bool {
-        if let (Some(lower), Some(upper)) = (
-            signed_bitvector_constant(lower),
-            signed_bitvector_constant(upper),
-        ) {
+        self.bound_proves_order_in(OrderKind::Signed32, lower, upper, strict)
+    }
+
+    /// [`Self::bound_proves_order`] in the order of `kind`.
+    pub(super) fn bound_proves_order_in(
+        &self,
+        kind: OrderKind,
+        lower: &Bitvector32Term,
+        upper: &Bitvector32Term,
+        strict: bool,
+    ) -> bool {
+        let constants = match kind {
+            OrderKind::Signed32 => {
+                signed_bitvector_constant(lower).zip(signed_bitvector_constant(upper))
+            }
+            OrderKind::Unsigned32 => lower
+                .as_const()
+                .map(i64::from)
+                .zip(upper.as_const().map(i64::from)),
+        };
+        if let Some((lower, upper)) = constants {
             return if strict {
                 lower < upper
             } else {
                 lower <= upper
             };
         }
-        let condition = order_condition(lower.clone(), upper.clone(), strict);
+        let condition = kind.order(lower.clone(), upper.clone(), strict);
         if self.exact_condition_value(&condition) == Some(true)
-            || self.difference_graph_proves_order(lower, upper, strict)
+            || self.difference_graph_proves(&condition)
         {
             return true;
         }

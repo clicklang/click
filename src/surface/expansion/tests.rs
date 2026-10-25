@@ -2454,7 +2454,7 @@ fn expanded_contract_let_facts_remain_source_indexable() {
     let click_source = r#"verifying "increment.c";
 int32 increment(int32 x) {
     let max: int32 = 2147483647;
-    let expected = x + 1;
+    let expected: int32 = x + 1;
     requires x < max;
     ensures result_value: result == expected by auto();
 }"#;

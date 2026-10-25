@@ -117,9 +117,8 @@ when the default misses or when a proof must not search.
   proof `if`, `cases` or `match` are checked once, never once per arm: the arms rejoin,
   keeping the facts every arm proved, or the split is refused. An arm that
   reaches function exit is a finished path, like each `return` of the C: the
-  closer that ends the proof, the implicit `auto` or a written `auto();`,
-  closes its remaining goals on that path, so a split that ends a proof
-  finishes each arm on its own.
+  implicit closer that ends the proof closes its remaining goals on that
+  path, so a split that ends a proof finishes each arm on its own.
 
 ## Automation and search
 
@@ -153,15 +152,14 @@ equate to one value, and reads the fields' equalities, or the constructors'
 mismatch, from it
 (`mdtests/simp_reads_definitions_and_constructor_equations.md`).
 Written
-as a step of a script, `auto();` does what the closer an omitted one stands for
-does at that point: it executes whatever C remains, including after explicit
-steps at a live frontier
-(`mdtests/auto_after_explicit_steps_executes_the_rest.md`), and closes every
-goal still open in its block, so a closer after it has no goal and is refused
-(`mdtests/auto_in_a_script_closes_every_open_goal.md`). In each arm of a proof
-`if` that ends a proof, it closes that arm's goals
-(`mdtests/auto_closes_each_arm_of_a_split_that_ends_a_proof.md`). A written
-`simp()` invokes `simp` alone. Successful smart tactics and `auto` retain the checked
+as a step of a script, `auto();` is the older spelling of `solve();`: it
+closes the first open goal (`mdtests/a_written_auto_closes_one_goal.md`). A
+script that stops with C left ends with the implicit tail, which executes
+whatever remains and closes every open goal
+(`mdtests/a_script_that_stops_after_explicit_steps_executes_the_rest.md`). In
+each arm of a proof `if` that ends a proof, the arm's own closer closes that
+arm's goals
+(`mdtests/auto_closes_each_arm_of_a_split_that_ends_a_proof.md`). Successful smart tactics and `auto` retain the checked
 surface provenance that `click expand` can render as an explicit proof.
 Source-premise selection skips synthesized candidates whose rendered
 propositions do not tokenize as Click, rather than counting a route through an
@@ -959,8 +957,8 @@ step is still checked.
 | --- | --- | --- | --- | --- |
 | `both { ... } and { ... }` | control | Expansion output | Prove both sides of a conjunction. | [Reference](#conjunctions) |
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
-| `simp()` | smart | Core | Search available facts and bounded simplification rules. | [Reference](#simplification) |
-| `simp() using { P; ... }` | smart | Specialized | Restrict simplification to written premises. | [Reference](#simplification-with-selected-premises) |
+| `solve()` | smart | Core | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
+| `solve() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
 | `assumption()` | simple | Expansion output | Close a goal directly from available facts. | [Reference](#available-facts) |
 | `extract(P)` | simple | Expansion output | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
@@ -1158,9 +1156,14 @@ state. Expansion preserves both certificates.
 
 ### Simplification
 
-**Form:** `simp()`
+**Form:** `solve()`, also spelled `simp()`
 
-**Core.** On a proposition goal, search ambient pure facts and bounded rules for
+`solve()` closes one goal and runs no C. `simp()` is an older spelling of the
+same tactic, still accepted. `by solve();` restates what an omitted proof of a
+`have` or a pure theorem's `ensures` does, but it is accepted: it marks a place
+to write a different tactic later.
+
+**Core. On a proposition goal, search ambient pure facts and bounded rules for
 a simple proof. A signed `int32` goal over variables is tried with one
 arithmetic certificate from the indexed bounds reachable from those variables (a
 bound `i < n` leads on to `n`'s bounds, up to eight variables), the same way in
@@ -1281,9 +1284,9 @@ search plus leaves.
 
 ### Simplification with selected premises
 
-**Form:** `simp() using { P; ... }`
+**Form:** `solve() using { P; ... }`, also spelled `simp() using { P; ... }`
 
-**Specialized.** Write it when `simp` picks the wrong premises or searches too
+**Specialized.** Write it when `solve` picks the wrong premises or searches too
 long, to restrict it to the named facts. On a proposition goal, including a
 contract claim after function exit, search using exactly the listed proposition
 facts. A preceding `have` is available on each outcome where it was proved;
@@ -1624,11 +1627,13 @@ arithmetic certificate for the current comparison or equality, in the signed
 
 The family is decided by the goal's own checked terms, never guessed from its
 spelling, and the two never coerce into each other. For `int32`, affine terms
-plus bounded products and constant remainder, shift, bit-mask, and sign-bit-flip
-terms are supported; the latter also checks unsigned constant bounds from
-explicit signed intervals, and sums `uint32` order premises over their
-sign-bit-flipped operands, so `x < n` and `n <= 4u32` give `x < 4u32` as the
-same `int32` chain would.
+plus bounded products and constant remainder, shift, and bit-mask terms are
+supported. A `uint32` order goal is checked in the same family from its
+operands' signed intervals, so explicit signed bounds `0 <= n` and
+`n <= 536870911` give `((uint32)n) <= 1073741823u32`. A chain of `uint32`
+order premises, such as `x < n` and `n <= 4u32` giving `x < 4u32`, is summed
+over the operands' `uint32` observations in the `Integer` family, as a
+`uint64` chain is.
 
 For `Integer`, the goal is a linear comparison or equality over Integer atoms,
 including opaque pure-function applications and range folds.
@@ -1828,7 +1833,10 @@ under these envelope rules common to the three forms:
   `interval_subtract`, `interval_multiply`, `interval_remainder`,
   `interval_remainder_add`, `interval_shift_left`,
   `interval_arithmetic_shift_right`, `interval_bitwise_and`,
-  `interval_sign_bit_flip`, `interval_compare`, and `interval_narrowed_cast`,
+  `interval_compare` (whose `ult` and `ule` comparisons conclude a `uint32`
+  order from the operands' signed intervals once each has a known sign,
+  [`a_signed_certificate_concludes_a_uint32_order_from_intervals_of_known_sign.md`](https://github.com/clicklang/click/blob/master/mdtests/a_signed_certificate_concludes_a_uint32_order_from_intervals_of_known_sign.md)),
+  and `interval_narrowed_cast`,
   which treats a C conversion into `int8`, `uint8`, `int16` or `uint16` of a
   32-bit-word operand as that operand when the operand's checked interval
   lies inside the destination range

@@ -408,6 +408,41 @@ struct RewriteBudget {
     simp_closures: usize,
 }
 
+/// How the rewrite search closes each goal it reaches.
+#[derive(Clone, Copy)]
+pub(in crate::surface::proof) enum RewriteClosers<'p> {
+    /// `assumption`, `normalize`, the direct logical closer, then a
+    /// bounded nested `simp`: the context's facts.
+    Ambient,
+    /// The direct logical closer, `simp`'s typed atomic closer and
+    /// `normalize`, for `simp`'s own premises: no nested `simp`, which
+    /// would select the same premises and search them again.
+    Selected,
+    /// `normalize` and an atomic plan over these premises alone, for
+    /// `simp() using`, which reads no ambient fact.
+    Listed(&'p [(Proposition, ClickProposition)]),
+}
+
+/// Whether `kernel` is an equality the `rewrite` step can use.
+fn is_rewrite_equality(kernel: &Proposition) -> bool {
+    matches!(
+        kernel,
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32 | MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                ..
+            },
+            true
+        ) | Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(_, _)
+                | ConditionTerm::PointerValueEqual(_, _)
+                | ConditionTerm::PointerOffsetEqual(_, _),
+            true
+        ) | Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+    )
+}
+
 /// An equality in both directions, each with its kernel form.
 fn oriented_forms(
     kernel: Proposition,
@@ -1123,6 +1158,44 @@ impl<'a> Proof<'a> {
             REWRITE_DEPTH,
             &mut seen,
             &mut budget,
+            RewriteClosers::Ambient,
+        )
+    }
+
+    /// The same search over equalities a step selected or listed instead
+    /// of the goal's connected facts: `simp`'s premises from its
+    /// derivation, or a `simp() using` list. Each equality is used at most
+    /// once, so the chain is as long as the list allows, and `closers`
+    /// says what may close a rewritten goal.
+    pub(in crate::surface::proof) fn try_premise_equality_chain_closure(
+        &self,
+        premise_pairs: &[(Proposition, ClickProposition)],
+        closers: RewriteClosers<'_>,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(goal) = self.goal() else {
+            return Ok(None);
+        };
+        let candidates = premise_pairs
+            .iter()
+            .filter(|(kernel, _)| is_rewrite_equality(kernel))
+            .take(REWRITE_EQUALITIES)
+            .map(|(kernel, surface)| oriented_forms(kernel.clone(), surface.clone()))
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+        let mut seen = std::collections::BTreeMap::from([(goal.clone(), candidates.len())]);
+        let mut budget = RewriteBudget {
+            attempts: REWRITE_ATTEMPTS,
+            simp_closures: REWRITE_SIMP_CLOSURES,
+        };
+        self.rewrite_search(
+            &candidates,
+            &mut vec![false; candidates.len()],
+            candidates.len(),
+            &mut seen,
+            &mut budget,
+            closers,
         )
     }
 
@@ -1703,6 +1776,7 @@ impl<'a> Proof<'a> {
         depth: usize,
         seen: &mut std::collections::BTreeMap<Proposition, usize>,
         budget: &mut RewriteBudget,
+        closers: RewriteClosers<'_>,
     ) -> Result<Option<Self>, ClickError> {
         let Some(current) = self.goal() else {
             return Ok(None);
@@ -1733,7 +1807,7 @@ impl<'a> Proof<'a> {
                     Some(&reached) if reached >= left => continue,
                     Some(_) => {}
                     None => {
-                        if let Some(closed) = rewritten.try_close_after_rewrite(budget)? {
+                        if let Some(closed) = rewritten.try_close_after_rewrite(budget, closers)? {
                             return Ok(Some(closed));
                         }
                     }
@@ -1741,8 +1815,14 @@ impl<'a> Proof<'a> {
                 seen.insert(goal, left);
                 if depth > 1 {
                     used[index] = true;
-                    let found =
-                        rewritten.rewrite_search(candidates, used, depth - 1, seen, budget)?;
+                    let found = rewritten.rewrite_search(
+                        candidates,
+                        used,
+                        depth - 1,
+                        seen,
+                        budget,
+                        closers,
+                    )?;
                     used[index] = false;
                     if found.is_some() {
                         return Ok(found);
@@ -1756,10 +1836,28 @@ impl<'a> Proof<'a> {
     fn try_close_after_rewrite(
         &self,
         budget: &mut RewriteBudget,
+        closers: RewriteClosers<'_>,
     ) -> Result<Option<Self>, ClickError> {
         // Inside a `have`, the stated fact is the focused goal; the proof
         // around it is not complete yet.
         let closes = |proof: &Self| proof.focused_discharged() || proof.is_complete();
+        if let RewriteClosers::Listed(premise_pairs) = closers {
+            if let Ok(closed) = self.apply_step(ProofStep::Normalize)
+                && closes(&closed)
+            {
+                return Ok(Some(closed));
+            }
+            return Ok(self
+                .try_typed_atomic_simp_from_selected_premises(premise_pairs)
+                .filter(closes));
+        }
+        if let RewriteClosers::Selected = closers {
+            let closed = self
+                .try_direct_logical_closure()?
+                .or_else(|| self.try_typed_atomic_simp_closure())
+                .or_else(|| self.apply_step(ProofStep::Normalize).ok().filter(closes));
+            return Ok(closed.filter(closes));
+        }
         if let Ok(closed) = self.apply_step(ProofStep::Assumption)
             && closes(&closed)
         {

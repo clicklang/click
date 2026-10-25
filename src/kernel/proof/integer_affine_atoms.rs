@@ -61,7 +61,8 @@ pub(crate) enum IntegerAffineAtom {
     Machine(crate::kernel::SharedMachineIntegerTerm),
     Application(u64),
     Fold(Arc<IntegerFoldAtomRecord>),
-    /// A complete symbolic product, quotient, or remainder, keyed by shared DAG identity.
+    /// A complete symbolic product, quotient, remainder, or conditional, keyed
+    /// by shared DAG identity.
     Nonlinear(u64),
 }
 

@@ -415,11 +415,11 @@ are stated once over a format in `src/kernel/machine_integer/`, a per-format
 matrix checks them at all ten formats, and multiplication identities and
 signed operation bounds are filled
 ([kernel](../docs/internals/kernel.md#machine-integer-rules)). Stage 2 is
-done (2026-10-24) except the `uint32` order: conditions are one family,
+done (2026-10-24): conditions are one family,
 `Compare` and `Overflows` with a format, every format has both, and the
-matrix's comparison and definedness gaps are filled. The sign-flip encoding
-of `uint32` order remains, because its readers include the documented
-`interval_sign_bit_flip` certificate step and diagnostic wording
+matrix's comparison and definedness gaps are filled. The `uint32` order is
+native, as the `uint64` order is; the sign-flip encoding and its
+`interval_sign_bit_flip` certificate step are gone
 ([design](../design/machine-integers.md#stage-2-one-condition-family)).
 
 ### Naming decisions (maintainer, 2026-10-15)

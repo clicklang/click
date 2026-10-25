@@ -206,7 +206,9 @@ pub(crate) fn cast(
     // the bounds below establish that this conversion preserves the value.
     let converted =
         Bitvector32Term::machine_integer_cast(operand.ty(), machine.ty(), operand.value().clone());
-    if machine.value() == &converted {
+    // An `int32` or `uint32` observation reads σ(x) as `x` (rule K2), so
+    // the canonical conversion is compared by its word.
+    if machine.value() == &converted || machine.value() == converted.word32() {
         return Some(machine.ty().format());
     }
     // Ordinary C and the 32/64-bit modulo boundary retain legacy cast
@@ -244,7 +246,14 @@ pub(crate) fn cast(
         let legacy = machine
             .ty()
             .convert_modulo_value(operand.ty().value_from_term(operand.value().clone()));
-        if legacy == Some(machine.ty().value_from_term(machine.value().clone())) {
+        if legacy == Some(machine.ty().value_from_term(machine.value().clone()))
+            || legacy.as_ref().is_some_and(|value| {
+                matches!(
+                    value.numeric_value(),
+                    crate::kernel::integer_c_value!(term) if term.word32() == machine.value()
+                )
+            })
+        {
             return Some(machine.ty().format());
         }
     }

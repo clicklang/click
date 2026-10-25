@@ -606,7 +606,20 @@ pub(in crate::surface) fn library_import_hint(name: &str) -> String {
     });
     owners.get(name).map_or_else(String::new, |identity| {
         let path = crate::surface::library_module_path(identity);
-        format!("; it is declared in Click library module `{path}`, so add `import {path};`")
+        // A library proof sees only the theorems declared above it, since
+        // built-in bridges apply library theorems by name without a
+        // citation, so a later sibling is out of scope and an import would
+        // change nothing.
+        let proving_in_same_module = crate::surface::ambient_declaration()
+            .is_some_and(|declaration| owners.get(declaration.as_str()) == Some(identity));
+        if proving_in_same_module {
+            format!(
+                "; it is declared later in Click library module `{path}`, and a library proof \
+                 can cite only theorems declared above it, so move it above this one"
+            )
+        } else {
+            format!("; it is declared in Click library module `{path}`, so add `import {path};`")
+        }
     })
 }
 
@@ -646,6 +659,7 @@ fn empty_library_file() -> Result<ClickFile, ClickError> {
         &[],
         &[],
         &BTreeSet::new(),
+        &BTreeMap::new(),
         Default::default(),
     )
 }
@@ -682,6 +696,7 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             &resources,
             &[],
             &BTreeSet::new(),
+            &BTreeMap::new(),
             Default::default(),
         )?;
         if !module.verifying_sources().is_empty()
@@ -2005,7 +2020,6 @@ fn expand_declared_resource_signed_step(
         | SignedArithmeticStep::IntervalShiftLeft { .. }
         | SignedArithmeticStep::IntervalArithmeticShiftRight { .. }
         | SignedArithmeticStep::IntervalBitwiseAnd { .. }
-        | SignedArithmeticStep::IntervalSignBitFlip { .. }
         | SignedArithmeticStep::IntervalNarrowedCast { .. }) => step,
     })
 }

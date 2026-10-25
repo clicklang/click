@@ -10,8 +10,20 @@ surface contract below is stable.
 
 The public name is `Integer`; there is no `Int` alias. Existing `int` remains
 the C `int32` type. Integer literals are arbitrary-size mathematical values
-when their context is `Integer`. Machine values and Integer values do not mix
-implicitly.
+when their context is `Integer`. Machine values and Integer values mix only
+where the type a result is used at expects an Integer: there each machine
+operand of `+`, `-`, `*` and negation is observed with `to_integer` (the
+[reference table](../reference/language/index.md#integer-specification-arithmetic)
+lists the positions). `src/surface/parser/spec_arithmetic.rs` decides it
+while parsing, from the expected types of comparison operands, declared
+`Integer` parameters and fields, `-> Integer` results and typed `let`s; an
+untyped `let` of machine arithmetic is refused. A `match` arm and an `if`
+branch are in the position of their match or conditional; an `if`'s
+condition stays a proposition. So in an Integer position
+`if c { a + 1 } else { b }` reads `if c { to_integer(a) + 1 } else {
+to_integer(b) }`, an [Integer conditional](#integer-conditional), and
+`to_integer(if ...)` written out observes the C conditional, with its
+branches' C obligations.
 
 An unused `Integer` parameter does not reinterpret a separately machine-typed
 literal or expression. Expected-type propagation follows the expression and
@@ -120,8 +132,8 @@ holds (`examples/rust-slices`).
 The `Integer` arithmetic family reads a native comparison as the Integer
 comparison of its operands' observations (`integer_affine_claims`). A 64-bit or
 32-bit equality records no signedness, so it has both readings and a
-certificate may use either; an order names its signedness. A `uint32` order is
-the signed order of sign-flipped operands, which the reading strips. The
+certificate may use either; an order names its signedness, so a `uint32`
+order reads as the `uint32` observations of its operands. The
 special Integer rules read only the premises a node cites. `auto` refutes a
 native goal as its Integer reading and spells each cited native fact through
 its written operands, so an expanded certificate cites the facts as written
@@ -481,7 +493,46 @@ full-width boundary checks cover this profile. The checked
 [cast fixture](https://github.com/clicklang/click/blob/master/mdtests/legacy_integer_cast_identity.md)
 includes the unchanged Bitcoin fast-path operand conversion expressions.
 
+## The 32-bit sign cast
+
+A C conversion between `int` and `unsigned int` is the sign cast σ, the
+`MachineIntegerCast` node from `int32` to `uint32` or back
+(`Bitvector32Term::sign_cast32`). C assignment, return, argument and cast
+conversions build it, the usual arithmetic conversions build it for an
+`int` operand of an `unsigned` operation, and so does the modulo boundary
+above (Rust `as`, C++ conversions, specification casts). A sign-cleared
+`unsigned` array index is σ to `int32` (`pointer_index_term`). The
+constructor folds a constant and undoes a σ, so `σ(σ(x))` is `x`.
+Narrow promotions still reuse their canonical carrier (Stage 4 of
+`design/machine-integers.md`).
+
+σ keeps every bit, so the kernel reads σ(x) as `x`'s 32-bit word
+(decision of 2026-10-25):
+
+| Rule | Statement | Where |
+|---|---|---|
+| K1 word identity | `σ(x) == x` as a 32-bit word | 32-bit operator, comparison, overflow and 32-to-64 extension constructors read operands through `word32`; the e-graph interns σ(x) as `x` |
+| K2 observation | `to_integer(σ(x))` at `int32` or `uint32` is `to_integer(x)` at that format | `IntegerTerm::from_machine` |
+| K3 orders and indices | σ(x) has `x`'s `Int32` and `UInt32` difference-graph nodes; an element index is its word; `integer_cast_identity` and the checked-narrowing identity compare conversions by word | `difference_graph::word`, `canonicalized_offset_index_term`, `conversion::cast`, `checked_narrowing_identity` |
+| K4 modular equality | an observation of σ(x) contributes `x`'s word | through K2 |
+
+Soundness: σ_{S→F}(x) is `to_integer_S(x) mod 2^32` read in `F`. Reducing
+modulo 2^32 and reading two's complement are inverse bijections between
+either format's range and the 32-bit words, so `bits(σ(x)) = bits(x)`.
+Every 32-bit operator, comparison and observation is a function of its
+operands' bits, so each may read `x` for σ(x). The peel is one match on a
+term's root (`word32`), with no scan or clone; nested σ are reached as each
+subterm is built, interned or keyed.
+
+Because operators and comparisons read words, σ stays visible only on a
+value at rest: a local, a stored cell, a returned value, or an argument.
+Printed facts and steps show it as `((uint32)x)` or `((int32)x)` there and
+nowhere else. A load still has the erased `Bits32` kind, so a load after a
+store of the other signedness returns the stored σ unchanged; giving loads
+a signedness is a later step.
+
 ## Wide runtime scalars
+
 
 The shared kernel has `CType::Int128` / `UInt128` and corresponding `CValue`
 wrappers in the existing machine-term arena. `c_int128_literal` and
@@ -607,6 +658,35 @@ nonzero constants folds, while substituting a zero divisor stays opaque.
 Regressions cover full-width signed/unsigned magnitudes, both remainder signs,
 2/8/32/128-node shared DAGs, and explicit numeric bit-length work charging.
 This representation foundation used schema 38 without admitting new source operations.
+
+## Integer conditional
+
+`IntegerTerm::If { condition, then_term, else_term }` is the Integer
+counterpart of the machine `Bitvector32Term::If`: a `ConditionTerm` and two
+shared (`SharedIntegerTerm`) arms. `IntegerTerm::if_then_else` builds it and
+leaves one arm for a constant condition or equal arms, so neither stands.
+`SpecIntegerExpression::If` holds the written proposition and Integer
+branches; evaluation lowers it as a scalar `if` is lowered: a literally
+constant condition selects its branch, and any other lowers both into one
+conditional term (`evaluate_spec_integer_if_paths_in`). Lowering reads no
+ambient fact, so choosing a branch is a proof step.
+
+The term has the machine conditional's capabilities and no more. Its shallow
+interning key is its condition and its arms' ids. Substitution, variable
+collectors, alpha keys, memory-load and resource-read collectors, narrow
+carrier and fold-read checks, and both printers walk the condition and the
+arms; the Surface spelling is `if c { a } else { b }`. A rewrite that decides
+the condition (a substitution, `normalize() using`, or `simp`'s known
+conditions) leaves the selected arm, and arms a rewrite makes equal leave one,
+also under an exact Integer substitution, since that only deletes a node:
+`rewrite(x == y); normalize();` closes `(if c { x } else { y }) == x`, as for
+a machine conditional. The affine fragment keeps an unresolved conditional as
+one opaque atom by its shared identity, as it keeps a product or quotient; a
+bound over its arms takes a case split
+(`mdtests/an_integer_if_in_a_theorem_verifies.md`,
+`mdtests/an_integer_if_is_reduced_under_a_known_condition.md`,
+`mdtests/an_integer_function_with_an_if_body_unfolds.md`). A termination
+measure may not read one, as it may not read a machine conditional.
 
 ## Guarded wide native division
 

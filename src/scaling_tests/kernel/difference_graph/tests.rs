@@ -36,6 +36,40 @@ fn work_is_independent_of_unrelated_bounded_values() {
     );
 }
 
+/// A `uint32` order's nodes are paired with their words' `Int32` nodes, so
+/// beside 64 to 512 values with unsigned bounds of their own and signed
+/// bounds by a shared hub, an unsigned fact, an unsigned question, and a
+/// signed question the pairing answers cost the same: the pairing links one
+/// word's two nodes and nothing else, and a bound on the hub follows at most
+/// `EDGE_LIMIT` of its edges.
+#[test]
+fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
+    let (i, n) = (variable(0), variable(1));
+    let unsigned_lt = |a: &Bitvector32Term, b: &Bitvector32Term| {
+        ConditionTerm::unsigned_less_than(a.clone(), b.clone())
+    };
+    let mut samples = Vec::new();
+    for size in [64, 128, 512] {
+        let mut graph = DifferenceGraph::new();
+        for index in 0..size {
+            let other = variable(10 + index);
+            graph.assume_condition(&unsigned_lt(&other, &constant(4)), true);
+            graph.assume_condition(&lt(&other, &n), true);
+        }
+        graph.assume_condition(&unsigned_lt(&n, &constant(1000)), true);
+        let (_, insert) = graph_work(|| graph.assume_condition(&unsigned_lt(&i, &n), true));
+        let (answer, unsigned) = graph_work(|| graph.decide(&unsigned_lt(&i, &constant(1000))));
+        assert_eq!(answer, Some(true));
+        let (answer, signed) = graph_work(|| graph.decide(&le(&constant(0), &i)));
+        assert_eq!(answer, Some(true));
+        samples.push((insert, unsigned, signed));
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "unsigned graph work should not grow with unrelated values: {samples:?}"
+    );
+}
+
 /// Equating a fresh name to a value names that value's node, so a value
 /// with 16 to 256 names is still one node: each equality costs the same,
 /// and a bound on the value reaches every name.
@@ -132,46 +166,23 @@ fn a_bound_on_a_shared_value_costs_the_same_beside_any_number_of_dependents() {
 fn written_order_queries_are_flat_beside_a_high_degree_bound() {
     let order = |domain, strict, left: &Bitvector32Term, right: &Bitvector32Term| {
         let (left, right) = (Box::new(left.clone()), Box::new(right.clone()));
-        match (domain, strict) {
-            (Domain::Int32, true) => ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
+        ConditionTerm::Compare {
+            format: match domain {
+                Domain::Int32 => MachineIntegerType::Int32,
+                Domain::Int64 => MachineIntegerType::Int64,
+                Domain::UInt64 => MachineIntegerType::UInt64,
+                Domain::UInt32 => MachineIntegerType::UInt32,
             },
-            (Domain::Int32, false) => ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
+            relation: if strict {
+                CompareRelation::LessThan
+            } else {
+                CompareRelation::LessEqual
             },
-            (Domain::Int64, true) => ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            },
-            (Domain::Int64, false) => ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            },
-            (Domain::UInt64, true) => ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            },
-            (Domain::UInt64, false) => ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            },
+            left,
+            right,
         }
     };
-    for domain in [Domain::Int32, Domain::Int64, Domain::UInt64] {
+    for domain in [Domain::Int32, Domain::Int64, Domain::UInt64, Domain::UInt32] {
         for strict in [false, true] {
             let mut samples = Vec::new();
             for size in [16, 33, 64, 256, 1024] {
@@ -210,4 +221,57 @@ fn written_order_queries_are_flat_beside_a_high_degree_bound() {
             );
         }
     }
+}
+
+/// A 32-bit order of σ(x), the sign cast, reads `x`'s nodes (rule K1):
+/// beside 16 to 1,024 unrelated bounded values it decides what the same
+/// order of `x` decides, at the same work, so the read-through adds no
+/// node and no search.
+#[test]
+fn an_order_of_a_sign_cast_costs_what_the_order_of_its_word_costs() {
+    let (i, n) = (variable(0), variable(1));
+    let cast = |source, destination| Bitvector32Term::sign_cast32(source, destination, i.clone());
+    let order = |format, left: Bitvector32Term| ConditionTerm::Compare {
+        format,
+        relation: CompareRelation::LessEqual,
+        left: Box::new(left),
+        right: Box::new(n.clone()),
+    };
+    let mut samples = Vec::new();
+    for size in [16, 64, 256, 1024] {
+        let mut graph = DifferenceGraph::new();
+        for index in 0..size {
+            let other = variable(10 + index);
+            graph.assume_condition(&le(&constant(0), &other), true);
+            graph.assume_condition(&lt(&other, &constant(4)), true);
+        }
+        graph.assume_condition(&le(&constant(0), &i), true);
+        graph.assume_condition(&lt(&i, &n), true);
+        let mut work = Vec::new();
+        for (format, source, destination) in [
+            (
+                MachineIntegerType::Int32,
+                MachineIntegerType::UInt32,
+                MachineIntegerType::Int32,
+            ),
+            (
+                MachineIntegerType::UInt32,
+                MachineIntegerType::Int32,
+                MachineIntegerType::UInt32,
+            ),
+        ] {
+            let (plain, plain_work) = graph_work(|| graph.decide(&order(format, i.clone())));
+            let (cast, cast_work) =
+                graph_work(|| graph.decide(&order(format, cast(source, destination))));
+            assert_eq!(plain, Some(true), "{format:?}, {size}");
+            assert_eq!(cast, plain, "{format:?}, {size}");
+            assert_eq!(cast_work, plain_work, "{format:?}, {size}");
+            work.push(cast_work);
+        }
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "work should not grow with unrelated values: {samples:?}"
+    );
 }

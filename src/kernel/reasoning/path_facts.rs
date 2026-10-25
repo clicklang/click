@@ -546,7 +546,12 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
             // A constant subtraction retains equality of the full-width
             // operands. Its bound must still be proved explicitly; this does
             // not infer nonemptiness or arithmetic ranges from a low word.
-            if let Bitvector32Term::UInt64Subtract(left, right) = value.as_ref()
+            if let Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Subtract,
+                left,
+                right,
+            } = value.as_ref()
                 && right.uint64_as_const().is_some()
             {
                 for (alias, fact) in assumptions.exact_uint64_equalities(left) {

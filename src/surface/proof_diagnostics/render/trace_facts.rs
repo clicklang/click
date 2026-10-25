@@ -1,7 +1,7 @@
 //! Typed diagnostic forms for facts without an exact source spelling.
 use super::*;
 #[cfg(test)]
-use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{CompareRelation, MachineBinaryOp, MachineIntegerType};
 
 impl Renderer<'_> {
     pub(super) fn resource_arguments(&mut self, arguments: &[AlgebraicValue]) {
@@ -66,26 +66,12 @@ impl Renderer<'_> {
             BitwiseAnd(a, b) => Some((a, b, "bits32", "&")),
             BitwiseOr(a, b) => Some((a, b, "bits32", "|")),
             BitwiseXor(a, b) => Some((a, b, "bits32", "^")),
-            Int64Add(a, b) => Some((a, b, "int64", "+")),
-            Int64Subtract(a, b) => Some((a, b, "int64", "-")),
-            Int64Multiply(a, b) => Some((a, b, "int64", "*")),
-            Int64Divide(a, b) => Some((a, b, "int64", "/")),
-            Int64Remainder(a, b) => Some((a, b, "int64", "%")),
-            Int64ShiftLeft(a, b) => Some((a, b, "int64", "<<")),
-            Int64ArithmeticShiftRight(a, b) => Some((a, b, "int64", ">>")),
-            Int64BitwiseAnd(a, b) => Some((a, b, "int64", "&")),
-            Int64BitwiseOr(a, b) => Some((a, b, "int64", "|")),
-            Int64BitwiseXor(a, b) => Some((a, b, "int64", "^")),
-            UInt64Add(a, b) => Some((a, b, "uint64", "+")),
-            UInt64Subtract(a, b) => Some((a, b, "uint64", "-")),
-            UInt64Multiply(a, b) => Some((a, b, "uint64", "*")),
-            UInt64Divide(a, b) => Some((a, b, "uint64", "/")),
-            UInt64Remainder(a, b) => Some((a, b, "uint64", "%")),
-            UInt64ShiftLeft(a, b) => Some((a, b, "uint64", "<<")),
-            UInt64LogicalShiftRight(a, b) => Some((a, b, "uint64", ">>")),
-            UInt64BitwiseAnd(a, b) => Some((a, b, "uint64", "&")),
-            UInt64BitwiseOr(a, b) => Some((a, b, "uint64", "|")),
-            UInt64BitwiseXor(a, b) => Some((a, b, "uint64", "^")),
+            Binary {
+                format,
+                op,
+                left: a,
+                right: b,
+            } => Some((a, b, format.name(), op.c_symbol())),
             _ => None,
         };
         if let Some((a, b, kind, operator)) = binary {
@@ -103,8 +89,17 @@ impl Renderer<'_> {
             UInt64FromInt32(inner) => Some((inner, "UInt64FromInt32")),
             UInt64FromInt64(inner) => Some((inner, "UInt64FromInt64")),
             BitwiseNot(inner) => Some((inner, "BitwiseNot")),
-            Int64BitwiseNot(inner) => Some((inner, "Int64BitwiseNot")),
-            UInt64BitwiseNot(inner) => Some((inner, "UInt64BitwiseNot")),
+            Unary {
+                format,
+                op: crate::kernel::MachineUnaryOp::BitwiseNot,
+                operand: inner,
+            } => Some((
+                inner,
+                match format {
+                    crate::kernel::MachineIntegerType::UInt64 => "UInt64BitwiseNot",
+                    _ => "Int64BitwiseNot",
+                },
+            )),
             _ => None,
         };
         if let Some((inner, name)) = unary {
@@ -177,10 +172,12 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
-                        left: Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                            Box::new(word),
-                            Box::new(Bitvector32Term::UInt64Constant(1)),
-                        )),
+                        left: Box::new(Bitvector32Term::Binary {
+                            format: MachineIntegerType::UInt64,
+                            op: MachineBinaryOp::BitwiseAnd,
+                            left: Box::new(word),
+                            right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                        }),
                         right: Box::new(Bitvector32Term::UInt64Constant(0)),
                     },
                     true,
@@ -311,9 +308,22 @@ mod tests {
         let a = Box::new(Bitvector32Term::Variable(Variable(986_703)));
         let b = Box::new(Bitvector32Term::Constant(2));
         for (value, expected) in [
-            (Bitvector32Term::Int64Divide(a.clone(), b.clone()), "int64("),
             (
-                Bitvector32Term::UInt64Divide(a.clone(), b.clone()),
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::Int64,
+                    op: MachineBinaryOp::Divide,
+                    left: a.clone(),
+                    right: b.clone(),
+                },
+                "int64(",
+            ),
+            (
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Divide,
+                    left: a.clone(),
+                    right: b.clone(),
+                },
                 "uint64(",
             ),
             (

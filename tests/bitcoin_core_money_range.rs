@@ -114,6 +114,32 @@ enum RoundingPhase {
     AdjustedNumeratorRejections,
 }
 
+fn rounding_phase_directory(name: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(&format!("click-bitcoin-fee-frac-{name}-"))
+        .tempdir()
+        .unwrap()
+}
+
+#[test]
+fn rounding_phases_with_the_same_fixture_own_independent_directories() {
+    let first = rounding_phase_directory("SharedFixture");
+    let second = rounding_phase_directory("SharedFixture");
+    assert_ne!(first.path(), second.path());
+    fs::write(first.path().join("phase"), "first").unwrap();
+    fs::write(second.path().join("phase"), "second").unwrap();
+    let first_path = first.path().to_path_buf();
+    drop(first);
+    assert!(!first_path.exists());
+    assert_eq!(
+        fs::read_to_string(second.path().join("phase")).unwrap(),
+        "second"
+    );
+    let second_path = second.path().to_path_buf();
+    drop(second);
+    assert!(!second_path.exists());
+}
+
 fn check_upstream_cpp_rounding_phase(
     selected: &str,
     name: &str,
@@ -126,11 +152,8 @@ fn check_upstream_cpp_rounding_phase(
         sha256(ARCHIVE),
         "fceeaef86784f820339f6dc3fc24992eb9c6bcf52edccbf6b7869d79296a3c7d"
     );
-    let root = std::env::temp_dir().join(format!(
-        "click-bitcoin-fee-frac-{name}-{}",
-        std::process::id()
-    ));
-    fs::create_dir(&root).unwrap();
+    let scratch = rounding_phase_directory(name);
+    let root = scratch.path();
     let archive_path = root.join("input-closure.tar.gz");
     fs::write(&archive_path, ARCHIVE).unwrap();
     let result = Command::new("tar")
@@ -271,7 +294,6 @@ fn check_upstream_cpp_rounding_phase(
         assert_eq!(initializer["conversions"][0]["value_type"]["bits"], 64);
         assert!(cpp_description::artifact(&config_path).exists());
         assert!(root.join(click::project::LOCK_NAME).exists());
-        fs::remove_dir_all(root).unwrap();
         return;
     }
     if selected == "FeeFrac::Div" && !bounded_div && name != "FeeFracDivImported" {
@@ -285,7 +307,6 @@ fn check_upstream_cpp_rounding_phase(
         }
         assert!(!cpp_description::artifact(&config_path).exists());
         assert!(!root.join(click::project::LOCK_NAME).exists());
-        fs::remove_dir_all(root).unwrap();
         return;
     }
     refreshed.unwrap_or_else(|error| panic!("{selected}: {error}"));
@@ -383,7 +404,6 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             error.message()
         );
         assert!(error.message().len() < 8000);
-        fs::remove_dir_all(root).unwrap();
         return;
     }
     let project = read_click_project(&sidecar, source).unwrap();
@@ -515,7 +535,6 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             let error = load_import(&config_path).unwrap_err();
             assert!(error.len() < 8000, "{error}");
         }
-        fs::remove_dir_all(root).unwrap();
         return;
     }
     if matches!(phase, None | Some(RoundingPhase::Tools))
@@ -1142,7 +1161,6 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             );
         }
     }
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

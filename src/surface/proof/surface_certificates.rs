@@ -1334,64 +1334,10 @@ pub(super) fn plan_recorded_signed_order_path(
     // rule does; the whole chain is then one Integer arithmetic step over
     // its written premises.
     let final_edge = path.last()?.clone();
-    if unsigned_order_edge(&current.0) {
-        plan_unsigned_order_suffix(goal, &current, &final_edge)?;
-    } else {
-        plan_explicit_named_signed_rule(goal, &[current, final_edge])?;
-    }
+    plan_explicit_named_signed_rule(goal, &[current, final_edge])?;
     Some(vec![ProofTactic::ArithmeticUsing(
         path.iter().map(|(_, surface)| surface.clone()).collect(),
     )])
-}
-
-/// Whether an order fact is a 32-bit unsigned order: the signed order of
-/// sign-flipped operands, a constant operand arriving already flipped.
-fn unsigned_order_edge(proposition: &Proposition) -> bool {
-    let flipped = |term: &Bitvector32Term| {
-        matches!(term, Bitvector32Term::BitwiseXor(left, right)
-            if left.as_const() == Some(0x8000_0000) || right.as_const() == Some(0x8000_0000))
-    };
-    signed_strict_parts(proposition)
-        .or_else(|| signed_nonstrict_parts(proposition))
-        .is_some_and(|(lower, upper)| flipped(lower) || flipped(upper))
-}
-
-/// The last two edges of an unsigned chain, composed by Integer arithmetic
-/// into the chain's goal.
-fn plan_unsigned_order_suffix(
-    goal: &Proposition,
-    current: &(Proposition, ClickProposition),
-    last: &(Proposition, ClickProposition),
-) -> Option<Vec<ProofTactic>> {
-    let parts = |edge: &(Proposition, ClickProposition)| {
-        if let Some((lower, upper)) = signed_strict_parts(&edge.0) {
-            surface_strict_parts(&edge.1)?;
-            Some((lower.clone(), upper.clone(), true))
-        } else {
-            let (lower, upper) = signed_nonstrict_parts(&edge.0)?;
-            surface_nonstrict_parts(&edge.1)?;
-            Some((lower.clone(), upper.clone(), false))
-        }
-    };
-    let (lower, middle, first_strict) = parts(current)?;
-    let (next_lower, upper, second_strict) = parts(last)?;
-    if middle != next_lower {
-        return None;
-    }
-    // The composed order is `lower < upper` or `lower <= upper`, written
-    // that way round; a goal written the other way round is not this one.
-    let concluded = if first_strict || second_strict {
-        goal_exact_less_than_parts(goal)?
-    } else {
-        goal_exact_less_equal_parts(goal)?
-    };
-    if concluded != (&lower, &upper) {
-        return None;
-    }
-    Some(vec![ProofTactic::ArithmeticUsing(vec![
-        current.1.clone(),
-        last.1.clone(),
-    ])])
 }
 
 fn orient_surface_bitvector_equality(

@@ -237,7 +237,8 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
             SpecIntegerExpression::FromMachine(_)
             | SpecIntegerExpression::Negate(_)
             | crate::kernel::binary_spec_integer_expression!(_, _)
-            | SpecIntegerExpression::PureFunctionApplication { .. } => Visit::Descend,
+            | SpecIntegerExpression::PureFunctionApplication { .. }
+            | SpecIntegerExpression::If { .. } => Visit::Descend,
             SpecIntegerExpression::ResourceField(_)
             | SpecIntegerExpression::AlgebraicMatch { .. }
             | SpecIntegerExpression::RangeFold { .. } => Visit::Stop(()),
@@ -389,7 +390,8 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecIntegerExpression::Negate(_)
             | crate::kernel::binary_spec_integer_expression!(_, _)
             | SpecIntegerExpression::PureFunctionApplication { .. }
-            | SpecIntegerExpression::AlgebraicMatch { .. } => Visit::Descend,
+            | SpecIntegerExpression::AlgebraicMatch { .. }
+            | SpecIntegerExpression::If { .. } => Visit::Descend,
             SpecIntegerExpression::RangeFold { .. } => Visit::Stop(()),
         },
         // Every route to these is refused above, before they are reached.
@@ -457,6 +459,9 @@ pub(super) fn obligation_free_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecIntegerExpression::FromMachine(_)
             | SpecIntegerExpression::ResourceField(_)
             | SpecIntegerExpression::RangeFold { .. } => Visit::Stop(()),
+            // A condition is a proposition, which this rule does not admit,
+            // as it does not admit a scalar `if`.
+            SpecIntegerExpression::If { .. } => Visit::Stop(()),
         },
         SpecNode::Proposition(_)
         | SpecNode::PredicateArgument(_)

@@ -2139,7 +2139,7 @@ fn native_view_prefix_premises(
     } else {
         let (evidence, _) = context.proves_atomic_for_derivation_with_id(&coverage, true);
         let Some(AtomicPropositionDerivationEvidence::WideOrderPath {
-            unsigned: true,
+            format: crate::kernel::MachineIntegerType::UInt64,
             path,
         }) = evidence
         else {
@@ -2209,16 +2209,20 @@ fn reduce_simp_atomic_premises(
             },
             true,
         ) => match (left.as_ref(), right.as_ref()) {
-            (Bitvector32Term::UInt64Subtract(base, amount), Bitvector32Term::Variable(upper)) => {
-                match (base.as_ref(), amount.as_ref()) {
-                    (Bitvector32Term::Variable(base), Bitvector32Term::UInt64Constant(amount)) => {
-                        Some(AtomicReductionQuery::UnsignedSubtractionLessThan(
-                            *base, *amount, *upper,
-                        ))
-                    }
-                    _ => None,
-                }
-            }
+            (
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Subtract,
+                    left: base,
+                    right: amount,
+                },
+                Bitvector32Term::Variable(upper),
+            ) => match (base.as_ref(), amount.as_ref()) {
+                (Bitvector32Term::Variable(base), Bitvector32Term::UInt64Constant(amount)) => Some(
+                    AtomicReductionQuery::UnsignedSubtractionLessThan(*base, *amount, *upper),
+                ),
+                _ => None,
+            },
             _ => None,
         },
         Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => Some(

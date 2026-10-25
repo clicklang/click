@@ -35,7 +35,9 @@ proof fixtures. Read the actual command's exit status; preserve it when piping o
 For prose-only changes, use `scripts/check.sh --docs-only`.
 
 Preserve the gate's ten-minute budget. Keep slow audits and mutations in nightly
-and add tests for distinct behavior, not duplicate coverage. Do not run the
+and add tests for distinct behavior, not duplicate coverage. For expected timings
+and cache-state comparisons, use the
+[gate timing baselines](docs/internals/testing.md#gate-timing-baselines). Do not run the
 nightly suite (`scripts/check.sh --nightly`, `CLICK_NIGHTLY`, or
 `--run-ignored`) before a PR: it takes hours, and the nightly workflow runs it.
 At most run the few nightly tests or fixtures the change plausibly affects,

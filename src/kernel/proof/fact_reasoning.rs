@@ -116,14 +116,46 @@ fn collect_machine_affine_atoms(
     crate::instrumentation::record_deterministic_work(1);
     match (term, wide) {
         (Bitvector32Term::Add(left, right), false)
-        | (Bitvector32Term::Int64Add(left, right), true)
-        | (Bitvector32Term::UInt64Add(left, right), true) => {
+        | (
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Add,
+                left,
+                right,
+            },
+            true,
+        )
+        | (
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left,
+                right,
+            },
+            true,
+        ) => {
             collect_machine_affine_atoms(left, coefficient, wide, atoms, constant);
             collect_machine_affine_atoms(right, coefficient, wide, atoms, constant);
         }
         (Bitvector32Term::Subtract(left, right), false)
-        | (Bitvector32Term::Int64Subtract(left, right), true)
-        | (Bitvector32Term::UInt64Subtract(left, right), true) => {
+        | (
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Subtract,
+                left,
+                right,
+            },
+            true,
+        )
+        | (
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Subtract,
+                left,
+                right,
+            },
+            true,
+        ) => {
             collect_machine_affine_atoms(left, coefficient, wide, atoms, constant);
             collect_machine_affine_atoms(right, coefficient.wrapping_neg(), wide, atoms, constant);
         }
@@ -710,9 +742,7 @@ fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComp
             integer(left, right)
         }
         _ => match order_condition_parts(condition)?.1 {
-            OrderOperands::Bitvector32Signed(left, right)
-            | OrderOperands::Bitvector64Signed(left, right)
-            | OrderOperands::Bitvector64Unsigned(left, right) => machine(&left, &right),
+            OrderOperands::Machine(_, left, right) => machine(&left, &right),
             OrderOperands::Integer(left, right) => integer(&left, &right),
         },
     }
@@ -1163,15 +1193,17 @@ enum OrderOperator {
 }
 
 /// The two sides of an order condition, tagged with the order they are
-/// compared in. Every family the kernel lowers an order to is here: 32-bit
-/// signed (unsigned 32-bit comparisons lower to signed ones over sign-flipped
-/// terms), both 64-bit orders, and the mathematical `Integer` order. Sides
-/// from different families are never one claim.
+/// compared in. Every family the kernel lowers an order to is here: a
+/// machine order at its format (`int32`, `uint32`, `int64`, `uint64`), and
+/// the mathematical `Integer` order. Sides from different families are never
+/// one claim.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum OrderOperands {
-    Bitvector32Signed(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64Signed(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Bitvector64Unsigned(Box<Bitvector32Term>, Box<Bitvector32Term>),
+    Machine(
+        MachineIntegerType,
+        Box<Bitvector32Term>,
+        Box<Bitvector32Term>,
+    ),
     Integer(SharedIntegerTerm, SharedIntegerTerm),
 }
 
@@ -1179,9 +1211,7 @@ impl OrderOperands {
     /// The same sides read from the other end: `b ? a` for `a ? b`.
     fn mirrored(self) -> Self {
         match self {
-            Self::Bitvector32Signed(left, right) => Self::Bitvector32Signed(right, left),
-            Self::Bitvector64Signed(left, right) => Self::Bitvector64Signed(right, left),
-            Self::Bitvector64Unsigned(left, right) => Self::Bitvector64Unsigned(right, left),
+            Self::Machine(format, left, right) => Self::Machine(format, right, left),
             Self::Integer(left, right) => Self::Integer(right, left),
         }
     }
@@ -1190,77 +1220,16 @@ impl OrderOperands {
     fn condition(self, operator: OrderOperator) -> ConditionTerm {
         use OrderOperator::*;
         match (self, operator) {
-            (Self::Bitvector32Signed(l, r), LessThan) => ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left: l,
-                right: r,
-            },
-            (Self::Bitvector32Signed(l, r), LessEqual) => ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left: l,
-                right: r,
-            },
-            (Self::Bitvector32Signed(l, r), GreaterThan) => ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left: l,
-                right: r,
-            },
-            (Self::Bitvector32Signed(l, r), GreaterEqual) => ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left: l,
-                right: r,
-            },
-            (Self::Bitvector64Signed(l, r), LessThan) => ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessThan,
-                left: l,
-                right: r,
-            },
-            (Self::Bitvector64Signed(l, r), LessEqual) => ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessEqual,
-                left: l,
-                right: r,
-            },
-            (Self::Bitvector64Signed(l, r), GreaterThan) => ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterThan,
-                left: l,
-                right: r,
-            },
-            (Self::Bitvector64Signed(l, r), GreaterEqual) => ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterEqual,
-                left: l,
-                right: r,
-            },
-            (Self::Bitvector64Unsigned(l, r), LessThan) => ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessThan,
-                left: l,
-                right: r,
-            },
-            (Self::Bitvector64Unsigned(l, r), LessEqual) => ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessEqual,
-                left: l,
-                right: r,
-            },
-            (Self::Bitvector64Unsigned(l, r), GreaterThan) => ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::GreaterThan,
-                left: l,
-                right: r,
-            },
-            (Self::Bitvector64Unsigned(l, r), GreaterEqual) => ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::GreaterEqual,
-                left: l,
-                right: r,
+            (Self::Machine(format, left, right), operator) => ConditionTerm::Compare {
+                format,
+                relation: match operator {
+                    LessThan => CompareRelation::LessThan,
+                    LessEqual => CompareRelation::LessEqual,
+                    GreaterThan => CompareRelation::GreaterThan,
+                    GreaterEqual => CompareRelation::GreaterEqual,
+                },
+                left,
+                right,
             },
             (Self::Integer(l, r), LessThan) => ConditionTerm::IntegerLessThan(l, r),
             (Self::Integer(l, r), LessEqual) => ConditionTerm::IntegerLessEqual(l, r),
@@ -1287,112 +1256,23 @@ fn order_condition_parts(condition: &ConditionTerm) -> Option<(OrderOperator, Or
     use OrderOperator::*;
     Some(match condition {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
+            format:
+                format @ (MachineIntegerType::Int32
+                | MachineIntegerType::UInt32
+                | MachineIntegerType::Int64
+                | MachineIntegerType::UInt64),
+            relation,
             left: l,
             right: r,
         } => (
-            LessThan,
-            OrderOperands::Bitvector32Signed(l.clone(), r.clone()),
-        ),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left: l,
-            right: r,
-        } => (
-            LessEqual,
-            OrderOperands::Bitvector32Signed(l.clone(), r.clone()),
-        ),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left: l,
-            right: r,
-        } => (
-            GreaterThan,
-            OrderOperands::Bitvector32Signed(l.clone(), r.clone()),
-        ),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left: l,
-            right: r,
-        } => (
-            GreaterEqual,
-            OrderOperands::Bitvector32Signed(l.clone(), r.clone()),
-        ),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::LessThan,
-            left: l,
-            right: r,
-        } => (
-            LessThan,
-            OrderOperands::Bitvector64Signed(l.clone(), r.clone()),
-        ),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::LessEqual,
-            left: l,
-            right: r,
-        } => (
-            LessEqual,
-            OrderOperands::Bitvector64Signed(l.clone(), r.clone()),
-        ),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::GreaterThan,
-            left: l,
-            right: r,
-        } => (
-            GreaterThan,
-            OrderOperands::Bitvector64Signed(l.clone(), r.clone()),
-        ),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::GreaterEqual,
-            left: l,
-            right: r,
-        } => (
-            GreaterEqual,
-            OrderOperands::Bitvector64Signed(l.clone(), r.clone()),
-        ),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::LessThan,
-            left: l,
-            right: r,
-        } => (
-            LessThan,
-            OrderOperands::Bitvector64Unsigned(l.clone(), r.clone()),
-        ),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::LessEqual,
-            left: l,
-            right: r,
-        } => (
-            LessEqual,
-            OrderOperands::Bitvector64Unsigned(l.clone(), r.clone()),
-        ),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::GreaterThan,
-            left: l,
-            right: r,
-        } => (
-            GreaterThan,
-            OrderOperands::Bitvector64Unsigned(l.clone(), r.clone()),
-        ),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::GreaterEqual,
-            left: l,
-            right: r,
-        } => (
-            GreaterEqual,
-            OrderOperands::Bitvector64Unsigned(l.clone(), r.clone()),
+            match relation {
+                CompareRelation::LessThan => LessThan,
+                CompareRelation::LessEqual => LessEqual,
+                CompareRelation::GreaterThan => GreaterThan,
+                CompareRelation::GreaterEqual => GreaterEqual,
+                CompareRelation::Equal => return None,
+            },
+            OrderOperands::Machine(*format, l.clone(), r.clone()),
         ),
         ConditionTerm::IntegerLessThan(l, r) => {
             (LessThan, OrderOperands::Integer(l.clone(), r.clone()))
@@ -1410,16 +1290,21 @@ fn order_condition_parts(condition: &ConditionTerm) -> Option<(OrderOperator, Or
     })
 }
 
-/// The canonical order claim of a 32-bit signed order condition, and `None`
-/// for every other condition. This is the normalization every availability
-/// path and planner shares, unchanged from before the other families were
-/// normalized; see [`canonical_order_claim`] for those.
+/// The canonical order claim of a 32-bit order condition, signed or
+/// unsigned, and `None` for every other condition. This is the
+/// normalization every availability path and planner shares, unchanged from
+/// before the other families were normalized; see [`canonical_order_claim`]
+/// for those.
 fn canonical_order_condition(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<CanonicalOrderCondition> {
-    canonical_order_claim(condition, value)
-        .filter(|claim| matches!(claim.operands, OrderOperands::Bitvector32Signed(..)))
+    canonical_order_claim(condition, value).filter(|claim| {
+        matches!(
+            claim.operands,
+            OrderOperands::Machine(MachineIntegerType::Int32 | MachineIntegerType::UInt32, ..)
+        )
+    })
 }
 
 /// The canonical order claim of an order condition in any family.
@@ -3382,8 +3267,12 @@ mod uint64_loop_tests {
         let length = Bitvector32Term::Variable(Variable(981_011));
         let removed = Bitvector32Term::Variable(Variable(981_012));
         let upper = Bitvector32Term::Variable(Variable(981_013));
-        let difference =
-            Bitvector32Term::UInt64Subtract(Box::new(length.clone()), Box::new(removed.clone()));
+        let difference = Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Subtract,
+            left: Box::new(length.clone()),
+            right: Box::new(removed.clone()),
+        };
         let condition = ConditionTerm::uint64_less_equal(difference, upper.clone());
         let goal = Proposition::ConditionIs(condition.clone(), true);
         let premises = [

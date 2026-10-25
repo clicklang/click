@@ -18,6 +18,7 @@ use super::*;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
 use crate::kernel::OverflowOperation;
+use crate::kernel::{MachineBinaryOp, MachineIntegerType, MachineUnaryOp};
 
 /// Which spelling policy a printer applies.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -850,39 +851,18 @@ impl Printer<'_> {
         }
         let operator_text = comparison(symbol, polarity);
         let operand_type = operator.operand_type();
-        // Lowered unsigned 32-bit order flips both sign bits. Recover the
-        // comparison and spell its operands as `uint32` values.
-        const SIGN: u32 = 0x8000_0000;
-        fn flipped(value: &Bitvector32Term) -> Option<&Bitvector32Term> {
-            const SIGN: u32 = 0x8000_0000;
-            match value {
-                Bitvector32Term::BitwiseXor(a, b) if b.as_const() == Some(SIGN) => Some(a.as_ref()),
-                Bitvector32Term::BitwiseXor(a, b) if a.as_const() == Some(SIGN) => Some(b.as_ref()),
-                _ => None,
-            }
-        }
         let is_equality = symbol == "==";
-        if operand_type == "int32"
-            && !is_equality
-            && (flipped(left).is_some() || flipped(right).is_some())
-        {
-            let recover = |value: &Bitvector32Term| {
-                flipped(value).cloned().or_else(|| {
-                    value
-                        .as_const()
-                        .map(|v| Bitvector32Term::Constant(v ^ SIGN))
-                })
-            };
-            let (left, right) = (recover(left)?, recover(right)?);
+        // A `uint32` order spells its operands as `uint32` values.
+        if operand_type == "uint32" && !is_equality {
             if !self.source_mode() {
                 return Some(atom(format!(
                     "{} {operator_text} {} (unsigned)",
-                    self.exact_operand(&left, Some(false), depth)?,
-                    self.exact_operand(&right, Some(false), depth)?
+                    self.exact_operand(left, Some(false), depth)?,
+                    self.exact_operand(right, Some(false), depth)?
                 )));
             }
-            let left = self.as_type(&left, Hint::Unsigned32, depth)?;
-            let right = self.as_type(&right, Hint::Unsigned32, depth)?;
+            let left = self.as_type(left, Hint::Unsigned32, depth)?;
+            let right = self.as_type(right, Hint::Unsigned32, depth)?;
             return Some(atom(format!(
                 "{} {operator_text} {}",
                 operand(left, SHIFT),
@@ -1136,33 +1116,47 @@ impl Printer<'_> {
                 else_term,
                 ..
             } => self.hint_of(then_term).or_else(|| self.hint_of(else_term)),
-            B::Int64BitwiseNot(_) => Some(Hint::Int64),
-            B::UInt64BitwiseNot(_) => Some(Hint::UInt64),
+            B::Unary {
+                format: MachineIntegerType::Int64,
+                op: MachineUnaryOp::BitwiseNot,
+                operand: _,
+            } => Some(Hint::Int64),
+            B::Unary {
+                format: MachineIntegerType::UInt64,
+                op: MachineUnaryOp::BitwiseNot,
+                operand: _,
+            } => Some(Hint::UInt64),
             B::BitwiseNot(inner) => self.hint_of(inner),
             _ => {
                 let (operator, left, right) = value.as_binary()?;
                 use crate::kernel::BitvectorBinaryOp as Op;
                 match operator {
-                    Op::Int64Add
-                    | Op::Int64Subtract
-                    | Op::Int64Multiply
-                    | Op::Int64Divide
-                    | Op::Int64Remainder
-                    | Op::Int64ShiftLeft
-                    | Op::Int64ArithmeticShiftRight
-                    | Op::Int64BitwiseAnd
-                    | Op::Int64BitwiseOr
-                    | Op::Int64BitwiseXor => Some(Hint::Int64),
-                    Op::UInt64Add
-                    | Op::UInt64Subtract
-                    | Op::UInt64Multiply
-                    | Op::UInt64Divide
-                    | Op::UInt64Remainder
-                    | Op::UInt64ShiftLeft
-                    | Op::UInt64LogicalShiftRight
-                    | Op::UInt64BitwiseAnd
-                    | Op::UInt64BitwiseOr
-                    | Op::UInt64BitwiseXor => Some(Hint::UInt64),
+                    Op::Machine(
+                        MachineIntegerType::Int64,
+                        MachineBinaryOp::Add
+                        | MachineBinaryOp::Subtract
+                        | MachineBinaryOp::Multiply
+                        | MachineBinaryOp::Divide
+                        | MachineBinaryOp::Remainder
+                        | MachineBinaryOp::ShiftLeft
+                        | MachineBinaryOp::ShiftRight
+                        | MachineBinaryOp::BitwiseAnd
+                        | MachineBinaryOp::BitwiseOr
+                        | MachineBinaryOp::BitwiseXor,
+                    ) => Some(Hint::Int64),
+                    Op::Machine(
+                        MachineIntegerType::UInt64,
+                        MachineBinaryOp::Add
+                        | MachineBinaryOp::Subtract
+                        | MachineBinaryOp::Multiply
+                        | MachineBinaryOp::Divide
+                        | MachineBinaryOp::Remainder
+                        | MachineBinaryOp::ShiftLeft
+                        | MachineBinaryOp::ShiftRight
+                        | MachineBinaryOp::BitwiseAnd
+                        | MachineBinaryOp::BitwiseOr
+                        | MachineBinaryOp::BitwiseXor,
+                    ) => Some(Hint::UInt64),
                     Op::UnsignedDivide | Op::UnsignedRemainder | Op::LogicalShiftRight => {
                         Some(Hint::Unsigned32)
                     }
@@ -1346,11 +1340,15 @@ impl Printer<'_> {
                     B::Add(..)
                         | B::Subtract(..)
                         | B::Multiply(..)
-                        | B::UInt64Add(..)
-                        | B::UInt64Subtract(..)
-                        | B::UInt64Multiply(..)
-                        | B::UInt64Divide(..)
-                        | B::UInt64Remainder(..)
+                        | B::Binary {
+                            format: MachineIntegerType::UInt64,
+                            op: MachineBinaryOp::Add
+                                | MachineBinaryOp::Subtract
+                                | MachineBinaryOp::Multiply
+                                | MachineBinaryOp::Divide
+                                | MachineBinaryOp::Remainder,
+                            ..
+                        }
                 )
             {
                 return None;
@@ -1401,7 +1399,7 @@ impl Printer<'_> {
         if let Some((operator, inner)) = value.as_unary() {
             use crate::kernel::BitvectorUnaryOp as U;
             let (prefix, type_name) = match operator {
-                U::BitwiseNot | U::Int64BitwiseNot | U::UInt64BitwiseNot => (Some("~"), None),
+                U::BitwiseNot | U::Machine(_, MachineUnaryOp::BitwiseNot) => (Some("~"), None),
                 U::Float32Negate | U::Float64Negate => (Some("-"), None),
                 U::Int64From32 | U::Int64FromUInt32 => (None, Some("int64")),
                 U::UInt64From32 | U::UInt64FromInt32 | U::UInt64FromInt64 => (None, Some("uint64")),
@@ -1411,7 +1409,7 @@ impl Printer<'_> {
                 }
             };
             let inner_hint = match operator {
-                U::BitwiseNot | U::Int64BitwiseNot | U::UInt64BitwiseNot => hint,
+                U::BitwiseNot | U::Machine(_, MachineUnaryOp::BitwiseNot) => hint,
                 U::Int64FromUInt32 | U::UInt64From32 => Some(Hint::Unsigned32),
                 U::Int64From32 | U::UInt64FromInt32 => Some(Hint::Signed32),
                 U::UInt64FromInt64 => Some(Hint::Int64),
@@ -1818,15 +1816,21 @@ impl Printer<'_> {
                     Some(atom(format!("{}u64", *value as i64 / width)))
                 }
                 Bitvector32Term::Multiply(left, right)
-                | Bitvector32Term::UInt64Multiply(left, right)
-                    if right.as_const().map(i64::from) == Some(width) =>
-                {
+                | Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Multiply,
+                    left,
+                    right,
+                } if right.as_const().map(i64::from) == Some(width) => {
                     self.bitvector(left, hint, depth)
                 }
                 Bitvector32Term::Multiply(left, right)
-                | Bitvector32Term::UInt64Multiply(left, right)
-                    if left.as_const().map(i64::from) == Some(width) =>
-                {
+                | Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Multiply,
+                    left,
+                    right,
+                } if left.as_const().map(i64::from) == Some(width) => {
                     self.bitvector(right, hint, depth)
                 }
                 _ => None,
@@ -2417,6 +2421,24 @@ impl Printer<'_> {
                     MULTIPLY,
                 ))
             }
+            IntegerTerm::If {
+                condition,
+                then_term,
+                else_term,
+            } => {
+                let condition = self.condition(condition, true, depth)?;
+                let then_term = self.integer(then_term, depth)?;
+                let else_term = self.integer(else_term, depth)?;
+                // Parenthesized wherever it is an operand, as a machine
+                // conditional is.
+                Some(spelled(
+                    format!(
+                        "if {} {{ {} }} else {{ {} }}",
+                        condition.text, then_term.text, else_term.text
+                    ),
+                    0,
+                ))
+            }
             IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
                 let scrutinee = self.algebraic(scrutinee, depth)?;
                 let mut spelled_arms = Vec::new();
@@ -2726,13 +2748,10 @@ mod tests {
         // An unsigned order over an `int32` value converts it.
         let order = Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::UInt32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::BitwiseXor(
-                    Box::new(Bitvector32Term::Variable(Variable(7))),
-                    Box::new(Bitvector32Term::Constant(0x8000_0000)),
-                )),
-                right: Box::new(Bitvector32Term::Constant(1073741823 ^ 0x8000_0000)),
+                left: Box::new(Bitvector32Term::Variable(Variable(7))),
+                right: Box::new(Bitvector32Term::Constant(1073741823)),
             },
             true,
         );

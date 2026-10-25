@@ -1626,7 +1626,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
             if let Some(pointer) = term.address_pointer() {
                 return Some((pointer, None));
             }
-            let Bitvector32Term::UInt64BitwiseAnd(left, right) = term else {
+            let Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::BitwiseAnd,
+                left,
+                right,
+            } = term
+            else {
                 return None;
             };
             let (pointer, mask) = if let Some(pointer) = left.address_pointer() {
@@ -1680,15 +1686,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // matching, checked 32-to-64-bit cast of the cited constant; the
         // replacement keeps that cast, including its signedness. Never
         // identify a full-width literal by truncating it to 32 bits.
-        if let Bitvector32Term::Constant(source) = from {
-            // Unsigned 32-bit order is encoded by signed order after XOR
-            // with the sign bit. The constant side of that bias is folded.
-            if matches!(term, Bitvector32Term::Constant(value) if *value == source ^ 0x8000_0000) {
-                return Bitvector32Term::bitwise_xor(
-                    to.clone(),
-                    Bitvector32Term::Constant(0x8000_0000),
-                );
-            }
+        if let Bitvector32Term::Constant(_) = from {
             let casts: &[fn(Bitvector32Term) -> Bitvector32Term] = match term {
                 Bitvector32Term::Int64Constant(_) => &[
                     Bitvector32Term::int64_from_32,
@@ -2926,10 +2924,12 @@ mod tests {
         for term in terms {
             let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int64,
-                Bitvector32Term::Int64Add(
-                    Box::new(Bitvector32Term::Variable(Variable(193_043))),
-                    Box::new(term),
-                ),
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::Int64,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(Bitvector32Term::Variable(Variable(193_043))),
+                    right: Box::new(term),
+                },
             ));
             let goal = integer_equality(observed.clone(), IntegerTerm::add(x.clone(), x.clone()));
             let expected =
@@ -3052,7 +3052,12 @@ mod tests {
             };
             let mask = |value| {
                 if wide {
-                    Bitvector32Term::UInt64BitwiseAnd(Box::new(value), Box::new(one.clone()))
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::BitwiseAnd,
+                        left: Box::new(value),
+                        right: Box::new(one.clone()),
+                    }
                 } else {
                     Bitvector32Term::BitwiseAnd(Box::new(value), Box::new(one.clone()))
                 }
@@ -3119,10 +3124,12 @@ mod tests {
                     kind,
                 )),
                 if wide {
-                    Bitvector32Term::UInt64BitwiseOr(
-                        Box::new(load(&after, pointer.clone(), kind)),
-                        Box::new(one.clone()),
-                    )
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::BitwiseOr,
+                        left: Box::new(load(&after, pointer.clone(), kind)),
+                        right: Box::new(one.clone()),
+                    }
                 } else {
                     Bitvector32Term::BitwiseOr(
                         Box::new(load(&after, pointer.clone(), kind)),
@@ -3156,10 +3163,12 @@ mod tests {
                 LoadKind::Bits64,
             );
             for index in 0..size {
-                term = Bitvector32Term::UInt64BitwiseXor(
-                    Box::new(term),
-                    Box::new(Bitvector32Term::Variable(Variable(931_000 + index))),
-                );
+                term = Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::BitwiseXor,
+                    left: Box::new(term),
+                    right: Box::new(Bitvector32Term::Variable(Variable(931_000 + index))),
+                };
             }
             term
         };

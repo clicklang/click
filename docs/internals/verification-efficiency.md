@@ -580,9 +580,12 @@ fails. The fuel is a safety net against a runaway decision, not a license to
 scan; the decision's remaining scans are listed under "Fast-part scans" in
 [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 
-The graph's nodes are `int32`, `int64` and `uint64` values keyed by term, and
-its edges are constraints `x - y <= c`; a constant bound is an edge to a zero
-node, so facts about unrelated values never meet at a shared constant.
+The graph's nodes are `int32`, `uint32`, `int64` and `uint64` values keyed by
+term, and its edges are constraints `x - y <= c`; a constant bound is an edge to
+a zero node, so facts about unrelated values never meet at a shared constant.
+A word's `uint32` node is paired with its `int32` node, and the pair is linked
+once either interval settles the word's sign, a constant-size step per
+tightening (`unsigned_work_is_flat_beside_values_bounded_by_its_hub`).
 Insertion propagates bounds and checks for cycles along at most `EDGE_LIMIT`
 edges, and a read pulls one hop from a node whose push was cut short, so a
 value many others are bounded by costs the same however many there are. Past

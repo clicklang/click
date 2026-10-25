@@ -98,6 +98,35 @@ fn push_registered_load(
     true
 }
 
+/// The havoc-identity tag of a format-carrying binary node, the one each
+/// per-width operator node had before the nodes were merged.
+fn havoc_machine_binary_tag(format: MachineIntegerType, op: MachineBinaryOp) -> &'static str {
+    use MachineBinaryOp as Op;
+    let signed = format != MachineIntegerType::UInt64;
+    match (signed, op) {
+        (true, Op::Add) => "ti64a",
+        (true, Op::Subtract) => "ti64s",
+        (true, Op::Multiply) => "ti64m",
+        (true, Op::Divide) => "ti64d",
+        (true, Op::Remainder) => "ti64r",
+        (true, Op::ShiftLeft) => "ti64l",
+        (true, Op::ShiftRight) => "ti64ar",
+        (true, Op::BitwiseAnd) => "ti64ba",
+        (true, Op::BitwiseOr) => "ti64bo",
+        (true, Op::BitwiseXor) => "ti64bx",
+        (false, Op::Add) => "tu64a",
+        (false, Op::Subtract) => "tu64s",
+        (false, Op::Multiply) => "tu64m",
+        (false, Op::Divide) => "tu64d",
+        (false, Op::Remainder) => "tu64r",
+        (false, Op::ShiftLeft) => "tu64l",
+        (false, Op::ShiftRight) => "tu64lr",
+        (false, Op::BitwiseAnd) => "tu64ba",
+        (false, Op::BitwiseOr) => "tu64bo",
+        (false, Op::BitwiseXor) => "tu64bx",
+    }
+}
+
 fn push_havoc_binary(
     identity: &mut String,
     tasks: &mut Vec<HavocIdentityTask>,
@@ -418,76 +447,30 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         *value.clone(),
                         *value,
                     ),
-                    Bitvector32Term::Int64BitwiseNot(value) => {
-                        identity.push_str("ti64bn(");
+                    Bitvector32Term::Unary {
+                        format,
+                        op: MachineUnaryOp::BitwiseNot,
+                        operand,
+                    } => {
+                        identity.push_str(match format {
+                            MachineIntegerType::UInt64 => "tu64bn(",
+                            _ => "ti64bn(",
+                        });
                         tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::Bitvector(*value));
+                        tasks.push(HavocIdentityTask::Bitvector(*operand));
                     }
-                    Bitvector32Term::UInt64BitwiseNot(value) => {
-                        identity.push_str("tu64bn(");
-                        tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::Bitvector(*value));
-                    }
-                    Bitvector32Term::Int64Add(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "ti64a", *left, *right)
-                    }
-                    Bitvector32Term::Int64Subtract(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "ti64s", *left, *right)
-                    }
-                    Bitvector32Term::Int64Multiply(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "ti64m", *left, *right)
-                    }
-                    Bitvector32Term::Int64Divide(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "ti64d", *left, *right)
-                    }
-                    Bitvector32Term::Int64Remainder(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "ti64r", *left, *right)
-                    }
-                    Bitvector32Term::Int64ShiftLeft(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "ti64l", *left, *right)
-                    }
-                    Bitvector32Term::Int64ArithmeticShiftRight(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "ti64ar", *left, *right)
-                    }
-                    Bitvector32Term::Int64BitwiseAnd(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "ti64ba", *left, *right)
-                    }
-                    Bitvector32Term::Int64BitwiseOr(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "ti64bo", *left, *right)
-                    }
-                    Bitvector32Term::Int64BitwiseXor(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "ti64bx", *left, *right)
-                    }
-                    Bitvector32Term::UInt64Add(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "tu64a", *left, *right)
-                    }
-                    Bitvector32Term::UInt64Subtract(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "tu64s", *left, *right)
-                    }
-                    Bitvector32Term::UInt64Multiply(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "tu64m", *left, *right)
-                    }
-                    Bitvector32Term::UInt64Divide(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "tu64d", *left, *right)
-                    }
-                    Bitvector32Term::UInt64Remainder(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "tu64r", *left, *right)
-                    }
-                    Bitvector32Term::UInt64ShiftLeft(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "tu64l", *left, *right)
-                    }
-                    Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "tu64lr", *left, *right)
-                    }
-                    Bitvector32Term::UInt64BitwiseAnd(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "tu64ba", *left, *right)
-                    }
-                    Bitvector32Term::UInt64BitwiseOr(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "tu64bo", *left, *right)
-                    }
-                    Bitvector32Term::UInt64BitwiseXor(left, right) => {
-                        push_havoc_binary(&mut identity, &mut tasks, "tu64bx", *left, *right)
-                    }
+                    Bitvector32Term::Binary {
+                        format,
+                        op,
+                        left,
+                        right,
+                    } => push_havoc_binary(
+                        &mut identity,
+                        &mut tasks,
+                        havoc_machine_binary_tag(format, op),
+                        *left,
+                        *right,
+                    ),
                     Bitvector32Term::If {
                         condition,
                         then_term,
@@ -1758,7 +1741,8 @@ fn held_integer_term(binding: &CLocalBinding) -> Option<&Bitvector32Term> {
 }
 
 /// A constant-time fingerprint of a term: its root's variant and, for a
-/// variable or constant, its payload, and the same of a binary node's two
+/// variable or constant, its payload, and for a format-carrying operator its
+/// format and operator, and the same of a binary node's two
 /// operands. Equal terms share a fingerprint; a lookup compares the terms
 /// it finds, so a shared fingerprint costs only a comparison.
 pub(crate) fn held_term_fingerprint(term: &Bitvector32Term) -> u64 {
@@ -1768,6 +1752,8 @@ pub(crate) fn held_term_fingerprint(term: &Bitvector32Term) -> u64 {
         match term {
             Bitvector32Term::Variable(variable) => variable.hash(hasher),
             Bitvector32Term::Constant(value) => value.hash(hasher),
+            Bitvector32Term::Binary { format, op, .. } => (format, op).hash(hasher),
+            Bitvector32Term::Unary { format, op, .. } => (format, op).hash(hasher),
             _ => {}
         }
     }

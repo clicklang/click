@@ -2,6 +2,7 @@
 //! Curried application nodes have shallow keys and indexed parent uses. A late
 //! operand merge therefore updates precisely the applications depending on it.
 use super::*;
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::{
     Bitvector32Term as T, BitvectorUnaryOp as U, CType, CValue, CarrierWidth as W,
@@ -50,6 +51,10 @@ pub(in crate::kernel::equality_graph) enum ConditionKind {
     IntegerLe,
     IntegerGt,
     IntegerGe,
+    UInt32Lt,
+    UInt32Le,
+    UInt32Gt,
+    UInt32Ge,
 }
 
 /// Shared classification for registration and the opaque-atom lookup fast path.
@@ -345,7 +350,14 @@ impl TermClasses {
                     continue;
                 }
                 Work::Machine(term, width) => {
+                    // σ(x) is `x`'s 32-bit word (rule K1): one class.
+                    let term = if width == W::Bits32 {
+                        term.word32()
+                    } else {
+                        term
+                    };
                     let wide = width == W::Bits64;
+
                     let binary = if wide {
                         uint64_binary(term).map(|(op, a, b)| (Binary::UInt64(op), a, b))
                     } else if width == W::Bits32 {
@@ -419,10 +431,10 @@ impl TermClasses {
                         // than guessing its carrier from the shifted value.
                         if matches!(
                             op,
-                            crate::kernel::BitvectorBinaryOp::Int64ShiftLeft
-                                | crate::kernel::BitvectorBinaryOp::Int64ArithmeticShiftRight
-                                | crate::kernel::BitvectorBinaryOp::UInt64ShiftLeft
-                                | crate::kernel::BitvectorBinaryOp::UInt64LogicalShiftRight
+                            crate::kernel::BitvectorBinaryOp::Machine(
+                                MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                                MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
+                            )
                         ) {
                             pending.push(Work::OpaqueCount(b));
                         } else {
@@ -448,10 +460,8 @@ impl TermClasses {
                             | U::Int64FromUInt32
                             | U::UInt64FromInt32
                             | U::BitwiseNot => W::Bits32,
-                            U::UInt32From64
-                            | U::UInt64FromInt64
-                            | U::Int64BitwiseNot
-                            | U::UInt64BitwiseNot => W::Bits64,
+                            U::UInt32From64 | U::UInt64FromInt64 => W::Bits64,
+                            U::Machine(format, _) => W::of_machine_type(format),
                             U::MachineIntegerCast { source, .. } => W::of_machine_type(source),
                             U::Float32Negate | U::Float64Negate => unreachable!(),
                         };
@@ -1096,6 +1106,16 @@ impl TermClasses {
                 right: b,
             } => (Int32Ge, self.intern_int32(a), self.intern_int32(b)),
             C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation,
+                left: a,
+                right: b,
+            } if *relation != CompareRelation::Equal => (
+                Self::condition_kind(condition)?,
+                self.intern_int32(a),
+                self.intern_int32(b),
+            ),
+            C::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: a,
@@ -1236,6 +1256,26 @@ impl TermClasses {
                 relation: CompareRelation::GreaterEqual,
                 ..
             } => ConditionKind::Int32Ge,
+            C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::LessThan,
+                ..
+            } => ConditionKind::UInt32Lt,
+            C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::LessEqual,
+                ..
+            } => ConditionKind::UInt32Le,
+            C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::GreaterThan,
+                ..
+            } => ConditionKind::UInt32Gt,
+            C::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::GreaterEqual,
+                ..
+            } => ConditionKind::UInt32Ge,
             C::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::LessThan,

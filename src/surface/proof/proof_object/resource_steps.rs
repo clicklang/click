@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::kernel::{IntegerTerm, SharedIntegerTerm};
+use crate::kernel::{MachineBinaryOp, MachineIntegerType};
 
 impl<'a> Proof<'a> {
     /// Whether `resource` names a declared family that is not an
@@ -2935,12 +2936,12 @@ fn observes_machine_arithmetic(reading: &Proposition) -> bool {
                 Bitvector32Term::Add(..)
                     | Bitvector32Term::Subtract(..)
                     | Bitvector32Term::Multiply(..)
-                    | Bitvector32Term::Int64Add(..)
-                    | Bitvector32Term::Int64Subtract(..)
-                    | Bitvector32Term::Int64Multiply(..)
-                    | Bitvector32Term::UInt64Add(..)
-                    | Bitvector32Term::UInt64Subtract(..)
-                    | Bitvector32Term::UInt64Multiply(..)
+                    | Bitvector32Term::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Add, .. }
+                    | Bitvector32Term::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Subtract, .. }
+                    | Bitvector32Term::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Multiply, .. }
+                    | Bitvector32Term::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Add, .. }
+                    | Bitvector32Term::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Subtract, .. }
+                    | Bitvector32Term::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Multiply, .. }
             )
         )
     })

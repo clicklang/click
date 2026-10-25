@@ -57,13 +57,16 @@ The facts below come from code audits of `master` on 2026-10-20.
 
 ### Smart tactics today
 
-`SmartTacticKind` (`src/surface.rs:4211`) has eight kinds:
+`SmartTacticKind` (`src/surface.rs:4211`) had eight kinds:
 
 - the four engines: `Simp`, `Arithmetic`, `Auto`, and `execute` as two kinds
   (`SmartExecute` and `ExecuteUntil`);
 - `ApplyTheorem`, which covers both `apply(theorem(args))` and `apply(ih(m))`;
 - `FactTransport`;
 - `CloseInvariants`.
+
+It now has the four engines (`Arithmetic`, `Simp`, `Execute`, `Auto`); see
+step 12.
 
 The engines are not layered as the principle says:
 
@@ -272,12 +275,12 @@ The fast/slow line is expansion: anything that still runs while checking an
 expanded proof must be fast. That is every simple tactic and every kernel
 check, not only code outside `simp`.
 
+Proposition facts (`FactSet`) have no `scan_unindexed` at all now: fast
+code reads them only through an index, and a new whole-set scan there does
+not compile.
+
 **Known fast-part scans** (`scan_unindexed`) still open:
 
-- Certifying an existential obligation from an assumed existential
-  (`certification_proves_exists_obligation_from_facts`). It tries each
-  existential fact of the obligation's sort as the witness source, a
-  search for which fact to use.
 - The memory-resolution condition match's fallback
   (`scanned_matching_condition_fact_for_memory_resolution`), reached from
   `functions.rs` and contract certification whenever its index declines.
@@ -344,8 +347,10 @@ the universals under their goal's shape: instantiation for a derivation
 condition (`condition_holds_by_instantiated_fact`) and of a loadable cell
 (`quantified_int32_fact_certifies_loadable_cell`), the alpha match of a
 universal goal, and the consequents an iterated guard equality
-instantiates (`instantiated_universal_consequents`; another condition
-offers its own variables to every universal, so it still reads them all).
+instantiates (`instantiated_universal_consequents`, which takes the
+equality's two sides: its one caller, the iterated guard, asks only an
+equality, and another condition would offer its own variables to every
+universal). Universal facts have no unindexed scan left.
 The quantified order facts for a condition serve only `simp`
 (`scan_for_search`). `universal_instantiation_ignores_universals_of_other_shapes`
 covers the scaling.
@@ -363,24 +368,55 @@ against pointer when deciding which memory facts survive a store
 charging made fail on the old scans). Still `scan_unindexed`, each over
 every composition:
 
-- `proves_owned_memory_ranges_separate_by`, which finds members through
-  base roots and aliases in other blocks;
-- `proves_owned_resources_separate` for a non-memory side, matched by
-  resource identity, which the member index does not file (two memory
-  sides read it): the index lists a composition under the memory members
-  it adds beyond its predecessor, and a non-memory member would need the
-  same difference over non-memory facts; and the composition range cover in
-  `proves_resource_separate_inner`, whose owner of the other side may be a
-  composite;
 - the composite frame frontier (`frame_frontier_compositions`), now over
-  the compositions owning a composite only (`composite_owning_compositions`;
-  a composition without one expands to nothing). Its gate once walked
+  the compositions owning a composite only (`composite_owning_compositions`,
+  read from each composition's own count; a composition without one
+  expands to nothing). Its gate once walked
   every fact of every composition on each store's cell drop
   (`frame_frontier_ignores_compositions_without_composites`);
 - `store_compositions` when the writer stated no store owners: the
   owned store footprint collects the member of every composition holding
   the cell, so its output is as large as the compositions that restate
   it.
+
+**Fixed:** the composition range cover in `proves_resource_separate_inner`
+while the path states a containment fact with a non-memory parent, as
+composite expansion does for every opened composite. The owners of the
+other range are now found by walking containment facts upward from its
+blocks: facts with a memory child filed by the child's block
+(`memory_containers`), then those with a non-memory child
+(`resource_containers`). A memory container adds its blocks and their
+address-equal blocks; a non-memory container adds its narrowest member key
+(`OwnedMemberKey::exact`). The cover reads the compositions listed under
+those blocks and keys, and the work is the containment facts on the way
+(`composition_cover_with_a_token_container_ignores_unrelated_compositions`;
+debug builds compare every answer with the scan). The counter that chose
+the scan, `nonmemory_parent_containments`, is gone.
+
+**Fixed:** owned separation of a non-memory side. The member index also
+lists a composition under the `OwnedMemberKey`s of each owned non-memory
+member it adds beyond its predecessor. One key is the bucket the
+composition's own direct match reads, which `direct_match_candidate_positions`
+now takes from the same key. A token or composite is also listed under its
+shape and first-pointer root (`ShapeRoot`). A side whose first argument is a
+pointer reads only the roots `direct_match_candidates_for` reads, so
+compositions owning the same composite at unrelated pointers are not
+visited. The difference walks cover the owned non-memory facts beside the
+memory ones (`changed_owned_inputs_from`, `owned_non_memory_input_facts`).
+A predecessor from another origin is chosen by the count of both
+(`listed_size`), so admission still costs what changed.
+`proves_owned_resources_separate` reads the compositions listed under the
+two sides' keys (`token_ownership_ignores_unrelated_compositions`,
+`composite_ownership_ignores_compositions_of_other_roots`; debug builds
+compare every answer with the scan).
+
+**Fixed:** owned range separation through related roots
+(`composition_separates_owned_ranges`). Each side is asked of a
+composition's members under its base's related roots, in those roots'
+blocks, and owned members of a valid composition are disjoint, so the
+compositions listed under those blocks reach one holding both
+(`owned_range_separation_ignores_unrelated_compositions`; debug builds
+compare every answer with the scan).
 
 **Accessors.** The callers of `pure_facts`, `condition_fact_pairs` and
 `proposition_facts` read a whole context to copy or describe it, not to
@@ -415,10 +451,16 @@ Still `scan_unindexed`:
   which `range_proven_disjoint_from_pointer` falls through to on a miss.
   Resolution equates loaded pointers whose cells agree across snapshots,
   so this is the same open question as the memory-resolution condition
-  match above;
-- a universal instantiated by a condition other than an equality
-  (`instantiated_universal_consequents`), which offers the condition's
-  variables to every universal.
+  match above.
+
+**Fixed, by narrowing:** certifying an existential obligation
+(`certification_proves_exists_obligation_from_facts`) tries only the
+assumed existentials alpha-equal to it, read from the identity bucket.
+Across the gate and the unit tests those were every hit (four, each with
+three facts on its path); trying every other existential of the sort as
+the witness source was a search for which fact to use, and is gone. It
+once tried every proposition fact
+(`existential_obligation_ignores_unrelated_facts`).
 
 **Fixed:** separation of a non-memory resource. The stated separations
 with a non-memory side are filed under each such side, and containment
@@ -751,6 +793,20 @@ Decided by the maintainer on 2026-10-20.
      and `arithmetic`, or are dropped. It does not leave open goals: Click
      has no general open-goal stack inside a loop body, and
      `close_invariants() by {…}` is already the explicit form.
+6. **One closer, and the proof at one program point** (2026-10-25; phase F).
+   - `simp` and `auto` become one tactic, `solve`, which closes one goal and
+     never runs C. On a single goal the two already run the same search;
+     they differ only in which goals a written form acts on after execution.
+   - What an omitted proof means, and what follows the last written tactic
+     of any script, is one implicit loop: `solve` an open goal, `step` a
+     statement with one successor, split at one with several and run the
+     loop on each arm, and stop at function exit with every goal closed. An
+     omitted proof is the empty script.
+   - The proof is at exactly one program point at a time. `execute()` is the
+     only tactic that breaks this today: it leaves every exit path at once
+     and applies the rest of the script to each.
+   - `by solve();` stays accepted although it is redundant: it is a handy
+     place holder to replace with another tactic.
 
 ## Plan
 
@@ -823,8 +879,22 @@ verdict change.
    `mdtests/c_named_function_contract_refines_vacuous_guarded_clause.md`.
    The restricted chain is `simp() using`'s, which reads no ambient fact.
    Switched off together, they also cost the `authority_symbolic` mdtests
-   and `examples/bounded-pool`, so they overlap. Covering those with the
-   connected chain is still to do. *Verdicts.*
+   and `examples/bounded-pool`, so they overlap. *Verdicts.*
+
+   Done in part, 2026-10-25: the selected-premise chain and `simp() using`'s
+   restricted chain were one greedy loop over a premise list. Both now run
+   the connected chain's search (`rewrite_search`), with the listed
+   equalities as its candidates and each used at most once
+   (`try_premise_equality_chain_closure`). `RewriteClosers` says what may
+   close a rewritten goal: `Selected` keeps the old chain's direct, typed
+   atomic and `normalize` closers, with no nested `simp`, which would
+   select the same premises again; `Listed` reads only the `using` list.
+   The greedy loop is gone, and no gate verdict changed. Switched off on
+   the day before, the selected chain alone cost a step of
+   `examples/arena`, and the restricted chain `examples/input-cursor` and
+   15 mdtests. The indexed goal-local search is still separate: switched
+   off alone, it costs a step of `examples/modeled-binary-tree` and
+   `mdtests/loop_old_parameter_resource_argument.md`.
 8. **Move definition-condition reading and constructor join into `simp`.**
    Done: both are part of `simp`'s last strategy over the connected facts
    (`try_connected_fact_closure`), definition reading first and constructor
@@ -900,10 +970,15 @@ verdict change.
     verdict changed except one, to a proof:
     `smart_ranking_closure_reads_an_inequality_in_scope` closes a ranking
     member from the inner loop's exit fact, which the named-premise closer
-    refused. `SmartTacticKind` keeps its kinds for now: a kind is a smart
-    site's spelling in diagnostics, so `close_invariants()` keeps its own,
-    and `apply` and `transport` stay smart sites until steps 13 and 14 make
-    their searches helpers.
+    refused. Done since steps 13 and 14 made the searches of `apply` and
+    `transport` lookups: `SmartTacticKind` is the four engines, and
+    `execute_until` is `Execute`. A smart site's class is a `SmartSite`:
+    an engine, an `ElidedArgument` (the premises of `apply(theorem(args))`
+    or `apply(ih(m))`, the frame evidence of `transport(P, Q)`), or bare
+    `close_invariants()`. `ElidedArgument::written_form` names the simple
+    tactic the `using` form is, and `every_public_form_has_one_class` checks
+    it against that form's parsed class. A refusal still spells the site as
+    written. No verdict changed.
 13. **`transport`.** Add an instance argument. Restrict the bare form's
     premise planner to facts about the memory involved, using an index,
     instead of every available fact. *Verdicts* for the planner change.
@@ -996,8 +1071,90 @@ verdict change.
     and removes its line from the list. A scan in a simple tactic that
     searches waits for its phase C step.
 
+### Phase F: one closer, one program point
+
+The measurements below are from master on 2026-10-25, over the gate's
+mdtests and examples.
+
+- Mapping `simp` and a written `auto();` to one single-goal closer changed
+  three mdtests, each about written `auto` itself: two write `auto();` with
+  C still to run, which executed the rest, and one checks that `auto();`
+  closed every claim. No example changed.
+- Of 5,063 function proofs, 553 end with more than one exit path, mostly
+  two. 820 do work other than a closer after exit; 557 of them have one
+  path, so a single program point already holds there. Of the 263 with
+  several paths, 237 begin with a proof `if` that tells the paths apart
+  again (`execute(); if result == tail { … } else { … }`), which a `branch`
+  at the C `if` writes directly. Only 26 do the same work on every path
+  (`have` 13, `fold` 9, `unfold` 3, `match`, `open` and `outcomes` 2 each).
+- A written script that stops with C left is refused, with "no checked
+  proof driver accepts this proof script's shape … remove tactics from the
+  end", where the cause is that execution has not reached exit.
+
+19. **`solve`.** Add `solve()` and `solve() using { … }` as the single-goal
+    closer, today's `simp`, and accept `simp` as its alias. `by solve();`
+    is accepted wherever `by simp();` is. No verdict changes.
+    Done: the tactic reference lists `solve()` and `solve() using`, with
+    `simp` named as the older spelling, `click docs simp` shows `solve`, and
+    `mdtests/solve_closes_one_goal.md` checks all three spellings.
+20. **The implicit tail.** Every script, the empty one included, ends with
+    the loop of decision 6. A script that stops with C left is finished by
+    it instead of refused; an omitted proof is the empty script. This only
+    accepts more proofs. Expansion writes the loop's steps, splits and
+    closers, as it writes `execute`'s today. The misleading refusal above
+    goes with it.
+    Done: a script that ends in a statement-level tactic is followed by the
+    closer an omitted proof ends with, which at a live frontier executes
+    what remains and at function exit closes what is open; a script that
+    ends in a split ends in its arms, each with its own closer. The tail's
+    site follows the script's last tactic, so its execution and closing are
+    charged to a smart budget. The implicit closer of a written script had
+    been charged nowhere: `owned_split_buffer_pipeline` spent 2,247,631 units
+    (15.7 s) in it under a 2,000,000-unit smart budget. Its claim is now
+    written in expanded form, and its post-execution work is 47,548 units.
+    `mdtests/a_script_that_stops_with_c_left_is_finished.md` covers the tail.
+    Scripts that end in a split keep the uncharged closer in each arm.
+21. **A written `auto();` is `solve();`.** It closes the first open goal; the
+    implicit tail closes the rest and runs any C left. Migrate the three
+    mdtests. `SmartTacticKind` becomes `Arithmetic`, `Solve` and `Execute`,
+    with the four classification stores, profiling and trace labels.
+    Done: `auto();` parses as `solve();`. `SmartTacticKind` is `Arithmetic`,
+    `Solve` and `Execute`, and what an omitted proof and the implicit
+    closer stand for is the smart site `SmartSite::Implicit`, still spelled
+    `auto` in refusals until step 24. The three mdtests are now
+    `a_written_auto_closes_one_goal.md`,
+    `a_script_that_stops_after_explicit_steps_executes_the_rest.md` and
+    `a_script_that_stops_after_a_call_reports_the_remaining_goal.md`.
+22. **`execute_until` is `step_until`.** It is repeated `step()` and never
+    forks: it refuses at an undecided branch, and each requirement it
+    crosses is proved by `solve`. Rename it, keeping the old spelling as an
+    alias, and give its refusals one tactic name (today the same miss is
+    reported as `step()` refused by `execute_until`, or as `execute()`).
+23. **`execute()` keeps one program point.** It refuses when execution
+    would leave more than one exit path and names the `branch` to write.
+    Migrate the 263 multi-path proofs: the 237 path-selecting `if`s become
+    `branch` arms, and the 26 that repeat work repeat it in each arm.
+    *Verdicts* only where a migration misses; each is explained in the PR.
+24. **Spelling migration.** Rewrite `simp()` as `solve()` across the corpus
+    and library, and drop the `by auto();` and `by simp();` that only
+    restate the omitted proof. Printing, expansion and diagnostics spell
+    `solve`.
+25. **Documentation review.** Read every page that describes proof tactics
+    and update it for this phase: `docs/concepts/` (smart and simple
+    tactics, tracing, proof-failure triage), `docs/reference/tactics/` and
+    `click docs` text, the CLI reference for `expand`, `profile` and
+    `audit`, the language reference, the tracing skill, example and mdtest
+    prose, `README.md`, and this roadmap. No page may still describe
+    `simp` and `auto` as different tactics, an omitted proof as
+    `execute(); auto();`, or a proof that holds several exit paths.
+
+Out of scope: a default join at C branches. The implicit tail splits each
+branch to exit as `execute` does today, so `n` sequential undecided `if`s
+still give `2^n` paths, and `branch ensuring` stays the written join.
+
 Phase A can start at once, and phase B does not depend on it. Phase E can
-run beside any other phase. Within phase C, step 10 comes before 11–13,
+run beside any other phase. Phase F's steps go in order, except that 22
+can go at any time and 25 is last. Within phase C, step 10 comes before 11–13,
 because those steps need its messages. Step 14's pieces are independent of
 one another. Phase D follows the steps whose behavior it documents. The
 tracing work in step 15 can start once step 10 lands.
@@ -1023,7 +1180,9 @@ tracing work in step 15 can start once step 10 lands.
 
 - **Exactly four smart tactics remain,** and each is documented as one
   comprehensible engine or wrapper: `auto` wraps `execute` and `simp`, and
-  `simp` wraps `arithmetic`.
+  `simp` wraps `arithmetic`. After phase F, three remain: `solve`, which
+  wraps `arithmetic`; `execute`; and `arithmetic`. An omitted proof is the
+  implicit loop over `step`, `branch` and `solve`, not a fourth tactic.
 - **Every search outside those four is a helper** for an elided argument of a
   simple tactic. `click expand` writes the helper's result into that tactic,
   and the written form checks with no search.

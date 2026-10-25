@@ -7,6 +7,7 @@
 #[cfg(test)]
 use crate::kernel::CompareRelation;
 use crate::kernel::LoadKind;
+use crate::kernel::MachineUnaryOp;
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, CPointerValue, CType, CValue,
     IntegerComparisonOperator, IntegerTerm, MachineIntegerType, PureFunctionArgument,
@@ -803,8 +804,7 @@ enum AlphaBitvectorKey {
     Variable(AlphaVariableKey),
     Binary(BitvectorBinaryOp, Box<Self>, Box<Self>),
     BitwiseNot(Box<Self>),
-    Int64BitwiseNot(Box<Self>),
-    UInt64BitwiseNot(Box<Self>),
+    Unary(MachineIntegerType, MachineUnaryOp, Box<Self>),
     Float32Negate(Box<Self>),
     Float64Negate(Box<Self>),
     If {
@@ -1264,6 +1264,13 @@ enum AlphaIntegerNode {
         name: String,
         arguments: Vec<AlphaPureFunctionArgumentKey>,
     },
+    /// A conditional, keyed like the machine conditional in
+    /// [`AlphaBitvectorKey`].
+    If {
+        condition: Box<AlphaConditionKey>,
+        then_term: usize,
+        else_term: usize,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -1544,6 +1551,19 @@ fn alpha_integer_node(
             }
         }
         IntegerTerm::AlgebraicMatch { .. } => return None,
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => AlphaIntegerNode::If {
+            condition: Box::new(alpha_condition_key_with_bindings::<false>(
+                condition,
+                bindings,
+                next_binder,
+            )?),
+            then_term: alpha_integer_node(then_term, bindings, memo, nodes, next_binder)?,
+            else_term: alpha_integer_node(else_term, bindings, memo, nodes, next_binder)?,
+        },
         IntegerTerm::RangeFold {
             index,
             initial,
@@ -2141,18 +2161,19 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
         Bitvector32Term::BitwiseNot(body) => AlphaBitvectorKey::BitwiseNot(Box::new(
             alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder)?,
         )),
-        Bitvector32Term::Int64BitwiseNot(body) => {
-            AlphaBitvectorKey::Int64BitwiseNot(Box::new(alpha_bitvector_key_with_bindings::<
-                ALLOW_LOADS,
-            >(body, bindings, next_binder)?))
-        }
-        Bitvector32Term::UInt64BitwiseNot(body) => {
-            AlphaBitvectorKey::UInt64BitwiseNot(Box::new(alpha_bitvector_key_with_bindings::<
-                ALLOW_LOADS,
-            >(
-                body, bindings, next_binder
-            )?))
-        }
+        Bitvector32Term::Unary {
+            format,
+            op,
+            operand: body,
+        } => AlphaBitvectorKey::Unary(
+            *format,
+            *op,
+            Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                body,
+                bindings,
+                next_binder,
+            )?),
+        ),
         Bitvector32Term::Float32Negate(body) => {
             AlphaBitvectorKey::Float32Negate(Box::new(alpha_bitvector_key_with_bindings::<
                 ALLOW_LOADS,

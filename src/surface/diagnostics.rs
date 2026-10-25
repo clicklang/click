@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::proof_diagnostics::render::{
     render_resource_diagnostic, render_resource_fact_diagnostic, render_resource_facts_diagnostic,
@@ -822,6 +823,30 @@ pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
             left: _,
             right: _,
         } => "uint64 greater-or-equal",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt32,
+            relation: CompareRelation::LessThan,
+            left: _,
+            right: _,
+        } => "uint32 less-than",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt32,
+            relation: CompareRelation::LessEqual,
+            left: _,
+            right: _,
+        } => "uint32 less-or-equal",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt32,
+            relation: CompareRelation::GreaterThan,
+            left: _,
+            right: _,
+        } => "uint32 greater-than",
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt32,
+            relation: CompareRelation::GreaterEqual,
+            left: _,
+            right: _,
+        } => "uint32 greater-or-equal",
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
@@ -2664,10 +2689,12 @@ fn range_end_is_next_element(start: &Bitvector32Term, end: &Bitvector32Term) -> 
         |term: &Bitvector32Term| term.as_const() == Some(1) || term.uint64_as_const() == Some(1);
     match end {
         Bitvector32Term::Add(left, right)
-        | Bitvector32Term::Int64Add(left, right)
-        | Bitvector32Term::UInt64Add(left, right) => {
-            (left.as_ref() == start && one(right)) || (right.as_ref() == start && one(left))
-        }
+        | Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Add,
+            left,
+            right,
+        } => (left.as_ref() == start && one(right)) || (right.as_ref() == start && one(left)),
         _ => false,
     }
 }
@@ -6716,6 +6743,19 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             output.push(')');
             output
         }
+        // A machine-typed `let` keeps its annotation: the type is the
+        // expected type of its value's arithmetic.
+        ContractExpression::Let {
+            name,
+            click_type: Some(click_type),
+            value,
+            body,
+        } => format!(
+            "(let {name}: {} = {}; {})",
+            describe_let_type(click_type),
+            describe_let_value(value),
+            describe_let_value(body)
+        ),
         ContractExpression::Let {
             name, value, body, ..
         } => format!(
@@ -6752,6 +6792,28 @@ fn describe_add_contract_expression(expression: &ContractExpression) -> String {
     }
     output.push(')');
     output
+}
+
+/// A `let` annotation as the file's language spells it.
+fn describe_let_type(click_type: &ClickType) -> String {
+    let name = describe_click_type(click_type);
+    if !rust_spelling() {
+        return name;
+    }
+    match name.as_str() {
+        "int8" => "i8",
+        "int16" => "i16",
+        "int32" => "i32",
+        "int64" => "i64",
+        "uint8" => "u8",
+        "uint16" => "u16",
+        "uint32" => "u32",
+        "uint64" => "u64",
+        "int128" => "i128",
+        "uint128" => "u128",
+        other => other,
+    }
+    .to_string()
 }
 
 /// Keep generated let bindings source-printable for long left-associated
@@ -6863,64 +6925,6 @@ fn aligned_comparison_sugar<'a>(
     alignment
         .is_power_of_two()
         .then_some((pointer.as_ref(), alignment))
-}
-
-/// A 32-bit unsigned order written the way the kernel states it: the signed
-/// order of both operands with their sign bit flipped, a constant operand
-/// arriving already flipped. It is spelled as the unsigned comparison it
-/// means, marked `(unsigned)` as [`describe_unsigned_comparison`] marks the
-/// kernel form, so it never reads as the signed comparison of the same
-/// operands.
-pub(super) fn unsigned_order_sugar(proposition: &ClickProposition) -> Option<String> {
-    const SIGN_BIT: &str = "-2147483648";
-    let ClickProposition::Comparison {
-        left,
-        operator,
-        right,
-    } = proposition
-    else {
-        return None;
-    };
-    if !matches!(
-        operator,
-        ComparisonOperator::LessThan
-            | ComparisonOperator::LessEqual
-            | ComparisonOperator::GreaterThan
-            | ComparisonOperator::GreaterEqual
-    ) {
-        return None;
-    }
-    let flipped = |expression: &ContractExpression| match expression {
-        ContractExpression::BitwiseXor(sign, value)
-            if describe_contract_expression(sign) == SIGN_BIT =>
-        {
-            Some(describe_contract_expression(value))
-        }
-        ContractExpression::BitwiseXor(value, sign)
-            if describe_contract_expression(sign) == SIGN_BIT =>
-        {
-            Some(describe_contract_expression(value))
-        }
-        _ => None,
-    };
-    let unflipped = |expression: &ContractExpression| {
-        flipped(expression).or_else(|| {
-            let constant = describe_contract_expression(expression)
-                .parse::<i64>()
-                .ok()?;
-            let bits = i32::try_from(constant).ok()? as u32;
-            Some((bits ^ 0x8000_0000).to_string())
-        })
-    };
-    // At least one side carries the flip itself; two bare constants are an
-    // ordinary signed comparison.
-    let (left, right) = match (flipped(left), flipped(right)) {
-        (Some(left), Some(right)) => (left, right),
-        (Some(left), None) => (left, unflipped(right)?),
-        (None, Some(right)) => (unflipped(left)?, right),
-        (None, None) => return None,
-    };
-    Some(format!("{left} {operator} {right} (unsigned)"))
 }
 
 pub(super) fn describe_click_proposition(proposition: &ClickProposition) -> String {
@@ -7111,7 +7115,7 @@ pub(super) fn describe_bitvector_with_context(
             "((uint32){})",
             describe_bitvector_with_context(value, parameter_binding)
         ),
-        Bitvector32Term::Int64BitwiseNot(value) | Bitvector32Term::UInt64BitwiseNot(value) => {
+        Bitvector32Term::Unary { operand: value, .. } => {
             format!(
                 "~{}",
                 describe_bitvector_with_context(value, parameter_binding)
@@ -7577,62 +7581,38 @@ pub(super) fn describe_condition_with_context(
     }
 }
 
-/// A 32-bit unsigned comparison, which the kernel states as the signed
-/// comparison of both operands with their sign bit flipped (see
-/// `ConditionTerm::unsigned_less_equal`). A constant operand arrives already
-/// flipped. Spelled as the unsigned comparison it means, never as the bias.
+/// A `uint32` order, spelled with its operands read as `uint32` values and
+/// marked `(unsigned)`, so it never reads as the signed comparison of the
+/// same operands.
 fn describe_unsigned_comparison(
     condition: &ConditionTerm,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
-    const SIGN_BIT: u32 = 0x8000_0000;
-    let (left, operator, right) = match condition {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        } => (left, "<", right),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        } => (left, "<=", right),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        } => (left, ">", right),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
-        } => (left, ">=", right),
-        _ => return None,
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::UInt32,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
     };
-    let flipped = |term: &Bitvector32Term| match term {
-        Bitvector32Term::BitwiseXor(value, sign) | Bitvector32Term::BitwiseXor(sign, value)
-            if sign.as_const() == Some(SIGN_BIT) =>
-        {
-            Some(describe_bitvector_with_context(value, parameter_binding))
-        }
-        _ => None,
+    let operator = match relation {
+        CompareRelation::LessThan => "<",
+        CompareRelation::LessEqual => "<=",
+        CompareRelation::GreaterThan => ">",
+        CompareRelation::GreaterEqual => ">=",
+        CompareRelation::Equal => return None,
     };
-    let unflipped = |term: &Bitvector32Term| {
-        flipped(term).or_else(|| term.as_const().map(|value| (value ^ SIGN_BIT).to_string()))
+    let operand = |term: &Bitvector32Term| match term.as_const() {
+        Some(value) => value.to_string(),
+        None => describe_bitvector_with_context(term, parameter_binding),
     };
-    // At least one side must carry the flip itself; two bare constants are
-    // an ordinary signed comparison.
-    let (left, right) = match (flipped(left), flipped(right)) {
-        (Some(left), Some(right)) => (left, right),
-        (Some(left), None) => (left, unflipped(right)?),
-        (None, Some(right)) => (unflipped(left)?, right),
-        (None, None) => return None,
-    };
-    Some(format!("{left} {operator} {right} (unsigned)"))
+    Some(format!(
+        "{} {operator} {} (unsigned)",
+        operand(left),
+        operand(right)
+    ))
 }
 
 pub(super) fn describe_binary_condition(

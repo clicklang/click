@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{MachineBinaryOp, MachineIntegerType};
 
 #[test]
 fn wide_cast_construction_and_validation_do_constant_work_on_large_operands() {
@@ -10,10 +11,12 @@ fn wide_cast_construction_and_validation_do_constant_work_on_large_operands() {
     for size in [16, 64, 256, 1024] {
         let mut operand = Bitvector32Term::Variable(Variable(149_002));
         for _ in 0..size {
-            operand = Bitvector32Term::Int64Add(
-                Box::new(operand),
-                Box::new(Bitvector32Term::Int64Constant(1)),
-            );
+            operand = Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Add,
+                left: Box::new(operand),
+                right: Box::new(Bitvector32Term::Int64Constant(1)),
+            };
         }
         let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {
             MachineIntegerType::Int128.convert_modulo_value(CValue::Int64(operand))
@@ -39,9 +42,19 @@ fn symbolic_modulo_conversion_work_is_independent_of_operand_depth() {
             for _ in 0..size {
                 let one = Bitvector32Term::UInt64Constant(1);
                 term = if right_nested {
-                    Bitvector32Term::UInt64Add(Box::new(one), Box::new(term))
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::Add,
+                        left: Box::new(one),
+                        right: Box::new(term),
+                    }
                 } else {
-                    Bitvector32Term::UInt64Add(Box::new(term), Box::new(one))
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::Add,
+                        left: Box::new(term),
+                        right: Box::new(one),
+                    }
                 };
             }
             let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -117,5 +130,50 @@ fn machine_integer_constant_work_is_linear_and_oversized_integer_rejection_is_co
             assert!(work <= previous * 4);
         }
         previous = Some(work);
+    }
+}
+
+/// Building σ, the 32-bit sign cast, and reading a term's word through it
+/// (`word32`) inspect only the operand's root: the work is the same for
+/// operands of 16 to 1,024 nodes, and a 32-bit operator over σ(x) is the
+/// operator over `x`.
+#[test]
+fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
+    use crate::kernel::Variable;
+    for size in [16, 64, 256, 1024] {
+        let mut operand = Bitvector32Term::Variable(Variable(149_003));
+        for _ in 0..size {
+            operand = Bitvector32Term::Add(
+                Box::new(operand),
+                Box::new(Bitvector32Term::Variable(Variable(149_004))),
+            );
+        }
+        let (cast, work) = crate::instrumentation::measure_deterministic_work(|| {
+            Bitvector32Term::sign_cast32(
+                MachineIntegerType::Int32,
+                MachineIntegerType::UInt32,
+                operand.clone(),
+            )
+        });
+        assert_eq!(work, 1, "size {size}");
+        assert!(std::ptr::eq(
+            cast.word32(),
+            cast.sign_cast32_operand().unwrap().1
+        ));
+        assert_eq!(cast.word32(), &operand, "size {size}");
+        let (back, work) = crate::instrumentation::measure_deterministic_work(|| {
+            Bitvector32Term::sign_cast32(
+                MachineIntegerType::UInt32,
+                MachineIntegerType::Int32,
+                cast.clone(),
+            )
+        });
+        assert_eq!(back, operand, "σ(σ(x)) is x, size {size}");
+        assert_eq!(work, 2, "size {size}");
+        assert_eq!(
+            Bitvector32Term::add(cast.clone(), Bitvector32Term::Constant(1)),
+            Bitvector32Term::add(operand.clone(), Bitvector32Term::Constant(1)),
+            "size {size}"
+        );
     }
 }

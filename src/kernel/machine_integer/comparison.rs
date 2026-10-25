@@ -196,8 +196,7 @@ pub(crate) fn native_comparison_through_integer_operations(
 /// a native comparison fact: `1u32 <= x` gives `1 <= to_integer(x)`. Each
 /// candidate is recomputed through the forward map, so only exact
 /// converses, up to the fact's equivalent order spellings, are returned. A
-/// 32-bit word comparison may read as `int32` and, when its operands carry
-/// the unsigned sign-bit encoding, as `uint32`
+/// 32-bit word equality may read as `int32` or as `uint32`
 /// (`representation::comparison_readings`).
 pub(crate) fn integer_observations_of_native_comparison(
     proposition: &Proposition,
@@ -215,14 +214,8 @@ pub(crate) fn integer_observations_of_native_comparison(
     let mut lifted = Vec::new();
     for &ty in types {
         let (Some(left), Some(right)) = (
-            representation::order_operand(ty, condition, left),
-            representation::order_operand(ty, condition, right),
-        ) else {
-            continue;
-        };
-        let (Some(left), Some(right)) = (
-            IntegerTerm::from_machine(ty, left),
-            IntegerTerm::from_machine(ty, right),
+            IntegerTerm::from_machine(ty, left.clone()),
+            IntegerTerm::from_machine(ty, right.clone()),
         ) else {
             continue;
         };

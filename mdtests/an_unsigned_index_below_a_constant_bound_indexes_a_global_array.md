@@ -5,7 +5,7 @@ The file-scope counterpart of
 The C frontend checks a file-scope subscript as `x >= 0 && x < 4` before
 the access, and the owned-footprint check reads the store in element
 coordinates. With `uint32 x` both read the signed pair `0 <= x`, `x < 4`
-filed beside the biased unsigned test; with `uint64 x` the check's
+filed beside the unsigned test; with `uint64 x` the check's
 `x >= 0u` is true of every unsigned value and the pair is filed on the
 index's low word.
 

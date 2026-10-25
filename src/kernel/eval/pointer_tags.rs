@@ -348,7 +348,12 @@ fn structural_form_of(
             object_class: class.class(),
             tag: Bitvector32Term::UInt64Constant(0),
         }),
-        Bitvector32Term::UInt64Add(left, right) => {
+        Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Add,
+            left,
+            right,
+        } => {
             if let Some(form) = form_of(left, assumptions, undecided, used, through_facts)? {
                 Some(TaggedAddress {
                     pointer: form.pointer,
@@ -365,16 +370,25 @@ fn structural_form_of(
                 })
             }
         }
-        Bitvector32Term::UInt64Subtract(left, right) => {
+        Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Subtract,
+            left,
+            right,
+        } => {
             form_of(left, assumptions, undecided, used, through_facts)?.map(|form| TaggedAddress {
                 pointer: form.pointer,
                 object_class: form.object_class,
                 tag: Bitvector32Term::uint64_subtract(form.tag, right.as_ref().clone()),
             })
         }
-        Bitvector32Term::UInt64BitwiseAnd(left, right)
-        | Bitvector32Term::UInt64BitwiseOr(left, right) => {
-            let operation = if matches!(term, Bitvector32Term::UInt64BitwiseAnd(_, _)) {
+        Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: op @ (MachineBinaryOp::BitwiseAnd | MachineBinaryOp::BitwiseOr),
+            left,
+            right,
+        } => {
+            let operation = if *op == MachineBinaryOp::BitwiseAnd {
                 CBitwiseOperation::And
             } else {
                 CBitwiseOperation::Or
@@ -486,10 +500,18 @@ pub(in crate::kernel) fn tag_bound(term: &Bitvector32Term) -> Option<u64> {
         return Some(constant);
     }
     match term {
-        Bitvector32Term::UInt64BitwiseAnd(left, right) => {
-            left.uint64_as_const().or_else(|| right.uint64_as_const())
-        }
-        Bitvector32Term::UInt64BitwiseOr(left, right) => {
+        Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::BitwiseAnd,
+            left,
+            right,
+        } => left.uint64_as_const().or_else(|| right.uint64_as_const()),
+        Bitvector32Term::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::BitwiseOr,
+            left,
+            right,
+        } => {
             let bound = tag_bound(left)?.max(tag_bound(right)?);
             Some(bound.checked_add(1)?.checked_next_power_of_two()? - 1)
         }
@@ -502,7 +524,13 @@ pub(in crate::kernel) fn masked_tag_value(
     assumptions: &PureFactContext,
     used: &mut UsedFacts,
 ) -> Option<Bitvector32Term> {
-    let Bitvector32Term::UInt64BitwiseAnd(left, right) = term else {
+    let Bitvector32Term::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::BitwiseAnd,
+        left,
+        right,
+    } = term
+    else {
         return None;
     };
     let (inner, mask) = match (left.uint64_as_const(), right.uint64_as_const()) {

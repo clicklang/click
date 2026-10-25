@@ -3224,8 +3224,7 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
         | Bitvector32Term::Int64FromUInt32(value)
         | Bitvector32Term::UInt64FromInt32(value)
         | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value) => {
+        | Bitvector32Term::Unary { operand: value, .. } => {
             collect_bitvector_bound_variables(value, variables)
         }
         crate::kernel::binary_wide_term!(left, right)
@@ -3559,6 +3558,19 @@ fn collect_integer_bound_variables_seen(
             // Integer expressions; use the established carrier-aware walker
             // for this shared namespace instead of dropping either side.
             crate::kernel::prelude::collect_integer_variables(term, variables);
+        }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_bound_variables(condition, variables);
+            if seen.insert(then_term.id()) {
+                collect_integer_bound_variables_seen(then_term, variables, seen);
+            }
+            if seen.insert(else_term.id()) {
+                collect_integer_bound_variables_seen(else_term, variables, seen);
+            }
         }
         IntegerTerm::RangeFold {
             index,
@@ -6891,6 +6903,25 @@ fn substitute_pointer_variable_in_spec_integer(
             };
             SpecIntegerExpression::Term(term)
         }
+        SpecIntegerExpression::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => SpecIntegerExpression::If {
+            condition: Box::new(substitute_pointer_variable_in_spec_proposition(
+                condition, from, to,
+            )),
+            then_branch: Box::new(substitute_pointer_variable_in_spec_integer(
+                then_branch,
+                from,
+                to,
+            )),
+            else_branch: Box::new(substitute_pointer_variable_in_spec_integer(
+                else_branch,
+                from,
+                to,
+            )),
+        },
         SpecIntegerExpression::FromMachine(value) => SpecIntegerExpression::FromMachine(Box::new(
             substitute_pointer_variable_in_spec_expression(value, from, to),
         )),

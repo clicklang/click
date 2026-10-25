@@ -8645,10 +8645,8 @@ fn rewrite_int32_term_by_exact_equality(
         | Bitvector32Term::UInt32From64(_)
         | Bitvector32Term::UInt64FromInt32(_)
         | Bitvector32Term::UInt64FromInt64(_)
-        | crate::kernel::binary_int64_term!(_, _)
-        | Bitvector32Term::Int64BitwiseNot(_)
-        | crate::kernel::binary_uint64_term!(_, _)
-        | Bitvector32Term::UInt64BitwiseNot(_)
+        | Bitvector32Term::Binary { .. }
+        | Bitvector32Term::Unary { .. }
         | Bitvector32Term::RangeFold { .. }
         | Bitvector32Term::IntegerToMachine { .. } => term.clone(),
         term => match (term.as_binary(), term.as_unary()) {
@@ -9386,7 +9384,12 @@ pub fn prove_uint64_integer_bridge(
                 true,
             );
             (
-                Bitvector32Term::UInt64Add(left.into(), right.into()),
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Add,
+                    left: left.into(),
+                    right: right.into(),
+                },
                 exact,
                 guard,
             )
@@ -9398,7 +9401,12 @@ pub fn prove_uint64_integer_bridge(
                 true,
             );
             (
-                Bitvector32Term::UInt64Multiply(left.into(), right.into()),
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Multiply,
+                    left: left.into(),
+                    right: right.into(),
+                },
                 exact,
                 guard,
             )
@@ -9409,7 +9417,12 @@ pub fn prove_uint64_integer_bridge(
                 true,
             );
             (
-                Bitvector32Term::UInt64Subtract(left.into(), right.into()),
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Subtract,
+                    left: left.into(),
+                    right: right.into(),
+                },
                 IntegerTerm::Subtract(a.into(), b.into()),
                 guard,
             )
@@ -9426,12 +9439,22 @@ pub fn prove_uint64_integer_bridge(
             );
             let (machine, exact) = if name == "click::integer::uint64_divide_to_integer" {
                 (
-                    Bitvector32Term::UInt64Divide(left.into(), right.into()),
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::Divide,
+                        left: left.into(),
+                        right: right.into(),
+                    },
                     IntegerTerm::TruncatingQuotient(a.into(), b.into()),
                 )
             } else {
                 (
-                    Bitvector32Term::UInt64Remainder(left.into(), right.into()),
+                    Bitvector32Term::Binary {
+                        format: MachineIntegerType::UInt64,
+                        op: MachineBinaryOp::Remainder,
+                        left: left.into(),
+                        right: right.into(),
+                    },
                     IntegerTerm::TruncatingRemainder(a.into(), b.into()),
                 )
             };
@@ -9655,11 +9678,21 @@ fn prove_signed_operation_to_integer(
         ),
         (MachineIntegerType::Int64, false) => (
             ConditionTerm::int64_signed_add_overflows(left.clone(), right.clone()),
-            Bitvector32Term::Int64Add(Box::new(left.clone()), Box::new(right.clone())),
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Add,
+                left: Box::new(left.clone()),
+                right: Box::new(right.clone()),
+            },
         ),
         (MachineIntegerType::Int64, true) => (
             ConditionTerm::int64_signed_subtract_overflows(left.clone(), right.clone()),
-            Bitvector32Term::Int64Subtract(Box::new(left.clone()), Box::new(right.clone())),
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Subtract,
+                left: Box::new(left.clone()),
+                right: Box::new(right.clone()),
+            },
         ),
         _ => unreachable!("signed operation bridges admit only int32/int64"),
     };

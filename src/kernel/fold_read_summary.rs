@@ -411,6 +411,12 @@ impl BodyChecker<'_> {
                 IntegerTerm::AlgebraicMatch { .. } => {
                     return Err(Self::unsupported("an algebraic match"));
                 }
+                // An evaluated conditional's condition holds machine terms,
+                // which this walk refuses as it refuses an evaluated machine
+                // conditional.
+                IntegerTerm::If { .. } => {
+                    return Err(Self::unsupported("an evaluated conditional"));
+                }
                 IntegerTerm::RangeFold { .. } => return Err(Self::unsupported("a nested fold")),
             }
         }
@@ -444,6 +450,15 @@ impl BodyChecker<'_> {
             SpecIntegerExpression::ResourceField(_) => Err(Self::unsupported("a resource field")),
             SpecIntegerExpression::AlgebraicMatch { .. } => {
                 Err(Self::unsupported("an algebraic match"))
+            }
+            SpecIntegerExpression::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.proposition(condition, scope)?;
+                self.integer(then_branch, scope)?;
+                self.integer(else_branch, scope)
             }
         }
     }

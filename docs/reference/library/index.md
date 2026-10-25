@@ -15,6 +15,13 @@ documentation gate. The same gate compares declaration names bidirectionally,
 so adding, removing, or changing a public symbol requires a matching reference
 update.
 
+A proof inside the library sees only the library theorems declared above
+it, in module order. Built-in tactics apply library theorems by name without
+a citation, so declaration order is what keeps library proofs acyclic; a
+proof that cites a later theorem of its own module is refused with that
+reason. Sidecars apply library theorems as declarations and are not limited
+this way.
+
 Pure function calls remain symbolic until explicitly unfolded. Predicates
 remain opaque until a proof explicitly unfolds them or applies a theorem that
 exposes the needed consequence. Theorems can be applied when their stated

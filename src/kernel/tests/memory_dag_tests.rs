@@ -4077,10 +4077,12 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
         .assume_condition(
             ConditionTerm::uint64_equal(
                 Bitvector32Term::pointer_address(q.clone()),
-                Bitvector32Term::UInt64Add(
-                    Box::new(Bitvector32Term::pointer_address(p.clone())),
-                    Box::new(Bitvector32Term::Variable(Variable(970_143))),
-                ),
+                Bitvector32Term::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(Bitvector32Term::pointer_address(p.clone())),
+                    right: Box::new(Bitvector32Term::Variable(Variable(970_143))),
+                },
             ),
             true,
         );

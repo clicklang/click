@@ -577,10 +577,8 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             | Bitvector32Term::UInt32From64(_)
             | Bitvector32Term::UInt64FromInt32(_)
             | Bitvector32Term::UInt64FromInt64(_)
-            | crate::kernel::binary_int64_term!(_, _)
-            | Bitvector32Term::Int64BitwiseNot(_)
-            | crate::kernel::binary_uint64_term!(_, _)
-            | Bitvector32Term::UInt64BitwiseNot(_) => {}
+            | Bitvector32Term::Binary { .. }
+            | Bitvector32Term::Unary { .. } => {}
             Bitvector32Term::Variable(variable) => {
                 variables.insert(*variable);
             }
@@ -750,11 +748,14 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
 }
 
 /// Certifies an existential requirement side-obligation (typically the
-/// loadability safety of an existential requirement body): the witness of an
-/// assumed existential over the same sort supplies the bound variable, its
-/// body conjuncts become facts, and the obligation body must then certify
-/// pointwise.
-fn certification_proves_exists_obligation_from_facts(
+/// loadability safety of an existential requirement body) from an assumed
+/// existential alpha-equal to it: its witness supplies the bound variable,
+/// its body conjuncts become facts, and the obligation body must then
+/// certify pointwise. Only the alpha-equal existentials, read from the
+/// identity bucket, are tried; across the gate and the unit tests they were
+/// the only ones that ever certified, and trying every other existential of
+/// the sort was a search for which one to use.
+pub(in crate::kernel) fn certification_proves_exists_obligation_from_facts(
     assumptions: &PureFactContext,
     obligation: &Proposition,
 ) -> bool {
@@ -765,8 +766,7 @@ fn certification_proves_exists_obligation_from_facts(
         return false;
     };
     let fact_candidates = assumptions
-        .prop_facts
-        .scan_unindexed()
+        .stated_identity_bucket(obligation)
         .cloned()
         .collect::<Vec<_>>();
     fact_candidates.iter().any(|fact| {

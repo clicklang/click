@@ -2114,6 +2114,18 @@ fn evaluate_spec_integer_expression_paths_in(
                 budget,
             )
         }
+        SpecIntegerExpression::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => evaluate_spec_integer_if_paths_in(
+            scope,
+            condition,
+            then_branch,
+            else_branch,
+            assumptions,
+            budget,
+        ),
         SpecIntegerExpression::FromMachine(machine) => {
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 scope,
@@ -2766,6 +2778,7 @@ fn integer_carrier_in_integer(term: &IntegerTerm, variable: Variable) -> bool {
         | crate::kernel::binary_integer_term!(_, _)
         | IntegerTerm::PureFunctionApplication(_)
         | IntegerTerm::AlgebraicMatch { .. }
+        | IntegerTerm::If { .. }
         | IntegerTerm::RangeFold { .. } => true,
     }
 }
@@ -7696,6 +7709,106 @@ fn evaluate_spec_algebraic_if_paths_in(
                 &branch_assumptions,
             ) {
                 paths.push(SpecAlgebraicPath {
+                    value: branch_path.value,
+                    facts,
+                    obligations,
+                });
+            }
+        }
+    }
+    Ok(paths)
+}
+
+/// An Integer `if`, as [`evaluate_spec_if_paths_in`] evaluates a scalar
+/// one: a literally constant condition selects its branch, and any other
+/// lowers both into one conditional term.
+fn evaluate_spec_integer_if_paths_in(
+    scope: SpecScope<'_>,
+    condition: &SpecProposition,
+    then_branch: &SpecIntegerExpression,
+    else_branch: &SpecIntegerExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecIntegerPath>> {
+    let mut paths = Vec::new();
+    for condition_path in with_integer_comparisons_preserved(false, || {
+        lower_spec_proposition_at_state_with_algebraic_bindings_in(
+            scope,
+            condition,
+            assumptions,
+            budget,
+        )
+    })? {
+        let branch_assumptions = assumptions_with_path_context(
+            assumptions,
+            &condition_path.facts,
+            &condition_path.obligations,
+        );
+        let branch_paths = match constant_spec_condition_value(&condition_path.proposition) {
+            Some(truth) => evaluate_spec_integer_expression_paths_in(
+                scope,
+                if truth { then_branch } else { else_branch },
+                &branch_assumptions,
+                budget,
+            )?,
+            None => {
+                let (condition, expected) =
+                    proposition_as_single_condition(&condition_path.proposition)
+                        .or_else(|| compound_spec_value_condition(&condition_path.proposition))
+                        .ok_or(ExecutionLimit::Paths)?;
+                let then_paths = evaluate_spec_integer_expression_paths_in(
+                    scope,
+                    then_branch,
+                    &branch_assumptions,
+                    budget,
+                )?;
+                let else_paths = evaluate_spec_integer_expression_paths_in(
+                    scope,
+                    else_branch,
+                    &branch_assumptions,
+                    budget,
+                )?;
+                let mut branch_paths = Vec::new();
+                for then_path in then_paths {
+                    for else_path in &else_paths {
+                        let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+                            &then_path.facts,
+                            &then_path.obligations,
+                            &else_path.facts,
+                            &else_path.obligations,
+                            &branch_assumptions,
+                        ) else {
+                            continue;
+                        };
+                        let (then_value, else_value) = if expected {
+                            (then_path.value.clone(), else_path.value.clone())
+                        } else {
+                            (else_path.value.clone(), then_path.value.clone())
+                        };
+                        branch_paths.push(SpecIntegerPath {
+                            value: IntegerTerm::if_then_else(
+                                condition.clone(),
+                                then_value,
+                                else_value,
+                            ),
+                            facts,
+                            obligations,
+                        });
+                    }
+                }
+                branch_paths
+            }
+        };
+        for branch_path in branch_paths {
+            if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
+                &condition_path.facts,
+                &condition_path.obligations,
+                &branch_path.facts,
+                &branch_path.obligations,
+                assumptions,
+                &branch_assumptions,
+            ) {
+                paths.push(SpecIntegerPath {
                     value: branch_path.value,
                     facts,
                     obligations,

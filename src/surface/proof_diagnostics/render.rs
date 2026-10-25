@@ -1737,40 +1737,6 @@ impl Renderer<'_> {
         }
     }
     fn binary_condition_bv(&mut self, a: &Bitvector32Term, b: &Bitvector32Term, label: &str) {
-        // A signed order of sign-flipped operands is the unsigned order of
-        // the operands themselves; a constant operand arrives already
-        // flipped. Render what it means, not the bias.
-        const SIGN_BIT: u32 = 0x8000_0000;
-        fn flipped(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
-            match term {
-                Bitvector32Term::BitwiseXor(value, sign)
-                | Bitvector32Term::BitwiseXor(sign, value)
-                    if sign.as_const() == Some(SIGN_BIT) =>
-                {
-                    Some(value)
-                }
-                _ => None,
-            }
-        }
-        let unflipped = |term: &Bitvector32Term| {
-            flipped(term).cloned().or_else(|| {
-                term.as_const()
-                    .map(|value| Bitvector32Term::Constant(value ^ SIGN_BIT))
-            })
-        };
-        if let Some(order) = label.strip_prefix("int32 ").filter(|order| *order != "=")
-            && (flipped(a).is_some() || flipped(b).is_some())
-            && let (Some(a), Some(b)) = (unflipped(a), unflipped(b))
-        {
-            self.push("uint32 ");
-            self.push(order);
-            self.push("(");
-            self.bitvector(&a);
-            self.push(", ");
-            self.bitvector(&b);
-            self.push(")");
-            return;
-        }
         // Equality shares one 32-bit kernel form between signed and unsigned
         // C values. Retained type metadata disambiguates a returned value
         // even when it has no source name.
@@ -1882,6 +1848,19 @@ impl Renderer<'_> {
                     self.integer_shared(&arm.body);
                 }
                 self.push(" }");
+            }
+            IntegerTerm::If {
+                condition,
+                then_term,
+                else_term,
+            } => {
+                self.push("if(");
+                self.condition(condition);
+                self.push(", ");
+                self.integer_shared(then_term);
+                self.push(", ");
+                self.integer_shared(else_term);
+                self.push(")");
             }
             IntegerTerm::RangeFold {
                 index,

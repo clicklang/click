@@ -9,6 +9,7 @@
 
 use super::representation::{self, Division};
 use super::*;
+use crate::kernel::MachineBinaryOp;
 use crate::kernel::proof::arithmetic_special::{
     SpecialArithmeticCertificate, SpecialArithmeticNode,
 };
@@ -248,6 +249,49 @@ fn exact_comparison_decides_alike_at_every_format() {
     }
 }
 
+/// An order is a native comparison at its own format, of the operands' words
+/// as they are: `uint32` and `uint64` orders are unsigned comparisons, not a
+/// signed comparison of re-encoded words. A narrow order is the `int32` order
+/// of its canonical words. Each reads back at its format alone.
+#[test]
+fn every_order_is_native_at_its_own_format() {
+    use crate::kernel::CompareRelation;
+    for ty in FORMATS {
+        let (a, b) = (value(ty, 172_031), value(ty, 172_032));
+        let filed = if ty.format().bits() < 32 {
+            Ty::Int32
+        } else {
+            ty
+        };
+        for (relation, compare) in [
+            (Relation::Less, CompareRelation::LessThan),
+            (Relation::LessEqual, CompareRelation::LessEqual),
+        ] {
+            let (native, truth) = representation::comparison(ty, relation, a.clone(), b.clone())
+                .unwrap_or_else(|| panic!("{ty:?} {relation:?} has a native comparison"));
+            assert!(truth, "{ty:?} {relation:?}");
+            assert_eq!(
+                native,
+                ConditionTerm::Compare {
+                    format: filed,
+                    relation: compare,
+                    left: Box::new(a.clone()),
+                    right: Box::new(b.clone()),
+                },
+                "{ty:?} {relation:?}"
+            );
+            let readings = comparison::integer_observations_of_native_comparison(
+                &Proposition::ConditionIs(native, true),
+            );
+            let expected = Proposition::ConditionIs(
+                integer_condition(relation, observe(ty, a.clone()), observe(ty, b.clone())),
+                true,
+            );
+            assert_eq!(readings, vec![expected], "{ty:?} {relation:?}");
+        }
+    }
+}
+
 fn identity_certificate(result: Proposition) -> SpecialArithmeticCertificate {
     SpecialArithmeticCertificate {
         nodes: vec![SpecialArithmeticNode::IntegerOperationIdentity {
@@ -463,20 +507,50 @@ fn division_word(
         Division::Quotient => [
             T::Divide(operand.clone(), divisor.clone()),
             T::UnsignedDivide(operand.clone(), divisor.clone()),
-            T::Int64Divide(operand.clone(), divisor.clone()),
-            T::UInt64Divide(operand, divisor),
+            T::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Divide,
+                left: operand.clone(),
+                right: divisor.clone(),
+            },
+            T::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Divide,
+                left: operand,
+                right: divisor,
+            },
         ],
         Division::ShiftRight => [
             T::ArithmeticShiftRight(operand.clone(), divisor.clone()),
             T::LogicalShiftRight(operand.clone(), divisor.clone()),
-            T::Int64ArithmeticShiftRight(operand.clone(), divisor.clone()),
-            T::UInt64LogicalShiftRight(operand, divisor),
+            T::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::ShiftRight,
+                left: operand.clone(),
+                right: divisor.clone(),
+            },
+            T::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::ShiftRight,
+                left: operand,
+                right: divisor,
+            },
         ],
         Division::Remainder => [
             T::Remainder(operand.clone(), divisor.clone()),
             T::UnsignedRemainder(operand.clone(), divisor.clone()),
-            T::Int64Remainder(operand.clone(), divisor.clone()),
-            T::UInt64Remainder(operand, divisor),
+            T::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Remainder,
+                left: operand.clone(),
+                right: divisor.clone(),
+            },
+            T::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Remainder,
+                left: operand,
+                right: divisor,
+            },
         ],
     };
     let mut accepted = candidates.into_iter().filter(|word| {

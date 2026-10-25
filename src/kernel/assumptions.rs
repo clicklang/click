@@ -36,6 +36,7 @@ use super::machine_integer::definedness::{
 };
 use super::machine_integer::modular::wrapped_equality_of_integer_equality;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
+pub(in crate::kernel) use condition_reasoning::held_order_at;
 pub(in crate::kernel) use condition_reasoning::narrowed_cast_identity;
 
 #[derive(Clone, Debug)]
@@ -1659,10 +1660,24 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, has
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value) => hash_memory_blind_bitvector(value, hasher),
-        crate::kernel::binary_wide_term!(left, right) => {
+        | Bitvector32Term::UInt64FromInt64(value) => hash_memory_blind_bitvector(value, hasher),
+        Bitvector32Term::Unary {
+            format,
+            op,
+            operand,
+        } => {
+            std::hash::Hash::hash(format, hasher);
+            std::hash::Hash::hash(op, hasher);
+            hash_memory_blind_bitvector(operand, hasher)
+        }
+        Bitvector32Term::Binary {
+            format,
+            op,
+            left,
+            right,
+        } => {
+            std::hash::Hash::hash(format, hasher);
+            std::hash::Hash::hash(op, hasher);
             hash_memory_blind_bitvector(left, hasher);
             hash_memory_blind_bitvector(right, hasher);
         }
@@ -2062,27 +2077,7 @@ fn collect_bitvector_memory_loads_with_width(
         | Bitvector32Term::Float64Binary { left, right, .. } => {
             let child_width = if matches!(
                 term,
-                Bitvector32Term::Int64Add(..)
-                    | Bitvector32Term::Int64Subtract(..)
-                    | Bitvector32Term::Int64Multiply(..)
-                    | Bitvector32Term::Int64Divide(..)
-                    | Bitvector32Term::Int64Remainder(..)
-                    | Bitvector32Term::Int64ShiftLeft(..)
-                    | Bitvector32Term::Int64ArithmeticShiftRight(..)
-                    | Bitvector32Term::Int64BitwiseAnd(..)
-                    | Bitvector32Term::Int64BitwiseOr(..)
-                    | Bitvector32Term::Int64BitwiseXor(..)
-                    | Bitvector32Term::UInt64Add(..)
-                    | Bitvector32Term::UInt64Subtract(..)
-                    | Bitvector32Term::UInt64Multiply(..)
-                    | Bitvector32Term::UInt64Divide(..)
-                    | Bitvector32Term::UInt64Remainder(..)
-                    | Bitvector32Term::UInt64ShiftLeft(..)
-                    | Bitvector32Term::UInt64LogicalShiftRight(..)
-                    | Bitvector32Term::UInt64BitwiseAnd(..)
-                    | Bitvector32Term::UInt64BitwiseOr(..)
-                    | Bitvector32Term::UInt64BitwiseXor(..)
-                    | Bitvector32Term::Float64Binary { .. }
+                Bitvector32Term::Binary { .. } | Bitvector32Term::Float64Binary { .. }
             ) {
                 Some(8)
             } else {
@@ -2109,8 +2104,7 @@ fn collect_bitvector_memory_loads_with_width(
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::UInt64FromInt32(value)
         | Bitvector32Term::UInt64FromInt64(value)
-        | Bitvector32Term::Int64BitwiseNot(value)
-        | Bitvector32Term::UInt64BitwiseNot(value)
+        | Bitvector32Term::Unary { operand: value, .. }
         | Bitvector32Term::BitwiseNot(value)
         | Bitvector32Term::Float32Negate(value)
         | Bitvector32Term::Float64Negate(value) => {
@@ -2486,6 +2480,27 @@ fn collect_integer_node_memory_loads(
             }
             Ok(())
         }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_memory_loads(condition, current_memory, loads, seen_integers)?;
+            collect_integer_memory_loads_with_width(
+                then_term,
+                current_memory,
+                loads,
+                width,
+                seen_integers,
+            )?;
+            collect_integer_memory_loads_with_width(
+                else_term,
+                current_memory,
+                loads,
+                width,
+                seen_integers,
+            )
+        }
         IntegerTerm::RangeFold {
             index,
             initial,
@@ -2790,6 +2805,12 @@ impl PureFactContext {
             let mut index = std::mem::take(&mut self.int64_signed_order_bounds);
             Self::adjust_order_bound_index(&mut index, left, right, strict, insert);
             self.int64_signed_order_bounds = index;
+        } else if let Some((left, right, strict)) =
+            condition_reasoning::condition_as_uint32_order_fact(condition, value)
+        {
+            let mut index = std::mem::take(&mut self.uint32_order_bounds);
+            Self::adjust_order_bound_index(&mut index, left, right, strict, insert);
+            self.uint32_order_bounds = index;
         } else if let Some((left, right, strict)) =
             condition_reasoning::condition_as_uint64_order_fact(condition, value)
         {
@@ -4288,6 +4309,7 @@ impl PureFactContext {
         self.order_facts_by_lower = OrderFactsByLower::default();
         self.signed_order_bounds = crate::persistent::PersistentMap::default();
         self.int64_signed_order_bounds = crate::persistent::PersistentMap::default();
+        self.uint32_order_bounds = crate::persistent::PersistentMap::default();
         self.uint64_order_bounds = crate::persistent::PersistentMap::default();
         self.wide_order_edges = Default::default();
         let facts = self
@@ -5100,6 +5122,7 @@ impl PureFactContext {
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
         self.nonmemory_separations_by_side = crate::persistent::PersistentMap::default();
         self.resource_containers = crate::persistent::PersistentMap::default();
+        self.memory_containers = crate::persistent::PersistentMap::default();
         self.separation_facts = crate::kernel::fact_collections::ScanSet::default();
         self.separation_facts_by_block = crate::persistent::PersistentMap::default();
         self.separated_address_classes = Default::default();
@@ -5825,9 +5848,19 @@ impl PureFactContext {
         let Proposition::CResourceContains { parent, child } = proposition else {
             return;
         };
-        if !matches!(**child, CResource::Memory(_)) {
-            self.resource_containers =
-                with_adjusted_member(&self.resource_containers, child, proposition, insert);
+        match &**child {
+            CResource::Memory(range) => {
+                self.memory_containers = with_adjusted_member(
+                    &self.memory_containers,
+                    &range.base().block,
+                    proposition,
+                    insert,
+                );
+            }
+            child => {
+                self.resource_containers =
+                    with_adjusted_member(&self.resource_containers, child, proposition, insert);
+            }
         }
         let key = ResourceContainsKey::of(parent);
         let facts = self
@@ -5969,6 +6002,7 @@ impl PureFactContext {
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
         self.nonmemory_separations_by_side = crate::persistent::PersistentMap::default();
         self.resource_containers = crate::persistent::PersistentMap::default();
+        self.memory_containers = crate::persistent::PersistentMap::default();
         self.separation_facts = self
             .prop_facts
             .iter()
@@ -6190,9 +6224,7 @@ impl PureFactContext {
             if !self.resource_compositions.contains(&resources) {
                 self.resource_compositions =
                     self.resource_compositions.with_value(resources.clone());
-                if resources.facts().iter().any(|fact| {
-                    fact.is_own() && matches!(fact.resource(), CResource::Composite { .. })
-                }) {
+                if resources.owns_composite() {
                     self.composite_owning_compositions = self
                         .composite_owning_compositions
                         .with_value(resources.clone());
@@ -6339,6 +6371,9 @@ impl PureFactContext {
             && self
                 .int64_signed_order_bounds
                 .shares_root_with(&other.int64_signed_order_bounds)
+            && self
+                .uint32_order_bounds
+                .shares_root_with(&other.uint32_order_bounds)
             && self
                 .uint64_order_bounds
                 .shares_root_with(&other.uint64_order_bounds)
@@ -6988,9 +7023,8 @@ impl PureFactContext {
         // The graph derives a same-block comparison's offset view. Do not
         // publish it as an independent premise: it must disappear when the
         // original pointer comparison is withdrawn.
-        // An unsigned upper bound below the sign bit, `x <u c` with
-        // `c <= 2^31`, is spelled as the biased signed order
-        // `(x ^ 2^31) < (c ^ 2^31)`. It holds exactly when the signed pair
+        // An unsigned upper bound below the sign bit, the `uint32` order
+        // `x <u c` with `c <= 2^31`, holds exactly when the signed pair
         // `0 <= x` and `x < c` does, so the pair is filed beside it, with the
         // source's strictness: every reader of signed order facts on `x`
         // (interval, index range, and element-membership rules) then sees
@@ -11337,8 +11371,8 @@ mod decided_algebraic_if_tests;
 /// node finds every edge whose lower end is a constant at least as large by
 /// one range read; and when `lower` is a load also under its pointer and
 /// kind, the only loads memory-derivation bridging relates to it. A 64-bit
-/// fact is filed under its canonical lower end, per kind (0 unsigned, 1
-/// signed), as the wide walk matches.
+/// or `uint32` fact is filed under its canonical lower end, per format
+/// (`WIDE_ORDER_FORMATS`), as the format-indexed walk matches.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OrderFactsByLower {
     written: crate::persistent::PersistentMap<
@@ -11357,7 +11391,7 @@ pub(crate) struct OrderFactsByLower {
     wide: [crate::persistent::PersistentMap<
         Bitvector32Term,
         crate::persistent::PersistentSet<ConditionTerm>,
-    >; 2],
+    >; 3],
 }
 
 impl OrderFactsByLower {
@@ -11414,9 +11448,12 @@ impl OrderFactsByLower {
             file(&mut self.written, lower, condition, insert);
             return;
         }
-        for (kind, unsigned) in [(0, true), (1, false)] {
+        for (kind, format) in condition_reasoning::WIDE_ORDER_FORMATS
+            .into_iter()
+            .enumerate()
+        {
             if let Some((lower, _, _)) =
-                condition_reasoning::wide_order_fact(condition, value, unsigned)
+                condition_reasoning::wide_order_fact(condition, value, format)
             {
                 file(
                     &mut self.wide[kind],
@@ -11477,15 +11514,18 @@ impl OrderFactsByLower {
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
-    /// The 64-bit order facts of one kind (unsigned or signed) whose lower
-    /// end has canonical form `lower`.
+    /// The order facts at `format`, one of
+    /// [`condition_reasoning::WIDE_ORDER_FORMATS`], whose lower end has
+    /// canonical form `lower`.
     pub(crate) fn wide_from<'a>(
         &'a self,
-        unsigned: bool,
+        format: MachineIntegerType,
         lower: &Bitvector32Term,
     ) -> impl Iterator<Item = &'a ConditionTerm> + 'a {
-        self.wide[usize::from(!unsigned)]
-            .get(lower)
+        let kind = condition_reasoning::WIDE_ORDER_FORMATS
+            .iter()
+            .position(|wide| *wide == format);
+        kind.and_then(|kind| self.wide[kind].get(lower))
             .into_iter()
             .flat_map(crate::persistent::PersistentSet::iter)
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))

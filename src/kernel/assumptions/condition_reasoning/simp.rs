@@ -686,13 +686,13 @@ impl PureFactContext {
             }
             (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::LessThan,
                     left: fact_left,
                     right: fact_right,
                 },
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::LessThan,
                     left: target_left,
                     right: target_right,
@@ -700,13 +700,13 @@ impl PureFactContext {
             )
             | (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::LessEqual,
                     left: fact_left,
                     right: fact_right,
                 },
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::LessEqual,
                     left: target_left,
                     right: target_right,
@@ -714,13 +714,13 @@ impl PureFactContext {
             )
             | (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::GreaterThan,
                     left: fact_left,
                     right: fact_right,
                 },
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::GreaterThan,
                     left: target_left,
                     right: target_right,
@@ -728,18 +728,18 @@ impl PureFactContext {
             )
             | (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::GreaterEqual,
                     left: fact_left,
                     right: fact_right,
                 },
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::GreaterEqual,
                     left: target_left,
                     right: target_right,
                 },
-            ) => {
+            ) if fact_format == target_format => {
                 bitvector_terms_proven_equal_for_memory_resolution(fact_left, target_left, self)
                     && bitvector_terms_proven_equal_for_memory_resolution(
                         fact_right,
@@ -749,13 +749,13 @@ impl PureFactContext {
             }
             (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::LessThan,
                     left: fact_left,
                     right: fact_right,
                 },
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::GreaterThan,
                     left: target_left,
                     right: target_right,
@@ -763,13 +763,13 @@ impl PureFactContext {
             )
             | (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::GreaterThan,
                     left: fact_left,
                     right: fact_right,
                 },
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::LessThan,
                     left: target_left,
                     right: target_right,
@@ -777,13 +777,13 @@ impl PureFactContext {
             )
             | (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::LessEqual,
                     left: fact_left,
                     right: fact_right,
                 },
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::GreaterEqual,
                     left: target_left,
                     right: target_right,
@@ -791,18 +791,18 @@ impl PureFactContext {
             )
             | (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::GreaterEqual,
                     left: fact_left,
                     right: fact_right,
                 },
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::LessEqual,
                     left: target_left,
                     right: target_right,
                 },
-            ) => {
+            ) if fact_format == target_format => {
                 bitvector_terms_proven_equal_for_memory_resolution(fact_left, target_right, self)
                     && bitvector_terms_proven_equal_for_memory_resolution(
                         fact_right,

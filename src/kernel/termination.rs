@@ -1558,6 +1558,9 @@ fn collect_spec_c_variables(
                     | crate::kernel::binary_spec_integer_expression!(_, _)
                     | SpecIntegerExpression::PureFunctionApplication { .. }
                     | SpecIntegerExpression::AlgebraicMatch { .. } => {}
+                    SpecIntegerExpression::If { .. } => {
+                        return Visit::Stop("a conditional `if` expression");
+                    }
                     SpecIntegerExpression::RangeFold { .. } => return Visit::Stop("a range fold"),
                 }
             }

@@ -10,7 +10,9 @@
 //! **Keys.** A composition is listed under the base, the block and the
 //! anchor offset of owned memory members, which are exactly the keys a
 //! member lookup probes (`ResourceContext::owned_memory_members_with_base`,
-//! the block buckets, `owned_memory_by_anchor`).
+//! the block buckets, `owned_memory_by_anchor`), and under the
+//! `OwnedMemberKey` of owned members of other resources, the bucket a
+//! direct match reads (`direct_match_candidate_positions`).
 //!
 //! **Incremental admission.** A snapshot is listed only under the owned
 //! members it holds beyond some earlier admitted snapshot, its predecessor:
@@ -35,7 +37,9 @@
 //! snapshot holding both whenever any stated composition does. The answer it
 //! derives from that snapshot is the one `S` would give: owned members of a
 //! valid composition are disjoint, so each object finds the same member.
-use super::{CMemoryRange, Pointer, PointerBlock, PointerOffsetTerm, ResourceContext};
+use super::{
+    CMemoryRange, OwnedMemberKey, Pointer, PointerBlock, PointerOffsetTerm, ResourceContext,
+};
 use crate::persistent::{PersistentMap, PersistentSet};
 
 /// How far in size a predecessor candidate may be from the snapshot it
@@ -50,10 +54,11 @@ pub(in crate::kernel) struct CompositionMemberIndex {
     by_base: PersistentMap<Pointer, PersistentSet<u32>>,
     by_block: PersistentMap<PointerBlock, PersistentSet<u32>>,
     by_anchor: PersistentMap<PointerOffsetTerm, PersistentSet<u32>>,
+    by_member: PersistentMap<OwnedMemberKey, PersistentSet<u32>>,
     /// The last snapshot admitted from each storage origin. Holding it keeps
     /// the origin alive, so its address is never reused as a key.
     checkpoints: PersistentMap<usize, ResourceContext>,
-    /// The latest composition admitted with each number of memory facts:
+    /// The latest composition admitted with each [`listed_size`]:
     /// predecessor candidates for a snapshot of another origin, since a
     /// difference walk visits at least the difference in size.
     latest_by_size: PersistentMap<usize, u32>,
@@ -82,7 +87,7 @@ impl CompositionMemberIndex {
         let added = self
             .checkpoints
             .get(&origin)
-            .and_then(|prior| resources.changed_memory_inputs_from(prior))
+            .and_then(|prior| resources.changed_owned_inputs_from(prior))
             .map(|changed| {
                 changed
                     .into_iter()
@@ -90,7 +95,7 @@ impl CompositionMemberIndex {
                     .collect::<Vec<_>>()
             })
             .or_else(|| {
-                let size = resources.memory_input_facts().len();
+                let size = listed_size(resources);
                 (0..=NEAREST_SIZES)
                     .flat_map(|distance| [size.checked_sub(distance), size.checked_add(distance)])
                     .flatten()
@@ -104,7 +109,7 @@ impl CompositionMemberIndex {
             });
         self.latest_by_size = self
             .latest_by_size
-            .with_inserted(resources.memory_input_facts().len(), ordinal);
+            .with_inserted(listed_size(resources), ordinal);
         self.compositions = self.compositions.with_inserted(ordinal, resources.clone());
         self.checkpoints = self.checkpoints.with_inserted(origin, resources.clone());
         let added = match added {
@@ -119,8 +124,35 @@ impl CompositionMemberIndex {
             crate::instrumentation::record_deterministic_work(1);
             if let Some(range) = fact.memory_own_range() {
                 self.list(range, ordinal);
+            } else if fact.is_own() {
+                for key in OwnedMemberKey::listed(&fact) {
+                    let listed = self.by_member.get(&key).cloned().unwrap_or_default();
+                    self.by_member = self
+                        .by_member
+                        .with_inserted(key, listed.with_value(ordinal));
+                }
             }
         }
+    }
+
+    /// The admitted compositions listed under any of `blocks` or `members`,
+    /// owned non-memory members' keys, and the root, in admission order,
+    /// each once.
+    pub(in crate::kernel) fn listed_under_members<'k>(
+        &self,
+        blocks: impl IntoIterator<Item = &'k PointerBlock>,
+        members: impl IntoIterator<Item = &'k OwnedMemberKey>,
+    ) -> Vec<&ResourceContext> {
+        self.listed_in(
+            blocks
+                .into_iter()
+                .filter_map(|block| self.by_block.get(block))
+                .chain(
+                    members
+                        .into_iter()
+                        .filter_map(|member| self.by_member.get(member)),
+                ),
+        )
     }
 
     fn list(&mut self, range: &CMemoryRange, ordinal: u32) {
@@ -194,7 +226,13 @@ impl CompositionMemberIndex {
     }
 }
 
-/// The memory facts `resources` holds beyond `prior`, when walking the
+/// The number of facts a difference walk compares: the memory facts and the
+/// owned facts of other resources.
+fn listed_size(resources: &ResourceContext) -> usize {
+    resources.memory_input_facts().len() + resources.owned_non_memory_input_facts().len()
+}
+
+/// The memory and other owned facts `resources` holds beyond `prior`, when walking the
 /// difference of their member indexes costs less than listing `resources`:
 /// subtrees the two persistent indexes share are skipped, so a snapshot
 /// derived from `prior` by a few changes pays for those changes, and an
@@ -204,9 +242,15 @@ fn added_beyond(
     resources: &ResourceContext,
 ) -> Option<Vec<super::CResourceFact>> {
     let held = resources.memory_input_facts();
+    let held_members = resources.owned_non_memory_input_facts();
+    let size = listed_size(resources);
     let mut added = Vec::new();
-    for (walked, change) in prior.memory_input_facts().diff(held).enumerate() {
-        if walked >= held.len() {
+    let changes = prior
+        .memory_input_facts()
+        .diff(held)
+        .chain(prior.owned_non_memory_input_facts().diff(held_members));
+    for (walked, change) in changes.enumerate() {
+        if walked >= size {
             return None;
         }
         if let super::SnapshotMapChange::Added(fact) = change {

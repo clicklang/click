@@ -3997,8 +3997,32 @@ fn unsigned_extent_bound_below_the_sign_bit_is_decided_by_signed_order() {
     assert_eq!(above.decide(&fits), Some(false));
 }
 
-/// An unsigned chain `x <u n`, `n <=u 4` is the signed chain over the
-/// sign-bit-flipped atoms, so it gives `x <u 4`, and with it the signed range
+/// A `uint32` order fact answers its mirrored spelling, as a signed one
+/// does, and never the signed order of the same words.
+#[test]
+fn a_uint32_order_fact_answers_its_mirror_and_not_a_signed_order() {
+    let x = Bitvector32Term::Variable(Variable(89_310));
+    let y = Bitvector32Term::Variable(Variable(89_311));
+    let context = PureFactContext::new().assume_condition(
+        ConditionTerm::unsigned_less_than(x.clone(), y.clone()),
+        true,
+    );
+    assert!(context.has_condition_fact(
+        ConditionTerm::unsigned_greater_than(y.clone(), x.clone()),
+        true
+    ));
+    assert_eq!(
+        context.decide(&ConditionTerm::unsigned_greater_equal(x.clone(), y.clone())),
+        Some(false)
+    );
+    assert!(
+        !context.has_condition_fact(ConditionTerm::signed_less_than(x.clone(), y.clone()), true)
+    );
+    assert_eq!(context.decide(&ConditionTerm::signed_less_than(x, y)), None);
+}
+
+/// An unsigned chain `x <u n`, `n <=u 4` composes in the `uint32` order, so
+/// it gives `x <u 4`, and with it the signed range
 /// `0 <= x` and `x < 4` an index needs. It does not compose with a signed
 /// bound on `n` (a negative `n` is a huge unsigned one), with no bound on
 /// `n`, or through a wrapped `n - 1`.
@@ -7506,7 +7530,12 @@ fn int64_subtract_bridge_matches_independent_overflow_boundary_model() {
         panic!("missing typed observation");
     };
     assert_eq!(machine.ty(), MachineIntegerType::Int64);
-    let operation = Bitvector32Term::Int64Subtract(Box::new(left.clone()), Box::new(right.clone()));
+    let operation = Bitvector32Term::Binary {
+        format: MachineIntegerType::Int64,
+        op: MachineBinaryOp::Subtract,
+        left: Box::new(left.clone()),
+        right: Box::new(right.clone()),
+    };
     assert_eq!(machine.value(), &operation);
     let observe = |term| IntegerTerm::from_machine(MachineIntegerType::Int64, term).unwrap();
     let mathematical =
@@ -7650,7 +7679,7 @@ fn uint32_subtract_bridge_matches_unsigned_underflow_boundary_model() {
     };
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::UInt32,
             relation: CompareRelation::LessEqual,
             left,
             right,
@@ -7680,10 +7709,7 @@ fn uint32_subtract_bridge_matches_unsigned_underflow_boundary_model() {
     for a in samples {
         for b in samples {
             let safe = a.checked_sub(b).is_some();
-            assert_eq!(
-                (machine(left, a, b) as i32) <= (machine(right, a, b) as i32),
-                safe
-            );
+            assert_eq!(machine(left, a, b) <= machine(right, a, b), safe);
             assert_eq!(
                 integer(observed, a, b),
                 num_bigint::BigInt::from(a.wrapping_sub(b))
@@ -7823,13 +7849,13 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
             ) => machine(left, a, b) == machine(right, a, b),
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::UInt32,
                     relation: CompareRelation::LessEqual,
                     left,
                     right,
                 },
                 true,
-            ) => (machine(left, a, b) as i32) <= (machine(right, a, b) as i32),
+            ) => machine(left, a, b) <= machine(right, a, b),
             Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
                 integer(left, a, b) == integer(right, a, b)
             }
@@ -7911,13 +7937,13 @@ fn uint32_integer_order_bridges_agree_with_unsigned_boundary_models() {
         match p {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::UInt32,
                     relation: CompareRelation::LessEqual,
                     left,
                     right,
                 },
                 true,
-            ) => (machine(left, a, b) as i32) <= (machine(right, a, b) as i32),
+            ) => machine(left, a, b) <= machine(right, a, b),
             Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => {
                 let observe = |term: &IntegerTerm| {
                     let IntegerTerm::Machine(value) = term else {
@@ -8057,7 +8083,7 @@ fn uint32_remainder_bound_agrees_with_full_width_models() {
     };
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::UInt32,
             relation: CompareRelation::LessThan,
             left,
             right,
@@ -8093,10 +8119,7 @@ fn uint32_remainder_bound_agrees_with_full_width_models() {
             assert_eq!(guarded, divisor != 0);
             if guarded {
                 assert!(u64::from(value) % u64::from(divisor) < u64::from(divisor));
-                assert!(
-                    (machine(left, value, divisor) as i32)
-                        < (machine(right, value, divisor) as i32)
-                );
+                assert!(machine(left, value, divisor) < machine(right, value, divisor));
             }
         }
     }
@@ -9005,13 +9028,22 @@ fn unsigned_u16_packing_bridges_match_disjoint_fields_and_retain_both_bounds() {
             Bitvector32Term::Constant(value) => u64::from(*value),
             Bitvector32Term::UInt64Constant(value) => *value,
             Bitvector32Term::Int64Constant(value) => *value as u64,
-            Bitvector32Term::BitwiseOr(a, b) | Bitvector32Term::UInt64BitwiseOr(a, b) => {
-                word(a) | word(b)
-            }
+            Bitvector32Term::BitwiseOr(a, b)
+            | Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::BitwiseOr,
+                left: a,
+                right: b,
+            } => word(a) | word(b),
             Bitvector32Term::ShiftLeft(a, b) => {
                 u64::from((word(a) as u32).wrapping_shl(word(b) as u32))
             }
-            Bitvector32Term::UInt64ShiftLeft(a, b) => word(a).wrapping_shl(word(b) as u32),
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::ShiftLeft,
+                left: a,
+                right: b,
+            } => word(a).wrapping_shl(word(b) as u32),
             _ => panic!("unexpected native packing term"),
         }
     }
@@ -9642,7 +9674,7 @@ fn universal_consequents_ignore_unrelated_propositions() {
             )),
         )),
     };
-    let query = ConditionTerm::equal(
+    let query = (
         Bitvector32Term::Variable(Variable(94_002)),
         Bitvector32Term::Constant(1),
     );
@@ -9661,7 +9693,7 @@ fn universal_consequents_ignore_unrelated_propositions() {
                 });
             }
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                assumptions.instantiated_universal_consequents(&query)
+                assumptions.instantiated_universal_consequents(&query.0, &query.1)
             });
             work
         })
@@ -9724,11 +9756,8 @@ fn universal_instantiation_ignores_universals_of_other_shapes() {
                 facts.assume_proposition(ordered(index))
             });
             let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let Proposition::ConditionIs(condition, _) = &goal else {
-                    unreachable!()
-                };
                 !assumptions
-                    .instantiated_universal_consequents(condition)
+                    .instantiated_universal_consequents(&cell, &Bitvector32Term::Constant(7))
                     .is_empty()
                     || assumptions
                         .select_forall_int32_instantiation_evidence(&goal)

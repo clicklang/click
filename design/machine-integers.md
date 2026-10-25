@@ -392,7 +392,7 @@ Done 2026-10-24, for every gap that needs no new node. What changed:
   `uint32` order.
 - 128-bit comparisons join here.
 
-Done 2026-10-24, except the `uint32` order. What changed:
+Done 2026-10-24. What changed:
 
 - `ConditionTerm` has `Compare { format, relation, left, right }` and
   `Overflows { format, op, left, right }` (`CompareRelation`,
@@ -427,16 +427,22 @@ Done 2026-10-24, except the `uint32` order. What changed:
   128-bit test yet: Rust's panic checks still lower to bounds.
 - The matrix has no comparison or definedness gap left.
 
-Left: the `uint32` order is still the `int32` order of sign-flipped
-operands (`order_operand`, `unsigned_less_than`). Its readers include the
-surface certificate step `interval_sign_bit_flip` (language reference,
-grammar), the planners and closers that recognize the flip
-(`signed_arithmetic_planner.rs`, `smart_closures.rs`,
-`surface_synthesis.rs`, `surface_certificates.rs`), three printers that
-decode it, the difference graph and interval bounds (which have no `uint32`
-node), and the diagnostic kind, which names a `uint32` order "signed
-less-than". Removing it changes certificate syntax and diagnostic wording,
-which needs the maintainer, and needs `uint32` order reasoning first.
+- The `uint32` order is native, `Compare { format: UInt32, .. }` of the
+  operands' words, as the `uint64` order is; the sign-flip encoding
+  (`order_operand`, and `unsigned_less_than` building the `int32` order of
+  `x ^ 2^31`) is gone. Its readers were migrated by giving `uint32` the
+  paths `uint64` has: a `UInt32` domain in the difference graph, paired
+  with each word's `Int32` node; a `uint32_order_bounds` endpoint index and
+  a place in the format-indexed order walk (`WIDE_ORDER_FORMATS`); `uint32`
+  rules in the condition checker (`decide_unsigned32_order`); and native
+  readers in the planners, closers and printers. Diagnostics name the
+  order "uint32 less-than" (as "uint64 less-than"), where they said
+  "signed less-than".
+- The `signed_int32` certificate step `interval_sign_bit_flip` is replaced
+  by a direct unsigned comparison, `interval_compare L, R ult|ule`, which
+  reads each operand's signed interval as unsigned once its sign is known.
+  The fixtures that spelled the bias in source were rewritten to the
+  `uint32` order they meant.
 
 ### Stage 3. One term family
 
@@ -447,6 +453,35 @@ which needs the maintainer, and needs `uint32` order reasoning first.
   longer describes the type.
 - Separate floats into their own term type.
 - Load equations take their load's format.
+
+Progress:
+
+- The 64-bit operators are merged (2026-10-24). `Bitvector32Term` has
+  `Binary { format, op, left, right }` (`MachineBinaryOp`) and
+  `Unary { format, op, operand }` (`MachineUnaryOp`) in place of its 24
+  `Int64*` and `UInt64*` operator variants; `ShiftRight` is arithmetic at
+  `int64` and logical at `uint64`. The constructors are unchanged, and
+  `machine_binary` and `machine_unary` dispatch to them by format.
+  `term_shape.rs` reads both nodes as `Machine(format, op)`. Only `int64`
+  and `uint64` have these nodes until the 32-bit operators join; the width
+  check refuses any other format. Output is unchanged; the derived order
+  now sorts every 64-bit binary before every 64-bit complement.
+- The 32-bit operators wait for their leaves to carry a signedness
+  (option D, 2026-10-25): today an `int32` and a `uint32` value share one
+  word with no node between the two readings, and kernel-internal index
+  arithmetic, C conversions, modular equality and the difference graph rely
+  on it. The sequence is: (1) the sign cast σ, (2) constants with a format,
+  (3) loads with a format, (4) the operator merge. Step 1 is done
+  (2026-10-25): every C conversion between `int` and `unsigned int`, the
+  usual arithmetic conversions, the modulo boundary and a sign-cleared
+  `unsigned` index build σ, the `MachineIntegerCast` node between `int32`
+  and `uint32`, and the kernel reads σ(x) as `x`'s word under rules K1–K4
+  ([Decisions](#decisions), 2026-10-25;
+  `docs/internals/mathematical-integers.md`, "The 32-bit sign cast"). No
+  verdict changed. Before the rules, an explicit cast changed 37 tests (28
+  fixture verdicts) across order facts, element indices, arithmetic
+  certificates and checked narrowing.
+
 
 ### Stage 4. Front ends and library
 
@@ -529,3 +564,49 @@ Maintainer direction, 2026-10-24:
   There is no union bound for now: a fact that holds regardless of
   signedness is stated twice, or `T: intn | uintn` is added later if it is
   needed. This is design only; it is not implemented yet.
+- **Type-directed specification arithmetic.** Arithmetic on machine values
+  takes its meaning from the type its result is used at; where there is no
+  expected type, the author writes one. An Integer position (a comparison
+  that reads as Integer, an `Integer` parameter, field or result, `let s:
+  Integer`, and the arms of a match or branches of an `if` there) makes
+  `+`, `-`, `*` and negation exact over `to_integer` observations; a
+  machine position keeps the C operation at that type. An untyped `let` whose value does arithmetic on a
+  machine value is an error that names both annotations; an untyped `let`
+  has its value's type, so arithmetic on an earlier Integer `let` is
+  Integer arithmetic. Unsuffixed literals stay Integer, except that a typed
+  `let s: int64 = 5;` gives its literal the declared type, range-checked.
+  The reason: one rule, read from types, replaces the
+  syntactic spine rule, and extracting a subexpression into a `let` can no
+  longer silently change its meaning. Status: the branches of an `if` are
+  Integer positions since the kernel gained an Integer conditional
+  (`IntegerTerm::If`, 2026-10-25); before that an Integer position observed
+  the whole conditional. Predicates' `Integer` parameters and `Integer`
+  resource parameters are not supported by lowering yet, so they are not
+  Integer positions either; an `Integer` resource field's `fold` value is
+  one.
+
+Maintainer direction, 2026-10-25:
+
+- **The 32-bit sign cast is read as its word.** σ_{S→F}(x), the
+  `MachineIntegerCast` from `int32` to `uint32` or back, denotes
+  `to_integer_S(x) mod 2^32` read in `F`. The kernel takes four rules for
+  it:
+  - K1 (word identity): `σ(x) == x` as a 32-bit word; σ(x) and `x` are one
+    e-graph class.
+  - K2 (observation): `to_integer` of σ(x) at `int32` or `uint32` is
+    `to_integer` of `x` at that format.
+  - K3 (orders and indices): the difference graph, the order-fact indexes,
+    the certificate readers (`signed_int32`, `arithmetic`, `normalize
+    using`, `integer_cast_identity`) and the memory index rules read σ(x) as
+    `x`.
+  - K4 (modular equality): an observation of σ(x) contributes `x`'s word.
+
+  Soundness: reduction modulo 2^32 and two's-complement reading are inverse
+  bijections between each format's range and the 32-bit words, so
+  `bits(σ(x)) = bits(x)`, and every 32-bit operator, comparison and
+  observation depends only on its operands' bits. A load at a signedness
+  other than the stored value's (K5) is not approved yet; it comes with
+  loads that carry a format.
+- **Printing shows σ where the signedness changes.** A value, fact or step
+  holding σ prints it as `(uint32)x` or `(int32)x`; nothing else changes.
+
