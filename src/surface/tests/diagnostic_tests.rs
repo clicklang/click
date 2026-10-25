@@ -709,10 +709,11 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
             .expect("all push postconditions should expand explicitly");
     // `1 <= owner->len` composes the entry order `0 <= len` with the
     // increment as one explicit signed certificate, then transports it.
+    let compact_expansion = expanded.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        expanded.contains(
+        compact_expansion.contains(
             "have to_integer((at(region(5).entry, 0) + 1)) <= \
-             to_integer((at(region(5).entry, owner->len) + 1)) by {\n                    \
+             to_integer((at(region(5).entry, owner->len) + 1)) by { \
              arithmetic_certificate signed_int32 {"
         ),
         "{expanded}"
