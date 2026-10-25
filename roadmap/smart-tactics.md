@@ -1221,6 +1221,9 @@ mdtests and examples.
     files Rust tests name, the fixtures that check the older spelling, and
     documentation examples that quote one of them; documentation prose,
     which names `simp` as the older spelling, changes in step 25.
+    A `solve() using` miss now adds arithmetic's own reason, without its
+    location and except where the goal is outside arithmetic's fragment
+    (`mdtests/a_solve_using_miss_reports_arithmetic_s_reason.md`).
 
     Measured 2026-10-25, with every `arithmetic()` read as `solve() using {}`
     and every `arithmetic() using { … }` as `solve() using { … }`. At first

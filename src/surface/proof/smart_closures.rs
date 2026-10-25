@@ -10784,7 +10784,33 @@ impl<'a> Proof<'a> {
                                 "checked `simp` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
                             ));
                         }
-                        return Err(proof.step_error("`simp() using` could not prove the current goal from only its listed premises").with_check_observations(checks));
+                        // Arithmetic is the last closer `solve() using`
+                        // tries; its own refusal says why the listed
+                        // premises fall short, as `arithmetic() using`
+                        // reported it.
+                        let arithmetic = match proof
+                            .apply_step(ProofStep::ArithmeticUsing(simp.premises.clone()))
+                        {
+                            Err(error) => {
+                                // The reason without its location prefix,
+                                // which the report already gives.
+                                let summary = error.raw_summary();
+                                let reason = summary
+                                    .find("` proof step tactic")
+                                    .and_then(|at| summary[at..].find(": ").map(|end| at + end + 2))
+                                    .map_or(summary, |start| &summary[start..]);
+                                // A goal outside arithmetic's fragment has
+                                // nothing to add about the premises.
+                                if reason.starts_with("`arithmetic` requires a supported") {
+                                    String::new()
+                                } else {
+                                    format!("; arithmetic: {reason}")
+                                }
+                            }
+                            Ok(_) => String::new(),
+                        };
+                        check_verification_deadline()?;
+                        return Err(proof.step_error(format!("`solve() using` could not prove the current goal from only its listed premises{arithmetic}")).with_check_observations(checks));
                     };
                     proof = closed;
                 }

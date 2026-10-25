@@ -14,5 +14,5 @@ theorem empty_using_uses_nothing(x: int32) {
 ```
 
 ```expect
-fail: `simp() using` could not prove the current goal from only its listed premises
+fail: `solve() using` could not prove the current goal from only its listed premises
 ```
