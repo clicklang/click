@@ -16175,6 +16175,7 @@ mod tactic_classification_tests {
             .collect::<Vec<_>>();
         assert_eq!(instances, registry, "one instance per registered form");
         let mut failures = Vec::new();
+        let mut classes = BTreeMap::new();
         for (form, &(_, written)) in PUBLIC_TACTIC_FORMS.iter().zip(FORM_INSTANCES) {
             let parsed = Parser::new(written).and_then(|mut parser| {
                 let cell = BTreeMap::from([(
@@ -16210,6 +16211,7 @@ mod tactic_classification_tests {
                 }
             };
             let class = tactic.class();
+            classes.insert(form.id, class);
             if label(class) != form.class {
                 failures.push(format!(
                     "{}: registry says {}, `{written}` parses as {class:?}",
@@ -16226,6 +16228,19 @@ mod tactic_classification_tests {
                 }
             } else if !matches!(class, TacticClass::Smart(_)) {
                 failures.push(format!("{}: non-smart form has no certificate", form.id));
+            }
+        }
+        // An elided form is the simple tactic its `-using` form writes out.
+        for (id, class) in &classes {
+            let TacticClass::Smart(SmartSite::Elided(elided)) = class else {
+                continue;
+            };
+            let written = classes.get(format!("{id}-using").as_str());
+            if written != Some(&TacticClass::Simple(elided.written_form())) {
+                failures.push(format!(
+                    "{id}: elided form of {:?}, but `{id}-using` parses as {written:?}",
+                    elided.written_form()
+                ));
             }
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));

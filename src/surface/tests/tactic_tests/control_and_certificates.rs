@@ -728,14 +728,14 @@ fn parses_and_classifies_simple_and_smart_tactics() {
     ));
     assert!(matches!(
         ProofTactic::Simp.class(),
-        TacticClass::Smart(SmartTacticKind::Simp)
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Simp))
     ));
     assert!(matches!(
         ProofTactic::SimpUsing(ProofSimpUsing {
             premises: Vec::new(),
         })
         .class(),
-        TacticClass::Smart(SmartTacticKind::Simp)
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Simp))
     ));
     assert!(matches!(
         ProofTactic::Step.class(),
@@ -747,7 +747,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
     };
     assert!(matches!(
         ProofTactic::ApplyTheorem(application.clone()).class(),
-        TacticClass::Smart(SmartTacticKind::ApplyTheorem)
+        TacticClass::Smart(SmartSite::Elided(ElidedArgument::TheoremPremises))
     ));
     assert!(matches!(
         ProofTactic::ApplyTheoremUsing {
@@ -771,7 +771,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
             target: transport_target.clone(),
         }
         .class(),
-        TacticClass::Smart(SmartTacticKind::FactTransport)
+        TacticClass::Smart(SmartSite::Elided(ElidedArgument::FrameEvidence))
     ));
     assert!(matches!(
         ProofTactic::TransportUsing {
@@ -806,7 +806,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
     ));
     assert!(matches!(
         ProofTactic::CloseInvariants.class(),
-        TacticClass::Smart(SmartTacticKind::CloseInvariants)
+        TacticClass::Smart(SmartSite::CloseInvariants)
     ));
     assert!(matches!(
         ProofTactic::Mark("before_write".to_string()).class(),
@@ -822,11 +822,11 @@ fn parses_and_classifies_simple_and_smart_tactics() {
     ));
     assert!(matches!(
         ProofTactic::SmartExecute.class(),
-        TacticClass::Smart(SmartTacticKind::SmartExecute)
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Execute))
     ));
     assert!(matches!(
         ProofTactic::ExecuteUntil(CodeRegionRef::Region(1)).class(),
-        TacticClass::Smart(SmartTacticKind::ExecuteUntil)
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Execute))
     ));
 }
 
@@ -953,7 +953,7 @@ fn proof_certificate_has_no_smart_step_variant() {
         .expect_err("smart tactics cannot appear in a proof certificate");
     assert_eq!(
         smart.tactic_class(),
-        TacticClass::Smart(SmartTacticKind::Simp)
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Simp))
     );
 }
 
@@ -981,7 +981,7 @@ fn tactic_certificate_rejects_a_direct_smart_tactic() {
 
     assert_eq!(
         error.tactic_class(),
-        TacticClass::Smart(SmartTacticKind::Simp)
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Simp))
     );
     assert_eq!(error.path(), &[CertificatePathSegment::Tactic(0)]);
 }
@@ -1016,7 +1016,7 @@ fn tactic_certificate_rejects_smart_tactics_in_nested_control_tactics() {
 
     assert_eq!(
         error.tactic_class(),
-        TacticClass::Smart(SmartTacticKind::Simp)
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Simp))
     );
     assert_eq!(
         error.path(),
@@ -1049,7 +1049,7 @@ fn tactic_certificate_checks_structural_induction_arms() {
         .expect_err("smart tactics cannot be hidden in an induction arm");
     assert_eq!(
         error.tactic_class(),
-        TacticClass::Smart(SmartTacticKind::Simp)
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Simp))
     );
     assert_eq!(
         error.path(),
@@ -1077,7 +1077,7 @@ fn tactic_certificate_treats_an_omitted_nested_proof_as_auto() {
 
     assert_eq!(
         error.tactic_class(),
-        TacticClass::Smart(SmartTacticKind::Auto)
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Auto))
     );
     assert_eq!(
         error.path(),
@@ -1098,7 +1098,7 @@ fn tactic_certificate_rejects_a_bare_invariant_closure() {
 
     assert_eq!(
         error.tactic_class(),
-        TacticClass::Smart(SmartTacticKind::CloseInvariants)
+        TacticClass::Smart(SmartSite::CloseInvariants)
     );
     assert_eq!(error.path(), &[CertificatePathSegment::Tactic(0)]);
 }
