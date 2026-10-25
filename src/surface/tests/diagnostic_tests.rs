@@ -2822,7 +2822,9 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
                 crate::instrumentation::TacticWorkLimits {
                     simple: 1_000_000,
                     smart: 128,
-                    control: if nested { 128 } else { 1_000_000 },
+                    // Enough for the nested `have` to lower its read of the
+                    // stored cell by name before `simp` exhausts its budget.
+                    control: if nested { 160 } else { 1_000_000 },
                 },
                 || {
                     verify_c0_sources(

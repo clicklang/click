@@ -2376,6 +2376,11 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
         if rewrite.refusal().is_none() {
             resolved = rewritten;
         }
+        // Substitution refuses outright past an exhausted work budget; the
+        // comparison form is a lookup aid, so it gives up instead.
+        if crate::instrumentation::deadline_exceeded() {
+            return None;
+        }
         resolved = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
             &resolved, variable, &value,
         );
