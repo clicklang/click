@@ -3283,13 +3283,28 @@ impl PureFactContext {
         required: (&Pointer, Option<&Pointer>),
         available: &CMemoryRange,
     ) -> bool {
-        self.designations_equal(required.0, &available.designation)
-            && required.1.is_none_or(|extent| {
-                available
-                    .opaque_extent
-                    .as_deref()
-                    .is_some_and(|source| self.opaque_extents_equal(extent, source))
-            })
+        let matches = |designation: &Pointer, extent: Option<&Pointer>| {
+            self.designations_equal(designation, &available.designation)
+                && extent.is_none_or(|extent| {
+                    available
+                        .opaque_extent
+                        .as_deref()
+                        .is_some_and(|source| self.opaque_extents_equal(extent, source))
+                })
+        };
+        if matches(required.0, required.1) {
+            return true;
+        }
+        // An opaque read designates what the pointer the path's facts show
+        // stored at its address designates, as `pointer_designations_match`
+        // compares a complete read.
+        if required.1.is_none_or(|extent| extent == required.0)
+            && let Some(stored) =
+                crate::kernel::memory_provenance::complete_pointer_read_value(required.0, self)
+        {
+            return matches(stored.designation(), stored.opaque_extent());
+        }
+        false
     }
 
     pub(in crate::kernel) fn pointer_designations_match(

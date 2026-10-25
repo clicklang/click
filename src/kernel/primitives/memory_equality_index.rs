@@ -33,6 +33,13 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Pointer) -> E
         };
         if let Some(stored) =
             crate::kernel::memory_provenance::checked_pointer_read_stored_value(&read, assumptions)
+                .or_else(|| {
+                    crate::kernel::memory_provenance::complete_pointer_read_value(
+                        &read,
+                        assumptions,
+                    )
+                    .map(|stored| stored.pointer().clone())
+                })
         {
             graph.add_checked_read_equality(&read, &stored);
         }
@@ -2126,7 +2133,11 @@ impl ResourceContext {
         if let Some(endpoint) = crate::kernel::memory_provenance::checked_pointer_read_endpoint(
             range.base(),
             assumptions,
-        ) {
+        )
+        .or_else(|| {
+            crate::kernel::memory_provenance::complete_pointer_read_value(range.base(), assumptions)
+                .map(|stored| stored.pointer().clone())
+        }) {
             graph.add_checked_read_equality(range.base(), &endpoint);
         }
         let index =

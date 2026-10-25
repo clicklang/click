@@ -111,11 +111,6 @@ pub(super) use memory_loads::{
     evaluate_spec_memory_load_paths, symbolic_load_value,
 };
 pub(crate) use memory_loads::{comparison_form, holds_by_read_over_write, read_over_write_value};
-pub(crate) use memory_loads::{
-    loaded_pointer_read_origin, loaded_pointer_stored_block, pointer_read_over_write_c_value,
-    pointer_read_over_write_value,
-    read_over_write_address,
-};
 pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};
 #[cfg(test)]
 pub(super) use memory_loads::{load_substitution_term_visits, reset_load_substitution_term_visits};
@@ -126,6 +121,10 @@ pub(crate) use memory_loads::{
 pub(crate) use memory_loads::{
     loaded_pointer_read_heap_identities, loaded_pointer_read_predates_block, pointer_load_identity,
     record_pointer_load_source, registered_pointer_load, typed_pointer_read_variable,
+};
+pub(crate) use memory_loads::{
+    loaded_pointer_read_origin, loaded_pointer_stored_block, pointer_read_over_write_c_value,
+    pointer_read_over_write_value, read_over_write_address,
 };
 pub(crate) use memory_loads::{
     registered_load_kind_for_variable, registered_load_origin_term_for_variable,

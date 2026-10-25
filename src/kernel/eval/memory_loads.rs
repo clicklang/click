@@ -1991,12 +1991,35 @@ fn canonicalized_symbolic_load_value_with_identity(
         return Some(complete_loaded_word(value, memory, &address));
     };
     // The read keeps its version name. The equality graph relates it to the
-    // pointer stored there whenever a query names the read
-    // (`EqualityGraph::register_logical_read_values`); the read equation
-    // beside it lets a context that keeps it reach the read from the stored
-    // pointer too. Both come from the memory alone.
+    // pointer stored there whenever a query names the read and memory alone
+    // shows that pointer (`EqualityGraph::register_logical_read_values`). The
+    // read equation beside it lets a context that keeps it reach the read from
+    // the stored pointer too; where only the path's frame facts show the
+    // pointer still stored, the equation is a side fact of the lowering, and
+    // the term is still the read.
     if names_version {
-        if let Some(stored) = pointer_read_over_write_c_value(pointer_value.pointer()) {
+        let stored = pointer_read_over_write_c_value(pointer_value.pointer()).or_else(|| {
+            (!assumptions.should_force_symbolic_external_loads())
+                .then(|| {
+                    crate::kernel::memory_provenance::complete_pointer_read_value(
+                        pointer_value.pointer(),
+                        assumptions,
+                    )
+                    .or_else(|| {
+                        crate::kernel::memory_provenance::complete_pointer_read_value(
+                            &Pointer::loaded_value(
+                                &crate::kernel::intern_c_memory_ref(memory),
+                                &address,
+                            ),
+                            assumptions,
+                        )
+                    })
+                })
+                .flatten()
+        });
+        if let Some(stored) = stored
+            && stored.pointer() != pointer_value.pointer()
+        {
             facts.push(ExecutionPureFact::logical_read_equation(
                 stored.with_type(value_type),
                 pointer_value.pointer().clone(),
@@ -2515,14 +2538,99 @@ pub(crate) fn pointer_read_over_write_c_value(pointer: &Pointer) -> Option<CPoin
     if read.displacement != PointerOffsetTerm::Constant(0) {
         return None;
     }
-    let memory = read.defining_memory.memory();
-    let CValue::Pointer(stored) = memory
-        .known_value(&read.defining_address)
-        .or_else(|| memory.known_union_pointer(&read.defining_address))?
+    let CValue::Pointer(stored) = memory_shown_cell_value(
+        &read.defining_memory,
+        &read.defining_address,
+        crate::kernel::C_POINTER_BYTE_WIDTH,
+    )?
     else {
         return None;
     };
     (stored.pointer() != pointer).then_some(stored)
+}
+
+/// The value `memory` holds at exactly `address`, as a cell or as the pointer
+/// view of a union cell, when memory alone shows it: the assumption-free
+/// version walk (`resource_tracker::last_same`) stops at a step that wrote
+/// the cell. A cell a havoc kept because a fact showed it separate holds its
+/// value only where that fact holds, so it gives nothing here; the
+/// read-over-write authority never stands in for a frame fact.
+fn memory_shown_cell_value(memory: &SharedCMemory, address: &Pointer, bytes: u32) -> Option<CValue> {
+    thread_local! {
+        // The answer is a function of the interned snapshot, the address and
+        // the width, so it is memoized; a query met again while its own walk
+        // runs (the walk asks block distinctness, which asks this) answers
+        // nothing rather than recursing.
+        static MEMORY_SHOWN_CELLS: std::cell::RefCell<
+            std::collections::HashMap<(SharedCMemory, Pointer, u32), Option<CValue>>,
+        > = std::cell::RefCell::new(std::collections::HashMap::new());
+        static MEMORY_SHOWN_IN_PROGRESS: std::cell::RefCell<
+            std::collections::HashSet<(SharedCMemory, Pointer, u32)>,
+        > = std::cell::RefCell::new(std::collections::HashSet::new());
+    }
+    let key = (memory.clone(), address.clone(), bytes);
+    if let Some(hit) = MEMORY_SHOWN_CELLS.with(|cache| cache.borrow().get(&key).cloned()) {
+        return hit;
+    }
+    if !MEMORY_SHOWN_IN_PROGRESS.with(|running| running.borrow_mut().insert(key.clone())) {
+        return None;
+    }
+    let shown = memory_shown_cell_value_uncached(memory, address, bytes);
+    MEMORY_SHOWN_IN_PROGRESS.with(|running| running.borrow_mut().remove(&key));
+    MEMORY_SHOWN_CELLS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= 100_000 {
+            cache.clear();
+        }
+        cache.insert(key, shown.clone());
+    });
+    shown
+}
+
+fn memory_shown_cell_value_uncached(
+    memory: &SharedCMemory,
+    address: &Pointer,
+    bytes: u32,
+) -> Option<CValue> {
+    // The read's own snapshot must hold the cell: a projection interned from
+    // several sources names its oldest, which need not be this read's.
+    let held = memory
+        .known_value(address)
+        .or_else(|| memory.known_union_pointer(address))?;
+    let source = crate::kernel::prelude::canonical_load_projection_source(memory, address)
+        .unwrap_or_else(|| memory.clone());
+    let last = crate::kernel::resource_tracker::last_same(
+        crate::kernel::resource_tracker::Resource::Cell {
+            pointer: address,
+            bytes,
+        },
+        &crate::kernel::resource_tracker::ProgramPoint::at(&source),
+    )?;
+    // The step the walk stopped at must have left the cached cell standing
+    // for the cell's bytes by memory alone. A store elsewhere that overlaps
+    // the cell changed some of them, whatever a cached cell still says; a
+    // havoc keeps a cell only where a frame fact showed it separate, and that
+    // fact, not the cache, is the authority for it.
+    match last.point.snapshot().derivation().as_deref() {
+        Some(CMemoryDerivation::Store { pointer, value, .. })
+            if last.stopped_by.reason == crate::kernel::resource_tracker::StopReason::Affected
+                && (pointer != address || value.byte_width() < bytes) =>
+        {
+            None
+        }
+        Some(CMemoryDerivation::CallHavoc { .. } | CMemoryDerivation::LoopHavoc { .. }) => None,
+        // A step the walk could not show separate from the cell (a store or a
+        // release through an unrelated address) left the cache standing only
+        // where a fact shows it separate.
+        _ if matches!(
+            last.stopped_by.reason,
+            crate::kernel::resource_tracker::StopReason::NotShownSeparate(_)
+        ) =>
+        {
+            None
+        }
+        _ => Some(held),
+    }
 }
 
 /// Whether `proposition` holds by the read-over-write authority alone: its
@@ -2637,9 +2745,8 @@ pub(crate) fn registered_pointer_load(identity: PointerLoadId) -> Option<(Shared
 /// following the result back through further reads reaches older history.
 pub(crate) fn loaded_pointer_stored_block(identity: PointerLoadId) -> Option<PointerBlock> {
     let (memory, address) = registered_pointer_load(identity)?;
-    let CValue::Pointer(stored) = memory
-        .known_value(&address)
-        .or_else(|| memory.known_union_pointer(&address))?
+    let CValue::Pointer(stored) =
+        memory_shown_cell_value(&memory, &address, crate::kernel::C_POINTER_BYTE_WIDTH)?
     else {
         return None;
     };

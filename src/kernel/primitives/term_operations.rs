@@ -4822,11 +4822,8 @@ impl Pointer {
         // cell's read alike. A name the word's canonical form takes from a
         // cell at another address is a stored value, not this read, so the
         // read is named by its own cell then.
-        let bits = Bitvector32Term::MemoryLoad(
-            memory.clone(),
-            Box::new(address.clone()),
-            LoadKind::Int32,
-        );
+        let bits =
+            Bitvector32Term::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
         if let Some((variable, _)) = crate::kernel::load_variable_for_term(&bits)
             && crate::kernel::registered_load_for_variable(&variable)
                 .is_some_and(|(_, registered)| registered == *address)
@@ -4841,10 +4838,12 @@ impl Pointer {
             crate::kernel::C_POINTER_BYTE_WIDTH,
             memory,
         );
-        Err(match canonical_pointer_read(&Bitvector32Term::Variable(variable)) {
-            Some(named) => named_pointer_read(named),
-            None => Self::loaded_value(&source, address),
-        })
+        Err(
+            match canonical_pointer_read(&Bitvector32Term::Variable(variable)) {
+                Some(named) => named_pointer_read(named),
+                None => Self::loaded_value(&source, address),
+            },
+        )
     }
 
     pub(crate) fn symbolic_function(variable: Variable) -> Self {
@@ -5855,9 +5854,13 @@ fn canonical_pointer_read(
 
 /// The pointer read a load variable's pointer value names: `Pointer::symbolic`
 /// of a load variable and the named read of its cell are one read spelled
-/// two ways. `None` for a variable that names no load.
+/// two ways. `None` for a variable that names no load, or a load narrower
+/// than a pointer, which reads a prefix of a pointer, not the pointer.
 pub(crate) fn pointer_read_of_load_variable(variable: Variable) -> Option<Pointer> {
-    if !crate::kernel::is_load_variable(&variable) {
+    if !crate::kernel::is_load_variable(&variable)
+        || crate::kernel::registered_load_bytes_for_variable(&variable)
+            .is_none_or(|bytes| bytes < crate::kernel::C_POINTER_BYTE_WIDTH)
+    {
         return None;
     }
     canonical_pointer_read(&Bitvector32Term::Variable(variable)).map(named_pointer_read)

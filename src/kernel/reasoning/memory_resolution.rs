@@ -1098,6 +1098,36 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
     else {
         return false;
     };
+    // A pointer read the path's facts show still holds a stored pointer (a
+    // frame the memory alone does not show) is that pointer here.
+    let checked_stored = |pointer: &Pointer| {
+        let PointerBlock::LoadedPointer(_) = &pointer.block else {
+            return None;
+        };
+        let stored = crate::kernel::memory_provenance::complete_pointer_read_value(
+            &Pointer {
+                block: pointer.block.clone(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            assumptions,
+        )?
+        .pointer()
+        .clone();
+        Some(Pointer {
+            block: stored.block,
+            offset: PointerOffsetTerm::add(stored.offset, pointer.offset.clone()),
+        })
+    };
+    if let Some(left) = checked_stored(left)
+        && pointers_proven_equal_for_memory_resolution(&left, right, assumptions)
+    {
+        return true;
+    }
+    if let Some(right) = checked_stored(right)
+        && pointers_proven_equal_for_memory_resolution(left, &right, assumptions)
+    {
+        return true;
+    }
     // The shared graph answers known equality first. Offset reasoning below
     // is a stronger, separately guarded judgment, not another alias walk.
     let candidate = assumptions.pointers_known_equal(left, right)

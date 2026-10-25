@@ -3485,7 +3485,9 @@ impl CMemory {
         &self,
         pointer: &Pointer,
     ) -> Option<&Bitvector32Term> {
-        self.heap.live_allocations.get(&heap_allocation_key(pointer))
+        self.heap
+            .live_allocations
+            .get(&heap_allocation_key(pointer))
     }
 
     pub(crate) fn is_live_heap_address(

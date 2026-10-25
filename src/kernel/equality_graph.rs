@@ -710,7 +710,7 @@ impl EqualityGraph {
         state: &mut EqualityGraphState,
         values: impl IntoIterator<Item = &'a Pointer>,
     ) {
-        let reads = self.logical_reads.lock().expect("logical pointer reads");
+        let mut reads = self.logical_reads.lock().expect("logical pointer reads");
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut definitions = Vec::new();
         while let Some(value) = pending.pop() {
@@ -727,24 +727,16 @@ impl EqualityGraph {
                 };
                 if !state.logical_values.contains(&read) {
                     state.logical_values = state.logical_values.with_value(read.clone());
-                    if let Some(stored) = crate::kernel::eval::pointer_read_over_write_value(&read)
-                    {
+                    // The authority walks memory history under a fresh naming
+                    // context, which reads this thread's read table itself.
+                    drop(reads);
+                    let stored = crate::kernel::eval::pointer_read_over_write_value(&read);
+                    reads = self.logical_reads.lock().expect("logical pointer reads");
+                    if let Some(stored) = stored {
                         pending.push(stored.clone());
                         definitions.push((read, stored));
                     }
                 }
-            }
-            // A load variable's pointer value and the named read of its cell
-            // are one read spelled two ways.
-            if let PointerBlock::Symbolic(variable) = &value.block
-                && value.offset == PointerOffsetTerm::Constant(0)
-                && let Some(named) =
-                    crate::kernel::primitives::pointer_read_of_load_variable(*variable)
-                && named != value
-                && !definitions.contains(&(value.clone(), named.clone()))
-            {
-                pending.push(named.clone());
-                definitions.push((value.clone(), named));
             }
             if reads.definitions.is_empty() {
                 continue;
