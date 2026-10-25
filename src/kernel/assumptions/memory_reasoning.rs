@@ -3514,11 +3514,42 @@ impl PureFactContext {
                             resources.proves_owned_resources_separate(left, right, self)
                         })
                 } else {
-                    self.resource_compositions
-                        .scan_unindexed()
-                        .any(|resources| {
-                            resources.proves_owned_resources_separate(left, right, self)
-                        })
+                    // Each side is matched in its own bucket: a memory side
+                    // by block, another by the `OwnedMemberKey`s that hold
+                    // every member able to entail it, the keys
+                    // `CompositionMemberIndex` lists a composition under.
+                    let mut blocks = Vec::new();
+                    let mut members = Vec::new();
+                    for side in [left, right] {
+                        match side {
+                            CResource::Memory(range) => blocks.push(range.base().block.clone()),
+                            other => members.extend(OwnedMemberKey::probed(
+                                &crate::kernel::CResourceFact::View(other.clone()),
+                                self,
+                            )),
+                        }
+                    }
+                    let separates = |resources: &ResourceContext| {
+                        resources.proves_owned_resources_separate(left, right, self)
+                    };
+                    let indexed = self
+                        .composition_members
+                        .listed_under_members(blocks.iter(), members.iter())
+                        .into_iter()
+                        .any(separates);
+                    #[cfg(debug_assertions)]
+                    if !crate::instrumentation::in_uncharged_debug_check() {
+                        crate::instrumentation::uncharged_debug_check(|| {
+                            let scanned =
+                                self.resource_compositions.scan_for_upkeep().any(separates);
+                            assert_eq!(
+                                indexed, scanned,
+                                "the listed compositions' owned separation differs from every \
+                                 composition's"
+                            );
+                        });
+                    }
+                    indexed
                 }
             },
         ) {
@@ -3578,26 +3609,77 @@ impl PureFactContext {
                 // A composition covers `target` with its owned members in
                 // `target`'s block, apart from an owner of `other`: a member
                 // in `other`'s block or in one its address equals, or a
-                // non-memory owner, which contains memory only through a
-                // containment fact with that parent. With no such fact, the
-                // compositions listed under those blocks are enough
-                // (`CompositionMemberIndex`): one listed under none of them
-                // holds no member there beyond its predecessor, which then
-                // covers whatever it covers.
-                if self.nonmemory_parent_containments != 0 {
-                    return self.resource_compositions.scan_unindexed().any(covers);
-                }
-                let mut blocks = vec![target.base().block.clone(), other.base().block.clone()];
-                for pointer in [other.base().clone(), other.start_pointer()] {
-                    for (alias, _) in self.pointer_equality_component(&pointer) {
-                        if !blocks.contains(&alias.block) {
-                            blocks.push(alias.block);
+                // container of such memory through containment facts,
+                // walked upward from `other`'s blocks (`memory_containers`,
+                // `resource_containers`). The compositions listed under
+                // those blocks and the non-memory containers' keys are
+                // enough (`CompositionMemberIndex`): one listed under none
+                // of them holds no member there beyond its predecessor,
+                // which then covers whatever it covers.
+                let mut blocks = Vec::new();
+                let mut pending_blocks = Vec::new();
+                let add_blocks =
+                    |range: &CMemoryRange,
+                     blocks: &mut Vec<PointerBlock>,
+                     pending: &mut Vec<PointerBlock>| {
+                        let mut add = |block: PointerBlock| {
+                            if !blocks.contains(&block) {
+                                blocks.push(block.clone());
+                                pending.push(block);
+                            }
+                        };
+                        add(range.base().block.clone());
+                        for pointer in [range.base().clone(), range.start_pointer()] {
+                            for (alias, _) in self.pointer_equality_component(&pointer) {
+                                add(alias.block);
+                            }
+                        }
+                    };
+                add_blocks(other, &mut blocks, &mut pending_blocks);
+                let mut containers = BTreeSet::new();
+                let mut pending_containers = Vec::new();
+                loop {
+                    let facts = if let Some(block) = pending_blocks.pop() {
+                        self.memory_containers.get(&block)
+                    } else if let Some(container) = pending_containers.pop() {
+                        self.resource_containers.get(container)
+                    } else {
+                        break;
+                    };
+                    for fact in facts
+                        .into_iter()
+                        .flat_map(crate::persistent::PersistentSet::iter)
+                    {
+                        crate::instrumentation::record_deterministic_work(1);
+                        let Proposition::CResourceContains { parent, .. } = fact else {
+                            continue;
+                        };
+                        match &**parent {
+                            CResource::Memory(range) => {
+                                add_blocks(range, &mut blocks, &mut pending_blocks);
+                            }
+                            container => {
+                                if containers.insert(container) {
+                                    pending_containers.push(container);
+                                }
+                            }
                         }
                     }
                 }
+                if !blocks.contains(&target.base().block) {
+                    blocks.push(target.base().block.clone());
+                }
+                let members = containers
+                    .into_iter()
+                    .filter_map(|container| {
+                        OwnedMemberKey::exact(&crate::kernel::CResourceFact::View(
+                            container.clone(),
+                        ))
+                    })
+                    .collect::<Vec<_>>();
                 let indexed = self
                     .composition_members
-                    .listed_under([], blocks.iter())
+                    .listed_under_members(blocks.iter(), members.iter())
                     .into_iter()
                     .any(covers);
                 #[cfg(debug_assertions)]
@@ -5519,6 +5601,51 @@ mod shallow_composition_separation_tests {
         );
     }
 
+    /// The cover also finds an owner of the other range that contains it
+    /// only through a containment fact with a non-memory parent, as
+    /// composite expansion states for every opened composite. It walks the
+    /// containment facts upward from the other range's block
+    /// (`memory_containers`); while any such fact was stated it once asked
+    /// every stated composition.
+    #[test]
+    fn composition_cover_with_a_token_container_ignores_unrelated_compositions() {
+        let holder = token("cover-holder");
+        let contains = Proposition::CResourceContains {
+            parent: Box::new(holder.clone()),
+            child: Box::new(CResource::Memory(cells(9_211))),
+        };
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = (0..size).fold(
+                PureFactContext::new().assume_proposition(contains.clone()),
+                |facts, index| {
+                    facts.assume_proposition(owner_of(&[at(&format!("cover-token-other-{index}"))]))
+                },
+            );
+            let (left, right) = (
+                CResource::Memory(cells(9_210)),
+                CResource::Memory(cells(9_211)),
+            );
+            let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.proves_resource_separate(&left, &right)
+            });
+            assert!(!separate);
+            let held = facts.assume_proposition(Proposition::CResourceComposition(
+                ResourceContext::new().unchecked_with_facts([
+                    CResourceFact::own_memory(cells(9_210)),
+                    CResourceFact::own(holder.clone()),
+                ]),
+            ));
+            assert!(held.proves_resource_separate(&left, &right));
+            samples.push((size, work));
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "the composition cover grew with unrelated compositions: {samples:?}"
+        );
+    }
+
     /// Two ranges are separate as distinct owned members of one composition,
     /// found through their bases' related roots. The check reads the
     /// compositions listed under those roots' blocks; it once asked every
@@ -5594,6 +5721,85 @@ mod shallow_composition_separation_tests {
         assert!(
             samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
             "token separation grew with unrelated separations: {samples:?}"
+        );
+    }
+
+    /// Two tokens are separate as distinct owned members of one composition.
+    /// The check reads the compositions listed under the tokens' member keys
+    /// (`OwnedMemberKey`); it once asked every stated composition.
+    #[test]
+    fn token_ownership_ignores_unrelated_compositions() {
+        let owning =
+            |tokens: &[CResource]| {
+                Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts(
+                    tokens.iter().map(|token| CResourceFact::own(token.clone())),
+                ))
+            };
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
+                facts.assume_proposition(owning(&[token(&format!("owned-token-{index}"))]))
+            });
+            let (left, right) = (token("owned-query-left"), token("owned-query-right"));
+            let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.proves_resource_separate(&left, &right)
+            });
+            assert!(!separate);
+            let held = facts.assume_proposition(owning(&[left.clone(), right.clone()]));
+            assert!(held.proves_resource_separate(&left, &right));
+            samples.push((size, work));
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "token ownership grew with unrelated compositions: {samples:?}"
+        );
+    }
+
+    /// Two `boxed(p)` composites at distinct pointers are separate as
+    /// distinct owned members of one composition. The check reads the
+    /// compositions listed under the two pointers' roots, not every
+    /// composition owning a `boxed` (`OwnedMemberKey::ShapeRoot`): all of
+    /// those share the composite's name and arity.
+    #[test]
+    fn composite_ownership_ignores_compositions_of_other_roots() {
+        let boxed = |variable: u64| CResource::Composite {
+            name: "boxed".into(),
+            arguments: vec![crate::kernel::AlgebraicValue::C(
+                crate::kernel::CValue::Pointer(crate::kernel::CPointerValue::new(
+                    symbolic(variable),
+                    crate::kernel::CType::Int32Pointer,
+                )),
+            )]
+            .into(),
+        };
+        let owning = |members: &[CResource]| {
+            Proposition::CResourceComposition(
+                ResourceContext::new().unchecked_with_facts(
+                    members
+                        .iter()
+                        .map(|member| CResourceFact::own(member.clone())),
+                ),
+            )
+        };
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
+                facts.assume_proposition(owning(&[boxed(9_400 + index)]))
+            });
+            let (left, right) = (boxed(9_300), boxed(9_301));
+            let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.proves_resource_separate(&left, &right)
+            });
+            assert!(!separate);
+            let held = facts.assume_proposition(owning(&[left.clone(), right.clone()]));
+            assert!(held.proves_resource_separate(&left, &right));
+            samples.push((size, work));
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "composite ownership grew with compositions of other roots: {samples:?}"
         );
     }
 
