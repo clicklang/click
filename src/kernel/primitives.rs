@@ -125,6 +125,7 @@ pub(crate) use memory_state::resource_context_has_symbolic_range_read;
 pub use memory_state::value_independent_click_memory;
 pub(super) use resource_algebra::*;
 pub(in crate::kernel) use term_operations::round_right_to_even;
+pub(in crate::kernel) use term_operations::pointer_read_of_load_variable;
 pub(crate) use term_operations::{
     first_unavailable_connective_side, listed_premise_holds, mirrored_equality,
     proposition_holds_without_facts, single_variable_of_c_value,

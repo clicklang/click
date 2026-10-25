@@ -2470,10 +2470,18 @@ pub(crate) fn pointer_read_over_write_value(pointer: &Pointer) -> Option<Pointer
 /// read's snapshot stores there, through stored reads in turn: one address,
 /// spelled by the stored pointer. `None` when the base is no stored read.
 pub(crate) fn read_over_write_address(address: &Pointer) -> Option<Pointer> {
-    let PointerBlock::LoadedPointer(_) = address.block else {
-        return None;
+    let mut current = match &address.block {
+        PointerBlock::LoadedPointer(_) => address.clone(),
+        // A load variable's pointer value is the named read of its cell.
+        PointerBlock::Symbolic(variable) => {
+            let read = crate::kernel::primitives::pointer_read_of_load_variable(*variable)?;
+            Pointer {
+                block: read.block,
+                offset: PointerOffsetTerm::add(read.offset, address.offset.clone()),
+            }
+        }
+        _ => return None,
     };
-    let mut current = address.clone();
     // A stored read was read before the store holding it, so the chain runs
     // back through history; the bound only stops a pathological one.
     for _ in 0..16 {

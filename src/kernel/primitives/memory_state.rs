@@ -7249,9 +7249,9 @@ impl CMemory {
         value_type: CType,
     ) -> CValue {
         let snapshot = crate::kernel::intern_c_memory(self.clone());
+        // A version read is a named read, or a cell's own materialized read,
+        // either of which already carries its definition.
         let value = Pointer::version_read(&snapshot, pointer);
-        crate::kernel::equality_graph::EqualityGraph::default()
-            .register_pointer_read_definition(&value, &snapshot, pointer);
         CValue::Pointer(CPointerValue::from_read(
             value, value_type, &snapshot, pointer,
         ))

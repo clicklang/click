@@ -4749,22 +4749,56 @@ impl Pointer {
     /// (`eval::pointer_read_over_write_value`). A cell holding its own read
     /// is that read.
     pub(crate) fn version_read(memory: &SharedCMemory, address: &Pointer) -> Self {
+        // An address through a stored read is the address through the
+        // stored pointer: one place (`eval::read_over_write_address`).
+        let address = crate::kernel::eval::read_over_write_address(address)
+            .unwrap_or_else(|| address.clone());
+        let address = &address;
         let source = memory.unchanged_bytes_source();
-        // The read is named at its cell's version: the projection is taken
-        // at the point the assumption-free walk finds the cell last written,
-        // so two points the walk relates project, and name, alike.
         let canonical = crate::kernel::memory_provenance::canonical_value_load_memory(
             &source,
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,
         );
-        if let Some(CValue::Pointer(stored)) = canonical.memory().known_value(address)
-            && stored.pointer().as_loaded_value().is_some_and(|read| {
-                read.defining_address == *address
-                    && read.displacement == PointerOffsetTerm::Constant(0)
-            })
+        // A cell holding its own read (a materialization), as a named read or
+        // as the load variable of its word, reads as that read.
+        let own_read = |held: &SharedCMemory| match held.memory().known_value(address) {
+            Some(CValue::Pointer(stored))
+                if stored.pointer().as_loaded_value().is_some_and(|read| {
+                    read.defining_address == *address
+                        && read.displacement == PointerOffsetTerm::Constant(0)
+                }) || matches!(
+                    stored.pointer(),
+                    Pointer {
+                        block: PointerBlock::Symbolic(variable),
+                        offset: PointerOffsetTerm::Constant(0),
+                    } if crate::kernel::registered_load_for_variable(variable)
+                        .is_some_and(|(_, registered)| registered == *address)
+                ) =>
+            {
+                Some(stored.pointer().clone())
+            }
+            _ => None,
+        };
+        if let Some(read) = own_read(&source).or_else(|| own_read(&canonical)) {
+            return read;
+        }
+        // A pointer is named by the read of its word, as every pointer read
+        // is (`Pointer::loaded`), so the C program and the logic name one
+        // cell's read alike. A name the word's canonical form takes from a
+        // cell at another address is a stored value, not this read, so the
+        // read is named by its own cell then.
+        let bits = Bitvector32Term::MemoryLoad(
+            memory.clone(),
+            Box::new(address.clone()),
+            LoadKind::Int32,
+        );
+        if let Some((variable, _)) = crate::kernel::load_variable_for_term(&bits)
+            && crate::kernel::registered_load_for_variable(&variable)
+                .is_some_and(|(_, registered)| registered == *address)
+            && let Some(named) = canonical_pointer_read(&Bitvector32Term::Variable(variable))
         {
-            return stored.pointer().clone();
+            return named_pointer_read(named);
         }
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &canonical,
@@ -4773,11 +4807,10 @@ impl Pointer {
             crate::kernel::C_POINTER_BYTE_WIDTH,
             memory,
         );
-        let r = match canonical_pointer_read(&Bitvector32Term::Variable(variable)) {
+        match canonical_pointer_read(&Bitvector32Term::Variable(variable)) {
             Some(named) => named_pointer_read(named),
             None => Self::loaded_value(&source, address),
-        };
-        r
+        }
     }
 
     pub(crate) fn symbolic_function(variable: Variable) -> Self {
@@ -5784,6 +5817,16 @@ fn canonical_pointer_read(
     // A snapshot that left these bytes unchanged reads them from its source.
     crate::kernel::registered_load_for_variable(&variable)
         .map(|(memory, address)| (memory.unchanged_bytes_source(), address, Some(variable)))
+}
+
+/// The pointer read a load variable's pointer value names: `Pointer::symbolic`
+/// of a load variable and the named read of its cell are one read spelled
+/// two ways. `None` for a variable that names no load.
+pub(crate) fn pointer_read_of_load_variable(variable: Variable) -> Option<Pointer> {
+    if !crate::kernel::is_load_variable(&variable) {
+        return None;
+    }
+    canonical_pointer_read(&Bitvector32Term::Variable(variable)).map(named_pointer_read)
 }
 
 /// The pointer a canonical read names, recording the load variable it came
