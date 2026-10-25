@@ -126,7 +126,11 @@ when the default misses or when a proof must not search.
 omitting the proof clause.
 `by auto();` and an omitted proof clause execute the function, then close its
 claims with `auto`, per claim or once for a grouped proof. Closing with
-`auto` tries direct logical closure on each open claim, then `simp`. A proof
+`auto` tries direct logical closure on each open claim, then `simp`. On a
+returned path that holds the body of a resource the contract produces but
+not the resource, it first folds it, as a written `fold(R(...))` after the C
+would; a fold that does not check leaves the path as it was
+(`mdtests/an_omitted_proof_folds_the_resource_its_contract_produces.md`). A proof
 script that ends with a claim still open closes it the same way, so a script
 needs no final closer. On a stated fact, `have P by auto();`, there is no C to
 execute, and `auto` is `simp`.
