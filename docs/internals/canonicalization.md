@@ -69,11 +69,19 @@ two-stage composition:
    own offset are treated the same way. When every observable cell is a
    materialization — it holds exactly the value a load of that cell reads
    from one common source snapshot — the load is shrunk against that source
-   instead, since such cells write nothing. A pointer cell counts when its
+   instead, since such cells write nothing. The shrunk snapshot keeps only the
+   source cells the load's own snapshot still holds: a source cell it lacks
+   was erased since, by a havoc or a write, and carrying it across would make
+   the named snapshot record a value the cell no longer holds
+   (`a_load_projection_jump_does_not_restore_a_havocked_cell`). A pointer cell counts when its
    value is the pointer a typed load of the same cell produces: the cell's
    block offset by that load's variable at the pointee's width. So owning a
    second descriptor, which materializes its pointer fields, does not rename
    a load of the first (`mdtests/unfold_region_then_write_a_descriptor_of_its_type.md`).
+   A logical read of an integer cell (a Click expression, not C evaluation)
+   does not take a recorded value, except a cell holding its own read: it
+   keeps its version name, and the read-over-write authority relates it to
+   the stored value ([spellability](spellability.md#a-read-names-its-version)).
 2. **Replace each remaining load with its load variable**: the kernel
    variable identified by the cell and the snapshot of its last write, found
    by walking the memory derivation DAG.

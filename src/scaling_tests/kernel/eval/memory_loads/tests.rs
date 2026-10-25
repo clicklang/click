@@ -593,6 +593,7 @@ fn logical_read_address_uses_class_index_without_scanning_aliases_or_frames() {
                     true,
                 );
         }
+        let mut outcomes = Vec::new();
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 for offset in [0, 4, 8] {
@@ -614,12 +615,24 @@ fn logical_read_address_uses_class_index_without_scanning_aliases_or_frames() {
                         &context,
                     );
                     assert_eq!(paths.len(), 1);
-                    assert_eq!(paths[0].outcome, CExpressionOutcome::Value(int32(7)));
                     assert!(paths[0].facts.is_empty());
                     assert!(paths[0].obligations.is_empty());
+                    outcomes.push(paths[0].outcome.clone());
                 }
             })
         });
+        // The read names its version (`docs/internals/spellability.md`); the
+        // read-over-write authority relates it to the stored `7`.
+        for outcome in outcomes {
+            let CExpressionOutcome::Value(CValue::Int32(read)) = outcome else {
+                panic!("an int32 read: {outcome:?}");
+            };
+            assert_eq!(
+                crate::kernel::read_over_write_value(&read),
+                Some(Bitvector32Term::Constant(7)),
+                "the aliased read reads the owner's stored cell"
+            );
+        }
         samples.push((work, map_work));
         assert_eq!(
             logical_memory_load_address(&memory, alias.clone(), CType::Int32, &before),
