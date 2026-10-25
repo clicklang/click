@@ -620,7 +620,13 @@ pub(in crate::kernel) fn promote_c_int32_path_value(value: CValue) -> Option<Bit
 pub(in crate::kernel) fn promote_c_uint32_path_value(value: CValue) -> Option<Bitvector32Term> {
     match value.numeric_value().clone() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Bool(value) | CValue::Int32(value) | CValue::UInt32(value) => Some(value),
+        CValue::Bool(value) | CValue::UInt32(value) => Some(value),
+        // The usual arithmetic conversions read an `int` as `unsigned int`.
+        CValue::Int32(value) => Some(Bitvector32Term::sign_cast32(
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            value,
+        )),
         CValue::Int8(value) => Some(value),
         CValue::Int16(value) => Some(value),
         CValue::UInt8(value) => Some(value),
@@ -843,14 +849,33 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
             | CValue::UInt8(value)
             | CValue::UInt16(value),
         ) => Some(CValue::Int32(value)),
-        (CType::Int32, CValue::UInt32(value)) => Some(CValue::Int32(value)),
+        (CType::Int32, CValue::UInt32(value)) => Some(CValue::Int32(Bitvector32Term::sign_cast32(
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int32,
+            value,
+        ))),
+        (CType::UInt32, CValue::Int32(value)) => {
+            Some(CValue::UInt32(Bitvector32Term::sign_cast32(
+                MachineIntegerType::Int32,
+                MachineIntegerType::UInt32,
+                value,
+            )))
+        }
+
         (CType::UInt32, CValue::Int64(value) | CValue::UInt64(value)) => {
             Some(CValue::UInt32(Bitvector32Term::uint32_from_64(value)))
         }
         (CType::Int32, value @ (CValue::Int64(_) | CValue::UInt64(_))) => {
             narrow_integer(value, target_type, conversion, obligations, assumptions)
         }
-        (CType::UInt32, crate::kernel::int_promoted_c_value!(value)) => Some(CValue::UInt32(value)),
+        (
+            CType::UInt32,
+            CValue::Int8(value)
+            | CValue::Int16(value)
+            | CValue::UInt8(value)
+            | CValue::UInt16(value),
+        ) => Some(CValue::UInt32(value)),
+
         (CType::Int16, CValue::Int8(value) | CValue::UInt8(value)) => Some(CValue::Int16(value)),
         (CType::UInt16, CValue::UInt8(value)) => Some(CValue::UInt16(value)),
         (
@@ -1129,9 +1154,15 @@ fn checked_narrowing_identity_readings(
     else {
         return None;
     };
-    if *cast_source != source_type || value.as_ref() != operand {
+    // A σ operand's word is its operand (rule K1): the conversion of
+    // σ(w) is built as the conversion of `w` from `w`'s format.
+    let (word_source, word) = operand
+        .sign_cast32_operand()
+        .unwrap_or((source_type, operand));
+    if *cast_source != word_source || value.as_ref() != word {
         return None;
     }
+
     let observed = IntegerTerm::from_machine(*destination, converted.clone())?;
     let original = IntegerTerm::from_machine(source_type, operand.clone())?;
     let mut identities = vec![Proposition::ConditionIs(

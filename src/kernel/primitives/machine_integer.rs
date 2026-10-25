@@ -405,7 +405,11 @@ impl MachineIntegerType {
                 term
             };
             if destination.bits() == 32 {
-                word
+                if is_sign_cast32(source, self) {
+                    Bitvector32Term::sign_cast32(source, self, word)
+                } else {
+                    word
+                }
             } else if destination.is_signed() {
                 // The narrow signed value still uses a sign-extended word.
                 // Mask first, flip the sign bit, then subtract it. The masked
@@ -588,6 +592,60 @@ impl Bitvector32Term {
         )
     }
 
+    /// The 32-bit sign cast σ: `value`, an `int32` or `uint32` term, read at
+    /// the other one of the two. It folds a constant and undoes a σ
+    /// (`machine_integer_cast`), so σ(σ(x)) is `x`. Every C conversion
+    /// between `int` and `unsigned int` builds it
+    /// (`design/machine-integers.md`, "Decisions", 2026-10-25).
+    pub(crate) fn sign_cast32(
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+        value: Self,
+    ) -> Self {
+        debug_assert!(is_sign_cast32(source, destination));
+        Self::machine_integer_cast(source, destination, value)
+    }
+
+    /// The 32-bit word this term names. σ(x) names `x`'s word (rule K1), so
+    /// σ is peeled; every other term is its own word. One match on the
+    /// root: no scan, no clone. Nodes that read a 32-bit word (the 32-bit
+    /// operators, comparisons and extensions, Integer observations, the
+    /// e-graph and the difference graph) read their operands through it.
+    pub(crate) fn word32(&self) -> &Self {
+        match self {
+            Self::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } if is_sign_cast32(*source, *destination) => value,
+            term => term,
+        }
+    }
+
+    /// The source format and operand of a σ, if this term is one.
+    pub(crate) fn sign_cast32_operand(&self) -> Option<(MachineIntegerType, &Self)> {
+        match self {
+            Self::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } if is_sign_cast32(*source, *destination) => Some((*source, value)),
+            _ => None,
+        }
+    }
+
+    /// [`Self::word32`] of an owned term.
+    pub(crate) fn into_word32(self) -> Self {
+        match self {
+            Self::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } if is_sign_cast32(source, destination) => *value,
+            term => term,
+        }
+    }
+
     /// The unsigned byte a [`Self::signed_byte`] term converts, if this is one.
     pub(crate) fn signed_byte_operand(&self) -> Option<&Self> {
         match self {
@@ -646,8 +704,19 @@ impl Bitvector32Term {
     }
 }
 
+/// Whether a conversion from `source` to `destination` is the 32-bit sign
+/// cast σ: `int32` to `uint32` or back, which keeps every bit.
+pub(crate) fn is_sign_cast32(source: MachineIntegerType, destination: MachineIntegerType) -> bool {
+    matches!(
+        (source, destination),
+        (MachineIntegerType::Int32, MachineIntegerType::UInt32)
+            | (MachineIntegerType::UInt32, MachineIntegerType::Int32)
+    )
+}
+
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]
