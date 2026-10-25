@@ -55,5 +55,5 @@ void keep(const uint8* p, int32 n, int32 i) {
 ```
 
 ```expect
-fail: `simp() using` could not prove the current goal from only its listed premises
+fail: `solve() using` could not prove the current goal from only its listed premises
 ```
