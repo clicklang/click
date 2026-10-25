@@ -1477,7 +1477,7 @@ impl SignedArithmeticCertificate {
                     // over the value stored there (the read-over-write
                     // authority): the derivation is checked against that
                     // form when the written one does not match.
-                    let resolved = crate::kernel::read_over_write_resolved(result);
+                    let resolved = crate::kernel::comparison_form(result);
                     let mut derives = |stated: &Proposition| {
                         let expected = affine_claim_from_interval_evidence_refs(
                             &self.nodes,

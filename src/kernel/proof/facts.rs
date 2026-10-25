@@ -891,13 +891,24 @@ impl ProofFacts {
         self
     }
 
-    /// Indexed membership for fact bookkeeping and certificate construction.
+    /// Indexed membership for fact bookkeeping and certificate construction,
+    /// by the fact itself or by its comparison form
+    /// (`kernel::comparison_form`), under which every fact is filed too.
     pub(crate) fn contains(&self, fact: &Proposition) -> bool {
         self.exact.contains(fact)
+            || crate::kernel::comparison_form(fact)
+                .is_some_and(|comparison| self.exact.contains(&comparison))
     }
 
-    /// Semantic availability for checking a requested premise or goal.
+    /// Semantic availability for checking a requested premise or goal, as
+    /// written or by its comparison form (`kernel::comparison_form`).
     pub(crate) fn available(&self, fact: &Proposition) -> bool {
+        self.available_as_written(fact)
+            || crate::kernel::comparison_form(fact)
+                .is_some_and(|comparison| self.available_as_written(&comparison))
+    }
+
+    fn available_as_written(&self, fact: &Proposition) -> bool {
         self.contains(fact)
             || self.assumptions.contains_known(fact)
             // Introduction and normalization can retain opposite constant
@@ -997,6 +1008,11 @@ impl ProofFacts {
         algebraic_equalities_by_term =
             index_algebraic_equality_fact(algebraic_equalities_by_term, &fact);
         exact = exact.with_value(Arc::clone(&fact));
+        // Filed under its comparison form too, so a lookup of either form,
+        // or of another proposition with that comparison form, finds it.
+        if let Some(comparison) = crate::kernel::comparison_form(&fact) {
+            exact = exact.with_value(Arc::new(comparison));
+        }
         let mut ordered = self.ordered.clone();
         ordered.push(Arc::clone(&fact));
         let implicit_transport_assumptions = index_implicit_transport_context(

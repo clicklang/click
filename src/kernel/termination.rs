@@ -5613,8 +5613,7 @@ mod ranking_member_tests {
         // Each member reads a stored cell, which names its version; compare
         // through the read-over-write authority.
         let resolved = |proposition: &Proposition| {
-            crate::kernel::eval::read_over_write_resolved(proposition)
-                .unwrap_or_else(|| proposition.clone())
+            crate::kernel::eval::comparison_form(proposition).unwrap_or_else(|| proposition.clone())
         };
         assert_eq!(
             resolved(obligations[0].proposition()),

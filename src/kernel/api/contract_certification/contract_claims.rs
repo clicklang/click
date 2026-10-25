@@ -1598,7 +1598,7 @@ fn function_claim_holds_on_prepared_path(
             // in: its lowering, and its registered predicate identity.
             // One rule for a load the claim needs to be legal: the contract's
             // resources at either endpoint supply it, or the path states it.
-            let load_obligation_holds_exactly = |obligation: &Proposition| {
+            let load_obligation_holds = |obligation: &Proposition| {
                 contract_endpoints_certify_loadability(
                     entry_state,
                     entry_resources,
@@ -1615,13 +1615,6 @@ fn function_claim_holds_on_prepared_path(
                         assumptions,
                         obligation,
                     )
-            };
-            let load_obligation_holds = |obligation: &Proposition| {
-                // A read of a stored cell names its version; the path's
-                // facts state the obligation about the value stored there.
-                load_obligation_holds_exactly(obligation)
-                    || crate::kernel::eval::read_over_write_resolved(obligation)
-                        .is_some_and(|resolved| load_obligation_holds_exactly(&resolved))
             };
             let certifies = |proof: &&CCheckedFunctionProposition| {
                 // Cheapest checks first: a completion from another
@@ -2470,7 +2463,7 @@ fn lowered_goal_is_constant_true(proposition: &Proposition) -> bool {
     // Evaluation includes the read-over-write authority: a read of a
     // stored cell is the value stored there.
     constant_true(proposition)
-        || crate::kernel::eval::read_over_write_resolved(proposition)
+        || crate::kernel::eval::comparison_form(proposition)
             .is_some_and(|resolved| constant_true(&resolved))
 }
 

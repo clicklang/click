@@ -2410,12 +2410,10 @@ mod owned_anchor_tests {
 }
 
 /// `condition` with each read of a stored cell replaced by its stored value
-/// (`eval::read_over_write_resolved`).
+/// (`eval::comparison_form`).
 fn read_over_write_condition(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    match crate::kernel::eval::read_over_write_resolved(&Proposition::ConditionIs(
-        condition.clone(),
-        true,
-    ))? {
+    match crate::kernel::eval::comparison_form(&Proposition::ConditionIs(condition.clone(), true))?
+    {
         Proposition::ConditionIs(resolved, true) if &resolved != condition => Some(resolved),
         _ => None,
     }

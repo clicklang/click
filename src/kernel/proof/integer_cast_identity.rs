@@ -21,7 +21,7 @@ pub(super) fn check(
     // A read of a cell holding the cast is that cast (the read-over-write
     // authority), so the identity also sees the cast a store wrote.
     check_as_written(node, bounds, premises, result).or_else(|error| {
-        match crate::kernel::read_over_write_resolved(result) {
+        match crate::kernel::comparison_form(result) {
             Some(resolved) => check_as_written(node, bounds, premises, &resolved),
             None => Err(error),
         }

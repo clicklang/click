@@ -109,9 +109,7 @@ pub(super) use memory_loads::{
     canonical_offset_term, evaluate_c_memory_load_paths, evaluate_logical_memory_load_paths,
     evaluate_spec_memory_load_paths, symbolic_load_value,
 };
-pub(crate) use memory_loads::{
-    holds_by_read_over_write, read_over_write_resolved, read_over_write_value,
-};
+pub(crate) use memory_loads::{comparison_form, holds_by_read_over_write, read_over_write_value};
 pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};
 #[cfg(test)]
 pub(super) use memory_loads::{load_substitution_term_visits, reset_load_substitution_term_visits};

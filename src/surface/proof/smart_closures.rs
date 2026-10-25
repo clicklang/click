@@ -3968,7 +3968,7 @@ impl<'a> Proof<'a> {
     }
 
     /// A goal that reads stored cells, proved over the values stored there:
-    /// `have` the goal's read-over-write form (`kernel::read_over_write_resolved`)
+    /// `have` the goal's read-over-write form (`kernel::comparison_form`)
     /// by `simp`, then close the goal by `assumption`, which matches a read
     /// through the value its cell holds. The stored-value form is the goal
     /// `simp` would have seen had the reads been folded, so this recovers
@@ -3978,7 +3978,7 @@ impl<'a> Proof<'a> {
         let Some(goal) = self.goal() else {
             return Ok(None);
         };
-        let Some(resolved) = crate::kernel::read_over_write_resolved(goal) else {
+        let Some(resolved) = crate::kernel::comparison_form(goal) else {
             return Ok(None);
         };
         let Some(_scope) = SimpFallbackScope::enter(SimpFallback::StoredValue) else {

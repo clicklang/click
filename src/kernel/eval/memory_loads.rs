@@ -2340,9 +2340,21 @@ pub(crate) fn read_over_write_value(term: &Bitvector32Term) -> Option<Bitvector3
     (value != *term).then_some(value)
 }
 
-/// `proposition` with each load variable that [`read_over_write_value`]
-/// resolves replaced by its value, or `None` when none does.
-pub(crate) fn read_over_write_resolved(proposition: &Proposition) -> Option<Proposition> {
+/// The comparison form of `proposition`: each read of a stored cell
+/// replaced by the value stored there (the read-over-write authority,
+/// [`read_over_write_value`]), or `None` when it reads none.
+///
+/// A read keeps its version name in every term a proof holds, so it can be
+/// spelled and written (`docs/internals/spellability.md`); two facts that
+/// differ only by a read on one side and its stored value on the other are
+/// one fact. Exact matching therefore compares comparison forms: the fact
+/// stores file each fact under its comparison form as well as its own
+/// (`ProofFacts::with_fact`, `PureFactContext::assume_condition_once`), an
+/// exact lookup also asks for the comparison form of what it looks up, and a
+/// kernel rule that compares a stated term with the one it derives compares
+/// their comparison forms. This is the one place the authority enters
+/// matching; a check does not resolve reads on its own.
+pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> {
     // Memory snapshots stay opaque: only the proposition's own terms are
     // visited, never the cells of a snapshot a read names.
     let mut collector =
@@ -2375,7 +2387,7 @@ pub(crate) fn read_over_write_resolved(proposition: &Proposition) -> Option<Prop
 /// reads of stored cells, replaced by the values stored there, leave a
 /// constant truth. Such a fact states nothing beyond the memory it reads.
 pub(crate) fn holds_by_read_over_write(proposition: &Proposition) -> bool {
-    read_over_write_resolved(proposition)
+    comparison_form(proposition)
         .is_some_and(|resolved| crate::kernel::reasoning::path_facts::solve_builtin_prop(&resolved))
 }
 

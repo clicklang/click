@@ -673,18 +673,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .iter()
             .any(&available)
         };
-        // A goal reading a stored cell is available as its form over the
-        // value stored there (the read-over-write authority): one more exact
-        // lookup, of the rewritten goal.
-        let stored_value_form = || {
-            crate::kernel::eval::read_over_write_resolved(proposition)
-                .is_some_and(|resolved| available(&resolved) || facts.contains(&resolved))
-        };
-        if available(proposition)
-            || spelled_otherwise()
-            || observed_otherwise()
-            || stored_value_form()
-        {
+        if available(proposition) || spelled_otherwise() || observed_otherwise() {
             return Ok(self.closed_focused());
         }
         // A conjunction or disjunction that is not itself a fact still
@@ -1505,13 +1494,10 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let ProofObligation::Proposition(goal) = &branch.obligation else {
             return Err(PropositionSplitError::NotProposition);
         };
-        // A written disjunction reading stored cells is the available one
-        // over the values stored there (the read-over-write authority), and
-        // each written disjunct is equivalent to its stored-value form.
-        if !branch.state.facts.contains(&disjunction)
-            && !crate::kernel::eval::read_over_write_resolved(&disjunction)
-                .is_some_and(|resolved| branch.state.facts.contains(&resolved))
-        {
+        // Membership is by comparison form, so a written disjunction reading
+        // stored cells finds the one over the values stored there, and each
+        // written disjunct is equivalent to its stored-value form.
+        if !branch.state.facts.contains(&disjunction) {
             return Err(PropositionSplitError::MissingDisjunction);
         }
         let Proposition::Or(left, right) = disjunction else {
