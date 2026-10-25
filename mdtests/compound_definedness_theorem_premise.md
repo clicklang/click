@@ -33,7 +33,6 @@ int32 probe(int32 a, int32 b, int32 c) {
         assumption();
     }
     apply(bridge(a, b, c)) using { defined(a + b + c); };
-    execute(); simp();
 }
 ```
 

@@ -17,8 +17,6 @@ void attach(struct holder* owner, int32* data, int32 length) {
     ensures owner->data == data;
 } by {
     have separate(memory(*owner), memory(data[0..length])) by assumption();
-    execute();
-    simp();
 }
 ```
 

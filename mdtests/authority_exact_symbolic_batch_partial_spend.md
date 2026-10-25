@@ -22,13 +22,13 @@ void mint_n(int32* o, int32 n) {
     requires defined(count(tok(o)) + n);
     produces n of tok(o);
     ensures count(tok(o)) == old(count(tok(o))) + n;
-} by { fold(n of tok(o)); execute(); simp(); }
+} by { fold(n of tok(o)); }
 void spend_n(int32* o, int32 n) {
     owns authority(tok(o));
     requires 0 < n;
     consumes n of tok(o);
     ensures count(tok(o)) == old(count(tok(o))) - n;
-} by { unfold(n of tok(o)); execute(); simp(); }
+} by { unfold(n of tok(o)); }
 void run(int32* o, int32 k) {
     owns authority(tok(o));
     requires count(tok(o)) == 0;

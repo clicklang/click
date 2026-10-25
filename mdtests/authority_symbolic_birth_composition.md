@@ -29,7 +29,6 @@ void mint_pair(int32* o, int32 n, int32 m) {
         simp();
     }
     fold(m of tok(o));
-    execute(); simp();
 }
 void run(int32* o, int32 n, int32 m) {
     owns authority(tok(o));

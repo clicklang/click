@@ -56,7 +56,6 @@ uint64 post(const uint8* p, uint64 n) {
    }
   }
  }
- execute(); simp();
 }
 ```
 

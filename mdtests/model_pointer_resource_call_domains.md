@@ -25,7 +25,6 @@ void keep(struct node* p) {
     step();
     have Ref::At(p) == Ref::At(p) by { simp(); }
     let held = fold(token(p), { model: old(held.model) });
-    execute(); simp();
 }
 ```
 

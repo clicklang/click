@@ -22,7 +22,6 @@ void probe(int32* p, int32* q) {
     unfold(saved);
     step();
     let saved = fold(saved_at(old(p)), { model: old(saved.model) });
-    execute(); simp();
 }
 resource saved_index(n: int32) {
     field value: int32;
@@ -35,7 +34,6 @@ void scalar(int32 n) {
     unfold(saved);
     step();
     let saved = fold(saved_index(old(n)), { value: old(saved.value) });
-    execute(); simp();
 }
 void current(int32* p, int32* q) {
     owns saved: saved_at(q);
@@ -44,7 +42,6 @@ void current(int32* p, int32* q) {
     unfold(saved);
     step();
     let saved = fold(saved_at(p), { model: old(saved.model) });
-    execute(); simp();
 }
 ```
 ```expect

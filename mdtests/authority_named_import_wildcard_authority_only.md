@@ -28,7 +28,6 @@ int32 run() { ensures result == 0; } by {
     have framed.serial == 3;
     unfold(first); unfold(second); unfold(framed);
     unfold(authority(ticket(&pool, _)));
-    execute(); simp();
 }
 ```
 

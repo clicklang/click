@@ -17,7 +17,7 @@ void issue(int32* pool) {
     ensures member.serial == 7;
     ensures count(ticket(pool, _)) == old(count(ticket(pool, _))) + 1;
     ensures count(ticket(pool, 7)) == old(count(ticket(pool, 7))) + 1;
-} by { let member = fold(ticket(pool, 7), { serial: 7 }); execute(); simp(); }
+} by { let member = fold(ticket(pool, 7), { serial: 7 }); }
 void nested(int32* pool) {
     owns authority(ticket(pool, _));
     requires defined(count(ticket(pool, _)) + 1);
@@ -26,7 +26,7 @@ void nested(int32* pool) {
     ensures member.serial == 7;
     ensures count(ticket(pool, _)) == old(count(ticket(pool, _))) + 1;
     ensures count(ticket(pool, 7)) == old(count(ticket(pool, 7))) + 1;
-} by { let { member: member } = step(issue, {}); execute(); simp(); }
+} by { let { member: member } = step(issue, {}); }
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool, _)));
@@ -37,7 +37,6 @@ int32 run() { ensures result == 0; } by {
     have member.serial == 7;
     have retained.serial == 3;
     unfold(member); unfold(retained); unfold(authority(ticket(&pool, _)));
-    execute(); simp();
 }
 ```
 

@@ -36,7 +36,6 @@ int32 distance(uint64 n, int32 remaining) {
             0 <= (int32)(uint32)n; 1000 >= (int32)(uint32)n;
         };
     }
-    execute(); simp();
 }
 ```
 

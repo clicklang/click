@@ -52,7 +52,6 @@ uint32 sum(const uint8* bytes, uint64 length, uint64 start) {
             close_invariants();
         }
     }
-    execute(); simp();
 }
 ```
 

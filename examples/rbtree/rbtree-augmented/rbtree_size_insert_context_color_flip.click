@@ -407,7 +407,6 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.model == sized_plug(old(state.outer), sized_context_flip_subtree(sized_context_flip_finish(old(state.phase)), node, old(state.outer), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle)));
 } by {
     step(__rb_insert, { state: state });
-    execute(); simp();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -424,5 +423,4 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.model == sized_plug(old(state.outer), sized_context_flip_subtree(sized_context_flip_finish(old(state.phase)), node, old(state.outer), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle)));
 } by {
     step(__rb_insert_augmented, { state: state });
-    execute(); simp();
 }

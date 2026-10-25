@@ -36,7 +36,6 @@ void lifecycle() { ensures 1 == 1; } by {
     unfold(slot(&pool, &first, 10));
     unfold(slot(&pool, &second, 20));
     unfold(authority(slot(&pool, _, _)));
-    execute(); simp();
 }
 ```
 

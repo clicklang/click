@@ -38,7 +38,6 @@ void caller(int32 *left, int32 *visited, int32 n) {
         };
         assumption();
     }
-    execute(); simp();
 }
 ```
 

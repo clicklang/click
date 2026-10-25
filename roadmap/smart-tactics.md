@@ -1200,6 +1200,9 @@ mdtests and examples.
     proof, 462 uses in 257 files. As before, only files that still verify
     change, and files Rust tests name, by path or by file name, and the
     mdtests documentation examples quote keep theirs.
+    Then `execute();` and its closers at the end of a longer `by { … }`
+    block, on one line with other tactics or not, were dropped the same way:
+    234 uses in 182 files.
 
     `execute` then names only the tail's stepping and splitting. *Verdicts*
     only where a migration misses; each is explained in the PR.

@@ -40,7 +40,6 @@ void fill(int32 *p, int32 n) {
             step();
         }
     }
-    execute(); simp();
 }
 ```
 

@@ -38,7 +38,6 @@ uint64 f(const uint8* input, const uint8* buf, int32 narrow, uint64 native, uint
   initialize by simp();
   preserve by { step(); step(); step(); step(); step(); step(); step(); step(); }
  }
- execute(); simp();
 }
 ```
 

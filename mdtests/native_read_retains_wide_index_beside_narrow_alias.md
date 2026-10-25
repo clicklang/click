@@ -20,7 +20,6 @@ int32 read(const uint8* cursor, const uint8* base, uint64 held, uint64 remaining
 } by {
  have held - remaining < held by arithmetic() using { 1u64 <= remaining; remaining <= held; held <= 15u64; };
  have held <= 9223372036854775807u64 by arithmetic() using { held <= 15u64; };
- execute(); simp();
 }
 ```
 ```expect

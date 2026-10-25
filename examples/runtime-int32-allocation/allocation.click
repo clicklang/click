@@ -31,6 +31,4 @@ int32 free_int32s(int32 data[], int32 count) {
     ensures result == 0;
 } by {
     unfold(allocated_int32s(data, count));
-    execute();
-    simp();
 }

@@ -20,7 +20,6 @@ void user(struct node* p, struct node* q) {
 } by {
     unfold(a); unfold(b);
     have separate(memory(p->tag), memory(q->tag)) by assumption();
-    execute(); simp();
 }
 ```
 

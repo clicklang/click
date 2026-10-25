@@ -22,7 +22,6 @@ void local() {
     unfold(cell_at(&x));
     fold(cell_at(&x));
     unfold(cell_at(&x));
-    execute(); simp();
 }
 void parameter(int32 x) {
     ensures 1 == 1;
@@ -34,7 +33,6 @@ void parameter(int32 x) {
     unfold(cell_at(&x));
     fold(cell_at(&x));
     unfold(cell_at(&x));
-    execute(); simp();
 }
 ```
 

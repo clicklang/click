@@ -27,7 +27,6 @@ int32 fill_nested_fields() {
 } by {
     step(); step(); step();
     loop { decreases 4 - i; invariant i >= 0; invariant i <= 4; }
-    execute(); simp();
 }
 ```
 

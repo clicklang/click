@@ -13,12 +13,12 @@ void retire(int32* pool) {
     owns authority(ticket(pool));
     consumes member: ticket(pool);
     ensures to_integer(count(ticket(pool))) == to_integer(old(count(ticket(pool))) - 1);
-} by { unfold(member); execute(); simp(); }
+} by { unfold(member); }
 void nested(int32* pool) {
     owns authority(ticket(pool));
     consumes member: ticket(pool);
     ensures to_integer(count(ticket(pool))) == to_integer(old(count(ticket(pool))) - 1);
-} by { step(retire, { member: member }); execute(); simp(); }
+} by { step(retire, { member: member }); }
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool)));
@@ -28,7 +28,6 @@ int32 run() { ensures result == 0; } by {
     have second.serial == 2;
     have to_integer(count(ticket(&pool))) == 1;
     unfold(second); unfold(authority(ticket(&pool)));
-    execute(); simp();
 }
 ```
 

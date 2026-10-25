@@ -243,7 +243,7 @@ template<class T> bool Stack<T>::pop(T& out) {
     }
 }
 template<class T> unsigned long Stack<T>::size() const {
-} by { execute(); simp(); }
+}
 template<class T> Stack<T>::~Stack() {
     owns *this;
     consumes list: nodes<T>(this->head);
@@ -281,7 +281,7 @@ int round_trip(Container<int>& container, int x) {
     requires to_integer(size(container)) == length(items(container));
     requires size(container) < 18446744073709551615u64;
     ensures result == first_or(List::Cons(x, old(items(container))), 0);
-} by { execute(); simp(); }
+}
 int caller(Stack<int>& stack, int x) {
     owns stack;
     owns state: nodes<int>(stack.head);

@@ -21,7 +21,6 @@ int32 visit(int32* links, int32 index, int32 n) {
     ensures result == old(links[index]);
 } by {
     have 0 <= old(links[index]) by assumption();
-    execute(); simp();
 }
 ```
 

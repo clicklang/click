@@ -108,7 +108,6 @@ uint8 last(const uint8* bytes, uint64 length) {
             simp();
         }
     }
-    execute(); simp();
 }
 ```
 

@@ -23,7 +23,7 @@ verifying "mutex_abstract_reserved_refolded.c";
 void write_value(struct holder *holder, int *data) {
     owns life: lifetime(holder);
     owns data[0..1];
-} by { unfold(life); fold(life); execute(); simp(); }
+} by { unfold(life); fold(life); }
 ```
 
 ```expect

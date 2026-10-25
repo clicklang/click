@@ -20,7 +20,6 @@ uint64 keep(uint64* p, uint64* q) {
     step();
     have separate(memory(*p), memory(*q)) by { assumption(); }
     have *p == 17 by { assumption(); }
-    execute(); simp();
 }
 ```
 

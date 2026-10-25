@@ -60,7 +60,6 @@ uint64 seed(uint64 word, uint64 len) {
    close_invariants() by { simp(); }
   }
  }
- execute(); simp();
 }
 ```
 ```expect

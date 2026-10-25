@@ -17,8 +17,6 @@ int32 split_length(int32* p, int32 n, int32 split) {
     ensures to_integer(n - split) <= 1073741823;
 } by {
     observe(slices(p, n, split));
-    execute();
-    simp();
 }
 ```
 

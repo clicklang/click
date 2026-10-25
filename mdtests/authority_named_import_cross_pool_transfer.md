@@ -26,7 +26,6 @@ void move(int32* source, int32* destination, int32* cell) {
 } by {
     unfold(before);
     let after = fold(slot(destination, cell), { label: old(before.label) });
-    execute(); simp();
 }
 void invoke(int32* source, int32* destination, int32* cell) {
     owns authority(slot(source, _));
@@ -42,7 +41,6 @@ void invoke(int32* source, int32* destination, int32* cell) {
     ensures to_integer(count(slot(destination, _))) == to_integer(old(count(slot(destination, _))) + 1);
 } by {
     let { after: after } = step(move, { before: before });
-    execute(); simp();
 }
 ```
 

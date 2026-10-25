@@ -26,7 +26,7 @@ void bump(int32* pool, int32* p) {
     owns member: ticket(pool, p);
     ensures member.serial == old(member.serial);
     ensures p[0] == 7;
-} by { unfold(member); step(); fold(member); execute(); simp(); }
+} by { unfold(member); step(); fold(member); }
 int32 run() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
     branch { execute(); simp(); } else {}
@@ -42,7 +42,6 @@ int32 run() { ensures result == 0 or result == 9; } by {
     have count(ticket(&pool, _)) == 2;
     unfold(first); unfold(second);
     unfold(authority(ticket(&pool, _)));
-    execute(); simp();
 }
 ```
 

@@ -33,7 +33,6 @@ void issue(int32* pool, int32* p) {
 } by {
     step();
     fold(slot(pool, p));
-    execute(); simp();
 }
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
@@ -52,7 +51,6 @@ int32 lifecycle() { ensures result == 0 or result == 9; } by {
     unfold(slot(&pool, p));
     unfold(slot(&pool, p + 1));
     unfold(authority(slot(&pool, _)));
-    execute(); simp();
 }
 ```
 

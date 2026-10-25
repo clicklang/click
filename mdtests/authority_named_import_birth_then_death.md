@@ -13,7 +13,7 @@ void issue(int32* pool) {
     owns authority(ticket(pool));
     requires defined(count(ticket(pool)) + 1);
     ensures count(ticket(pool)) == old(count(ticket(pool)));
-} by { let member = fold(ticket(pool), { serial: 7 }); unfold(member); execute(); simp(); }
+} by { let member = fold(ticket(pool), { serial: 7 }); unfold(member); }
 ```
 
 ```expect

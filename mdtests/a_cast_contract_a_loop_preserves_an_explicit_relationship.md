@@ -30,7 +30,6 @@ int32 read_packed(unsigned long word, struct node* p, int32 count) {
         initialize by { simp(); }
         preserve by { step(); step(); simp(); }
     }
-    execute(); simp();
 }
 ```
 

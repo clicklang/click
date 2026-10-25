@@ -23,7 +23,7 @@ verifying "lifetime_inputs.c";
 
 void wrapped(struct holder *holder) {
     owns life: lifetime(holder);
-} by { unfold(life); fold(life); execute(); simp(); }
+} by { unfold(life); fold(life); }
 void borrow(struct holder *holder) {
     owns mutex_use(&holder->mu);
 }

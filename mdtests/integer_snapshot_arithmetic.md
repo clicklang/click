@@ -25,7 +25,6 @@ void transfer(int32 progress, int32 total, int32 end) {
             to_integer(end) == at(region(0).entry, to_integer(progress));
         };
     }
-    execute(); simp();
 }
 ```
 

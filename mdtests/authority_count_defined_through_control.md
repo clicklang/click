@@ -27,7 +27,6 @@ void inspect(struct pool* pool) {
             simp();
         }
     }
-    execute(); simp();
 }
 ```
 

@@ -26,7 +26,6 @@ void decrement(int32 a) {
     have at(region(0).entry, to_integer(a)) <= 10 by {
         apply(observed_identity(at(region(0).entry, to_integer(a)))) using { at(region(0).entry, to_integer(a)) == 10; };
     }
-    execute(); simp();
 }
 ```
 

@@ -32,7 +32,6 @@ void caller(struct Node *p, struct Node *q) {
     let {after: after} = step(helper, {before: before});
     have r == q;
     have r->tag == 7 by { normalize() using { r == q; }; }
-    execute(); simp();
 }
 ```
 

@@ -27,7 +27,6 @@ unsigned long first::helper(struct box* p) {
 } by {
     step(); step();
     have q->wide == old(p->wide) by { simp(); }
-    execute(); simp();
 }
 unsigned long run(struct box* p) {
     owns p->wide;

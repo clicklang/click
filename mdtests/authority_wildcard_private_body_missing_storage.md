@@ -27,7 +27,6 @@ int32 lifecycle() { ensures result == 9; } by {
     unfold(slot(&pool, &first));
     unfold(slot(&pool, &second));
     unfold(authority(slot(&pool, _)));
-    execute(); simp();
 }
 ```
 

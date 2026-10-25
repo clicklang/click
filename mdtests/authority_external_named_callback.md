@@ -17,7 +17,7 @@ void invoke(void (*callback)(int32*), int32* pool) {
     owns authority(token(pool));
     owns token(pool);
     ensures count(token(pool)) == old(count(token(pool)));
-} by { step(Keep); execute(); simp(); }
+} by { step(Keep); }
 ```
 
 ```expect

@@ -55,7 +55,6 @@ void sized_copy_from_generated_table(struct rb_node* old, struct rb_node* new) {
     step(sized_copy_from_table, {
         source_tree: source_tree, target_tree: target_tree, source: source, target: target
     });
-    execute(); simp();
 }
 
 spec enum SizedRotationInput { Left(SizedTree), Right(SizedTree) }

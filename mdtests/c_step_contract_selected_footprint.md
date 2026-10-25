@@ -23,7 +23,7 @@ void invoke(void (*callback)(int32*), int32* cells) {
     views cells[1..2];
     owns cells[0..1];
     ensures cells[1] == old(cells[1]);
-} by { step(Buffered); execute(); simp(); }
+} by { step(Buffered); }
 ```
 
 ```expect

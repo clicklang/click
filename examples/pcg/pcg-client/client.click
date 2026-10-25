@@ -55,6 +55,4 @@ int32 first_outputs_repeat() {
         rewrite(at(region(6).entry, pcg::pcg32_global.state) == 1753877967969059832u64);
         normalize();
     }
-    execute();
-    simp();
 }

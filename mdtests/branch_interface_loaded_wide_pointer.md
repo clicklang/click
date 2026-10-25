@@ -31,7 +31,6 @@ void put(struct Holder* h, int32 x, uint64 stamp) {
     } else {
         step(); have *q == address(p) + stamp by { simp(); }
     }
-    execute(); simp();
 }
 ```
 

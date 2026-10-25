@@ -37,7 +37,6 @@ void checkout(int32* pool, struct payload* p) {
 } by {
     unfold(capacity(pool));
     fold(item(pool, p));
-    execute(); simp();
 }
 int32 lifecycle() { ensures result == 3; } by {
     step(); step(); step(); step(); step(); step();
@@ -57,7 +56,6 @@ int32 lifecycle() { ensures result == 3; } by {
     unfold(item(&pool, &second));
     unfold(authority(capacity(&pool)));
     unfold(authority(item(&pool, _)));
-    execute(); simp();
 }
 ```
 

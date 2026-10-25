@@ -73,7 +73,6 @@ void tag_then_count(struct node *p) {
             }
         }
     }
-    execute(); simp();
 }
 ```
 

@@ -52,8 +52,6 @@ int32 twice(struct pair* p) {
     ensures result >= 0;
 } by {
     let { result: r } = step(get, { x: x });
-    execute();
-    simp();
 }
 ```
 
