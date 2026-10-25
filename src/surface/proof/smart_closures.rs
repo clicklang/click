@@ -9589,15 +9589,23 @@ impl<'a> Proof<'a> {
         &self,
         surfaces: &[ClickProposition],
     ) -> Option<Self> {
-        // The listed premises go to the arithmetic engine first, as
-        // `arithmetic() using` sends them: a bound from the goal's own
-        // terms, a sum or chain over the premises, or a refutation of
-        // contradictory ones.
-        if let Ok(closed) = self.apply_step(ProofStep::ArithmeticUsing(surfaces.to_vec()))
-            && (closed.is_complete() || closed.focused_discharged())
-        {
+        if let Some(closed) = self.try_restricted_simp_closure_before_arithmetic(surfaces) {
             return Some(closed);
         }
+        // What the closers above miss goes to the arithmetic engine, as
+        // `arithmetic() using` sends it: a bound from the goal's own terms,
+        // a sum or chain over the premises, or a refutation of
+        // contradictory ones. It comes last so a goal they close keeps its
+        // expansion.
+        self.apply_step(ProofStep::ArithmeticUsing(surfaces.to_vec()))
+            .ok()
+            .filter(|closed| closed.is_complete() || closed.focused_discharged())
+    }
+
+    fn try_restricted_simp_closure_before_arithmetic(
+        &self,
+        surfaces: &[ClickProposition],
+    ) -> Option<Self> {
         if matches!(
             self.goal(),
             Some(Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. })

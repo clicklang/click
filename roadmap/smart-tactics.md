@@ -1093,8 +1093,13 @@ mdtests and examples.
   two. 820 do work other than a closer after exit; 557 of them have one
   path, so a single program point already holds there. Of the 263 with
   several paths, 237 begin with a proof `if` that tells the paths apart
-  again (`execute(); if result == tail { … } else { … }`), which a `branch`
-  at the C `if` writes directly. Only 26 do the same work on every path
+  again (`execute(); if result == tail { … } else { … }`), which a proof
+  `if` before the C writes directly, each arm starting with
+  `step_until(function.exit)`. A later count of the source text finds fewer:
+  93 written `execute();` followed in their script by a proof `if`, 17 of
+  them directly, and 8 of those `if`s test `result`, which does not exist
+  before the C runs, so their condition is restated over the inputs; the
+  migration recounts from the source. Only 26 do the same work on every path
   (`have` 13, `fold` 9, `unfold` 3, `match`, `open` and `outcomes` 2 each).
 - A written script that stops with C left is refused, with "no checked
   proof driver accepts this proof script's shape … remove tactics from the
@@ -1155,9 +1160,15 @@ mdtests and examples.
       `execute(); fold(…); apply(…);`): `step_until(function.exit)` and
       the same work. `step_until` first learns to target function exit; it
       never forks, so it is refused where the C would split;
-    - followed by exit work on several paths (263): the 237 path-selecting
-      proof `if`s become `branch` arms at the C `if`, and the 26 that
-      repeat work repeat it in each arm.
+    - followed by exit work on several paths (263): each path-selecting
+      proof `if` moves before the C, and each of its arms starts with
+      `step_until(function.exit)`; the 26 that repeat work repeat it in each
+      arm. `branch` serves only where the C arms rejoin.
+
+    Done in part: `step_until(function.exit)` steps to function exit and
+    never splits; at a branch the facts do not decide it is refused, naming
+    the proof `if` or `branch` to write there
+    (`mdtests/step_until_steps_to_function_exit.md`).
 
     `execute` then names only the tail's stepping and splitting. *Verdicts*
     only where a migration misses; each is explained in the PR.
@@ -1171,31 +1182,33 @@ mdtests and examples.
     replacement. Printing, expansion and diagnostics spell `solve` and
     `step_until`.
 
-    Measured 2026-10-25, with every `arithmetic()` read as
-    `solve() using {}` and every `arithmetic() using { … }` as
-    `solve() using { … }`. At first `solve() using` lost 42 proofs and
-    `examples/rust-chunks-exact`: it never called the arithmetic engine, so
-    it missed even `(x & 255) <= 255` from no premises, simplex refutation
-    of contradictory premises, and unsigned zero floors. It now tries the
-    listed premises in the arithmetic engine first, as `arithmetic() using`
-    does, which changed no gate verdict; read that way, every proof the gate
-    expects verifies. 29 refusal mdtests still refuse but print the generic
-    `solve() using` miss instead of arithmetic's specific refusal ("reads no
-    facts from the context", "stays within uint64", "no combination of the
-    listed premises proves it"), so before removal `solve() using` reports
-    its arithmetic refusal when that attempt got furthest. One,
+    Measured 2026-10-25, with every `arithmetic()` read as `solve() using {}`
+    and every `arithmetic() using { … }` as `solve() using { … }`. At first
+    `solve() using` lost 42 proofs and `examples/rust-chunks-exact`: it never
+    called the arithmetic engine, so it missed even `(x & 255) <= 255` from no
+    premises, simplex refutation of contradictory premises, and unsigned zero
+    floors. With the listed premises sent to the arithmetic engine first, as
+    `arithmetic() using` sends them, no gate verdict changed, and read that
+    way every proof the gate expects verified. Trying it first, though,
+    rewrote the expansions of goals the other closers already prove (equality
+    chains, graph normalization) into arithmetic certificates, so `solve()
+    using` now tries arithmetic last, after the closers it had, and those
+    expansions stay as they were. 29 refusal mdtests still refuse but print
+    the generic `solve() using` miss instead of arithmetic's specific refusal
+    ("reads no facts from the context", "stays within uint64", "no combination
+    of the listed premises proves it"), so before removal `solve() using`
+    reports its arithmetic refusal when that attempt got furthest. One,
     `arithmetic_uint32_mask_refusal_names_no_signed_overflow`, now proves its
     goal, which is true: `x < 1u32` from `x <= 1u32` and `x != 1u32`, which
     arithmetic alone could not use; it needs a goal that does not follow.
-25. **Documentation review.** Read every page that describes proof tactics
-    and update it for this phase: `docs/concepts/` (smart and simple
-    tactics, tracing, proof-failure triage), `docs/reference/tactics/` and
-    `click docs` text, the CLI reference for `expand`, `profile` and
-    `audit`, the language reference, the tracing skill, example and mdtest
-    prose, `README.md`, and this roadmap. No page may still describe
-    `simp`, `auto`, `execute` or `execute_until` as tactics to write, an
-    omitted proof as `execute(); auto();`, or a proof that holds several
-    exit paths.
+25. **Documentation review.** Read every page that describes proof tactics and
+    update it for this phase: `docs/concepts/` (smart and simple tactics,
+    tracing, proof-failure triage), `docs/reference/tactics/` and `click docs`
+    text, the CLI reference for `expand`, `profile` and `audit`, the language
+    reference, the tracing skill, example and mdtest prose, `README.md`, and
+    this roadmap. No page may still describe `simp`, `auto`, `execute` or
+    `execute_until` as tactics to write, an omitted proof as `execute();
+    auto();`, or a proof that holds several exit paths.
 
 Out of scope: a default join at C branches. The implicit tail splits each
 branch to exit as `execute` does today, so `n` sequential undecided `if`s
