@@ -1849,6 +1849,19 @@ impl Renderer<'_> {
                 }
                 self.push(" }");
             }
+            IntegerTerm::If {
+                condition,
+                then_term,
+                else_term,
+            } => {
+                self.push("if(");
+                self.condition(condition);
+                self.push(", ");
+                self.integer_shared(then_term);
+                self.push(", ");
+                self.integer_shared(else_term);
+                self.push(")");
+            }
             IntegerTerm::RangeFold {
                 index,
                 initial,

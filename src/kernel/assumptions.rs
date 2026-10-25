@@ -2480,6 +2480,27 @@ fn collect_integer_node_memory_loads(
             }
             Ok(())
         }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_memory_loads(condition, current_memory, loads, seen_integers)?;
+            collect_integer_memory_loads_with_width(
+                then_term,
+                current_memory,
+                loads,
+                width,
+                seen_integers,
+            )?;
+            collect_integer_memory_loads_with_width(
+                else_term,
+                current_memory,
+                loads,
+                width,
+                seen_integers,
+            )
+        }
         IntegerTerm::RangeFold {
             index,
             initial,

@@ -312,6 +312,15 @@ impl Names {
                     self.integer(&mut arm.body);
                 }
             }
+            SpecIntegerExpression::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.proposition(condition);
+                self.integer(then_branch);
+                self.integer(else_branch);
+            }
             SpecIntegerExpression::FromMachine(machine) => self.expression(machine),
             SpecIntegerExpression::Negate(inner) => self.integer(inner),
             crate::kernel::binary_spec_integer_expression!(left, right) => {

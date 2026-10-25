@@ -1431,6 +1431,15 @@ fn collect_integer_node_reads(
             collect_shared_integer_reads(initial, reads, seen);
             collect_shared_integer_reads(body, reads, seen);
         }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_reads(condition, reads);
+            collect_shared_integer_reads(then_term, reads, seen);
+            collect_shared_integer_reads(else_term, reads, seen);
+        }
         IntegerTerm::Constant(_)
         | IntegerTerm::Variable(_)
         | IntegerTerm::AlgebraicMatch { .. } => {}

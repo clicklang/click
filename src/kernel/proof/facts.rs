@@ -2893,6 +2893,15 @@ fn collect_integer_bitvector_atoms(
             collect_integer_bitvector_atoms(left, atoms, visited);
             collect_integer_bitvector_atoms(right, atoms, visited);
         }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_bitvector_atoms(condition, atoms);
+            collect_integer_bitvector_atoms(then_term, atoms, visited);
+            collect_integer_bitvector_atoms(else_term, atoms, visited);
+        }
         _ => {}
     }
 }

@@ -17,6 +17,8 @@ mod algebraic_match_tests;
 #[cfg(test)]
 mod graph_condition_tests;
 #[cfg(test)]
+mod integer_conditional_tests;
+#[cfg(test)]
 mod pointer_application_tests;
 mod spec_rewrite;
 
@@ -419,6 +421,21 @@ fn collect_integer_carriers(
                 return;
             }
             collect_integer_shared_carriers(right, variables, seen);
+        }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_carriers(condition, variables);
+            if variables.exhausted() {
+                return;
+            }
+            collect_integer_shared_carriers(then_term, variables, seen);
+            if variables.exhausted() {
+                return;
+            }
+            collect_integer_shared_carriers(else_term, variables, seen);
         }
         IntegerTerm::RangeFold {
             index,
@@ -3349,6 +3366,52 @@ impl<'a> TermRewrite<'a> {
             } => self.rewrite_integer_range_fold(index, initial, *accumulator, *item, body),
             IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
                 self.rewrite_integer_match(scrutinee, arms)
+            }
+            IntegerTerm::If {
+                condition,
+                then_term,
+                else_term,
+            } => {
+                // As a machine conditional: a rewrite that decides the
+                // condition leaves the arm it selects, and arms the rewrite
+                // made equal decide nothing either.
+                if let Some(conditions) = &mut self.collected_conditions {
+                    conditions.push(condition.as_ref().clone());
+                }
+                let condition = self.condition(condition);
+                let condition = if self.integer_exact.is_some() {
+                    condition
+                } else {
+                    folded_machine_condition(condition)
+                };
+                if self.checked_work_exhausted() {
+                    return exhausted_integer(shared.as_ref());
+                }
+                if self.integer_exact.is_none()
+                    && let ConditionTerm::Constant(value) = condition
+                {
+                    let result = self.integer_shared(if value { then_term } else { else_term });
+                    if self.checked_work_exhausted() {
+                        return exhausted_integer(shared.as_ref());
+                    }
+                    self.integer_cache.insert(cache_key, result.clone());
+                    return result;
+                }
+                let then_term = self.integer_shared(then_term);
+                let else_term = self.integer_shared(else_term);
+                // Arms the rewrite made equal are one term in either mode:
+                // like dropping a rewritten `+ 0` above, it only deletes a
+                // node, and keeping it would leave `if c { y } else { y }`
+                // beside the `y` every producer builds.
+                if self.integer_exact.is_none() || then_term == else_term {
+                    IntegerTerm::if_then_else(condition, then_term, else_term)
+                } else {
+                    IntegerTerm::If {
+                        condition: Box::new(condition),
+                        then_term: then_term.into(),
+                        else_term: else_term.into(),
+                    }
+                }
             }
         };
         if self.checked_work_exhausted() {

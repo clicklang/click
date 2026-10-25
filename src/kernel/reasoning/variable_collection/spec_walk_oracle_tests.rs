@@ -201,6 +201,15 @@ fn old_collect_spec_integer_variables(
     while let Some(expression) = pending.pop() {
         match expression {
             SpecIntegerExpression::ResourceField(_) => {}
+            SpecIntegerExpression::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                old_collect_spec_proposition_bitvector_variables(condition, variables);
+                pending.push(then_branch);
+                pending.push(else_branch);
+            }
             SpecIntegerExpression::AlgebraicMatch { scrutinee, arms } => {
                 old_collect_spec_algebraic_expression_bitvector_variables(scrutinee, variables);
                 for arm in arms {
@@ -285,6 +294,15 @@ fn old_collect_spec_integer_bound_variables_inner(
         }
         SpecIntegerExpression::Term(term) => {
             collect_integer_bound_identities(term, variables, integer_seen);
+        }
+        SpecIntegerExpression::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            old_collect_spec_proposition_bound_identities(condition, variables, integer_seen);
+            old_collect_spec_integer_bound_variables_inner(then_branch, variables, integer_seen);
+            old_collect_spec_integer_bound_variables_inner(else_branch, variables, integer_seen);
         }
         SpecIntegerExpression::AlgebraicMatch { scrutinee, arms } => {
             old_collect_spec_algebraic_bound_identities(scrutinee, variables, integer_seen);

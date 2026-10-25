@@ -948,7 +948,10 @@ fn collect_integer_affine_terms(
             | IntegerTerm::Variable(_)
             | IntegerTerm::Machine(_)
             | IntegerTerm::PureFunctionApplication(_)
-            | IntegerTerm::AlgebraicMatch { .. } => {}
+            | IntegerTerm::AlgebraicMatch { .. }
+            // An unresolved conditional is an opaque atom, as a machine
+            // conditional's observation is.
+            | IntegerTerm::If { .. } => {}
             // A RangeFold is a checked opaque atom.  Its body and endpoints
             // are represented by the kernel-issued alpha key below; affine
             // normalization must never enumerate or lower the range here.
@@ -987,16 +990,18 @@ fn collect_integer_affine_terms(
             | IntegerTerm::Machine(_)
             | IntegerTerm::PureFunctionApplication(_)
             | IntegerTerm::AlgebraicMatch { .. }
+            | IntegerTerm::If { .. }
             | IntegerTerm::TruncatingQuotient(_, _)
             | IntegerTerm::TruncatingRemainder(_, _) => {
                 let atom = match node.as_ref() {
                     IntegerTerm::Variable(variable) => IntegerAffineAtom::Variable(*variable),
                     IntegerTerm::Machine(source) => IntegerAffineAtom::Machine(source.clone()),
                     IntegerTerm::AlgebraicMatch { .. } => return None,
+                    // An unresolved conditional is an opaque atom by its
+                    // shared identity, as a quotient is.
                     IntegerTerm::TruncatingQuotient(_, _)
-                    | IntegerTerm::TruncatingRemainder(_, _) => {
-                        IntegerAffineAtom::Nonlinear(node.id())
-                    }
+                    | IntegerTerm::TruncatingRemainder(_, _)
+                    | IntegerTerm::If { .. } => IntegerAffineAtom::Nonlinear(node.id()),
                     IntegerTerm::PureFunctionApplication(application) => {
                         IntegerAffineAtom::Application(application.id())
                     }
