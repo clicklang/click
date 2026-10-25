@@ -1,6 +1,6 @@
-# `auto` after explicit steps reports the remaining goal
+# A script that stops after a call reports the remaining goal
 
-Without the intermediate `have`, the `auto();` written after the call step
+Without the intermediate `have`, the implicit tail after the call step
 executes the `return` and is refused at its overflow, as the omitted proof
 is. The refusal names that statement, not an unsupported proof shape.
 
@@ -26,7 +26,6 @@ int32 frame(int32 w, int32 h) {
     requires h >= 0 and h <= 1000;
     ensures to_integer(result) == to_integer(w * h + 1) by {
         step(); step();
-        auto();
     }
 }
 ```

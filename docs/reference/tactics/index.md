@@ -117,9 +117,8 @@ when the default misses or when a proof must not search.
   proof `if`, `cases` or `match` are checked once, never once per arm: the arms rejoin,
   keeping the facts every arm proved, or the split is refused. An arm that
   reaches function exit is a finished path, like each `return` of the C: the
-  closer that ends the proof, the implicit `auto` or a written `auto();`,
-  closes its remaining goals on that path, so a split that ends a proof
-  finishes each arm on its own.
+  implicit closer that ends the proof closes its remaining goals on that
+  path, so a split that ends a proof finishes each arm on its own.
 
 ## Automation and search
 
@@ -153,15 +152,14 @@ equate to one value, and reads the fields' equalities, or the constructors'
 mismatch, from it
 (`mdtests/simp_reads_definitions_and_constructor_equations.md`).
 Written
-as a step of a script, `auto();` does what the closer an omitted one stands for
-does at that point: it executes whatever C remains, including after explicit
-steps at a live frontier
-(`mdtests/auto_after_explicit_steps_executes_the_rest.md`), and closes every
-goal still open in its block, so a closer after it has no goal and is refused
-(`mdtests/auto_in_a_script_closes_every_open_goal.md`). In each arm of a proof
-`if` that ends a proof, it closes that arm's goals
-(`mdtests/auto_closes_each_arm_of_a_split_that_ends_a_proof.md`). A written
-`simp()` invokes `simp` alone. Successful smart tactics and `auto` retain the checked
+as a step of a script, `auto();` is the older spelling of `solve();`: it
+closes the first open goal (`mdtests/a_written_auto_closes_one_goal.md`). A
+script that stops with C left ends with the implicit tail, which executes
+whatever remains and closes every open goal
+(`mdtests/a_script_that_stops_after_explicit_steps_executes_the_rest.md`). In
+each arm of a proof `if` that ends a proof, the arm's own closer closes that
+arm's goals
+(`mdtests/auto_closes_each_arm_of_a_split_that_ends_a_proof.md`). Successful smart tactics and `auto` retain the checked
 surface provenance that `click expand` can render as an explicit proof.
 Source-premise selection skips synthesized candidates whose rendered
 propositions do not tokenize as Click, rather than counting a route through an
