@@ -10,8 +10,16 @@ surface contract below is stable.
 
 The public name is `Integer`; there is no `Int` alias. Existing `int` remains
 the C `int32` type. Integer literals are arbitrary-size mathematical values
-when their context is `Integer`. Machine values and Integer values do not mix
-implicitly.
+when their context is `Integer`. Machine values and Integer values mix only
+where the type a result is used at expects an Integer: there each machine
+operand of `+`, `-`, `*` and negation is observed with `to_integer` (the
+[reference table](../reference/language/index.md#integer-specification-arithmetic)
+lists the positions). `src/surface/parser/spec_arithmetic.rs` decides it
+while parsing, from the expected types of comparison operands, declared
+`Integer` parameters and fields, `-> Integer` results and typed `let`s; an
+untyped `let` of machine arithmetic is refused. A `match` arm is in the
+position of its match; an `if` branch is not yet, because
+`SpecIntegerExpression` has no conditional.
 
 An unused `Integer` parameter does not reinterpret a separately machine-typed
 literal or expression. Expected-type propagation follows the expression and

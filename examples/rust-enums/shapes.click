@@ -12,11 +12,13 @@ fn square(side: u32) -> Shape {
 fn perimeter(s: Shape) -> u32 {
     requires match s { Shape::Circle(r) => r, Shape::Rect(w, h) => w, Shape::Empty => 0u32 } <= 1000u32;
     requires match s { Shape::Circle(r) => r, Shape::Rect(w, h) => h, Shape::Empty => 0u32 } <= 1000u32;
-    ensures result == match s {
+    // The perimeter is the `u32` value the Rust arms compute.
+    let perimeter: u32 = match s {
         Shape::Circle(r) => r * 6u32,
         Shape::Rect(w, h) => (w + h) * 2u32,
         Shape::Empty => 0u32,
     };
+    ensures result == perimeter;
 } by { execute(); simp(); }
 
 fn grow(s: Shape) -> Shape {

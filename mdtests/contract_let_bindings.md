@@ -23,7 +23,7 @@ function inc_with_let(x: int32) -> int32 {
 
 int32 bounded_increment(int32 x) {
     let max: int32 = 2147483647;
-    let expected = x + 1;
+    let expected: int32 = x + 1;
 
     requires x < max;
     ensures result_value: result == expected by auto();
@@ -32,7 +32,7 @@ int32 bounded_increment(int32 x) {
 
 int32 read_first(int32 p[]) {
     let len: int32 = 1;
-    let first = len - 1;
+    let first: int32 = len - 1;
 
     views p[0..len];
     ensures result_value: result == p[first] by auto();

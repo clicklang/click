@@ -86,6 +86,34 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .filter(|function| *function.return_type() == ClickType::Integer)
             .map(|function| function.name().to_string())
             .collect::<BTreeSet<_>>();
+        // An argument for an imported `Integer` parameter is read at an
+        // Integer position, as one for a local parameter is.
+        let integer_positions = |parameters: &[FunctionParameter]| {
+            let positions = parameters
+                .iter()
+                .enumerate()
+                .filter(|(_, parameter)| *parameter.click_type() == ClickType::Integer)
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            (!positions.is_empty()).then_some(positions)
+        };
+        let imported_integer_parameters = imported_ids
+            .iter()
+            .filter_map(|imported| locals.get(imported))
+            .flat_map(|file| {
+                file.click_function_definitions()
+                    .iter()
+                    .map(|function| (function.name(), function.parameters()))
+                    .chain(
+                        file.theorem_definitions()
+                            .iter()
+                            .map(|theorem| (theorem.name(), theorem.parameters())),
+                    )
+            })
+            .filter_map(|(name, parameters)| {
+                integer_positions(parameters).map(|positions| (name.to_string(), positions))
+            })
+            .collect::<BTreeMap<_, _>>();
         let imported_callees = imported_ids
             .iter()
             .filter_map(|imported| locals.get(imported))
@@ -133,6 +161,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             &imported_resources,
             &imported_declarations,
             &imported_integer_functions,
+            &imported_integer_parameters,
             layouts.clone(),
         )?;
         if local.imports().len() != module.imports().len() {

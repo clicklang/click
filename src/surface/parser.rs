@@ -10,7 +10,9 @@ mod rust_literals;
 use super::names;
 mod rust_syntax;
 mod rust_trait_objects;
+mod spec_arithmetic;
 pub(crate) use rust_trait_objects::implementation_interface_contract;
+pub(super) use spec_arithmetic::written_integer_parameters;
 pub(super) mod tokenizer;
 use cpp_model::rewrite_model_accessors;
 use name_table::{NameKind, NameScope, NameTable, ShadowRestore};
@@ -447,6 +449,7 @@ pub(super) fn parse_file_items_for_module(
     imported_resources: &[&ResourceDefinition],
     imported_declarations: &[(names::DeclarationKind, String)],
     imported_integer_functions: &BTreeSet<String>,
+    imported_integer_parameters: &BTreeMap<String, Vec<usize>>,
     layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::with_program_layouts(
@@ -466,6 +469,11 @@ pub(super) fn parse_file_items_for_module(
     parser
         .integer_function_names
         .extend(imported_integer_functions.iter().cloned());
+    parser.integer_parameter_positions.extend(
+        imported_integer_parameters
+            .iter()
+            .map(|(name, positions)| (name.clone(), positions.clone())),
+    );
     for callee in imported_callees {
         let (named_contract, block) = match callee {
             ImportedCallee::Function(block) => (false, *block),
@@ -918,6 +926,16 @@ struct Parser {
     /// Pure functions declared `-> Integer`, whose calls are Integer
     /// operands.
     integer_function_names: BTreeSet<String>,
+    /// The positions of the `Integer` parameters of each pure function and
+    /// theorem this module declares or imports, where an argument's
+    /// arithmetic is exact.
+    integer_parameter_positions: BTreeMap<String, Vec<usize>>,
+    /// What each `let` in scope is as an arithmetic operand, so a later
+    /// binding's arithmetic on it has a meaning.
+    let_operands: spec_arithmetic::LetOperands,
+    /// The machine types of the current theorem's or pure function's
+    /// parameters, which a diagnostic names.
+    spec_parameter_types: BTreeMap<String, C0Type>,
     /// The casts written as `address(p)`, which convert a C pointer to its
     /// `uint64` address. Arithmetic on them is
     /// pointer-word arithmetic, such as a tag added to an aligned address,
@@ -1125,6 +1143,17 @@ impl Parser {
     fn verifies_rust(&self) -> bool {
         self.language == SourceLanguage::Rust
     }
+}
+
+/// The machine types of a theorem's or pure function's parameters.
+fn spec_parameter_types(parameters: &[FunctionParameter]) -> BTreeMap<String, C0Type> {
+    parameters
+        .iter()
+        .filter_map(|parameter| match parameter.click_type() {
+            ClickType::C(c_type) => Some((parameter.name().to_string(), *c_type)),
+            _ => None,
+        })
+        .collect()
 }
 
 fn algebraic_parameter_types(
@@ -1512,6 +1541,9 @@ impl Parser {
             names: NameTable::default(),
             pure_function_slices: BTreeMap::new(),
             integer_function_names: BTreeSet::new(),
+            integer_parameter_positions: BTreeMap::new(),
+            let_operands: Default::default(),
+            spec_parameter_types: BTreeMap::new(),
             address_casts: std::collections::HashSet::new(),
             theorem_pointer_params: BTreeSet::new(),
             pending_slice_params: None,
@@ -1613,8 +1645,23 @@ impl Parser {
                     if self.declares_integer_result(parameters) {
                         self.integer_function_names.insert(name.clone());
                     }
+                    if let Some(positions) =
+                        spec_arithmetic::written_integer_parameters(&self.tokens, parameters)
+                    {
+                        self.integer_parameter_positions
+                            .insert(name.clone(), positions);
+                    }
                     if let Some(slices) = self.written_slice_parameters(parameters) {
                         self.pure_function_slices.insert(name, slices);
+                    }
+                }
+                names::DeclarationKind::Theorem => {
+                    if let Some(positions) = spec_arithmetic::written_integer_parameters(
+                        &self.tokens,
+                        declaration.at + 1,
+                    ) {
+                        self.integer_parameter_positions
+                            .insert(declaration.name, positions);
                     }
                 }
                 _ => {}
@@ -2750,7 +2797,19 @@ impl Parser {
             &mut self.names.algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
         );
-        let body = self.parse_branch_value(return_type == ClickType::C(C0Type::Bool))?;
+        let previous_spec_parameter_types = std::mem::replace(
+            &mut self.spec_parameter_types,
+            spec_parameter_types(&parsed_parameters.parameters),
+        );
+        let body = self.parse_branch_value(return_type == ClickType::C(C0Type::Bool));
+        self.spec_parameter_types = previous_spec_parameter_types;
+        let body = body?;
+        // A `-> Integer` body is read where its result is used.
+        let body = if return_type == ClickType::Integer {
+            self.at_integer_position(body)
+        } else {
+            body
+        };
         self.names.struct_params = previous_struct_params;
         self.names
             .replace(NameKind::StructArrayParameter, previous_struct_array_params);
@@ -3597,6 +3656,7 @@ impl Parser {
         let previous_integer_literal_context =
             std::mem::replace(&mut self.integer_literal_context, false);
         let previous_integer_lets = self.names.take(NameKind::IntegerLet);
+        let previous_let_operands = self.take_let_operands();
         let mut execution_struct_params = BTreeMap::new();
         let mut execution_struct_array_params = BTreeSet::new();
         let mut executed_reference_params = BTreeSet::new();
@@ -3633,6 +3693,10 @@ impl Parser {
         let previous_theorem_param_names = self
             .names
             .replace(NameKind::TheoremParameter, parameter_names.clone());
+        let previous_spec_parameter_types = std::mem::replace(
+            &mut self.spec_parameter_types,
+            spec_parameter_types(&parsed_parameters.parameters),
+        );
         let previous_theorem_pointer_params = std::mem::replace(
             &mut self.theorem_pointer_params,
             parsed_parameters
@@ -3687,6 +3751,7 @@ impl Parser {
                             binding.name
                         )));
                     }
+                    self.bind_contract_let_operand(&binding);
                     let substitutions = contract_let_substitutions(&contract_lets);
                     let kind = match binding.kind {
                         ContractLetBindingKind::Value(value) => ContractLetBindingKind::Value(
@@ -3858,11 +3923,13 @@ impl Parser {
             .replace(NameKind::TypeParameter, previous_type_parameters);
         self.names
             .replace(NameKind::TheoremParameter, previous_theorem_param_names);
+        self.spec_parameter_types = previous_spec_parameter_types;
         self.theorem_pointer_params = previous_theorem_pointer_params;
         self.names
             .replace(NameKind::IntegerParameter, previous_integer_params);
         self.names
             .replace(NameKind::IntegerLet, previous_integer_lets);
+        self.restore_let_operands(previous_let_operands);
         self.integer_literal_context = previous_integer_literal_context;
 
         let requires: Vec<Requirement> = requires
@@ -4120,6 +4187,7 @@ impl Parser {
             .collect::<Vec<_>>();
         let previous_integer_params = self.names.take(NameKind::IntegerParameter);
         let previous_integer_lets = self.names.take(NameKind::IntegerLet);
+        let previous_let_operands = self.take_let_operands();
         let previous_integer_literal_context =
             std::mem::replace(&mut self.integer_literal_context, false);
         let mut contract_lets = Vec::new();
@@ -4246,6 +4314,7 @@ impl Parser {
                             signature.name()
                         )));
                     }
+                    self.bind_contract_let_operand(&binding);
                     if binding.kind == ContractLetBindingKind::Parameter {
                         // A clause would read the value where the body reads
                         // the program's variable.
@@ -4708,6 +4777,7 @@ impl Parser {
             .replace(NameKind::IntegerParameter, previous_integer_params);
         self.names
             .replace(NameKind::IntegerLet, previous_integer_lets);
+        self.restore_let_operands(previous_let_operands);
         self.integer_literal_context = previous_integer_literal_context;
 
         // Flattening an aggregate clause keeps the clause the author wrote
@@ -4852,7 +4922,7 @@ impl Parser {
         self.expect_ident_spelling("let")?;
         let name = self.expect_ident("let binding name")?;
         self.refuse_bool_literal_binder(&name)?;
-        let click_type = if self.peek() == Some(&Token::Colon) {
+        let mut click_type = if self.peek() == Some(&Token::Colon) {
             self.position += 1;
             let (click_type, parsed_type) = self.parse_click_type()?;
             if let Some(parsed_type) = parsed_type
@@ -4873,7 +4943,24 @@ impl Parser {
             );
             let value = self.parse_contract_expression();
             self.integer_literal_context = previous_integer_literal_context;
-            ContractLetBindingKind::Value(value?)
+            let value = value?;
+            // The annotation is the value's expected type; without one,
+            // arithmetic on a machine value has no meaning.
+            let value = match &click_type {
+                Some(ClickType::Integer) => self.at_integer_position(value),
+                Some(ClickType::C(c_type)) => self.typed_let_literal(&name, *c_type, value)?,
+                Some(_) => value,
+                None => {
+                    self.refuse_untyped_machine_arithmetic(&name, &value)?;
+                    // An untyped `let` has its value's type, so one whose
+                    // value is an exact Integer is an Integer binding.
+                    if self.integer_operand(&value) {
+                        click_type = Some(ClickType::Integer);
+                    }
+                    value
+                }
+            };
+            ContractLetBindingKind::Value(value)
         } else if self.peek_ident() == Some("where") {
             self.position += 1;
             if click_type.is_none() {
@@ -8065,6 +8152,7 @@ impl Parser {
             }
         }
         self.expect(Token::RParen)?;
+        let arguments = self.observe_integer_arguments(&name, arguments);
         let arguments = self.spread_slice_arguments(&name, arguments)?;
         Ok((name, arguments))
     }
@@ -8084,141 +8172,6 @@ impl Parser {
         Ok(self.specification_comparison(left, operator, right))
     }
 
-    /// A comparison as the file's specification arithmetic reads it. A
-    /// comparison that does arithmetic, or that
-    /// compares an Integer with a machine value, compares exact Integers:
-    /// each machine operand of its arithmetic is observed with
-    /// `to_integer`, so `x + 1 > x` reads
-    /// `to_integer(x) + 1 > to_integer(x)`. A population count is a
-    /// quantity, so a comparison with a `count(...)` operand compares
-    /// Integers too. A comparison with a pointer operand keeps its C
-    /// meaning.
-    fn reads_as_integer_comparison(
-        &self,
-        left: &ContractExpression,
-        operator: ComparisonOperator,
-        right: &ContractExpression,
-    ) -> bool {
-        if !self.integer_arithmetic || operator == ComparisonOperator::In {
-            return false;
-        }
-        let left_integer = self.integer_operand(left);
-        let right_integer = self.integer_operand(right);
-        let mixed = left_integer != right_integer;
-        let arithmetic = has_arithmetic_spine(left) || has_arithmetic_spine(right);
-        let counted = has_count_operand(left) || has_count_operand(right);
-        !(left_integer && right_integer)
-            && (mixed || arithmetic || counted)
-            && !self.has_c_only_operand(left)
-            && !self.has_c_only_operand(right)
-    }
-
-    fn specification_comparison(
-        &self,
-        left: ContractExpression,
-        operator: ComparisonOperator,
-        right: ContractExpression,
-    ) -> ClickProposition {
-        if self.reads_as_integer_comparison(&left, operator, &right) {
-            return ClickProposition::Comparison {
-                left: self.observe_machine_operands(left),
-                operator,
-                right: self.observe_machine_operands(right),
-            };
-        }
-        ClickProposition::Comparison {
-            left,
-            operator,
-            right,
-        }
-    }
-
-    /// Whether `expression` is already an exact Integer: an Integer
-    /// binding, a `to_integer` observation, or arithmetic over them.
-    fn integer_operand(&self, expression: &ContractExpression) -> bool {
-        self.integer_operand_in_scope(expression, &mut BTreeMap::new())
-    }
-
-    fn integer_operand_in_scope<'a>(
-        &self,
-        expression: &'a ContractExpression,
-        bindings: &mut BTreeMap<&'a str, bool>,
-    ) -> bool {
-        match expression {
-            ContractExpression::Add(left, right)
-            | ContractExpression::Subtract(left, right)
-            | ContractExpression::Multiply(left, right) => {
-                self.integer_operand_in_scope(left, bindings)
-                    || self.integer_operand_in_scope(right, bindings)
-            }
-            ContractExpression::Negate(inner)
-            | ContractExpression::Old(inner)
-            | ContractExpression::At {
-                expression: inner, ..
-            } => self.integer_operand_in_scope(inner, bindings),
-            ContractExpression::Let {
-                name,
-                click_type,
-                value,
-                body,
-            } => {
-                let integer = match click_type {
-                    Some(ClickType::Integer) => true,
-                    Some(_) => false,
-                    None => self.integer_operand_in_scope(value, bindings),
-                };
-                let previous = bindings.insert(name.as_str(), integer);
-                let result = self.integer_operand_in_scope(body, bindings);
-                if let Some(previous) = previous {
-                    bindings.insert(name.as_str(), previous);
-                } else {
-                    bindings.remove(name.as_str());
-                }
-                result
-            }
-            ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => bindings
-                .get(name.as_str())
-                .copied()
-                .unwrap_or_else(|| self.integer_leaf(expression)),
-            leaf => self.integer_leaf(leaf),
-        }
-    }
-
-    fn integer_leaf(&self, expression: &ContractExpression) -> bool {
-        match expression {
-            ContractExpression::Call { name, .. } => {
-                name == "to_integer"
-                    || crate::surface::integer_truncation::is_integer_truncation(name)
-                    || self.integer_function_names.contains(name)
-            }
-            ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => {
-                self.names.contains_any(NameKind::INTEGERS, name)
-                    || matches!(
-                        self.names.arm_binding_types.get(name),
-                        Some(AlgebraicFieldType::Integer)
-                    )
-            }
-            // A fold, a match or a conditional is an Integer when a value it
-            // can produce is one.
-            ContractExpression::RangeFold { initial, body, .. } => {
-                self.integer_operand(initial) || self.integer_operand(body)
-            }
-            ContractExpression::AlgebraicMatch { arms, .. } => {
-                arms.iter().any(|arm| self.integer_operand(&arm.body))
-            }
-            ContractExpression::If {
-                then_branch,
-                else_branch,
-                ..
-            } => self.integer_operand(then_branch) || self.integer_operand(else_branch),
-            _ => false,
-        }
-    }
-
     /// Whether the function header whose parameter list opens at `start`
     /// declares `-> Integer`: the parenthesis is matched, then the result
     /// type follows the arrow.
@@ -8231,118 +8184,6 @@ impl Parser {
         };
         self.tokens.get(close + 1) == Some(&Token::Arrow)
             && matches!(self.tokens.get(close + 2), Some(Token::Ident(name)) if name == "Integer")
-    }
-
-    /// Whether an arithmetic operand of `expression` has only a C meaning:
-    /// a pointer parameter, an `address(p)` of a pointer, or a floating-point
-    /// value, which has no Integer observation.
-    fn has_c_only_operand(&self, expression: &ContractExpression) -> bool {
-        match expression {
-            ContractExpression::Add(left, right)
-            | ContractExpression::Subtract(left, right)
-            | ContractExpression::Multiply(left, right) => {
-                self.has_c_only_operand(left) || self.has_c_only_operand(right)
-            }
-            ContractExpression::Negate(inner)
-            | ContractExpression::Old(inner)
-            | ContractExpression::At {
-                expression: inner, ..
-            } => self.has_c_only_operand(inner),
-            ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name))
-                if matches!(
-                    self.names.arm_binding_types.get(name),
-                    Some(AlgebraicFieldType::C { c_type, .. }) if c_type.is_pointer()
-                ) =>
-            {
-                true
-            }
-            // An address, `&r->arr[0]`, or a value cast to a pointer type.
-            ContractExpression::CFragment(
-                CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_),
-            )
-            | ContractExpression::CUnary {
-                lowered: CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_),
-                ..
-            } => true,
-            ContractExpression::CFragment(CExpression::Cast { target_type, .. })
-            | ContractExpression::CUnary {
-                lowered: CExpression::Cast { target_type, .. },
-                ..
-            } if target_type.is_pointer() => true,
-            ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => {
-                let c_only = |c_type: &C0Type| {
-                    c_type.is_pointer() || matches!(c_type, C0Type::Float32 | C0Type::Float64)
-                };
-                self.theorem_pointer_params.contains(name)
-                    || self.current_local_pointers.contains(name)
-                    || self.names.c_parameter_types.get(name).is_some_and(c_only)
-                    || (name == "result"
-                        && !self.names.c_parameter_types.contains_key(name)
-                        && self.current_result_c_type.as_ref().is_some_and(c_only))
-            }
-            ContractExpression::CFragment(CExpression::TypedLoad { value_type, .. })
-            | ContractExpression::CUnary {
-                lowered: CExpression::TypedLoad { value_type, .. },
-                ..
-            }
-            | ContractExpression::Field {
-                lowered: CExpression::TypedLoad { value_type, .. },
-                ..
-            } => value_type.is_pointer() || matches!(value_type, CType::Float32 | CType::Float64),
-            ContractExpression::CFragment(cast @ CExpression::Cast { .. })
-            | ContractExpression::CUnary {
-                lowered: cast @ CExpression::Cast { .. },
-                ..
-            } => self.address_casts.contains(cast),
-            _ => false,
-        }
-    }
-
-    /// `expression` with each machine operand of its arithmetic observed
-    /// with `to_integer`. Unsuffixed literals take the Integer type from
-    /// context, and Integer operands are left as they are.
-    fn observe_machine_operands(&self, expression: ContractExpression) -> ContractExpression {
-        match expression {
-            ContractExpression::Add(left, right) => ContractExpression::Add(
-                Box::new(self.observe_machine_operands(*left)),
-                Box::new(self.observe_machine_operands(*right)),
-            ),
-            ContractExpression::Subtract(left, right) => ContractExpression::Subtract(
-                Box::new(self.observe_machine_operands(*left)),
-                Box::new(self.observe_machine_operands(*right)),
-            ),
-            ContractExpression::Multiply(left, right) => ContractExpression::Multiply(
-                Box::new(self.observe_machine_operands(*left)),
-                Box::new(self.observe_machine_operands(*right)),
-            ),
-            ContractExpression::Negate(inner) => {
-                ContractExpression::Negate(Box::new(self.observe_machine_operands(*inner)))
-            }
-            ContractExpression::Old(inner) if has_arithmetic_spine(&inner) => {
-                ContractExpression::Old(Box::new(self.observe_machine_operands(*inner)))
-            }
-            ContractExpression::At {
-                selector,
-                expression,
-            } if has_arithmetic_spine(&expression) || self.integer_operand(&expression) => {
-                ContractExpression::At {
-                    selector,
-                    expression: Box::new(self.observe_machine_operands(*expression)),
-                }
-            }
-            ContractExpression::IntegerLiteral(value) => ContractExpression::IntegerLiteral(value),
-            // An Integer operand, including one under `old` or `at`, is
-            // already exact.
-            leaf if self.integer_operand(&leaf) => leaf,
-            leaf => ContractExpression::Call {
-                name: "to_integer".to_string(),
-                arguments: vec![leaf],
-            },
-        }
     }
 
     /// A comparison operand whose outermost operator is `&`, `|` or `^` must
@@ -8903,6 +8744,15 @@ impl Parser {
                 let field = self.expect_ident("resource field name")?;
                 self.expect(Token::Colon)?;
                 let value = self.parse_contract_expression()?;
+                // An `Integer` field's value is read where an Integer is
+                // expected.
+                let value = if declared.iter().any(|declared| {
+                    declared.name() == field && declared.click_type() == &ClickType::Integer
+                }) {
+                    self.at_integer_position(value)
+                } else {
+                    value
+                };
                 fields.push((field, value));
                 if self.peek() != Some(&Token::Comma) {
                     break;
@@ -14105,6 +13955,7 @@ impl Parser {
                 }
                 self.expect(Token::RParen)?;
             }
+            let arguments = self.observe_integer_fields(&algebraic_type.name, &variant, arguments);
             return Ok(ContractExpression::AlgebraicConstructor {
                 algebraic_type,
                 variant,
@@ -14458,6 +14309,7 @@ impl Parser {
     fn parse_contract_value_let_expression(&mut self) -> Result<ContractExpression, ClickError> {
         let bool_body = std::mem::take(&mut self.bool_value_context);
         let mut bindings = Vec::new();
+        let mut shadowed_lets = Vec::new();
         loop {
             if bindings.len() >= CONTRACT_LET_CHAIN_LIMIT {
                 return Err(self.error(format!(
@@ -14471,6 +14323,11 @@ impl Parser {
             let binding_was_in_scope = !self
                 .names
                 .insert(NameKind::ContractBinding, binding.name.clone());
+            shadowed_lets.push(self.bind_let_operand(
+                &binding.name,
+                binding.click_type.as_ref(),
+                Some(&value),
+            ));
             let previous_integer_context = self.integer_literal_context;
             let click_type = binding.click_type;
             self.integer_literal_context |= matches!(click_type, Some(ClickType::Integer));
@@ -14487,6 +14344,7 @@ impl Parser {
         }
 
         let body = self.parse_branch_value(bool_body);
+        self.unbind_let_operands(shadowed_lets);
         for (name, _, _, binding_was_in_scope, previous_integer_context) in bindings.iter().rev() {
             self.integer_literal_context = *previous_integer_context;
             if !*binding_was_in_scope {
@@ -16181,44 +16039,6 @@ fn struct_byte_base(base: CExpression) -> CExpression {
         pointee_volatile: false,
         pointee_constant: false,
         explicit_qualification: false,
-    }
-}
-
-/// Every named child slot of a composite resource body: its unmatched
-/// body's and each match arm's, whichever resource each one owns.
-/// Whether `expression` or an operand of its arithmetic is a population
-/// count, looking through `old`.
-fn has_count_operand(expression: &ContractExpression) -> bool {
-    match expression {
-        ContractExpression::ResourceCount(_) => true,
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right) => {
-            has_count_operand(left) || has_count_operand(right)
-        }
-        ContractExpression::Negate(inner) | ContractExpression::Old(inner) => {
-            has_count_operand(inner)
-        }
-        _ => false,
-    }
-}
-
-/// Whether `expression` does `+`, `-`, `*` or negation at its top, looking
-/// through `old`.
-fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
-    match expression {
-        ContractExpression::Add(..)
-        | ContractExpression::Subtract(..)
-        | ContractExpression::Multiply(..) => true,
-        // A negative literal, `-128`, is a constant, not arithmetic.
-        ContractExpression::Negate(inner) => {
-            !matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_))
-        }
-        ContractExpression::Old(inner)
-        | ContractExpression::At {
-            expression: inner, ..
-        } => has_arithmetic_spine(inner),
-        _ => false,
     }
 }
 

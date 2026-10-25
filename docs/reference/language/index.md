@@ -958,33 +958,90 @@ Integer values have no C storage or runtime representation. Datatype fields and
 generic arguments such as `Box<Integer>` are supported, as is extraction from
 known constructors. Symbolic Integer-valued datatype matches are supported when
 the matched result has one consistent carrier; contextual Integer literals in
-their arms inherit that result type. Mixed C and Integer arithmetic remains
-rejected unless an explicit conversion is present.
+their arms inherit that result type. Mixed C and Integer arithmetic is
+rejected unless an explicit conversion is present or the arithmetic is in a
+position that expects an Integer
+([Integer specification arithmetic](#integer-specification-arithmetic)).
 
 ### Integer specification arithmetic
 
-Specification arithmetic is Integer by default
+Arithmetic on machine values takes its meaning from the type its result is
+used at. Where there is no expected type, you must write one. Where an
+Integer is expected, `+`, `-`, `*` and negation are exact Integer operations
+and each machine operand is observed with `to_integer`, so `x + 1 > x` reads
+`to_integer(x) + 1 > to_integer(x)` and holds for every `int32` and `uint32`.
+Where a machine type is expected they are the C operation at that type:
+partial, with a definedness obligation, for signed types, and wrapping for
+unsigned ones. Unsuffixed literals are Integer unless their context gives
+them a machine type
 ([standard library roadmap item](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md)).
-A specification comparison that does `+`, `-`, `*` or negation, or that compares an Integer with a
-machine value, compares exact Integers: each machine operand of its
-arithmetic is observed with `to_integer`, so `x + 1 > x` reads
-`to_integer(x) + 1 > to_integer(x)` and holds for every `int32` and
-`uint32`. Unsuffixed literals take the Integer type. A contract `let` of a
-machine value is a machine operand
-(`mdtests/a_c_valued_contract_let_in_integer_arithmetic.md`). A comparison
-with a pointer (a parameter of a C function or a theorem, a local, a struct
-field, a pointer `result`, or an `address(p)`) or a floating-point value
-among its arithmetic operands, and a comparison
-without arithmetic between machine values, keep their C meaning; the latter
-has the same truth either way
-(`mdtests/pointer_operands_keep_their_c_meaning.md`). Arithmetic on an address is pointer-word
-arithmetic, such as a tag added to an aligned address
+
+| Position | Expected type |
+| --- | --- |
+| an operand of a comparison that does `+`, `-`, `*` or negation, compares an Integer with a machine value, or has a `count(...)` operand | Integer |
+| an argument for an `Integer` parameter of a pure function or theorem, including a library theorem and `truncating_quotient` / `truncating_remainder` | Integer |
+| the value of `let s: Integer = ...`, an `Integer` constructor field, an `Integer` resource field's value in a `fold` map, the body of a `-> Integer` function | Integer |
+| an arm of a `match` in an Integer position | Integer |
+| a machine-typed parameter, constructor or resource field; `let s: int32 = ...`, whose unsuffixed literal value is an `int32` in the type's range; an index or memory range; a cast; the argument of `to_integer(...)` or `defined(...)`; an operand of `/ % << >> & \| ^`; a machine fold accumulator or body; a `decreases` measure | that machine type |
+| a branch of an `if` | the conditional's C type: the kernel has no Integer conditional, so an Integer position observes the whole conditional, `to_integer(if ...)` |
+| an untyped `let s = ...` | none: arithmetic on a machine value in its value is refused; the binding has its value's type, so one whose value is an Integer is an Integer |
+
+<!-- verified-example: mdtests/a_typed_let_gives_machine_arithmetic_its_meaning.md -->
+```click
+let s: Integer = a + b;
+let t = a;
+let k = 5 + 3;
+```
+
+`s` is the exact sum; `let s: int32 = a + b;` is C's sum and owes its
+definedness (`mdtests/a_machine_typed_let_keeps_the_c_operation.md`). An
+untyped `let` of a plain machine value, such as `t`, or of arithmetic on
+Integers and literals alone, such as `k`, needs no annotation. An untyped
+`let` whose value does `+`, `-`, `*` or negation on a machine value, at its
+top, under `old` or `at`, or in a branch or arm, is refused in a contract,
+a theorem, a pure function body or a specification expression alike:
+``untyped `let s` does arithmetic on a machine value; arithmetic takes its
+meaning from the type its result is used at, so write `let s: Integer = ...;`
+for the exact value or `let s: int32 = ...;` for the C operation``, naming the
+operand's machine type where its spelling shows it
+(`mdtests/an_untyped_let_of_machine_arithmetic_is_refused.md`). So a value
+never changes meaning when it is moved into a `let`. An untyped `let` has
+its value's type, and an earlier `let` in scope (a contract's or theorem's,
+or an enclosing `let ... ;`) is an operand of that type: after
+`let a = to_integer(x);`, `let b = a + 1;` is Integer arithmetic and needs no
+annotation (`mdtests/an_untyped_let_of_an_integer_has_the_integer_type.md`),
+while after `let t = a;`, `let u = t + 1;` is refused and names `t`'s type
+(`mdtests/an_untyped_let_of_a_machine_let_is_refused.md`). A typed `let`
+gives an unsuffixed literal its machine type: `let m: int64 = 5;` is the
+`int64` 5, for every fixed-width type
+(`mdtests/a_typed_let_gives_a_literal_its_machine_type.md`), and a literal
+outside the range is refused with
+`` `let byte: uint8` cannot hold 300; a `uint8` lies in 0..=255 ``
+(`mdtests/contract_let_type_mismatch.md`). An `Integer`
+resource field's `fold` value is exact
+(`mdtests/an_integer_resource_field_reads_fold_arithmetic_exactly.md`).
+Predicates' `Integer` parameters and `Integer` resource parameters are not
+supported yet, so neither is an Integer position. A contract `let` of a
+machine value is a machine operand where it is used
+(`mdtests/a_c_valued_contract_let_in_integer_arithmetic.md`). Integer
+parameters, fields and results:
+`mdtests/integer_parameters_fields_and_results_read_machine_arithmetic_exactly.md`;
+match arms: `mdtests/a_match_arm_in_an_integer_comparison_is_exact.md`.
+
+A comparison with a pointer (a parameter of a C function or a theorem, a
+local, a struct field, a pointer `result`, or an `address(p)`) or a
+floating-point value among its arithmetic operands, and a comparison without
+arithmetic between machine values, keep their C meaning; the latter has the
+same truth either way (`mdtests/pointer_operands_keep_their_c_meaning.md`).
+Arithmetic on an address is pointer-word arithmetic, such as a tag added to
+an aligned address
 (`mdtests/address_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`,
 `mdtests/pointer_arithmetic_on_a_theorem_parameter_keeps_its_c_meaning_under_integer_arithmetic.md`),
 and a floating-point value has no Integer observation
-(`mdtests/floating_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`). A population count is a quantity, so a comparison
-with a `count(...)` operand also compares Integers. Expansions and
-diagnostics print the inserted `to_integer`. See
+(`mdtests/floating_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`).
+A population count is a quantity, so a comparison with a `count(...)`
+operand also compares Integers. Expansions and diagnostics print the
+inserted `to_integer`. See
 `mdtests/integer_arithmetic_makes_specification_addition_exact.md` and its
 C-arithmetic twin
 `mdtests/machine_specification_addition_needs_its_overflow_bound.md`. The
@@ -3648,7 +3705,7 @@ Function contracts may also use contract-level `let` bindings:
 ```click
 int32 bounded_increment(int32 x) {
     let max: int32 = 2147483647;
-    let expected = x + 1;
+    let expected: int32 = x + 1;
 
     requires x < max;
     ensures result_value: result == expected by auto();
@@ -3659,7 +3716,9 @@ Contract-level lets are immutable lexical abbreviations. They are visible to
 later clauses in the same function block, including `requires`, `ensures`,
 `owns`, `views`, and region proof blocks. A contract-level let cannot reuse a C
 parameter name or an earlier contract-level let name. Explicit type annotations
-are checked when the binding is evaluated.
+are checked when the binding is evaluated, and a value that does arithmetic on
+a machine value requires one
+([Integer specification arithmetic](#integer-specification-arithmetic)).
 
 Use `old(...)` in the binding when the abbreviation must capture an entry-state
 value. For example, `let data = old(owner->data);` gives later postconditions a

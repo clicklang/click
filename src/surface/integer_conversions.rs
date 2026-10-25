@@ -1362,10 +1362,15 @@ mod tests {
         for bad in [
             guarded.replace("requires defined(x + 1i64);", ""),
             guarded.replace("requires d != 0;", ""),
-            guarded.replace("to_integer(x + 1i64)", "x + 1i64"),
         ] {
             assert!(verify_c0_sources(&bad, &[]).is_err(), "{bad}");
         }
+        // Written for the Integer parameters without `to_integer`, `x + 1i64`
+        // is the exact sum, which owes no definedness.
+        let exact = guarded
+            .replace("to_integer(x + 1i64)", "x + 1i64")
+            .replace("requires defined(x + 1i64);", "");
+        verify_c0_sources(&exact, &[]).unwrap();
     }
     #[test]
     fn negated_integer_order_arithmetic_expands_and_reverifies() {
