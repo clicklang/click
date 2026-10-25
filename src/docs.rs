@@ -285,8 +285,12 @@ pub fn index() -> String {
 
 /// The documentation for `name`, or a message naming close matches.
 pub fn lookup(name: &str) -> Result<String, String> {
-    // `simp` is the older spelling of `solve`.
-    let name = if name == "simp" { "solve" } else { name };
+    // `simp` and `execute_until` are older spellings.
+    let name = match name {
+        "simp" => "solve",
+        "execute_until" => "step_until",
+        name => name,
+    };
     let pages = pages();
     if let Some(entry) = tactic_entries()
         .into_iter()

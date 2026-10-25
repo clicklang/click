@@ -1130,6 +1130,13 @@ mdtests and examples.
     crosses is proved by `solve`. Rename it, keeping the old spelling as an
     alias, and give its refusals one tactic name (today the same miss is
     reported as `step()` refused by `execute_until`, or as `execute()`).
+    Done in part: `step_until` is the documented spelling, `execute_until`
+    its accepted alias (`click docs execute_until` shows `step_until`), and
+    refusals, profiling and trace labels say `step_until`
+    (`mdtests/step_until_steps_to_a_statement.md`). It also walks a loop the
+    facts decide, as `execute` does, and still never splits. A miss inside
+    it still reads "`step()` is missing prerequisite … refused by
+    `step_until`": the step that missed, and the tactic that ran it.
 23. **`execute()` keeps one program point.** It refuses when execution
     would leave more than one exit path and names the `branch` to write.
     Migrate the 263 multi-path proofs: the 237 path-selecting `if`s become
