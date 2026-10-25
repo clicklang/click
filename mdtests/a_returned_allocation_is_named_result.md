@@ -16,9 +16,6 @@ verifying "a_returned_allocation_is_named_result.c";
 
 int32* make() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

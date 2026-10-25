@@ -28,17 +28,11 @@ verifying "modeled_pthread_abstract_resource_transfer.c";
 
 void *worker(void *unused) {
     owns permit();
-} by {
-    execute();
-    simp();
 }
 
 int32 run() {
     owns permit();
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

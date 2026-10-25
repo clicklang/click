@@ -29,10 +29,6 @@ verifying "fresh_allocation_writes_are_internal_effects.c";
 
 int32* fresh_allocation_writes_are_internal_effects() {
     produces maybe_initialized_int32(result);
-} by {
-    execute();
-    fold(maybe_initialized_int32(result));
-    simp();
 }
 ```
 

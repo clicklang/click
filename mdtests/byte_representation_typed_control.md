@@ -31,9 +31,6 @@ verifying "typed_field_copy.c";
 
 int h() {
     ensures result == 7 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

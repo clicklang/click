@@ -72,9 +72,6 @@ uint64 *words(uint64 *p) {
 
 int32 allocate() {
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 identities() {

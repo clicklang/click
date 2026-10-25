@@ -15,9 +15,6 @@ verifying "aligned_rejects_non_power_of_two.c";
 int32 aligned_rejects_non_power_of_two(uint8* p) {
     requires aligned(p, 6);
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

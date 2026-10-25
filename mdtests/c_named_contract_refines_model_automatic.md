@@ -31,24 +31,15 @@ contract void Preserve(int32* p) {
 void preserve(int32* p) {
     owns t: cell_at(p);
     ensures t.model == old(t.model);
-} by {
-    execute();
-    simp();
 }
 
 int32 accept(void (*step)(int32*)) {
     requires Preserve(step);
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 caller() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

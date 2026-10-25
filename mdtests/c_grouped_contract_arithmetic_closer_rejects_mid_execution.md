@@ -18,8 +18,6 @@ int32 bump(int32 n) {
     ensures result <= 101;
 } by {
     arithmetic() using { 0 <= n; n <= 100; };
-    execute();
-    simp();
 }
 ```
 

@@ -25,9 +25,6 @@ verifying "iterated_ownership_rejects_overlapping_elements.c";
 
 void keep(int32* data, int32* occupied, int32 capacity) {
     owns pair_cells(data, occupied, capacity);
-} by {
-    execute();
-    simp();
 }
 ```
 

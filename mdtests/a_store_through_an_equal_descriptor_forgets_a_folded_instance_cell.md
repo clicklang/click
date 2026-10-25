@@ -40,9 +40,6 @@ int32 touch(struct slot* s, struct slot* other) {
     owns r: slot_span(s);
     owns *other;
     ensures result == old(s->at);
-} by {
-    execute();
-    simp();
 }
 ```
 

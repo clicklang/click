@@ -40,8 +40,6 @@ int32 walk(int32 m, int32 n) {
         intro();
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

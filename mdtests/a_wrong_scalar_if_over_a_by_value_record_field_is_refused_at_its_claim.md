@@ -23,9 +23,6 @@ verifying "a_wrong_scalar_if_over_a_by_value_record_field_is_refused_at_its_clai
 
 uint32 pick(struct pair p) {
     ensures result == (if p.flag != 0 { p.value } else { 1 });
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -31,7 +31,7 @@ void set(int32* p, int32 value) {
     produces c: cell(p);
     ensures c.model == Maybe<int32>::Some(value);
 } by {
-    execute();
+    step_until(function.exit);
     let c = fold(cell(p), { model: Maybe<int32>::Some(value) });
     simp();
 }
@@ -42,8 +42,6 @@ void empty(int32* p) {
     ensures c.model == Maybe<int32>::None;
 } by {
     let c = fold(cell(p), { model: Maybe<int32>::None });
-    execute();
-    simp();
 }
 
 void nullable(int32* p, int32 value) {

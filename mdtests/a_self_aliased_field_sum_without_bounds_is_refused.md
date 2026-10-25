@@ -23,9 +23,6 @@ void add_assign(struct FeeFrac* self, struct FeeFrac* other) {
     requires self == other;
     owns self->size;
     ensures self->size == old(self->size) + old(self->size);
-} by {
-    execute();
-    simp();
 }
 ```
 

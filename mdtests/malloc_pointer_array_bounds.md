@@ -20,9 +20,6 @@ verifying "malloc_pointer_array_bounds.c";
 
 int32 malloc_pointer_array_bounds() {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

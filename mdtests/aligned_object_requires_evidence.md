@@ -32,9 +32,6 @@ int32 object_is_aligned(struct pair* p) {
     requires p != 0;
     views pair_storage(p);
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 forward(struct pair* p) {
@@ -44,8 +41,6 @@ int32 forward(struct pair* p) {
     ensures result == 1;
 } by {
     fold(pair_storage(p));
-    execute();
-    simp();
 }
 ```
 

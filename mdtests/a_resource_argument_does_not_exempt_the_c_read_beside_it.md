@@ -29,8 +29,6 @@ int32 wrong_container(struct rb_node* node) {
     owns link: sized_link(node, ((struct sized_node*)(void*)node)->size);
     owns ((struct sized_node*)(void*)node)->size;
     ensures true;
-} by {
-    execute();
 }
 ```
 

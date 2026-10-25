@@ -43,9 +43,6 @@ struct node* first(struct node* head) {
     owns l: listed();
     ensures l.model == old(l.model);
     ensures starts_with(old(l.model), result) == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

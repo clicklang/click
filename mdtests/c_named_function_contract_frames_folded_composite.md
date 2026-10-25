@@ -40,9 +40,6 @@ contract int32 PreserveBundles(int32 key, int32 spare) {
 int32 keep_first_bundle(int32 key, int32 spare) {
     owns bundle(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_bundle(
@@ -54,18 +51,12 @@ int32 apply_bundle(
     owns bundle(key);
     owns bundle(spare);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 framed_bundle_caller(int32 key, int32 spare) {
     owns bundle(key);
     owns bundle(spare);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 ```
 

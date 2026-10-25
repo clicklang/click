@@ -44,8 +44,6 @@ int32 list_head(struct node* node) {
     ensures result == node->value;
 } by {
     unfold(list(node));
-    execute();
-    simp();
 }
 
 int32 empty_list_value(struct node* node) {
@@ -55,8 +53,6 @@ int32 empty_list_value(struct node* node) {
     ensures result == 0;
 } by {
     unfold(list(node));
-    execute();
-    simp();
 }
 ```
 

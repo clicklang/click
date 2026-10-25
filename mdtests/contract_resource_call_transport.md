@@ -32,8 +32,6 @@ int32 invoke(int32 (*callback)()) {
     ensures result == 0;
 } by {
     step(Touch, { cell: first });
-    execute();
-    simp();
 }
 ```
 

@@ -33,7 +33,7 @@ int32 get(struct pool* p, int32* q) {
     views q[0..1];
 } by {
     let { live: n } = unfold(st);
-    execute();
+    step_until(function.exit);
     let st = fold(pool_state(p), { live: n });
     simp();
 }

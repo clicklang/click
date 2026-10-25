@@ -52,8 +52,6 @@ int32 copy_name(char buf[], int32 n) {
         assumption();
     }
     step(snprintf, { n0: (uint64) n });
-    execute();
-    simp();
 }
 ```
 

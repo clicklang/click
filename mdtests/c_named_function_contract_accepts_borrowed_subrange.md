@@ -29,26 +29,17 @@ contract int32 ReadFirst(int32* cells) {
 int32 read_first(int32* state) {
     views state[0..1];
     ensures result == state[0];
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_read(int32 (*read)(int32*), int32* cells) {
     requires ReadFirst(read);
     owns cells[0..2];
     ensures result == cells[0];
-} by {
-    execute();
-    simp();
 }
 
 int32 borrowed_subrange_caller(int32* cells) {
     owns cells[0..2];
     ensures result == cells[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -39,17 +39,11 @@ int32 swap_pair(int32 data[]) {
     ensures result == old(data[1]);
     ensures data[0] == old(data[1]);
     ensures data[1] == old(data[0]);
-} by {
-    execute();
-    simp();
 }
 
 int32 get_first(int32 data[]) {
     views data[0..1];
     ensures result == data[0];
-} by {
-    execute();
-    simp();
 }
 
 int32 swap_get(int32 data[]) {

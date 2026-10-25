@@ -41,7 +41,7 @@ int32 read_locked(struct counter *counter) {
 } by {
     have held(&counter->mu);
     unfold(state);
-    execute();
+    step_until(function.exit);
     fold(state);
     simp();
 }

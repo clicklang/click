@@ -33,9 +33,6 @@ int32 first(int32 a[], int32 n) {
     requires a[0] == 7;
     views a[0..n];
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 
 int32 caller(int32 a[], int32 n) {
@@ -43,9 +40,6 @@ int32 caller(int32 a[], int32 n) {
     requires a[0] == 7;
     views a[0..n];
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 
 int32 sorted_first(int32 a[], int32 n) {
@@ -55,10 +49,7 @@ int32 sorted_first(int32 a[], int32 n) {
     };
     requires a[0] == 7;
     views a[0..n];
-    ensures result == 7 by {
-        execute();
-        simp();
-    }
+    ensures result == 7;
 }
 ```
 

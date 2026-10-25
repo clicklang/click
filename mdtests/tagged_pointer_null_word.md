@@ -37,35 +37,23 @@ verifying "tagged_pointer_null_word.c";
 
 struct node* literal_null_round_trip() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 struct node* known_null_round_trip(struct node* next) {
     requires next == 0;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 struct node* loaded_tagged_null(struct node* node) {
     owns node->word;
     requires node->word == 1;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 struct node* loaded_zero(struct node* node) {
     owns node->word;
     requires node->word == 0;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -27,9 +27,6 @@ int32 g(int32 x) {
     owns values[0..4];
     ensures result >= 0;
     ensures result <= 4;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -51,30 +51,18 @@ verifying "main.c";
 
 int32 feature_path() {
     ensures result == 4;
-} by {
-    execute();
-    simp();
 }
 
 int32 disabled_path() {
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 
 int32 elif_path() {
     ensures result == 8;
-} by {
-    execute();
-    simp();
 }
 
 int32 combined_path() {
     ensures result == 6;
-} by {
-    execute();
-    simp();
 }
 ```
 

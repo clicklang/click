@@ -23,9 +23,6 @@ struct node* forge(struct node* node) {
     owns node->word;
     requires node->word == 5;
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 unsigned long read_forged(struct node* node) {
     owns node->word;

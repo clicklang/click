@@ -49,8 +49,6 @@ int32 branch_writes_nothing(int32 c) {
         step();
     } else {
     }
-    execute();
-    simp();
 }
 ```
 

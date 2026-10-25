@@ -29,9 +29,6 @@ verifying "main.c";
 
 int32 run() {
     ensures result == 8;
-} by {
-    execute();
-    simp();
 }
 ```
 

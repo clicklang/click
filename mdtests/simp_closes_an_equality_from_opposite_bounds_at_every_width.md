@@ -38,27 +38,18 @@ uint32 pick32(uint32 a, uint32 b) {
     requires a <= b;
     requires a >= b;
     ensures result == b;
-} by {
-    execute();
-    simp();
 }
 
 int64 pick64(int64 a, int64 b) {
     requires b >= a;
     requires not (a < b);
     ensures result == b;
-} by {
-    execute();
-    simp();
 }
 
 uint64 picku64(uint64 a, uint64 b) {
     requires a <= b;
     requires not (a < b);
     ensures result == b;
-} by {
-    execute();
-    simp();
 }
 
 uint32 count(uint32 n) {
@@ -69,8 +60,6 @@ uint32 count(uint32 n) {
         decreases n - i;
         invariant i <= n;
     }
-    execute();
-    simp();
 }
 ```
 

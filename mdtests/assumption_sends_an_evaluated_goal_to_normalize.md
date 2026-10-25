@@ -17,8 +17,6 @@ int32 f(int32 x) {
     step();
     let { result: value } = step();
     have value == 1 by assumption();
-    execute();
-    simp();
 }
 ```
 

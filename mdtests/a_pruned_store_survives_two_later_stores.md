@@ -28,9 +28,6 @@ int32 read_after_three_stores(int32* a, int32 i, int32 j, int32 m) {
     requires m < 8;
     requires m != j;
     ensures result == old(a[m]);
-} by {
-    execute();
-    simp();
 }
 ```
 

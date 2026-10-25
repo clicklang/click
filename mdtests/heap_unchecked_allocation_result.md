@@ -20,9 +20,6 @@ verifying "heap_unchecked_allocation_result.c";
 
 int32 heap_unchecked_allocation_result() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

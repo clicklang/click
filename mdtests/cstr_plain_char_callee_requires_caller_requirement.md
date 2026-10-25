@@ -26,16 +26,10 @@ uint64 measure(const char* src) {
     views click::cstr::cstr_at(src, n);
     ensures result == n;
     ensures src[result] == '\0';
-} by {
-    execute();
-    simp();
 }
 
 uint64 outer(const char* src) {
     ensures src[result] == '\0';
-} by {
-    execute();
-    simp();
 }
 ```
 

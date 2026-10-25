@@ -32,9 +32,6 @@ resource Hooked(cell: int32*) {
 void clear_cell(int32* cell) {
     owns cell[0..1];
     ensures cell[0] == 0;
-} by {
-    execute();
-    simp();
 }
 
 void arm(int32* cell) {

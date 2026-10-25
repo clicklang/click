@@ -42,8 +42,6 @@ int32 caller(int32* sq, int32 scale) {
     ensures result == sq[0] + scale;
 } by {
     let o = fold(obj(sq), { size: 5 });
-    execute();
-    simp();
 }
 extern int32 area(int32* self, int32 scale) {
     owns o: obj(self);

@@ -22,9 +22,6 @@ verifying "structs.c";
 
 int32 local_probe() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

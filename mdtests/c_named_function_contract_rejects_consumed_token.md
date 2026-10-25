@@ -31,26 +31,17 @@ contract int32 PreserveToken(int32 key) {
 int32 consume_token(int32 key) {
     consumes permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_token(int32 (*callback)(int32), int32 key) {
     requires PreserveToken(callback);
     owns permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 consumed_token_caller(int32 key) {
     owns permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 ```
 

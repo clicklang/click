@@ -236,7 +236,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     have n == i;
     have not (n < end) by { rewrite(n == i); assumption(); }
     have n == end by auto();
-    execute();
+    step_until(function.exit);
     have arena->data == old(arena->data) by auto();
     have arena->occupied == old(arena->occupied) by auto();
     have arena->capacity == old(arena->capacity) by auto();

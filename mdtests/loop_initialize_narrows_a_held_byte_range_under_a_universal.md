@@ -55,8 +55,6 @@ int32 count_up(uint8 *a, int32 n) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

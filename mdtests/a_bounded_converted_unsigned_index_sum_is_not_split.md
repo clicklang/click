@@ -30,9 +30,6 @@ int32 store_through_bounded_converted_sum(int32* a, uint32 u) {
     requires a[1] == 5;
     consumes a[0..8];
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

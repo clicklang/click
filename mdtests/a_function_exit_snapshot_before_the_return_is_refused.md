@@ -17,8 +17,6 @@ int32 is_less(uint32 a, uint32 b) {
     ensures result == 0 or result == 1;
 } by {
     have at(function.exit, a == a) by { simp(); }
-    execute();
-    simp();
 }
 ```
 

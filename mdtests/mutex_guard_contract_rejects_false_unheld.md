@@ -42,8 +42,6 @@ void keep(struct counter *counter) {
     owns h: holding(counter);
 } by {
     have not held(&counter->mu) by simp();
-    execute();
-    simp();
 }
 
 int32 read_counter(struct counter *counter) {

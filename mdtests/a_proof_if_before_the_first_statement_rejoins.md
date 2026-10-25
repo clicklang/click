@@ -23,7 +23,6 @@ int32 f(int32 x) {
     } else {
         have x > 0;
     }
-    execute();
 }
 ```
 

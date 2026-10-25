@@ -16,9 +16,6 @@ verifying "answer.c";
 
 int32 answer() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

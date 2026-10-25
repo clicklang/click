@@ -20,8 +20,6 @@ int32 is_negative(char c) {
     ensures result == 1;
 } by {
     unfold(negative_char);
-    execute();
-    simp();
 }
 ```
 

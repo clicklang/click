@@ -41,10 +41,6 @@ int32 initialize_box(struct box* owner, int32 value) {
     produces box(owner);
     ensures result == value;
     ensures owner->value == value;
-} by {
-    execute();
-    fold(box(owner));
-    simp();
 }
 
 int32 initialize_two_boxes(struct box* left, struct box* right, int32 value) {
@@ -59,8 +55,6 @@ int32 initialize_two_boxes(struct box* left, struct box* right, int32 value) {
 } by {
     execute_until(region(2));
     step();
-    execute();
-    simp();
 }
 ```
 

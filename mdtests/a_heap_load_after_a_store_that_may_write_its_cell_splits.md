@@ -62,9 +62,6 @@ int32 read_back(int32 u) {
     requires u < 4;
     ensures result == 0 or u != 0 or result == 7;
     ensures result == 0 or u == 0 or result == 3;
-} by {
-    execute();
-    simp();
 }
 
 int32 read_back_stepped(int32 u) {

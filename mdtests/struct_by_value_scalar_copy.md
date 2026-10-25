@@ -47,9 +47,6 @@ struct pair bump(struct pair value) {
 
 int32 run_struct_by_value() {
     ensures result == 459;
-} by {
-    execute();
-    simp();
 }
 ```
 

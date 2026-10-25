@@ -27,8 +27,6 @@ long *as_long(void *v) {
 
 long long read_back(void *raw) {
     ensures true;
-} by {
-    execute();
 }
 ```
 

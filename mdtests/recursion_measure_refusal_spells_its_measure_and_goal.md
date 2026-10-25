@@ -27,9 +27,6 @@ verifying "recursion_measure_refusal_spells_its_measure_and_goal.c";
 int32 count(int32 n) {
     decreases n ^ -1;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

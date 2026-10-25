@@ -26,7 +26,7 @@ function widened(k: int32) -> Integer {
 void probe(int32 n) {
     ensures widened(n) == 0;
 } by {
-    execute();
+    step_until(function.exit);
     unfold(widened(n));
     simp();
 }

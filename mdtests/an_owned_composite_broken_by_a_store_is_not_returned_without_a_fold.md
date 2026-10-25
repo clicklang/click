@@ -30,7 +30,6 @@ void mk(uint8* p) {
     owns zt(p);
 } by {
     unfold(zt(p));
-    execute();
 }
 
 uint8 use(uint8* p) {
@@ -39,8 +38,6 @@ uint8 use(uint8* p) {
 } by {
     step();
     unfold(zt(p));
-    execute();
-    simp();
 }
 ```
 

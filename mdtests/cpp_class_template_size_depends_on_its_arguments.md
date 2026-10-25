@@ -30,17 +30,11 @@ template<class T> void Pair<T>::swap() {
     owns *this;
     ensures this->first == old(this->second);
     ensures sizeof(Pair<T>) == 16;
-} by {
-    execute();
-    simp();
 }
 
 void swap_ints(Pair<int>& pair) {
     owns pair;
     ensures pair.first == old(pair.second);
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -27,9 +27,6 @@ verifying "main.c";
 uint64 last_index(const char* s) {
     requires click::cstr::readable(s);
     ensures s[result] == '\0';
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -55,8 +55,6 @@ void wipe(int32 a[], int32 n) {
         }
     }
     have icount(a, 0, 1) == 5;
-    execute();
-    simp();
 }
 ```
 

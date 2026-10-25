@@ -48,8 +48,6 @@ void keep(struct counter *counter) {
 } by {
     unfold(h);
     let forged = fold(holding(counter), { mode: LockMode::Holding });
-    execute();
-    simp();
 }
 
 int32 read_counter(struct counter *counter) {

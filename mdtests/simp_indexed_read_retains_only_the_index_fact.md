@@ -18,8 +18,6 @@ int32 same(int32* data, int32 index, int32 x0, int32 x1) {
     ensures result == 0;
 } by {
     have data[index] == data[0] by { simp(); }
-    execute();
-    simp();
 }
 ```
 

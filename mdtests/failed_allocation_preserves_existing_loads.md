@@ -27,9 +27,6 @@ int32 failed_allocation_preserves_existing_loads(int32 data[], int32 length) {
     ensures forall (k: int32) {
         0 <= k and k < length implies data[k] == old(data[k])
     };
-} by {
-    execute();
-    simp();
 }
 ```
 

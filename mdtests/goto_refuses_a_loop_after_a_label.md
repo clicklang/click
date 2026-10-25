@@ -26,9 +26,6 @@ verifying "loop_after_label.c";
 
 int32 count(int32 n) {
     ensures result == 3;
-} by {
-    execute();
-    simp();
 }
 ```
 

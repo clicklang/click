@@ -37,24 +37,15 @@ void preserve_pair(int32* p, int32* q) {
     owns b: cell_at(q);
     ensures a.model == old(a.model);
     ensures b.model == old(b.model);
-} by {
-    execute();
-    simp();
 }
 
 int32 accept(void (*step)(int32*, int32*)) {
     requires PreservePair(step);
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 caller() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

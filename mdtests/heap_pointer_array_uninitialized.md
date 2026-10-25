@@ -18,9 +18,6 @@ verifying "heap_pointer_array_uninitialized.c";
 
 int32* heap_pointer_array_uninitialized() {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

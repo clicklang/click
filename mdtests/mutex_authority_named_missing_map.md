@@ -14,17 +14,12 @@ verifying "mutex_authority_named_missing_map.c";
 
 void keep(struct holder *holder) {
     owns g: mutex_guard(&holder->mu);
-} by {
-    execute();
-    simp();
 }
 
 void caller(struct holder *holder) {
     owns g: mutex_guard(&holder->mu);
 } by {
     step(keep, {});
-    execute();
-    simp();
 }
 ```
 

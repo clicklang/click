@@ -23,9 +23,6 @@ verifying "an_unsigned_index_that_wraps_below_zero_is_refused.c";
 
 int32 read_previous(uint32 x) {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

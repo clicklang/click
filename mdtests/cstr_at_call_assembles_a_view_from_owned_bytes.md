@@ -36,9 +36,6 @@ uint64 measure(uint8* src, uint64 n) {
     requires src[n] == '\0';
     requires forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(src[k]) };
     ensures result == n;
-} by {
-    execute();
-    simp();
 }
 ```
 

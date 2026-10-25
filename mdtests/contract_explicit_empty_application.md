@@ -21,8 +21,6 @@ int32 invoke(int32 (*callback)(int32), int32 x) {
     ensures result == x;
 } by {
     step(Identity);
-    execute();
-    simp();
 }
 ```
 

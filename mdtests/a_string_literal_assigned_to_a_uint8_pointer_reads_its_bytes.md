@@ -21,9 +21,6 @@ uint8* string_literal_assignment() {
     ensures readable: viewable(result[0..3]);
     ensures first_byte: result[0] == 111;
     ensures terminator: result[2] == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

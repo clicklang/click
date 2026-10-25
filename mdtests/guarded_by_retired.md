@@ -25,8 +25,6 @@ verifying "guarded_by_retired.c";
 void start(struct box *box) {
     owns box->mu;
     requires aligned(&box->mu, 8);
-} by {
-    execute();
 }
 ```
 

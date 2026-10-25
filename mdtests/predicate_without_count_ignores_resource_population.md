@@ -35,8 +35,6 @@ void wrap_zero(int32* cell) {
 } by {
     unfold(is_zero);
     fold(zero_cell(cell));
-    execute();
-    simp();
 }
 ```
 

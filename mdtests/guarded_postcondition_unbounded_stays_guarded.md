@@ -41,8 +41,6 @@ int32 pick(struct box* b) {
 } by {
     let { live: n } = unfold(st);
     let st = fold(counted(b), { live: n });
-    execute();
-    simp();
 }
 
 int32 caller(struct box* b) {
@@ -51,8 +49,6 @@ int32 caller(struct box* b) {
 } by {
     step();
     step(pick, { st: st });
-    execute();
-    simp();
 }
 ```
 

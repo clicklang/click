@@ -39,23 +39,14 @@ verifying "main.c";
 
 int32 run() {
     ensures result == 4;
-} by {
-    execute();
-    simp();
 }
 
 int32 after_undef() {
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 
 int32 after_redefine() {
     ensures result == 8;
-} by {
-    execute();
-    simp();
 }
 ```
 

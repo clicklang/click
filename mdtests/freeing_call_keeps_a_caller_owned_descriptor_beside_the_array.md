@@ -24,9 +24,6 @@ void buf_destroy(struct buf* b) {
     consumes b->data[0..b->capacity];
     requires 1 <= b->capacity;
     requires b->capacity <= 536870911;
-} by {
-    execute();
-    simp();
 }
 
 void teardown(struct buf* b, struct region* r) {
@@ -36,9 +33,6 @@ void teardown(struct buf* b, struct region* r) {
     requires 1 <= b->capacity;
     requires b->capacity <= 536870911;
     owns *r;
-} by {
-    execute();
-    simp();
 }
 ```
 

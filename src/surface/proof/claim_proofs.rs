@@ -704,19 +704,19 @@ pub(in crate::surface) fn prove_claims_by_grouped_auto(
 /// A written script followed by the implicit tail every script ends with: a
 /// closer at a live frontier executes the C that remains, and at function
 /// exit it closes what is still open, as the implicit closer does. A script
-/// that ends in a split (`if`, `cases`, `match`, `branch`, `outcomes`,
-/// `both`) ends in its arms, each with its own implicit closer, so nothing
-/// is appended after it. Returns whether the tail was appended.
+/// that ends in `match`, `outcomes`, `both` or structural induction ends in
+/// its arms, each with its own implicit closer, so nothing is appended after
+/// it. After a proof `if` or `cases` the tail is appended: before execution
+/// it runs the C the split left, and after execution, where the split forks
+/// the returned paths, it is the closer each forked path runs. Returns
+/// whether the tail was appended.
 pub(super) fn with_implicit_tail(tactics: &[ProofTactic]) -> (Vec<ProofTactic>, bool) {
     let mut tactics = tactics.to_vec();
     let ends_linearly = !matches!(
         tactics.last(),
         None | Some(
             ProofTactic::AutoClose
-                | ProofTactic::If(_)
-                | ProofTactic::Cases(_)
                 | ProofTactic::Match(_)
-                | ProofTactic::Branch(_)
                 | ProofTactic::CallOutcomes(_)
                 | ProofTactic::Both(_)
                 | ProofTactic::StructuralInduct { .. }
@@ -1915,6 +1915,50 @@ fn apply_post_execution_arithmetic_using<'a>(
 /// the path's tactics continue after this closer; a closer that leaves a
 /// claim it acts on open is refused.
 #[allow(clippy::too_many_arguments)]
+/// Folds each open resource claim of a returned path whose fold checks on
+/// the path's outcome `Proof`, recording the fold for expansion as a
+/// written `fold` after execution is recorded.
+#[allow(clippy::too_many_arguments)]
+fn fold_produced_resources<'a>(
+    claims: &[FunctionClaimRef<'_>],
+    closures: &[ClaimClosure<'_>],
+    outcome: &mut CFunctionOutcome,
+    outcome_proof: &mut Option<Proof<'a>>,
+    capturing_this_tactic: bool,
+    grouped_contract: bool,
+    path_grouped_surface_closers: &mut Vec<ProofTactic>,
+    path_deferred_capture_tactics: &mut Vec<ProofTactic>,
+) -> Result<(), ClickError> {
+    for (claim_index, claim) in claims.iter().enumerate() {
+        if closures[claim_index].is_closed() {
+            continue;
+        }
+        let Ensure::Resource(resource) = claim.clause().ensure() else {
+            continue;
+        };
+        let fold = ProofTactic::FoldResource(resource.clone());
+        let Some(step) = SourceContext::PostExecution.leaf_step(&fold) else {
+            continue;
+        };
+        let current = required_outcome(outcome_proof)?;
+        let before = current.checkpoint();
+        let Ok(folded) = current.apply_step(step) else {
+            check_verification_deadline()?;
+            continue;
+        };
+        *outcome = folded.focused_outcome_snapshot()?;
+        let added = folded.certificate_since(&before)?.to_proof_tactics();
+        if capturing_this_tactic {
+            path_deferred_capture_tactics.extend(added.iter().cloned());
+        }
+        if grouped_contract {
+            path_grouped_surface_closers.extend(added);
+        }
+        *outcome_proof = Some(folded);
+    }
+    Ok(())
+}
+
 fn close_post_execution_claims_with_simp<'a, 'e>(
     post_tactic: &PostExecutionTactic,
     deferred: &DeferredPostExecutionTactic,
@@ -1977,6 +2021,27 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
     let acts_on = |claim_index: usize| auto_closer || Some(claim_index) == main_claim;
     let capturing_this_tactic =
         path_capture.is_some_and(|capture| capture.tactic_index == *tactic_index);
+    // The closer an omitted proof stands for folds
+    // a resource the contract produces when the
+    // path holds its body but not the resource: the
+    // `fold` a script would write after execution.
+    // A fold that does not check leaves the path as
+    // it was, and the claim reports what is missing.
+    if auto_closer
+        && !*resource_transition_applied
+        && matches!(outcome, CFunctionOutcome::Return { .. })
+    {
+        fold_produced_resources(
+            claims,
+            closures,
+            outcome,
+            outcome_proof,
+            capturing_this_tactic,
+            proof_context.constants.grouped_contract,
+            path_grouped_surface_closers,
+            path_deferred_capture_tactics,
+        )?;
+    }
     // Read the outcome's resources through the
     // contract's checked transition before closing
     // claims against it, so a produced or returned
@@ -2465,8 +2530,11 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
             };
             // Keep the checked authority for the original claims,
             // but close the rewritten goals in the expanded proof.
-            // Reflexive residuals need normalization, not assumption.
+            // Reflexive residuals need normalization, not assumption. With
+            // resource claims, keep the ordinary assumption closers: they
+            // follow contract order, whose next goal may be ownership.
             if proof_context.constants.grouped_contract
+                && direct_resource_claims.is_empty()
                 && !direct_claims.is_empty()
                 && direct_claims.iter().all(|(index, _, _)| {
                     rewritten_claim_proofs[*index]

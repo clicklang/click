@@ -36,9 +36,6 @@ struct point make_point() {
 
 int32 read_point() {
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -19,8 +19,6 @@ int32 set_twice(int32 x) {
     ensures result == at(after_first_write, x) + 1 by {
         step();
         mark after_first_write;
-        execute();
-        simp();
     }
 }
 ```

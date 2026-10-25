@@ -20,8 +20,6 @@ int32 read_terminator_without_permission(uint8 bytes[]) {
     requires click::cstr::readable(bytes);
     ensures result == '\0' by {
         unfold(click::cstr::readable);
-        execute();
-        simp();
     }
 }
 ```

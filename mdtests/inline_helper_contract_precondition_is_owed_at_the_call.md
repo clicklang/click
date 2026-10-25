@@ -32,17 +32,11 @@ verifying "inline_helper_contract_precondition_is_owed_at_the_call.c";
 int32 run(int32 value) {
     requires value < 200;
     ensures result == value + 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 add_one(int32 value) {
     requires value < 100;
     ensures result == value + 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

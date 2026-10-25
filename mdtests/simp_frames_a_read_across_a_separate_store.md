@@ -50,8 +50,6 @@ int32 service_step(struct service* owner) {
     }
     step();
     have owner->cell[0] == owner->phase by simp();
-    execute();
-    simp();
 }
 ```
 

@@ -32,8 +32,6 @@ void direct(int32* x) {
     unfold(done);
     have x[0] == 1 by { assumption(); }
     let done = fold(Ready(x), { value: 1 });
-    execute();
-    simp();
 }
 void indirect(int32 (*callback)(int32*), int32* x) {
     requires Repair(callback);
@@ -46,8 +44,6 @@ void indirect(int32 (*callback)(int32*), int32* x) {
     unfold(done);
     have x[0] == 1 by { assumption(); }
     let done = fold(Ready(x), { value: 1 });
-    execute();
-    simp();
 }
 ```
 

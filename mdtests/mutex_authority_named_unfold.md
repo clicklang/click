@@ -15,8 +15,6 @@ void keep(struct holder *holder) {
     owns g: mutex_guard(&holder->mu);
 } by {
     unfold(g);
-    execute();
-    simp();
 }
 ```
 

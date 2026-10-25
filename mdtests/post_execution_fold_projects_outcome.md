@@ -25,10 +25,6 @@ int32 seal(int32 x) {
     consumes permit(x);
     produces bundle(x);
     ensures result_matches: result == x;
-} by {
-    execute();
-    fold(bundle(x));
-    simp();
 }
 ```
 

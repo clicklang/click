@@ -20,8 +20,6 @@ verifying "structs.c";
 long long member_rank(struct a *pa) {
     views pa->x;
     ensures true;
-} by {
-    execute();
 }
 ```
 

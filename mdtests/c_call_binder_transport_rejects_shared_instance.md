@@ -23,9 +23,6 @@ void pair_step(int32* state) {
     owns second: Counter();
     ensures first.revision == old(first.revision);
     ensures second.revision == old(second.revision);
-} by {
-    execute();
-    simp();
 }
 
 void run_pair(int32* state) {
@@ -33,8 +30,6 @@ void run_pair(int32* state) {
     ensures c.revision == old(c.revision);
 } by {
     step(pair_step, { first: c, second: c });
-    execute();
-    simp();
 }
 ```
 

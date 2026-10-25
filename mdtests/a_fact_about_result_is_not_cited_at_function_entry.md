@@ -16,7 +16,7 @@ verifying "a_fact_about_result_is_not_cited_at_function_entry.c";
 uint32 decrement(uint32 x) {
     requires 1u32 <= x;
     ensures to_integer(result) <= to_integer(x) by {
-        execute();
+        step_until(function.exit);
         have to_integer(result) == to_integer(x) - 1 by auto();
         have to_integer(result) <= to_integer(x) by auto();
     }

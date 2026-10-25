@@ -20,8 +20,6 @@ void make(int32 x, int32 y) {
         requires x > 0 or y > 0 by simp();
         requires y > 0 or x > 0 by simp();
     }
-    execute();
-    simp();
 }
 ```
 

@@ -72,8 +72,6 @@ int32 read_zero(struct box* box) {
     ensures result == 0;
 } by {
     observe(zero_box(box));
-    execute();
-    simp();
 }
 
 int32 zero_pipeline(struct box* box) {

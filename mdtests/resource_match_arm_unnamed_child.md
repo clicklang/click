@@ -49,8 +49,6 @@ void set(struct cell* cell) {
     step();
     fold(cell_value(cell));
     let m = fold(maybe_cell(cell), { mode: Mode::Held });
-    execute();
-    simp();
 }
 ```
 

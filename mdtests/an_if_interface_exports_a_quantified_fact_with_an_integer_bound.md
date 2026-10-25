@@ -48,8 +48,6 @@ int32 q(int32 j) {
             assumption();
         }
     }
-    execute();
-    simp();
 }
 ```
 

@@ -17,7 +17,6 @@ void typed_caller(struct model_node* p) {
     ensures held.model == ImportedNodeRef::At(p);
 } by {
     let { held: held } = step(imported_node, {});
-    execute();
 }
 ```
 

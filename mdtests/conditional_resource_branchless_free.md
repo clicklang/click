@@ -56,9 +56,6 @@ int32 item_destroy(struct item* item) {
 
 int32 destroy_null() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

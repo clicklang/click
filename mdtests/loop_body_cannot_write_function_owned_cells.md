@@ -48,8 +48,6 @@ void fill(struct box* b, int32* a, int32 n) {
             simp();
         }
     }
-    execute();
-    simp();
 }
 ```
 

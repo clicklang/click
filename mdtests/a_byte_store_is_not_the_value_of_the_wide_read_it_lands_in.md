@@ -44,17 +44,11 @@ verifying "a_byte_store_is_not_the_value_of_the_wide_read_it_lands_in.c";
 int32 need7(int32 x) {
     requires x == 7;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 caller(int32* q) {
     owns q[0..1];
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

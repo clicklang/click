@@ -28,10 +28,7 @@ int32 sum(int32 a[], int32 n) {
     requires a[0] == 2147483647;
     requires a[1] == 1;
     ensures result_sum: to_integer(result) ==
-        (0..n).fold(0, |acc, k| { acc + to_integer(a[k]) }) by {
-        execute();
-        simp();
-    }
+        (0..n).fold(0, |acc, k| { acc + to_integer(a[k]) });
 }
 ```
 

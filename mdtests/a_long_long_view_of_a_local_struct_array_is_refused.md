@@ -22,8 +22,6 @@ verifying "pairs.c";
 
 long long view() {
     ensures true;
-} by {
-    execute();
 }
 ```
 

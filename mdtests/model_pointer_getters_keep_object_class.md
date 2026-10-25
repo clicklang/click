@@ -30,7 +30,7 @@ void direct() {
     produces held: token();
     ensures true;
 } by {
-    execute();
+    step_until(function.exit);
     match src.model {
         MaybeRef::Missing => { let held = fold(token(), { model: NodeRef::At(0) }); },
         MaybeRef::Present(p) => { let held = fold(token(), { model: NodeRef::At(p) }); },
@@ -42,7 +42,7 @@ void via_getter() {
     produces held: token();
     ensures true;
 } by {
-    execute();
+    step_until(function.exit);
     let held = fold(token(), { model: NodeRef::At(selected(src.model, 0)) });
 }
 
@@ -51,14 +51,14 @@ void via_nested() {
     produces held: token();
     ensures true;
 } by {
-    execute();
+    step_until(function.exit);
     let held = fold(token(), { model: NodeRef::At(nested(src.model, 0)) });
 }
 void via_identity(struct model_node* p) {
     produces held: token();
     ensures held.model == NodeRef::At(identity(p));
 } by {
-    execute();
+    step_until(function.exit);
     let held = fold(token(), { model: NodeRef::At(identity(p)) });
 }
 ```

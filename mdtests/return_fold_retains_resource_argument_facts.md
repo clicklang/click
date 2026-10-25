@@ -21,7 +21,7 @@ int32 f(int32* p) {
     ensures result == 0;
 } by {
     unfold(before);
-    execute();
+    step_until(function.exit);
     have result == 0 by normalize();
     let after = fold(Cell(p), { tag: 1 });
     simp();

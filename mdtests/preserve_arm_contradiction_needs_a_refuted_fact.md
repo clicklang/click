@@ -87,8 +87,6 @@ void bump_n(struct cell* node, int32 n) {
             }
         }
     }
-    execute();
-    simp();
 }
 ```
 

@@ -25,9 +25,6 @@ verifying "guarded_free.c";
 
 int f() {
     ensures result == 1 or result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

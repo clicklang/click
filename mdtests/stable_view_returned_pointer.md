@@ -23,17 +23,11 @@ verifying "stable_view_returned_pointer.c";
 const int32 *stable_view_returned_pointer(int32 *p) {
     requires viewable(p[0..1]);
     ensures result == p;
-} by {
-    execute();
-    simp();
 }
 
 int32 stable_view_returned_pointer_caller(int32 *p) {
     owns p[0..1];
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

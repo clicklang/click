@@ -14,7 +14,7 @@ int32 first(int32 x, int32 y) {
     requires x < y;
     ensures y > result;
 } by {
-    execute();
+    step_until(function.exit);
     have y > result by {
         apply(ordered(x, y)) using { x < y; };
     }

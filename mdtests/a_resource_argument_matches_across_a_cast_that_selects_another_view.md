@@ -44,7 +44,7 @@ int32 set_size(struct sized_node* node) {
     ensures parent.value == 1;
 } by {
     unfold(parent);
-    execute();
+    step_until(function.exit);
     let parent = fold(size_metadata((struct rb_node*)(void*)node), { value: 1 });
     simp();
 }
@@ -60,7 +60,6 @@ void caller(struct rb_node* rb_old) {
     step();
     step();
     step(set_size, { parent: source });
-    execute();
 }
 ```
 

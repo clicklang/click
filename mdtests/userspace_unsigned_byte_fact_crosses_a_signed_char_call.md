@@ -32,27 +32,18 @@ verifying "unsigned_byte_fact_crosses_a_signed_char_call.c";
 int32 first_char(char* p) {
     views p[0..1];
     ensures result == p[0];
-} by {
-    execute();
-    simp();
 }
 
 int32 first_of_bytes(uint8* q) {
     views q[0..1];
     requires q[0] == 200;
     ensures result == -56;
-} by {
-    execute();
-    simp();
 }
 
 int32 first_of_chars(char* p) {
     views p[0..1];
     requires ((uint8*)p)[0] == 200;
     ensures result == -56;
-} by {
-    execute();
-    simp();
 }
 ```
 

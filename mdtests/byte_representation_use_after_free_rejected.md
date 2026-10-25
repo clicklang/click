@@ -62,9 +62,6 @@ verifying "restored_pointer_after_free.c";
 
 int f() {
     ensures result == 18 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

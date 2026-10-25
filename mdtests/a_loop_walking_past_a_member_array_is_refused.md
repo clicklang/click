@@ -51,8 +51,6 @@ int32 walk(struct Rec* r, int32 n) {
             close_invariants() by simp();
         }
     }
-    execute();
-    simp();
 }
 ```
 

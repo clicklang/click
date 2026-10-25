@@ -15,7 +15,7 @@ int32 f(int32 x) {
     requires x == 1;
     ensures result == 1;
 } by {
-    execute();
+    step_until(function.exit);
     cases {
         x == 1 => { simp(); }
         x == 2 => { simp(); }

@@ -34,7 +34,7 @@ uint32 reduce_lane(uint32 value) {
     requires value <= 255u32;
     ensures result == value;
 } by {
-    execute();
+    step_until(function.exit);
     apply(byte_lane(value));
     simp();
 }

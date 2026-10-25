@@ -32,9 +32,6 @@ void broadly_mutable(int32* state) {
     requires state[0] < 100;
     owns state[0..2];
     ensures state[0] == old(state[0]) + 1;
-} by {
-    execute();
-    simp();
 }
 
 void apply_step(void (*step)(int32*), int32* cells) {
@@ -43,9 +40,6 @@ void apply_step(void (*step)(int32*), int32* cells) {
     views cells[1..2];
     owns cells[0..1];
     ensures old(cells[0]) < cells[0];
-} by {
-    execute();
-    simp();
 }
 
 void larger_footprint_caller(int32* cells) {
@@ -53,9 +47,6 @@ void larger_footprint_caller(int32* cells) {
     views cells[1..2];
     owns cells[0..1];
     ensures old(cells[0]) < cells[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

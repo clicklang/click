@@ -55,8 +55,6 @@ int32 loop_writes_other() {
         invariant i >= 0;
         invariant i <= 4;
     }
-    execute();
-    simp();
 }
 ```
 

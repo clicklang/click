@@ -18,7 +18,6 @@ int32 identity(int32 x) {
     have at(function.entry, to_integer(x)) == 0;
     have at(function.entry, to_integer(x)) == at(function.entry, 0);
     have old(to_integer(x)) == old(0);
-    execute();
 }
 ```
 

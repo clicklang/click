@@ -35,9 +35,6 @@ void increment(int32* state) {
     requires state[0] < 1000;
     owns state[0..1];
     ensures state[0] == old(state[0]) + 1;
-} by {
-    execute();
-    simp();
 }
 
 void apply_step(void (*step)(int32*), int32* cell) {
@@ -45,18 +42,12 @@ void apply_step(void (*step)(int32*), int32* cell) {
     requires cell[0] < 100;
     owns cell[0..1];
     ensures old(cell[0]) < cell[0];
-} by {
-    execute();
-    simp();
 }
 
 void unrefuted_guard_caller(int32* cell) {
     requires cell[0] < 100;
     owns cell[0..1];
     ensures old(cell[0]) < cell[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

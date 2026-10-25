@@ -50,8 +50,6 @@ int32 count(struct cell* p, int32 n) {
         invariant 0 <= i and i <= n;
         invariant c.v == old(c.v);
     }
-    execute();
-    simp();
 }
 ```
 

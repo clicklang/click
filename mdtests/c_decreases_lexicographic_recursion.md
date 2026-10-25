@@ -55,8 +55,6 @@ int32 ack(int32 m, int32 n) {
     }
     have 0 <= to_integer(n - 1) by auto();
     have to_integer(n - 1) < to_integer(n) by auto();
-    execute();
-    simp();
 }
 ```
 

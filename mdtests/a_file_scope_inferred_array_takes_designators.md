@@ -22,16 +22,10 @@ verifying "designated_global.c";
 int32 sum() {
     requires designated[0] == 0 and designated[1] == 2 and designated[2] == 5;
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 
 uint64 bytes() {
     ensures result == 12;
-} by {
-    execute();
-    simp();
 }
 ```
 

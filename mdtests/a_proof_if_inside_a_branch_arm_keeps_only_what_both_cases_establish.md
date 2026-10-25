@@ -31,8 +31,6 @@ int32 pick(int32 a, int32 c) {
  } else {
   have x == 0 or c == 0 by { auto(); }
  }
- execute();
- simp();
  }
 }
 ```

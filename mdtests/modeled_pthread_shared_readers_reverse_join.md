@@ -40,9 +40,6 @@ verifying "modeled_pthread_shared_readers_reverse_join.c";
 
 void *reader(void *p) {
     views ((struct cell *)p)->value;
-} by {
-    execute();
-    simp();
 }
 
 int32 run(struct cell *task) {

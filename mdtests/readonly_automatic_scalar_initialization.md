@@ -15,9 +15,6 @@ verifying "readonly.c";
 
 int32 probe() {
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -49,8 +49,6 @@ int32 loop_writes_member() {
         invariant i >= 0;
         invariant i <= 2;
     }
-    execute();
-    simp();
 }
 ```
 

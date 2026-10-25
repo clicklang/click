@@ -15,7 +15,7 @@ void set_seven(int32* cell) {
     ensures cell[0] == 7;
 } by {
     unfold(input_cell(cell));
-    execute();
+    step_until(function.exit);
     have cell[0] == 7 by {
         if cell[0] == 8 {
             normalize();

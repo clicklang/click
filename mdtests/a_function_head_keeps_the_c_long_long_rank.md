@@ -20,9 +20,6 @@ verifying "main.c";
 long long first(long long *p) {
     views p[0];
     ensures result == p[0];
-} by {
-    execute();
-    simp();
 }
 
 unsigned long long *same(unsigned long long *p) {

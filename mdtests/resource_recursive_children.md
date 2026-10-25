@@ -32,7 +32,7 @@ int32 read_root(int32* p, int32* next) {
 } by {
     let { tail: t } = unfold(root);
     unfold(t);
-    execute();
+    step_until(function.exit);
     let t = fold(chain(next), { model: Chain::End });
     let root = fold(chain(p), { model: old(root.model) }, { tail: t });
     simp();
@@ -63,7 +63,7 @@ int32 read_left(int32* p, int32* left, int32* right) {
 } by {
     let { left: l, right: r } = unfold(root);
     unfold(l);
-    execute();
+    step_until(function.exit);
     let l = fold(tree(left), { model: Tree::Leaf(2) });
     let root = fold(tree(p), { model: old(root.model) }, { left: l, right: r });
     simp();

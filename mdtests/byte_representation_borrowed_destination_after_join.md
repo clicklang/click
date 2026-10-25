@@ -48,16 +48,10 @@ verifying "borrowed_destination_after_join.c";
 
 void *reader(void *p) {
     views ((struct cell *)p)->value;
-} by {
-    execute();
-    simp();
 }
 
 int32 run() {
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -20,9 +20,6 @@ int32 first_unsigned(char* p) {
     views p[0..1];
     requires p[0] == 7;
     ensures result == 135;
-} by {
-    execute();
-    simp();
 }
 ```
 

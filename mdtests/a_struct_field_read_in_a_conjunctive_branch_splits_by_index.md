@@ -31,9 +31,6 @@ verifying "a_struct_field_read_in_a_conjunctive_branch_splits_by_index.c";
 
 int32 f(int32 x) {
     ensures result == 0 or result == 2 or result == 4;
-} by {
-    execute();
-    simp();
 }
 ```
 

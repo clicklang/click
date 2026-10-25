@@ -40,8 +40,6 @@ int32 loop_writes_field() {
         invariant i >= 0;
         invariant i <= 2;
     }
-    execute();
-    simp();
 }
 ```
 

@@ -22,9 +22,6 @@ verifying "an_implicit_zero_of_an_automatic_struct_array_is_not_another_value.c"
 
 int32 read() {
     ensures result == 4;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -25,9 +25,6 @@ verifying "other_pending.c";
 
 int f() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

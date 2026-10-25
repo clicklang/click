@@ -33,7 +33,7 @@ void keep(int32* p) {
     ensures s.amount == old(s.amount);
 } by {
     let { amount: n } = unfold(s);
-    execute();
+    step_until(function.exit);
     let s = fold(bundle(p), { amount: n });
     simp();
 }
@@ -43,23 +43,19 @@ void package(int32* p) {
     ensures s.amount == 2;
 } by {
     let s = fold(bundle(p), { amount: 2 });
-    execute();
-    simp();
 }
 void empty(int32* p) {
     produces s: bundle(p);
     ensures s.amount == 0;
 } by {
     let s = fold(bundle(p), { amount: 0 });
-    execute();
-    simp();
 }
 void keep_wrapper(int32* p) {
     owns s: wrapper(p);
     ensures s.amount == old(s.amount);
 } by {
     let { amount: n, label: l } = unfold(s);
-    execute();
+    step_until(function.exit);
     let s = fold(wrapper(p), { amount: n }, { label: l });
     simp();
 }

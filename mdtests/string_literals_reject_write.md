@@ -20,9 +20,6 @@ verifying "string_literals_reject_write.c";
 
 uint8* string_literal_reject_write() {
     ensures result != 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

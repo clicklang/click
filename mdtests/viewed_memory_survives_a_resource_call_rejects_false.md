@@ -23,9 +23,6 @@ resource list_at(p: struct node*) {
 
 void touch(struct node* node) {
     owns list_at(node);
-} by {
-    execute();
-    simp();
 }
 
 int32 keep(int32* cell) {
@@ -33,8 +30,6 @@ int32 keep(int32* cell) {
     ensures result == *cell + 1;
 } by {
     fold(list_at(0));
-    execute();
-    simp();
 }
 ```
 

@@ -49,8 +49,6 @@ int32 count(struct cell* p) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

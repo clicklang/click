@@ -51,9 +51,6 @@ void probe(struct region* region) {
 
     ensures r.start == old(r.start);
     ensures st.live == old(st.live);
-} by {
-    execute();
-    simp();
 }
 
 void probe_reversed(struct region* region) {
@@ -62,9 +59,6 @@ void probe_reversed(struct region* region) {
 
     ensures r.start == old(r.start);
     ensures st.live == old(st.live);
-} by {
-    execute();
-    simp();
 }
 ```
 

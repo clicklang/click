@@ -17,10 +17,6 @@ verifying "fold_consumed.c";
 int32 f(int32* p) {
     consumes p[0..1];
     produces wrap(p);
-} by {
-    execute();
-    fold(wrap(p));
-    simp();
 }
 ```
 

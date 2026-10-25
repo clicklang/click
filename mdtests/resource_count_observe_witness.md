@@ -38,8 +38,6 @@ void observe_one_permit(struct owner* owner) {
     ensures 1 <= count(permit(owner));
 } by {
     observe(permit(owner));
-    execute();
-    simp();
 }
 
 void observe_many_permits(struct owner* owner, int32 amount) {
@@ -51,8 +49,6 @@ void observe_many_permits(struct owner* owner, int32 amount) {
     ensures amount <= count(permit(owner));
 } by {
     observe(amount of permit(owner));
-    execute();
-    simp();
 }
 ```
 

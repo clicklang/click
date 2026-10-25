@@ -21,9 +21,6 @@ verifying "byte_store_at_offset_4_is_not_framed.c";
 int64 stale_at_4(int64* q) {
     owns q[0..1];
     ensures result == old(q[0]);
-} by {
-    execute();
-    simp();
 }
 ```
 

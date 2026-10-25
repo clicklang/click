@@ -14,9 +14,6 @@ verifying "sizeof_supported_types.c";
 
 int32 sizeof_supported_types() {
     ensures result == 21;
-} by {
-    execute();
-    simp();
 }
 ```
 

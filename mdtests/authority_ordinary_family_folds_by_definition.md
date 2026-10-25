@@ -24,8 +24,6 @@ void reset(struct object* obj) {
     unfold(cell(obj));
     step();
     fold(cell(obj));
-    execute();
-    simp();
 }
 ```
 

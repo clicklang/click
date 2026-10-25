@@ -55,31 +55,19 @@ verifying "size_tables.c";
 uint32 divisor_of(int32 units_base) {
     requires units_base == 1;
     ensures result == 1024;
-} by {
-    execute();
-    simp();
 }
 
 uint32 padded(int32 index) {
     requires index == 2;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 uint64 tmp_size() {
     ensures result == 12;
-} by {
-    execute();
-    simp();
 }
 
 char separator(int32 no_space) {
     ensures (no_space != 0 and result == 0) or (no_space == 0 and result == 32);
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -45,30 +45,21 @@ verifying "structs.c";
 int32 own(struct a *pa) {
     views pa->x;
     ensures true;
-} by {
-    execute();
 }
 
 int32 member_int(struct a *pa) {
     views pa->x;
     ensures true;
-} by {
-    execute();
 }
 
 int32 local_own() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 loaded_own(struct node *n) {
     views n->next;
     views n->next->v;
     ensures true;
-} by {
-    execute();
 }
 ```
 

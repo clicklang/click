@@ -26,16 +26,10 @@ verifying "aligned_from_struct_local.c";
 
 int32 struct_local_is_aligned() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 struct_local_pointer_is_aligned() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

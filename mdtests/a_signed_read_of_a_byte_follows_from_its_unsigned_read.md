@@ -32,9 +32,6 @@ int read_high(unsigned char* u, int i) {
     views u[0..4];
     requires u[i] == 255;
     ensures result == -1;
-} by {
-    execute();
-    simp();
 }
 
 int read_low(unsigned char* u, int i) {
@@ -43,9 +40,6 @@ int read_low(unsigned char* u, int i) {
     views u[0..4];
     requires u[i] == 5;
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

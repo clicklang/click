@@ -19,9 +19,6 @@ verifying "store.c";
 
 long store_local() {
     ensures result == 3;
-} by {
-    execute();
-    simp();
 }
 ```
 

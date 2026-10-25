@@ -29,9 +29,6 @@ void bump(struct node* n) {
     requires n != 0;
     owns n->payload;
     views n->next->augmented;
-} by {
-    execute();
-    simp();
 }
 ```
 

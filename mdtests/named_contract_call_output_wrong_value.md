@@ -39,8 +39,6 @@ void direct(int32* x) {
     unfold(done);
     have x[0] == 1 by { assumption(); }
     let done = fold(Ready(x), { value: 1 });
-    execute();
-    simp();
 }
 ```
 

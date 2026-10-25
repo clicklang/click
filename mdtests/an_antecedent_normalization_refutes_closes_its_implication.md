@@ -32,8 +32,6 @@ int32 r(int32 i, uint64 n) {
     }
     have i == i + 1 implies n <= 5u64 by { simp(); }
     have i <= i + 4 implies i == i + 1 implies n <= 5u64 by { auto(); }
-    execute();
-    simp();
 }
 ```
 

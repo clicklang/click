@@ -99,7 +99,7 @@ void change_child_requires(struct rb_node* old_child, struct rb_node* new_child,
     ensures d.model == old(c.model);
 } by {
     unfold(c);
-    execute();
+    step_until(function.exit);
     let d = fold(ctx_at(new_child, parent, root), { model: Ctx::Left }, {});
     simp();
 }

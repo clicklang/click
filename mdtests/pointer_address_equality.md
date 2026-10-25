@@ -35,9 +35,6 @@ int32 self_after_clear(struct node* node) {
     requires node != 0;
     owns node->word;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 other_after_link(struct node* node, struct node* other) {
@@ -45,18 +42,12 @@ int32 other_after_link(struct node* node, struct node* other) {
     requires address(other) != address(node);
     owns node->word;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 null_word_is_zero(struct node* node) {
     requires node != 0;
     owns node->word;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

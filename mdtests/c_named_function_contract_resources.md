@@ -41,9 +41,6 @@ int32 consume_and_store(int32 token, int32* output) {
     consumes output[0..1];
     ensures result == 0;
     ensures output[0] == token;
-} by {
-    execute();
-    simp();
 }
 
 int32 invoke_consumer(
@@ -56,9 +53,6 @@ int32 invoke_consumer(
     consumes output[0..1];
     ensures result == 0;
     ensures output[0] == token;
-} by {
-    execute();
-    simp();
 }
 ```
 

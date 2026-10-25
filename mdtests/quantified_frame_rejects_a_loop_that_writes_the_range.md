@@ -41,8 +41,6 @@ void wipe(int32 a[], int32 n) {
     ) using {
         forall (k: int32) { 0 <= k and k < n implies old(a[k]) == old(a[k]) };
     };
-    execute();
-    simp();
 }
 ```
 

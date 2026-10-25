@@ -33,8 +33,6 @@ void touch(int32* data, int32* occupied, int32 capacity) {
 } by {
     gather(evens(data, occupied, capacity));
     scatter(evens(data, occupied, capacity));
-    execute();
-    simp();
 }
 ```
 

@@ -44,16 +44,10 @@ int32 read_back(int32 u, int32 c) {
     requires 0 <= u;
     requires u < 2;
     ensures result == 0 or result == 3 or result == 7;
-} by {
-    execute();
-    simp();
 }
 
 int32 nested(int32 x, int32 y) {
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

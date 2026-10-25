@@ -36,9 +36,6 @@ int read_after_moving(int *p, int *r, int n) {
     views r[0..n];
     requires 0 < n;
     ensures result == p[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

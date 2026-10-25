@@ -25,7 +25,6 @@ int32 step(int32* a, int32 i) {
     mark start;
     step();
     have at(start, p) == at(start, a + i);
-    execute();
 }
 ```
 

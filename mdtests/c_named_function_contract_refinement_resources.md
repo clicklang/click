@@ -40,9 +40,6 @@ int32 store_increment(int32 value, int32* destination) {
     owns destination[0..1];
     ensures result == value + 1;
     ensures value < result;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_store_step(
@@ -55,17 +52,11 @@ int32 apply_store_step(
     requires input <= 100;
     owns output[0..1];
     ensures result == input + 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 resource_refining_step_caller(int32* output) {
     owns output[0..1];
     ensures result == 42;
-} by {
-    execute();
-    simp();
 }
 ```
 

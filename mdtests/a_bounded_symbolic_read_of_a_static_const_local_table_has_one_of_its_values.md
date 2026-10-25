@@ -20,9 +20,6 @@ verifying "a_bounded_symbolic_read_of_a_static_const_local_table_has_one_of_its_
 int32 g(int32 x) {
     ensures result >= 0;
     ensures result <= 4;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -17,9 +17,6 @@ int f(unsigned int u)
 verifying "k2.c";
 int32 f(uint32 u) {
     ensures result == 3 or result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

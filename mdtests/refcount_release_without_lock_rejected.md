@@ -41,9 +41,6 @@ void object_release_unlocked(struct object *obj) {
     owns access: mutex_use(&obj->mu, control(obj));
     consumes reference(obj);
     produces permit(obj);
-} by {
-    execute();
-    simp();
 }
 ```
 

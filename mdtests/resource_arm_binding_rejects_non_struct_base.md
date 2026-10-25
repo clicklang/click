@@ -35,9 +35,6 @@ resource frame_at(p: struct tree_node*) {
 int read_value(struct tree_node* node) {
     owns f: frame_at(node);
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

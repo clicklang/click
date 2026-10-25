@@ -19,9 +19,6 @@ verifying "entry_literal.c";
 
 int main() {
     ensures result == 3;
-} by {
-    execute();
-    simp();
 }
 ```
 

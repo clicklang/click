@@ -18,15 +18,12 @@ resource Counter() { field revision: int32; }
 
 void increment(int32* state) {
     owns first: Counter();
-} by {
-    execute();
 }
 
 void caller(int32* state) {
     owns c: Counter();
 } by {
     step(increment(state), { first: c });
-    execute();
 }
 ```
 

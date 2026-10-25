@@ -48,9 +48,6 @@ int32 read_item(struct item* item) {
 
 int32 heap_scoped_borrow_then_free() {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

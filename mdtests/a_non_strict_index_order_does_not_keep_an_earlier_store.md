@@ -26,8 +26,6 @@ void mark(int32 *a, int32 n, int32 i, int32 j) {
 } by {
     step();
     step();
-    execute();
-    simp();
 }
 ```
 

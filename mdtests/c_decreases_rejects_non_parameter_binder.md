@@ -24,9 +24,6 @@ int32 countdown(int32 n) {
     requires n >= 0;
     decreases m;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

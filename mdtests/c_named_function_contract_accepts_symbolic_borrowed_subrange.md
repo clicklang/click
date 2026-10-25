@@ -42,9 +42,6 @@ int32 read_at(int32* state, int32 position, int32 count) {
     requires position < count;
     views state[position..position + 1];
     ensures result == state[position];
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_read(
@@ -58,9 +55,6 @@ int32 apply_read(
     requires index < length;
     owns cells[0..length];
     ensures result == cells[index];
-} by {
-    execute();
-    simp();
 }
 
 int32 symbolic_borrowed_subrange_caller(
@@ -72,9 +66,6 @@ int32 symbolic_borrowed_subrange_caller(
     requires index < length;
     owns cells[0..length];
     ensures result == cells[index];
-} by {
-    execute();
-    simp();
 }
 ```
 

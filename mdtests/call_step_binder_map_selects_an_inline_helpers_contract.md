@@ -37,7 +37,7 @@ void fill(struct cell* p) {
     produces y: filled(p);
 } by {
     unfold(x);
-    execute();
+    step_until(function.exit);
     let y = fold(filled(p), { tag: 0 });
     simp();
 }

@@ -36,9 +36,6 @@ int32 parameter_is_null(struct node* p, struct node* q) {
     requires p == 0;
     requires q != 0;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 cell_is_null(struct node* n, struct node* q) {
@@ -46,9 +43,6 @@ int32 cell_is_null(struct node* n, struct node* q) {
     requires n->left == 0;
     requires q != 0;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

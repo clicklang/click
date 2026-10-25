@@ -37,9 +37,6 @@ int32 bump() {
     ensures counter == 6;
     ensures read_counter(old(counter), 0) == 5;
     ensures counter_is(old(counter), 5);
-} by {
-    execute();
-    simp();
 }
 ```
 

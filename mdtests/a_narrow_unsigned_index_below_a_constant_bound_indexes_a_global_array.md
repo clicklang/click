@@ -50,31 +50,19 @@ verifying "a_narrow_unsigned_index_below_a_constant_bound_indexes_a_global_array
 int32 read_byte(uint8 x) {
     owns values[0..4];
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 
 void write_byte(uint8 x) {
     owns values[0..4];
-} by {
-    execute();
-    simp();
 }
 
 int32 read_half(uint16 x) {
     owns values[0..4];
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 
 void write_half(uint16 x) {
     owns values[0..4];
-} by {
-    execute();
-    simp();
 }
 ```
 

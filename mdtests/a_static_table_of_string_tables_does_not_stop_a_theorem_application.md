@@ -30,8 +30,6 @@ int32 f() {
     have format::decimal_length(0u64) == 1u64 by {
         apply(format::decimal_length_1(0u64));
     }
-    execute();
-    simp();
 }
 ```
 

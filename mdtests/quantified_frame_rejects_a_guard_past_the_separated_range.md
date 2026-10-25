@@ -26,8 +26,6 @@ void poke(int32 *a, int32 n) {
     ) using {
         forall (k: int32) { 0 <= k and k < 2 implies old(a[k]) == old(a[k]) };
     };
-    execute();
-    simp();
 }
 ```
 

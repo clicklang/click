@@ -14,17 +14,12 @@ verifying "mutex_authority_named_wrong_mutex.c";
 
 void keep_other(struct holder *holder) {
     owns g: mutex_use(&holder->other);
-} by {
-    execute();
-    simp();
 }
 
 void caller(struct holder *holder) {
     owns g: mutex_use(&holder->mu);
 } by {
     step(keep_other, { g: g });
-    execute();
-    simp();
 }
 ```
 

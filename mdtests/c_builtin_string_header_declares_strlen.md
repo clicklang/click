@@ -32,9 +32,6 @@ uint64 last_index(const char* s) {
     views click::cstr::cstr_at(s, len);
     ensures result == len;
     ensures s[result] == '\0';
-} by {
-    execute();
-    simp();
 }
 ```
 

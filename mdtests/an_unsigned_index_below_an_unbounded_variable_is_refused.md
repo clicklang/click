@@ -18,9 +18,6 @@ verifying "an_unsigned_index_below_an_unbounded_variable_is_refused.c";
 
 void store_unbounded(int32* values, uint32 x, uint32 n) {
     owns values[0..4];
-} by {
-    execute();
-    simp();
 }
 ```
 

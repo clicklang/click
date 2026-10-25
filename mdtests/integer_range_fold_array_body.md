@@ -17,7 +17,7 @@ int32 array_fold_append_at_zero(int32 a[]) {
     views a[0..1];
     ensures (0..1).fold(0, |acc, k| { acc + to_integer(a[k]) }) ==
         (0..0).fold(0, |acc, k| { acc + to_integer(a[k]) }) + to_integer(a[0]) by {
-        execute();
+        step_until(function.exit);
         have 0 <= 0;
         have 0 < 2147483647;
         apply(integer_range_fold_append(

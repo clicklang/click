@@ -30,9 +30,6 @@ int32 read_back(int32 u) {
     requires 0 <= u;
     requires u < 4;
     ensures result == 0 or result == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

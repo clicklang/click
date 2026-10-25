@@ -14,17 +14,12 @@ verifying "mutex_authority_named_wrong_family.c";
 
 void keep(struct holder *holder) {
     owns g: mutex_guard(&holder->mu);
-} by {
-    execute();
-    simp();
 }
 
 void caller(struct holder *holder) {
     owns life: mutex_live(&holder->mu);
 } by {
     step(keep, { g: life });
-    execute();
-    simp();
 }
 ```
 

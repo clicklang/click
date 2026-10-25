@@ -39,9 +39,6 @@ void write(struct cell* c, int32 v) {
 void move_out(struct cell* c, struct cell* d, int32 x) {
     consumes before: cell_at(d);
     produces after: cell_at(c);
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -78,9 +78,6 @@ int32 drain(int32 n) {
 int32 run(int32 n) {
     requires n >= 0;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

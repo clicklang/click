@@ -35,9 +35,6 @@ verifying "call_keeps_a_nonempty_recursive_resource.c";
 
 void clear(int32 *count) {
     owns *count;
-} by {
-    execute();
-    simp();
 }
 
 void clear_beside(struct node *head, struct node *spare, int32 *count) {
@@ -45,9 +42,6 @@ void clear_beside(struct node *head, struct node *spare, int32 *count) {
     owns list(head);
     owns list(spare);
     owns *count;
-} by {
-    execute();
-    simp();
 }
 ```
 

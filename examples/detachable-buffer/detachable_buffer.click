@@ -42,10 +42,6 @@ int32 detachable_buffer_init(
     ensures result == length;
     ensures owner->len == length;
     ensures owner->data == data;
-} by {
-    execute();
-    fold(attached_buffer(owner));
-    simp();
 }
 
 int32 detachable_buffer_detach(
@@ -64,10 +60,6 @@ int32 detachable_buffer_detach(
     ensures owner->data == data;
 } by {
     unfold(attached_buffer(owner));
-    execute();
-    fold(detached_backing(data, length));
-    fold(detached_buffer(owner));
-    simp();
 }
 
 int32 detachable_buffer_set_first(
@@ -82,9 +74,6 @@ int32 detachable_buffer_set_first(
     ensures data[0] == value;
 } by {
     unfold(detached_backing(data, length));
-    execute();
-    fold(detached_backing(data, length));
-    simp();
 }
 
 int32 detachable_buffer_attach(
@@ -98,9 +87,6 @@ int32 detachable_buffer_attach(
     ensures result == length;
     ensures owner->len == length;
     ensures owner->data == data;
-} by {
-    execute();
-    simp();
 }
 
 int32 detachable_buffer_get(

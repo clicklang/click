@@ -20,9 +20,6 @@ verifying "a_signed_index_with_only_an_upper_bound_is_refused.c";
 
 int32 write_local(int32 x) {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

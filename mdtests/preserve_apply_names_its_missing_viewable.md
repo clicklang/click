@@ -290,8 +290,6 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

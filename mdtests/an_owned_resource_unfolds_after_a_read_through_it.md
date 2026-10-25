@@ -30,9 +30,6 @@ void bump(struct cell* p) {
 } by {
     step();
     unfold(flat(p));
-    execute();
-    fold(flat(p));
-    simp();
 }
 ```
 

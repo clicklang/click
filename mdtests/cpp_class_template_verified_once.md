@@ -45,26 +45,17 @@ template<class T> void Cell<T>::set(T v) {
     requires this->count < 1000u64;
     ensures this->value == v;
     ensures this->count == old(this->count) + 1u64;
-} by {
-    execute();
-    simp();
 }
 
 template<class T> T Cell<T>::get() const {
     views *this;
     ensures result == this->value;
-} by {
-    execute();
-    simp();
 }
 
 template<class T> void Cell<T>::read(T& out) const {
     views *this;
     owns out;
     ensures out == this->value;
-} by {
-    execute();
-    simp();
 }
 
 int round_trip(Cell<int>& small, Cell<unsigned int>& large, int x, unsigned int y) {
@@ -73,9 +64,6 @@ int round_trip(Cell<int>& small, Cell<unsigned int>& large, int x, unsigned int 
     requires small.count < 1000u64;
     requires large.count < 1000u64;
     ensures result == x;
-} by {
-    execute();
-    simp();
 }
 ```
 

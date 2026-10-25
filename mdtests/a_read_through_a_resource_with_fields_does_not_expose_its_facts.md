@@ -26,9 +26,6 @@ verifying "a_read_through_a_resource_with_fields_does_not_expose_its_facts.c";
 int32 peek(struct cell* p) {
     owns c: counted(p);
     ensures result == c.v;
-} by {
-    execute();
-    simp();
 }
 ```
 

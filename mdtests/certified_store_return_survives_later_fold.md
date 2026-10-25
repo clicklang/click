@@ -33,9 +33,6 @@ int32 increment_and_clear(struct pair* pair) {
     ensures result == old(pair->value) + 1;
 } by {
     unfold(owned_pair(pair));
-    execute();
-    fold(owned_pair(pair));
-    simp();
 }
 ```
 

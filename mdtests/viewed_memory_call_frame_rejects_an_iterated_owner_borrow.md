@@ -39,8 +39,6 @@ void touch(int32* flags, int32* data, int32 n) {
     have flags[0] == 0 by simp();
     give(data[0..1]);
     fold(cells(flags, data, n));
-    execute();
-    simp();
 }
 
 int32 keep(int32* flags, int32* data, int32 n, int32* b) {
@@ -58,16 +56,11 @@ int32 keep(int32* flags, int32* data, int32 n, int32* b) {
             at(m0, *b) == old(*b);
         };
     }
-    execute();
-    simp();
 }
 int32 root(int32* flags, int32* b) {
     owns cells(flags, b, 1);
     requires flags[0] == 0;
     ensures result == old(*b);
-} by {
-    execute();
-    simp();
 }
 ```
 

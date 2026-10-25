@@ -42,9 +42,6 @@ verifying "pointer_bytes_as_integer.c";
 
 int f() {
     ensures result == 1 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

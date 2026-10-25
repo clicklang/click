@@ -29,8 +29,6 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
         rewrite(old(a[m]) == 5);
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

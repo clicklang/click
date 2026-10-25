@@ -32,7 +32,6 @@ uint64 count(uint64 n) {
             step();
         }
     }
-    execute();
 }
 ```
 

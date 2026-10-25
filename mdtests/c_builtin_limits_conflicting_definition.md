@@ -18,9 +18,6 @@ verifying "limits_conflict.c";
 
 int f() {
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

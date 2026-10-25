@@ -18,7 +18,7 @@ void increment(int32* state) {
     ensures first.revision == 1;
 } by {
     unfold(first);
-    execute();
+    step_until(function.exit);
     let first = fold(Counter(), { revision: 1 });
     simp();
 }
@@ -31,8 +31,6 @@ void caller(int32* state) {
     have at(region(0).exit, c.revision) < 1000 by {
         arithmetic() using { c.revision == 1; };
     }
-    execute();
-    simp();
 }
 ```
 

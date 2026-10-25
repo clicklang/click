@@ -21,7 +21,7 @@ int32 set(int32* p) {
     ensures result == 1;
 } by {
     unfold(input);
-    execute();
+    step_until(function.exit);
     let output = fold(Cell(p), { value: 1 });
     simp();
 }
@@ -32,8 +32,6 @@ void caller(int32* p) {
 } by {
     let { result: status, output: checked } = step(set, { input: input });
     have status == 1 by { assumption(); }
-    execute();
-    simp();
 }
 ```
 ```expect

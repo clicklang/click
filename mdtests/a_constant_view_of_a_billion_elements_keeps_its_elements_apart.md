@@ -16,9 +16,6 @@ verifying "a_constant_view_of_a_billion_elements_keeps_its_elements_apart.c";
 int32 first(int32 *a) {
     views a[0..1000000000];
     ensures a[0] == a[1];
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -28,9 +28,6 @@ uint64 returned(const char* s) {
     views click::cstr::cstr_at(s, n);
     ensures result == n;
     ensures s[result] == '\0';
-} by {
-    execute();
-    simp();
 }
 
 uint64 copied(uint8 bytes[]) {
@@ -38,9 +35,6 @@ uint64 copied(uint8 bytes[]) {
     views click::cstr::cstr_at(bytes, n);
     ensures result == n;
     ensures bytes[result] == '\0';
-} by {
-    execute();
-    simp();
 }
 ```
 

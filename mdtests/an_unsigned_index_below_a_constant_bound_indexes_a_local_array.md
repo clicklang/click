@@ -36,16 +36,10 @@ verifying "an_unsigned_index_below_a_constant_bound_indexes_a_local_array.c";
 
 int32 write_then_read(uint32 x) {
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 
 int32 write_then_read_wide(uint64 x) {
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

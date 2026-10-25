@@ -46,8 +46,6 @@ int32 loop_heap_lifetime_join(int32* data) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

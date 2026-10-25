@@ -45,7 +45,6 @@ void cut(uint8* s, uint64 n) {
         simp();
     }
     fold(cstr_at(s, 0u64));
-    execute();
 }
 ```
 

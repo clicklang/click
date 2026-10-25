@@ -23,9 +23,6 @@ verifying "null_pointer.c";
 int32 is_null(int32* p) {
     requires p == 0;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

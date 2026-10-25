@@ -23,9 +23,6 @@ verifying "readonly_memcpy.c";
 int f(uint8 src[]) {
     views buf[0..16];
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

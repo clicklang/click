@@ -19402,3 +19402,29 @@ fn replacement_with_children_preserves_pointer_values_across_stores() {
     assert_ne!(source, wrong_identity);
     assert!(verify_c0_sources(&wrong_identity, &sources).is_err());
 }
+
+#[test]
+#[ignore = "nightly: original, expanded, and hostile read-over-write proofs"]
+fn grouped_rewritten_claims_close_ownership_in_contract_order() {
+    let (source, sources) = mdtest_sources("mdtests/a_read_of_a_stored_cell_stays_a_read.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &sources, "set", CProofClaim::Grouped)
+        .expect("the grouped read-over-write proof should expand");
+    let (checked, planning) = proof::count_planning_statement_transitions(|| {
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+    });
+    checked.expect("the explicit expansion must close the equality and ownership exactly once");
+    assert_eq!(
+        planning, 0,
+        "rechecking the explicit certificate must not plan"
+    );
+    let hostile = expanded.replace("ensures a[j] == 5;", "ensures a[j] == 6;");
+    assert_ne!(
+        hostile, expanded,
+        "the retained result claim must be changed"
+    );
+    assert!(without_implicit_auto(|| verify_c0_sources(&hostile, &sources)).is_err());
+}

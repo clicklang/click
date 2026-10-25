@@ -29,8 +29,6 @@ void fill(uint8* dst) {
         instantiate((0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }), k);
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

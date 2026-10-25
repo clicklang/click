@@ -25,9 +25,6 @@ verifying "fill.c";
 void fill(uint8* dst) {
     owns dst[0..4];
     ensures bytes::all_equal(dst, 0u64, 4u64, 7u8);
-} by {
-    execute();
-    simp();
 }
 ```
 

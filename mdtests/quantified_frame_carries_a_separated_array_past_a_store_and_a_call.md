@@ -23,9 +23,6 @@ verifying "quantified_frame_carries_a_separated_array_past_a_store_and_a_call.c"
 void touch(int32 *visited, int32 n) {
     requires 0 < n;
     owns visited[0..n];
-} by {
-    execute();
-    simp();
 }
 
 void walk(int32 *left, int32 *visited, int32 n, int32 cur) {
@@ -38,8 +35,6 @@ void walk(int32 *left, int32 *visited, int32 n, int32 cur) {
     step();
     step();
     have forall (k: int32) { 0 <= k and k < n implies left[k] == old(left[k]) };
-    execute();
-    simp();
 }
 ```
 

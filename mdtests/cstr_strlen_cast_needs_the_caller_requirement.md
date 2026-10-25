@@ -16,9 +16,6 @@ verifying "strlen_cast_unproved.c";
 
 uint64 unproved(uint8 bytes[]) {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -30,9 +30,6 @@ int32 bump() {
     requires read_counter(0) == 5;
     ensures counter == 6;
     ensures read_counter(0) == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

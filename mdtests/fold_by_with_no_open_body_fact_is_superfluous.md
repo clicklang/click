@@ -15,8 +15,6 @@ void make(int32 x) {
     produces positive(x);
 } by {
     fold(positive(x)) by { simp(); }
-    execute();
-    simp();
 }
 ```
 

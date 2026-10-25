@@ -36,8 +36,6 @@ int32 walk(int32 n) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

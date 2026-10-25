@@ -38,7 +38,7 @@ void write(struct cell* c, int32 v) {
     ensures after.value == v;
 } by {
     let {} = unfold(before);
-    execute();
+    step_until(function.exit);
     let after = fold(cell_at(c), { value: v }, {});
 }
 
@@ -49,7 +49,7 @@ int32 read(struct cell* c) {
     ensures after.value == old(before.value);
 } by {
     let {} = unfold(before);
-    execute();
+    step_until(function.exit);
     let after = fold(cell_at(c), { value: old(before.value) }, {});
 }
 
@@ -57,9 +57,6 @@ int32 set_and_get(struct cell* c, int32 x) {
     owns cell: cell_at(c);
     ensures result == x;
     ensures cell.value == x;
-} by {
-    execute();
-    simp();
 }
 ```
 

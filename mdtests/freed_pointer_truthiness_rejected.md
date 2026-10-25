@@ -24,9 +24,6 @@ verifying "freed_truth.c";
 
 int f() {
     ensures result == 1 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

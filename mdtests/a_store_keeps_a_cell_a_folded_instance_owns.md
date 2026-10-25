@@ -40,9 +40,6 @@ void touch(struct slot* s, struct slot* other) {
     owns *other;
     requires s->at == 5;
     ensures s->at == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

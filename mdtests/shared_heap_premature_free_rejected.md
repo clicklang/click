@@ -41,8 +41,6 @@ void free_early(struct child* obj) {
     consumes child_ref(obj);
 } by {
     unfold(child_control(obj));
-    execute();
-    simp();
 }
 ```
 

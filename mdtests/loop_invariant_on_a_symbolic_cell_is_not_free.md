@@ -39,8 +39,6 @@ void mark_prefix(int32 a[], int32 n, int32 m) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

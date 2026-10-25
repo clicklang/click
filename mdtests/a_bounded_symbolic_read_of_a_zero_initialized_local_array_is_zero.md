@@ -22,9 +22,6 @@ verifying "a_bounded_symbolic_read_of_a_zero_initialized_local_array_is_zero.c";
 
 int32 f(int32 x) {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -32,8 +32,6 @@ void caller(int32* p) {
 } by {
     let { result: p, output: checked } = step(set, { input: input });
     have 1 == 1 by { normalize(); }
-    execute();
-    simp();
 }
 ```
 ```expect

@@ -23,9 +23,6 @@ extern int32 take(const uint8* p) {
 
 int32 direct() {
     ensures true;
-} by {
-    execute();
-    simp();
 }
 ```
 

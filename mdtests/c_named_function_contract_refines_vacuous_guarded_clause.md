@@ -36,9 +36,6 @@ void increment(int32* state) {
     requires state[0] < 1000;
     owns state[0..1];
     ensures to_integer(state[0]) == to_integer(old(state[0]) + 1);
-} by {
-    execute();
-    simp();
 }
 
 theorem increment_is_guarded_progress() {
@@ -70,9 +67,6 @@ void apply_step(void (*step)(int32*), int32* cell) {
     requires cell[0] < 100;
     owns cell[0..1];
     ensures old(cell[0]) < cell[0];
-} by {
-    execute();
-    simp();
 }
 
 void vacuous_guard_caller(int32* cell) {
@@ -82,8 +76,6 @@ void vacuous_guard_caller(int32* cell) {
     ensures old(cell[0]) < cell[0];
 } by {
     apply(increment_is_guarded_progress());
-    execute();
-    simp();
 }
 ```
 

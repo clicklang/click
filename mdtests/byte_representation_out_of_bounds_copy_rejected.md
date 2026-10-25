@@ -25,9 +25,6 @@ verifying "out_of_bounds_memcpy.c";
 
 int f() {
     ensures result == 0 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

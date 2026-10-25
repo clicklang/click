@@ -15,7 +15,6 @@ void untyped_caller(void* p) {
     ensures true;
 } by {
     let { held: held } = step(imported_node, {});
-    execute();
 }
 ```
 

@@ -36,9 +36,6 @@ verifying "forward_goto_cleanup_chain_missing_release.c";
 
 int32 cleanup_missing_first_release() {
     ensures result == -1 or result == -2 or result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

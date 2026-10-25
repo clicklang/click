@@ -27,8 +27,6 @@ int64 sum(int64 a, int64 b) {
             conclusion 0;
         }
     }
-    execute();
-    simp();
 }
 ```
 

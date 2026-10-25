@@ -18,9 +18,6 @@ verifying "kernel_stdlib.c";
 
 int f() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

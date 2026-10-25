@@ -24,20 +24,12 @@ int32 mint_positive(int32 x, int32 k) {
     requires x >= 0;
     requires 0 < k;
     produces k of ok(x);
-} by {
-    execute();
-    fold(k of ok(x));
-    simp();
 }
 
 int32 mint_zero(int32 x, int32 k) {
     requires x >= 0;
     requires k == 0;
     produces k of ok(x);
-} by {
-    execute();
-    fold(k of ok(x));
-    simp();
 }
 
 int32 mint_have(int32 x, int32 k) {
@@ -45,7 +37,7 @@ int32 mint_have(int32 x, int32 k) {
     requires positive(k);
     produces k of ok(x);
 } by {
-    execute();
+    step_until(function.exit);
     have 0 < k by { unfold(positive); simp(); }
     fold(k of ok(x));
     simp();

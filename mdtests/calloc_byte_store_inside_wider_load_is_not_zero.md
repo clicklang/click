@@ -21,9 +21,6 @@ verifying "calloc_byte_store_inside_wider_load_is_not_zero.c";
 
 int32 f() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

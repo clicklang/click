@@ -53,24 +53,17 @@ verifying "exit_produces_checked_composite.c";
 void mk(uint8* p) {
     consumes p[0..6];
     produces zt(p);
-} by {
-    execute();
-    fold(zt(p));
 }
 
 void mk_at_exit(uint8* p) {
     consumes p[0..6];
     produces zt(p);
-} by {
-    execute();
 }
 
 void mk_from(uint8* p, uint8 v) {
     requires v == 0;
     consumes p[0..6];
     produces zt(p);
-} by {
-    execute();
 }
 
 void spin(uint8* p, int32 n) {
@@ -91,8 +84,6 @@ void spin(uint8* p, int32 n) {
             step();
         }
     }
-    execute();
-    simp();
 }
 
 uint8 use(uint8* p) {
@@ -101,8 +92,6 @@ uint8 use(uint8* p) {
 } by {
     step();
     unfold(zt(p));
-    execute();
-    simp();
 }
 ```
 

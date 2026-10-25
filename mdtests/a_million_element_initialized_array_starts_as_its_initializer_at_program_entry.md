@@ -35,16 +35,10 @@ verifying "a_million_element_initialized_array_starts_as_its_initializer_at_prog
 
 int32 peek() {
     ensures result == 4;
-} by {
-    execute();
-    simp();
 }
 
 int main() {
     ensures result == 285;
-} by {
-    execute();
-    simp();
 }
 ```
 

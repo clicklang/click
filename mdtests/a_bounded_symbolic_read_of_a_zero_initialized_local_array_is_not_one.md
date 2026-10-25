@@ -19,9 +19,6 @@ verifying "a_bounded_symbolic_read_of_a_zero_initialized_local_array_is_not_one.
 
 int32 f(int32 x) {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

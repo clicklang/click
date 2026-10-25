@@ -48,7 +48,7 @@ int32 bump_grid() {
     ensures grid[0][0] == old(grid[0][0]) + 1;
     ensures result == old(calls) + old(grid[0][0]) + 2;
 } by {
-    execute();
+    step_until(function.exit);
     have to_integer(calls + grid[0][0]) == to_integer(calls) + to_integer(grid[0][0]) by auto();
     auto();
 }
@@ -64,7 +64,7 @@ int32 bump_counter() {
     ensures counters[0].value == old(counters[0].value) + 1;
     ensures result == old(calls) + old(counters[0].value) + 2;
 } by {
-    execute();
+    step_until(function.exit);
     have to_integer(calls + counters[0].value) == to_integer(calls) + to_integer(counters[0].value) by auto();
     auto();
 }

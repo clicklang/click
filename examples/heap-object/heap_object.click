@@ -13,10 +13,6 @@ verifying "item_pipeline.c";
 
 struct item* item_create(int32 value) {
     produces owned_item(result);
-} by {
-    execute();
-    fold(owned_item(result));
-    simp();
 }
 
 int32 item_read(struct item* item) {
@@ -24,9 +20,6 @@ int32 item_read(struct item* item) {
     views owned_item(item);
 
     ensures result == item->value;
-} by {
-    execute();
-    simp();
 }
 
 int32 item_destroy(struct item* item) {
@@ -47,14 +40,8 @@ int32 item_destroy(struct item* item) {
 
 int32 item_round_trip(int32 value) {
     ensures result == -1 or result == value;
-} by {
-    execute();
-    simp();
 }
 
 int32 item_pipeline(int32 value) {
     ensures result == -1 or result == 0;
-} by {
-    execute();
-    simp();
 }

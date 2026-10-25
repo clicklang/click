@@ -55,8 +55,6 @@ void traverse(int32 *next, int32 *visited) diverges {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

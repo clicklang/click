@@ -51,9 +51,6 @@ void apply_progress(void (*step)(int32*), int32* cells) {
     requires cells[0] < 100;
     owns cells[0..2];
     ensures old(cells[0]) < cells[0];
-} by {
-    execute();
-    simp();
 }
 
 void abstract_contract_refinement_caller(
@@ -66,8 +63,6 @@ void abstract_contract_refinement_caller(
     ensures old(cells[0]) < cells[0];
 } by {
     apply(exact_increment_is_progress(step));
-    execute();
-    simp();
 }
 ```
 

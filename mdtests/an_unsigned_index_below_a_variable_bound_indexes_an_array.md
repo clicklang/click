@@ -40,26 +40,17 @@ verifying "an_unsigned_index_below_a_variable_bound_indexes_an_array.c";
 void store_below(int32* values, uint32 x, uint32 n) {
     requires n <= 4u32;
     owns values[0..4];
-} by {
-    execute();
-    simp();
 }
 
 int32 read_below(int32* values, uint32 x, uint32 n) {
     requires n <= 4u32;
     owns values[0..4];
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 
 void store_global_below(uint32 x, uint32 n) {
     requires n <= 4u32;
     owns table[0..4];
-} by {
-    execute();
-    simp();
 }
 ```
 

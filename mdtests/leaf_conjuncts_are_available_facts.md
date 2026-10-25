@@ -33,7 +33,7 @@ theorem sub_extracted(x: int32, y: int32) {
 int32 inc(int32 x) {
     requires x >= 0 and x <= 100;
     ensures result >= 1 by {
-        execute();
+        step_until(function.exit);
         have result >= 1 by {
             arithmetic_certificate signed_int32 {
                 premise 0: x <= 100 => x <= 100;

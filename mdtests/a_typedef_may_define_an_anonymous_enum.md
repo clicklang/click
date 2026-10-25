@@ -26,9 +26,6 @@ verifying "jsmn_type.c";
 int32 is_container(uint32 type) {
     requires type == 2;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

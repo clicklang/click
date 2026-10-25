@@ -61,16 +61,10 @@ verifying "a_byte_store_reaches_the_local_it_lands_in.c";
 
 int64 read_after_local_byte_write() {
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 
 int64 write_through_the_whole_object() {
     ensures result == 11;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -23,9 +23,6 @@ int32 clear(uint8 d[]) {
     owns d[0..4];
     requires click::bytes::all_equal(d, 0u64, 0u64, 0u8);
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

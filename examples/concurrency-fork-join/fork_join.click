@@ -108,7 +108,4 @@ int fill_parallel(int output[4]) {
          output[2] == 0 and output[3] == 0) or
         (output[0] == 11 and output[1] == 11 and
          output[2] == 0 and output[3] == 0);
-} by {
-    execute();
-    simp();
 }

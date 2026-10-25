@@ -17,9 +17,6 @@ int32 f(char *dst, uint64 osz) {
     requires osz > 0;
     owns dst[0..osz];
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

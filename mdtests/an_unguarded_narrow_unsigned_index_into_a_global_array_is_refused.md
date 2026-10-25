@@ -18,9 +18,6 @@ verifying "an_unguarded_narrow_unsigned_index_into_a_global_array_is_refused.c";
 int32 read_byte(uint8 x) {
     owns values[0..4];
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

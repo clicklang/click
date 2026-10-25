@@ -12,8 +12,6 @@ void f(int32* p) {
     ensures true;
 } by {
     have forall (k: int32) { k.n == 5 } by { simp(); }
-    execute();
-    simp();
 }
 ```
 

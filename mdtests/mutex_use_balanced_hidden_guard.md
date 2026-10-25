@@ -23,9 +23,6 @@ verifying "mutex_use_balanced_hidden_guard.c";
 void helper(struct holder *holder) {
     owns mutex_use(&holder->mu);
     owns h: holding(holder);
-} by {
-    execute();
-    simp();
 }
 ```
 

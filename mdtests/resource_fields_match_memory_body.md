@@ -31,7 +31,7 @@ int32 read_some(int32* p, int32 expected) {
     ensures c.model == old(c.model);
 } by {
     unfold(c);
-    execute();
+    step_until(function.exit);
     fold(c);
     simp();
 }
@@ -44,7 +44,7 @@ int32 read_none(int32* p) {
     ensures c.model == old(c.model);
 } by {
     unfold(c);
-    execute();
+    step_until(function.exit);
     fold(c);
     simp();
 }

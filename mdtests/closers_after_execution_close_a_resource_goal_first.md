@@ -17,7 +17,7 @@ int32 g(int32 p[]) {
     owns p[0..1];
     ensures result == 7;
 } by {
-    execute();
+    step_until(function.exit);
     assumption();
     normalize();
 }

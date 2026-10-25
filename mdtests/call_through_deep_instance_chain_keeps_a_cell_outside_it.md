@@ -121,7 +121,7 @@ void overwrite(struct node* p) {
     let { tag: t2, child: c1 } = unfold(c2);
     let { tag: t1, child: c0 } = unfold(c1);
     let { tag: t0 } = unfold(c0);
-    execute();
+    step_until(function.exit);
     let c0 = fold(layer0(p), { tag: t0 }, {});
     let c1 = fold(layer1(p), { tag: t1 }, { child: c0 });
     let c2 = fold(layer2(p), { tag: t2 }, { child: c1 });
@@ -160,8 +160,6 @@ int32 caller(struct node* p) {
     step();
     let rc0 = fold(other0(p), { tag: rt0 }, {});
     let o = fold(other1(p), { tag: rt1 }, { child: rc0 });
-    execute();
-    simp();
 }
 ```
 

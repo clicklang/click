@@ -22,9 +22,6 @@ long long read_through(int64* p) {
     requires p != 0;
     views *p;
     ensures result == *p;
-} by {
-    execute();
-    simp();
 }
 ```
 

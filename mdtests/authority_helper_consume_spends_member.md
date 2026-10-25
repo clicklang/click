@@ -35,8 +35,6 @@ void drop(struct object* obj) {
     unfold(reference(obj));
     step();
     fold(control(obj));
-    execute();
-    simp();
 }
 int32 run() {
     ensures result == -1 or result == 0;
@@ -51,8 +49,6 @@ int32 run() {
     step();
     unfold(control(obj));
     unfold(authority(reference(obj)));
-    execute();
-    simp();
 }
 ```
 

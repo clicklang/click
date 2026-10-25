@@ -25,9 +25,6 @@ int32 run(struct holder *holder) {
     consumes holder->mu;
     requires aligned(&holder->mu, 8);
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

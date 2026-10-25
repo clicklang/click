@@ -28,9 +28,6 @@ int32 empty_repeat(int32 active) {
     views guarded(active);
 
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

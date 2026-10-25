@@ -73,8 +73,6 @@ uint64 f(uint64 b) {
             }
         }
     }
-    execute();
-    simp();
 }
 ```
 

@@ -20,9 +20,6 @@ verifying "designated_bound.c";
 uint32 padded(int32 index) {
     requires index == 4;
     ensures true;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -18,9 +18,6 @@ verifying "calloc_pointer_array_null_deref.c";
 
 int32 calloc_pointer_array_null_deref() {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

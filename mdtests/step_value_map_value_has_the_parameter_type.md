@@ -32,8 +32,6 @@ uint64 f() {
     step();
     step();
     step(measure, { n: 0u32 });
-    execute();
-    simp();
 }
 ```
 

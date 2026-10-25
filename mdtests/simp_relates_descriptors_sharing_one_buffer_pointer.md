@@ -28,9 +28,6 @@ int32 same_buffer(int32* p, struct slot* a, struct slot* b, struct slot* c, stru
     requires c->data == p;
     requires d->data == p;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -834,9 +834,6 @@ int32 set_first(int32 p[], int32 value) {
     owns p[0..1];
     ensures result == value;
     ensures p[0] == value;
-} by {
-    execute();
-    simp();
 }
 ```
 
@@ -2029,9 +2026,6 @@ int32 identity(int32 value) {
     ensures result == value;
     ensures cell.model == old(cell.model);
     ensures cell.revision == old(cell.revision);
-} by {
-    execute();
-    simp();
 }
 ```
 
@@ -2942,9 +2936,6 @@ int32 set_and_get(struct cell* c, int32 x) {
     produces after: cell_at(c);
     ensures result == x;
     ensures after.value == x;
-} by {
-    execute();
-    simp();
 }
 ```
 

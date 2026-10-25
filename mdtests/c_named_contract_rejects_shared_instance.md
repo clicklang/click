@@ -30,8 +30,6 @@ int32 invoke(int32 (*callback)()) {
     ensures result == 0;
 } by {
     step(Pair, { first: c, second: c });
-    execute();
-    simp();
 }
 ```
 

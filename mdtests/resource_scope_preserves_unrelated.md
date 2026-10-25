@@ -28,9 +28,6 @@ verifying "resource_scope_preserves_unrelated.c";
 int32 preserve_spare(int32 value) {
     owns spare(value);
     ensures result == value;
-} by {
-    execute();
-    simp();
 }
 
 int32 resource_scope_preserves_unrelated(struct object* obj, int32 value) {
@@ -43,8 +40,6 @@ int32 resource_scope_preserves_unrelated(struct object* obj, int32 value) {
     }
     open(marker(obj)) { }
     step();
-    execute();
-    simp();
 }
 ```
 

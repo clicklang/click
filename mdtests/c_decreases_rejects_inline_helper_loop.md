@@ -54,8 +54,6 @@ int32 drain(int32 n) {
             }
         }
     }
-    execute();
-    simp();
 }
 ```
 

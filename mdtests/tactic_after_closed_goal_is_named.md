@@ -41,8 +41,6 @@ int32 red_bit(int32 n) {
         rewrite(color_bit(Color::Red) == 0);
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

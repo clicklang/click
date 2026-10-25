@@ -18,9 +18,7 @@ int32 duplicate_ref(int32 object) {
     owns object_ref(object);
     produces object_ref(object);
 
-    ensures result == object by {
-        execute();
-    }
+    ensures result == object;
 }
 ```
 

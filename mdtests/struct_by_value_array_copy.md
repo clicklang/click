@@ -55,9 +55,6 @@ struct packet finish(struct packet value) {
 
 int32 run_struct_by_value_array() {
     ensures result == 473;
-} by {
-    execute();
-    simp();
 }
 ```
 

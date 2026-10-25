@@ -39,9 +39,6 @@ contract int32 InspectGuarded(int32 active, int32* cell) {
 int32 inspect_guarded(int32 active, int32* cell) {
     views maybe_cell(active, cell);
     ensures result == active;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_guarded_inspect(
@@ -65,9 +62,6 @@ int32 apply_guarded_inspect(
 int32 guarded_borrow_caller(int32* cell) {
     owns maybe_cell(1, cell);
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

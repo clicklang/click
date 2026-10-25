@@ -30,9 +30,6 @@ verifying "inline_helper_contract_is_the_call_boundary.c";
 int32 run(int32 n) {
     requires n > 0;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 

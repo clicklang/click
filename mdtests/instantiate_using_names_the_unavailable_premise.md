@@ -27,8 +27,6 @@ int32 pick(int32 a[], int32 n, int32 k) {
         };
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

@@ -23,18 +23,12 @@ verifying "a_string_literal_initializing_a_uint8_pointer_reads_its_bytes.c";
 
 int32 string_literal_initializer() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 uint8* string_literal_initialized_pointer() {
     ensures readable: viewable(result[0..3]);
     ensures first_byte: result[0] == 111;
     ensures terminator: result[2] == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

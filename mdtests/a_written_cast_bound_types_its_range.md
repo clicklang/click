@@ -20,7 +20,7 @@ int32 a_written_cast_range_bound(uint8 p[], int32 n) {
     requires viewable(p[0..n]);
     requires bytes::contains(p, 0, (uint64) n, 'x');
     ensures bytes::contains(p, 0, (uint64) n, 'x') by {
-        execute();
+        step_until(function.exit);
         unfold(bytes::contains);
         obtain (found: uint64) {
             0u64 <= found and found < (uint64) n and p[found] == 'x'

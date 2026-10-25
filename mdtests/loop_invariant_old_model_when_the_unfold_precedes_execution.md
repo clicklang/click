@@ -68,8 +68,6 @@ int spin(struct cell* node, struct cell* other, int n) {
         invariant c.model == old(c.model);
         invariant d.model == old(d.model);
     }
-    execute();
-    simp();
 }
 ```
 

@@ -37,9 +37,6 @@ int32 store_both(int32* a, int32 i) {
     requires i < 7;
     consumes a[0..8];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 store_next(int32* a, int32 i) {
@@ -49,9 +46,6 @@ int32 store_next(int32* a, int32 i) {
     requires a[i] > -100;
     consumes a[0..8];
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 store_next_in_anchored_range(int32* a, int32 i) {
@@ -61,9 +55,6 @@ int32 store_next_in_anchored_range(int32* a, int32 i) {
     requires a[i] > -100;
     consumes a[i..(i + 2)];
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

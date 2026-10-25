@@ -128,9 +128,6 @@ int32 bump() {
     requires read_counter(counter, 0) == 5;
     ensures counter == 6;
     ensures read_counter(old(counter), 0) == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

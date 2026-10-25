@@ -32,8 +32,6 @@ int32 fill(uint32 x) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

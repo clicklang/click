@@ -66,6 +66,8 @@ pub(crate) use memory_loads::check_canonical_at_creation;
 pub(crate) use memory_loads::count_canonical_at_creation_violations;
 #[cfg(test)]
 pub(in crate::kernel) use memory_loads::declare_load_access_width;
+#[cfg(test)]
+pub(crate) use memory_loads::duplicate_read_names;
 pub(crate) use memory_loads::is_load_variable;
 pub(crate) use memory_loads::is_load_variable_defining_fact;
 pub(crate) use memory_loads::is_store_fact;

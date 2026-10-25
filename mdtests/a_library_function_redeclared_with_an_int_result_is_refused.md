@@ -22,9 +22,6 @@ verifying "main.c";
 int32 name_length(const char* s) {
     requires click::cstr::readable(s);
     ensures result >= 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -29,8 +29,6 @@ void mark(int32 *next, int32 *visited) {
         };
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

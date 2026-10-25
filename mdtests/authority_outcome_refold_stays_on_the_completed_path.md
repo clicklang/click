@@ -21,7 +21,7 @@ int32 identity(int32 x) {
     owns marker(x);
     ensures result == x;
 } by {
-    execute();
+    step_until(function.exit);
     unfold(marker(x));
     fold(marker(x));
     unfold(marker(x));

@@ -73,8 +73,6 @@ void free_twice(struct arena* arena, struct region* region) {
 } by {
     step(arena_free, { allocated: allocated });
     step(arena_free, { allocated: allocated });
-    execute();
-    simp();
 }
 ```
 

@@ -33,8 +33,6 @@ int32 run(struct holder *holder) {
     step();
     let life = fold(lifetime(holder), { tag: 0 });
     step(keep, { life: life });
-    execute();
-    simp();
 }
 ```
 

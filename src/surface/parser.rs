@@ -9598,10 +9598,18 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::SmartExecute
             }
-            // `step_until` is the older spelling of `step_until`.
+            // `execute_until` is the older spelling of `step_until`.
             "step_until" | "execute_until" => {
                 self.expect(Token::LParen)?;
-                let region_ref = self.parse_code_region_ref()?;
+                let region_ref = if self.peek_ident() == Some("function")
+                    && self.peek_next() == Some(&Token::Dot)
+                    && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(kind)) if kind == "exit")
+                {
+                    self.position += 3;
+                    CodeRegionRef::FunctionExit
+                } else {
+                    self.parse_code_region_ref()?
+                };
                 self.expect(Token::RParen)?;
                 ProofTactic::ExecuteUntil(region_ref)
             }

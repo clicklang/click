@@ -23,8 +23,6 @@ void fill_t(uint8* dst) {
     ) using {
         at(region(1).entry, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }));
     };
-    execute();
-    simp();
 }
 ```
 

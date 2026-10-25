@@ -59,8 +59,6 @@ uint64 f() {
     step();
     step();
     let { result: second } = step(two, { na: 1u64, nb: 1u64 });
-    execute();
-    simp();
 }
 ```
 

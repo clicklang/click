@@ -26,9 +26,6 @@ verifying "a_struct_field_read_one_past_a_conjunctive_bound_is_refused.c";
 
 int32 f(int32 x) {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -48,8 +48,6 @@ int32 scratch(int32 a[], int32 n) {
     } else {
     }
     have icount(a, 0, 0) == 0;
-    execute();
-    simp();
 }
 ```
 

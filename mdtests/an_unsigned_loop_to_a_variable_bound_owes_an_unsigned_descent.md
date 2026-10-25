@@ -37,8 +37,6 @@ int32 count(uint32 n) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

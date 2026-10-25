@@ -46,10 +46,6 @@ verifying "resource_population_body_access.c";
 void wrap_object(struct object* obj) {
     consumes *obj;
     produces wrapper(obj);
-} by {
-    execute();
-    fold(wrapper(obj));
-    simp();
 }
 
 void unwrap_object(struct object* obj) {
@@ -57,8 +53,6 @@ void unwrap_object(struct object* obj) {
     produces *obj;
 } by {
     unfold(wrapper(obj));
-    execute();
-    simp();
 }
 
 void write_through_wrapper(struct object* obj) {
@@ -69,8 +63,6 @@ void write_through_wrapper(struct object* obj) {
         step();
     }
     step();
-    execute();
-    simp();
 }
 ```
 

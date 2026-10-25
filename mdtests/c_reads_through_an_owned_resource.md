@@ -28,9 +28,6 @@ verifying "c_reads_through_an_owned_resource.c";
 
 int32 peek(struct cell* p) {
     owns flat(p);
-} by {
-    execute();
-    simp();
 }
 ```
 

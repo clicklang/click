@@ -20,18 +20,12 @@ verifying "call_precondition_refuses_a_decremented_upper_bound_too_tight.c";
 int32 id(int32 x) {
     requires x <= 98;
     ensures result == x;
-} by {
-    execute();
-    simp();
 }
 
 int32 caller(int32 n) {
     requires n <= 100;
     requires 0 < n;
     ensures result == n - 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

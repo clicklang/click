@@ -57,9 +57,6 @@ uint8* literal_source() {
     ensures result[0] == 'o';
     ensures result[1] == 'k';
     ensures result[2] == '\0';
-} by {
-    execute();
-    simp();
 }
 
 void taker() {
@@ -68,9 +65,6 @@ void taker() {
 
 int32 read_literal() {
     ensures result == 'k' + 3;
-} by {
-    execute();
-    simp();
 }
 ```
 

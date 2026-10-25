@@ -31,26 +31,17 @@ contract int32 BorrowToken(int32 key) {
 int32 claims_token(int32 key) {
     owns permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_token(int32 (*callback)(int32), int32 key) {
     requires BorrowToken(callback);
     views permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 token_ownership_from_view_caller(int32 key) {
     views permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 ```
 

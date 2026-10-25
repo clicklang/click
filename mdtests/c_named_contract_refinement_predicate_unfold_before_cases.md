@@ -41,9 +41,6 @@ void clear_if_active(int32 active, int32* cell) {
         simp();
     } else {
         unfold(optional_cell(active, cell));
-        execute();
-        fold(optional_cell(active, cell));
-        simp();
     }
 }
 

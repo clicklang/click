@@ -20,14 +20,10 @@ void probe_many(int32 amount, int32 n) {
     requires amount > 0;
     owns amount of bundle(n);
     ensures n == 3;
-} by {
-    execute();
 }
 void probe_one(int32 n) {
     owns bundle(n);
     ensures n == 3;
-} by {
-    execute();
 }
 ```
 

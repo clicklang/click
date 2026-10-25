@@ -30,8 +30,6 @@ int32 sum(int32 a, int32 b, int32 c) {
             conclusion 0;
         }
     }
-    execute();
-    simp();
 }
 ```
 

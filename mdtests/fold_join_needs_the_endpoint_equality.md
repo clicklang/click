@@ -49,8 +49,6 @@ void join(int32* data, int32 cap) {
     have l < cap by auto();
     have l <= cap by auto();
     let c = fold(suffix(data, cap), { start: l });
-    execute();
-    simp();
 }
 ```
 

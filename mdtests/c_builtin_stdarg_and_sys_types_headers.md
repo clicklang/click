@@ -26,9 +26,6 @@ int64 advance(int64 offset, int64 step) {
     requires to_integer(offset + step) <= 9223372036854775807;
     requires to_integer(offset + step) >= to_integer(-9223372036854775807 - 1);
     ensures to_integer(result) == to_integer(offset + step);
-} by {
-    execute();
-    simp();
 }
 ```
 
