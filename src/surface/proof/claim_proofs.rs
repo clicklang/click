@@ -2465,8 +2465,11 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
             };
             // Keep the checked authority for the original claims,
             // but close the rewritten goals in the expanded proof.
-            // Reflexive residuals need normalization, not assumption.
+            // Reflexive residuals need normalization, not assumption. With
+            // resource claims, keep the ordinary assumption closers: they
+            // follow contract order, whose next goal may be ownership.
             if proof_context.constants.grouped_contract
+                && direct_resource_claims.is_empty()
                 && !direct_claims.is_empty()
                 && direct_claims.iter().all(|(index, _, _)| {
                     rewritten_claim_proofs[*index]
