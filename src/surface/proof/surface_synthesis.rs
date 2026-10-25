@@ -4216,7 +4216,7 @@ fn synthesize_static_array_element_load(
                     )?),
                 ));
             }
-            let mut remaining = u32::try_from(index.as_const()?).ok()?;
+            let mut remaining = index.as_const()?;
             let mut indexes = vec![CExpression::Value(int32(0)); shape.len()];
             for (subscript, dimension) in indexes.iter_mut().zip(shape).rev() {
                 *subscript = CExpression::Value(int32(remaining % dimension));

@@ -2323,6 +2323,16 @@ impl PureFactContext {
     }
 }
 
+/// `condition` with each read of a stored cell replaced by its stored value
+/// (`eval::comparison_form`).
+fn read_over_write_condition(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    match crate::kernel::eval::comparison_form(&Proposition::ConditionIs(condition.clone(), true))?
+    {
+        Proposition::ConditionIs(resolved, true) if &resolved != condition => Some(resolved),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod owned_anchor_tests {
     use super::*;
@@ -2406,15 +2416,5 @@ mod owned_anchor_tests {
             samples.iter().all(|(_, work)| *work <= smallest + 4),
             "offset distinctness grew with unrelated compositions: {samples:?}"
         );
-    }
-}
-
-/// `condition` with each read of a stored cell replaced by its stored value
-/// (`eval::comparison_form`).
-fn read_over_write_condition(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    match crate::kernel::eval::comparison_form(&Proposition::ConditionIs(condition.clone(), true))?
-    {
-        Proposition::ConditionIs(resolved, true) if &resolved != condition => Some(resolved),
-        _ => None,
     }
 }
