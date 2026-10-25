@@ -150,6 +150,7 @@ pub(crate) use eval::proposition_mentions_load_variable;
 pub(crate) use eval::proposition_mentions_registered_load_variable;
 pub(crate) use eval::read_over_write_c_value;
 pub(crate) use eval::read_over_write_resolved;
+pub(crate) use eval::read_over_write_value;
 #[cfg(test)]
 pub(crate) use eval::record_load_variable_defining_fact;
 pub(crate) use eval::registered_load_bytes_for_variable;

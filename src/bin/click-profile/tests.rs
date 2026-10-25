@@ -722,7 +722,10 @@ fn each_sidecar_spends_its_own_work_budget() {
         "an exhausted budget leaves the run incomplete"
     );
 
-    let within_each_sidecar = profile(26_000);
+    // Above the costliest sidecar's whole-run work, about 26000 units since
+    // reads of stored cells are decided through the read-over-write
+    // authority rather than folded at lowering.
+    let within_each_sidecar = profile(27_000);
     assert_eq!(within_each_sidecar.verification_failure, None);
     assert!(!within_each_sidecar.timed_out);
 }
