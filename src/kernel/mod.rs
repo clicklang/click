@@ -137,6 +137,8 @@ pub(crate) use eval::canonicalized_offset_index_term;
 pub(crate) use eval::comparison_form;
 #[cfg(test)]
 pub(crate) use eval::count_canonical_at_creation_violations;
+#[cfg(test)]
+pub(crate) use eval::duplicate_read_names;
 pub(crate) use eval::holds_by_read_over_write;
 pub(crate) use eval::is_load_variable;
 pub(crate) use eval::is_load_variable_defining_fact;

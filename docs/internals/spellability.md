@@ -152,9 +152,17 @@ back to it. The printer casts C arithmetic read at a snapshot,
 `(int32)at(p, a - 1)`, because the parser reads arithmetic inside `at(...)`
 and `old(...)` as Integer arithmetic.
 
-Two projections of one memory can still name one read twice: a read is named
-at its snapshot projected for that read, and the comparison form does not join
-two names whose snapshots differ only by projection.
+A read is named by its cell's version: the point the assumption-free version
+walk (`resource_tracker::last_same_point`) finds the cell last written. One
+version has one name. A cell of the canonical snapshot that holds the cell's
+own read (a materialization) names the read by that read, so a read through
+an unchanged-bytes source keeps the name it had there. Two reads the kernel's
+assumption-free load equality proves equal must share a name;
+`kernel::duplicate_read_names::capture` audits that in tests. Two names remain
+where only facts relate the reads (a call the walk cannot cross without a
+separation premise): a name cannot depend on facts, each read is spelled at
+its own point, and the frame fact relates them. Two writes of one stored value
+are two versions, related by the read-over-write authority.
 
 ## When a fact has no spelling
 
