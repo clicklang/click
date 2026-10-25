@@ -4702,6 +4702,7 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
         match node {
             Node::Term(term, depth) => match term {
                 Bitvector32Term::Constant(_)
+                | Bitvector32Term::UInt32Constant(_)
                 | Bitvector32Term::Variable(_)
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_)
@@ -5160,6 +5161,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                 ATOMIC_CANONICALIZATION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
                     Bitvector32Term::Constant(_)
+                    | Bitvector32Term::UInt32Constant(_)
                     | Bitvector32Term::Variable(_)
                     | Bitvector32Term::Int64Constant(_)
                     | Bitvector32Term::UInt64Constant(_)
@@ -5920,6 +5922,7 @@ fn collect_pointer_offset_memories(offset: &PointerOffsetTerm, memories: &mut Ve
 fn collect_bitvector_memories(term: &Bitvector32Term, memories: &mut Vec<SharedCMemory>) {
     match term {
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_)
@@ -6136,6 +6139,7 @@ fn transport_framed_atomic_bitvector(
     }
     Some(match term {
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_) => term.clone(),
@@ -6432,6 +6436,7 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                     ),
 
                     Bitvector32Term::Constant(_)
+                    | Bitvector32Term::UInt32Constant(_)
                     | Bitvector32Term::Int64Constant(_)
                     | Bitvector32Term::UInt64Constant(_)
                     | Bitvector32Term::MachineIntegerConstant(_)
@@ -8016,7 +8021,7 @@ mod direct_unchanged_scaling_tests {
     }
 
     fn value(index: usize) -> CValue {
-        CValue::UInt32(Bitvector32Term::Constant(index as u32))
+        CValue::UInt32(Bitvector32Term::UInt32Constant(index as u32))
     }
 
     /// `c_memories_connected_by_effects` walks the effects filed under the

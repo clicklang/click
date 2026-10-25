@@ -918,6 +918,7 @@ impl IntegerTerm {
         if matches!(
             value,
             Bitvector32Term::Constant(_)
+                | Bitvector32Term::UInt32Constant(_)
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_)
                 | Bitvector32Term::MachineIntegerConstant(_)
@@ -1104,31 +1105,34 @@ impl IntegerTerm {
         if matches!(index, IntegerRangeFoldIndex::Integer { .. }) && accumulator == item {
             return Err(crate::kernel::reasoning::IntegerPureSubstitutionError::UnsupportedCarrier);
         }
-        let (start, end) = match index {
-            IntegerRangeFoldIndex::Int32 { start, end } => (
-                match start.value() {
-                    Bitvector32Term::Constant(value) => Some(i64::from(*value as i32)),
-                    _ => None,
-                },
-                match end.value() {
-                    Bitvector32Term::Constant(value) => Some(i64::from(*value as i32)),
-                    _ => None,
-                },
-            ),
-            IntegerRangeFoldIndex::UInt64 { start, end } => {
-                let constant = |endpoint: &SharedIntegerRangeEndpoint| {
-                    endpoint
-                        .value()
-                        .uint64_as_const()
-                        .and_then(|value| i64::try_from(value).ok())
-                };
-                (constant(start), constant(end))
-            }
-            IntegerRangeFoldIndex::Integer { start, end } => (
-                start.as_const().and_then(|value| value.to_i64()),
-                end.as_const().and_then(|value| value.to_i64()),
-            ),
-        };
+        let (start, end) =
+            match index {
+                IntegerRangeFoldIndex::Int32 { start, end } => (
+                    match start.value() {
+                        Bitvector32Term::Constant(value)
+                        | Bitvector32Term::UInt32Constant(value) => Some(i64::from(*value as i32)),
+                        _ => None,
+                    },
+                    match end.value() {
+                        Bitvector32Term::Constant(value)
+                        | Bitvector32Term::UInt32Constant(value) => Some(i64::from(*value as i32)),
+                        _ => None,
+                    },
+                ),
+                IntegerRangeFoldIndex::UInt64 { start, end } => {
+                    let constant = |endpoint: &SharedIntegerRangeEndpoint| {
+                        endpoint
+                            .value()
+                            .uint64_as_const()
+                            .and_then(|value| i64::try_from(value).ok())
+                    };
+                    (constant(start), constant(end))
+                }
+                IntegerRangeFoldIndex::Integer { start, end } => (
+                    start.as_const().and_then(|value| value.to_i64()),
+                    end.as_const().and_then(|value| value.to_i64()),
+                ),
+            };
         let (Some(start), Some(end)) = (start, end) else {
             return Ok(None);
         };
@@ -1873,7 +1877,9 @@ mod tests {
     fn range_fold_append_theorem_evaluates_both_sides_for_both_carriers() {
         fn eval_bits(term: &Bitvector32Term, bits: &BTreeMap<Variable, i64>) -> i64 {
             match term {
-                Bitvector32Term::Constant(value) => *value as i32 as i64,
+                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                    *value as i32 as i64
+                }
                 Bitvector32Term::Variable(variable) => bits[variable],
                 Bitvector32Term::Add(left, right) => eval_bits(left, bits) + eval_bits(right, bits),
                 _ => panic!("test evaluator only needs signed constants, variables, and add"),

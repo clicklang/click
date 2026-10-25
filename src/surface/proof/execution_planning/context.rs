@@ -656,8 +656,10 @@ pub(in crate::surface) enum StatementPrerequisitePolicy {
 const SOURCE_CAPABILITY_MAX_NODES: usize = 4096;
 
 fn is_one_byte_external_range(bytes: &Bitvector32Term) -> bool {
-    matches!(bytes, Bitvector32Term::Constant(1))
-        || matches!(bytes, Bitvector32Term::Subtract(end, start)
+    matches!(
+        bytes,
+        Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)
+    ) || matches!(bytes, Bitvector32Term::Subtract(end, start)
             if end.as_ref() == &Bitvector32Term::add(start.as_ref().clone(), Bitvector32Term::Constant(1)))
 }
 
@@ -899,6 +901,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
             Work::Condition(_) => return Ok(false),
             Work::Bitvector(
                 Bitvector32Term::Constant(_)
+                | Bitvector32Term::UInt32Constant(_)
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_),
             ) => {}

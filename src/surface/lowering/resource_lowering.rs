@@ -962,7 +962,12 @@ fn mark_uninitialized_resource_memory(
                 match evaluate_requirement_segment(parameter_binding, &state, segment) {
                     Ok(evaluated) => {
                         let extent = match (&evaluated.start, &evaluated.end) {
-                            (Bitvector32Term::Constant(start), Bitvector32Term::Constant(end)) => {
+                            (
+                                Bitvector32Term::Constant(start)
+                                | Bitvector32Term::UInt32Constant(start),
+                                Bitvector32Term::Constant(end)
+                                | Bitvector32Term::UInt32Constant(end),
+                            ) => {
                                 if end <= start {
                                     continue;
                                 }
@@ -1257,8 +1262,10 @@ fn materialize_access_segment_cells(
     else {
         return Ok(memory);
     };
-    let (Bitvector32Term::Constant(start), Bitvector32Term::Constant(end)) =
-        (&segment.start, &segment.end)
+    let (
+        Bitvector32Term::Constant(start),
+        Bitvector32Term::Constant(end) | Bitvector32Term::UInt32Constant(end),
+    ) = (&segment.start, &segment.end)
     else {
         return Ok(memory);
     };
@@ -3050,7 +3057,10 @@ fn lower_resource_segment_with_values(
     }
     let start = bound(start_value, "start")?;
     let end = bound(end_value, "end")?;
-    if let (Bitvector32Term::Constant(start), Bitvector32Term::Constant(end)) = (&start, &end)
+    if let (
+        Bitvector32Term::Constant(start),
+        Bitvector32Term::Constant(end) | Bitvector32Term::UInt32Constant(end),
+    ) = (&start, &end)
         && end < start
     {
         return Err(ClickError::new(format!(
@@ -3267,7 +3277,9 @@ pub(in crate::surface) fn concrete_loadable_block(
             {
                 return Ok(None);
             }
-            let Bitvector32Term::Constant(end) = segment.end else {
+            let (Bitvector32Term::Constant(end) | Bitvector32Term::UInt32Constant(end)) =
+                segment.end
+            else {
                 return Ok(None);
             };
             if let Some(layout) =
@@ -3338,8 +3350,10 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
         else {
             continue;
         };
-        let (Bitvector32Term::Constant(start), Bitvector32Term::Constant(end)) =
-            (&segment.start, &segment.end)
+        let (
+            Bitvector32Term::Constant(start),
+            Bitvector32Term::Constant(end) | Bitvector32Term::UInt32Constant(end),
+        ) = (&segment.start, &segment.end)
         else {
             continue;
         };
@@ -3399,8 +3413,10 @@ pub(in crate::surface) fn loadable_base_and_bytes(
                 .map_err(|message| {
                     ClickError::new(format!("could not lower `viewable` segment: {message}"))
                 })?;
-            if let (Bitvector32Term::Constant(start), Bitvector32Term::Constant(end)) =
-                (&segment.start, &segment.end)
+            if let (
+                Bitvector32Term::Constant(start),
+                Bitvector32Term::Constant(end) | Bitvector32Term::UInt32Constant(end),
+            ) = (&segment.start, &segment.end)
                 && end < start
             {
                 return Err(ClickError::new(format!(

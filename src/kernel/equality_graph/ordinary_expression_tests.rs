@@ -278,3 +278,28 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/ordinary_expression_tests.rs");
 }
+
+/// A `uint32` constant is its word's `Constant` (rule K1): one e-graph
+/// class, directly and as an operand, and distinct from other constants.
+#[test]
+fn a_uint32_constant_is_one_class_with_its_word() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let graph = EqualityGraph::default();
+    for bits in [0u32, 7, 0x7FFF_FFFF, 0x8000_0000, u32::MAX] {
+        let word = Bitvector32Term::Constant(bits);
+        let formatted = Bitvector32Term::UInt32Constant(bits);
+        assert!(graph.are_int32_equal(&word, &formatted), "{bits}");
+        let x = Bitvector32Term::Variable(Variable(961_001));
+        assert!(
+            graph.are_int32_equal(
+                &Bitvector32Term::BitwiseXor(Box::new(x.clone()), Box::new(word.clone())),
+                &Bitvector32Term::BitwiseXor(Box::new(x), Box::new(formatted.clone())),
+            ),
+            "{bits} as an operand"
+        );
+        assert!(
+            !graph.are_int32_equal(&formatted, &Bitvector32Term::Constant(bits.wrapping_add(1))),
+            "{bits}"
+        );
+    }
+}

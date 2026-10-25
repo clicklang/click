@@ -468,7 +468,7 @@ impl ResourceContainsKey {
 /// `PureFactContext::open_condition_facts`.
 fn condition_has_an_open_side(condition: &ConditionTerm) -> bool {
     let open = |term: &Bitvector32Term| match term {
-        Bitvector32Term::Constant(_) => false,
+        Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => false,
         Bitvector32Term::Variable(variable) => {
             crate::kernel::eval::registered_load_for_variable(variable).is_some()
         }
@@ -1639,6 +1639,10 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, has
         }
 
         Bitvector32Term::Constant(value) => std::hash::Hash::hash(value, hasher),
+        Bitvector32Term::UInt32Constant(value) => {
+            std::hash::Hash::hash("uint32", hasher);
+            std::hash::Hash::hash(value, hasher)
+        }
         Bitvector32Term::Int64Constant(value) => std::hash::Hash::hash(value, hasher),
         Bitvector32Term::UInt64Constant(value) => std::hash::Hash::hash(value, hasher),
         Bitvector32Term::MachineIntegerConstant(value) => std::hash::Hash::hash(value, hasher),
@@ -1778,6 +1782,7 @@ fn collect_bitvector_memory_load_keys(
 ) {
     match term {
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
@@ -2046,6 +2051,7 @@ fn collect_bitvector_memory_loads_with_width(
         }
 
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
@@ -9589,7 +9595,7 @@ fn collect_affine_bitvector_terms(
     constant: &mut i64,
 ) -> Option<()> {
     match term {
-        Bitvector32Term::Constant(value) => {
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             *constant = constant.checked_add(coefficient.checked_mul(i64::from(*value as i32))?)?;
         }
         Bitvector32Term::Add(left, right) => {

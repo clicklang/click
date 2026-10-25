@@ -1984,6 +1984,7 @@ fn collect_bitvector_integer_variables_seen(
     }
     match term {
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_)
@@ -2678,6 +2679,7 @@ pub(crate) fn collect_bitvector_variables(
 ) {
     match term {
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_) => {}
@@ -2804,6 +2806,7 @@ fn collect_bitvector_capture_variables_seen(
     }
     match term {
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_) => {}
@@ -3556,6 +3559,7 @@ fn collect_bitvector_scope_summary(
     }
     match term {
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_) => IntegerScopeSummary::default(),
@@ -4163,6 +4167,7 @@ fn collect_bitvector_binder_variables_seen(
     }
     match term {
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_)

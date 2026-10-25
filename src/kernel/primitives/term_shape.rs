@@ -91,6 +91,7 @@ impl Bitvector32Term {
                 right,
             } => Some((BitvectorBinaryOp::Float64(*operator), left, right)),
             Self::Constant(_)
+            | Self::UInt32Constant(_)
             | Self::Int64Constant(_)
             | Self::UInt64Constant(_)
             | Self::MachineIntegerConstant(_)
@@ -147,6 +148,7 @@ impl Bitvector32Term {
                 value,
             )),
             Self::Constant(_)
+            | Self::UInt32Constant(_)
             | Self::Int64Constant(_)
             | Self::UInt64Constant(_)
             | Self::MachineIntegerConstant(_)
@@ -249,6 +251,12 @@ impl BitvectorBinaryOp {
         left: Bitvector32Term,
         right: Bitvector32Term,
     ) -> Bitvector32Term {
+        // A 32-bit operator reads words: a `uint32` constant operand is its
+        // word's `Constant` (rule K1).
+        let (left, right) = match self {
+            Self::Machine(..) | Self::Float32(_) | Self::Float64(_) => (left, right),
+            _ => (left.constant_word32(), right.constant_word32()),
+        };
         let (left, right) = (Box::new(left), Box::new(right));
         match self {
             Self::Add => Bitvector32Term::Add(left, right),
@@ -333,6 +341,14 @@ impl BitvectorUnaryOp {
     /// Applies the operator as the bare node, without folding or
     /// normalization.
     pub(crate) fn build_raw(self, value: Bitvector32Term) -> Bitvector32Term {
+        let value = match self {
+            Self::BitwiseNot
+            | Self::Int64From32
+            | Self::UInt64From32
+            | Self::Int64FromUInt32
+            | Self::UInt64FromInt32 => value.constant_word32(),
+            _ => value,
+        };
         let value = Box::new(value);
         match self {
             Self::BitwiseNot => Bitvector32Term::BitwiseNot(value),

@@ -315,7 +315,7 @@ impl Bitvector32Term {
 
             Self::MachineIntegerConstant(_) => None,
 
-            Self::Constant(value) => Some(*value),
+            Self::Constant(value) | Self::UInt32Constant(value) => Some(*value),
             Self::Variable(_)
             | Self::MemoryLoad(_, _, _)
             | Self::PointerAddress(_, _)
@@ -687,7 +687,9 @@ impl Bitvector32Term {
         let (left, right) = (left.into_word32(), right.into_word32());
         fn flatten(term: Bitvector32Term, constant: &mut u32, terms: &mut Vec<Bitvector32Term>) {
             match term {
-                Bitvector32Term::Constant(value) => *constant ^= value,
+                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                    *constant ^= value
+                }
                 Bitvector32Term::BitwiseXor(left, right) => {
                     flatten(*left, constant, terms);
                     flatten(*right, constant, terms);
@@ -818,11 +820,15 @@ fn int64_constant(term: &Bitvector32Term) -> Option<i64> {
     match term {
         Bitvector32Term::Int64Constant(value) => Some(*value),
         Bitvector32Term::Int64From32(value) => match value.as_ref() {
-            Bitvector32Term::Constant(value) => Some(i64::from(*value as i32)),
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                Some(i64::from(*value as i32))
+            }
             _ => int64_constant(value),
         },
         Bitvector32Term::Int64FromUInt32(value) => match value.as_ref() {
-            Bitvector32Term::Constant(value) => Some(i64::from(*value)),
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                Some(i64::from(*value))
+            }
             _ => int64_constant(value),
         },
         Bitvector32Term::Binary {
@@ -881,11 +887,15 @@ fn uint64_constant(term: &Bitvector32Term) -> Option<u64> {
         // when a pointer proved null is substituted into `(uint64)p`.
         Bitvector32Term::PointerAddress(pointer, _) if **pointer == Pointer::null() => Some(0),
         Bitvector32Term::UInt64From32(value) => match value.as_ref() {
-            Bitvector32Term::Constant(value) => Some(u64::from(*value)),
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                Some(u64::from(*value))
+            }
             _ => uint64_constant(value),
         },
         Bitvector32Term::UInt64FromInt32(value) => match value.as_ref() {
-            Bitvector32Term::Constant(value) => Some((*value as i32 as i64) as u64),
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                Some((*value as i32 as i64) as u64)
+            }
             _ => uint64_constant(value),
         },
         Bitvector32Term::UInt64FromInt64(value) => match value.as_ref() {
@@ -961,7 +971,7 @@ enum DecodedFloat {
 
 fn float32_bits_as_const(term: &Bitvector32Term) -> Option<u32> {
     match term {
-        Bitvector32Term::Constant(value) => Some(*value),
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => Some(*value),
         Bitvector32Term::Float32Negate(value) => Some(float32_bits_as_const(value)? ^ 0x8000_0000),
         Bitvector32Term::Float32Binary {
             operator,
@@ -1482,7 +1492,9 @@ fn float_binary_bits(
 
 fn int64_shift_count_constant(term: &Bitvector32Term) -> Option<u32> {
     let value = match term {
-        Bitvector32Term::Constant(value) => u64::from(*value),
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+            u64::from(*value)
+        }
         Bitvector32Term::Int64Constant(value) if *value >= 0 => *value as u64,
         Bitvector32Term::UInt64Constant(value) => *value,
         _ => return None,
@@ -2440,6 +2452,12 @@ impl ConditionTerm {
     ) -> Self {
         use MachineIntegerType as Ty;
         use OverflowOperation as O;
+        // A 32-bit overflow test reads its operands' words (rule K1).
+        let (left, right) = if format.format().bits() == 32 {
+            (left.into_word32(), right.into_word32())
+        } else {
+            (left, right)
+        };
         match (format, op) {
             (Ty::Int32, O::Add) => Self::signed_add_overflows(left, right),
             (Ty::Int32, O::Subtract) => Self::signed_subtract_overflows(left, right),
@@ -2544,7 +2562,9 @@ impl ConditionTerm {
         fn wide(term: &Bitvector32Term) -> Option<Bitvector32Term> {
             match term {
                 Bitvector32Term::UInt32From64(value) => Some(value.as_ref().clone()),
-                Bitvector32Term::Constant(value) if *value <= i32::MAX as u32 => {
+                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)
+                    if *value <= i32::MAX as u32 =>
+                {
                     Some(Bitvector32Term::UInt64Constant(u64::from(*value)))
                 }
                 Bitvector32Term::Add(left, right) if right.as_const().is_some() => {
@@ -3250,7 +3270,7 @@ impl ConditionTerm {
     /// a constant bound decides it.
     pub(crate) fn unsigned_less_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         let (left, right) = (left.into_word32(), right.into_word32());
-        if let Bitvector32Term::Constant(bound) = &right
+        if let Bitvector32Term::Constant(bound) | Bitvector32Term::UInt32Constant(bound) = &right
             && left.unsigned32_upper_bound() < *bound
         {
             return Self::Constant(true);
@@ -3260,7 +3280,7 @@ impl ConditionTerm {
 
     pub(crate) fn unsigned_less_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         let (left, right) = (left.into_word32(), right.into_word32());
-        if let Bitvector32Term::Constant(bound) = &right
+        if let Bitvector32Term::Constant(bound) | Bitvector32Term::UInt32Constant(bound) = &right
             && left.unsigned32_upper_bound() <= *bound
         {
             return Self::Constant(true);
@@ -3270,7 +3290,7 @@ impl ConditionTerm {
 
     pub(crate) fn unsigned_greater_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         let (left, right) = (left.into_word32(), right.into_word32());
-        if let Bitvector32Term::Constant(bound) = &right
+        if let Bitvector32Term::Constant(bound) | Bitvector32Term::UInt32Constant(bound) = &right
             && left.unsigned32_upper_bound() <= *bound
         {
             return Self::Constant(false);
@@ -3280,7 +3300,7 @@ impl ConditionTerm {
 
     pub(crate) fn unsigned_greater_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         let (left, right) = (left.into_word32(), right.into_word32());
-        if let Bitvector32Term::Constant(bound) = &right
+        if let Bitvector32Term::Constant(bound) | Bitvector32Term::UInt32Constant(bound) = &right
             && left.unsigned32_upper_bound() < *bound
         {
             return Self::Constant(false);
@@ -3591,6 +3611,7 @@ fn machine_constant_value(
     if !matches!(
         term,
         Bitvector32Term::Constant(_)
+            | Bitvector32Term::UInt32Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::MachineIntegerConstant(_)

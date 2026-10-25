@@ -2690,6 +2690,7 @@ fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> b
         return !matches!(
             term,
             Bitvector32Term::Constant(_)
+                | Bitvector32Term::UInt32Constant(_)
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_)
                 | Bitvector32Term::MachineIntegerConstant(_)
@@ -2711,6 +2712,7 @@ fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> b
         .any(|value| match value {
             Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
             Bitvector32Term::Constant(_)
+            | Bitvector32Term::UInt32Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::MachineIntegerConstant(_) => false,
@@ -5134,7 +5136,7 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
 /// An element index scaled to bytes, folded when the index is a constant.
 fn canonical_scaled_offset(value: Bitvector32Term, byte_width: i64) -> PointerOffsetTerm {
     match value {
-        Bitvector32Term::Constant(value) => {
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             PointerOffsetTerm::Constant((value as i32 as i64) * byte_width)
         }
         value => PointerOffsetTerm::Int32Scaled {
@@ -7206,7 +7208,7 @@ fn c_value_from_bitvector_term(c_type: CType, term: Bitvector32Term) -> Option<C
         CType::Int32 => CValue::Int32(term),
         CType::UInt8 => CValue::UInt8(term),
         CType::UInt16 => CValue::UInt16(term),
-        CType::UInt32 => CValue::UInt32(term),
+        CType::UInt32 => crate::kernel::uint32(term),
         CType::Int64 => CValue::Int64(term),
         CType::UInt64 => CValue::UInt64(term),
         CType::Int128 => CValue::Int128(term),
@@ -8265,14 +8267,16 @@ fn c_bool_comparison_as_zero_test(
         let CValue::Bool(term) = value else {
             return None;
         };
-        if matches!(term, Bitvector32Term::Constant(_))
-            || !bool_term_is_zero_or_one(term)
+        if matches!(
+            term,
+            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+        ) || !bool_term_is_zero_or_one(term)
             || is_spec_bool(value)
         {
             return None;
         }
         match constant {
-            CValue::Bool(Bitvector32Term::Constant(1)) => {
+            CValue::Bool(Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)) => {
                 Some(CValue::Bool(Bitvector32Term::Constant(0)))
             }
             _ => None,
@@ -8309,7 +8313,11 @@ fn bool_disequality_as_equality(
         let CValue::Bool(term) = value else {
             return None;
         };
-        if matches!(term, Bitvector32Term::Constant(_)) || !bool_term_is_zero_or_one(term) {
+        if matches!(
+            term,
+            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+        ) || !bool_term_is_zero_or_one(term)
+        {
             return None;
         }
         // A C `bool` compares with zero instead; see

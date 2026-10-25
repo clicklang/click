@@ -1067,6 +1067,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 | Bitvector32Term::AlgebraicMatch { .. }
                 | Bitvector32Term::IntegerToMachine { .. }
                 | Bitvector32Term::Constant(_)
+                | Bitvector32Term::UInt32Constant(_)
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_)
                 | Bitvector32Term::MachineIntegerConstant(_) => term.clone(),
@@ -1686,7 +1687,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // matching, checked 32-to-64-bit cast of the cited constant; the
         // replacement keeps that cast, including its signedness. Never
         // identify a full-width literal by truncating it to 32 bits.
-        if let Bitvector32Term::Constant(_) = from {
+        if let Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) = from {
             let casts: &[fn(Bitvector32Term) -> Bitvector32Term] = match term {
                 Bitvector32Term::Int64Constant(_) => &[
                     Bitvector32Term::int64_from_32,
@@ -1718,18 +1719,20 @@ fn rewrite_atomic_proposition_by_exact_equality(
             Bitvector32Term::Add(left, right) => {
                 let (left, right) = binary(left, right);
                 match (left.as_ref(), right.as_ref()) {
-                    (Bitvector32Term::Constant(first), Bitvector32Term::Constant(second)) => {
-                        Bitvector32Term::Constant(first.wrapping_add(*second))
-                    }
+                    (
+                        Bitvector32Term::Constant(first) | Bitvector32Term::UInt32Constant(first),
+                        Bitvector32Term::Constant(second) | Bitvector32Term::UInt32Constant(second),
+                    ) => Bitvector32Term::Constant(first.wrapping_add(*second)),
                     _ => Bitvector32Term::Add(left, right),
                 }
             }
             Bitvector32Term::Subtract(left, right) => {
                 let (left, right) = binary(left, right);
                 match (left.as_ref(), right.as_ref()) {
-                    (Bitvector32Term::Constant(first), Bitvector32Term::Constant(second)) => {
-                        Bitvector32Term::Constant(first.wrapping_sub(*second))
-                    }
+                    (
+                        Bitvector32Term::Constant(first) | Bitvector32Term::UInt32Constant(first),
+                        Bitvector32Term::Constant(second) | Bitvector32Term::UInt32Constant(second),
+                    ) => Bitvector32Term::Constant(first.wrapping_sub(*second)),
                     _ => Bitvector32Term::Subtract(left, right),
                 }
             }
@@ -1806,6 +1809,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 }
             }
             Bitvector32Term::Constant(_)
+            | Bitvector32Term::UInt32Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::MachineIntegerConstant(_) => term.clone(),

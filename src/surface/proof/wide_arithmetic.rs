@@ -123,7 +123,7 @@ impl Carrier {
                     Self::UInt32 => text
                         .parse::<u32>()
                         .ok()
-                        .map(|value| CValue::UInt32(Bitvector32Term::Constant(value))),
+                        .map(|value| CValue::UInt32(Bitvector32Term::UInt32Constant(value))),
                 };
                 value
                     .map(|value| ContractExpression::CFragment(CExpression::Value(value)))
@@ -269,7 +269,7 @@ fn at_operand(selector: &SnapshotSelector, expression: &ContractExpression) -> C
         | ContractExpression::CFragment(CExpression::Value(
             CValue::UInt64(Bitvector32Term::UInt64Constant(_))
             | CValue::Int64(Bitvector32Term::Int64Constant(_))
-            | CValue::UInt32(Bitvector32Term::Constant(_)),
+            | CValue::UInt32(Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)),
         ))
         | ContractExpression::At { .. }
         | ContractExpression::Old(_) => expression.clone(),

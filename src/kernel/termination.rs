@@ -3503,7 +3503,9 @@ fn verified_loop_ranking_measures(
 
 fn ranking_affine_form(term: &Bitvector32Term) -> (BTreeMap<Bitvector32Term, i64>, i64) {
     match term {
-        Bitvector32Term::Constant(value) => (BTreeMap::new(), i64::from(*value as i32)),
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+            (BTreeMap::new(), i64::from(*value as i32))
+        }
         Bitvector32Term::Add(left, right) => {
             let (mut terms, constant) = ranking_affine_form(left);
             let (right_terms, right_constant) = ranking_affine_form(right);

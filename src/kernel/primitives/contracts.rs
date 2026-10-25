@@ -2787,10 +2787,11 @@ pub(crate) fn memory_range_byte_count(
 
 fn canonical_subtract(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
     match (&left, &right) {
-        (Bitvector32Term::Constant(left), Bitvector32Term::Constant(right)) => {
-            Bitvector32Term::Constant(left.wrapping_sub(*right))
-        }
-        (_, Bitvector32Term::Constant(0)) => left,
+        (
+            Bitvector32Term::Constant(left) | Bitvector32Term::UInt32Constant(left),
+            Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
+        ) => Bitvector32Term::Constant(left.wrapping_sub(*right)),
+        (_, Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => left,
         _ if left == right => Bitvector32Term::Constant(0),
         (
             Bitvector32Term::Add(left_base, left_addend),
@@ -2804,14 +2805,14 @@ fn canonical_subtract(left: Bitvector32Term, right: Bitvector32Term) -> Bitvecto
 
 fn canonical_multiply(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
     match (&left, &right) {
-        (Bitvector32Term::Constant(left), Bitvector32Term::Constant(right)) => {
-            Bitvector32Term::Constant(left.wrapping_mul(*right))
-        }
-        (_, Bitvector32Term::Constant(1)) => left,
+        (
+            Bitvector32Term::Constant(left) | Bitvector32Term::UInt32Constant(left),
+            Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
+        ) => Bitvector32Term::Constant(left.wrapping_mul(*right)),
+        (_, Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)) => left,
         (Bitvector32Term::Constant(1), _) => right,
-        (_, Bitvector32Term::Constant(0)) | (Bitvector32Term::Constant(0), _) => {
-            Bitvector32Term::Constant(0)
-        }
+        (_, Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0))
+        | (Bitvector32Term::Constant(0), _) => Bitvector32Term::Constant(0),
         _ => Bitvector32Term::Multiply(Box::new(left), Box::new(right)),
     }
 }
@@ -2942,7 +2943,8 @@ pub(crate) fn scaled_extent_element_width(bytes: &Bitvector32Term) -> Option<u32
         return None;
     };
     match (left.as_ref(), right.as_ref()) {
-        (Bitvector32Term::Constant(width), _) | (_, Bitvector32Term::Constant(width))
+        (Bitvector32Term::Constant(width) | Bitvector32Term::UInt32Constant(width), _)
+        | (_, Bitvector32Term::Constant(width) | Bitvector32Term::UInt32Constant(width))
             if *width > 0 =>
         {
             Some(*width)
@@ -3142,7 +3144,9 @@ pub(crate) fn memory_range_extent_guards(range: &CMemoryRange) -> Vec<Propositio
 pub(crate) fn narrow_range_constant(value: &CValue) -> Option<Bitvector32Term> {
     let value = value.numeric_value();
     let constant = match value {
-        CValue::Int32(Bitvector32Term::Constant(bits)) => i64::from(*bits as i32),
+        CValue::Int32(Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) => {
+            i64::from(*bits as i32)
+        }
         CValue::Int64(Bitvector32Term::Int64Constant(value)) => *value,
         CValue::UInt64(term) => i64::try_from(term.uint64_as_const()?).ok()?,
         _ => return None,
@@ -3164,7 +3168,7 @@ pub(crate) fn wide_range_bounds(
         // unsigned 64-bit value. A negative one becomes larger than any
         // extent the range's guards allow, so the range denotes memory only
         // when its bounds are nonnegative.
-        CValue::Int32(Bitvector32Term::Constant(bits)) => {
+        CValue::Int32(Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) => {
             Some(Bitvector32Term::UInt64Constant(*bits as i32 as i64 as u64))
         }
         CValue::Int32(term) => Some(Bitvector32Term::UInt64FromInt32(Box::new(term.clone()))),

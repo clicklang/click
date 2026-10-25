@@ -524,7 +524,7 @@ impl PureFactContext {
                 op: OverflowOperation::Divide,
                 left: _,
                 right,
-            } if matches!(right.as_ref(), Bitvector32Term::Constant(value) if *value != (-1i32) as u32) => {
+            } if matches!(right.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value != (-1i32) as u32) => {
                 Some(false)
             }
             ConditionTerm::Overflows {
@@ -532,7 +532,7 @@ impl PureFactContext {
                 op: OverflowOperation::Divide,
                 left,
                 right: _,
-            } if matches!(left.as_ref(), Bitvector32Term::Constant(value) if *value != i32::MIN as u32) => {
+            } if matches!(left.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value != i32::MIN as u32) => {
                 Some(false)
             }
             ConditionTerm::Overflows {

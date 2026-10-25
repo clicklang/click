@@ -132,7 +132,9 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
     }
     while let Some(term) = pending.pop() {
         let units = match term {
-            Bitvector32Term::Constant(value) => (u32::BITS - value.leading_zeros()) as usize + 2,
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                (u32::BITS - value.leading_zeros()) as usize + 2
+            }
             Bitvector32Term::Variable(_) => 2,
             Bitvector32Term::PureFunctionApplication { name, arguments } => {
                 name.len().saturating_add(arguments.len()).saturating_add(3)
@@ -145,7 +147,7 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
             return None;
         }
         match term {
-            Bitvector32Term::Constant(value) => {
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
                 push_token!(SignedArithmeticAtomToken::Constant(*value));
             }
             Bitvector32Term::Variable(variable) => {
@@ -1569,7 +1571,9 @@ fn charge_term_work(root: &Bitvector32Term) -> bool {
     let mut pending = vec![root];
     while let Some(term) = pending.pop() {
         let units = match term {
-            Bitvector32Term::Constant(value) => (u32::BITS - value.leading_zeros()) as usize + 2,
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                (u32::BITS - value.leading_zeros()) as usize + 2
+            }
             Bitvector32Term::Variable(_) => 2,
             Bitvector32Term::PureFunctionApplication { name, arguments } => {
                 name.len().saturating_add(arguments.len()).saturating_add(2)
@@ -1682,7 +1686,7 @@ fn signed_term_work(root: &Bitvector32Term) -> usize {
     while let Some(term) = pending.pop() {
         units = units.saturating_add(1);
         match term {
-            Bitvector32Term::Constant(value) => {
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
                 units = units.saturating_add((u32::BITS - value.leading_zeros()) as usize + 1);
             }
             Bitvector32Term::Variable(_) => {}
@@ -3071,7 +3075,7 @@ fn affine_difference(
     let mut pending = vec![(left, BigInt::one()), (right, -BigInt::one())];
     while let Some((term, coefficient)) = pending.pop() {
         match term {
-            Bitvector32Term::Constant(value) => {
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
                 let value = BigInt::from(*value as i32);
                 if !charge_bigint_binary_work(&coefficient, &value) {
                     return None;

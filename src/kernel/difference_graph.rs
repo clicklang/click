@@ -2371,9 +2371,9 @@ fn offset_residue(offset: &PointerOffsetTerm) -> Option<Residue> {
     match offset {
         O::Constant(bytes) => Some(Residue::exact(*bytes as u64)),
         O::Int32Scaled { value, byte_width } => match value.as_ref() {
-            Bitvector32Term::Constant(index) => Some(Residue::exact(
-                i64::from(*index as i32).wrapping_mul(*byte_width) as u64,
-            )),
+            Bitvector32Term::Constant(index) | Bitvector32Term::UInt32Constant(index) => Some(
+                Residue::exact(i64::from(*index as i32).wrapping_mul(*byte_width) as u64),
+            ),
             _ => (*byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0)),
         },
         O::Int64Scaled { byte_width, .. } => {
@@ -2585,11 +2585,14 @@ fn wrap(domain: Domain, value: i128) -> i128 {
 fn constant(domain: Domain, term: &Bitvector32Term) -> Option<i128> {
     use Bitvector32Term as T;
     match (domain, term) {
-        (Domain::Int32, T::Constant(value)) => Some(i128::from(*value as i32)),
+        // A `uint32` constant's word is the `Constant` of its bits (K1).
+        (Domain::Int32, T::Constant(value) | T::UInt32Constant(value)) => {
+            Some(i128::from(*value as i32))
+        }
         (Domain::Int64, T::Int64Constant(value)) => Some(i128::from(*value)),
         (Domain::UInt64, T::UInt64Constant(value)) => Some(i128::from(*value)),
         (Domain::UInt64, T::Int64Constant(value)) if *value >= 0 => Some(i128::from(*value)),
-        (Domain::UInt32, T::Constant(value)) => Some(i128::from(*value)),
+        (Domain::UInt32, T::Constant(value) | T::UInt32Constant(value)) => Some(i128::from(*value)),
         _ => None,
     }
 }

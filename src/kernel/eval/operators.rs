@@ -316,9 +316,12 @@ pub(in crate::kernel) fn evaluate_c_add_paths(
 fn fold_c_int32_constant_increment(mut path: CExpressionPath) -> CExpressionPath {
     if let CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Add(base, increment))) =
         &path.outcome
-        && let (Bitvector32Term::Add(inner, addend), Bitvector32Term::Constant(increment)) =
-            (base.as_ref(), increment.as_ref())
-        && let Bitvector32Term::Constant(addend) = addend.as_ref()
+        && let (
+            Bitvector32Term::Add(inner, addend),
+            Bitvector32Term::Constant(increment) | Bitvector32Term::UInt32Constant(increment),
+        ) = (base.as_ref(), increment.as_ref())
+        && let Bitvector32Term::Constant(addend) | Bitvector32Term::UInt32Constant(addend) =
+            addend.as_ref()
         && let Some(sum) = (*addend as i32).checked_add(*increment as i32)
     {
         path.outcome = CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::add(
@@ -3422,9 +3425,12 @@ fn owed_guard_paths(
 /// it does not reassociate the C expression or discard intermediate guards.
 /// Keep the combined offset signed-representable for interval reconstruction.
 fn c_int32_add_value(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
-    if let (Bitvector32Term::Add(base, trailing), Bitvector32Term::Constant(right)) =
-        (&left, &right)
-        && let Bitvector32Term::Constant(trailing) = trailing.as_ref()
+    if let (
+        Bitvector32Term::Add(base, trailing),
+        Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
+    ) = (&left, &right)
+        && let Bitvector32Term::Constant(trailing) | Bitvector32Term::UInt32Constant(trailing) =
+            trailing.as_ref()
         && let Some(offset) = (*trailing as i32).checked_add(*right as i32)
     {
         return Bitvector32Term::add(

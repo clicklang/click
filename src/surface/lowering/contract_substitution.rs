@@ -3617,9 +3617,9 @@ fn substitute_c_fragment_as_contract_with_numerals_in(
     contextual_numerals: bool,
 ) -> Result<ContractExpression, String> {
     match expression {
-        CExpression::Value(CValue::Int32(Bitvector32Term::Constant(value)))
-            if contextual_numerals =>
-        {
+        CExpression::Value(CValue::Int32(
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
+        )) if contextual_numerals => {
             let signed = *value as i32;
             let literal =
                 ContractExpression::IntegerLiteral(i64::from(signed).unsigned_abs().to_string());

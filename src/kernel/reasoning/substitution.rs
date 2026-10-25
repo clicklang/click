@@ -3134,7 +3134,9 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
 /// bound identities as well so a logical or fold binder cannot reuse one.
 fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTreeSet<Variable>) {
     match term {
-        Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_) => {}
+        Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
+        | Bitvector32Term::Variable(_) => {}
         crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
@@ -5179,6 +5181,7 @@ pub(crate) fn substitute_bitvector_variable(
         }
 
         Bitvector32Term::Constant(value) => Bitvector32Term::Constant(*value),
+        Bitvector32Term::UInt32Constant(value) => Bitvector32Term::UInt32Constant(*value),
         Bitvector32Term::Int64Constant(value) => Bitvector32Term::Int64Constant(*value),
         Bitvector32Term::UInt64Constant(value) => Bitvector32Term::UInt64Constant(*value),
         Bitvector32Term::Variable(variable) if *variable == from => to.clone(),

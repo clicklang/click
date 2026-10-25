@@ -208,7 +208,13 @@ pub(crate) fn cast(
         Bitvector32Term::machine_integer_cast(operand.ty(), machine.ty(), operand.value().clone());
     // An `int32` or `uint32` observation reads σ(x) as `x` (rule K2), so
     // the canonical conversion is compared by its word.
-    if machine.value() == &converted || machine.value() == converted.word32() {
+    if machine.value() == &converted
+        || machine.value() == converted.word32()
+        || machine
+            .value()
+            .constant32()
+            .is_some_and(|bits| converted.constant32() == Some(bits))
+    {
         return Some(machine.ty().format());
     }
     // Ordinary C and the 32/64-bit modulo boundary retain legacy cast
@@ -236,8 +242,8 @@ pub(crate) fn cast(
     let masked_unsigned_source = match (operand.ty(), operand.value()) {
         (ty, Bitvector32Term::BitwiseAnd(left, right)) if narrow_unsigned(ty) => {
             let mask = (1u32 << operand.ty().format().bits()) - 1;
-            matches!(left.as_ref(), Bitvector32Term::Constant(value) if *value == mask)
-                || matches!(right.as_ref(), Bitvector32Term::Constant(value) if *value == mask)
+            matches!(left.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value == mask)
+                || matches!(right.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value == mask)
         }
         _ => false,
     };
@@ -251,6 +257,7 @@ pub(crate) fn cast(
                 matches!(
                     value.numeric_value(),
                     crate::kernel::integer_c_value!(term) if term.word32() == machine.value()
+                        || machine.value().constant32().is_some_and(|bits| term.constant32() == Some(bits))
                 )
             })
         {

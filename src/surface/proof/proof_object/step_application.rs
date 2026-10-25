@@ -95,7 +95,11 @@ fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> boo
         return false;
     };
     signed_atom_matches(value, right)
-        && matches!(amount.as_ref(), crate::kernel::Bitvector32Term::Constant(1))
+        && matches!(
+            amount.as_ref(),
+            crate::kernel::Bitvector32Term::Constant(1)
+                | crate::kernel::Bitvector32Term::UInt32Constant(1)
+        )
 }
 
 fn signed_atom_matches(
@@ -195,7 +199,7 @@ fn signed_scaled_term_matches(
         (crate::kernel::Bitvector32Term::Constant(value), _, Some(expected))
             if matches!(
                 source,
-                crate::kernel::Bitvector32Term::Constant(source_value)
+                crate::kernel::Bitvector32Term::Constant(source_value) | crate::kernel::Bitvector32Term::UInt32Constant(source_value)
                     if (*source_value as i64).saturating_mul(i64::from(expected))
                         == i64::from(*value as i32)
             ) =>
@@ -313,10 +317,12 @@ fn signed_add_surface_shape(
             // the emitted kernel node still uses the children's exact
             // mathematical claim, not the lowered machine-value claim.
             if let crate::kernel::Bitvector32Term::Add(base, trailing) = first
-                && let crate::kernel::Bitvector32Term::Constant(trailing) = trailing.as_ref()
-                && let crate::kernel::Bitvector32Term::Constant(second) = second
+                && let crate::kernel::Bitvector32Term::Constant(trailing)
+                | crate::kernel::Bitvector32Term::UInt32Constant(trailing) = trailing.as_ref()
+                && let crate::kernel::Bitvector32Term::Constant(second)
+                | crate::kernel::Bitvector32Term::UInt32Constant(second) = second
                 && let Some(offset) = (*trailing as i32).checked_add(*second as i32)
-                && matches!(target_second.as_ref(), crate::kernel::Bitvector32Term::Constant(value) if *value == offset as u32)
+                && matches!(target_second.as_ref(), crate::kernel::Bitvector32Term::Constant(value) | crate::kernel::Bitvector32Term::UInt32Constant(value) if *value == offset as u32)
                 && signed_atom_matches(target_first, base)
             {
                 return true;
@@ -413,7 +419,8 @@ fn signed_term_constant_value(term: &crate::kernel::Bitvector32Term) -> Option<i
     while let Some(task) = pending.pop() {
         match task {
             Task::Visit(term) => match term {
-                crate::kernel::Bitvector32Term::Constant(value) => {
+                crate::kernel::Bitvector32Term::Constant(value)
+                | crate::kernel::Bitvector32Term::UInt32Constant(value) => {
                     values.push(Some(*value as i32 as i64));
                 }
                 crate::kernel::Bitvector32Term::Add(left, right) => {
@@ -2293,7 +2300,12 @@ impl<'a> Proof<'a> {
                     relation: crate::kernel::CompareRelation::Equal,
                     left,
                     right,
-                } if matches!(right.as_ref(), crate::kernel::Bitvector32Term::Constant(0)) => {
+                } if matches!(
+                    right.as_ref(),
+                    crate::kernel::Bitvector32Term::Constant(0)
+                        | crate::kernel::Bitvector32Term::UInt32Constant(0)
+                ) =>
+                {
                     left.as_ref().clone()
                 }
                 crate::kernel::ConditionTerm::Compare {
@@ -2301,7 +2313,12 @@ impl<'a> Proof<'a> {
                     relation: crate::kernel::CompareRelation::Equal,
                     left,
                     right,
-                } if matches!(left.as_ref(), crate::kernel::Bitvector32Term::Constant(0)) => {
+                } if matches!(
+                    left.as_ref(),
+                    crate::kernel::Bitvector32Term::Constant(0)
+                        | crate::kernel::Bitvector32Term::UInt32Constant(0)
+                ) =>
+                {
                     right.as_ref().clone()
                 }
                 _ => {

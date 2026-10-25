@@ -2431,7 +2431,11 @@ impl PureFactContext {
         }
         let (left, right, strict) = condition_as_order_fact(condition, true)?;
         let small = |term: &Bitvector32Term| match term {
-            Bitvector32Term::Constant(value) if *value <= i32::MAX as u32 => Some(*value as u64),
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)
+                if *value <= i32::MAX as u32 =>
+            {
+                Some(*value as u64)
+            }
             _ => None,
         };
         // Truncation commutes with addition modulo 2^32, so a truncated

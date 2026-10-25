@@ -1904,7 +1904,10 @@ impl TermClasses {
         // Such an absent endpoint therefore cannot match an application.
         for atom in [&left_atom, &right_atom].into_iter().flatten() {
             if let Node::Int32(value) = atom
-                && !matches!(value.value(), Bitvector32Term::Constant(_))
+                && !matches!(
+                    value.value(),
+                    Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+                )
                 && !self.nodes.contains_key(atom)
             {
                 return false;

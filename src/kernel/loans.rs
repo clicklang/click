@@ -2670,7 +2670,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         .filter(|requirement| requirement.fact.is_own())
     {
         let clause = match requirement.fact.owned_quantity_term() {
-            Some(Bitvector32Term::Constant(quantity)) => Some(*quantity),
+            Some(
+                Bitvector32Term::Constant(quantity) | Bitvector32Term::UInt32Constant(quantity),
+            ) => Some(*quantity),
             _ => None,
         };
         let total = demanded_own_quantities
@@ -2687,12 +2689,13 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             .copied()
             .flatten();
         match (demanded, fact.owned_quantity_term()) {
-            (Some(demanded), Some(Bitvector32Term::Constant(clause))) if demanded > *clause => {
-                StableViewPlanError::MissingResource(CResourceFact::Own(
-                    fact.resource().clone(),
-                    Box::new(Bitvector32Term::Constant(demanded)),
-                ))
-            }
+            (
+                Some(demanded),
+                Some(Bitvector32Term::Constant(clause) | Bitvector32Term::UInt32Constant(clause)),
+            ) if demanded > *clause => StableViewPlanError::MissingResource(CResourceFact::Own(
+                fact.resource().clone(),
+                Box::new(Bitvector32Term::Constant(demanded)),
+            )),
             _ => StableViewPlanError::MissingResource(fact.clone()),
         }
     };

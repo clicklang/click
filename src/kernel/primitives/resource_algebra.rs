@@ -1264,6 +1264,7 @@ fn collect_memory_load_work<'a>(
                         work.push(MemoryLoadFootprintWork::Term(value, depth + 1));
                     }
                     Bitvector32Term::Constant(_)
+                    | Bitvector32Term::UInt32Constant(_)
                     | Bitvector32Term::Int64Constant(_)
                     | Bitvector32Term::UInt64Constant(_)
                     | Bitvector32Term::MachineIntegerConstant(_)
@@ -9865,14 +9866,19 @@ pub(in crate::kernel) fn checked_native_range_endpoint(
     assumptions: &PureFactContext,
 ) -> Option<Bitvector32Term> {
     let wide = match term {
-        Bitvector32Term::Constant(value) if *value <= i32::MAX as u32 => {
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)
+            if *value <= i32::MAX as u32 =>
+        {
             return Some(Bitvector32Term::UInt64Constant(u64::from(*value)));
         }
         Bitvector32Term::Variable(_) => term.clone(),
         Bitvector32Term::UInt32From64(value) => value.as_ref().clone(),
         Bitvector32Term::Add(left, right) => {
             let (value, constant) = match (left.as_ref(), right.as_ref()) {
-                (value, Bitvector32Term::Constant(constant))
+                (
+                    value,
+                    Bitvector32Term::Constant(constant) | Bitvector32Term::UInt32Constant(constant),
+                )
                 | (Bitvector32Term::Constant(constant), value)
                     if *constant <= i32::MAX as u32 =>
                 {

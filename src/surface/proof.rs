@@ -2705,7 +2705,9 @@ fn evaluate_entry_resource_context(
                         right.as_ref().clone(),
                     )
                 }
-                Bitvector32Term::Constant(bytes) if bytes % CType::Int32.byte_width() == 0 => {
+                Bitvector32Term::Constant(bytes) | Bitvector32Term::UInt32Constant(bytes)
+                    if bytes % CType::Int32.byte_width() == 0 =>
+                {
                     CMemoryRange::new(
                         base.clone(),
                         Bitvector32Term::Constant(0),

@@ -2185,6 +2185,36 @@ fn rust_a_u32_cell_read_as_i32_is_its_sign_cast() {
     assert!(C0VerificationSession::new_program_prepared(&wrong, &prepared).is_err());
 }
 
+/// A Rust `u32` literal above `i32::MAX` is a `uint32` constant: stated,
+/// stored through `&mut u32`, read back and returned as that number, and a
+/// refusal prints it in its own type, not as the negative `int32` reading.
+#[test]
+fn rust_a_u32_constant_above_i32_max_is_stated_stored_and_read_as_itself() {
+    let p = Project::new(
+        "pub fn literal() -> u32 { 4000000000 }\n\
+         pub fn stored(value: &mut u32) -> u32 { *value = 4000000000; *value }\n\
+         pub fn stated(value: &u32) -> u32 { *value }\n",
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let claim = "verifying \"borrow.rs\";\n\
+        fn literal() -> u32 { ensures result == 4000000000u32; } by { execute(); simp(); }\n\
+        fn stored(value: &mut u32) -> u32 { owns *value; ensures result == 4000000000u32; ensures *value == 4000000000u32; } by { execute(); simp(); }\n\
+        fn stated(value: &u32) -> u32 { views *value; requires *value == 4000000000u32; ensures result == 4000000000u32; } by { execute(); simp(); }\n";
+    C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
+    let wrong = claim.replace(
+        "owns *value; ensures result == 4000000000u32;",
+        "owns *value; ensures result == 1u32;",
+    );
+    assert_ne!(wrong, claim);
+    let Err(error) = C0VerificationSession::new_program_prepared(&wrong, &prepared) else {
+        panic!("the stored value is not 1");
+    };
+    let message = error.message();
+    assert!(message.contains("4000000000"), "{message}");
+    assert!(!message.contains("-294967296"), "{message}");
+}
+
 const MOVE_SOURCE: &str = include_str!("../examples/rust-move-drop/guard.rs");
 const MOVE_SIDECAR: &str = include_str!("../examples/rust-move-drop/guard.click");
 fn moves_project(source: &str) -> (Project, String) {

@@ -112,7 +112,7 @@ fn external_array_load_substitution_changes_only_the_copied_lane() {
     });
     assert_eq!(
         typed_load(&changed, &target.offset_by_bytes(4)),
-        CValue::UInt32(23u32.into())
+        crate::kernel::uint32(23u32)
     );
     assert_eq!(typed_load(&changed, &target), previous);
     assert_eq!(typed_load(&changed, &target.offset_by_bytes(8)), following);

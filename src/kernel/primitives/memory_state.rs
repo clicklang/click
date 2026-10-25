@@ -309,6 +309,9 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                     Bitvector32Term::Constant(value) => {
                         let _ = write!(identity, "tc{value};");
                     }
+                    Bitvector32Term::UInt32Constant(value) => {
+                        let _ = write!(identity, "tuc{value};");
+                    }
                     Bitvector32Term::Int64Constant(value) => {
                         let _ = write!(identity, "ti64c{value};");
                     }
@@ -1751,7 +1754,9 @@ pub(crate) fn held_term_fingerprint(term: &Bitvector32Term) -> u64 {
         std::mem::discriminant(term).hash(hasher);
         match term {
             Bitvector32Term::Variable(variable) => variable.hash(hasher),
-            Bitvector32Term::Constant(value) => value.hash(hasher),
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                value.hash(hasher)
+            }
             Bitvector32Term::Binary { format, op, .. } => (format, op).hash(hasher),
             Bitvector32Term::Unary { format, op, .. } => (format, op).hash(hasher),
             _ => {}

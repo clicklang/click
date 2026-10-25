@@ -5710,13 +5710,11 @@ impl AnnotationLowerer<'_> {
                         )
                 };
                 let as_uint64 = |expression: SpecExpression| match &expression {
-                    SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(value)))
-                        if *value <= i32::MAX as u32 =>
-                    {
-                        SpecExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(
-                            u64::from(*value),
-                        )))
-                    }
+                    SpecExpression::Value(CValue::Int32(
+                        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
+                    )) if *value <= i32::MAX as u32 => SpecExpression::Value(CValue::UInt64(
+                        Bitvector32Term::UInt64Constant(u64::from(*value)),
+                    )),
                     _ => expression,
                 };
                 let (start, end, unsigned64) = if is_uint64(&start) || is_uint64(&end) {

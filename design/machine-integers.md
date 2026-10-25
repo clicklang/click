@@ -495,6 +495,23 @@ Progress:
   (`LoadKind::word_kind`), as a signed byte read is the conversion of the
   byte's unsigned read. Kernel-internal reads stay `Int32`. A trace prints
   either 32-bit kind as `read<Bits32>`, as before. No verdict changed.
+- Step 2, constants with a format, is done (2026-10-25). `Bitvector32Term`
+  has `UInt32Constant(u32)` beside `Constant(u32)`, which stays the `int32`
+  spelling of every kernel-internal constant. A C, C++ or Rust value at
+  `uint32` takes it: literals (`c_uint32_literal`, the C++ scalar literal,
+  Rust `u32` literals and suffixes), `MachineIntegerType::constant_term`
+  and every conversion fold at `uint32`, `kernel::uint32` and
+  `value_from_term` at `uint32` (`Bitvector32Term::in_format32`, one match
+  on the root). Its word is `Constant` of the same bits (rule K1): the
+  32-bit operator, comparison and overflow constructors and the raw
+  32-bit operator builders read it as `Constant` (`into_word32`,
+  `constant_word32`), the e-graph interns it as `Constant`
+  (`MachineAtom::int32`), the difference graph reads its value
+  (`difference_graph::constant`), and the kernel's matches on a 32-bit
+  constant's bits read either format. So the format survives only
+  on a value at rest, as σ does, and a load at the other signedness of a
+  stored constant folds through σ to the other format (K5). The hash and
+  the derived order include the format. No verdict changed.
 
 
 ### Stage 4. Front ends and library

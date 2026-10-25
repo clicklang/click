@@ -2052,6 +2052,7 @@ impl PureFactContext {
             }
 
             Bitvector32Term::Constant(value) => Bitvector32Term::Constant(*value),
+            Bitvector32Term::UInt32Constant(value) => Bitvector32Term::UInt32Constant(*value),
             Bitvector32Term::Variable(variable) => Bitvector32Term::Variable(*variable),
             Bitvector32Term::Int64Constant(value) => Bitvector32Term::Int64Constant(*value),
             Bitvector32Term::UInt64Constant(value) => Bitvector32Term::UInt64Constant(*value),

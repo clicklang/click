@@ -1625,7 +1625,10 @@ impl<'a> Proof<'a> {
             // separate source occurrence.  It is still source-printable as
             // an ordinary signed literal, and the certificate checker will
             // re-lower that literal before accepting the step.
-            if matches!(term, Bitvector32Term::Constant(_)) {
+            if matches!(
+                term,
+                Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+            ) {
                 return Some(ContractExpression::IntegerLiteral(
                     i32::from_ne_bytes(value.to_ne_bytes()).to_string(),
                 ));
@@ -1635,7 +1638,8 @@ impl<'a> Proof<'a> {
         // the same variable may lower to the same raw bitvector term, but is
         // not a valid typed witness for an int32 interval node.
         for candidate in candidates.iter().rev() {
-            if let crate::kernel::Bitvector32Term::Constant(value) = term
+            if let crate::kernel::Bitvector32Term::Constant(value)
+            | crate::kernel::Bitvector32Term::UInt32Constant(value) = term
                 && let ContractExpression::IntegerLiteral(literal) = *candidate
                 && literal.parse::<u32>().ok() == Some(*value)
             {
@@ -2853,7 +2857,7 @@ impl<'a> Proof<'a> {
             fn offset_base(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
                 match term {
                     Bitvector32Term::Add(base, delta) | Bitvector32Term::Subtract(base, delta)
-                        if matches!(delta.as_ref(), Bitvector32Term::Constant(value) if *value != 0) =>
+                        if matches!(delta.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value != 0) =>
                     {
                         Some(base)
                     }
@@ -2916,7 +2920,9 @@ impl<'a> Proof<'a> {
         let literal = |term: &Bitvector32Term| {
             matches!(
                 term,
-                Bitvector32Term::Constant(_) | Bitvector32Term::Int64Constant(_)
+                Bitvector32Term::Constant(_)
+                    | Bitvector32Term::UInt32Constant(_)
+                    | Bitvector32Term::Int64Constant(_)
             )
         };
         if !literal(left) && !literal(right) {
@@ -4025,9 +4031,9 @@ impl<'a> Proof<'a> {
         // the operand's own type.
         let successor = match &right {
             ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
-                Bitvector32Term::Constant(value),
+                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
             ))) if unsigned && *value == bound => ContractExpression::CFragment(
-                CExpression::Value(CValue::UInt32(Bitvector32Term::Constant(value + 1))),
+                CExpression::Value(CValue::UInt32(Bitvector32Term::UInt32Constant(value + 1))),
             ),
             ContractExpression::IntegerLiteral(literal)
                 if !unsigned && literal.parse::<i32>().ok() == Some(bound as i32) =>
@@ -6937,7 +6943,7 @@ impl<'a> Proof<'a> {
                 continue;
             }
             if !strict
-                && !matches!(other, Bitvector32Term::Constant(constant)
+                && !matches!(other, Bitvector32Term::Constant(constant) | Bitvector32Term::UInt32Constant(constant)
                     if (constant as i32) < i32::MAX)
             {
                 continue;
@@ -7701,10 +7707,15 @@ impl<'a> Proof<'a> {
             } else {
                 continue;
             };
-            let Bitvector32Term::Constant(value) = literal else {
+            let (Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)) =
+                literal
+            else {
                 continue;
             };
-            if matches!(operand, Bitvector32Term::Constant(_)) {
+            if matches!(
+                operand,
+                Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+            ) {
                 continue;
             }
             let surface = ClickProposition::Comparison {
@@ -7863,8 +7874,8 @@ impl<'a> Proof<'a> {
                     Proposition::ConditionIs(
                         ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right },
                         true
-                    ) if matches!(left.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
-                        || matches!(right.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
+                    ) if matches!(left.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
+                        || matches!(right.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
                 ) || matches!(
                     &equality,
                     Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
@@ -7906,7 +7917,8 @@ impl<'a> Proof<'a> {
                             matches!(kernel, Proposition::ConditionIs(
                                 ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, true
                             ) if matches!(if source { left.as_ref() } else { right.as_ref() },
-                                Bitvector32Term::Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_)))
+                                Bitvector32Term::Constant(_)
+                                | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_)))
                                 || matches!(kernel, Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
                                     if matches!(if source { &**left } else { &**right }, crate::kernel::IntegerTerm::Constant(_)))
                         };
@@ -8126,7 +8138,9 @@ impl<'a> Proof<'a> {
             ) => (value, bound, false),
             _ => return None,
         };
-        let Bitvector32Term::Constant(goal_bits) = goal_bound.as_ref() else {
+        let (Bitvector32Term::Constant(goal_bits) | Bitvector32Term::UInt32Constant(goal_bits)) =
+            goal_bound.as_ref()
+        else {
             return None;
         };
         let goal_constant = *goal_bits as i32;
@@ -8184,7 +8198,9 @@ impl<'a> Proof<'a> {
                 ) if value == goal_value => bound,
                 _ => continue,
             };
-            let Bitvector32Term::Constant(bits) = bound.as_ref() else {
+            let (Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) =
+                bound.as_ref()
+            else {
                 continue;
             };
             let constant = *bits as i32;
@@ -8497,7 +8513,7 @@ impl<'a> Proof<'a> {
                         };
                         let positive = ClickProposition::Comparison {
                             left: ContractExpression::CFragment(CExpression::Value(
-                                CValue::UInt32(Bitvector32Term::Constant(0)),
+                                CValue::UInt32(Bitvector32Term::UInt32Constant(0)),
                             )),
                             operator: ComparisonOperator::LessThan,
                             right: difference.clone(),
@@ -8641,7 +8657,9 @@ impl<'a> Proof<'a> {
             } else {
                 continue;
             };
-            let Bitvector32Term::Constant(bits) = selected_constant else {
+            let (Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) =
+                selected_constant
+            else {
                 continue;
             };
             if (*bits as i32) < 0 {
@@ -9164,9 +9182,11 @@ impl<'a> Proof<'a> {
             for surface in surfaces {
                 for value in candidate_values.iter() {
                     let argument = match value {
-                        Bitvector32Term::Constant(bits) => Some(ContractExpression::CFragment(
-                            CExpression::Value(CValue::Int32(Bitvector32Term::Constant(*bits))),
-                        )),
+                        Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits) => {
+                            Some(ContractExpression::CFragment(CExpression::Value(
+                                CValue::Int32(Bitvector32Term::Constant(*bits)),
+                            )))
+                        }
                         Bitvector32Term::UInt64Constant(_) => Some(ContractExpression::CFragment(
                             CExpression::Value(CValue::UInt64(value.clone())),
                         )),

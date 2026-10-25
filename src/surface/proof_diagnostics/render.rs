@@ -1754,7 +1754,9 @@ impl Renderer<'_> {
         self.push(")");
     }
     fn comparison_bitvector(&mut self, value: &Bitvector32Term, signed: bool) {
-        if signed && let Bitvector32Term::Constant(value) = value {
+        if signed
+            && let Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) = value
+        {
             self.fmt(format_args!("{}", *value as i32));
         } else {
             self.bitvector(value);
@@ -1968,7 +1970,9 @@ impl Renderer<'_> {
             return;
         }
         match v {
-            Bitvector32Term::Constant(v) => self.fmt(format_args!("{v}")),
+            Bitvector32Term::Constant(v) | Bitvector32Term::UInt32Constant(v) => {
+                self.fmt(format_args!("{v}"))
+            }
             Bitvector32Term::Int64Constant(v) => self.fmt(format_args!("{v}i64")),
             Bitvector32Term::UInt64Constant(v) => self.fmt(format_args!("{v}u64")),
             // A model-field variable is a name for one field of one instance,

@@ -126,12 +126,16 @@ use crate::kernel::scaled_extent_element_width;
 fn endpoint_base_and_shift(term: &Bitvector32Term) -> (&Bitvector32Term, i64) {
     match term {
         Bitvector32Term::Add(left, right) => match (left.as_ref(), right.as_ref()) {
-            (base, Bitvector32Term::Constant(shift)) => (base, i64::from(*shift as i32)),
+            (base, Bitvector32Term::Constant(shift) | Bitvector32Term::UInt32Constant(shift)) => {
+                (base, i64::from(*shift as i32))
+            }
             (Bitvector32Term::Constant(shift), base) => (base, i64::from(*shift as i32)),
             _ => (term, 0),
         },
         Bitvector32Term::Subtract(left, right) => match right.as_ref() {
-            Bitvector32Term::Constant(shift) => (left.as_ref(), -i64::from(*shift as i32)),
+            Bitvector32Term::Constant(shift) | Bitvector32Term::UInt32Constant(shift) => {
+                (left.as_ref(), -i64::from(*shift as i32))
+            }
             _ => (term, 0),
         },
         _ => (term, 0),
@@ -193,7 +197,7 @@ fn structural_constant_byte_extent(bytes: &Bitvector32Term) -> Option<u32> {
     crate::instrumentation::record_deterministic_work(1);
     match bytes {
         Bitvector32Term::Multiply(left, right) => match (left.as_ref(), right.as_ref()) {
-            (count, Bitvector32Term::Constant(width))
+            (count, Bitvector32Term::Constant(width) | Bitvector32Term::UInt32Constant(width))
             | (Bitvector32Term::Constant(width), count) => {
                 constant_element_count(count).map(|count| (count as u32).wrapping_mul(*width))
             }
@@ -2911,13 +2915,19 @@ impl PureFactContext {
         else {
             return false;
         };
-        if !matches!(low.as_ref(), Bitvector32Term::Constant(0)) {
+        if !matches!(
+            low.as_ref(),
+            Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)
+        ) {
             return false;
         }
         let Bitvector32Term::Add(term, one) = sum.as_ref() else {
             return false;
         };
-        if !matches!(one.as_ref(), Bitvector32Term::Constant(1)) {
+        if !matches!(
+            one.as_ref(),
+            Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)
+        ) {
             return false;
         }
         // Facts may write the load atom by its load variable while the

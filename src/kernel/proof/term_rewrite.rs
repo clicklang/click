@@ -760,6 +760,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
     }
     match term {
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_) => {}
@@ -1253,7 +1254,7 @@ fn exhausted_c_value(value: &CValue) -> CValue {
         CValue::UInt8(_) => CValue::UInt8(Bitvector32Term::Constant(0)),
         CValue::UInt16(_) => CValue::UInt16(Bitvector32Term::Constant(0)),
         CValue::Int32(_) => CValue::Int32(Bitvector32Term::Constant(0)),
-        CValue::UInt32(_) => CValue::UInt32(Bitvector32Term::Constant(0)),
+        CValue::UInt32(_) => CValue::UInt32(Bitvector32Term::UInt32Constant(0)),
         CValue::Int64(_) => CValue::Int64(Bitvector32Term::Int64Constant(0)),
         CValue::UInt64(_) => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
         CValue::Int128(_) => MachineIntegerType::Int128
@@ -5002,6 +5003,7 @@ impl<'a> TermRewrite<'a> {
             }
 
             Bitvector32Term::Constant(_)
+            | Bitvector32Term::UInt32Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::MachineIntegerConstant(_)

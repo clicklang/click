@@ -678,7 +678,9 @@ the difference graph and element indices
 32-bit load has the reader's signedness (`LoadKind::Int32`, `UInt32`; a
 pointer read is `Int32`), and a typed read of a cell stored at the other
 signedness returns σ of the stored word (rule K5); both reads name one word
-and one load variable. Unsigned division and
+and one load variable. A `uint32` constant is `UInt32Constant`, an `int32`
+or kernel-internal one `Constant`; both name one word, so the format
+survives only on a value at rest. Unsigned division and
 remainder have distinct term nodes so high-bit operands do not inherit signed
 division, and unsigned right shift has a distinct logical-shift node. Equality
 and ordered comparisons select the unsigned conditions. Stores and function

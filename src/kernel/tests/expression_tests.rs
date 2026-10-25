@@ -329,7 +329,7 @@ fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
         ),
         (
             c_cast(c_float64_literal(0x8000_0000_0000_0000), CType::UInt32),
-            CValue::UInt32(Bitvector32Term::Constant(0)),
+            CValue::UInt32(Bitvector32Term::UInt32Constant(0)),
         ),
     ];
     for (expression, expected) in valid {

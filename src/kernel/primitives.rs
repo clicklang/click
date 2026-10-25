@@ -699,7 +699,14 @@ impl Ord for AddressObjectClass {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Bitvector32Term {
+    /// A 32-bit constant at `int32`, the format of every kernel-internal
+    /// constant (indices, counts, masks).
     Constant(u32),
+    /// A 32-bit constant at `uint32`: a C, C++ or Rust `unsigned` value.
+    /// Its word is `Constant` of the same bits (rule K1,
+    /// [`Bitvector32Term::into_word32`]); it survives only on a value at
+    /// rest, since the 32-bit operators and comparisons read words.
+    UInt32Constant(u32),
     /// Signed 64-bit constants are kept in the same term arena as the
     /// original 32-bit terms so equality, substitution, and memory-load
     /// indexing continue to share one checked representation.
@@ -3508,8 +3515,12 @@ pub(crate) fn rewrite_condition_through_bits(
         {
             *condition
         }
-        Bitvector32Term::Constant(1) => ConditionTerm::Constant(true),
-        Bitvector32Term::Constant(0) => ConditionTerm::Constant(false),
+        Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1) => {
+            ConditionTerm::Constant(true)
+        }
+        Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0) => {
+            ConditionTerm::Constant(false)
+        }
         _ => condition.clone(),
     }
 }

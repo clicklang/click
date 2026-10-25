@@ -2163,7 +2163,7 @@ fn quantified_index_interval(
 fn unsigned_binder_zero(binder_type: &ClickType) -> Option<CExpression> {
     let value = match binder_type.c_type()? {
         C0Type::UInt8 => CValue::UInt8(Bitvector32Term::Constant(0)),
-        C0Type::UInt32 => CValue::UInt32(Bitvector32Term::Constant(0)),
+        C0Type::UInt32 => CValue::UInt32(Bitvector32Term::UInt32Constant(0)),
         C0Type::UInt64(_) => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
         _ => return None,
     };
@@ -2999,12 +2999,12 @@ fn constant_segment_covers_index(
 
 fn constant_c_expression_i64(expression: &CExpression) -> Option<i64> {
     match expression {
-        CExpression::Value(CValue::Int32(Bitvector32Term::Constant(value))) => {
-            Some(*value as i32 as i64)
-        }
-        CExpression::Value(CValue::UInt8(Bitvector32Term::Constant(value))) => {
-            Some(i64::from(*value))
-        }
+        CExpression::Value(CValue::Int32(
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
+        )) => Some(*value as i32 as i64),
+        CExpression::Value(CValue::UInt8(
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
+        )) => Some(i64::from(*value)),
         CExpression::Add(left, right) => {
             Some(constant_c_expression_i64(left)? + constant_c_expression_i64(right)?)
         }

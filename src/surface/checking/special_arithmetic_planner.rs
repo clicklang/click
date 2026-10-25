@@ -939,7 +939,10 @@ fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
             (Bitvector32Term::UInt32From64(left), Bitvector32Term::UInt32From64(right)) => {
                 pending.push((left, right))
             }
-            (Bitvector32Term::Constant(a), Bitvector32Term::Constant(b)) if a == b => {}
+            (
+                Bitvector32Term::Constant(a) | Bitvector32Term::UInt32Constant(a),
+                Bitvector32Term::Constant(b) | Bitvector32Term::UInt32Constant(b),
+            ) if a == b => {}
             (Bitvector32Term::Int64Constant(a), Bitvector32Term::Int64Constant(b)) if a == b => {}
             (Bitvector32Term::UInt64Constant(a), Bitvector32Term::UInt64Constant(b)) if a == b => {}
             (Bitvector32Term::Variable(a), Bitvector32Term::Variable(b)) if a == b => {}
@@ -995,7 +998,9 @@ fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
 fn bounded_u64_constant(term: &Bitvector32Term) -> Option<u64> {
     match term {
         Bitvector32Term::UInt64Constant(value) => Some(*value),
-        Bitvector32Term::Constant(value) => Some(u64::from(*value)),
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+            Some(u64::from(*value))
+        }
         Bitvector32Term::Int64Constant(value) if *value >= 0 => Some(*value as u64),
         _ => None,
     }
