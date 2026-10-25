@@ -2899,9 +2899,11 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
             let error = crate::instrumentation::with_tactic_work_limits(
                 crate::instrumentation::TacticWorkLimits {
                     simple: 1_000_000,
-                    smart: 128,
-                    // Enough for the nested `have` to lower its read of the
-                    // stored cell by name before `simp` exhausts its budget.
+                    // Enough for the `have`, whose nested script searches
+                    // and so is charged to the smart budget, to lower its
+                    // read of the stored cell by name before `simp` exhausts
+                    // the budget.
+                    smart: if nested { 160 } else { 128 },
                     control: if nested { 160 } else { 1_000_000 },
                 },
                 || {
