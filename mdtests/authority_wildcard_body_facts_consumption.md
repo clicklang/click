@@ -13,7 +13,7 @@ int32 take(int32* pool, int32* p) {
     produces p[0..1];
     ensures 0 <= result;
     ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
-} by { unfold(slot(pool, p)); execute(); simp(); }
+} by { unfold(slot(pool, p)); }
 ```
 
 ```expect

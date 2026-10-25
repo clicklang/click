@@ -80,7 +80,6 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.parent_tag == old(state.parent_tag);
 } by {
     step(__rb_insert, { state: state });
-    execute(); simp();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -91,5 +90,4 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.parent_tag == old(state.parent_tag);
 } by {
     step(__rb_insert_augmented, { state: state });
-    execute(); simp();
 }

@@ -24,7 +24,6 @@ uint8 byte_write_read(uint8 *bytes, uint64 wide, int32 index, uint8 value) {
     have bytes + wide == bytes + index by {
         normalize() using { to_integer(wide) == to_integer(index); };
     }
-    execute(); simp();
 }
 uint32 word_write_read(uint32 *words, uint64 wide, int32 index, uint32 value) {
     requires to_integer(index) == to_integer(wide);
@@ -34,7 +33,6 @@ uint32 word_write_read(uint32 *words, uint64 wide, int32 index, uint32 value) {
     have words + index == words + wide by {
         normalize() using { to_integer(index) == to_integer(wide); };
     }
-    execute(); simp();
 }
 ```
 

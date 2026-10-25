@@ -52,9 +52,6 @@ int32 get(struct pair* p) {
 int32 twice(struct pair* p) {
     owns pair(p);
     ensures result >= 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

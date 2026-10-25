@@ -29,8 +29,6 @@ int32 keep_again(int32 x) {
         intro();
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

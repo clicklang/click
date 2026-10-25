@@ -36,7 +36,6 @@ int32 run() { ensures result == 0 or result == 3; } by {
     have second.serial == 2;
     unfold(second);
     unfold(authority(ticket(&pool, _)));
-    execute(); simp();
 }
 ```
 

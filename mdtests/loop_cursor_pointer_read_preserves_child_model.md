@@ -62,7 +62,6 @@ void inspect(struct node* root) {
             }
         }
     }
-    execute(); simp();
 }
 ```
 

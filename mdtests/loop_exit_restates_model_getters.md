@@ -41,7 +41,6 @@ void walk(int32 n) {
             step();
         }
     }
-    execute(); simp();
 }
 ```
 

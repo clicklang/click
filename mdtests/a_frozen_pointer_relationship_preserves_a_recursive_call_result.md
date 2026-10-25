@@ -36,7 +36,7 @@ void pop(struct node* node) {
     produces *node;
     produces chain(node->next);
     ensures node->next == old(node->next);
-} by { unfold(chain(node)); execute(); simp(); }
+} by { unfold(chain(node)); }
 int32 roundtrip(struct node* node, struct node* tail) {
     requires node != 0;
     owns *node;

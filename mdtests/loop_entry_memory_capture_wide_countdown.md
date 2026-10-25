@@ -53,7 +53,6 @@ uint64 inspect(const uint8* p, uint64 n) {
  have n <= 0u64 by assumption();
  have not (n < 0u64) by normalize();
  have n == 0u64 by auto();
- execute(); simp();
 }
 ```
 

@@ -46,7 +46,6 @@ int32 run(int32 value) {
     branch { step(); step(); simp(); } else {}
     step(); step(); step();
     have h->target->payload == value by { rewrite(h->target == p); simp(); }
-    execute(); simp();
 }
 ```
 

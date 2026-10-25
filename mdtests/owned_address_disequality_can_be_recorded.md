@@ -26,7 +26,6 @@ int32 inspect(struct node *a, struct node *b) {
     have a != tmp by assumption();
     have address(a) != address(b) by simp();
     step();
-    execute(); simp();
 }
 ```
 

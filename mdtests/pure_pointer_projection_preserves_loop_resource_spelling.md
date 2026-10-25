@@ -57,7 +57,6 @@ void round_trip(struct Box* p, int32 n) {
             }
         }
     }
-    execute(); simp();
 }
 ```
 ```expect

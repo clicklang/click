@@ -15,7 +15,7 @@ unsigned int read_pair(unsigned int *p) {
 } by { unfold(pair(p)); execute(); fold(pair(p)); simp(); }
 int main() {
     ensures result == 16;
-} by { fold(pair(state)); execute(); simp(); }
+} by { fold(pair(state)); }
 ```
 
 ```expect

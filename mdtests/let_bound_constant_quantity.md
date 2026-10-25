@@ -35,7 +35,6 @@ void take_two(struct child* obj) {
         unfold(2 of child_ref(obj));
         step();
     }
-    execute(); simp();
 }
 ```
 

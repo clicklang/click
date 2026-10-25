@@ -26,7 +26,7 @@ authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns authority(ticket(argument));
     consumes ticket(argument);
-} by { unfold(ticket(argument)); execute(); simp(); }
+} by { unfold(ticket(argument)); }
 int32 run(void* p, void* q) {
     owns authority(ticket(p));
     owns authority(ticket(q));

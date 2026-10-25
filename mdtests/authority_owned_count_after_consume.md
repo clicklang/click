@@ -10,7 +10,7 @@ void consume(int32* p) {
     ensures 0 <= count(token(p));
 } by {
     have 0 < count(token(p)) by { arithmetic() using { 1 <= count(token(p)); }; }
-    unfold(token(p)); execute(); simp();
+    unfold(token(p));
 }
 ```
 ```expect

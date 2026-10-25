@@ -21,7 +21,6 @@ int32 inspect(struct node *a, struct node *b) {
 } by {
     step(); step();
     step();
-    execute(); simp();
 }
 ```
 

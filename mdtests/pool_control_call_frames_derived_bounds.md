@@ -59,7 +59,6 @@ int32 forward(struct pool* pool) {
         have 0 <= pool->used by auto();
         have defined(pool->used + count(slot(pool))) by { assumption(); }
     }
-    execute(); simp();
 }
 ```
 

@@ -29,7 +29,6 @@ void mark(uint64 *values, int32 *visited, int32 n, int32 cur, uint64 stamp) {
     ) using {
         at(before, forall (k: int32) { 0 <= k and k < n implies values[k] == stamp });
     };
-    execute(); simp();
 }
 ```
 

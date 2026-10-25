@@ -15,7 +15,7 @@ void dispose(struct packet input) {
     consumes cell(input.data);
     requires input.data[0] == 7;
     ensures old(input.data[0]) == 7;
-} by { unfold(cell(input.data)); execute(); simp(); }
+} by { unfold(cell(input.data)); }
 ```
 
 ```expect

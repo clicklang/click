@@ -14,7 +14,7 @@ int read_cell(int *p) {
     ensures result == old(p[0]);
 } by { unfold(cell(p)); execute(); fold(cell(p)); simp(); }
 int main() { ensures result == 7; }
-by { fold(cell(&state)); execute(); simp(); }
+by { fold(cell(&state)); }
 ```
 
 ```expect

@@ -49,7 +49,6 @@ int32 run() { ensures result == 0; } by {
     have count(cell(p)) == 1;
     unfold(first);
     unfold(authority(cell(p)));
-    execute(); simp();
 }
 ```
 

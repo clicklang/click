@@ -22,15 +22,11 @@ void inspect(struct pool* pool) {
     owns control(pool);
     owns pool->capacity of slot(pool);
     ensures 0 <= pool->capacity;
-} by {
-    execute(); simp();
 }
 void reversed(struct pool* pool) {
     owns pool->capacity of slot(pool);
     owns control(pool);
     ensures 0 <= pool->capacity;
-} by {
-    execute(); simp();
 }
 ```
 

@@ -26,7 +26,6 @@ void link(struct node *p, struct node *q) {
     step();
     step(touch, {});
     have q->left == p by { normalize() using { }; }
-    execute(); simp();
 }
 ```
 

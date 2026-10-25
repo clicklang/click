@@ -21,7 +21,6 @@ int32 run() { ensures result == 0; } by {
     have count(ticket(&pool)) == 1;
     unfold(first);
     unfold(authority(ticket(&pool)));
-    execute(); simp();
 }
 ```
 

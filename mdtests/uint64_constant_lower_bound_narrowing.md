@@ -17,7 +17,6 @@ uint64 identity(uint64 mid) {
     have 0 < (int32)(uint32)mid by {
         simp() using { 0u64 < mid; mid <= 2147483647u64; };
     }
-    execute(); simp();
 }
 ```
 

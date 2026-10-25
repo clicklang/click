@@ -16,8 +16,6 @@ void inspect(int32* pool, int32 n) {
     owns authority(slot(pool));
     owns n of slot(pool);
     ensures 0 <= n;
-} by {
-    execute(); simp();
 }
 ```
 

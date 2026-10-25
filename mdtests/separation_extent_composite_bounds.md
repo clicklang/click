@@ -11,7 +11,7 @@ int32 length(int32* p, int32 n) {
     views slice(p, n);
     ensures result >= 0;
     ensures result <= 1073741823;
-} by { observe(slice(p, n)); execute(); simp(); }
+} by { observe(slice(p, n)); }
 ```
 
 ```expect

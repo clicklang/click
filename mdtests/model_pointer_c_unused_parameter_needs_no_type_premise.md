@@ -18,7 +18,7 @@ void wrapped(struct model_node* p, struct model_node* ignored) {
 void caller(struct model_node* p, void* ignored) {
     produces held: token(); ensures held.model == NodeRef::At(p);
 } by {
-    let { held: held } = step(wrapped, {}); execute();
+    let { held: held } = step(wrapped, {});
 }
 ```
 

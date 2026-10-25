@@ -29,7 +29,6 @@ int32 iterator_read(const uint8* bytes, uint64 bytes_len, int32 remaining) {
             to_integer(remaining - 1) < to_integer((int32)(uint32)bytes_len);
         };
     }
-    execute(); simp();
 }
 ```
 ```expect

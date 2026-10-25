@@ -20,7 +20,6 @@ void probe(struct node *p, struct node *q, struct node *value) {
     } else {
         have p->next == value by assumption();
     }
-    execute(); simp();
 }
 ```
 

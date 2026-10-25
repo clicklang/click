@@ -41,7 +41,6 @@ int32 lifecycle() { ensures result == 0 or result == 9; } by {
     unfold(slot(&pool, p));
     unfold(slot(&pool, p + 1));
     unfold(authority(slot(&pool, _)));
-    execute(); simp();
 }
 ```
 

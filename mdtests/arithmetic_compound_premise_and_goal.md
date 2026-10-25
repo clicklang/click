@@ -27,7 +27,6 @@ int32 bounds(int32 left, int32 right) {
             left <= 2147483646 - right;
         };
     }
-    execute(); simp();
 }
 ```
 

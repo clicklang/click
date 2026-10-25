@@ -20,7 +20,6 @@ void set(int32* p, int32* q, int32 x) {
     owns q[0..1];
 } by {
     open(cell(p)) { step(); } by { simp(); }
-    execute(); simp();
 }
 void set_last(int32* p, int32 x) {
     requires x > 0;

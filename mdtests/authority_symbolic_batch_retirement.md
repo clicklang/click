@@ -30,14 +30,13 @@ void mint_pair(int32* o, int32 n, int32 m) {
         simp();
     }
     fold(m of tok(o));
-    execute(); simp();
 }
 void spend_n(int32* o, int32 n) {
     owns authority(tok(o));
     requires 0 <= n;
     consumes n of tok(o);
     ensures count(tok(o)) == old(count(tok(o))) - n;
-} by { unfold(n of tok(o)); execute(); simp(); }
+} by { unfold(n of tok(o)); }
 void run(int32* o, int32 n, int32 m) {
     owns authority(tok(o));
     requires count(tok(o)) == 0;
