@@ -2094,9 +2094,7 @@ fn callback_script_tails_report_missing_authority_and_complete_valid_steps() {
             .collect::<Vec<_>>();
         let result = verify_c0_sources(&source, &sources);
         if let Some(expected) = expected {
-            let error = result
-                .err()
-                .expect("missing callback authority must be refused");
+            let error = result.expect_err("missing callback authority must be refused");
             assert!(
                 error.message().contains(expected),
                 "{fixture_name}: {}",
@@ -2193,9 +2191,7 @@ fn callback_script_tails_complete_or_report_a_bounded_failure() {
                 }
             }
         } else {
-            let error = result
-                .err()
-                .expect("the changed callback must lose its contract authority");
+            let error = result.expect_err("the changed callback must lose its contract authority");
             let report = error.concise_report();
             assert!(
                 report.contains("no contract fact for the function pointer `augment->copy`"),
