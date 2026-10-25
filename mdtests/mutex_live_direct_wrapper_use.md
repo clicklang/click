@@ -26,7 +26,7 @@ void wrapped(struct holder *holder) {
 } by { unfold(life); fold(life); execute(); simp(); }
 void borrow(struct holder *holder) {
     owns mutex_use(&holder->mu);
-} by { execute(); simp(); }
+}
 void keep(struct holder *holder) {
     owns mutex_live(&holder->mu);
 } by {

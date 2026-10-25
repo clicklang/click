@@ -30,7 +30,7 @@ verifying "modeled_pthread_counted_shared_partial_then_create.c";
 authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns ticket(argument);
-} by { execute(); simp(); }
+}
 int32 run(void* p, void* q) {
     owns authority(ticket(p));
     owns authority(ticket(q));

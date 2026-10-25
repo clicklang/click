@@ -48,25 +48,25 @@ class Square : Shape {
     function size(this) -> int32 { this->side }
 }
 void Square::set(int half) {
-} by { execute(); simp(); }
+}
 void Square::grow(int delta) {
-} by { execute(); simp(); }
+}
 void bump(Shape& shape, int delta) {
     requires 0 <= delta and delta <= 100;
     requires 0 <= size(shape) and size(shape) <= 1000;
     ensures size(shape) - delta == old(size(shape));
-} by { execute(); simp(); }
+}
 void reset(Shape& shape, int half) {
     requires 0 <= half and half <= 50;
     ensures size(shape) == half + half;
-} by { execute(); simp(); }
+}
 int caller(Square& square, int delta, int half) {
     owns square;
     requires 0 <= delta and delta <= 100;
     requires 0 <= half and half <= 50;
     requires 0 <= square.side and square.side <= 1000;
     ensures result == half + half;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

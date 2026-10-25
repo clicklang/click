@@ -17,7 +17,7 @@ verifying "mutex_use_named_lifetime_entry.c";
 
 void helper(struct holder *holder) {
     owns access: mutex_use(&holder->mu);
-} by { execute(); simp(); }
+}
 
 void caller(struct holder *holder) {
     owns lifetime: mutex_live(&holder->mu);

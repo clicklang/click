@@ -21,7 +21,7 @@ void bump(int32* s) {
     owns s[0..1];
     requires 0 <= s[0] and s[0] <= 500;
     ensures to_integer(s[0] - 2) == to_integer(old(s[0]));
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

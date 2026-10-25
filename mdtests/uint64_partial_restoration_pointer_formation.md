@@ -20,7 +20,7 @@ int32 chunk_step(uint8 *bytes, uint64 bytes_len, uint64 remaining, uint64 size) 
     requires bytes_len <= 2147483647u64;
     requires remaining <= bytes_len;
     ensures result == 0;
-} by { execute(); }
+}
 ```
 
 ```expect

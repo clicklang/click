@@ -25,7 +25,7 @@ int32 invoke(int32 (*callback)(int32*, int32), int32* cell, int32 x) {
     requires x == 0;
     owns cell[0..1];
     ensures result == cell[0];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

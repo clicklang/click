@@ -25,7 +25,7 @@ void nop(uint64 length) {
     ensures empty: forall (k: uint64) { k < 0u64 implies k == 5u64 };
     ensures small: forall (k: uint64) { k < 3u64 implies k <= 2u64 };
     ensures window: forall (k: uint64) { 2u64 <= k and k < 3u64 implies k == 2u64 };
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

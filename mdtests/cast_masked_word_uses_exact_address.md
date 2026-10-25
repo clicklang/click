@@ -17,7 +17,7 @@ verifying "cast_masked_word_uses_exact_address.c";
 struct node* clear_tag(unsigned long word, struct node* p) {
     requires (word & ~3) == address(p);
     ensures address(result) == address(p);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

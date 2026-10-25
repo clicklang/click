@@ -31,31 +31,31 @@ verifying "shapes.cpp";
 Shape::Shape(int32& out) {
     owns this->log;
     ensures this->log == &out;
-} by { execute(); simp(); }
+}
 Shape::~Shape() {
     owns this->log;
     owns this->log[0..1];
     ensures this->log == old(this->log);
     ensures this->log[0] == 9;
-} by { execute(); simp(); }
+}
 Square::Square(int32& out, int32 s) {
     owns this->base.log;
     owns this->side;
     ensures this->base.log == &out;
     ensures this->side == s;
-} by { execute(); simp(); }
+}
 Square::~Square() {
     owns this->base.log;
     owns this->side;
     owns this->base.log[0..1];
     ensures this->base.log == old(this->base.log);
     ensures this->base.log[0] == 9;
-} by { execute(); simp(); }
+}
 int caller(int32& out, int scale) {
     owns out;
     ensures result == 0;
     ensures out == 9;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

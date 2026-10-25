@@ -29,14 +29,14 @@ int32 read_other_global() {
     requires h[0] == 5;
     owns g[0..1];
     ensures result == 5;
-} by { execute(); simp(); }
+}
 
 int32 read_static_local() {
     requires calls[0] == 5;
     owns g[0..1];
     owns calls[0..2];
     ensures result == 5;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

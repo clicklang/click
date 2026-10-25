@@ -15,7 +15,7 @@ verifying "unsigned_shift_stronger_bound.c";
 uint32 shift(uint32 value, uint32 count) {
     requires count < 8u32;
     ensures result == (value << count);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

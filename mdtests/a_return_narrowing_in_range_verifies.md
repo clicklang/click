@@ -16,7 +16,7 @@ verifying "a_return_narrowing_in_range_verifies.c";
 uint8 f(int32 x) {
     requires x == 44;
     ensures result == 44;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

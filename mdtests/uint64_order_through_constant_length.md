@@ -20,7 +20,7 @@ int32 below(uint64 index, uint64 length) {
     requires index < 4u64;
     requires length == 4u64;
     ensures result == 1;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

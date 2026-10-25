@@ -18,14 +18,14 @@ verifying "wide.c" as wide;
 long read_low() {
     owns wide::low;
     ensures result == old(wide::low);
-} by { execute(); simp(); }
+}
 unsigned long read_high() {
     owns wide::high;
     ensures result == old(wide::high);
-} by { execute(); simp(); }
+}
 int main() {
     ensures result == 1;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

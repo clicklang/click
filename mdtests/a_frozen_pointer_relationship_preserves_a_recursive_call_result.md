@@ -42,7 +42,7 @@ int32 roundtrip(struct node* node, struct node* tail) {
     owns *node;
     owns chain(tail);
     ensures result == 0;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

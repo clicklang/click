@@ -21,7 +21,7 @@ verifying "mutex_use_contract.c";
 
 void inner(struct holder *holder) {
     owns mutex_use(&holder->mu);
-} by { execute(); simp(); }
+}
 void keep(struct holder *holder) {
     owns mutex_use(&holder->mu);
 } by {

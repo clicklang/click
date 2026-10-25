@@ -13,7 +13,7 @@ verifying "entry.c";
 void entry(uint64* word, uint8* bytes) {
     owns word[0..1];
     owns bytes[0..2147483647];
-} by { execute(); }
+}
 ```
 
 ```expect

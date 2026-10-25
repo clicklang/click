@@ -15,11 +15,11 @@ int32 reach(struct Pair& pair, int32& r) {
     views pair.first;
     requires &r == &pair.first;
     ensures result == pair.first;
-} by { execute(); simp(); }
+}
 int32 caller(struct Pair& pair) {
     views pair.first;
     ensures result == pair.first;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

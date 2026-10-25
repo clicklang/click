@@ -15,7 +15,7 @@ int32 invoke(int32 (*callback)(int32), int32 x) {
     requires Positive(callback);
     requires Identity(callback);
     ensures result == x;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

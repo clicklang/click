@@ -30,13 +30,13 @@ extern int Shape::area(int scale) const {
 }
 int Square::area(int scale) const {
     ensures to_integer(result) == to_integer(scale + 1);
-} by { execute(); simp(); }
+}
 int Tile::area(int scale) const {
-} by { execute(); simp(); }
+}
 int caller(const Square& square, int scale) {
     requires 0 <= scale and scale <= 1000;
     ensures to_integer(result) == to_integer(scale + 1);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

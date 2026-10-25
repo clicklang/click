@@ -31,16 +31,16 @@ int32 widen(uint8 x) {
     ensures result >= 0;
     ensures result <= 255;
     ensures result == x;
-} by { execute(); simp(); }
+}
 
 int32 pass_wide(int32 y) {
     ensures result >= 0;
     ensures result <= 255;
-} by { execute(); simp(); }
+}
 
 int32 pass_known() {
     ensures result == 44;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

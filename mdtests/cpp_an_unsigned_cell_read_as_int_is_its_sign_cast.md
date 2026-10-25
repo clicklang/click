@@ -21,17 +21,17 @@ int read_signed(const uint32& u) {
     views u;
     requires u == 4294967295u32;
     ensures result == -1;
-} by { execute(); simp(); }
+}
 unsigned int read_unsigned(const uint32& u) {
     views u;
     requires u == 4294967295u32;
     ensures result == 4294967295u32;
-} by { execute(); simp(); }
+}
 int store_and_read_signed(uint32& u) {
     owns u;
     ensures result == -1;
     ensures u == 4294967295u32;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

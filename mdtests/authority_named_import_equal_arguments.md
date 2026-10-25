@@ -15,7 +15,7 @@ void preserve(int32* pool) {
     ensures left.serial == old(left.serial);
     ensures right.serial == old(right.serial);
     ensures count(ticket(pool)) == old(count(ticket(pool)));
-} by { execute(); simp(); }
+}
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool)));

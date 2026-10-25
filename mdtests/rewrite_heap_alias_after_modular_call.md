@@ -31,12 +31,12 @@ void put(struct holder* h, struct child* p) {
     owns uninitialized(h->target);
     ensures h->target == p;
     ensures defined(h->target);
-} by { execute(); simp(); }
+}
 void change(struct child* p) {
     owns uninitialized(p->refs);
     owns p->payload;
     ensures p->payload == old(p->payload);
-} by { execute(); simp(); }
+}
 int32 run(int32 value) {
     ensures result == -1 or result == value;
 } by {

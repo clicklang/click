@@ -14,7 +14,7 @@ void copy(const struct callbacks* cb, struct callbacks* out) {
     views cb->call;
     owns out->call;
     ensures out->call == (&table)->call;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

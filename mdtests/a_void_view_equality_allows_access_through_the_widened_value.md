@@ -17,7 +17,7 @@ int32 probe(struct Pair* pair, int32* q) {
     requires (void*)q == (void*)pair;
     views q[0];
     views pair->second;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

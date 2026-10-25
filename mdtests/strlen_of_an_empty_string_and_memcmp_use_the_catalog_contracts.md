@@ -25,12 +25,12 @@ verifying "strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.c";
 
 uint64 empty_length(uint8 text[]) {
     views click::cstr::cstr_at(text, 0u64);
-    ensures result == 0u64 by { execute(); simp(); }
+    ensures result == 0u64;
 }
 
 int32 compare_self(uint8 bytes[]) {
     views bytes[0..2];
-    ensures 1 == 1 by { execute(); simp(); }
+    ensures 1 == 1;
 }
 ```
 

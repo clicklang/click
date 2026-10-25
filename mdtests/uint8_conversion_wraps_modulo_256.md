@@ -18,22 +18,22 @@ verifying "uint8_conversion_wraps_modulo_256.c";
 unsigned char cast(int32 x) {
     requires x == -56;
     ensures result == 200;
-} by { execute(); simp(); }
+}
 
 unsigned char returned(int32 x) {
     requires x == 300;
     ensures result == 44;
-} by { execute(); simp(); }
+}
 
 int32 initialized(int32 x) {
     requires x == -1;
     ensures result == 255;
-} by { execute(); simp(); }
+}
 
 unsigned char from_signed_char(signed char c) {
     requires c == -1;
     ensures result == 255;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

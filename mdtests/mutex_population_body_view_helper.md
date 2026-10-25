@@ -25,7 +25,7 @@ resource counter_state(p: struct counter*) {
 uint32 read_value(struct counter* p) {
     views p->value;
     ensures result == p->value;
-} by { execute(); simp(); }
+}
 uint32 read_locked(struct counter* p) {
     owns contribution(p);
     owns access: mutex_use(&p->mutex, counter_state(p));

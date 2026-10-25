@@ -27,12 +27,12 @@ int32 window(int32* p, uint64 k, uint64 n) {
     views p[0..1];
     requires n != 7u64 implies n <= k;
     ensures result == old(p[0]);
-} by { execute(); simp(); }
+}
 
 int32 use_all(int32* p, uint64 k) {
     views p[0..1];
     ensures result == old(p[0]);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

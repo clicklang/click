@@ -11,7 +11,7 @@ void copy4(char* dst, const char* src) {
     views src[0..4];
     owns dst[0..4];
     requires separate(memory(dst[0..4]), memory(src[0..4]));
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

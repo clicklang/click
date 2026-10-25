@@ -18,7 +18,7 @@ void write_value(struct holder *holder) {
     owns life: lifetime(holder);
     owns holder->payload;
     ensures holder->payload == 7;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

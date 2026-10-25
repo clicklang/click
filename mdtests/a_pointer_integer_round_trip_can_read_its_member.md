@@ -14,7 +14,7 @@ verifying "probe.c";
 int32 probe(struct Pair* pair) {
     views pair->first;
     ensures result == pair->first;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

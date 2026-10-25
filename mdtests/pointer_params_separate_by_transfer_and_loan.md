@@ -27,7 +27,7 @@ int32 clobber_dst(int32* dst, int32* src) {
     views src[0..1];
 
     ensures source_unchanged: src[0] == old(src[0]);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

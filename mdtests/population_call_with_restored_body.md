@@ -20,7 +20,7 @@ resource control(obj: struct object*) {
 verifying "reopen.c";
 void inspect(struct object* obj) {
     owns control(obj);
-} by { execute(); simp(); }
+}
 void restored(struct object* obj) {
     owns control(obj);
 } by {

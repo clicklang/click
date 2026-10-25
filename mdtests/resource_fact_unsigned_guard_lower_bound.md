@@ -20,7 +20,7 @@ uint8 first(uint8 bytes[], uint64 len) {
     requires 0u64 < len;
     views prefix(bytes, len);
     ensures true;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

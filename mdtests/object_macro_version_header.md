@@ -31,7 +31,7 @@ verifying "version.c";
 
 int version_num() {
     ensures result == 4352;
-} by { execute(); simp(); }
+}
 
 unsigned char *version_text() {
     ensures readable: viewable(result[0..5]);
@@ -40,7 +40,7 @@ unsigned char *version_text() {
     ensures result[2] == '1';
     ensures result[3] == '7';
     ensures result[4] == '\0';
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

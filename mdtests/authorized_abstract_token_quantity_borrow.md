@@ -26,11 +26,11 @@ verifying "authorized_abstract_token_quantity_borrow.c";
 void use_refs(struct object* object, int32 amount) {
     requires 0 <= amount;
     owns amount of object_ref(object);
-} by { execute(); simp(); }
+}
 
 void hold_two(struct object* object) {
     owns 2 of object_ref(object);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

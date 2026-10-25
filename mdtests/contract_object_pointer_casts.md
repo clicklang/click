@@ -40,10 +40,10 @@ void sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
     owns ((struct sized_node*)(void*)rb_new)->size;
     ensures ((struct sized_node*)(void*)rb_new)->size == old(((struct sized_node*)(void*)rb_old)->size);
     ensures ((struct sized_node*)(void*)rb_old)->size == old(((struct sized_node*)(void*)rb_old)->size);
-} by { execute(); simp(); }
+}
 struct sized_node* identity(struct rb_node* p) {
     ensures address(result) == address((struct sized_node*)(void*)p);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -15,12 +15,12 @@ verifying "uint16_conversion_wraps_modulo_65536.c";
 unsigned short cast(int32 x) {
     requires x == -1;
     ensures result == 65535;
-} by { execute(); simp(); }
+}
 
 int32 initialized(int32 x) {
     requires x == 70000;
     ensures result == 4464;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -11,7 +11,7 @@ verifying "resource_address.c";
 resource cell_at(p: int32*) {}
 void observe(int32* p) {
     ensures 1 == 1;
-} by { execute(); simp(); }
+}
 void local() {
     ensures 1 == 1;
 } by {

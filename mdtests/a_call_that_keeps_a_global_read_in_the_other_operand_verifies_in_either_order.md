@@ -26,11 +26,11 @@ int call_first() {
     requires g == 5;
     owns g;
     ensures result == 5;
-} by { execute(); simp(); }
+}
 int read_first() {
     requires g == 5;
     ensures result == 6;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

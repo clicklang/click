@@ -17,7 +17,7 @@ void preserve(int32* p) {
     owns r: revision_record(p, c);
     ensures c.revision == old(c.revision);
     ensures r.revision == old(r.revision);
-} by { execute(); simp(); }
+}
 void remember(int32* p) {
     owns target: cell(p);
     ensures target.revision == old(target.revision);

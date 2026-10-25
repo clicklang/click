@@ -42,24 +42,24 @@ class Square : Shape {
 Shape::Shape(int64 t) {
     owns this->tag;
     ensures this->tag == t;
-} by { execute(); simp(); }
+}
 Square::Square(int32 s) {
     owns this->base.tag;
     owns this->side;
     ensures this->base.tag == 7;
     ensures this->side == s;
-} by { execute(); simp(); }
+}
 int Square::area(int scale) const {
-} by { execute(); simp(); }
+}
 int total(const Shape& shape, int scale) {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(shape) and size(shape) <= 100;
     ensures to_integer(result) == to_integer(size(shape) + scale);
-} by { execute(); simp(); }
+}
 int caller(int scale) {
     requires 0 <= scale and scale <= 100;
     ensures to_integer(result) == to_integer(3 + scale);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

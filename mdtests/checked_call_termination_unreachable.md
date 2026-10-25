@@ -15,7 +15,7 @@ int32 off() { ensures result == 0; } by { execute(); simp(); }
 void caller(int32 flag) {
     requires flag == 0;
     ensures 1 == 1;
-} by { execute(); simp(); }
+}
 void after_call() { ensures 1 == 1; } by { execute(); simp(); }
 ```
 ```expect

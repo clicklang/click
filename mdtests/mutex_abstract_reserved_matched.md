@@ -27,7 +27,7 @@ verifying "mutex_abstract_reserved_matched.c";
 void write_value(struct holder *holder, int *data) {
     owns life: lifetime(holder);
     owns data[0..1];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

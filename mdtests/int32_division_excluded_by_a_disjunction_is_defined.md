@@ -19,7 +19,7 @@ int32 required(int32 x, int32 y) {
     requires y != 0;
     requires x != -2147483647 - 1 or y != -1;
     ensures result == x / y;
-} by { execute(); simp(); }
+}
 
 int32 established(int32 x, int32 y) {
     requires 0 <= x and x <= 100;

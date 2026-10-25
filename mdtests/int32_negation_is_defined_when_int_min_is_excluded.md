@@ -18,12 +18,12 @@ verifying "int32_negation_is_defined_when_int_min_is_excluded.c";
 int32 excluded(int32 x) {
     requires x != -2147483647 - 1;
     ensures to_integer(result) == to_integer(-x);
-} by { execute(); simp(); }
+}
 
 int32 above(int32 x) {
     requires x > -2147483647 - 1;
     ensures to_integer(result) == to_integer(-x);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect
