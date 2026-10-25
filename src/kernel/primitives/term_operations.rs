@@ -4750,9 +4750,20 @@ impl Pointer {
     /// is that read.
     pub(crate) fn version_read(memory: &SharedCMemory, address: &Pointer) -> Self {
         let source = memory.unchanged_bytes_source();
+        // The read is named at its cell's version: the projection is taken
+        // at the point the assumption-free walk finds the cell last written,
+        // so two points the walk relates project, and name, alike.
+        let version = crate::kernel::resource_tracker::last_same_point(
+            crate::kernel::resource_tracker::Resource::Cell {
+                pointer: address,
+                bytes: crate::kernel::C_POINTER_BYTE_WIDTH,
+            },
+            &crate::kernel::resource_tracker::ProgramPoint::at(&source),
+        )
+        .map_or(source.clone(), |point| point.snapshot().clone());
         let canonical = crate::kernel::intern_c_memory(
             crate::kernel::reasoning::memory_resolution::canonical_memory_for_pointer_load(
-                source.memory(),
+                version.memory(),
                 address,
             ),
         );
@@ -4767,14 +4778,15 @@ impl Pointer {
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &canonical,
             address,
-            LoadKind::Bits32,
+            LoadKind::Int32,
             crate::kernel::C_POINTER_BYTE_WIDTH,
             memory,
         );
-        match canonical_pointer_read(&Bitvector32Term::Variable(variable)) {
+        let r = match canonical_pointer_read(&Bitvector32Term::Variable(variable)) {
             Some(named) => named_pointer_read(named),
             None => Self::loaded_value(&source, address),
-        }
+        };
+        r
     }
 
     pub(crate) fn symbolic_function(variable: Variable) -> Self {

@@ -1988,6 +1988,18 @@ fn canonicalized_symbolic_load_value_with_identity(
     let CValue::Pointer(pointer_value) = &value else {
         return Some(complete_loaded_word(value, memory, &address));
     };
+    // The read keeps its version name; the equality graph learns the pointer
+    // stored there, which the memory alone records, so resource matching and
+    // pointer comparison relate the two.
+    if names_version {
+        if let Some(stored) = pointer_read_over_write_c_value(pointer_value.pointer()) {
+            facts.push(ExecutionPureFact::logical_read_equation(
+                stored.with_type(value_type),
+                pointer_value.pointer().clone(),
+            ));
+        }
+        return Some(value);
+    }
     // Losing a scalar cache does not lose a complete pointer stored in the
     // selected memory history. Return that whole value before minting another
     // numeric read coordinate, preserving its bounds and object class.
@@ -2438,6 +2450,12 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
 /// view of a union cell, when that snapshot records one. A cell holding the
 /// read itself resolves to nothing.
 pub(crate) fn pointer_read_over_write_value(pointer: &Pointer) -> Option<Pointer> {
+    pointer_read_over_write_c_value(pointer).map(|stored| stored.pointer().clone())
+}
+
+/// [`pointer_read_over_write_value`] with the stored pointer's type and
+/// designation.
+fn pointer_read_over_write_c_value(pointer: &Pointer) -> Option<CPointerValue> {
     let read = pointer.as_loaded_value()?;
     if read.displacement != PointerOffsetTerm::Constant(0) {
         return None;
@@ -2449,8 +2467,7 @@ pub(crate) fn pointer_read_over_write_value(pointer: &Pointer) -> Option<Pointer
     else {
         return None;
     };
-    let stored = stored.pointer().clone();
-    (stored != *pointer).then_some(stored)
+    (stored.pointer() != pointer).then_some(stored)
 }
 
 /// Whether `proposition` holds by the read-over-write authority alone: its
@@ -2556,6 +2573,23 @@ pub(crate) fn pointer_load_identity(memory: &SharedCMemory, address: &Pointer) -
 /// Decode a pointer-load name without consulting scalar-load metadata.
 pub(crate) fn registered_pointer_load(identity: PointerLoadId) -> Option<(SharedCMemory, Pointer)> {
     POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().get(&identity).cloned())
+}
+
+/// The block a pointer read's value lies in by the read-over-write authority:
+/// the block of the pointer its snapshot stores at the read's address. It
+/// reads the memory, never facts. `None` when the snapshot records no pointer
+/// there. A stored read was read before the store that holds it, so a caller
+/// following the result back through further reads reaches older history.
+pub(crate) fn loaded_pointer_stored_block(identity: PointerLoadId) -> Option<PointerBlock> {
+    let (memory, address) = registered_pointer_load(identity)?;
+    let CValue::Pointer(stored) = memory
+        .known_value(&address)
+        .or_else(|| memory.known_union_pointer(&address))?
+    else {
+        return None;
+    };
+    (stored.pointer().block != PointerBlock::LoadedPointer(identity))
+        .then(|| stored.pointer().block.clone())
 }
 
 thread_local! {
