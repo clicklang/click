@@ -25,7 +25,7 @@ void forward(int32* pool, int32* member, int32 tag) {
     owns authority(slot(pool, _, _));
     consumes slot(pool, member, tag);
     ensures count(slot(pool, _, _)) == old(count(slot(pool, _, _))) - 1;
-} by { execute(); simp(); }
+}
 void lifecycle() { ensures 1 == 1; } by {
     step(); step(); step(); step(); step(); step();
     fold(authority(slot(&pool, _, _)));

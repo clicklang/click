@@ -18,7 +18,7 @@ int32 via_load(uint8* p) {
     views p[0..1];
     ensures result >= 0;
     ensures result <= 255;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

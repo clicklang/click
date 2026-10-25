@@ -20,7 +20,7 @@ void put(int32* p, int32* q, int32 i, int32 n) {
     requires i < n;
     owns p[1..n];
     ensures q[i] == 7;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

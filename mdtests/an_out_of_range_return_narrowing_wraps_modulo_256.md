@@ -17,7 +17,7 @@ verifying "an_out_of_range_return_narrowing_wraps_modulo_256.c";
 uint8 f(int32 x) {
     requires x == 300;
     ensures result == 44;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

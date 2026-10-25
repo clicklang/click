@@ -36,7 +36,7 @@ int32 total(int32* s, int32 scale) {
     requires 0 <= scale and scale <= 100;
     ensures o.size == old(o.size);
     ensures result == o.size + scale;
-} by { execute(); simp(); }
+}
 int32 caller(int32* sq, int32 scale) {
     owns sq[0..1];
     requires 0 <= sq[0] and sq[0] <= 100;

@@ -16,12 +16,12 @@ verifying "int32_conversion_from_a_long_wraps_modulo_2_to_the_32.c";
 int32 cast(int64 x) {
     requires x == 2147483648;
     ensures result == -2147483648;
-} by { execute(); simp(); }
+}
 
 int32 returned(int64 x) {
     requires x == 4294967301;
     ensures result == 5;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

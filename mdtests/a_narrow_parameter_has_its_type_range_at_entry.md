@@ -36,22 +36,22 @@ verifying "a_narrow_parameter_has_its_type_range_at_entry.c";
 int32 ignore_u8(uint8 x) {
     ensures x >= 0;
     ensures x <= 255;
-} by { execute(); simp(); }
+}
 
 int32 ignore_u16(uint16 x) {
     ensures x >= 0;
     ensures x <= 65535;
-} by { execute(); simp(); }
+}
 
 int32 ignore_i8(int8 x) {
     ensures x >= -128;
     ensures x <= 127;
-} by { execute(); simp(); }
+}
 
 int32 ignore_i16(int16 x) {
     ensures x >= -32768;
     ensures x <= 32767;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

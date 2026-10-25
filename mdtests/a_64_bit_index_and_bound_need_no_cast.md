@@ -25,13 +25,13 @@ uint8 read(const uint8* bytes, uint64 length, uint64 index) {
     requires index < length;
     views bytes[0..length];
     ensures result == bytes[index];
-} by { execute(); simp(); }
+}
 void write(uint8* bytes, uint64 length, uint64 index, uint8 value) {
     requires length <= 2147483647u64;
     requires index < length;
     owns bytes[0..length];
     ensures bytes[index] == value;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

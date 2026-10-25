@@ -18,23 +18,23 @@ verifying "widths.c";
 void probe_byte(struct byte *p) {
     views p->value;
     ensures viewable(p->value);
-} by { execute(); simp(); }
+}
 void probe_short(struct short *p) {
     views p->value;
     ensures viewable(p->value);
-} by { execute(); simp(); }
+}
 void probe_word(struct word *p) {
     views p->value;
     ensures viewable(p->value);
-} by { execute(); simp(); }
+}
 void probe_wide(struct wide *p) {
     views p->value;
     ensures viewable(p->value);
-} by { execute(); simp(); }
+}
 void probe_real(struct real *p) {
     views p->value;
     ensures viewable(p->value);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

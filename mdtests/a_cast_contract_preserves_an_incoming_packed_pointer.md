@@ -18,7 +18,7 @@ int32 read_packed(unsigned long word, struct node* p) {
     requires ((struct node*)(word & ~1)) == p;
     views p->value;
     ensures result == p->value;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

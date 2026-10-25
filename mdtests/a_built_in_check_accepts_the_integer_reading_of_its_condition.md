@@ -31,18 +31,18 @@ int32 difference(int32 a, int32 b) {
     requires to_integer(a) - to_integer(b) <= 2147483647;
     requires to_integer(a) - to_integer(b) >= -2147483648;
     ensures to_integer(result) == to_integer(a) - to_integer(b);
-} by { execute(); auto(); }
+}
 
 int32 difference_low_first(int32 a, int32 b) {
     requires -2147483648 <= to_integer(a) - to_integer(b);
     requires 2147483647 >= to_integer(a) - to_integer(b);
     ensures to_integer(result) == to_integer(a) - to_integer(b);
-} by { execute(); auto(); }
+}
 
 uint32 fits(uint32 a, uint32 b) {
     requires a <= 4294967295u32 - b;
     ensures result == 1u32;
-} by { execute(); simp(); }
+}
 
 theorem a_difference_in_range_is_defined(a: int32, b: int32) {
     requires to_integer(a) - to_integer(b) >= -2147483648;

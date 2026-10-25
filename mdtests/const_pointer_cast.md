@@ -30,18 +30,18 @@ verifying "const_pointer_cast.c";
 const struct node *as_const(struct node *node) {
     requires node != 0;
     ensures result == node;
-} by { execute(); simp(); }
+}
 
 const struct node *round_trip(const struct node *node) {
     requires node != 0;
     ensures result == node;
-} by { execute(); simp(); }
+}
 
 int32 read_value(struct node *node) {
     requires node != 0;
     views node->value;
     ensures result == node->value;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

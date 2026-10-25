@@ -28,7 +28,7 @@ resource Other(p: int32*) { field revision: int32; owns p[0]; fact p[0] == revis
 void noop(int32* p) {
     owns p[0];
     ensures p[0] == old(p[0]);
-} by { execute(); simp(); }
+}
 contract void Migrated(int32* p) {
     consumes input: Input(p);
     produces output: Output(p);

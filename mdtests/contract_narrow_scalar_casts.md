@@ -22,7 +22,7 @@ theorem narrow_boundaries() {
 
 uint16 retain(uint16 x) {
     ensures result == old((uint16)(int32)x);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

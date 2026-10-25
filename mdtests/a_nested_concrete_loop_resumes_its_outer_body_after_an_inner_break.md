@@ -34,7 +34,7 @@ verifying "a_nested_concrete_loop_resumes_its_outer_body_after_an_inner_break.c"
 
 int32 f(int32 x) {
     ensures result == 3;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

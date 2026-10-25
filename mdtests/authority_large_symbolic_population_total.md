@@ -26,7 +26,7 @@ void first_birth(int32* o, int32 k) {
     produces k of tok(o);
     ensures count(tok(o)) == k;
     ensures 0 <= count(tok(o));
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

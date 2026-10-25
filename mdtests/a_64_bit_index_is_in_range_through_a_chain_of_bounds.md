@@ -23,7 +23,7 @@ uint8 get(const uint8* bytes, uint64 length, uint64 n, uint64 i) {
     requires i < n;
     views bytes[0..length];
     ensures result == bytes[i];
-} by { execute(); simp(); }
+}
 int64 get_signed(const int64* cells, int64 length, int64 n, int64 i) {
     requires length <= 1000i64;
     requires n <= length;
@@ -31,7 +31,7 @@ int64 get_signed(const int64* cells, int64 length, int64 n, int64 i) {
     requires i < n;
     views cells[0..length];
     ensures result == result;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

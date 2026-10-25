@@ -24,7 +24,7 @@ int32 contract_owns_write_footprint(int32 p[], int32 dst[], int32* counter, int3
     ensures writes_first: p[0] == 1;
     ensures writes_second: dst[0] == 2;
     ensures writes_counter: counter[0] == n;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

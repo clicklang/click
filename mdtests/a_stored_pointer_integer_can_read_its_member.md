@@ -16,7 +16,7 @@ int32 probe(struct Pair* pair, struct Holder* h) {
     views pair->first;
     owns h->word;
     ensures result == pair->first;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

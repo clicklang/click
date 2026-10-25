@@ -13,7 +13,7 @@ verifying "current_load_through_old_pointer.c";
 void write(int32* p, int32* q) {
     owns p[0..1];
     ensures load_int32(old(p)) == 7;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -16,11 +16,11 @@ uint64 quotient(uint64 n, uint64 d) { return n / d; }
 verifying "uint64_constant_bound_strengthening.c";
 uint32 classify(uint64 n) {
     ensures result != 1u32;
-} by { execute(); simp(); }
+}
 uint64 quotient(uint64 n, uint64 d) {
     requires d > 0u64;
     ensures result == n / d;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

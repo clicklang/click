@@ -14,7 +14,7 @@ uint8 read_byte(struct bytes* p) {
     requires p != 0;
     views p->first;
     views p->second;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

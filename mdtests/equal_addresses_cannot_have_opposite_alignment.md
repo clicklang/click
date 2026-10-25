@@ -12,7 +12,7 @@ void impossible(struct node* p, struct node* q) {
     requires aligned(p, 8);
     requires ((uint64)q & 7) != 0;
     ensures false;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

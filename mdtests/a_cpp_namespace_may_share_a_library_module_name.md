@@ -37,7 +37,7 @@ extern int V::length(int x) {
 int caller(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

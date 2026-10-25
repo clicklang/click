@@ -18,11 +18,11 @@ verifying "written_closers_prove_a_guarded_call_postcondition.c";
 extern int32 helper(int32 x) { ensures result == x + 1; }
 
 int32 by_auto(int32 x) {
-    ensures result == x + 1 by { execute(); auto(); }
+    ensures result == x + 1;
 }
 
 int32 by_simp(int32 x) {
-    ensures result == x + 1 by { execute(); simp(); }
+    ensures result == x + 1;
 }
 ```
 

@@ -23,7 +23,7 @@ verifying "mutex_abstract_reserved_guard.c";
 void write_value(struct holder *holder, int *data) {
     owns mutex_guard(&holder->mu);
     owns data[0..1];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

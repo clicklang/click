@@ -59,7 +59,7 @@ int32* pick(int32* p, int32 flag, int32* q) {
 uint64 dispatch(uint64 (*what)(uint64), int32 flag) {
     requires flag != 0;
     requires Wide(what);
-    ensures result == 4294967296 by { execute(); simp(); }
+    ensures result == 4294967296;
 }
 contract uint64 Wide(uint64 seed) {
     ensures result == seed;

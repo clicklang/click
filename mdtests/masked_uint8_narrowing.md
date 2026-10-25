@@ -13,7 +13,7 @@ unsigned char low_byte(unsigned value) {
 verifying "masked_uint8_narrowing.c";
 uint8 low_byte(uint32 value) {
     ensures ((uint32)result) == (value & 255u32);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

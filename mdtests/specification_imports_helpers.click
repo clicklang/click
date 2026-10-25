@@ -5,7 +5,7 @@ contract int32 ImportedIdentity(int32 x) {
 }
 
 int32 imported_helper(int32 x) {
-    ensures result == x by { execute(); simp(); }
+    ensures result == x;
 }
 
 tactic retain_equal(x: int32, y: int32) {

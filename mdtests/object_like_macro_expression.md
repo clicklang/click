@@ -15,7 +15,7 @@ verifying "main.c";
 
 int32 run() {
     ensures result == 3;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

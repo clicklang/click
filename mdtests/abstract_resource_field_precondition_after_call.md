@@ -27,7 +27,7 @@ void bump(int32* s, int32 delta) {
     requires 0 <= delta and delta <= 100;
     requires 0 <= o.size and o.size <= 500;
     ensures to_integer(o.size) == to_integer(old(o.size) + delta + delta);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

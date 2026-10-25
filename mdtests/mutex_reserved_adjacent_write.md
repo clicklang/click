@@ -22,7 +22,7 @@ int32 run(struct holder *holder) {
     owns holder->value;
     requires aligned(&holder->mu, 8);
     ensures result == 0;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

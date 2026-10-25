@@ -35,7 +35,7 @@ void run(int32* o, int32 k) {
     requires k == 1000000000;
     produces k of tok(o);
     ensures count(tok(o)) == k;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

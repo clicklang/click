@@ -25,13 +25,13 @@ void copy_viewed(uint8* dst, const uint8* src) {
     views src[0..4];
     owns dst[0..4];
     ensures click::bytes::equal(dst, 0u64, src, 0u64, 4u64);
-} by { execute(); simp(); }
+}
 
 void copy_then_clear(uint8* dst, uint8* src) {
     owns src[0..4];
     owns dst[0..4];
     ensures src[0] == 0;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

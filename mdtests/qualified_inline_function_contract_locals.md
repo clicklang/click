@@ -32,7 +32,7 @@ unsigned long first::helper(struct box* p) {
 unsigned long run(struct box* p) {
     owns p->wide;
     ensures result == old(p->wide);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

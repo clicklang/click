@@ -46,13 +46,13 @@ resource tagged_node_at(p: struct node*) {
 
 void touch_tagged(struct node* node) {
     owns list: tagged_node_at(node);
-} by { execute(); simp(); }
+}
 
 int32 keep_tagged(int32* cell) {
     views *cell;
     owns list: tagged_node_at(0);
     ensures result == *cell;
-} by { execute(); simp(); }
+}
 
 ```
 

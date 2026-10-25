@@ -16,17 +16,17 @@ verifying "int16_conversion_wraps_modulo_65536.c";
 short cast(int32 x) {
     requires x == 40000;
     ensures result == -25536;
-} by { execute(); simp(); }
+}
 
 int32 initialized(int32 x) {
     requires x == -32769;
     ensures result == 32767;
-} by { execute(); simp(); }
+}
 
 short from_unsigned_short(unsigned short u) {
     requires u == 65535;
     ensures result == -1;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect
