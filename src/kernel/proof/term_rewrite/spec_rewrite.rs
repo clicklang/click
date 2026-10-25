@@ -171,6 +171,21 @@ fn collect_spec_integer_carriers(
                 collect_spec_argument_carriers(argument, variables, integer_seen);
             }
         }
+        SpecIntegerExpression::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            collect_spec_proposition_carriers(condition, variables, integer_seen);
+            if variables.exhausted() {
+                return;
+            }
+            collect_spec_integer_carriers(then_branch, variables, integer_seen);
+            if variables.exhausted() {
+                return;
+            }
+            collect_spec_integer_carriers(else_branch, variables, integer_seen);
+        }
         SpecIntegerExpression::AlgebraicMatch { scrutinee, arms } => {
             collect_spec_algebraic_carriers(scrutinee, variables, integer_seen);
             if variables.exhausted() {
@@ -1267,6 +1282,15 @@ impl<'a> TermRewrite<'a> {
                         .collect::<Result<Vec<_>, _>>()?,
                 }
             }
+            SpecIntegerExpression::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => SpecIntegerExpression::If {
+                condition: Box::new(self.rewrite_spec_proposition(condition)?),
+                then_branch: Box::new(self.rewrite_spec_integer(then_branch)?),
+                else_branch: Box::new(self.rewrite_spec_integer(else_branch)?),
+            },
             SpecIntegerExpression::FromMachine(value) => {
                 SpecIntegerExpression::FromMachine(Box::new(self.rewrite_spec_expression(value)?))
             }

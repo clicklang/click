@@ -657,6 +657,19 @@ fn integer_expression_kind(
             }
             body_kind
         }
+        // Like a match's arms: an Integer branch makes the conditional
+        // Integer, and an unsuffixed numeral branch takes the other's type.
+        ContractExpression::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            let then_kind =
+                integer_expression_kind(then_branch, integer_bindings, click_functions, locals)?;
+            let else_kind =
+                integer_expression_kind(else_branch, integer_bindings, click_functions, locals)?;
+            Some(then_kind || else_kind)
+        }
         ContractExpression::AlgebraicMatch { arms, .. } => {
             if arms.is_empty() {
                 return None;
@@ -882,6 +895,23 @@ fn contains_integer_expression_signal(
                     click_functions,
                     &body_locals,
                 )
+        }
+        ContractExpression::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            contains_integer_expression_signal(
+                then_branch,
+                integer_bindings,
+                click_functions,
+                locals,
+            ) || contains_integer_expression_signal(
+                else_branch,
+                integer_bindings,
+                click_functions,
+                locals,
+            )
         }
         ContractExpression::AlgebraicMatch { arms, .. } => arms.iter().any(|arm| {
             contains_integer_expression_signal(&arm.body, integer_bindings, click_functions, locals)

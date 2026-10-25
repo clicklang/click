@@ -2968,6 +2968,15 @@ pub enum SpecIntegerExpression {
         scrutinee: Box<SpecAlgebraicExpression>,
         arms: Vec<SpecIntegerMatchArm>,
     },
+    /// `if condition { then_branch } else { else_branch }` with Integer
+    /// branches, evaluated as a scalar `if` is: a literally constant
+    /// condition selects its branch, any other lowers both into one
+    /// [`IntegerTerm::If`].
+    If {
+        condition: Box<SpecProposition>,
+        then_branch: Box<Self>,
+        else_branch: Box<Self>,
+    },
     FromMachine(Box<SpecExpression>),
     Negate(Box<Self>),
     Add(Box<Self>, Box<Self>),

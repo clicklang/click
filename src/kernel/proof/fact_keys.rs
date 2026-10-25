@@ -1264,6 +1264,13 @@ enum AlphaIntegerNode {
         name: String,
         arguments: Vec<AlphaPureFunctionArgumentKey>,
     },
+    /// A conditional, keyed like the machine conditional in
+    /// [`AlphaBitvectorKey`].
+    If {
+        condition: Box<AlphaConditionKey>,
+        then_term: usize,
+        else_term: usize,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -1544,6 +1551,19 @@ fn alpha_integer_node(
             }
         }
         IntegerTerm::AlgebraicMatch { .. } => return None,
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => AlphaIntegerNode::If {
+            condition: Box::new(alpha_condition_key_with_bindings::<false>(
+                condition,
+                bindings,
+                next_binder,
+            )?),
+            then_term: alpha_integer_node(then_term, bindings, memo, nodes, next_binder)?,
+            else_term: alpha_integer_node(else_term, bindings, memo, nodes, next_binder)?,
+        },
         IntegerTerm::RangeFold {
             index,
             initial,

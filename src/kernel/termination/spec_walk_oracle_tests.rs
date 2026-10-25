@@ -86,6 +86,7 @@ fn old_collect_spec_integer_expression_c_variables(
         SpecIntegerExpression::Term(_) => Ok(()),
         // A resource field reads the binder's instance, not a C local.
         SpecIntegerExpression::ResourceField(_) => Ok(()),
+        SpecIntegerExpression::If { .. } => Err("a conditional `if` expression"),
         SpecIntegerExpression::FromMachine(value) => {
             old_collect_spec_expression_c_variables(value, reads)
         }

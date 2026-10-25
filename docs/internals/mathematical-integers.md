@@ -17,9 +17,13 @@ operand of `+`, `-`, `*` and negation is observed with `to_integer` (the
 lists the positions). `src/surface/parser/spec_arithmetic.rs` decides it
 while parsing, from the expected types of comparison operands, declared
 `Integer` parameters and fields, `-> Integer` results and typed `let`s; an
-untyped `let` of machine arithmetic is refused. A `match` arm is in the
-position of its match; an `if` branch is not yet, because
-`SpecIntegerExpression` has no conditional.
+untyped `let` of machine arithmetic is refused. A `match` arm and an `if`
+branch are in the position of their match or conditional; an `if`'s
+condition stays a proposition. So in an Integer position
+`if c { a + 1 } else { b }` reads `if c { to_integer(a) + 1 } else {
+to_integer(b) }`, an [Integer conditional](#integer-conditional), and
+`to_integer(if ...)` written out observes the C conditional, with its
+branches' C obligations.
 
 An unused `Integer` parameter does not reinterpret a separately machine-typed
 literal or expression. Expected-type propagation follows the expression and
@@ -615,6 +619,35 @@ nonzero constants folds, while substituting a zero divisor stays opaque.
 Regressions cover full-width signed/unsigned magnitudes, both remainder signs,
 2/8/32/128-node shared DAGs, and explicit numeric bit-length work charging.
 This representation foundation used schema 38 without admitting new source operations.
+
+## Integer conditional
+
+`IntegerTerm::If { condition, then_term, else_term }` is the Integer
+counterpart of the machine `Bitvector32Term::If`: a `ConditionTerm` and two
+shared (`SharedIntegerTerm`) arms. `IntegerTerm::if_then_else` builds it and
+leaves one arm for a constant condition or equal arms, so neither stands.
+`SpecIntegerExpression::If` holds the written proposition and Integer
+branches; evaluation lowers it as a scalar `if` is lowered: a literally
+constant condition selects its branch, and any other lowers both into one
+conditional term (`evaluate_spec_integer_if_paths_in`). Lowering reads no
+ambient fact, so choosing a branch is a proof step.
+
+The term has the machine conditional's capabilities and no more. Its shallow
+interning key is its condition and its arms' ids. Substitution, variable
+collectors, alpha keys, memory-load and resource-read collectors, narrow
+carrier and fold-read checks, and both printers walk the condition and the
+arms; the Surface spelling is `if c { a } else { b }`. A rewrite that decides
+the condition (a substitution, `normalize() using`, or `simp`'s known
+conditions) leaves the selected arm, and arms a rewrite makes equal leave one,
+also under an exact Integer substitution, since that only deletes a node:
+`rewrite(x == y); normalize();` closes `(if c { x } else { y }) == x`, as for
+a machine conditional. The affine fragment keeps an unresolved conditional as
+one opaque atom by its shared identity, as it keeps a product or quotient; a
+bound over its arms takes a case split
+(`mdtests/an_integer_if_in_a_theorem_verifies.md`,
+`mdtests/an_integer_if_is_reduced_under_a_known_condition.md`,
+`mdtests/an_integer_function_with_an_if_body_unfolds.md`). A termination
+measure may not read one, as it may not read a machine conditional.
 
 ## Guarded wide native division
 

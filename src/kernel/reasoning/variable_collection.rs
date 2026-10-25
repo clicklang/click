@@ -881,6 +881,15 @@ fn collect_integer_bound_identities(
             collect_shared_integer_bound_identities(left, variables, integer_seen);
             collect_shared_integer_bound_identities(right, variables, integer_seen);
         }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_integer_variables(condition, variables, &mut SeenTerms::default());
+            collect_shared_integer_bound_identities(then_term, variables, integer_seen);
+            collect_shared_integer_bound_identities(else_term, variables, integer_seen);
+        }
         IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_algebraic_term_bound_identities(scrutinee, variables, integer_seen);
             for arm in arms {
@@ -1874,6 +1883,21 @@ fn collect_integer_carrier_variables_seen(
             }
             collect_shared_integer_carrier_variables_seen(right, variables, seen);
         }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_integer_variables(condition, variables, seen);
+            if crate::instrumentation::checked_collection_exhausted() {
+                return;
+            }
+            collect_shared_integer_carrier_variables_seen(then_term, variables, seen);
+            if crate::instrumentation::checked_collection_exhausted() {
+                return;
+            }
+            collect_shared_integer_carrier_variables_seen(else_term, variables, seen);
+        }
         IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_algebraic_integer_variables(scrutinee, variables, seen);
             if crate::instrumentation::checked_collection_exhausted() {
@@ -2164,6 +2188,21 @@ fn collect_integer_free_variables_seen(
                 return;
             }
             collect_shared_integer_variables_seen(right, variables, seen);
+        }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_integer_variables(condition, variables, seen);
+            if crate::instrumentation::checked_collection_exhausted() {
+                return;
+            }
+            collect_shared_integer_variables_seen(then_term, variables, seen);
+            if crate::instrumentation::checked_collection_exhausted() {
+                return;
+            }
+            collect_shared_integer_variables_seen(else_term, variables, seen);
         }
         IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_algebraic_free_integer_variables(scrutinee, variables, seen);
@@ -2545,6 +2584,15 @@ fn collect_integer_variables_seen(
             }
         }
         IntegerTerm::Machine(value) => collect_bitvector_variables(value.value(), variables),
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_bitvector_variables(condition, variables);
+            collect_shared_integer_variables(then_term, variables, seen);
+            collect_shared_integer_variables(else_term, variables, seen);
+        }
         IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_algebraic_term_bitvector_variables(scrutinee, variables);
             for arm in arms {
@@ -3229,6 +3277,21 @@ fn collect_integer_bitvector_capture_variables(
             }
             collect_shared_integer_bitvector_capture_variables(right, variables, integer_seen);
         }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_capture_variables(condition, variables, integer_seen);
+            if crate::instrumentation::checked_collection_exhausted() {
+                return;
+            }
+            collect_shared_integer_bitvector_capture_variables(then_term, variables, integer_seen);
+            if crate::instrumentation::checked_collection_exhausted() {
+                return;
+            }
+            collect_shared_integer_bitvector_capture_variables(else_term, variables, integer_seen);
+        }
         IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_capture_variables_in_algebraic_term(scrutinee, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
@@ -3409,6 +3472,16 @@ fn collect_integer_scope_summary(
                 }
                 summary.merge(collect_scope_summary_in_argument(argument, summaries));
             }
+            summary
+        }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            let mut summary = collect_condition_scope_summary(condition, summaries);
+            summary.merge(collect_integer_scope_summary_shared(then_term, summaries));
+            summary.merge(collect_integer_scope_summary_shared(else_term, summaries));
             summary
         }
         IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
@@ -3931,6 +4004,29 @@ fn collect_integer_binder_variables_seen(
                 bitvector_variables,
                 integer_seen,
             );
+        }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_binder_variables(
+                condition,
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
+            for branch in [then_term, else_term] {
+                if crate::instrumentation::checked_collection_exhausted() {
+                    return;
+                }
+                collect_integer_binder_variables_shared(
+                    branch,
+                    integer_variables,
+                    bitvector_variables,
+                    integer_seen,
+                );
+            }
         }
         IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_binder_variables_in_algebraic_term(

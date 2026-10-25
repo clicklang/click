@@ -172,6 +172,15 @@ impl<'a> SpecNode<'a> {
                     visit(N::Algebraic(scrutinee));
                     arms.iter().for_each(|arm| visit(N::Integer(&arm.body)));
                 }
+                SpecIntegerExpression::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                } => {
+                    visit(N::Proposition(condition));
+                    visit(N::Integer(then_branch));
+                    visit(N::Integer(else_branch));
+                }
                 SpecIntegerExpression::FromMachine(value) => visit(N::Expression(value)),
                 SpecIntegerExpression::Negate(value) => visit(N::Integer(value)),
                 crate::kernel::binary_spec_integer_expression!(left, right) => {

@@ -981,9 +981,8 @@ them a machine type
 | an operand of a comparison that does `+`, `-`, `*` or negation, compares an Integer with a machine value, or has a `count(...)` operand | Integer |
 | an argument for an `Integer` parameter of a pure function or theorem, including a library theorem and `truncating_quotient` / `truncating_remainder` | Integer |
 | the value of `let s: Integer = ...`, an `Integer` constructor field, an `Integer` resource field's value in a `fold` map, the body of a `-> Integer` function | Integer |
-| an arm of a `match` in an Integer position | Integer |
+| an arm of a `match` or a branch of an `if` in an Integer position (the `if`'s condition is a proposition) | Integer |
 | a machine-typed parameter, constructor or resource field; `let s: int32 = ...`, whose unsuffixed literal value is an `int32` in the type's range; an index or memory range; a cast; the argument of `to_integer(...)` or `defined(...)`; an operand of `/ % << >> & \| ^`; a machine fold accumulator or body; a `decreases` measure | that machine type |
-| a branch of an `if` | the conditional's C type: the kernel has no Integer conditional, so an Integer position observes the whole conditional, `to_integer(if ...)` |
 | an untyped `let s = ...` | none: arithmetic on a machine value in its value is refused; the binding has its value's type, so one whose value is an Integer is an Integer |
 
 <!-- verified-example: mdtests/a_typed_let_gives_machine_arithmetic_its_meaning.md -->
@@ -994,7 +993,16 @@ let k = 5 + 3;
 ```
 
 `s` is the exact sum; `let s: int32 = a + b;` is C's sum and owes its
-definedness (`mdtests/a_machine_typed_let_keeps_the_c_operation.md`). An
+definedness (`mdtests/a_machine_typed_let_keeps_the_c_operation.md`). An `if` or `match` in an operand
+is looked through: a comparison does arithmetic when a branch or arm does,
+and each branch is then in the Integer position, so
+`result == (if x < 7 { x + 1 } else { 7 })` reads
+`to_integer(result) == (if x < 7 { to_integer(x) + 1 } else { 7 })` and the
+branch's sum is exact, even at `INT32_MAX` or `UINT32_MAX`
+(`mdtests/an_int32_branch_in_an_integer_comparison_is_exact.md`,
+`mdtests/an_unsigned_branch_in_an_integer_comparison_does_not_wrap.md`).
+`to_integer(if ...)` written out observes the C conditional instead, with
+its branches' C obligations. An
 untyped `let` of a plain machine value, such as `t`, or of arithmetic on
 Integers and literals alone, such as `k`, needs no annotation. An untyped
 `let` whose value does `+`, `-`, `*` or negation on a machine value, at its

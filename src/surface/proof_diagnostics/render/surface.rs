@@ -2421,6 +2421,24 @@ impl Printer<'_> {
                     MULTIPLY,
                 ))
             }
+            IntegerTerm::If {
+                condition,
+                then_term,
+                else_term,
+            } => {
+                let condition = self.condition(condition, true, depth)?;
+                let then_term = self.integer(then_term, depth)?;
+                let else_term = self.integer(else_term, depth)?;
+                // Parenthesized wherever it is an operand, as a machine
+                // conditional is.
+                Some(spelled(
+                    format!(
+                        "if {} {{ {} }} else {{ {} }}",
+                        condition.text, then_term.text, else_term.text
+                    ),
+                    0,
+                ))
+            }
             IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
                 let scrutinee = self.algebraic(scrutinee, depth)?;
                 let mut spelled_arms = Vec::new();

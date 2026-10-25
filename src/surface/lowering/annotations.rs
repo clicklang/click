@@ -5247,6 +5247,34 @@ impl AnnotationLowerer<'_> {
                 }
                 result_type
             }
+            // An Integer conditional: Integer branches, or one Integer branch
+            // and an unsuffixed numeral, which takes its type. Any other
+            // conditional keeps its C lowering, so it is not typed here.
+            ContractExpression::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                let then_type = self.contract_expression_click_type_in_scope(
+                    then_branch,
+                    environment,
+                    lexical_bindings,
+                );
+                let else_type = self.contract_expression_click_type_in_scope(
+                    else_branch,
+                    environment,
+                    lexical_bindings,
+                );
+                let integer_or_numeral = |branch_type: &Option<ClickType>, branch| {
+                    *branch_type == Some(ClickType::Integer)
+                        || (branch_type.is_none()
+                            && is_unsuffixed_integer_literal_expression(branch))
+                };
+                ((then_type == Some(ClickType::Integer) || else_type == Some(ClickType::Integer))
+                    && integer_or_numeral(&then_type, then_branch)
+                    && integer_or_numeral(&else_type, else_branch))
+                .then_some(ClickType::Integer)
+            }
             ContractExpression::Call { name, .. }
                 if name == "to_integer" || is_integer_truncation(name) =>
             {
@@ -5412,6 +5440,24 @@ impl AnnotationLowerer<'_> {
             return Ok(SpecIntegerExpression::AlgebraicMatch {
                 scrutinee: Box::new(scrutinee),
                 arms: lowered_arms,
+            });
+        }
+        if let ContractExpression::If {
+            condition,
+            then_branch,
+            else_branch,
+        } = expression
+        {
+            return Ok(SpecIntegerExpression::If {
+                condition: Box::new(
+                    self.click_proposition_to_spec_proposition(condition, environment)?,
+                ),
+                then_branch: Box::new(
+                    self.lower_contract_integer_to_spec(then_branch, environment)?,
+                ),
+                else_branch: Box::new(
+                    self.lower_contract_integer_to_spec(else_branch, environment)?,
+                ),
             });
         }
         // The proof parser preserves a variable reference as a C fragment

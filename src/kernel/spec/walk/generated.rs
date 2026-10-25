@@ -223,7 +223,7 @@ impl Gen {
             };
         }
         let d = depth - 1;
-        match self.pick(10) {
+        match self.pick(11) {
             0 => SpecIntegerExpression::AlgebraicMatch {
                 scrutinee: Box::new(self.alg(d)),
                 arms: vec![SpecIntegerMatchArm {
@@ -263,6 +263,11 @@ impl Gen {
             },
             7 => SpecIntegerExpression::Multiply(Box::new(self.int(d)), Box::new(self.int(d))),
             8 => SpecIntegerExpression::Subtract(Box::new(self.int(d)), Box::new(self.int(d))),
+            9 => SpecIntegerExpression::If {
+                condition: Box::new(self.prop(d)),
+                then_branch: Box::new(self.int(d)),
+                else_branch: Box::new(self.int(d)),
+            },
             _ => SpecIntegerExpression::TruncatingRemainder(
                 Box::new(self.int(d)),
                 Box::new(self.int(d)),

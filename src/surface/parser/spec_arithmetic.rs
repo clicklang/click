@@ -7,9 +7,9 @@
 //! argument for an `Integer` parameter of a pure function or theorem, the
 //! value of `let s: Integer`, an `Integer` constructor field, an `Integer`
 //! resource field's `fold` value, the body of a `-> Integer` function, and
-//! every arm of a `match` in one of those positions. An `if` is not yet one: the kernel has no Integer
-//! conditional, so a conditional keeps its C value and is observed whole,
-//! `to_integer(if ...)`. Where a machine type is expected the
+//! every arm of a `match` and branch of an `if` in one of those positions
+//! (an `if`'s condition stays a proposition). Where a machine type is
+//! expected the
 //! operation is C's at that type, as written. An untyped `let` has no
 //! expected type, so one whose value does arithmetic on a machine value is
 //! refused and names both annotations. An untyped `let` has its value's
@@ -247,7 +247,7 @@ impl Parser {
         value: &ContractExpression,
     ) -> Result<(), ClickError> {
         if !self.integer_arithmetic
-            || !has_value_arithmetic(value)
+            || !has_arithmetic_spine(value)
             || self.has_c_only_operand(value)
         {
             return Ok(());
@@ -469,6 +469,14 @@ impl Parser {
             | ContractExpression::At {
                 expression: inner, ..
             } => self.has_c_only_operand_in_scope(inner, scope),
+            ContractExpression::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                self.has_c_only_operand_in_scope(then_branch, scope)
+                    || self.has_c_only_operand_in_scope(else_branch, scope)
+            }
             ContractExpression::AlgebraicMatch { arms, .. } => arms.iter().any(|arm| {
                 with_locals(scope, self.arm_operands(arm), |scope| {
                     self.has_c_only_operand_in_scope(&arm.body, scope)
@@ -536,8 +544,9 @@ impl Parser {
     }
 
     /// `expression` with each machine operand of its arithmetic observed
-    /// with `to_integer`, in every arm of a match it produces. Unsuffixed literals take the Integer type from
-    /// context, and Integer operands are left as they are.
+    /// with `to_integer`, in every arm of a match and branch of a conditional
+    /// it produces. Unsuffixed literals take the Integer type from context,
+    /// and Integer operands are left as they are.
     pub(super) fn observe_machine_operands(
         &self,
         expression: ContractExpression,
@@ -578,6 +587,17 @@ impl Parser {
                     expression: observe(expression, scope),
                 }
             }
+            // Each branch is in the position the conditional is in; the
+            // condition is a proposition, read as it was parsed.
+            ContractExpression::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => ContractExpression::If {
+                condition,
+                then_branch: observe(then_branch, scope),
+                else_branch: observe(else_branch, scope),
+            },
             // Each arm is in the position the match is in.
             ContractExpression::AlgebraicMatch { scrutinee, arms } => {
                 ContractExpression::AlgebraicMatch {
@@ -640,7 +660,7 @@ impl Parser {
             ContractExpression::Old(inner)
             | ContractExpression::At {
                 expression: inner, ..
-            } if has_value_arithmetic(inner) => self.machine_spine_operand(inner, scope),
+            } if has_arithmetic_spine(inner) => self.machine_spine_operand(inner, scope),
             ContractExpression::If {
                 then_branch,
                 else_branch,
@@ -732,31 +752,9 @@ pub(super) fn has_count_operand(expression: &ContractExpression) -> bool {
     }
 }
 
-/// Whether the value of `expression` is computed by `+`, `-`, `*` or
-/// negation: at its top, through `old` and `at`, or in a branch of a
-/// conditional or an arm of a match.
-fn has_value_arithmetic(expression: &ContractExpression) -> bool {
-    match expression {
-        ContractExpression::Old(inner)
-        | ContractExpression::At {
-            expression: inner, ..
-        } => has_value_arithmetic(inner),
-        ContractExpression::If {
-            then_branch,
-            else_branch,
-            ..
-        } => has_value_arithmetic(then_branch) || has_value_arithmetic(else_branch),
-        ContractExpression::AlgebraicMatch { arms, .. } => {
-            arms.iter().any(|arm| has_value_arithmetic(&arm.body))
-        }
-        _ => has_arithmetic_spine(expression),
-    }
-}
-
 /// Whether `expression` does `+`, `-`, `*` or negation at its top, looking
-/// through `old`, `at`, and the arms of a match, each of which is in the
-/// position the whole is in. A conditional is not looked through: the
-/// kernel has no Integer conditional, so an `if` keeps its C value.
+/// through `old`, `at`, the arms of a match and the branches of a
+/// conditional, each of which is in the position the whole is in.
 pub(super) fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
     match expression {
         ContractExpression::Add(..)
@@ -770,6 +768,11 @@ pub(super) fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
         | ContractExpression::At {
             expression: inner, ..
         } => has_arithmetic_spine(inner),
+        ContractExpression::If {
+            then_branch,
+            else_branch,
+            ..
+        } => has_arithmetic_spine(then_branch) || has_arithmetic_spine(else_branch),
         ContractExpression::AlgebraicMatch { arms, .. } => {
             arms.iter().any(|arm| has_arithmetic_spine(&arm.body))
         }

@@ -63,6 +63,14 @@ pub enum IntegerTerm {
         scrutinee: Box<AlgebraicTerm>,
         arms: Vec<AlgebraicIntegerMatchArm>,
     },
+    /// A conditional Integer value, the counterpart of the machine
+    /// `Bitvector32Term::If`. Built by [`IntegerTerm::if_then_else`], so a
+    /// constant condition or equal branches never stand.
+    If {
+        condition: Box<ConditionTerm>,
+        then_term: SharedIntegerTerm,
+        else_term: SharedIntegerTerm,
+    },
     RangeFold {
         index: IntegerRangeFoldIndex,
         initial: SharedIntegerTerm,
@@ -355,6 +363,15 @@ impl Clone for IntegerTerm {
             Self::AlgebraicMatch { scrutinee, arms } => Self::AlgebraicMatch {
                 scrutinee: scrutinee.clone(),
                 arms: arms.clone(),
+            },
+            Self::If {
+                condition,
+                then_term,
+                else_term,
+            } => Self::If {
+                condition: condition.clone(),
+                then_term: then_term.clone(),
+                else_term: else_term.clone(),
             },
             Self::RangeFold {
                 index,
@@ -717,6 +734,16 @@ impl fmt::Debug for IntegerTerm {
                 .field("scrutinee", scrutinee)
                 .field("arms", arms)
                 .finish(),
+            Self::If {
+                condition,
+                then_term,
+                else_term,
+            } => formatter
+                .debug_struct("If")
+                .field("condition", condition)
+                .field("then_term", &then_term.id())
+                .field("else_term", &else_term.id())
+                .finish(),
             Self::RangeFold {
                 index,
                 initial,
@@ -758,6 +785,7 @@ enum IntegerShallowKey {
         scrutinee: Box<AlgebraicTerm>,
         arms: Vec<AlgebraicIntegerMatchArm>,
     },
+    If(Box<ConditionTerm>, u64, u64),
     RangeFold(IntegerRangeFoldIndex, u64, Variable, Variable, u64),
 }
 
@@ -781,7 +809,7 @@ impl IntegerTerm {
                         term, variables,
                     );
                 }
-                IntegerTerm::AlgebraicMatch { .. } => {
+                IntegerTerm::AlgebraicMatch { .. } | IntegerTerm::If { .. } => {
                     crate::kernel::reasoning::variable_collection::collect_integer_variables(
                         term, variables,
                     );
@@ -915,6 +943,11 @@ impl IntegerTerm {
                 scrutinee: scrutinee.clone(),
                 arms: arms.clone(),
             },
+            Self::If {
+                condition,
+                then_term,
+                else_term,
+            } => IntegerShallowKey::If(condition.clone(), then_term.id(), else_term.id()),
             Self::RangeFold {
                 index,
                 initial,
@@ -1109,6 +1142,29 @@ impl IntegerTerm {
         Ok(None)
     }
 
+    /// `if condition { then_term } else { else_term }`: one branch when the
+    /// condition is a constant or both branches are the same term, as
+    /// `AlgebraicTerm::if_then_else` builds an algebraic conditional.
+    pub(crate) fn if_then_else(condition: ConditionTerm, then_term: Self, else_term: Self) -> Self {
+        crate::instrumentation::record_deterministic_work(1);
+        match condition {
+            ConditionTerm::Constant(true) => then_term,
+            ConditionTerm::Constant(false) => else_term,
+            condition => {
+                let then_term = SharedIntegerTerm::intern(then_term);
+                let else_term = SharedIntegerTerm::intern(else_term);
+                if then_term == else_term {
+                    return then_term.as_ref().clone();
+                }
+                Self::If {
+                    condition: Box::new(condition),
+                    then_term,
+                    else_term,
+                }
+            }
+        }
+    }
+
     pub fn as_const(&self) -> Option<&BigInt> {
         match self {
             Self::Constant(value) => Some(value),
@@ -1289,6 +1345,17 @@ fn fmt_integer_term(
             }
             write!(formatter, " }}")
         }
+        IntegerTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            write!(formatter, "if {condition:?} {{ ")?;
+            fmt_integer_shared(then_term, formatter, seen)?;
+            write!(formatter, " }} else {{ ")?;
+            fmt_integer_shared(else_term, formatter, seen)?;
+            write!(formatter, " }}")
+        }
         IntegerTerm::RangeFold {
             index,
             initial,
@@ -1407,6 +1474,14 @@ mod tests {
                 | IntegerTerm::Machine(_)
                 | IntegerTerm::PureFunctionApplication { .. }
                 | IntegerTerm::AlgebraicMatch { .. } => {}
+                IntegerTerm::If {
+                    then_term,
+                    else_term,
+                    ..
+                } => {
+                    pending.push(then_term.clone());
+                    pending.push(else_term.clone());
+                }
                 IntegerTerm::Negate(value) => pending.push(value.clone()),
                 crate::kernel::binary_integer_term!(left, right) => {
                     pending.push(left.clone());
@@ -1826,6 +1901,9 @@ mod tests {
                 }
                 IntegerTerm::AlgebraicMatch { .. } => {
                     unreachable!("the range-fold law test evaluator has no match model")
+                }
+                IntegerTerm::If { .. } => {
+                    unreachable!("the range-fold law test evaluator has no condition model")
                 }
                 IntegerTerm::RangeFold {
                     index,

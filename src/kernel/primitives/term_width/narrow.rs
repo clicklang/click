@@ -287,6 +287,14 @@ impl NarrowWalk {
             IntegerTerm::RangeFold { initial, body, .. } => {
                 self.integer(initial).or_else(|| self.integer(body))
             }
+            IntegerTerm::If {
+                condition,
+                then_term,
+                else_term,
+            } => self
+                .condition(condition)
+                .or_else(|| self.integer(then_term))
+                .or_else(|| self.integer(else_term)),
             IntegerTerm::PureFunctionApplication(application) => application
                 .arguments()
                 .iter()
