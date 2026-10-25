@@ -1782,6 +1782,59 @@ fn sibling_materialization_cells_must_not_launder_a_havoc() {
     );
 }
 
+/// A load projection that jumps to the common source of the surviving
+/// materialization cells keeps only the cells the projected memory itself
+/// holds. A cell the source holds but a later havoc erased was written over:
+/// carrying it across the jump would record the havocked cell's old value
+/// in the snapshot the load names (bounded-pool's `pool_transfer` call read
+/// `source->checked_out` as its value before `pool_checkout`).
+#[test]
+fn a_load_projection_jump_does_not_restore_a_havocked_cell() {
+    let pristine = CMemory::new().with_block("arg-memory", 32);
+    let loaded = symbolic_descriptor(93_000);
+    let sibling = symbolic_descriptor(93_001);
+    let source = pristine
+        .clone()
+        .store(loaded.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+    let materialized = source
+        .clone()
+        .store(sibling.clone(), source.symbolic_int32_load(&sibling));
+    let separation = Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(memory_range(loaded.clone(), 0, 1))),
+        right: Box::new(CResource::Memory(memory_range(sibling.clone(), 0, 1))),
+    };
+    let assumptions = PureFactContext::new().assume_proposition(separation);
+    let havocked = materialized.with_call_memory_havoc(
+        Variable(9001),
+        &[memory_range(loaded.clone(), 0, 1)],
+        &assumptions,
+        None,
+    );
+    assert_eq!(havocked.known_value(&loaded), None, "the havoc erases the cell");
+    assert!(
+        havocked.known_value(&sibling).is_some(),
+        "the separated sibling's materialization survives the havoc"
+    );
+    let projected =
+        crate::kernel::reasoning::memory_resolution::canonical_memory_for_pointer_load(
+            &havocked, &loaded,
+        );
+    assert_eq!(
+        projected.known_value(&loaded),
+        None,
+        "the projection must not restore the havocked cell from the source"
+    );
+    assert_ne!(
+        crate::kernel::eval::canonical_form_of_load(
+            crate::kernel::intern_c_memory_ref(&havocked),
+            loaded,
+            crate::kernel::LoadKind::Bits32,
+        ),
+        Bitvector32Term::Constant(7),
+        "a read of the havocked cell is not its value before the havoc"
+    );
+}
+
 fn symbolic_descriptor(identity: u64) -> Pointer {
     Pointer {
         block: "arg-memory".into(),

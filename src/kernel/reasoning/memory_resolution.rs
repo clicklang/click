@@ -3578,10 +3578,18 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
                 .map(|(block, size)| (block.clone(), size.clone())),
         )
         .collect::<SnapshotMap<_, _>>();
+    //
+    // A jump keeps only the source cells this memory still holds: the
+    // surviving cells are materializations of the source, but a source cell
+    // this memory lacks was erased since (a havoc wrote it), and carrying it
+    // over would make the snapshot the load names record a value the cell no
+    // longer holds (pinned by
+    // `a_load_projection_jump_does_not_restore_a_havocked_cell`).
     let mut cells = (*canonical.cells).clone();
     let keep = |cell_pointer: &Pointer, value: &CValue| {
         cell_pointer.block.observable_by_load(&pointer.block)
             && !cell_disjoint_from_load_by_constant_offset(cell_pointer, value, pointer)
+            && (!jumped || memory.cells.get(cell_pointer).is_some())
     };
     // A load through an unresolved pointer observes every pointer-reachable
     // cell outside a few key ranges; projecting from the store's maintained
@@ -3594,6 +3602,11 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
     {
         Some(visited) => visited,
         None => cells.retain_only_candidates_by(&candidates, keep, |run| {
+            // Dropping a run this memory does not hold forgets knowledge,
+            // which a projection may always do.
+            if jumped && !memory.cells.holds_run(run) {
+                return (SlotSet::Nothing, RuleAnswer::Sound);
+            }
             run_slots_kept_by_load_projection(run, pointer)
         }),
     };
