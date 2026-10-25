@@ -2331,6 +2331,19 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
     if own_facts.len() <= 1 {
         return None;
     }
+    // A fact that holds by the read-over-write authority alone (a store's
+    // value read back in the path that stored it) states nothing the exit
+    // can use, and the path's read has no spelling there, so it is neither
+    // a disjunct's conjunct nor counted in the order below.
+    let own_facts = own_facts
+        .iter()
+        .map(|own| {
+            own.iter()
+                .filter(|fact| !crate::kernel::eval::holds_by_read_over_write(fact))
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
     let mut ordered = own_facts.iter().collect::<Vec<_>>();
     ordered.sort_by_key(|own| own.len());
     let mut disjuncts = Vec::new();
@@ -2342,15 +2355,11 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
         std::collections::HashSet::new();
     for own in &ordered {
         crate::instrumentation::record_deterministic_work(own.len());
-        // A fact that holds by the read-over-write authority alone (a store's
-        // value read back in the path that stored it) states nothing the
-        // exit can use, and the path's read has no spelling there.
         let narrowed = own
             .iter()
             .filter(|fact| match fact {
                 Proposition::ConditionIs(condition, value) => {
                     !earlier.contains(&(condition, !*value))
-                        && !crate::kernel::eval::holds_by_read_over_write(fact)
                 }
                 _ => true,
             })

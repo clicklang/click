@@ -2356,8 +2356,8 @@ pub(crate) fn holds_by_read_over_write(proposition: &Proposition) -> bool {
 }
 
 /// `value` with its term read through the read-over-write authority: what a
-/// test compares a logical read with, now that the read names its version.
-#[cfg(test)]
+/// logical read of a stored cell evaluates to, as a diagnostic or a test
+/// reports it, now that the read names its version.
 pub(crate) fn read_over_write_c_value(value: &CValue) -> CValue {
     let resolve = |term: &Bitvector32Term| read_over_write_value(term).unwrap_or(term.clone());
     match value {

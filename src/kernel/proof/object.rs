@@ -673,7 +673,18 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .iter()
             .any(&available)
         };
-        if available(proposition) || spelled_otherwise() || observed_otherwise() {
+        // A goal reading a stored cell is available as its form over the
+        // value stored there (the read-over-write authority): one more exact
+        // lookup, of the rewritten goal.
+        let stored_value_form = || {
+            crate::kernel::eval::read_over_write_resolved(proposition)
+                .is_some_and(|resolved| available(&resolved) || facts.contains(&resolved))
+        };
+        if available(proposition)
+            || spelled_otherwise()
+            || observed_otherwise()
+            || stored_value_form()
+        {
             return Ok(self.closed_focused());
         }
         // A conjunction or disjunction that is not itself a fact still
