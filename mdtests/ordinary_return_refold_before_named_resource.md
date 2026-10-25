@@ -25,7 +25,7 @@ void inspect(int32* p, int32* occupied) {
     ensures tag.value == 1;
 } by {
     unfold(cell(p, occupied));
-    execute();
+    step_until(function.exit);
     fold(cell(p, occupied));
     let tag = fold(marker(), { value: 1 });
     simp();

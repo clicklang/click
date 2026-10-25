@@ -32,7 +32,7 @@ int32 probe(struct ring_buffer* owner) {
 } by {
     unfold(linear_ring(owner));
     unfold(ring_frame(owner));
-    execute();
+    step_until(function.exit);
     fold(ring_frame(owner));
     fold(linear_ring(owner));
     simp();

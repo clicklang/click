@@ -25,7 +25,7 @@ int32* calloc_zeroed_int32(int32 count) {
     requires count <= 536870911;
     produces maybe_zeroed(result, count);
 } by {
-    execute();
+    step_until(function.exit);
     fold(maybe_zeroed(result, count));
     simp();
 }

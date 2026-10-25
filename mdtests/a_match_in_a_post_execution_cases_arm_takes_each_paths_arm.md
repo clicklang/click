@@ -21,7 +21,7 @@ int read(int* p) {
     ensures result == p[0];
     ensures c.model == old(c.model);
 } by {
-    execute();
+    step_until(function.exit);
     cases {
         result > 0 => {
             match old(c.model) {

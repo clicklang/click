@@ -19,7 +19,7 @@ int32 f(int32 n) {
     ensures result <= 10;
     ensures result >= 0;
 } by {
-    execute();
+    step_until(function.exit);
     if n < 5 {
         have n <= 10 by assumption();
         simp();

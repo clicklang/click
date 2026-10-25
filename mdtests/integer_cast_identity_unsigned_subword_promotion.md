@@ -19,7 +19,7 @@ void store_lane(uint16 *out, uint32 value) {
     owns *out;
     ensures to_integer((int32)*out) == to_integer(*out);
 } by {
-    execute();
+    step_until(function.exit);
     have to_integer(*out) == to_integer(old(value)) by { arithmetic_certificate rules {
         premise 0: 0 <= to_integer(old(value)) => 0 <= to_integer(old(value));
         premise 1: to_integer(old(value)) <= 65535 => to_integer(old(value)) <= 65535;

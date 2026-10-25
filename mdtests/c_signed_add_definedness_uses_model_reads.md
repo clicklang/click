@@ -23,7 +23,7 @@ int32 f(struct cell* p, struct cell* q) {
     ensures to_integer(result) == to_integer(1 + old(left.number) + old(right.number));
 } by {
     unfold(left); unfold(right);
-    execute();
+    step_until(function.exit);
     fold(left); fold(right); simp();
 }
 ```

@@ -39,7 +39,7 @@ void keep(int32* data, int32* occupied, int32 capacity) {
     owns arena_cells(data, occupied, capacity);
 } by {
     unfold(arena_cells(data, occupied, capacity));
-    execute();
+    step_until(function.exit);
     fold(arena_cells(data, occupied, capacity));
     simp();
 }
@@ -49,7 +49,7 @@ void touch(int32* data, int32 capacity) {
     requires 0 < capacity;
 } by {
     unfold(plain_cells(data, capacity));
-    execute();
+    step_until(function.exit);
     fold(plain_cells(data, capacity));
     simp();
 }

@@ -23,13 +23,13 @@ verifying "inspect_server.c";
 int32 inspect_server(int32 fd, int32 state[]) {
     owns live_server(fd, state) by {
         unfold(live_server(fd, state));
-        execute();
+        step_until(function.exit);
         fold(live_server(fd, state));
     }
 
     ensures state_is_ready: state[0] == 1 by {
         unfold(live_server(fd, state));
-        execute();
+        step_until(function.exit);
         fold(live_server(fd, state));
         simp();
     }

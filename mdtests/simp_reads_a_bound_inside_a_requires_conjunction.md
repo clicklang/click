@@ -29,7 +29,7 @@ int32 inc_extracted(int32 x) {
     requires x >= 0 and x <= 100;
     ensures result >= 0;
 } by {
-    execute();
+    step_until(function.exit);
     extract(x <= 100);
     simp();
 }

@@ -32,7 +32,7 @@ void probe(struct node* n) {
 
 theorem probe_is_linked() executes probe(struct node* n) {
     ensures Linked(&probe) by {
-        execute();
+        step_until(function.exit);
         simp();
     }
 }

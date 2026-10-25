@@ -60,7 +60,7 @@ int32 live_count(struct arena* arena) {
 } by {
     let { marks: m, prefix: p, free: f, live: n } = unfold(state);
     unfold(f);
-    execute();
+    step_until(function.exit);
     let f = fold(free_suffix(arena->data, arena->capacity), { start: p });
     let state = fold(arena_prefix_state(arena), {
         prefix: p,

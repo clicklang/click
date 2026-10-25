@@ -20,7 +20,7 @@ int main() {
     step();
     mark first;
     have counter == 8u32;
-    execute();
+    step_until(function.exit);
     have to_integer(result) == to_integer(at(first, counter) + 1u32);
     rewrite(to_integer(result) == to_integer(at(first, counter) + 1u32));
     rewrite(at(first, counter) == 8u32);

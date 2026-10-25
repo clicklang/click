@@ -17,7 +17,7 @@ void compose(const uint8* base, const uint8* middle, const uint8* end) {
  requires end == middle + 3u64;
  ensures end == base + 5u64;
 } by {
- execute();
+ step_until(function.exit);
  have base + 2u64 + 3u64 == base + 5u64 by normalize();
  simp() using {
   end == middle + 3u64;
@@ -33,7 +33,7 @@ void join(const uint8* base, const uint8* middle, const uint8* end, uint64 first
  requires base + first + second == base + (first + second);
  ensures end == base + (first + second);
 } by {
- execute();
+ step_until(function.exit);
  simp() using {
   end == middle + second;
   middle == base + first;

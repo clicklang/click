@@ -41,7 +41,7 @@ int32 identity(int32 x) {
     requires x == 7;
     ensures result == 7;
 } by {
-    execute();
+    step_until(function.exit);
     rewrite(x == 7);
     normalize();
 }

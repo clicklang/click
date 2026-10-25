@@ -23,7 +23,7 @@ int32 f(int32* p, int32* q) {
     produces right: Cell(q);
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     have reflexive(p) == 1 by { unfold(reflexive(p)); normalize(); }
     let left = fold(Cell(p), { tag: 1 });
     have reflexive(q) == 1 by { unfold(reflexive(q)); normalize(); }
@@ -37,7 +37,7 @@ int32 g(int32* p, int32* q) {
     produces right: Cell(q);
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     let left = fold(PlainCell(p), { tag: 1 });
     have reflexive(q) == 1 by { unfold(reflexive(q)); normalize(); }
     let right = fold(Cell(q), { tag: 2 });

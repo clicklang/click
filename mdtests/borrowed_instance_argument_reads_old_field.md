@@ -56,7 +56,7 @@ void use(struct region* region) {
     ensures region->arena == old(region->arena);
 } by {
     let { start: s } = unfold(r);
-    execute();
+    step_until(function.exit);
     let r = fold(reg(region), { start: s });
     simp();
 }

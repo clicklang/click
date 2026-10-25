@@ -31,7 +31,7 @@ void increment(int32* o, int32 n) {
     requires n < 2147483647;
     ensures count(tok(o)) == old(count(tok(o))) + (n + 1);
 } by {
-    execute();
+    step_until(function.exit);
     have to_integer(n + 1) == to_integer(n) + 1 by auto();
     have to_integer(old(count(tok(o)))) + to_integer(n + 1) <= 2147483647 by auto();
     have to_integer(old(count(tok(o)))) + to_integer(n + 1) >= -2147483648 by auto();

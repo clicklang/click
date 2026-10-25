@@ -27,7 +27,7 @@ void create() {
     produces model: account();
     ensures model.total == 18446744073709551616;
 } by {
-    execute();
+    step_until(function.exit);
     let model = fold(account(), { total: 18446744073709551616 });
     simp();
 }
@@ -39,7 +39,7 @@ void change() {
     ensures old(model.total) == 18446744073709551616;
 } by {
     unfold(model);
-    execute();
+    step_until(function.exit);
     let model = fold(account(), { total: 18446744073709551617 });
     simp();
 }

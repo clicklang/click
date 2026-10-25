@@ -19,7 +19,7 @@ verifying "an_int32_branch_in_an_integer_comparison_is_exact.c";
 int32 keep(int32 a, int32 c) {
     requires a == 2147483647;
     ensures (if c > 0 { a + 1 } else { a }) > result - 1 by {
-        execute();
+        step_until(function.exit);
         if c > 0 {
             have (if c > 0 { a + 1 } else { a }) == a + 1 by simp();
             simp();

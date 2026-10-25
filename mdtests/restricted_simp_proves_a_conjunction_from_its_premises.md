@@ -18,7 +18,7 @@ int32 checked_index(int32 i, int32 n) {
     requires i >= 0;
     requires i < n;
     ensures in_range: 0 <= i and i < n and result == i by {
-        execute();
+        step_until(function.exit);
         have 0 <= i and i < n and result == i by {
             simp() using {
                 i >= 0;

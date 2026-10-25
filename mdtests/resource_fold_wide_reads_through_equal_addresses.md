@@ -25,7 +25,7 @@ void inspect(struct node *p, struct node *q, struct node *zid, struct node *sid)
     produces packed_at(p->next, q->next);
     ensures 1 == 1;
 } by {
-    execute();
+    step_until(function.exit);
     fold(packed_at(p->next, q->next));
     simp();
 }

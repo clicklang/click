@@ -23,7 +23,7 @@ void set(int32* a, int32 i, int32 j) {
     owns a[0..4];
     ensures a[j] == 5;
 } by {
-    execute();
+    step_until(function.exit);
     have a[i] == 5 by normalize();
     rewrite(j == i);
 }

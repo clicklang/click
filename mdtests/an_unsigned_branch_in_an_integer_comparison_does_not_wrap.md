@@ -17,7 +17,7 @@ verifying "an_unsigned_branch_in_an_integer_comparison_does_not_wrap.c";
 uint32 keep_unsigned(uint32 u, int32 c) {
     requires u == 4294967295u32;
     ensures (if c > 0 { u + 1 } else { u }) > result - 1 by {
-        execute();
+        step_until(function.exit);
         if c > 0 {
             have (if c > 0 { u + 1 } else { u }) == u + 1 by simp();
             simp();

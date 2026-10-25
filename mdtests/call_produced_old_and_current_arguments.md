@@ -24,7 +24,7 @@ void split(struct box* p, int32* q) {
 } by {
     unfold(h);
     let t = fold(cell(p->child), { model: Model::Empty });
-    execute();
+    step_until(function.exit);
     let u = fold(cell(p->child), { model: Model::Empty });
     simp();
 }

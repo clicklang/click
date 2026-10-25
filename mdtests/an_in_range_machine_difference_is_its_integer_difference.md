@@ -15,7 +15,7 @@ uint32 decrement(uint32 x) {
     requires 1 <= to_integer(x);
     ensures to_integer(result) == to_integer(x) - 1;
 } by {
-    execute();
+    step_until(function.exit);
     have 0 <= to_integer(old(x)) - 1 by auto();
     have to_integer(old(x)) - 1 <= 4294967295 by auto();
     arithmetic_certificate rules {

@@ -15,7 +15,7 @@ int32 f(int32* p) {
     produces out: Cell(p);
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     have reflexive(p) == 1 by { unfold(reflexive(p)); normalize(); }
     let out = fold(Cell(p), { tag: 1 });
     simp();

@@ -19,7 +19,7 @@ void fill_t(uint8* dst) {
     owns dst[0..5];
     ensures (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 });
 } by {
-    execute();
+    step_until(function.exit);
     transport(at(region(1).entry, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })),
               (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })) using { }
 }

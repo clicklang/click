@@ -31,7 +31,7 @@ int32 f(int32 p[2], int32 m) {
     ensures allpos(p, m);
     ensures allpos_range(p, m);
 } by {
-    execute();
+    step_until(function.exit);
     unfold(allpos);
     unfold(allpos_range);
     simp();

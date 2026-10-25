@@ -18,7 +18,7 @@ void increment(int32* state) {
     ensures first.revision == 1;
 } by {
     unfold(first);
-    execute();
+    step_until(function.exit);
     let first = fold(Counter(), { revision: 1 });
     simp();
 }

@@ -61,7 +61,7 @@ int32 conditional_cleanup_step(int32 failed) {
 int32 skip_conditional(int32 flag) {
     ensures result == 1;
 } by {
-    execute();
+    step_until(function.exit);
     normalize();
 }
 ```

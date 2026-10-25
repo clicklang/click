@@ -17,7 +17,7 @@ int64 next(uint8 byte) {
     requires byte < 255;
     ensures result <= 255i64;
 } by {
-    execute();
+    step_until(function.exit);
     have result <= 255i64 by {
         simp() using { ((uint32)byte) <= 255u32; byte < 255; };
     }

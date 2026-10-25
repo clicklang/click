@@ -52,14 +52,14 @@ int32 forward_skip() {
 int32 forward_skip_execute() {
     ensures result == 1;
 } by {
-    execute();
+    step_until(function.exit);
     normalize();
 }
 
 int32 forward_goto_chain() {
     ensures result == 2;
 } by {
-    execute();
+    step_until(function.exit);
     normalize();
 }
 ```

@@ -31,7 +31,7 @@ void split_cells(int32* left, int32* right) {
     ensures first.value == 1;
     ensures second.value == 2;
 } by {
-    execute();
+    step_until(function.exit);
     let first = fold(cell(left), { value: 1 });
     let second = fold(cell(right), { value: 2 });
     simp();

@@ -20,7 +20,7 @@ int32 bump(int32 x) {
     mark before;
     step();
     mark after;
-    execute();
+    step_until(function.exit);
     have ((int32)old(x)) == at(before, x) by normalize();
     have ((int64)at(before, x)) == old((int64)x) by normalize();
     have ((int32)(at(after, x) - at(before, x))) == 1 by normalize();

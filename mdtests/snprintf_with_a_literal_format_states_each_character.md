@@ -34,7 +34,7 @@ int32 render(char buf[], uint32 n) {
     requires n == 42u32;
     owns buf[0..8];
     ensures result == 2 by {
-        execute();
+        step_until(function.exit);
         have format::decimal_length(42u64) == 2u64 by {
             apply(format::decimal_length_2(42u64));
         }
@@ -43,7 +43,7 @@ int32 render(char buf[], uint32 n) {
         }
     }
     ensures buf[0] == 52 by {
-        execute();
+        step_until(function.exit);
         have (uint64) n == 42u64 by { simp(); }
         have format::decimal_length((uint64) n) == 2u64 by {
             rewrite((uint64) n == 42u64);
@@ -74,7 +74,7 @@ int32 fraction(char tmp[], uint32 remainder) {
     requires remainder == 5u32;
     owns tmp[0..12];
     ensures result == 4 by {
-        execute();
+        step_until(function.exit);
         have (uint64) remainder == 5u64 by { simp(); }
         have format::decimal_length(5u64) == 1u64 by {
             apply(format::decimal_length_1(5u64));

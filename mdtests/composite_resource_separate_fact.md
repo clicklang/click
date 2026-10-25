@@ -22,13 +22,13 @@ verifying "clobber_dst_packaged.c";
 int32 clobber_dst_packaged(int32* dst, int32* src) {
     owns separated_first_cells(dst, src) by {
         unfold(separated_first_cells(dst, src));
-        execute();
+        step_until(function.exit);
         fold(separated_first_cells(dst, src));
     }
 
     ensures source_unchanged: src[0] == old(src[0]) by {
         unfold(separated_first_cells(dst, src));
-        execute();
+        step_until(function.exit);
         fold(separated_first_cells(dst, src));
     }
 }

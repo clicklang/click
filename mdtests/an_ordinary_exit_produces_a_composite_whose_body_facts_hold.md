@@ -54,7 +54,7 @@ void mk(uint8* p) {
     consumes p[0..6];
     produces zt(p);
 } by {
-    execute();
+    step_until(function.exit);
     fold(zt(p));
 }
 

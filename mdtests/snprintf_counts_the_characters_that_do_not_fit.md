@@ -23,7 +23,7 @@ verifying "clipped.c";
 int32 clipped(char buf[]) {
     owns buf[0..2];
     ensures result == 3 by {
-        execute();
+        step_until(function.exit);
         have format::decimal_length(123u64) == 3u64 by {
             apply(format::decimal_length_3(123u64));
         }
@@ -32,7 +32,7 @@ int32 clipped(char buf[]) {
         }
     }
     ensures buf[1] == 0 by {
-        execute();
+        step_until(function.exit);
         have format::decimal_length(123u64) == 3u64 by {
             apply(format::decimal_length_3(123u64));
         }

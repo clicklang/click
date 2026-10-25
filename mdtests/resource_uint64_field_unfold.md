@@ -30,7 +30,7 @@ unsigned long word_of(struct rb_node* node) {
     ensures result == node->__rb_parent_color;
 } by {
     unfold(linked(node));
-    execute();
+    step_until(function.exit);
     fold(linked(node));
     simp();
 }

@@ -31,7 +31,7 @@ int32 make(int32* p, int32 m) {
     produces bound(p, m);
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     fold(bound(p, m));
     simp();
 }

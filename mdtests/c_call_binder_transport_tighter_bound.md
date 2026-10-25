@@ -27,7 +27,7 @@ void increment(int32* state) {
     ensures first.revision == 1;
 } by {
     unfold(first);
-    execute();
+    step_until(function.exit);
     let first = fold(Counter(), { model: Mark::Set, revision: 1 });
     simp();
 }
@@ -39,7 +39,7 @@ void advance(int32* state) {
     ensures first.revision == old(first.revision) + 1;
 } by {
     unfold(first);
-    execute();
+    step_until(function.exit);
     let first = fold(Counter(), { model: old(first.model), revision: old(first.revision) + 1 });
     simp();
 }
