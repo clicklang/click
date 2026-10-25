@@ -4567,16 +4567,53 @@ pub enum SimpleTactic {
     IteratedOwnership,
 }
 
+/// The four smart tactics, each one engine
+/// (`docs/concepts/smart-and-simple-tactics.md`). `auto` wraps `execute`
+/// and `simp`, and `simp` wraps `arithmetic`; `execute_until` is a variant
+/// of `execute`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SmartTacticKind {
-    CloseInvariants,
-    Auto,
-    ApplyTheorem,
     Arithmetic,
-    FactTransport,
-    SmartExecute,
-    ExecuteUntil,
     Simp,
+    Execute,
+    Auto,
+}
+
+/// A simple tactic written with one argument elided. The search behind it
+/// only looks the argument up, and the same tactic with the argument
+/// written is [`ElidedArgument::written_form`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ElidedArgument {
+    /// `apply(theorem(args))`: the theorem's premises.
+    TheoremPremises,
+    /// `apply(ih(m))`: the hypothesis's premises.
+    InductionPremises,
+    /// `transport(P, Q)`: the frame evidence.
+    FrameEvidence,
+}
+
+impl ElidedArgument {
+    /// The simple tactic the elided form is, once its argument is written.
+    pub fn written_form(self) -> SimpleTactic {
+        match self {
+            Self::TheoremPremises => SimpleTactic::ApplyTheorem,
+            Self::InductionPremises => SimpleTactic::ApplyInduction,
+            Self::FrameEvidence => SimpleTactic::FactTransport,
+        }
+    }
+}
+
+/// What a smart site searches with. Each runs on the smart budget, is
+/// refused by a certificate, and is replaced by `click expand`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SmartSite {
+    /// One of the four smart tactics.
+    Engine(SmartTacticKind),
+    /// A simple tactic whose argument a lookup fills.
+    Elided(ElidedArgument),
+    /// Bare `close_invariants()`: a fixed expansion into
+    /// `close_invariants() by { ... }` with `simp()` on each member.
+    CloseInvariants,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4599,11 +4636,18 @@ pub enum ControlTactic {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TacticClass {
     Simple(SimpleTactic),
-    Smart(SmartTacticKind),
+    Smart(SmartSite),
     Control(ControlTactic),
     /// Dev-only proof hole; never a real proof step. Anything that would
     /// expand, certify, or audit a tactic must reject this class outright.
     Sorry,
+}
+
+impl TacticClass {
+    /// The class of a smart tactic itself.
+    pub fn smart(kind: SmartTacticKind) -> Self {
+        Self::Smart(SmartSite::Engine(kind))
+    }
 }
 
 /// One user-selectable proof-tactic form exposed by the Surface Click parser.
@@ -5048,9 +5092,13 @@ impl ProofTactic {
             Self::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
             Self::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
             Self::StructuralInduct { .. } => TacticClass::Control(ControlTactic::StructuralInduct),
-            Self::ApplyInduction { .. } => TacticClass::Smart(SmartTacticKind::ApplyTheorem),
+            Self::ApplyInduction { .. } => {
+                TacticClass::Smart(SmartSite::Elided(ElidedArgument::InductionPremises))
+            }
             Self::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
-            Self::ApplyTheorem(_) => TacticClass::Smart(SmartTacticKind::ApplyTheorem),
+            Self::ApplyTheorem(_) => {
+                TacticClass::Smart(SmartSite::Elided(ElidedArgument::TheoremPremises))
+            }
             Self::ApplyTheoremUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),
             Self::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
             Self::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
@@ -5060,25 +5108,27 @@ impl ProofTactic {
             Self::Normalize | Self::NormalizeUsing(_) => {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }
-            Self::ArithmeticUsing(_) => TacticClass::Smart(SmartTacticKind::Arithmetic),
+            Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
             Self::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
             Self::Intro | Self::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
             Self::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
             Self::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
-            Self::CloseInvariants => TacticClass::Smart(SmartTacticKind::CloseInvariants),
+            Self::CloseInvariants => TacticClass::Smart(SmartSite::CloseInvariants),
             Self::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),
             Self::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),
             Self::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
-            Self::Transport { .. } => TacticClass::Smart(SmartTacticKind::FactTransport),
+            Self::Transport { .. } => {
+                TacticClass::Smart(SmartSite::Elided(ElidedArgument::FrameEvidence))
+            }
             Self::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
             Self::InstantiateUsing { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
-            Self::SmartExecute => TacticClass::Smart(SmartTacticKind::SmartExecute),
-            Self::ExecuteUntil(_) => TacticClass::Smart(SmartTacticKind::ExecuteUntil),
-            Self::Simp => TacticClass::Smart(SmartTacticKind::Simp),
-            Self::AutoClose => TacticClass::Smart(SmartTacticKind::Auto),
-            Self::SimpUsing(_) => TacticClass::Smart(SmartTacticKind::Simp),
+            Self::SmartExecute | Self::ExecuteUntil(_) => {
+                TacticClass::smart(SmartTacticKind::Execute)
+            }
+            Self::Simp | Self::SimpUsing(_) => TacticClass::smart(SmartTacticKind::Simp),
+            Self::AutoClose => TacticClass::smart(SmartTacticKind::Auto),
             Self::Have(_) => TacticClass::Control(ControlTactic::Have),
             Self::Open(_) => TacticClass::Control(ControlTactic::Open),
             Self::If(_) => TacticClass::Control(ControlTactic::If),

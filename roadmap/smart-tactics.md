@@ -57,13 +57,16 @@ The facts below come from code audits of `master` on 2026-10-20.
 
 ### Smart tactics today
 
-`SmartTacticKind` (`src/surface.rs:4211`) has eight kinds:
+`SmartTacticKind` (`src/surface.rs:4211`) had eight kinds:
 
 - the four engines: `Simp`, `Arithmetic`, `Auto`, and `execute` as two kinds
   (`SmartExecute` and `ExecuteUntil`);
 - `ApplyTheorem`, which covers both `apply(theorem(args))` and `apply(ih(m))`;
 - `FactTransport`;
 - `CloseInvariants`.
+
+It now has the four engines (`Arithmetic`, `Simp`, `Execute`, `Auto`); see
+step 12.
 
 The engines are not layered as the principle says:
 
@@ -939,10 +942,15 @@ verdict change.
     verdict changed except one, to a proof:
     `smart_ranking_closure_reads_an_inequality_in_scope` closes a ranking
     member from the inner loop's exit fact, which the named-premise closer
-    refused. `SmartTacticKind` keeps its kinds for now: a kind is a smart
-    site's spelling in diagnostics, so `close_invariants()` keeps its own,
-    and `apply` and `transport` stay smart sites until steps 13 and 14 make
-    their searches helpers.
+    refused. Done since steps 13 and 14 made the searches of `apply` and
+    `transport` lookups: `SmartTacticKind` is the four engines, and
+    `execute_until` is `Execute`. A smart site's class is a `SmartSite`:
+    an engine, an `ElidedArgument` (the premises of `apply(theorem(args))`
+    or `apply(ih(m))`, the frame evidence of `transport(P, Q)`), or bare
+    `close_invariants()`. `ElidedArgument::written_form` names the simple
+    tactic the `using` form is, and `every_public_form_has_one_class` checks
+    it against that form's parsed class. A refusal still spells the site as
+    written. No verdict changed.
 13. **`transport`.** Add an instance argument. Restrict the bare form's
     premise planner to facts about the memory involved, using an index,
     instead of every available fact. *Verdicts* for the planner change.
