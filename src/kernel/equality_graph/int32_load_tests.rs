@@ -12,7 +12,7 @@ fn load(memory: &SharedCMemory, pointer: &Pointer, bytes: u32) -> Bitvector32Ter
     Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
         bytes,
     ))
 }
@@ -140,7 +140,7 @@ fn int32_load_defining_snapshot_is_independent_of_live_origin() {
     let left = Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
         &before,
         &address(1),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
         4,
         &before,
     ));
@@ -149,7 +149,7 @@ fn int32_load_defining_snapshot_is_independent_of_live_origin() {
     let renamed = Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
         &before,
         &address(1),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
         4,
         &after,
     ));
@@ -174,7 +174,7 @@ fn int32_load_defining_snapshot_is_independent_of_live_origin() {
         Bitvector32Term::MemoryLoad(
             m.clone(),
             Box::new(address(1)),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     crate::kernel::eval::declare_load_access_width(&address(1), 4);

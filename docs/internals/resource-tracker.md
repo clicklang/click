@@ -615,12 +615,19 @@ address: a byte of `0xFF` is `-1` read as `int8` and `255` read as `uint8`, and
 an `int32` read at the same address returns all four bytes. A
 `Bitvector32Term::MemoryLoad` therefore carries a `LoadKind`
 (`src/kernel/primitives.rs`) beside its snapshot and address: `UInt8`,
-`Int16`, `UInt16`, `Bits32`, `Bits64`, `Float32` or `Float64`. Four- and
-eight-byte integer reads keep their bit pattern in the term and let the
-`CValue` wrapper choose signed or unsigned, so `int32` and `uint32` are one
-kind; two-byte reads hold the extended value, which signedness changes. A
-pointer read is a `Bits32` read, because Click names a pointer value by the
-four-byte word at its address, as a materialized pointer field's cells hold it.
+`Int16`, `UInt16`, `Int32`, `UInt32`, `Bits64`, `Float32` or `Float64`.
+Four- and eight-byte integer reads keep their bit pattern in the term;
+two-byte reads hold the extended value, which signedness changes. A 32-bit
+read keeps its signedness in its kind, but both 32-bit kinds read one word
+(`LoadKind::word_kind`, `LoadKind::is_word32`): a load variable is named by
+the word's `Int32` read, and a route that answers a load term from a cell
+reads the stored word whichever signedness stored it, while a typed read of
+the other signedness returns the sign cast σ of it (rule K5,
+[mathematical integers](mathematical-integers.md#the-32-bit-sign-cast)).
+Eight-byte reads are one kind, `Bits64`, and let the `CValue` wrapper choose
+signed or unsigned. A pointer read is an `Int32` read, because Click names a
+pointer value by the four-byte word at its address, as a materialized
+pointer field's cells hold it.
 
 **One byte, one name.** A byte has a single load term: its unsigned (`UInt8`)
 read. A signed (`Int8`) read of the byte is not a load term of its own; it is
@@ -677,7 +684,7 @@ The kind is checked in three kinds of place:
   a one-byte cell of the other signedness answers with the same bits
   converted: the value is exactly what a read of this kind returns;
 - the int32 equality graph takes a load variable as an int32 load only when its
-  kind is `Bits32`. Its recorded width is the widest access seen at the
+  kind is `Int32`, which every 32-bit load variable's is. Its recorded width is the widest access seen at the
   address, so a byte read beside an `int32` read used to qualify
   (`mdtests/a_byte_read_is_not_the_int32_read_at_its_address.md`).
 

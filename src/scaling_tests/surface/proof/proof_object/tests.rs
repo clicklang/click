@@ -1640,7 +1640,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
                     block: "rewrite_reads".into(),
                     offset: PointerOffsetTerm::Constant(index as i64 * 4),
                 }),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             );
             let (variable, registered) = crate::kernel::load_variable_for_term(&load).unwrap();
             let fact = Proposition::ConditionIs(
@@ -1991,7 +1991,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             let load = Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(&memory),
                 Box::new(pointer),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             );
             facts.push(Proposition::ConditionIs(
                 ConditionTerm::Compare {

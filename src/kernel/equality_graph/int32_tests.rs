@@ -87,7 +87,7 @@ fn unsigned_congruence_keeps_load_snapshots_and_widths_distinct() {
         CValue::UInt32(Bitvector32Term::Constant(9)),
     ));
     let load = |memory, kind| Bitvector32Term::MemoryLoad(memory, Box::new(pointer.clone()), kind);
-    let old = load(before.clone(), LoadKind::Bits32);
+    let old = load(before.clone(), LoadKind::Int32);
     let value = var(90_012);
     let mut graph = EqualityGraph::default();
     graph.add_int32_equality(&old, &value);
@@ -96,7 +96,7 @@ fn unsigned_congruence_keeps_load_snapshots_and_widths_distinct() {
         &unsigned_composition(value.clone())
     ));
     assert!(!graph.are_int32_equal(
-        &unsigned_composition(load(after, LoadKind::Bits32)),
+        &unsigned_composition(load(after, LoadKind::Int32)),
         &unsigned_composition(value.clone())
     ));
     assert!(!graph.are_int32_equal(
@@ -182,7 +182,7 @@ fn fact_transport_uses_registered_load_congruence_only_in_one_snapshot() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             memory,
         ))
@@ -240,7 +240,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() 
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             memory,
         ))
@@ -316,7 +316,7 @@ fn two_resolved_four_byte_loads_compare_values_with_snapshot_scope() {
         let kind = if width == 1 {
             crate::kernel::LoadKind::UInt8
         } else {
-            crate::kernel::LoadKind::Bits32
+            crate::kernel::LoadKind::Int32
         };
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory, pointer, kind, width, memory,
@@ -356,7 +356,7 @@ fn direct_composite_int32_argument_uses_graph_with_snapshot_scope() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             memory,
         ))
@@ -400,7 +400,7 @@ fn resource_instance_int32_field_uses_graph_with_snapshot_scope() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             memory,
         ))
@@ -455,7 +455,7 @@ fn certification_uses_graph_int32_equality_with_snapshot_scope() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             memory,
         ))
@@ -498,7 +498,7 @@ fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             memory,
         ))
@@ -618,13 +618,13 @@ fn int32_load_identity_keeps_snapshots_and_exact_support_separate() {
         Bitvector32Term::MemoryLoad(
             memory.clone(),
             Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     let named = Bitvector32Term::Variable(load_variable_for_cell_with_origin(
         &before,
         &pointer,
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
         4,
         &before,
     ));

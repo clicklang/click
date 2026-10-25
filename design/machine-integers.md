@@ -471,7 +471,8 @@ Progress:
   word with no node between the two readings, and kernel-internal index
   arithmetic, C conversions, modular equality and the difference graph rely
   on it. The sequence is: (1) the sign cast σ, (2) constants with a format,
-  (3) loads with a format, (4) the operator merge. Step 1 is done
+  (3) loads with a format, (4) the operator merge; step 3 runs before
+  step 2. Step 1 is done
   (2026-10-25): every C conversion between `int` and `unsigned int`, the
   usual arithmetic conversions, the modulo boundary and a sign-cleared
   `unsigned` index build σ, the `MachineIntegerCast` node between `int32`
@@ -481,6 +482,19 @@ Progress:
   verdict changed. Before the rules, an explicit cast changed 37 tests (28
   fixture verdicts) across order facts, element indices, arithmetic
   certificates and checked narrowing.
+- Step 3, loads with a format, comes before step 2 (maintainer direction,
+  2026-10-25) and is done (2026-10-25). `LoadKind::Int32` and
+  `LoadKind::UInt32` replace `Bits32`: a C, C++ or Rust read takes its kind
+  from the lvalue's type (`LoadKind::of_type`, `LoadKind::of_value`), and a
+  pointer read is an `Int32` read as before. A typed read of a cell stored
+  at the other 32-bit signedness returns σ of the stored word (rule K5,
+  [Decisions](#decisions)); a term-level answer to a load term, which is a
+  word, is the stored word (`LoadKind::reads_value` compares word kinds).
+  One word, one name: a load variable is a variable, which has no format,
+  so a `UInt32` read is named and defined by its word's `Int32` read
+  (`LoadKind::word_kind`), as a signed byte read is the conversion of the
+  byte's unsigned read. Kernel-internal reads stay `Int32`. A trace prints
+  either 32-bit kind as `read<Bits32>`, as before. No verdict changed.
 
 
 ### Stage 4. Front ends and library
@@ -604,9 +618,17 @@ Maintainer direction, 2026-10-25:
   Soundness: reduction modulo 2^32 and two's-complement reading are inverse
   bijections between each format's range and the 32-bit words, so
   `bits(σ(x)) = bits(x)`, and every 32-bit operator, comparison and
-  observation depends only on its operands' bits. A load at a signedness
-  other than the stored value's (K5) is not approved yet; it comes with
-  loads that carry a format.
+  observation depends only on its operands' bits.
+- **K5 (memory), 2026-10-25.** A 32-bit read at signedness F of a cell
+  holding a value stored at the other signedness S returns σ_{S→F} of the
+  stored word (`Bitvector32Term::sign_cast32`, in `CType::read_cell`). Every
+  load-after-store resolution that answers a load *term* (`read_cell` on a
+  `LoadKind`, the materialization and stored-read checks in
+  `memory_resolution.rs`, `memory_provenance.rs`, `contract_claims.rs`,
+  `proof/execution.rs` and `loops.rs`) reads the cell's word, which by K1 is
+  the same word, so it compares word kinds. Soundness: the read returns the
+  same four bytes interpreted in F, which is C's modular conversion between
+  `int` and `unsigned int`. Loads come before formatted constants.
 - **Printing shows σ where the signedness changes.** A value, fact or step
   holding σ prints it as `(uint32)x` or `(int32)x`; nothing else changes.
 

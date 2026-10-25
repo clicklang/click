@@ -106,7 +106,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
             Bitvector32Term::MemoryLoad(
                 intern_c_memory_ref(memory),
                 Box::new(field.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         let backing = Pointer {

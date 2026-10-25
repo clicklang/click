@@ -953,7 +953,7 @@ mod tests {
             let load = crate::kernel::load_variable_for_cell_with_origin(
                 &identity,
                 &source,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
                 &observed,
             );
@@ -1007,7 +1007,7 @@ mod tests {
         let loaded = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &source,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             8,
             &memory,
         );
@@ -1015,7 +1015,7 @@ mod tests {
             crate::kernel::load_variable_for_term(&Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(target.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             ))
             .expect("the target read has a name");
         let read_through = |variable| {
@@ -1025,7 +1025,7 @@ mod tests {
                     block: PointerBlock::Symbolic(variable),
                     offset: PointerOffsetTerm::Constant(8),
                 }),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         let goal = Proposition::ConditionIs(
@@ -1079,7 +1079,7 @@ mod tests {
                         PointerOffsetTerm::Constant(displacement),
                     ),
                 }),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         let equality = Proposition::ConditionIs(
@@ -1192,7 +1192,7 @@ mod tests {
             Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(pointer(offset)),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         let data_offset = PointerOffsetTerm::scale_int32(data.clone(), 4);
@@ -1329,7 +1329,7 @@ mod tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let load =
-            Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Bits32);
+            Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, load.clone())
             .expect("a symbolic int32 load is a mathematical observation");
         let goal = Proposition::ConditionIs(
@@ -1364,7 +1364,7 @@ mod tests {
                     block: "fold".into(),
                     offset: PointerOffsetTerm::Constant(0),
                 }),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             ),
         ));
         let fold = IntegerTerm::range_fold(
@@ -1477,12 +1477,12 @@ mod tests {
         let first_load = Bitvector32Term::MemoryLoad(
             first_memory,
             Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let second_load = Bitvector32Term::MemoryLoad(
             second_memory,
             Box::new(pointer),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, second_load)
             .expect("a symbolic int32 load is a mathematical observation");

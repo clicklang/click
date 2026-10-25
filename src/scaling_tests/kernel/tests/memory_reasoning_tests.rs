@@ -336,14 +336,14 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
             let next = Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(cell(index + 1)),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             );
             memory = CMemory::new().store(cell(index), CValue::Int32(next));
         }
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(memory),
             Box::new(cell(0)),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let (proven, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::reasoning::bitvector_terms_proven_equal_for_memory_resolution(

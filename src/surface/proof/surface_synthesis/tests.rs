@@ -1685,7 +1685,7 @@ fn load_defining_equation_round_trips() {
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(state.memory()),
         Box::new(pointer),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
     let requirement = Proposition::ConditionIs(
@@ -1726,7 +1726,7 @@ fn load_defining_equation_uses_entry_snapshot() {
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(entry.memory()),
         Box::new(pointer),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
     let entry = entry.with_local("result", CValue::Int32(Bitvector32Term::Variable(variable)));
@@ -1781,7 +1781,7 @@ fn load_defining_equation_uses_saved_snapshot() {
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(base.memory()),
         Box::new(pointer.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
     let snapshot = base.with_local("result", CValue::Int32(Bitvector32Term::Variable(variable)));
@@ -1864,7 +1864,7 @@ fn example_load_defining_requirement(
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(state.memory()),
         Box::new(pointer),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
     (
@@ -1949,7 +1949,7 @@ fn load_equation_rejects_wrong_snapshot_and_unresolvable_variable() {
             right: Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(state.memory()),
                 Box::new(wrong_pointer.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
         },
         true,
@@ -1974,7 +1974,7 @@ fn load_equation_rejects_wrong_snapshot_and_unresolvable_variable() {
                     block: PointerBlock::Concrete("owned-string:wrong-snapshot".into()),
                     offset: PointerOffsetTerm::Constant(0),
                 }),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
         },
         true,
@@ -2019,7 +2019,7 @@ fn actual_struct_field_load_equation(
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(pointer.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
     let requirement = Proposition::ConditionIs(
@@ -2656,7 +2656,7 @@ fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&middle),
         Box::new(cell.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
     let after = with_memory(middle.store(other, int32(1)));

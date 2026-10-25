@@ -26,7 +26,7 @@ fn typed_load(memory: &CMemory, pointer: &Pointer) -> CValue {
         _ => CValue::UInt32(crate::kernel::eval::canonical_form_of_load(
             crate::kernel::intern_c_memory(memory.clone()),
             pointer.clone(),
-            crate::kernel::primitives::LoadKind::Bits32,
+            crate::kernel::primitives::LoadKind::Int32,
         )),
     }
 }

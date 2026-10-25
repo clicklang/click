@@ -3424,7 +3424,7 @@ mod tests {
                     block: "arithmetic-read-identity".into(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(offset),
                 }),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         let explicit = read(0);

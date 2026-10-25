@@ -116,7 +116,7 @@ fn simp_retains_recorded_load_address_equality_premises() {
                     block: "indexed".into(),
                     offset,
                 }),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             ))
         };
         let indexed = load(PointerOffsetTerm::Int32Scaled {
@@ -233,7 +233,7 @@ fn simp_retains_common_base_pointer_equality_for_load_congruence() {
             crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(at),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             ))
         };
         let goal = Proposition::ConditionIs(

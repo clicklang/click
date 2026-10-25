@@ -491,15 +491,18 @@ impl Sort {
 /// this kind.
 ///
 /// Four- and eight-byte integer reads keep their two's-complement bit pattern
-/// in the term and let the `CValue` wrapper choose the interpretation, so a
-/// signed and an unsigned read of that width are one kind (`Bits32`,
-/// `Bits64`). Narrower reads store the extended value, which signedness
-/// changes, so they keep it. Wide 128-bit reads also keep signedness: their
+/// in the term. A four-byte read keeps the reader's signedness (`Int32`,
+/// `UInt32`), but both read one word: one load variable names it
+/// ([`Self::word_kind`]), and a typed read of a cell stored at the other
+/// signedness is the sign cast σ of the stored word (rule K5,
+/// `design/machine-integers.md`). Eight-byte reads are one kind (`Bits64`)
+/// and let the `CValue` wrapper choose the interpretation. Narrower reads
+/// store the extended value, which signedness changes, so they keep it. Wide 128-bit reads also keep signedness: their
 /// checked constant payloads retain the exact machine format. This profile
 /// supports exact typed cells, not signed/unsigned memory reinterpretation.
 /// Floating-point reads are kinds of their own.
 ///
-/// A pointer read is a `Bits32` read: Click names a pointer value by the
+/// A pointer read is an `Int32` read: Click names a pointer value by the
 /// four-byte word at its address (`Pointer::loaded` scales that word), which
 /// is also how a materialized pointer field's cells hold it. The access is
 /// still eight bytes wide; framing takes the width recorded at the address,
@@ -510,7 +513,8 @@ pub enum LoadKind {
     UInt8,
     Int16,
     UInt16,
-    Bits32,
+    Int32,
+    UInt32,
     Bits64,
     /// Wide loads retain signedness because their constant payloads are typed.
     Int128,
@@ -528,7 +532,8 @@ impl LoadKind {
             CType::Int8 => Self::Int8,
             CType::Int16 => Self::Int16,
             CType::UInt16 => Self::UInt16,
-            CType::Int32 | CType::UInt32 => Self::Bits32,
+            CType::Int32 => Self::Int32,
+            CType::UInt32 => Self::UInt32,
             CType::Int64 | CType::UInt64 => Self::Bits64,
             CType::Int128 => Self::Int128,
             CType::UInt128 => Self::UInt128,
@@ -548,7 +553,7 @@ impl LoadKind {
             | CType::Float32Array(_)
             | CType::Float64Array(_)
             | CType::PointerArray(_, _) => return None,
-            _ if value_type.is_pointer() => Self::Bits32,
+            _ if value_type.is_pointer() => Self::Int32,
             _ => return None,
         })
     }
@@ -563,28 +568,36 @@ impl LoadKind {
             CValue::Int8(_) => Self::Int8,
             CValue::Int16(_) => Self::Int16,
             CValue::UInt16(_) => Self::UInt16,
-            CValue::Int32(_) | CValue::UInt32(_) => Self::Bits32,
+            CValue::Int32(_) => Self::Int32,
+            CValue::UInt32(_) => Self::UInt32,
             CValue::Int64(_) | CValue::UInt64(_) => Self::Bits64,
             CValue::Int128(_) => Self::Int128,
             CValue::UInt128(_) => Self::UInt128,
             CValue::Float32(_) => Self::Float32,
             CValue::Float64(_) => Self::Float64,
-            CValue::Pointer(_) => Self::Bits32,
+            CValue::Pointer(_) => Self::Int32,
         })
     }
 
-    /// Whether a read of this kind returns `value` itself, where `value` is
+    /// Whether a read of this kind returns `value`'s term, where `value` is
     /// what a cell holds. This is the one test every route that answers a
-    /// load term from a cell or a store applies.
+    /// load term from a cell or a store applies. A 32-bit read of either
+    /// signedness reads a 32-bit cell's word: the two reads name one word
+    /// (rule K5 read through K1), so a term-level answer is the stored
+    /// word whichever signedness stored it. The value a read returns, with
+    /// its signedness, is [`Self::read_cell`].
     pub fn reads_value(self, value: &CValue) -> bool {
-        Self::of_value(value) == Some(self)
+        Self::of_value(value).map(Self::word_kind) == Some(self.word_kind())
     }
 
     /// The value a read of this kind returns from a cell holding `value`:
     /// the value itself when the read is of its kind, or, for a one- or
     /// two-byte read of a cell of the same width and the other signedness,
     /// the same bits reinterpreted ([`CType::read_cell`]). A 32- or 64-bit
-    /// kind already reads a cell of either signedness as its bits.
+    /// kind reads a cell of either signedness as its word: this answers a
+    /// load *term*, whose word is the stored word (rules K5 and K1), and the
+    /// reader's tag gives it its signedness. A typed read that returns a
+    /// value of the other 32-bit signedness builds σ ([`CType::read_cell`]).
     pub(crate) fn read_cell(self, value: &CValue) -> Option<CValue> {
         if self.reads_value(value) {
             return Some(value.clone());
@@ -598,11 +611,28 @@ impl LoadKind {
         }
     }
 
+    /// Whether this is a 32-bit integer read of either signedness: the two
+    /// read the same four bytes, so they name one word (rules K1, K5).
+    pub fn is_word32(self) -> bool {
+        matches!(self, Self::Int32 | Self::UInt32)
+    }
+
+    /// The kind that names this read's word: a 32-bit read of either
+    /// signedness names its `Int32` read's word (rule K5, read through K1);
+    /// every other kind is its own word.
+    pub fn word_kind(self) -> Self {
+        if self == Self::UInt32 {
+            Self::Int32
+        } else {
+            self
+        }
+    }
+
     /// Width when the kind is known but no typed producer recorded an access.
-    /// Bits32 can also name an LP64 pointer word, so keep its eight-byte ABI
+    /// A 32-bit read can also name an LP64 pointer word, so keep its eight-byte ABI
     /// footprint. A fully unknown access uses MAX_SCALAR_ACCESS_BYTES instead.
     pub(crate) fn unrecorded_access_byte_width(self) -> u32 {
-        if self == Self::Bits32 {
+        if self.is_word32() {
             crate::kernel::C_POINTER_BYTE_WIDTH
         } else {
             self.byte_width()
@@ -614,7 +644,7 @@ impl LoadKind {
         match self {
             Self::Int8 | Self::UInt8 => 1,
             Self::Int16 | Self::UInt16 => 2,
-            Self::Bits32 | Self::Float32 => 4,
+            Self::Int32 | Self::UInt32 | Self::Float32 => 4,
             Self::Bits64 | Self::Float64 => 8,
             Self::Int128 | Self::UInt128 => 16,
         }

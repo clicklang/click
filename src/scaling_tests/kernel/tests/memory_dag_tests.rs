@@ -82,7 +82,7 @@ fn rewritten_store_witness_work_scales_with_selected_memory_path() {
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(arc_pointer(4)),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let assumptions = PureFactContext::new();
         let capture = CheckedLoadEqualityCapture::start();
@@ -152,7 +152,7 @@ fn checked_order_store_crossing_ignores_unrelated_order_facts() {
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory_ref(memory),
                     Box::new(kept.clone()),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )
             };
             let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -399,7 +399,7 @@ fn named_snapshot_alias_equality_does_not_depend_on_sibling_observation_origins(
             crate::kernel::eval::load_variable_for_cell_with_origin(
                 &named,
                 pointer,
-                LoadKind::Bits32,
+                LoadKind::Int32,
                 4,
                 origin,
             )
@@ -431,11 +431,11 @@ fn named_snapshot_alias_equality_does_not_depend_on_sibling_observation_origins(
             CMemory::new().with_block("local:different-snapshot", 4),
         );
         for retargeted in [
-            Bitvector32Term::MemoryLoad(changed, Box::new(right.clone()), LoadKind::Bits32),
+            Bitvector32Term::MemoryLoad(changed, Box::new(right.clone()), LoadKind::Int32),
             Bitvector32Term::MemoryLoad(
                 named.clone(),
                 Box::new(right.offset_by_bytes(4)),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             ),
             Bitvector32Term::MemoryLoad(named.clone(), Box::new(right.clone()), LoadKind::UInt8),
         ] {
@@ -450,7 +450,7 @@ fn named_snapshot_alias_equality_does_not_depend_on_sibling_observation_origins(
         crate::kernel::eval::load_variable_for_cell_with_origin(
             &named,
             &right,
-            LoadKind::Bits32,
+            LoadKind::Int32,
             8,
             &origins[1],
         );
@@ -939,7 +939,7 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
             Bitvector32Term::MemoryLoad(
                 memory,
                 Box::new(read.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         // Measure this selected cleanup edge's decision and certificate check,
@@ -1065,7 +1065,7 @@ fn preliminary_byte_gap_uses_only_selected_recorded_order() {
                 block: "byte-gap-index".into(),
                 offset: PointerOffsetTerm::Constant(slot * 4),
             }),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     let middle = index(2);
@@ -1253,7 +1253,7 @@ fn an_unrelated_view_does_not_walk_pointer_read_history() {
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &snapshot,
             &field,
-            LoadKind::Bits32,
+            LoadKind::Int32,
             C_POINTER_BYTE_WIDTH,
             &snapshot,
         );

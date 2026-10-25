@@ -155,7 +155,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
         let narrow = Bitvector32Term::MemoryLoad(
             intern_c_memory_ref(&after),
             Box::new(read_pointer.clone()),
-            LoadKind::Bits32,
+            LoadKind::Int32,
         );
         assert!(!matches(&narrow, &bits, &selected));
         let partial = read_pointer.offset_by_bytes(4);
@@ -298,7 +298,7 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
         ));
         assert!(!matches(
             &current,
-            &read(&after, &owned_pointer, LoadKind::Bits32),
+            &read(&after, &owned_pointer, LoadKind::Int32),
             &selected,
         ));
         for (offset, value) in [

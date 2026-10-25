@@ -2415,7 +2415,7 @@ fn condition_fact_matching_ignores_unrelated_local_memory() {
         int32(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(empty_memory),
             Box::new(owner),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )),
     );
     let before_local = CMemory::new()
@@ -2428,14 +2428,14 @@ fn condition_fact_matching_ignores_unrelated_local_memory() {
     let old_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(old_memory),
         Box::new(owner_field.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before_local),
                 Box::new(owner_field.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             ),
             old_load.clone(),
         ),
@@ -2446,7 +2446,7 @@ fn condition_fact_matching_ignores_unrelated_local_memory() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(after_local),
                 Box::new(owner_field),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             ),
             old_load,
         ),
@@ -2483,7 +2483,7 @@ fn order_check_does_not_resolve_loads_across_an_unrelated_local_store() {
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(memory.clone()),
             Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     let assumptions = PureFactContext::new()
@@ -2526,17 +2526,17 @@ fn equality_chains_across_observationally_equivalent_memory_loads() {
     let before_materialized_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before_materialized),
         Box::new(owner.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let before_sparse_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before_sparse),
         Box::new(owner.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let after_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(after),
         Box::new(owner),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let assumptions = PureFactContext::new()
         .assume_condition(
@@ -3112,7 +3112,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     let len = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&entry_memory),
         Box::new(owner.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let after_len = entry_memory
         .clone()
@@ -3120,7 +3120,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     let cap = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&after_len),
         Box::new(field(4)),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let after_cap = after_len
         .clone()
@@ -3128,7 +3128,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     let range_data_offset = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&after_cap),
         Box::new(field(8)),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let range_data = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -3140,7 +3140,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     let entry_data_offset = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&entry_memory),
         Box::new(field(8)),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let entry_data = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -3207,7 +3207,7 @@ fn quantified_int32_fact_does_not_certify_an_instantiated_load() {
     let loaded_value = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(indexed_fact_pointer),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let guarded_fact = forall_int32(
         fact_index,
@@ -3389,7 +3389,7 @@ fn quantified_atomic_derivation_retains_its_specialization_and_guards() {
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(data.offset_by_int32_elements(value)),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     let quantified = forall_int32(
@@ -3475,7 +3475,7 @@ fn a_quantified_instantiation_guard_needing_a_derivation_is_refused() {
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(data.offset_by_int32_elements(value)),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     let quantified = forall_int32(
@@ -3532,7 +3532,7 @@ fn quantified_int32_fact_certifies_a_concrete_indexed_load() {
     let indexed_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(data.offset_by_int32_elements(index_term.clone())),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let guarded_fact = forall_int32(
         index,
@@ -3565,7 +3565,7 @@ fn quantified_int32_fact_certifies_a_concrete_indexed_load() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(&memory),
                 Box::new(data.offset_by_int32_elements(concrete_index.clone())),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             ),
             concrete_index,
         ),
@@ -3596,7 +3596,7 @@ fn quantified_copy_fact_certifies_concrete_pointer_indices() {
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(base.offset_by_int32_elements(index)),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     let copied = forall_int32(
@@ -3651,7 +3651,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
     let loaded_value = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(data.offset_by_int32_elements(index_bits.clone())),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let guarded_fact = forall_int32(
         index,
@@ -4141,7 +4141,7 @@ fn finite_forall_order_fact_needs_an_explicit_instantiation() {
                 block: "arg-memory".into(),
                 offset: PointerOffsetTerm::scale_int32(index, 4),
             }),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     let k = Variable(88);
@@ -4239,7 +4239,7 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
             block: "arg-memory".into(),
             offset: PointerOffsetTerm::scale_int32(k_bits.clone(), 4),
         }),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let pivot = Bitvector32Term::Variable(Variable(191));
     let successor = Bitvector32Term::Variable(Variable(192));
@@ -5846,7 +5846,7 @@ fn derived_order_contradiction_resolves_load_endpoints() {
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
         Box::new(cell),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::signed_less_than(load, Bitvector32Term::Constant(7)),
@@ -5883,12 +5883,12 @@ fn derived_order_contradiction_bridges_snapshot_loads() {
     let before_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before.clone()),
         Box::new(preserved.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let after_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(after.clone()),
         Box::new(preserved),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CMemoryMutatesOnly {
@@ -9833,7 +9833,7 @@ fn offset_and_existential_matches_ignore_unrelated_facts() {
             block: "shape-target".into(),
             offset: PointerOffsetTerm::Constant(0),
         }),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let scaled = PointerOffsetTerm::Int32Scaled {
         value: Box::new(load),

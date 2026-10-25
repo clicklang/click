@@ -1716,7 +1716,7 @@ fn memory_resolution_graph_offsets_keep_load_snapshots_distinct() {
         Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
             memory,
             &address(index),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             memory,
         ))
@@ -2028,7 +2028,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     }) {
         return true;
     }
-    if let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits32) = left
+    if let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Int32) = left
         && let Some(CValue::Int32(value)) =
             stored_value_at_equal_pointer(memory, pointer, assumptions)
         && &value != left
@@ -2036,7 +2036,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     {
         return true;
     }
-    if let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits32) = right
+    if let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Int32) = right
         && let Some(CValue::Int32(value)) =
             stored_value_at_equal_pointer(memory, pointer, assumptions)
         && &value != right
@@ -2657,7 +2657,7 @@ fn memory_has_materialized_load_from(
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
-    let Some(CValue::Int32(Bitvector32Term::MemoryLoad(snapshot, load_pointer, LoadKind::Bits32))) =
+    let Some(CValue::Int32(Bitvector32Term::MemoryLoad(snapshot, load_pointer, LoadKind::Int32))) =
         materialized.known_value(pointer)
     else {
         return false;
@@ -3068,7 +3068,7 @@ fn unrelated_forgotten_snapshots_do_not_prove_their_loads_equal() {
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(memory),
             Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     assert!(
@@ -3085,7 +3085,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(pointer.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         PureFactContext::new().memory_loads_proven_equal(&load(left), &load(right))
@@ -4608,8 +4608,7 @@ fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<Sh
     // The cell is the load only when it holds the load of its own kind: a
     // narrower or differently signed read stored in it is another value
     // than a read of the cell returns.
-    (source_pointer.as_ref() == cell_pointer && LoadKind::of_value(value) == Some(kind))
-        .then_some(source)
+    (source_pointer.as_ref() == cell_pointer && kind.reads_value(value)).then_some(source)
 }
 
 /// The bounded-alias-only form of

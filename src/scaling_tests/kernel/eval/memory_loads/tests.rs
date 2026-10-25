@@ -234,7 +234,7 @@ fn naming_a_load_after_a_call_is_flat_in_its_address_read_depth() {
             let load = Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(&memory),
                 Box::new(cell.clone()),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             );
             let (named, units) = crate::instrumentation::measure_deterministic_work(|| {
                 load_variable_for_term(&load)
@@ -338,7 +338,7 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
     let scalar = Bitvector32Term::MemoryLoad(
         intern_c_memory(base.clone()),
         Box::new(address.clone()),
-        LoadKind::Bits32,
+        LoadKind::Int32,
     );
     let scalar = Pointer::symbolic(load_variable_for_term(&scalar).unwrap().0);
     assert!(latest_pointer_read_observation(&scalar).is_none());
@@ -406,7 +406,7 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
             &facts,
         )
     );
-    let narrow = load(&base, &pointer, LoadKind::Bits32);
+    let narrow = load(&base, &pointer, LoadKind::Int32);
     let (narrow_word, _) = load_variable_for_term(&narrow).unwrap();
     assert!(latest_wide_load_observation(&narrow_word).is_none());
     assert!(
@@ -788,7 +788,7 @@ fn pointer_read_premises_register_definitions_before_transitive_queries() {
     let parent = Pointer::symbolic(Variable(95_601));
     let successor = Pointer::symbolic(Variable(95_602));
     let address = base.offset_by_bytes(16);
-    let load = canonical_form_of_load(snapshot, address.clone(), LoadKind::Bits32);
+    let load = canonical_form_of_load(snapshot, address.clone(), LoadKind::Int32);
     let CValue::Pointer(stored) = crate::kernel::cell_run_value(CType::Int64Pointer, load) else {
         panic!("pointer field");
     };
@@ -874,7 +874,7 @@ fn seeded_pointer_cells_retain_their_typed_load_definition() {
     let alias = Pointer::symbolic(Variable(95_401));
     let address = base.offset_by_bytes(16);
     let alias_address = alias.offset_by_bytes(16);
-    let load = canonical_form_of_load(snapshot, address.clone(), LoadKind::Bits32);
+    let load = canonical_form_of_load(snapshot, address.clone(), LoadKind::Int32);
     let CValue::Pointer(seeded) = crate::kernel::cell_run_value(CType::Int64Pointer, load) else {
         panic!("seeded pointer");
     };
@@ -888,7 +888,7 @@ fn seeded_pointer_cells_retain_their_typed_load_definition() {
             let load = canonical_form_of_load(
                 intern_c_memory_ref(&memory),
                 unrelated.clone(),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             );
             crate::kernel::cell_run_value(CType::Int64Pointer, load);
         }
@@ -935,7 +935,7 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
     let cursor_address = cursor.offset_by_bytes(16);
     let memory = CMemory::new();
     let snapshot = intern_c_memory_ref(&memory);
-    let bits = canonical_form_of_load(snapshot, address.clone(), LoadKind::Bits32);
+    let bits = canonical_form_of_load(snapshot, address.clone(), LoadKind::Int32);
     let cached = CValue::Int32(bits);
     let mut samples = Vec::new();
     for count in [4u64, 16, 64, 256] {
@@ -1059,7 +1059,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
 
         // A later projection may name the same cell by its scalar load.
         // The checked C pointer read must still denote the cached value.
-        let name = canonical_form_of_load(snapshot, address.clone(), LoadKind::Bits32);
+        let name = canonical_form_of_load(snapshot, address.clone(), LoadKind::Int32);
         let projected = memory
             .clone()
             .materialize_named_cell(address.clone(), CValue::Int32(name));
@@ -1385,7 +1385,7 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
             Pointer::loaded(&canonical_term(&Bitvector32Term::MemoryLoad(
                 origin.clone(),
                 Box::new(field.clone()),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             )))
             .unwrap()
         };
@@ -1586,4 +1586,44 @@ fn a_call_frame_step_queries_its_kept_range_once() {
             "{size}: lookup {lookup_work}, step {step_work}"
         );
     }
+}
+
+/// One word, one name: an unsigned 32-bit read is named by its word's
+/// `Int32` read (rule K5), so naming it costs what naming that read again
+/// costs, and both return one variable, however many unrelated cells the
+/// snapshot holds.
+#[test]
+fn naming_an_unsigned_32_bit_read_costs_what_naming_its_word_costs() {
+    let mut samples = Vec::new();
+    for size in [16_u64, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut memory = CMemory::new();
+        for i in 0..size {
+            memory = memory.store(Pointer::symbolic(Variable(993_000 + i)), int32(7));
+        }
+        let memory = crate::kernel::intern_c_memory(memory);
+        let cell = Pointer::symbolic(Variable(994_000));
+        let load = |kind| Bitvector32Term::MemoryLoad(memory.clone(), Box::new(cell.clone()), kind);
+        let (signed, _) = load_variable_for_term(&load(LoadKind::Int32)).unwrap();
+        let (again, word_units) = crate::instrumentation::measure_deterministic_work(|| {
+            load_variable_for_term(&load(LoadKind::Int32))
+        });
+        let (unsigned, unsigned_units) = crate::instrumentation::measure_deterministic_work(|| {
+            load_variable_for_term(&load(LoadKind::UInt32))
+        });
+        let (unsigned, definition) = unsigned.unwrap();
+        assert_eq!(again.unwrap().0, signed, "size {size}");
+        assert_eq!(unsigned, signed, "size {size}");
+        assert_eq!(definition, load(LoadKind::Int32), "size {size}");
+        assert_eq!(
+            registered_load_kind_for_variable(&unsigned),
+            Some(LoadKind::Int32)
+        );
+        assert_eq!(unsigned_units, word_units, "size {size}");
+        samples.push(unsigned_units);
+    }
+    assert!(
+        samples.iter().all(|units| *units == samples[0]),
+        "naming an unsigned read grew with unrelated cells: {samples:?}"
+    );
 }

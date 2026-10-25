@@ -247,7 +247,7 @@ pub(super) fn int32_read(
         return None;
     };
     if crate::kernel::registered_load_kind_for_variable(variable)
-        != Some(crate::kernel::LoadKind::Bits32)
+        != Some(crate::kernel::LoadKind::Int32)
         || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
     {
         return None;
@@ -1472,7 +1472,7 @@ impl TermClasses {
             || self.registered_int32_loads.contains(&id)
             || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
             || crate::kernel::registered_load_kind_for_variable(variable)
-                != Some(crate::kernel::LoadKind::Bits32)
+                != Some(crate::kernel::LoadKind::Int32)
         {
             return;
         }
@@ -2796,7 +2796,7 @@ mod tests {
             Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &address,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 8,
                 memory,
             ))

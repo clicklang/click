@@ -91,7 +91,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
     let loaded = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(snapshot),
         Box::new(slot),
-        LoadKind::Bits32,
+        LoadKind::Int32,
     );
     let loaded_frame = ResourceContext::new()
         .unchecked_with_fact(owner(base(loaded)))
@@ -4488,7 +4488,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
     let selector_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(selector.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let projected = CResourceFact::view_memory(CMemoryRange::new(
         Pointer {
@@ -4562,7 +4562,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
     let selector_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(selector.clone()),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let base_projected = CResourceFact::view_memory(CMemoryRange::new(
         Pointer {

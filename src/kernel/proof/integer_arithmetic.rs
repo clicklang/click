@@ -1362,7 +1362,7 @@ mod tests {
                         Bitvector32Term::MemoryLoad(
                             memory.clone(),
                             Box::new(pointer.clone()),
-                            crate::kernel::LoadKind::Bits32,
+                            crate::kernel::LoadKind::Int32,
                         ),
                     )),
                 )

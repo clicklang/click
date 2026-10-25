@@ -4696,7 +4696,7 @@ mod guided_condition_instantiation_tests {
 
     fn body() -> Proposition {
         Proposition::ConditionIs(
-            ConditionTerm::equal(array_read(variable(998_100), LoadKind::Bits32), 0u32.into()),
+            ConditionTerm::equal(array_read(variable(998_100), LoadKind::Int32), 0u32.into()),
             true,
         )
     }
@@ -4705,7 +4705,7 @@ mod guided_condition_instantiation_tests {
     fn guided_condition_instantiation_keeps_matching_cell_index() {
         let _session = crate::kernel::VerificationSession::enter();
         let target =
-            ConditionTerm::equal(array_read(variable(998_101), LoadKind::Bits32), 0u32.into());
+            ConditionTerm::equal(array_read(variable(998_101), LoadKind::Int32), 0u32.into());
         assert_eq!(
             PureFactContext::guided_forall_condition_candidates(
                 Variable(998_100),

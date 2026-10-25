@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "signedness.cpp": {
+              "compilation_database_sha256": "5185137e2e3d44572ac6b8e6536eb8de58c218266c423af764a2d4dba322fa5a",
+              "dependencies": {},
+              "logical_source_sha256": "c044f21702be516d05f4c3cd1dec808f6348c72ffa5d125f04644287918d2e88",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "signedness.cpp",
+                  "-o",
+                  "signedness.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "signedness.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "c044f21702be516d05f4c3cd1dec808f6348c72ffa5d125f04644287918d2e88"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "d9b11d4160d1ada8d3b3d5a0c967857e435daf6a3d2ea2faeea38435d2d1226a",
+          "name": "clang"
+        },
+        "sources": {
+          "signedness.cpp": {
+            "artifact": {
+              "bytes": 10109,
+              "path": ".click/fixture/signedness.cpp.click-cpp.json",
+              "sha256": "04cc46756a398a213ff3e23bff6c53961d267ec4705c5a2841874b75adbc66ef"
+            },
+            "identity": "eb7e3ad01d6a6d58dc898edbb861710d6e61265834a313b6c1447c77159ea13a",
+            "inputs": {
+              "$unit/signedness.cpp": "c044f21702be516d05f4c3cd1dec808f6348c72ffa5d125f04644287918d2e88"
+            }
+          }
+        },
+        "unit": "8eb10106bd6077c7cddde9d825c755eb21c06fb1d7f6ae87f20a77398cecc4fa"
+      }
+    }
+  }
+}

@@ -300,7 +300,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
                 .and_then(|stored| {
                     let complete_pointer = matches!(&stored, CValue::Pointer(_))
                         || matches!(&stored, CValue::Int32(Bitvector32Term::Variable(variable))
-                        if registered_load_kind_for_variable(variable) == Some(LoadKind::Bits32)
+                        if registered_load_kind_for_variable(variable) == Some(LoadKind::Int32)
                             && registered_load_bytes_for_variable(variable)
                                 == Some(crate::kernel::C_POINTER_BYTE_WIDTH));
                     canonicalized_pointer_value_from_int_cell(
@@ -401,7 +401,8 @@ fn canonical_integer_read(
         CType::Bool | CType::Int8 | CType::UInt8 => LoadKind::UInt8,
         CType::Int16 => LoadKind::Int16,
         CType::UInt16 => LoadKind::UInt16,
-        CType::Int32 | CType::UInt32 => LoadKind::Bits32,
+        CType::Int32 => LoadKind::Int32,
+        CType::UInt32 => LoadKind::UInt32,
         CType::Int64 | CType::UInt64 => LoadKind::Bits64,
         _ => return None,
     };
@@ -1505,7 +1506,7 @@ pub(in crate::kernel) fn abstract_value_source(
         else {
             return None;
         };
-        if registered_load_kind_for_variable(&variable) != Some(LoadKind::Bits32) {
+        if registered_load_kind_for_variable(&variable) != Some(LoadKind::Int32) {
             return None;
         }
         let (loaded, loaded_address) = registered_load_for_variable(&variable)?;
@@ -2012,7 +2013,7 @@ fn canonicalized_symbolic_load_value_with_identity(
         let bits = Bitvector32Term::MemoryLoad(
             snapshot.clone(),
             Box::new(address.clone()),
-            LoadKind::Bits32,
+            LoadKind::Int32,
         );
         let (fresh, load) = load_variable_for_term(&bits)?;
         record_load_variable_defining_fact_with_source_and_pointer(
@@ -3811,6 +3812,12 @@ pub(crate) fn load_variable_for_cell_with_origin(
 /// snapshot that differ in kind are two values. The hash leaves it out, so a
 /// load keeps the slot it had when every load of its address agreed on one
 /// kind, and a second kind probes past it like any other collision.
+///
+/// One word, one name: a load variable is a variable, which has no format,
+/// and a 32-bit read of either signedness reads the same four bytes (rule
+/// K5), so both reads are named by their `Int32` word kind
+/// ([`LoadKind::word_kind`]). The reader's `CValue` tag gives the name its
+/// signedness, as it gives any variable's.
 fn mint_load_variable_identity(
     memory: &SharedCMemory,
     pointer: &Pointer,
@@ -3818,6 +3825,7 @@ fn mint_load_variable_identity(
     origin: &SharedCMemory,
     bytes: u32,
 ) -> Variable {
+    let kind = kind.word_kind();
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     memory.hash(&mut hasher);
@@ -3986,6 +3994,18 @@ pub(crate) fn load_variable_for_term(
     if *kind == LoadKind::Int8 {
         return None;
     }
+    // One word, one name: an unsigned 32-bit read is named, and defined, by
+    // its word's `Int32` read (rule K5; [`mint_load_variable_identity`]).
+    if *kind == LoadKind::UInt32 {
+        let Bitvector32Term::MemoryLoad(memory, pointer, _) = bits else {
+            unreachable!("matched a memory load above");
+        };
+        return load_variable_for_term(&Bitvector32Term::MemoryLoad(
+            memory.clone(),
+            pointer.clone(),
+            LoadKind::Int32,
+        ));
+    }
     // Naming is deterministic per term, and callers ask per fact atom per
     // comparison; the version walk and canonicalization behind a cold call
     // are not free, so cache by term. Term hashing is cheap: embedded
@@ -4042,7 +4062,7 @@ fn load_variable_for_term_uncached(bits: &Bitvector32Term) -> Option<(Variable, 
     // approximation of its own.
     if let Bitvector32Term::Variable(variable) = &canonical
         && let Bitvector32Term::MemoryLoad(_, _, kind) = bits
-        && registered_load_kind_for_variable(variable) == Some(*kind)
+        && registered_load_kind_for_variable(variable) == Some(kind.word_kind())
     {
         return Some((*variable, bits.clone()));
     }
@@ -4230,7 +4250,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
             let load = Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory.clone()),
                 Box::new(pointer.clone()),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             );
             let (variable, _) = load_variable_for_term(&load)?;
             Some(CValue::typed_pointer(
@@ -4278,17 +4298,17 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
             CValue::Int8(Bitvector32Term::signed_byte(unsigned))
         }),
         CType::Int16 => (LoadKind::Int16, CValue::Int16),
-        CType::Int32 => (LoadKind::Bits32, CValue::Int32),
+        CType::Int32 => (LoadKind::Int32, CValue::Int32),
         CType::UInt8 => (LoadKind::UInt8, CValue::UInt8),
         CType::UInt16 => (LoadKind::UInt16, CValue::UInt16),
-        CType::UInt32 => (LoadKind::Bits32, CValue::UInt32),
+        CType::UInt32 => (LoadKind::UInt32, CValue::UInt32),
         CType::Int64 => (LoadKind::Bits64, CValue::Int64),
         CType::UInt64 => (LoadKind::Bits64, CValue::UInt64),
         _ if c_type.is_object_pointer() => {
             let load = Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory.clone()),
                 Box::new(pointer.clone()),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             );
             return LOAD_VARIABLE_CACHE.with(|cache| {
                 let variable = cache.borrow().get(&load)?.0;
@@ -4334,7 +4354,7 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(memory.clone()),
             Box::new(pointer.clone()),
-            LoadKind::Bits32,
+            LoadKind::Int32,
         );
         let (variable, definition) = load_variable_for_term(&load)
             .expect("symbolic pointer cells must be backed by memory loads");
@@ -4920,7 +4940,7 @@ mod tests {
                 let bits = Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory_ref(&memory),
                     Box::new(cell.clone()),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 );
                 let mut facts = crate::kernel::ExecutionFacts::new();
                 let cached = canonicalized_pointer_value_from_int_cell(
@@ -5065,7 +5085,7 @@ mod tests {
             let bits = Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(&memory),
                 Box::new(cell.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             );
             let cached = canonicalized_pointer_value_from_int_cell(
                 &memory,
@@ -5255,7 +5275,7 @@ mod tests {
         let load = Bitvector32Term::MemoryLoad(
             memory.clone(),
             Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let (variable, canonical) = load_variable_for_term(&load).expect("load identity");
         let mut facts = crate::kernel::ExecutionFacts::new();
@@ -5285,7 +5305,7 @@ mod tests {
             offset: PointerOffsetTerm::Constant(12),
         };
         let load =
-            Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Bits32);
+            Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
         let (variable, canonical) = load_variable_for_term(&load).expect("load identity");
         let mut facts = crate::kernel::ExecutionFacts::new();
         let first = test_load_source(0);
@@ -5319,7 +5339,7 @@ mod tests {
         let first_load = Bitvector32Term::MemoryLoad(
             first_memory.clone(),
             Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let mut facts = crate::kernel::ExecutionFacts::new();
         let source = test_load_source(0);
@@ -5343,7 +5363,7 @@ mod tests {
         let second_load = Bitvector32Term::MemoryLoad(
             second_memory.clone(),
             Box::new(pointer),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let replacement = Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -6122,7 +6142,7 @@ mod tests {
         let source_word = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(base.clone()),
             Box::new(source.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let (variable, _) = load_variable_for_term(&source_word).unwrap();
         let cached = base.store(
@@ -6226,7 +6246,7 @@ mod tests {
             Pointer::loaded(&canonical_term(&Bitvector32Term::MemoryLoad(
                 origin.clone(),
                 Box::new(field.clone()),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             )))
             .unwrap()
         };
@@ -6324,7 +6344,7 @@ mod tests {
         let load = Bitvector32Term::MemoryLoad(
             snapshot.clone(),
             Box::new(address.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let (variable, _) = load_variable_for_term(&load).expect("load identity");
         let mut facts = crate::kernel::ExecutionFacts::new();
@@ -6390,7 +6410,7 @@ mod tests {
         let (variable, _) = load_variable_for_term(&Bitvector32Term::MemoryLoad(
             intern_c_memory_ref(&before),
             Box::new(address.clone()),
-            LoadKind::Bits32,
+            LoadKind::Int32,
         ))
         .unwrap();
         let cached = CValue::Int32(Bitvector32Term::Variable(variable));
@@ -6479,7 +6499,7 @@ mod tests {
         let load = Bitvector32Term::MemoryLoad(
             snapshot.clone(),
             Box::new(address.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let (variable, _) = load_variable_for_term(&load).expect("load identity");
         let mut facts = crate::kernel::ExecutionFacts::new();
@@ -6834,11 +6854,8 @@ mod tests {
             );
         record_load_access_width(&source, &address, 8);
         let source = intern_c_memory(source);
-        let original = Bitvector32Term::MemoryLoad(
-            source.clone(),
-            Box::new(address.clone()),
-            LoadKind::Bits32,
-        );
+        let original =
+            Bitvector32Term::MemoryLoad(source.clone(), Box::new(address.clone()), LoadKind::Int32);
         let projected = crate::kernel::memory_provenance::canonicalize_atomic_loads_deep(&original);
         let Bitvector32Term::MemoryLoad(projected, _, _) = projected else {
             panic!("an unresolved aliased read must remain a load");
@@ -6867,7 +6884,7 @@ mod tests {
             Some(Bitvector32Term::MemoryLoad(
                 intern_c_memory(memory.clone()),
                 Box::new(address.clone()),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             )),
         );
         // Recording a definition does not settle a value or grant a cell.
@@ -6883,7 +6900,7 @@ mod tests {
         let cell_bits = Bitvector32Term::MemoryLoad(
             intern_c_memory(memory),
             Box::new(address.clone()),
-            LoadKind::Bits32,
+            LoadKind::Int32,
         );
         // The pointee width does not enter the read's identity.
         assert_eq!(

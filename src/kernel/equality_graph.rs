@@ -438,7 +438,7 @@ pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<Bitvector32Te
             Bitvector32Term::MemoryLoad(
                 read.defining_memory,
                 Box::new(read.defining_address),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             )
         });
     }
@@ -466,7 +466,7 @@ pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<Bitvector32Te
     Some(Bitvector32Term::MemoryLoad(
         load.defining_memory,
         Box::new(load.defining_address),
-        LoadKind::Bits32,
+        LoadKind::Int32,
     ))
 }
 
@@ -2186,7 +2186,7 @@ impl EqualityGraphState {
             let definition = match &block {
                 PointerBlock::LoadedPointer(identity) => {
                     crate::kernel::eval::registered_pointer_load(*identity)
-                        .map(|(memory, address)| (memory, address, crate::kernel::LoadKind::Bits32))
+                        .map(|(memory, address)| (memory, address, crate::kernel::LoadKind::Int32))
                 }
                 // A function pointer read is a typed read of its address,
                 // like a loaded data pointer.
@@ -3223,7 +3223,7 @@ mod tests {
         let cell_bits = Bitvector32Term::MemoryLoad(
             memory.clone(),
             Box::new(p.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         // A pointer read of the cell names the typed read, whatever the
         // pointee width; an address indexed by the cell's scalar does not.
@@ -3250,7 +3250,7 @@ mod tests {
         crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &p,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &memory,
         );
@@ -3350,7 +3350,7 @@ mod tests {
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &address,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 8,
                 memory,
             ))
@@ -3385,7 +3385,7 @@ mod tests {
                 PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                     &memory,
                     address,
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                     8,
                     &memory,
                 )),
@@ -3424,7 +3424,7 @@ mod tests {
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
                 &cell,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 8,
                 &memory,
             ))
@@ -3445,7 +3445,7 @@ mod tests {
             };
             let (memory, address) =
                 crate::kernel::registered_load_origin_for_variable(variable).unwrap();
-            Bitvector32Term::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Bits32)
+            Bitvector32Term::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Int32)
         };
         assert!(crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
             &load(&left), &load(&right), &separated,
@@ -3471,7 +3471,7 @@ mod tests {
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 address,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 8,
                 memory,
             )),
@@ -3594,7 +3594,7 @@ mod tests {
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
                 &p,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
                 &memory,
             )),
@@ -3660,7 +3660,7 @@ mod tests {
         let cell_bits = Bitvector32Term::MemoryLoad(
             memory.clone(),
             Box::new(address.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         // The pointee width does not enter a read's identity; displacement does.
         let other_stride = Pointer::loaded(&cell_bits.clone()).unwrap();
@@ -3709,7 +3709,7 @@ mod tests {
             crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(pointer.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             ))
         };
         let source = read(&raw.pointer().offset_by_bytes(24));

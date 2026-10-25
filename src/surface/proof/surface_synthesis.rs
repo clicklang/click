@@ -3230,14 +3230,14 @@ fn synthesize_surface_bitvector(
             }))
         }
         Bitvector32Term::MemoryLoad(memory, kernel_pointer, kind) => {
-            if *kind == crate::kernel::LoadKind::Bits32
+            if *kind == crate::kernel::LoadKind::Int32
                 && let Some(field) =
                     synthesize_owned_field_at_address(kernel_pointer, CType::Int32, state)
             {
                 return Some(field);
             }
 
-            if *kind == crate::kernel::LoadKind::Bits32
+            if *kind == crate::kernel::LoadKind::Int32
                 && let Some(field) = synthesize_owned_pointer_field(kernel_pointer, state)
             {
                 return Some(ContractExpression::Index(
@@ -3413,7 +3413,7 @@ fn synthesize_surface_bitvector(
                 // array's is bytes), which the legacy `load` would read; a
                 // 32-bit read through it states its own type.
                 let typed_word = value_type.is_none()
-                    && *kind == crate::kernel::LoadKind::Bits32
+                    && *kind == crate::kernel::LoadKind::Int32
                     && kernel_pointer.block.is_static_block();
                 let value_type = if *kind == crate::kernel::LoadKind::UInt8 {
                     Some(CType::UInt8)
@@ -4326,7 +4326,7 @@ fn pointer_read_address_in_state(pointer: &Pointer, state: &CState) -> Option<Po
             (crate::kernel::canonical_form_of_load(
                 memory,
                 address.clone(),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             ) == Bitvector32Term::Variable(*variable))
             .then_some(address)
         }

@@ -7098,7 +7098,7 @@ impl CMemory {
         int32(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
-            LoadKind::Bits32,
+            LoadKind::Int32,
         ))
     }
 
@@ -7140,7 +7140,7 @@ impl CMemory {
         uint32(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
-            LoadKind::Bits32,
+            LoadKind::UInt32,
         ))
     }
 
@@ -7205,7 +7205,7 @@ impl CMemory {
         let value = Pointer::loaded(&Bitvector32Term::MemoryLoad(
             snapshot.clone(),
             Box::new(pointer.clone()),
-            LoadKind::Bits32,
+            LoadKind::Int32,
         ))
         .expect("a memory load names its read");
         // This factory constructs an exact typed read, just like the seeded
@@ -8163,7 +8163,7 @@ impl CState {
                 Some(Bitvector32Term::MemoryLoad(
                     intern_c_memory_ref(&self.memory),
                     Box::new(anchor.clone()),
-                    LoadKind::Bits32,
+                    LoadKind::Int32,
                 )),
             ));
         }

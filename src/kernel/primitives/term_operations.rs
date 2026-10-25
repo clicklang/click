@@ -3952,10 +3952,10 @@ impl CType {
     /// signedness and the same width (C11 6.5p7), which GCC and Clang allow
     /// through a pointer conversion with at most a `-Wpointer-sign`
     /// warning: the load reads the cell's bits in its own signedness. A
-    /// 32-bit term is the word's bits under either tag, as the kernel's own
-    /// C conversion between `int` and `unsigned int` treats it, so the read
-    /// retags it; a 64-bit term uses the bit-preserving conversions between
-    /// its two typed carriers. Narrower terms are their extended values, so
+    /// 32-bit read is the sign cast σ of the stored word (rule K5), as the
+    /// kernel's own C conversion between `int` and `unsigned int` is; a
+    /// 64-bit term uses the bit-preserving conversions between its two typed
+    /// carriers. Narrower terms are their extended values, so
     /// the read is the modular conversion between the two types, as for
     /// bytes below.
     ///
@@ -3994,8 +3994,22 @@ impl CType {
                 MachineIntegerType::Int16,
                 term,
             ))),
-            (Self::UInt32, CValue::Int32(term)) => Some(CValue::UInt32(term.clone())),
-            (Self::Int32, CValue::UInt32(term)) => Some(CValue::Int32(term.clone())),
+            // Rule K5: the four bytes read in the other signedness are the
+            // stored word under the sign cast σ.
+            (Self::UInt32, CValue::Int32(term)) => {
+                Some(CValue::UInt32(Bitvector32Term::sign_cast32(
+                    MachineIntegerType::Int32,
+                    MachineIntegerType::UInt32,
+                    term.clone(),
+                )))
+            }
+            (Self::Int32, CValue::UInt32(term)) => {
+                Some(CValue::Int32(Bitvector32Term::sign_cast32(
+                    MachineIntegerType::UInt32,
+                    MachineIntegerType::Int32,
+                    term.clone(),
+                )))
+            }
             (Self::UInt64, CValue::Int64(term)) => Some(CValue::UInt64(
                 Bitvector32Term::uint64_from_int64(term.clone()),
             )),
@@ -4638,11 +4652,8 @@ impl Pointer {
         if let Some(CValue::Pointer(stored)) = memory.memory().known_value(address) {
             return stored.pointer().clone();
         }
-        let read = Bitvector32Term::MemoryLoad(
-            memory.clone(),
-            Box::new(address.clone()),
-            LoadKind::Bits32,
-        );
+        let read =
+            Bitvector32Term::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
         match canonical_pointer_read(&read) {
             Some(named) => named_pointer_read(named),
             None => Self::loaded_value(memory, address),

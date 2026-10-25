@@ -109,7 +109,7 @@ fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
                         block: "other".into(),
                         offset: PointerOffsetTerm::Constant(index as i64 * 4),
                     }),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
             };
             context = context.assume_condition(condition.clone(), true);
@@ -157,7 +157,7 @@ fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
                     block: "other".into(),
                     offset: PointerOffsetTerm::Constant(0),
                 }),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
         };
         let extended = scalar_branch.assume_condition(extra, true);
@@ -318,7 +318,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
                     block: "buffer".into(),
                     offset: PointerOffsetTerm::Constant(index * 4),
                 }),
-                LoadKind::Bits32,
+                LoadKind::Int32,
             );
             let (variable, load) = load_variable_for_term(&read).unwrap();
             context = context.assume_condition(

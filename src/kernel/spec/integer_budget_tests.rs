@@ -326,7 +326,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
     let load = crate::kernel::eval::load_variable_for_cell(
         &memory,
         &pointer,
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let requirement = Proposition::CMemoryLoadable {
         memory: CMemory::new(),
@@ -392,7 +392,7 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
                 byte_width: 4,
             },
         },
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let outer = crate::kernel::eval::load_variable_for_cell(
         &memory,
@@ -403,7 +403,7 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
                 Box::new(PointerOffsetTerm::Variable(inner)),
             ),
         },
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let requirement = Proposition::CMemoryLoadable {
         memory: CMemory::new(),
@@ -439,7 +439,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let load = crate::kernel::eval::load_variable_for_cell(
         &memory,
         &pointer,
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let (registered_memory, registered_pointer) =
         crate::kernel::eval::registered_load_for_variable(&load)
@@ -452,7 +452,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
             right: Box::new(Bitvector32Term::MemoryLoad(
                 registered_memory.clone(),
                 Box::new(registered_pointer.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
         },
         true,
@@ -486,7 +486,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
                     offset: PointerOffsetTerm::Constant(4),
                     ..registered_pointer.clone()
                 }),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
         },
         true,
@@ -507,7 +507,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
             right: Box::new(Bitvector32Term::MemoryLoad(
                 tampered_memory,
                 Box::new(registered_pointer.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
         },
         true,
@@ -533,7 +533,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
             right: Box::new(Bitvector32Term::MemoryLoad(
                 registered_memory,
                 Box::new(registered_pointer),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
         },
         true,
@@ -615,7 +615,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     let load = crate::kernel::eval::load_variable_for_exact_cell(
         &memory,
         &pointer,
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
         4,
     );
     let (registered_memory, registered_pointer) =
@@ -630,7 +630,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
                 right: Box::new(Bitvector32Term::MemoryLoad(
                     memory,
                     Box::new(pointer),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )),
             },
             true,

@@ -109,7 +109,7 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::new()),
                 Box::new(pointer(id)),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             ),
             var(id),
         )

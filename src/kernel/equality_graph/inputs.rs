@@ -422,8 +422,7 @@ mod read_trace_tests {
     fn admitted_read_trace_includes_read_values_carried_as_offsets() {
         let mut graph = EqualityGraph::default();
         let memory = crate::kernel::intern_c_memory(CMemory::new());
-        let load =
-            Bitvector32Term::MemoryLoad(memory, Box::new(pointer(304_000)), LoadKind::Bits32);
+        let load = Bitvector32Term::MemoryLoad(memory, Box::new(pointer(304_000)), LoadKind::Int32);
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
         let read = PointerOffsetTerm::Int32Scaled {
             value: Box::new(Bitvector32Term::Variable(variable)),

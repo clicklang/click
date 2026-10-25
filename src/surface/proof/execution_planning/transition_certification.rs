@@ -1315,7 +1315,7 @@ mod condition_transition_tests {
             Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(pointer),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         let variable = Variable(0xfeed);

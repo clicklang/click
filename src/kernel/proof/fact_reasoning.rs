@@ -1755,7 +1755,7 @@ mod tests {
                 Bitvector32Term::Variable(load_variable_for_cell_with_origin(
                     &memory,
                     &pointer,
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                     crate::kernel::load_access_width_or_widest(&memory, &pointer),
                     &memory,
                 ))
@@ -1763,7 +1763,7 @@ mod tests {
                 Bitvector32Term::MemoryLoad(
                     memory,
                     Box::new(pointer.clone()),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 )
             };
             Proposition::ForAll {
@@ -1818,7 +1818,7 @@ mod tests {
             let load = load_variable_for_cell_with_origin(
                 snapshot,
                 &pointer,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
                 snapshot,
             );
@@ -1875,7 +1875,7 @@ mod tests {
                     left: Box::new(Bitvector32Term::MemoryLoad(
                         memory.clone().into(),
                         Box::new(pointer.clone()),
-                        crate::kernel::LoadKind::Bits32,
+                        crate::kernel::LoadKind::Int32,
                     )),
                     right: Box::new(Bitvector32Term::Variable(Variable(binder))),
                 },
@@ -1920,14 +1920,14 @@ mod tests {
         let left = load_variable_for_cell_with_origin(
             &intern_c_memory(before.clone()),
             &preserved,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &intern_c_memory(before.clone()),
         );
         let right = load_variable_for_cell_with_origin(
             &intern_c_memory(after.clone()),
             &preserved,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &intern_c_memory(after.clone()),
         );
@@ -1950,14 +1950,14 @@ mod tests {
         let changed_left = load_variable_for_cell_with_origin(
             &intern_c_memory(changed_before.clone()),
             &loaded,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &intern_c_memory(changed_before),
         );
         let changed_right = load_variable_for_cell_with_origin(
             &intern_c_memory(changed_after.clone()),
             &loaded,
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
             4,
             &intern_c_memory(changed_after),
         );
@@ -2120,7 +2120,7 @@ mod tests {
                         byte_width: 4,
                     },
                 }),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         let universal = |index: Variable, term: Bitvector32Term| Proposition::ForAll {
@@ -2230,7 +2230,7 @@ mod tests {
             Bitvector32Term::MemoryLoad(
                 intern_c_memory(memory.clone()),
                 Box::new(pointer.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         let empty = CMemory::new();
@@ -2989,7 +2989,7 @@ mod integer_reflexivity_tests {
             Pointer::symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 address,
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 8,
                 memory,
             ))
@@ -3081,7 +3081,7 @@ mod integer_reflexivity_tests {
                     Bitvector32Term::MemoryLoad(
                         memory.clone(),
                         Box::new(pointer.clone()),
-                        crate::kernel::LoadKind::Bits32,
+                        crate::kernel::LoadKind::Int32,
                     ),
                 )),
             )
@@ -3552,7 +3552,7 @@ mod annotated_address_condition_tests {
             let pointer = Pointer {
                 block: "annotated-address-target".into(),
                 offset: PointerOffsetTerm::scale_int32(
-                    Bitvector32Term::MemoryLoad(memory, Box::new(cell.clone()), LoadKind::Bits32),
+                    Bitvector32Term::MemoryLoad(memory, Box::new(cell.clone()), LoadKind::Int32),
                     1,
                 ),
             };

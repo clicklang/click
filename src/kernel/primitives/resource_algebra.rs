@@ -8525,7 +8525,7 @@ mod zero_quantity_graph_tests {
             Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &pointer(index),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
                 memory,
             ))
@@ -11595,12 +11595,12 @@ mod support_removal_tests {
         let first_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&first),
             Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let second_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&second),
             Box::new(pointer),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let fact = CResourceFact::view_memory(CMemoryRange::new(
             Pointer {
@@ -11628,7 +11628,7 @@ mod support_removal_tests {
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(pointer),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         );
         let mut nested = load;
         for _ in 0..(MAX_MEMORY_LOAD_FOOTPRINT_DEPTH + 8) {

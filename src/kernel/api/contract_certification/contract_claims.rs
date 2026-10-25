@@ -706,7 +706,7 @@ mod range_list_equality_graph_tests {
             Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &pointer(index),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
                 4,
                 memory,
             ))
@@ -912,7 +912,7 @@ fn materialized_load_is_unchanged(
         return false;
     };
     let kind = *kind;
-    if LoadKind::of_value(value) != Some(kind) {
+    if !kind.reads_value(value) {
         return false;
     }
     let right = Bitvector32Term::MemoryLoad(

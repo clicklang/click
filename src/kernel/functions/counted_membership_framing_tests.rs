@@ -235,7 +235,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(shared.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )
         };
         let (old_name, _) = crate::kernel::eval::load_variable_for_term(&load_in(&base)).unwrap();
@@ -271,12 +271,12 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
                 &Bitvector32Term::MemoryLoad(
                     intern_c_memory_ref(&before),
                     Box::new(pointer.clone()),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 ),
                 &Bitvector32Term::MemoryLoad(
                     intern_c_memory_ref(&after),
                     Box::new(pointer.clone()),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 ),
                 &assumptions,
             )

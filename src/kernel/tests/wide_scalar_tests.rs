@@ -520,7 +520,7 @@ fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() 
         CValue::Int32(Bitvector32Term::Constant((-1i32) as u32)),
     );
     let load =
-        Bitvector32Term::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::Bits32);
+        Bitvector32Term::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::Int32);
     let wide = Bitvector32Term::machine_integer_cast(
         MachineIntegerType::Int32,
         MachineIntegerType::Int128,
@@ -663,7 +663,7 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
             bits
         );
         assert_ne!(
-            crate::kernel::api::canonicalize_atomic_loads(&load(LoadKind::Bits32)),
+            crate::kernel::api::canonicalize_atomic_loads(&load(LoadKind::Int32)),
             bits
         );
         let overwritten = intern_c_memory(

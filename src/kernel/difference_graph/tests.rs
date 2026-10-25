@@ -899,7 +899,7 @@ fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
         Box::new(pointer),
-        crate::kernel::LoadKind::Bits32,
+        crate::kernel::LoadKind::Int32,
     );
     let named = crate::kernel::eval::canonical_term(&load);
     assert_ne!(named, load, "the load takes a load variable");

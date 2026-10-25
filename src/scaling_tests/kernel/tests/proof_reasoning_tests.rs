@@ -863,7 +863,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                                 Box::new(data.offset_by_int32_elements(Bitvector32Term::Variable(
                                     fact_index,
                                 ))),
-                                crate::kernel::LoadKind::Bits32,
+                                crate::kernel::LoadKind::Int32,
                             ),
                             Bitvector32Term::Constant(7),
                         ),
@@ -895,7 +895,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                                     Box::new(unrelated.offset_by_int32_elements(
                                         Bitvector32Term::Variable(unrelated_index),
                                     )),
-                                    crate::kernel::LoadKind::Bits32,
+                                    crate::kernel::LoadKind::Int32,
                                 ),
                                 Bitvector32Term::Constant(9),
                             ),
@@ -994,7 +994,7 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
                 let load = Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(cell),
-                    crate::kernel::LoadKind::Bits32,
+                    crate::kernel::LoadKind::Int32,
                 );
                 assumptions = assumptions.assume_condition(
                     ConditionTerm::signed_less_than(load, Bitvector32Term::Constant(index as u32)),

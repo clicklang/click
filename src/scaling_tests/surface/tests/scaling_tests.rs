@@ -6898,7 +6898,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
             base: at(Bitvector32Term::MemoryLoad(
                 memory.into(),
                 Box::new(index_cell.clone()),
-                crate::kernel::LoadKind::Bits32,
+                crate::kernel::LoadKind::Int32,
             )),
             bytes: Bitvector32Term::Constant(4),
             wide: false,
@@ -6949,7 +6949,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                 block: "data".into(),
                 offset,
             }),
-            crate::kernel::LoadKind::Bits32,
+            crate::kernel::LoadKind::Int32,
         )
     };
     let equal = |left: Bitvector32Term, right: Bitvector32Term| {
