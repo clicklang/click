@@ -2,12 +2,14 @@
 
 After `a[i] = 5`, the Click expression `a[i]` lowers to the read of that cell
 at the store's version, not to the stored value `5`: every read lowers to its
-version name (`docs/internals/spellability.md`). So `a[i] == 5` is the store's
-own fact, which `assumption` cites, rather than a goal that evaluates to
-`true`. A rewrite that moves a read to an equal address keeps it a read: with
-`i == j`, `rewrite(j == i)` turns the postcondition `a[j] == 5` into
-`a[i] == 5`, the same fact. If `a[i]` lowered to `5`, that fact would have no
-spelling and the rewritten goal could not be written.
+version name (`docs/internals/spellability.md`). The read-over-write authority
+relates the read to the value the store wrote, so `a[i] == 5` is a goal that
+holds by evaluation and `normalize` closes it, while the goal itself still
+names the read. A rewrite that moves a read to an equal address keeps it a
+read: with `i == j`, `rewrite(j == i)` turns the postcondition `a[j] == 5`
+into `a[i] == 5`, which holds by evaluation, so the rewrite closes it. If
+`a[i]` lowered to `5`, the rewritten goal would be `true`, no longer about
+`a` at all.
 
 ```c filename=set.c
 void set(int32* a, int32 i, int32 j) { a[i] = 5; }
@@ -22,9 +24,8 @@ void set(int32* a, int32 i, int32 j) {
     ensures a[j] == 5;
 } by {
     execute();
-    have a[i] == 5 by assumption();
+    have a[i] == 5 by normalize();
     rewrite(j == i);
-    assumption();
 }
 ```
 

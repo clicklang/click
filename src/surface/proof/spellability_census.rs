@@ -161,6 +161,44 @@ mod tests {
     use super::*;
     use crate::kernel::{Bitvector32Term, Sort, Variable};
 
+    /// After `a[i] = 5`, `a[i]` names the read at the store's version, so a
+    /// rewrite that moves `a[j]` to `a[i]` leaves the goal `a[i] == 5`: the
+    /// rewritten read is named as writing `a[i]` names it, not folded to the
+    /// stored `5` (which would leave `true`, a goal no longer about `a`).
+    #[test]
+    fn a_rewrite_to_a_stored_cell_keeps_the_read_in_the_goal() {
+        let c = "void set(int32* a, int32 i, int32 j) { a[i] = 5; }";
+        let click = r#"verifying "set.c";
+void set(int32* a, int32 i, int32 j) {
+    requires 0 <= i and i < 4;
+    requires i == j;
+    owns a[0..4];
+    ensures a[j] == 5;
+} by {
+    execute();
+    rewrite(j == i);
+}
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c0_sources(click, &[("set.c", c)]).unwrap();
+        });
+        let rewritten = lines
+            .iter()
+            .filter(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                fields.get(1) == Some(&"goal") && fields.get(4) == Some(&"rewrite")
+            })
+            .collect::<Vec<_>>();
+        assert!(!rewritten.is_empty(), "{lines:#?}");
+        assert!(
+            rewritten
+                .iter()
+                .all(|line| line.starts_with("spelled\t")
+                    && line.trim_end().ends_with("\ta[i] == 5")),
+            "{rewritten:#?}"
+        );
+    }
+
     #[test]
     fn facts_an_unfold_adds_at_the_execution_frontier_are_spelled() {
         let c = "struct cell { int32 value; int32 other; };\n\

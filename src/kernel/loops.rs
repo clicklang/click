@@ -2342,11 +2342,15 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
         std::collections::HashSet::new();
     for own in &ordered {
         crate::instrumentation::record_deterministic_work(own.len());
+        // A fact that holds by the read-over-write authority alone (a store's
+        // value read back in the path that stored it) states nothing the
+        // exit can use, and the path's read has no spelling there.
         let narrowed = own
             .iter()
             .filter(|fact| match fact {
                 Proposition::ConditionIs(condition, value) => {
                     !earlier.contains(&(condition, !*value))
+                        && !crate::kernel::eval::holds_by_read_over_write(fact)
                 }
                 _ => true,
             })

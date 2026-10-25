@@ -619,11 +619,13 @@ fn rewrite_through_load_variable(
     if rewritten == pointer {
         return None;
     }
-    Some(crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
-        memory,
-        Box::new(rewritten),
-        kind,
-    )))
+    // The read at the rewritten address is named as lowering names it: by
+    // its version, never by a value its cell holds, so the rewritten goal
+    // is the one writing the new address gives (`a[j]` to `a[i]`, not to
+    // what `a[i]` stores).
+    Some(crate::kernel::canonical_form_of_load(
+        memory, rewritten, kind,
+    ))
 }
 
 /// `rewrite` looks through a loaded pointer the same way: a pointer whose

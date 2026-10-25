@@ -6970,6 +6970,19 @@ impl PureFactContext {
                 }
             }
         }
+        // A fact that reads a stored cell also files its form over the value
+        // stored there (the read-over-write authority,
+        // `eval::read_over_write_value`), as a narrowing above files its
+        // carrier: one bounded rewrite of this fact, nothing else visited.
+        if let Some(Proposition::ConditionIs(resolved, resolved_value)) =
+            crate::kernel::eval::read_over_write_resolved(&Proposition::ConditionIs(
+                condition.clone(),
+                value,
+            ))
+            && resolved != condition
+        {
+            self = self.assume_condition_uncharged(resolved, resolved_value);
+        }
         // The graph derives a same-block comparison's offset view. Do not
         // publish it as an independent premise: it must disappear when the
         // original pointer comparison is withdrawn.

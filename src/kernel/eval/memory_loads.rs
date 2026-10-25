@@ -2347,6 +2347,14 @@ pub(crate) fn read_over_write_resolved(proposition: &Proposition) -> Option<Prop
     (&resolved != proposition).then_some(resolved)
 }
 
+/// Whether `proposition` holds by the read-over-write authority alone: its
+/// reads of stored cells, replaced by the values stored there, leave a
+/// constant truth. Such a fact states nothing beyond the memory it reads.
+pub(crate) fn holds_by_read_over_write(proposition: &Proposition) -> bool {
+    read_over_write_resolved(proposition)
+        .is_some_and(|resolved| crate::kernel::reasoning::path_facts::solve_builtin_prop(&resolved))
+}
+
 /// `value` with its term read through the read-over-write authority: what a
 /// test compares a logical read with, now that the read names its version.
 #[cfg(test)]

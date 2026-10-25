@@ -1494,7 +1494,13 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let ProofObligation::Proposition(goal) = &branch.obligation else {
             return Err(PropositionSplitError::NotProposition);
         };
-        if !branch.state.facts.contains(&disjunction) {
+        // A written disjunction reading stored cells is the available one
+        // over the values stored there (the read-over-write authority), and
+        // each written disjunct is equivalent to its stored-value form.
+        if !branch.state.facts.contains(&disjunction)
+            && !crate::kernel::eval::read_over_write_resolved(&disjunction)
+                .is_some_and(|resolved| branch.state.facts.contains(&resolved))
+        {
             return Err(PropositionSplitError::MissingDisjunction);
         }
         let Proposition::Or(left, right) = disjunction else {
