@@ -7007,6 +7007,7 @@ pub(super) fn describe_program_point_ref_as_recorded(point: &ProgramPointRef) ->
 pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
     match region {
         CodeRegionRef::Function => "function".to_string(),
+        CodeRegionRef::FunctionExit => "function.exit".to_string(),
         CodeRegionRef::Loop(index) => format!("loop({index})"),
         CodeRegionRef::Read(index) => format!("read({index})"),
         CodeRegionRef::BackEdge(None) => "back_edge()".into(),

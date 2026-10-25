@@ -5893,6 +5893,9 @@ pub struct ClickFunctionApplication {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum CodeRegionRef {
     Function,
+    /// The function's exit, written `function.exit`. Accepted only by
+    /// `step_until`, which steps there without splitting.
+    FunctionExit,
     Loop(usize),
     /// The `N`th region `step()` crosses: one lowered statement, in
     /// executable preorder. Each call a C statement makes is its own region.
@@ -5961,6 +5964,9 @@ impl CodeRegionRef {
             CodeRegionRef::Assignment { .. } | CodeRegionRef::Read(_) => Err(
                 CodeRegionResolutionError::ExecutionTargetOnly("assignment and read regions are"),
             ),
+            CodeRegionRef::FunctionExit => Err(CodeRegionResolutionError::ExecutionTargetOnly(
+                "`function.exit` is",
+            )),
         }
     }
 }
