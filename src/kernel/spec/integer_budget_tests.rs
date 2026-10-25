@@ -872,7 +872,7 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         (
             MachineIntegerType::UInt32,
             BigInt::from(u32::MAX),
-            CValue::UInt32(Bitvector32Term::Constant(u32::MAX)),
+            CValue::UInt32(Bitvector32Term::UInt32Constant(u32::MAX)),
         ),
         (
             MachineIntegerType::Int64,

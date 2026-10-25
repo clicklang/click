@@ -64,6 +64,14 @@ pub(crate) fn operation_word(
     right: Box<Bitvector32Term>,
 ) -> Option<Bitvector32Term> {
     use Bitvector32Term as T;
+    let (left, right) = if word(ty) == Word::Bits32 {
+        (
+            Box::new(left.constant_word32()),
+            Box::new(right.constant_word32()),
+        )
+    } else {
+        (left, right)
+    };
     Some(match (word(ty), operation) {
         (Word::Bits32, Operation::Add) => T::Add(left, right),
         (Word::Bits32, Operation::Subtract) => T::Subtract(left, right),

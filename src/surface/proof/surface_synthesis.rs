@@ -866,6 +866,7 @@ fn bitvector_term_exceeds_depth_limit(root: &Bitvector32Term) -> bool {
                 }
             }
             Bitvector32Term::Constant(_)
+            | Bitvector32Term::UInt32Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::MachineIntegerConstant(_)
@@ -1763,12 +1764,23 @@ fn synthesize_external_symbolic_element_range(
                 )),
                 Box::new(index.clone()),
             );
-            if !matches!(bytes, Bitvector32Term::Constant(1)) && bytes != &one_element {
+            if !matches!(
+                bytes,
+                Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)
+            ) && bytes != &one_element
+            {
                 return None;
             }
-            (!matches!(index, Bitvector32Term::Constant(_))).then_some((parameter.name(), index))
+            (!matches!(
+                index,
+                Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+            ))
+            .then_some((parameter.name(), index))
         })?;
-    if matches!(bytes, Bitvector32Term::Constant(1)) {
+    if matches!(
+        bytes,
+        Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)
+    ) {
         // Keep the byte count constant in the re-lowered proposition by
         // moving the symbolic index into the named pointer expression and
         // spelling a zero-based one-byte range over that displaced pointer.
@@ -1830,7 +1842,10 @@ fn is_reduced_one_element_byte_count(bytes: &Bitvector32Term) -> bool {
 }
 
 fn is_one_element_byte_count(bytes: &Bitvector32Term) -> bool {
-    matches!(bytes, Bitvector32Term::Constant(1)) || is_reduced_one_element_byte_count(bytes)
+    matches!(
+        bytes,
+        Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)
+    ) || is_reduced_one_element_byte_count(bytes)
 }
 
 fn int32_scaled_value(offset: &PointerOffsetTerm, width: i64) -> Option<Bitvector32Term> {
@@ -3058,9 +3073,14 @@ fn synthesize_surface_bitvector(
             name.clone(),
         )));
     }
-    if let Bitvector32Term::Constant(_) = term {
+    if let Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) = term {
         return Some(ContractExpression::CFragment(CExpression::Value(
             CValue::Int32(term.clone()),
+        )));
+    }
+    if let Bitvector32Term::UInt32Constant(_) = term {
+        return Some(ContractExpression::CFragment(CExpression::Value(
+            CValue::UInt32(term.clone()),
         )));
     }
     // The locals' held-term index finds the first local, in name order,
@@ -3148,7 +3168,9 @@ fn synthesize_surface_bitvector(
         Bitvector32Term::MachineIntegerCast { .. } => None,
 
         Bitvector32Term::MachineIntegerConstant(_) => None,
-        Bitvector32Term::Constant(_) => unreachable!("constants returned above"),
+        Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
+            unreachable!("constants returned above")
+        }
         Bitvector32Term::Add(left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::Add(left, right))
@@ -3998,6 +4020,7 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
                 pending.extend(pointer.offset.scaled_values());
             }
             Bitvector32Term::Constant(_)
+            | Bitvector32Term::UInt32Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::MachineIntegerConstant(_)

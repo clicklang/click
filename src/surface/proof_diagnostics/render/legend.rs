@@ -40,7 +40,9 @@ impl SnapshotLabels {
 
     fn legend_bits(&mut self, value: &Bitvector32Term) -> String {
         match value {
-            Bitvector32Term::Constant(value) => value.to_string(),
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                value.to_string()
+            }
             Bitvector32Term::Int64Constant(value) => value.to_string(),
             Bitvector32Term::UInt64Constant(value) => value.to_string(),
             Bitvector32Term::Variable(variable) => {

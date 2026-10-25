@@ -2121,7 +2121,10 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
             AlphaBitvectorKey::MachineIntegerConstant(*value)
         }
 
-        Bitvector32Term::Constant(value) => AlphaBitvectorKey::Constant(*value),
+        // A `uint32` constant is its word's `Constant` (rule K1).
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+            AlphaBitvectorKey::Constant(*value)
+        }
         Bitvector32Term::Int64Constant(value) => AlphaBitvectorKey::Int64Constant(*value),
         Bitvector32Term::UInt64Constant(value) => AlphaBitvectorKey::UInt64Constant(*value),
         Bitvector32Term::Variable(variable) => {

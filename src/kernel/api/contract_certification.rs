@@ -243,10 +243,14 @@ fn pointer_offset_byte_delta(
 fn split_additive_constant(term: &Bitvector32Term) -> (Bitvector32Term, u32) {
     match term {
         Bitvector32Term::Add(left, right) => {
-            if let Bitvector32Term::Constant(value) = right.as_ref() {
+            if let Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) =
+                right.as_ref()
+            {
                 return (left.as_ref().clone(), *value);
             }
-            if let Bitvector32Term::Constant(value) = left.as_ref() {
+            if let Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) =
+                left.as_ref()
+            {
                 return (right.as_ref().clone(), *value);
             }
             (term.clone(), 0)
@@ -568,6 +572,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             Bitvector32Term::MachineIntegerCast { .. } => {}
 
             Bitvector32Term::Constant(_)
+            | Bitvector32Term::UInt32Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::MachineIntegerConstant(_)
@@ -2983,7 +2988,10 @@ fn match_quantified_int32_term(
             && match_quantified_int32_term(pattern_right, target_right, binders, substitutions);
     }
     match (pattern, target) {
-        (Bitvector32Term::Constant(left), Bitvector32Term::Constant(right)) => left == right,
+        (
+            Bitvector32Term::Constant(left) | Bitvector32Term::UInt32Constant(left),
+            Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
+        ) => left == right,
         (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) => left == right,
         (Bitvector32Term::BitwiseNot(pattern), Bitvector32Term::BitwiseNot(target)) => {
             match_quantified_int32_term(pattern, target, binders, substitutions)

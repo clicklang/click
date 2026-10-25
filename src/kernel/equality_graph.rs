@@ -107,8 +107,13 @@ impl MachineAtom {
     pub(in crate::kernel) fn uint64(value: Bitvector32Term) -> Self {
         Self::new(crate::kernel::MachineIntegerType::UInt64, value)
     }
+    /// A 32-bit atom, interned by its word: a `uint32` constant is its
+    /// word's `Constant` (rule K1), so the two are one class.
     pub(in crate::kernel) fn int32(value: Bitvector32Term) -> Self {
-        Self::new(crate::kernel::MachineIntegerType::Int32, value)
+        Self::new(
+            crate::kernel::MachineIntegerType::Int32,
+            value.constant_word32(),
+        )
     }
     pub(in crate::kernel) fn value(&self) -> &Bitvector32Term {
         self.0.value()

@@ -586,8 +586,8 @@ fn source_scalar_lease_explicit_unsigned_widths_preserve_current_values() {
             "u32",
             CType::UInt32,
             CType::UInt32Pointer,
-            CValue::UInt32(4.into()),
-            CValue::UInt32(8.into()),
+            crate::kernel::uint32(4u32),
+            crate::kernel::uint32(8u32),
         ),
     ] {
         for source in [alias_export(1), read_export(1)] {

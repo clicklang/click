@@ -588,7 +588,10 @@ pub(in crate::kernel) fn order_facts_form_strict_cycle(
     let symbolic = {
         let mut flags = vec![false; nodes.len()];
         for (term, index) in &nodes {
-            flags[*index] = !matches!(term, Bitvector32Term::Constant(_));
+            flags[*index] = !matches!(
+                term,
+                Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+            );
         }
         flags
     };
@@ -905,7 +908,7 @@ pub(in crate::kernel) fn collect_bitvector_add_terms(
             collect_bitvector_add_terms(left, terms, constant);
             collect_bitvector_add_terms(right, terms, constant);
         }
-        Bitvector32Term::Constant(value) => {
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             *constant = constant.wrapping_add(*value);
         }
         term => terms.push(term.clone()),
@@ -1293,7 +1296,7 @@ fn collect_bitvector_affine_atoms(
             collect_bitvector_affine_atoms(left, positive, atoms, constant);
             collect_bitvector_affine_atoms(right, !positive, atoms, constant);
         }
-        Bitvector32Term::Constant(value) => {
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             *constant = if positive {
                 constant.wrapping_add(*value)
             } else {

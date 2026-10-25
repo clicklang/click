@@ -14223,7 +14223,7 @@ impl Parser {
                 CExpression::Value(CValue::UInt8(Bitvector32Term::Constant(u32::from(value)))),
             )),
             Some(Token::UInt32Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(CValue::UInt32(Bitvector32Term::Constant(value))),
+                CExpression::Value(CValue::UInt32(Bitvector32Term::UInt32Constant(value))),
             )),
             Some(Token::Int64MinimumMagnitude) => Err(self.error(
                 "positive int64 literal `9223372036854775808i64` is outside 0..9223372036854775807; this magnitude is allowed only after unary minus",
@@ -14903,7 +14903,7 @@ impl Parser {
             Some(Token::UInt64Number(value)) => Ok(C0Expression::UInt64Literal(value)),
             Some(Token::CharLiteral(value)) => Ok(
                 match self.character_constant_value(value)? {
-                    CValue::Int32(Bitvector32Term::Constant(bits)) => C0Expression::Int32Literal(bits),
+                    CValue::Int32(Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) => C0Expression::Int32Literal(bits),
                     _ => C0Expression::UInt8Literal(value),
                 },
             ),

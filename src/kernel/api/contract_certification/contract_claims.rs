@@ -2649,6 +2649,7 @@ fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> 
     };
     match term {
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_) => Some((exceptional, value.clone())),

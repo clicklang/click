@@ -365,9 +365,9 @@ impl BodyChecker<'_> {
                 .scalar_parameter(name)
                 .map(FoldEndpointTemplate::Parameter)
                 .ok_or(FoldReadDecline::UnsupportedEndpoint),
-            SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(value))) => {
-                Ok(FoldEndpointTemplate::Literal(*value))
-            }
+            SpecExpression::Value(CValue::Int32(
+                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
+            )) => Ok(FoldEndpointTemplate::Literal(*value)),
             _ => Err(FoldReadDecline::UnsupportedEndpoint),
         }
     }
@@ -465,7 +465,7 @@ impl BodyChecker<'_> {
 
     fn bitvector(&self, term: &Bitvector32Term, scope: Scope) -> Result<(), FoldReadDecline> {
         match term {
-            Bitvector32Term::Constant(_) => Ok(()),
+            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => Ok(()),
             Bitvector32Term::Variable(variable)
                 if scope == Scope::Body && *variable == self.item =>
             {

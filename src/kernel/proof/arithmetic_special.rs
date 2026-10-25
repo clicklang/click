@@ -88,6 +88,7 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
         }
         match term {
             Bitvector32Term::Constant(_)
+            | Bitvector32Term::UInt32Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::MachineIntegerConstant(_)
@@ -294,7 +295,10 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
             | (Bitvector32Term::UInt32From64(left), Bitvector32Term::UInt32From64(right)) => {
                 pending.push((left, right));
             }
-            (Bitvector32Term::Constant(left), Bitvector32Term::Constant(right)) => {
+            (
+                Bitvector32Term::Constant(left) | Bitvector32Term::UInt32Constant(left),
+                Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
+            ) => {
                 if left != right {
                     return false;
                 }
@@ -1860,7 +1864,7 @@ fn pointer_translation(
         u128::from(wide_range(x).1) + u128::from(wide_range(y).1) <= u128::from(u64::MAX)
     };
     let atom_range = |value: &Bitvector32Term| match value {
-        Bitvector32Term::Constant(value) => {
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             let value = i64::from(*value as i32);
             Some((value, value))
         }
@@ -2362,14 +2366,18 @@ fn bounded_uint64_constants(roots: &[&Bitvector32Term]) -> HashMap<usize, Option
                     .flatten()
                     .map(|value| !value),
                 Bitvector32Term::UInt64From32(value) => match value.as_ref() {
-                    Bitvector32Term::Constant(value) => Some(u64::from(*value)),
+                    Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                        Some(u64::from(*value))
+                    }
                     _ => values
                         .get(&(value.as_ref() as *const _ as usize))
                         .copied()
                         .flatten(),
                 },
                 Bitvector32Term::UInt64FromInt32(value) => match value.as_ref() {
-                    Bitvector32Term::Constant(value) => Some((*value as i32 as i64) as u64),
+                    Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                        Some((*value as i32 as i64) as u64)
+                    }
                     _ => values
                         .get(&(value.as_ref() as *const _ as usize))
                         .copied()
@@ -2535,7 +2543,9 @@ fn bounded_term_hashes(roots: &[&Bitvector32Term]) -> Option<HashMap<usize, u64>
                 (format, op).hash(&mut hasher);
             }
             match term {
-                Bitvector32Term::Constant(value) => value.hash(&mut hasher),
+                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                    value.hash(&mut hasher)
+                }
                 Bitvector32Term::Int64Constant(value) => value.hash(&mut hasher),
                 Bitvector32Term::UInt64Constant(value) => value.hash(&mut hasher),
                 Bitvector32Term::Variable(value) => value.hash(&mut hasher),

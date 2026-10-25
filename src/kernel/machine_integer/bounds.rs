@@ -28,7 +28,9 @@ use num_traits::{One, Zero};
 /// amount is a count, whatever word carries it.
 fn unsigned_constant(term: &Bitvector32Term) -> Option<BigInt> {
     match term {
-        Bitvector32Term::Constant(value) => Some(BigInt::from(*value)),
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+            Some(BigInt::from(*value))
+        }
         Bitvector32Term::Int64Constant(value) => Some(BigInt::from(*value)),
         Bitvector32Term::UInt64Constant(value) => Some(BigInt::from(*value)),
         _ => None,

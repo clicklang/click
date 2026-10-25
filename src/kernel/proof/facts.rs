@@ -616,7 +616,8 @@ impl ProofFacts {
                                 Bitvector32Term::Variable(variable) => {
                                     bound_variables.contains(variable)
                                 }
-                                Bitvector32Term::Constant(_) => false,
+                                Bitvector32Term::Constant(_)
+                                | Bitvector32Term::UInt32Constant(_) => false,
                                 _ => true,
                             })
                         {
@@ -1202,7 +1203,9 @@ impl ProofFacts {
                 if forward || endpoint != *measure {
                     return false;
                 }
-                let Bitvector32Term::Constant(bits) = bound else {
+                let (Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) =
+                    bound
+                else {
                     return false;
                 };
                 let lower = bits as i32;
@@ -2344,7 +2347,9 @@ fn substituted_range_extent(
     };
     let (count, width) = match bytes {
         Bitvector32Term::Multiply(count, width) => match width.as_ref() {
-            Bitvector32Term::Constant(_) => (count.as_ref(), Some(width.as_ref().clone())),
+            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
+                (count.as_ref(), Some(width.as_ref().clone()))
+            }
             _ => return None,
         },
         count @ Bitvector32Term::Subtract(_, _) => (count, None),
@@ -2775,7 +2780,10 @@ fn collect_algebraic_term_roots(term: &AlgebraicTerm, terms: &mut BTreeSet<Algeb
 
 fn bitvector_equality_atom_key(term: &Bitvector32Term) -> Option<BitvectorEqualityAtomKey> {
     match term {
-        Bitvector32Term::Constant(value) => Some(BitvectorEqualityAtomKey::Constant(*value)),
+        // A `uint32` constant is its word's `Constant` (rule K1).
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+            Some(BitvectorEqualityAtomKey::Constant(*value))
+        }
         Bitvector32Term::Variable(variable) => Some(BitvectorEqualityAtomKey::Variable(*variable)),
         Bitvector32Term::ClickFunctionApplication { name, arguments } => {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -2981,6 +2989,7 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
         // of levels, so the selection stays proportional to the term.
         Bitvector32Term::Variable(variable) => collect_load_address_atoms(*variable, atoms, 0),
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_) => {}

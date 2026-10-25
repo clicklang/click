@@ -235,7 +235,7 @@ fn float_to_integer_value(negative: bool, magnitude: u128, target_type: CType) -
     Some(match target_type {
         CType::UInt8 => CValue::UInt8(Bitvector32Term::Constant(value as u32)),
         CType::UInt16 => CValue::UInt16(Bitvector32Term::Constant(value as u32)),
-        CType::UInt32 => CValue::UInt32(Bitvector32Term::Constant(value as u32)),
+        CType::UInt32 => CValue::UInt32(Bitvector32Term::UInt32Constant(value as u32)),
         CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(value)),
         _ => unreachable!(),
     })
@@ -831,7 +831,7 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
             )))
         }
         (CType::Int32, CValue::Bool(value)) => Some(CValue::Int32(value)),
-        (CType::UInt32, CValue::Bool(value)) => Some(CValue::UInt32(value)),
+        (CType::UInt32, CValue::Bool(value)) => Some(crate::kernel::uint32(value)),
         (CType::Int8, CValue::Bool(value)) => Some(CValue::Int8(value)),
         (CType::Int16, CValue::Bool(value)) => Some(CValue::Int16(value)),
         (CType::UInt8, CValue::Bool(value)) => Some(CValue::UInt8(value)),
@@ -862,9 +862,9 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
             )))
         }
 
-        (CType::UInt32, CValue::Int64(value) | CValue::UInt64(value)) => {
-            Some(CValue::UInt32(Bitvector32Term::uint32_from_64(value)))
-        }
+        (CType::UInt32, CValue::Int64(value) | CValue::UInt64(value)) => Some(
+            crate::kernel::uint32(Bitvector32Term::uint32_from_64(value)),
+        ),
         (CType::Int32, value @ (CValue::Int64(_) | CValue::UInt64(_))) => {
             narrow_integer(value, target_type, conversion, obligations, assumptions)
         }
@@ -874,7 +874,7 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
             | CValue::Int16(value)
             | CValue::UInt8(value)
             | CValue::UInt16(value),
-        ) => Some(CValue::UInt32(value)),
+        ) => Some(crate::kernel::uint32(value)),
 
         (CType::Int16, CValue::Int8(value) | CValue::UInt8(value)) => Some(CValue::Int16(value)),
         (CType::UInt16, CValue::UInt8(value)) => Some(CValue::UInt16(value)),
@@ -1484,9 +1484,10 @@ pub(in crate::kernel) fn coerce_c_null_pointer_constant(
         });
     }
     match (target_type, value) {
-        (target_type, CValue::Int32(Bitvector32Term::Constant(0))) if target_type.is_pointer() => {
-            Some(CValue::typed_pointer(Pointer::null(), target_type))
-        }
+        (
+            target_type,
+            CValue::Int32(Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)),
+        ) if target_type.is_pointer() => Some(CValue::typed_pointer(Pointer::null(), target_type)),
         _ => None,
     }
 }
@@ -4114,7 +4115,7 @@ mod packed_word_contract_tests {
             .complete_word(Pointer::symbolic(Variable(997_030)));
         assert_eq!(
             MachineIntegerType::UInt32.convert_modulo_value(word.clone()),
-            Some(CValue::UInt32(Bitvector32Term::Constant(1)))
+            Some(CValue::UInt32(Bitvector32Term::UInt32Constant(1)))
         );
         assert_eq!(
             MachineIntegerType::UInt64.convert_modulo_value(word),

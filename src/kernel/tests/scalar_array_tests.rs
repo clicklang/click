@@ -519,7 +519,7 @@ fn compact_array_region_write_refreshes_an_addressed_scalar_local() {
     };
     assert_eq!(
         state.locals().get("value"),
-        Some(&CValue::UInt32(7u32.into()))
+        Some(&crate::kernel::uint32(7u32))
     );
 }
 

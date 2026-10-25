@@ -1162,12 +1162,16 @@ impl PureFactContext {
             ) => incremented
                 .add_const_base(1)
                 .and_then(|base| {
-                    let Bitvector32Term::Constant(goal_bits) = goal_upper.as_ref() else {
+                    let (Bitvector32Term::Constant(goal_bits)
+                    | Bitvector32Term::UInt32Constant(goal_bits)) = goal_upper.as_ref()
+                    else {
                         return None;
                     };
                     self.signed_order_bound_entries(&base).find_map(
                         |(fact_endpoint, candidate, strict, forward)| {
-                            let Bitvector32Term::Constant(candidate_bits) = &candidate else {
+                            let (Bitvector32Term::Constant(candidate_bits)
+                            | Bitvector32Term::UInt32Constant(candidate_bits)) = &candidate
+                            else {
                                 return None;
                             };
                             (!strict && forward && (*candidate_bits as i32) < (*goal_bits as i32))
@@ -1446,7 +1450,8 @@ impl PureFactContext {
                 },
                 true,
             ) => match lower.as_ref() {
-                Bitvector32Term::Constant(lower_bits) => (*lower_bits as i32)
+                Bitvector32Term::Constant(lower_bits)
+                | Bitvector32Term::UInt32Constant(lower_bits) => (*lower_bits as i32)
                     .checked_add(1)
                     .and_then(|successor| {
                         self.exact_direct_order_step(
@@ -1471,10 +1476,13 @@ impl PureFactContext {
                 },
                 true,
             ) => match goal_lower.as_ref() {
-                Bitvector32Term::Constant(goal_bits) => self
+                Bitvector32Term::Constant(goal_bits)
+                | Bitvector32Term::UInt32Constant(goal_bits) => self
                     .signed_order_bound_entries(value.as_ref())
                     .find_map(|(fact_endpoint, candidate, strict, forward)| {
-                        let Bitvector32Term::Constant(candidate_bits) = &candidate else {
+                        let (Bitvector32Term::Constant(candidate_bits)
+                        | Bitvector32Term::UInt32Constant(candidate_bits)) = &candidate
+                        else {
                             return None;
                         };
                         (!strict && !forward && (*goal_bits as i32) < (*candidate_bits as i32))
@@ -1499,7 +1507,8 @@ impl PureFactContext {
                 },
                 true,
             ) => match lower.as_ref() {
-                Bitvector32Term::Constant(lower_bits) => {
+                Bitvector32Term::Constant(lower_bits)
+                | Bitvector32Term::UInt32Constant(lower_bits) => {
                     (*lower_bits as i32).checked_add(1).and_then(|upper| {
                         let upper = Bitvector32Term::Constant(upper as u32);
                         let premise = Proposition::ConditionIs(
@@ -2003,8 +2012,10 @@ impl PureFactContext {
             let Some(base) = incremented.add_const_base(1) else {
                 return false;
             };
-            let (Bitvector32Term::Constant(premise_bits), Bitvector32Term::Constant(goal_bits)) =
-                (&step.upper, goal_upper.as_ref())
+            let (
+                Bitvector32Term::Constant(premise_bits),
+                Bitvector32Term::Constant(goal_bits) | Bitvector32Term::UInt32Constant(goal_bits),
+            ) = (&step.upper, goal_upper.as_ref())
             else {
                 return false;
             };
@@ -2318,7 +2329,9 @@ impl PureFactContext {
                 ) => (lower, value),
                 _ => return false,
             };
-            let Bitvector32Term::Constant(lower_bits) = lower.as_ref() else {
+            let (Bitvector32Term::Constant(lower_bits)
+            | Bitvector32Term::UInt32Constant(lower_bits)) = lower.as_ref()
+            else {
                 return false;
             };
             let Some(successor_bits) = (*lower_bits as i32).checked_add(1) else {
@@ -2344,8 +2357,11 @@ impl PureFactContext {
             else {
                 return false;
             };
-            let (Bitvector32Term::Constant(goal_bits), Bitvector32Term::Constant(premise_bits)) =
-                (goal_lower.as_ref(), &step.lower)
+            let (
+                Bitvector32Term::Constant(goal_bits),
+                Bitvector32Term::Constant(premise_bits)
+                | Bitvector32Term::UInt32Constant(premise_bits),
+            ) = (goal_lower.as_ref(), &step.lower)
             else {
                 return false;
             };
@@ -2369,7 +2385,9 @@ impl PureFactContext {
             else {
                 return false;
             };
-            let Bitvector32Term::Constant(lower_bits) = lower.as_ref() else {
+            let (Bitvector32Term::Constant(lower_bits)
+            | Bitvector32Term::UInt32Constant(lower_bits)) = lower.as_ref()
+            else {
                 return false;
             };
             let Some(upper_bits) = (*lower_bits as i32).checked_add(1) else {
@@ -3849,12 +3867,14 @@ impl PureFactContext {
         // Check a literal bound before registering a possibly large model
         // getter on the other side. The equality judgments are unchanged;
         // a mismatched bound makes visiting that payload unnecessary.
-        let (first_fact, first_target, second_fact, second_target) =
-            if matches!(fact_right, Bitvector32Term::Constant(_)) {
-                (fact_right, target_right, fact_left, target_left)
-            } else {
-                (fact_left, target_left, fact_right, target_right)
-            };
+        let (first_fact, first_target, second_fact, second_target) = if matches!(
+            fact_right,
+            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+        ) {
+            (fact_right, target_right, fact_left, target_left)
+        } else {
+            (fact_left, target_left, fact_right, target_right)
+        };
         self.bitvector_terms_equal_for_transport(first_fact, first_target)
             && self.bitvector_terms_equal_for_transport(second_fact, second_target)
     }
@@ -4520,7 +4540,7 @@ pub(super) fn collect_order_index_add_terms(
                 pending.push(right);
                 pending.push(left);
             }
-            Bitvector32Term::Constant(value) => {
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
                 *constant = constant.wrapping_add(*value);
             }
             term => terms.push(term.clone()),

@@ -95,7 +95,9 @@ impl PureFactContext {
                     Bitvector32Term::UInt32From64(wide) => self
                         .wide_constant_from_equalities(wide)
                         .map(|bits| bits as u32),
-                    Bitvector32Term::Constant(bits) => Some(*bits),
+                    Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits) => {
+                        Some(*bits)
+                    }
                     _ => None,
                 };
                 if let (Some(left), Some(right)) =
@@ -410,7 +412,7 @@ impl PureFactContext {
     ) -> Option<bool> {
         use crate::kernel::primitives::ConditionMatchKey;
         let atom = |term: &Bitvector32Term| match term {
-            Bitvector32Term::Constant(_) => true,
+            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => true,
             Bitvector32Term::Variable(variable) => {
                 crate::kernel::eval::registered_load_for_variable(variable).is_none()
             }

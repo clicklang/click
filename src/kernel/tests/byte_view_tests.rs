@@ -446,7 +446,7 @@ fn a_32_bit_read_of_the_other_signedness_is_the_sign_cast_of_the_word() {
             );
             assert_eq!(kind.read_cell(&cell), Some(cell.clone()));
             if matches!(term, Bitvector32Term::Constant(_)) && cast.is_some() {
-                assert!(matches!(expected, Bitvector32Term::Constant(u32::MAX)));
+                assert_eq!(expected.constant32(), Some(u32::MAX));
             }
         }
     }
@@ -546,7 +546,7 @@ fn integer_loads_read_a_cell_of_the_other_signedness_as_its_bits() {
         let bits = Bitvector32Term::Constant(word);
         assert_eq!(
             CType::UInt32.read_cell(&CValue::Int32(bits.clone())),
-            Some(CValue::UInt32(bits.clone()))
+            Some(uint32(bits.clone()))
         );
         assert_eq!(
             CType::Int32.read_cell(&CValue::UInt32(bits.clone())),

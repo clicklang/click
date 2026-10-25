@@ -275,3 +275,46 @@ fn an_order_of_a_sign_cast_costs_what_the_order_of_its_word_costs() {
         "work should not grow with unrelated values: {samples:?}"
     );
 }
+
+/// A `uint32` constant bound is its word's `Constant` (rule K1): an order
+/// against it decides as against the `Constant`, at the same work, however
+/// many unrelated bounded values the graph holds.
+#[test]
+fn an_order_against_a_uint32_constant_costs_what_its_word_costs() {
+    let i = variable(0);
+    let order = |format, right: Bitvector32Term| ConditionTerm::Compare {
+        format,
+        relation: CompareRelation::LessThan,
+        left: Box::new(i.clone()),
+        right: Box::new(right),
+    };
+    let mut samples = Vec::new();
+    for size in [16, 64, 256, 1024] {
+        let mut graph = DifferenceGraph::new();
+        for index in 0..size {
+            let other = variable(10 + index);
+            graph.assume_condition(&le(&constant(0), &other), true);
+            graph.assume_condition(&lt(&other, &constant(4)), true);
+        }
+        graph.assume_condition(&le(&constant(0), &i), true);
+        graph.assume_condition(&lt(&i, &constant(4)), true);
+        let mut work = Vec::new();
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+            for bits in [8u32, 4_000_000_000] {
+                let (word, word_work) =
+                    graph_work(|| graph.decide(&order(format, Bitvector32Term::Constant(bits))));
+                let (formatted, formatted_work) = graph_work(|| {
+                    graph.decide(&order(format, Bitvector32Term::UInt32Constant(bits)))
+                });
+                assert_eq!(formatted, word, "{format:?} {bits}, {size}");
+                assert_eq!(formatted_work, word_work, "{format:?} {bits}, {size}");
+                work.push(formatted_work);
+            }
+        }
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "work should not grow with unrelated values: {samples:?}"
+    );
+}

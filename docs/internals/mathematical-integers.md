@@ -549,6 +549,25 @@ its word's `Int32` read (`load_variable_for_term`,
 signedness. Kernel-internal reads (index arithmetic, pointer words) are
 `Int32`.
 
+A 32-bit constant has a format too: `Bitvector32Term::Constant(v)` is
+`int32`, the format of every kernel-internal constant, and
+`Bitvector32Term::UInt32Constant(v)` is `uint32`. A C, C++ or Rust value at
+`uint32` takes `UInt32Constant`: literals, `MachineIntegerType::constant_term`
+and every conversion that folds to `uint32`, `kernel::uint32` and
+`value_from_term` (`Bitvector32Term::in_format32`). Under K1 its word is
+`Constant(v)`: the 32-bit constructors and raw builders read it so
+(`into_word32`, `constant_word32`), the e-graph interns it so
+(`MachineAtom::int32`), the difference graph reads its value, and the
+kernel's matches on a 32-bit constant's bits read either format
+(`constant32`, `as_const`, or a `UInt32Constant` alternative beside the
+`Constant` pattern). A formatted constant therefore stays on a value at
+rest, and prints in its own type (`4000000000u32`, not `-294967296`)
+wherever a renderer reaches it
+(`mdtests/a_uint32_constant_above_int32_max_is_stated_stored_and_read_as_itself.md`,
+`mdtests/cpp_a_uint32_constant_above_int32_max_is_stored_and_read_as_itself.md`,
+`rust_a_u32_constant_above_i32_max_is_stated_stored_and_read_as_itself` in
+`tests/rust_import.rs`).
+
 ## Wide runtime scalars
 
 

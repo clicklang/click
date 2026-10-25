@@ -705,6 +705,7 @@ fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComp
         matches!(
             term,
             Bitvector32Term::Constant(_)
+                | Bitvector32Term::UInt32Constant(_)
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_)
         )

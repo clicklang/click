@@ -1,0 +1,321 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 53,
+            "end_line": 1,
+            "file": "constants.cpp",
+            "start_column": 35,
+            "start_line": 1
+          },
+          "value": {
+            "kind": "integer_literal",
+            "span": {
+              "end_column": 53,
+              "end_line": 1,
+              "file": "constants.cpp",
+              "start_column": 42,
+              "start_line": 1
+            },
+            "value": "4000000000",
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@literal#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "literal",
+      "parameters": [],
+      "path": [
+        "literal"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 56,
+        "end_line": 1,
+        "file": "constants.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    },
+    {
+      "body": [
+        {
+          "kind": "assign",
+          "span": {
+            "end_column": 20,
+            "end_line": 3,
+            "file": "constants.cpp",
+            "start_column": 5,
+            "start_line": 3
+          },
+          "target": {
+            "declaration_id": "c:constants.cpp@76@F@stored#&i#@u",
+            "name": "u",
+            "span": {
+              "end_column": 6,
+              "end_line": 3,
+              "file": "constants.cpp",
+              "start_column": 5,
+              "start_line": 3
+            }
+          },
+          "value": {
+            "kind": "integer_literal",
+            "span": {
+              "end_column": 20,
+              "end_line": 3,
+              "file": "constants.cpp",
+              "start_column": 9,
+              "start_line": 3
+            },
+            "value": "4000000000",
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        },
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 13,
+            "end_line": 4,
+            "file": "constants.cpp",
+            "start_column": 5,
+            "start_line": 4
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:constants.cpp@76@F@stored#&i#@u",
+              "name": "u",
+              "span": {
+                "end_column": 13,
+                "end_line": 4,
+                "file": "constants.cpp",
+                "start_column": 12,
+                "start_line": 4
+              }
+            },
+            "span": {
+              "end_column": 13,
+              "end_line": 4,
+              "file": "constants.cpp",
+              "start_column": 12,
+              "start_line": 4
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@stored#&i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "stored",
+      "parameters": [
+        {
+          "declaration_id": "c:constants.cpp@76@F@stored#&i#@u",
+          "name": "u",
+          "span": {
+            "end_column": 36,
+            "end_line": 2,
+            "file": "constants.cpp",
+            "start_column": 21,
+            "start_line": 2
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "path": [
+        "stored"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 5,
+        "file": "constants.cpp",
+        "start_column": 1,
+        "start_line": 2
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 63,
+            "end_line": 6,
+            "file": "constants.cpp",
+            "start_column": 55,
+            "start_line": 6
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:constants.cpp@161@F@stated#&1i#@u",
+              "name": "u",
+              "span": {
+                "end_column": 63,
+                "end_line": 6,
+                "file": "constants.cpp",
+                "start_column": 62,
+                "start_line": 6
+              }
+            },
+            "span": {
+              "end_column": 63,
+              "end_line": 6,
+              "file": "constants.cpp",
+              "start_column": 62,
+              "start_line": 6
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@stated#&1i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "stated",
+      "parameters": [
+        {
+          "declaration_id": "c:constants.cpp@161@F@stated#&1i#@u",
+          "name": "u",
+          "span": {
+            "end_column": 42,
+            "end_line": 6,
+            "file": "constants.cpp",
+            "start_column": 21,
+            "start_line": 6
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "bits": 32,
+              "is_const": true,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "path": [
+        "stated"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 66,
+        "end_line": 6,
+        "file": "constants.cpp",
+        "start_column": 1,
+        "start_line": 6
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "constants.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/constants.cpp",
+      "canonical_path": "$unit/constants.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "constants.cpp",
+      "-o",
+      "constants.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "constants.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [],
+  "records": [],
+  "schema": 60
+}

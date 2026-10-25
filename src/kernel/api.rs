@@ -290,8 +290,13 @@ pub fn uint16(bits: impl Into<Bitvector32Term>) -> CValue {
     CValue::UInt16(bits.into())
 }
 
+/// A `uint32` value. A root 32-bit constant takes the `uint32` format
+/// (`Bitvector32Term::in_format32`), so it prints as itself.
 pub fn uint32(bits: impl Into<Bitvector32Term>) -> CValue {
-    CValue::UInt32(bits.into())
+    CValue::UInt32(
+        bits.into()
+            .in_format32(crate::kernel::MachineIntegerType::UInt32),
+    )
 }
 
 /// A 64-bit value. A plain 32-bit constant, as `int64(-1)` writes, is widened
@@ -299,14 +304,18 @@ pub fn uint32(bits: impl Into<Bitvector32Term>) -> CValue {
 /// zero-extended for `uint64`, so the value's term has the value's width.
 pub fn int64(bits: impl Into<Bitvector32Term>) -> CValue {
     CValue::Int64(match bits.into() {
-        Bitvector32Term::Constant(bits) => Bitvector32Term::Int64Constant(i64::from(bits as i32)),
+        Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits) => {
+            Bitvector32Term::Int64Constant(i64::from(bits as i32))
+        }
         term => term,
     })
 }
 
 pub fn uint64(bits: impl Into<Bitvector32Term>) -> CValue {
     CValue::UInt64(match bits.into() {
-        Bitvector32Term::Constant(bits) => Bitvector32Term::UInt64Constant(u64::from(bits)),
+        Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits) => {
+            Bitvector32Term::UInt64Constant(u64::from(bits))
+        }
         term => term,
     })
 }
@@ -8633,6 +8642,7 @@ fn rewrite_int32_term_by_exact_equality(
         Bitvector32Term::ClickFunctionApplication { .. }
         | Bitvector32Term::AlgebraicMatch { .. } => term.clone(),
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::MemoryLoad(_, _, _)
         | Bitvector32Term::PointerAddress(_, _)

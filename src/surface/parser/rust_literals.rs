@@ -192,7 +192,7 @@ impl IntegerLiteral {
             IntegerSuffix::I32 => CValue::Int32(narrow),
             IntegerSuffix::U8 => CValue::UInt8(narrow),
             IntegerSuffix::U16 => CValue::UInt16(narrow),
-            IntegerSuffix::U32 => CValue::UInt32(narrow),
+            IntegerSuffix::U32 => crate::kernel::uint32(narrow),
             IntegerSuffix::I64 | IntegerSuffix::Isize => {
                 CValue::Int64(Bitvector32Term::Int64Constant(bits as i64))
             }
@@ -261,20 +261,30 @@ impl IntegerLiteral {
             }
         };
         Ok(match value {
-            CValue::Int32(Bitvector32Term::Constant(bits)) => C0Expression::Int32Literal(bits),
-            CValue::UInt8(Bitvector32Term::Constant(bits)) => {
-                C0Expression::UInt8Literal(bits as u8)
-            }
-            CValue::UInt32(Bitvector32Term::Constant(bits)) => C0Expression::UInt32Literal(bits),
+            CValue::Int32(
+                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
+            ) => C0Expression::Int32Literal(bits),
+            CValue::UInt8(
+                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
+            ) => C0Expression::UInt8Literal(bits as u8),
+            CValue::UInt32(
+                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
+            ) => C0Expression::UInt32Literal(bits),
             CValue::Int64(Bitvector32Term::Int64Constant(value)) => {
                 C0Expression::Int64Literal(value)
             }
             CValue::UInt64(Bitvector32Term::UInt64Constant(value)) => {
                 C0Expression::UInt64Literal(value)
             }
-            CValue::Int8(Bitvector32Term::Constant(bits))
-            | CValue::Int16(Bitvector32Term::Constant(bits))
-            | CValue::UInt16(Bitvector32Term::Constant(bits)) => C0Expression::Cast {
+            CValue::Int8(
+                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
+            )
+            | CValue::Int16(
+                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
+            )
+            | CValue::UInt16(
+                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
+            ) => C0Expression::Cast {
                 c_type: match value {
                     CValue::Int8(_) => C0Type::Int8,
                     CValue::Int16(_) => C0Type::Int16,

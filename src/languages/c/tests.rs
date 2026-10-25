@@ -711,14 +711,14 @@ fn c0_wide_static_initializers_use_checked_wide_values() {
             "wrapped",
             CValue::UInt64(Bitvector32Term::UInt64Constant(u64::MAX)),
         ),
-        ("mixed", CValue::UInt32(Bitvector32Term::Constant(0))),
+        ("mixed", CValue::UInt32(Bitvector32Term::UInt32Constant(0))),
         (
             "conditional",
-            CValue::UInt32(Bitvector32Term::Constant(u32::MAX)),
+            CValue::UInt32(Bitvector32Term::UInt32Constant(u32::MAX)),
         ),
         (
             "shifted",
-            CValue::UInt32(Bitvector32Term::Constant(u32::MAX - 1)),
+            CValue::UInt32(Bitvector32Term::UInt32Constant(u32::MAX - 1)),
         ),
         ("zero", CValue::UInt64(Bitvector32Term::UInt64Constant(0))),
         (

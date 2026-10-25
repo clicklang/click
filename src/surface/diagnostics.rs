@@ -2368,7 +2368,9 @@ fn constant_addend(term: &Bitvector32Term) -> Option<i64> {
         return Some(i64::from(value as i32));
     }
     match term {
-        Bitvector32Term::Constant(value) => Some(i64::from(*value as i32)),
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+            Some(i64::from(*value as i32))
+        }
         Bitvector32Term::Add(left, right) => Some(constant_addend(left)? + constant_addend(right)?),
         Bitvector32Term::Subtract(left, right) => {
             Some(constant_addend(left)? - constant_addend(right)?)
@@ -2389,7 +2391,7 @@ fn subtract_constant(term: &Bitvector32Term, amount: u32) -> Option<Bitvector32T
         return Some(term.clone());
     }
     match term {
-        Bitvector32Term::Constant(value) => {
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             Some(Bitvector32Term::Constant(value.wrapping_sub(amount)))
         }
         Bitvector32Term::Add(left, right) => {
@@ -2419,7 +2421,7 @@ fn exact_quotient(term: &Bitvector32Term, width: u32) -> Option<Bitvector32Term>
         return Some(term.clone());
     }
     match term {
-        Bitvector32Term::Constant(value) => {
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             let value = *value as i32;
             (value % width as i32 == 0)
                 .then(|| Bitvector32Term::Constant((value / width as i32) as u32))
@@ -5272,8 +5274,12 @@ pub(super) fn describe_c_value(value: &CValue, parameter_binding: ParameterBindi
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Parameter(term) => format!("{term:?}"),
         CValue::Void => "void".to_string(),
-        CValue::Bool(Bitvector32Term::Constant(0)) => "false".to_string(),
-        CValue::Bool(Bitvector32Term::Constant(1)) => "true".to_string(),
+        CValue::Bool(Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => {
+            "false".to_string()
+        }
+        CValue::Bool(Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)) => {
+            "true".to_string()
+        }
         CValue::Int128(value) => typed_literal_spelling(
             describe_bitvector_with_context(value, parameter_binding),
             "i128",
@@ -5299,7 +5305,11 @@ pub(super) fn describe_c_value(value: &CValue, parameter_binding: ParameterBindi
             describe_bitvector_with_context(value, parameter_binding),
             "u8",
         ),
-        CValue::UInt32(Bitvector32Term::Constant(value)) => format!("{value}u32"),
+        CValue::UInt32(
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
+        ) => {
+            format!("{value}u32")
+        }
         CValue::UInt32(value) => typed_literal_spelling(
             describe_bitvector_with_context(value, parameter_binding),
             "u32",
@@ -7065,6 +7075,7 @@ pub(super) fn describe_bitvector_with_context(
         ),
 
         Bitvector32Term::Constant(value) => format!("{}", *value as i32),
+        Bitvector32Term::UInt32Constant(value) => format!("{value}u32"),
         Bitvector32Term::Int64Constant(value) => format!("{value}i64"),
         Bitvector32Term::UInt64Constant(value) => format!("{value}u64"),
         Bitvector32Term::MachineIntegerConstant(value) => format!(

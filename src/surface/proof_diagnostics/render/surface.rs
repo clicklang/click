@@ -1025,7 +1025,10 @@ impl Printer<'_> {
             let value = self.bitvector(value, None, depth)?;
             return Some(cast("int32", value).text);
         }
-        if let Bitvector32Term::Constant(value) = value {
+        if let Bitvector32Term::UInt32Constant(value) = value {
+            return Some(value.to_string());
+        }
+        if let Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) = value {
             return match signed {
                 Some(true) => Some((*value as i32).to_string()),
                 Some(false) => Some(value.to_string()),
@@ -1043,6 +1046,7 @@ impl Printer<'_> {
         let literal = matches!(
             value,
             Bitvector32Term::Constant(_)
+                | Bitvector32Term::UInt32Constant(_)
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_)
         );
@@ -1093,6 +1097,7 @@ impl Printer<'_> {
         match value {
             B::Int64Constant(_) => Some(Hint::Int64),
             B::UInt64Constant(_) => Some(Hint::UInt64),
+            B::UInt32Constant(_) => Some(Hint::Unsigned32),
             B::Variable(variable) => self
                 .labels
                 .source_types
@@ -1246,7 +1251,9 @@ impl Printer<'_> {
         depth: usize,
     ) -> Option<Spelled> {
         let number = match (single, value) {
-            (true, Bitvector32Term::Constant(bits)) => f64::from(f32::from_bits(*bits)),
+            (true, Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) => {
+                f64::from(f32::from_bits(*bits))
+            }
             (false, Bitvector32Term::UInt64Constant(bits)) => f64::from_bits(*bits),
             _ => return self.bitvector(value, None, depth),
         };
@@ -1287,6 +1294,8 @@ impl Printer<'_> {
         use Bitvector32Term as B;
         match value {
             B::Constant(value) => return self.constant(*value, hint),
+            // A `uint32` constant is written in its own type.
+            B::UInt32Constant(value) => return self.constant(*value, Some(Hint::Unsigned32)),
             B::Int64Constant(value) => return Some(atom(format!("{value}i64"))),
             B::UInt64Constant(value) => return Some(atom(format!("{value}u64"))),
             B::Variable(variable) => {
@@ -1810,7 +1819,9 @@ impl Printer<'_> {
         let count = match width {
             Some(1) => self.bitvector(bytes, hint, depth),
             Some(width) => match bytes {
-                Bitvector32Term::Constant(value) if i64::from(*value) % width == 0 => {
+                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)
+                    if i64::from(*value) % width == 0 =>
+                {
                     Some(atom((i64::from(*value) / width).to_string()))
                 }
                 Bitvector32Term::UInt64Constant(value) if (*value as i64) % width == 0 => {
@@ -2123,8 +2134,12 @@ impl Printer<'_> {
         use crate::kernel::CValue;
         if !self.source_mode() {
             return match value {
-                CValue::Bool(Bitvector32Term::Constant(0)) => Some(atom("false")),
-                CValue::Bool(Bitvector32Term::Constant(1)) => Some(atom("true")),
+                CValue::Bool(Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => {
+                    Some(atom("false"))
+                }
+                CValue::Bool(Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)) => {
+                    Some(atom("true"))
+                }
                 CValue::Bool(value) | CValue::Int64(value) | CValue::UInt64(value) => {
                     self.bitvector(value, None, depth)
                 }
@@ -2144,7 +2159,9 @@ impl Printer<'_> {
         let typed = |printer: &mut Self, value: &Bitvector32Term, hint: Hint, suffix: &str| {
             let spelled_value = printer.bitvector(value, Some(hint), depth)?;
             Some(match value {
-                Bitvector32Term::Constant(_) if !suffix.is_empty() => {
+                Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+                    if !suffix.is_empty() =>
+                {
                     atom(typed_literal(spelled_value.text, suffix))
                 }
                 _ => spelled_value,
@@ -2154,8 +2171,12 @@ impl Printer<'_> {
             CValue::PointerInteger(_) => unreachable!("numeric projection"),
             CValue::Parameter(term) => self.algebraic(term, depth),
             CValue::Void => Some(atom("void")),
-            CValue::Bool(Bitvector32Term::Constant(0)) => Some(atom("false")),
-            CValue::Bool(Bitvector32Term::Constant(1)) => Some(atom("true")),
+            CValue::Bool(Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => {
+                Some(atom("false"))
+            }
+            CValue::Bool(Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)) => {
+                Some(atom("true"))
+            }
             CValue::Bool(value) => {
                 self.bitvector(value, Some(Hint::Narrow { signed: false }), depth)
             }
@@ -2168,9 +2189,9 @@ impl Printer<'_> {
             CValue::Int64(value) => typed(self, value, Hint::Int64, ""),
             CValue::UInt64(value) => typed(self, value, Hint::UInt64, ""),
             CValue::Int128(value) | CValue::UInt128(value) => self.bitvector(value, None, depth),
-            CValue::Float32(Bitvector32Term::Constant(bits)) => {
-                Some(atom(format!("{:?}f32", f32::from_bits(*bits))))
-            }
+            CValue::Float32(
+                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
+            ) => Some(atom(format!("{:?}f32", f32::from_bits(*bits)))),
             CValue::Float64(Bitvector32Term::UInt64Constant(bits)) => {
                 Some(atom(format!("{:?}", f64::from_bits(*bits))))
             }

@@ -1039,8 +1039,9 @@ fn contract_expression_variable(expression: &ContractExpression) -> Option<&str>
 }
 
 fn contract_expression_int32_constant(expression: &ContractExpression) -> Option<i64> {
-    let CExpression::Value(CValue::Int32(Bitvector32Term::Constant(value))) =
-        contract_expression_as_c_fragment(expression)?
+    let CExpression::Value(CValue::Int32(
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
+    )) = contract_expression_as_c_fragment(expression)?
     else {
         return None;
     };

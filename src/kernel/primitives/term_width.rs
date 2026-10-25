@@ -212,7 +212,7 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
     use Bitvector32Term as T;
     use CarrierWidth::{Bits32, Bits64};
     match term {
-        T::Constant(_) => Ok(Some(Bits32)),
+        T::Constant(_) | T::UInt32Constant(_) => Ok(Some(Bits32)),
         T::Int64Constant(_) | T::UInt64Constant(_) => Ok(Some(Bits64)),
         T::MachineIntegerConstant(constant) => {
             Ok(Some(CarrierWidth::of_bits(constant.format().bits())))
@@ -364,7 +364,7 @@ pub(crate) fn narrow_constant_out_of_range(value: &CValue) -> Option<NarrowRange
         CValue::UInt16(term) => ("CValue::UInt16", term, 0, i64::from(u16::MAX)),
         _ => return None,
     };
-    let Bitvector32Term::Constant(bits) = term else {
+    let (Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) = term else {
         return None;
     };
     // Signed tags read the carrier word as signed, unsigned ones as unsigned.

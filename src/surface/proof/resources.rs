@@ -5142,6 +5142,7 @@ fn is_integer_constant(value: &CValue) -> bool {
             if matches!(
                 term,
                 Bitvector32Term::Constant(_)
+                | Bitvector32Term::UInt32Constant(_)
                     | Bitvector32Term::Int64Constant(_)
                     | Bitvector32Term::UInt64Constant(_)
             )
@@ -5322,8 +5323,10 @@ fn materialize_composite_resource_cells_from_snapshot(
         return memory;
     };
     // Only signed constant spans have the bounded cell-materialization rule.
-    let Some((Bitvector32Term::Constant(start), Bitvector32Term::Constant(end))) =
-        range.int32_bounds()
+    let Some((
+        Bitvector32Term::Constant(start),
+        Bitvector32Term::Constant(end) | Bitvector32Term::UInt32Constant(end),
+    )) = range.int32_bounds()
     else {
         return memory;
     };

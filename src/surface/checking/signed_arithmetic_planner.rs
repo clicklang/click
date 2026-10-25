@@ -582,7 +582,7 @@ fn affine_difference(
     let mut pending = vec![(left, BigInt::one()), (right, -BigInt::one())];
     while let Some((term, coefficient)) = pending.pop() {
         charge_work(coefficient.bits() as usize + 1)?;
-        if let Bitvector32Term::Constant(value) = term {
+        if let Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) = term {
             let value = BigInt::from(*value as i32);
             charge_bigint_binary_work(&coefficient, &value)?;
             let product = &coefficient * &value;
@@ -614,7 +614,7 @@ fn decomposed_affine_difference(
     while let Some((term, coefficient)) = pending.pop() {
         charge_work(coefficient.bits() as usize + 1)?;
         match term {
-            Bitvector32Term::Constant(value) => {
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
                 let value = BigInt::from(*value as i32);
                 charge_bigint_binary_work(&coefficient, &value)?;
                 let product = &coefficient * &value;
@@ -1903,6 +1903,7 @@ impl<'a> Planner<'a> {
                     }
                     match term {
                         Bitvector32Term::Constant(_)
+                        | Bitvector32Term::UInt32Constant(_)
                         | Bitvector32Term::Int64Constant(_)
                         | Bitvector32Term::UInt64Constant(_)
                         | Bitvector32Term::Variable(_) => {
@@ -2392,7 +2393,9 @@ impl<'a> Planner<'a> {
         let mut pending = vec![term];
         while let Some(term) = pending.pop() {
             match term {
-                Bitvector32Term::Variable(_) | Bitvector32Term::Constant(_) => {}
+                Bitvector32Term::Variable(_)
+                | Bitvector32Term::Constant(_)
+                | Bitvector32Term::UInt32Constant(_) => {}
                 Bitvector32Term::UInt32From64(_)
                     if SignedArithmeticAtom::from_term(term).is_some() => {}
                 Bitvector32Term::PureFunctionApplication { arguments, .. } => {
@@ -2427,7 +2430,9 @@ impl<'a> Planner<'a> {
             charge_work(1)?;
             match task {
                 Task::Visit(term, allow_direct) => match term {
-                    Bitvector32Term::Constant(_) => results.push(self.interval_atom(term)?),
+                    Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
+                        results.push(self.interval_atom(term)?)
+                    }
                     Bitvector32Term::Add(left, right)
                     | Bitvector32Term::Subtract(left, right)
                     | Bitvector32Term::Multiply(left, right) => {

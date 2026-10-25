@@ -266,7 +266,7 @@ pub(in crate::surface) fn scale_int32_offset(
     byte_width: i64,
 ) -> PointerOffsetTerm {
     match value {
-        Bitvector32Term::Constant(value) => {
+        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             PointerOffsetTerm::Constant((value as i32 as i64) * byte_width)
         }
         value => PointerOffsetTerm::Int32Scaled {

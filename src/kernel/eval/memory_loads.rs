@@ -1317,7 +1317,7 @@ fn evaluate_c_memory_load_case(
             CType::Int32 => int32(Bitvector32Term::Constant(0)),
             CType::UInt8 => uint8(Bitvector32Term::Constant(0)),
             CType::UInt16 => uint16(Bitvector32Term::Constant(0)),
-            CType::UInt32 => CValue::UInt32(Bitvector32Term::Constant(0)),
+            CType::UInt32 => CValue::UInt32(Bitvector32Term::UInt32Constant(0)),
             CType::Int64 => CValue::Int64(Bitvector32Term::Int64Constant(0)),
             CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
             CType::Int128 => match crate::kernel::c_int128_literal(0) {
@@ -3355,6 +3355,7 @@ fn substitute_load_variables(
                 LOAD_SUBSTITUTION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
                     Bitvector32Term::Constant(_)
+                    | Bitvector32Term::UInt32Constant(_)
                     | Bitvector32Term::Variable(_)
                     | Bitvector32Term::Int64Constant(_)
                     | Bitvector32Term::UInt64Constant(_)
@@ -3658,6 +3659,7 @@ pub(crate) fn offsets_have_same_canonical_form(
 fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
     match term {
         Bitvector32Term::Constant(_)
+        | Bitvector32Term::UInt32Constant(_)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)

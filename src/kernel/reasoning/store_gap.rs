@@ -229,7 +229,9 @@ fn anchor_byte_form_cancels(anchor: &PointerOffsetTerm) -> bool {
     super::path_facts::byte_offset_from_pointer_offset(anchor).is_some_and(|form| {
         !matches!(
             form,
-            Bitvector32Term::Constant(_) | Bitvector32Term::Subtract(..)
+            Bitvector32Term::Constant(_)
+                | Bitvector32Term::UInt32Constant(_)
+                | Bitvector32Term::Subtract(..)
         )
     })
 }

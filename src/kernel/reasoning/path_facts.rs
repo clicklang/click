@@ -389,7 +389,9 @@ fn sequence_terms_definitely_distinct(left: &SequenceTerm, right: &SequenceTerm)
 fn c_values_definitely_distinct(left: &CValue, right: &CValue) -> bool {
     fn constant(bits: &Bitvector32Term) -> Option<u64> {
         match bits {
-            Bitvector32Term::Constant(value) => Some(u64::from(*value)),
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                Some(u64::from(*value))
+            }
             Bitvector32Term::Int64Constant(value) => Some(*value as u64),
             Bitvector32Term::UInt64Constant(value) => Some(*value),
             _ => None,
@@ -864,7 +866,9 @@ pub(in crate::kernel) fn element_count_from_bytes(
         Bitvector32Term::Multiply(left, right) if left.as_ref() == &element_width => {
             Some(right.as_ref().clone())
         }
-        Bitvector32Term::Constant(bytes) if bytes % element_width.as_const()? == 0 => {
+        Bitvector32Term::Constant(bytes) | Bitvector32Term::UInt32Constant(bytes)
+            if bytes % element_width.as_const()? == 0 =>
+        {
             Some(Bitvector32Term::Constant(bytes / element_width.as_const()?))
         }
         _ => None,

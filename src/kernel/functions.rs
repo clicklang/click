@@ -4998,7 +4998,7 @@ fn source_load_snapshot_for_proposition(
             Work::Condition(ConditionTerm::Constant(_))
             | Work::Condition(ConditionTerm::Variable(_)) => {}
             Work::Condition(_) => return Ok(None),
-            Work::Bitvector(Bitvector32Term::Constant(_))
+            Work::Bitvector(Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_))
             | Work::Bitvector(Bitvector32Term::Int64Constant(_))
             | Work::Bitvector(Bitvector32Term::UInt64Constant(_)) => {}
             Work::Bitvector(Bitvector32Term::Variable(variable)) => {
@@ -10536,7 +10536,7 @@ fn string_literal_instance_constant(c_type: CType, value: usize) -> Option<CValu
     Some(match c_type {
         CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(u64::from(value))),
         CType::Int64 => CValue::Int64(Bitvector32Term::UInt64Constant(u64::from(value))),
-        CType::UInt32 => CValue::UInt32(Bitvector32Term::Constant(value)),
+        CType::UInt32 => CValue::UInt32(Bitvector32Term::UInt32Constant(value)),
         CType::Int32 => CValue::Int32(Bitvector32Term::Constant(value)),
         _ => return None,
     })
