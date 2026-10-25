@@ -39,9 +39,6 @@ int32 put(int32 *a) {
     ensures a[4] == old(a[4]);
 } by {
     unfold(block(a));
-    step_until(function.exit);
-    fold(block(a));
-    simp();
 }
 
 void put_pointer(int32 **p, int32 *q) {
@@ -50,9 +47,6 @@ void put_pointer(int32 **p, int32 *q) {
     ensures p[1] == q;
 } by {
     unfold(pointers(p));
-    step_until(function.exit);
-    fold(pointers(p));
-    simp();
 }
 ```
 

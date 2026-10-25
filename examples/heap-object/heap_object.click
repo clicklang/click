@@ -13,10 +13,6 @@ verifying "item_pipeline.c";
 
 struct item* item_create(int32 value) {
     produces owned_item(result);
-} by {
-    execute();
-    fold(owned_item(result));
-    simp();
 }
 
 int32 item_read(struct item* item) {

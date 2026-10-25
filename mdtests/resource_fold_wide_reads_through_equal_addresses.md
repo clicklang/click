@@ -24,10 +24,6 @@ void inspect(struct node *p, struct node *q, struct node *zid, struct node *sid)
     requires zid->tag == address(sid) + (zid->tag & 1);
     produces packed_at(p->next, q->next);
     ensures 1 == 1;
-} by {
-    step_until(function.exit);
-    fold(packed_at(p->next, q->next));
-    simp();
 }
 ```
 

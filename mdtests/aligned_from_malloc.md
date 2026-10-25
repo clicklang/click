@@ -36,10 +36,6 @@ struct node* aligned_from_malloc() {
     produces owned_node(result);
     ensures result != 0 implies aligned(result, 8);
     ensures result != 0 implies aligned(&result->word, 8);
-} by {
-    execute();
-    fold(owned_node(result));
-    simp();
 }
 ```
 

@@ -22,10 +22,6 @@ struct node* list_empty() {
 
     ensures result == 0;
     ensures aligned(result, 8);
-} by {
-    execute();
-    fold(marked_list(result));
-    simp();
 }
 
 struct node* list_prepend(int32 value, struct node* tail) {
@@ -52,9 +48,6 @@ void list_mark(struct node* node) {
     ensures (node->word & 1) != 0;
 } by {
     unfold(marked_list(node));
-    execute();
-    fold(marked_list(node));
-    simp();
 }
 
 int32 list_is_marked(struct node* node) {
@@ -93,9 +86,6 @@ uint32 list_count_live(struct node* node) {
         simp();
     } else {
         unfold(marked_list(node));
-        execute();
-        fold(marked_list(node));
-        simp();
     }
 }
 

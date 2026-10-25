@@ -17,10 +17,6 @@ struct node* list_empty() {
     produces allocated_list(result);
 
     ensures result == 0;
-} by {
-    execute();
-    fold(allocated_list(result));
-    simp();
 }
 
 struct node* list_prepend(int32 value, struct node* tail) {

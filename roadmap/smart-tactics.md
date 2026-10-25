@@ -1186,6 +1186,15 @@ mdtests and examples.
     file by file, since which C has one path is not in the source text. It
     left 21 files whose C splits, and the files tests compare by text or
     documentation examples quote.
+    For uniform exit work on several paths, repeating the work in each arm
+    reads worse than the one line it replaces, so two forms replace it
+    instead. A goal `unfold` moves before the C (3 files). A `fold` of the
+    resource the contract produces is a search of the implicit closer: on
+    each returned path that holds its body it folds it, as the written
+    `fold` did, and expansion prints that fold per path
+    (`mdtests/an_omitted_proof_folds_the_resource_its_contract_produces.md`);
+    39 files drop `execute(); fold(…);` for it. Folds of other resources
+    stay written.
 
     `execute` then names only the tail's stepping and splitting. *Verdicts*
     only where a migration misses; each is explained in the PR.

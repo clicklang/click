@@ -44,9 +44,6 @@ uint32 count_nodes(struct node* node) {
         simp();
     } else {
         unfold(marked_list(node));
-        execute();
-        fold(marked_list(node));
-        simp();
     }
 }
 ```

@@ -25,10 +25,6 @@ int32* malloc_sizeof_scalar(int32 count) {
     requires 1 <= count;
     requires count <= 536870911;
     produces maybe_allocated(result, count);
-} by {
-    step_until(function.exit);
-    fold(maybe_allocated(result, count));
-    simp();
 }
 ```
 

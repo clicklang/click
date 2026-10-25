@@ -29,10 +29,6 @@ void link(struct node* node, struct node* tail) {
     requires aligned(tail, 8);
     consumes *node;
     produces packed(node);
-} by {
-    step_until(function.exit);
-    fold(packed(node));
-    simp();
 }
 ```
 
