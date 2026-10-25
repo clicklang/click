@@ -4452,6 +4452,30 @@ impl<'a> TermRewrite<'a> {
             self.pointer_origin_cache.insert(key, block.clone());
             return Pointer { block, offset };
         }
+        // A native equality substituted in the address a pointer read reads
+        // moves the read: it is the read at the rewritten address, named by
+        // its version as lowering names one, never by a pointer its cell
+        // holds (`a[j]` to `a[i]`, not to what `a[i]` stores).
+        if self.bitvector.is_some()
+            && !self.source_disabled
+            && let Some(read) = p.as_loaded_value()
+        {
+            self.charge_rewrite_work(1);
+            let address = self.pointer(&read.defining_address);
+            if address != read.defining_address
+                && let Some(moved) = Pointer::loaded(&Bitvector32Term::MemoryLoad(
+                    read.defining_memory.clone(),
+                    Box::new(address),
+                    crate::kernel::LoadKind::Bits32,
+                ))
+            {
+                self.changed = true;
+                return Pointer {
+                    block: moved.block,
+                    offset: self.offset(&read.displacement),
+                };
+            }
+        }
         // Opaque object and extent identities participate in lexical
         // binding, never in numeric pointer rewrites.
         if let PointerBlock::ExternalObject(variable) = &p.block {

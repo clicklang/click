@@ -387,7 +387,7 @@ fn logical_read_names_its_version(value_type: CType) -> bool {
             | CType::UInt32
             | CType::Int64
             | CType::UInt64
-    )
+    ) || value_type.is_pointer()
 }
 
 /// Name the selected caller read with the existing scalar normalizer.
@@ -2386,7 +2386,56 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
             &resolved, variable, &value,
         );
     }
+    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value) = &resolved {
+        let left_value = pointer_read_over_write_value(left);
+        let right_value = pointer_read_over_write_value(right);
+        if left_value.is_some() || right_value.is_some() {
+            let left = left_value.unwrap_or_else(|| left.as_ref().clone());
+            let right = right_value.unwrap_or_else(|| right.as_ref().clone());
+            // Two reads of one stored pointer compare equal; the comparison
+            // form is a lookup aid, so it states that outright.
+            let condition = if left == right {
+                ConditionTerm::Constant(true)
+            } else {
+                ConditionTerm::pointer_equal(left, right)
+            };
+            resolved = Proposition::ConditionIs(condition, *value);
+        }
+    }
+    // A pointer value carries qualifiers and a designation beside its address,
+    // so its comparison form is stated only when both addresses resolve to
+    // one stored pointer.
+    if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), value) =
+        &resolved
+    {
+        let resolve = |side: &CPointerValue| {
+            pointer_read_over_write_value(side.pointer()).unwrap_or_else(|| side.pointer().clone())
+        };
+        if resolve(left) == resolve(right) && left.pointer() != right.pointer() {
+            resolved = Proposition::ConditionIs(ConditionTerm::Constant(true), *value);
+        }
+    }
     (&resolved != proposition).then_some(resolved)
+}
+
+/// The read-over-write authority for a pointer read: the pointer stored at
+/// the read's address in the snapshot it reads, as a cell or as the pointer
+/// view of a union cell, when that snapshot records one. A cell holding the
+/// read itself resolves to nothing.
+pub(crate) fn pointer_read_over_write_value(pointer: &Pointer) -> Option<Pointer> {
+    let read = pointer.as_loaded_value()?;
+    if read.displacement != PointerOffsetTerm::Constant(0) {
+        return None;
+    }
+    let memory = read.defining_memory.memory();
+    let CValue::Pointer(stored) = memory
+        .known_value(&read.defining_address)
+        .or_else(|| memory.known_union_pointer(&read.defining_address))?
+    else {
+        return None;
+    };
+    let stored = stored.pointer().clone();
+    (stored != *pointer).then_some(stored)
 }
 
 /// Whether `proposition` holds by the read-over-write authority alone: its

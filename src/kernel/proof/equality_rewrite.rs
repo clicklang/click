@@ -638,10 +638,37 @@ fn rewrite_through_loaded_pointer_block(
     rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
     depth: usize,
 ) -> Option<Pointer> {
+    if depth == 0 {
+        return None;
+    }
+    // A pointer read named by its load identity: rewrite the address it
+    // reads and name the read there as lowering names one, by its version,
+    // never by a pointer its cell holds (`a[j]` to `a[i]`, not to what
+    // `a[i]` stores).
+    if let PointerBlock::LoadedPointer(identity) = &pointer.block {
+        let (memory, address) = crate::kernel::eval::registered_pointer_load(*identity)?;
+        let rewritten_address = {
+            let direct = rewrite_pointer(&address);
+            if direct != address {
+                direct
+            } else {
+                rewrite_through_loaded_pointer_block(&address, rewrite_pointer, depth - 1)?
+            }
+        };
+        let read = Pointer::loaded(&Bitvector32Term::MemoryLoad(
+            memory,
+            Box::new(rewritten_address),
+            crate::kernel::LoadKind::Bits32,
+        ))?;
+        return Some(Pointer {
+            block: read.block,
+            offset: pointer.offset.clone(),
+        });
+    }
     let PointerBlock::Symbolic(variable) = &pointer.block else {
         return None;
     };
-    if depth == 0 || !crate::kernel::is_load_variable(variable) {
+    if !crate::kernel::is_load_variable(variable) {
         return None;
     }
     let (memory, address) = crate::kernel::registered_load_origin_for_variable(variable)
@@ -1857,6 +1884,22 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
     }
 
+    /// `pointer` with an exact native equality substituted in its offset and,
+    /// for a pointer read, in the address it reads (the read then named at the
+    /// rewritten address by its version).
+    fn rewrite_pointer_through_reads(
+        pointer: &Pointer,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+    ) -> Pointer {
+        let rewrite_offsets = |pointer: &Pointer| Pointer {
+            block: pointer.block.clone(),
+            offset: rewrite_offset_term(&pointer.offset, left, right),
+        };
+        let offsets = rewrite_offsets(pointer);
+        rewrite_through_loaded_pointer_block(&offsets, &rewrite_offsets, 8).unwrap_or(offsets)
+    }
+
     // A mathematical observation of a machine value is still congruent under
     // a checked equality for that machine value.  Keep this bridge narrow:
     // root machine observations, scalar application arguments, and
@@ -2049,13 +2092,17 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         )
                     }
                     ConditionTerm::PointerEqual(goal_left, goal_right) => {
-                        let rewrite_pointer = |pointer: &Pointer| Pointer {
-                            block: pointer.block.clone(),
-                            offset: rewrite_offset_term(&pointer.offset, left, right),
-                        };
                         ConditionTerm::pointer_equal(
-                            rewrite_pointer(goal_left),
-                            rewrite_pointer(goal_right),
+                            rewrite_pointer_through_reads(goal_left, left, right),
+                            rewrite_pointer_through_reads(goal_right, left, right),
+                        )
+                    }
+                    ConditionTerm::PointerValueEqual(goal_left, goal_right) => {
+                        let rewrite_pointer =
+                            |pointer: &Pointer| rewrite_pointer_through_reads(pointer, left, right);
+                        ConditionTerm::PointerValueEqual(
+                            Box::new(goal_left.map_addresses(&rewrite_pointer)),
+                            Box::new(goal_right.map_addresses(&rewrite_pointer)),
                         )
                     }
                     _ => {
