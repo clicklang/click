@@ -19,7 +19,7 @@ void capture(struct model_node* p) {
     produces held: token();
     ensures held.model == NodeRef::At(p);
 } by {
-    execute();
+    step_until(function.exit);
     let held = fold(token(), { model: NodeRef::At(p) });
 }
 
@@ -27,7 +27,7 @@ void capture_null() {
     produces held: token();
     ensures true;
 } by {
-    execute();
+    step_until(function.exit);
     let held = fold(token(), { model: NodeRef::At(0) });
 }
 
@@ -36,7 +36,7 @@ void capture_known_null(void* p) {
     produces held: token();
     ensures true;
 } by {
-    execute();
+    step_until(function.exit);
     let held = fold(token(), { model: NodeRef::At((struct model_node*)p) });
 }
 ```

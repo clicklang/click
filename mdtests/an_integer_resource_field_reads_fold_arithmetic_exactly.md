@@ -22,7 +22,7 @@ void create(int32 x) {
     produces model: tally();
     ensures model.total == 2147483648;
 } by {
-    execute();
+    step_until(function.exit);
     let model = fold(tally(), { total: x + 1 });
     simp();
 }
@@ -32,7 +32,7 @@ void create_unsigned(uint32 y) {
     produces model: tally();
     ensures model.total == 4294967296;
 } by {
-    execute();
+    step_until(function.exit);
     let model = fold(tally(), { total: y + 1 });
     simp();
 }

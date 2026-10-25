@@ -17,7 +17,7 @@ int32 f(int32 n) {
     ensures 2 + 2 == 4;
     ensures result == n;
 } by {
-    execute();
+    step_until(function.exit);
     normalize();
     assumption();
 }

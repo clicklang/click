@@ -33,7 +33,7 @@ int32 pick(int32* p, int32 x) {
     produces c: Cell(p);
     ensures c.model == first(Shape::Pair(x, 3));
 } by {
-    execute();
+    step_until(function.exit);
     apply(first_pair(x, 3));
     let c = fold(Cell(p), { model: x });
     simp();

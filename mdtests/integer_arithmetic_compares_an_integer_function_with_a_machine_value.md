@@ -20,7 +20,7 @@ int32 echo(int32 x) {
     ensures result == exact(x);
     ensures result == old(exact(x));
 } by {
-    execute();
+    step_until(function.exit);
     unfold(exact(x));
 }
 ```

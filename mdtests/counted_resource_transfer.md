@@ -65,7 +65,7 @@ int32 package_one_ref(int32 object) {
     owns object_ref(object);
 
     produces held_ref(object) by {
-        execute();
+        step_until(function.exit);
         fold(held_ref(object));
     }
 }

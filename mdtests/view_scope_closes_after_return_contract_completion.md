@@ -13,7 +13,7 @@ void repair() {
     produces tag: marker();
     ensures tag.value == 1;
 } by {
-    execute();
+    step_until(function.exit);
     let tag = fold(marker(), { value: 1 });
     simp();
 }

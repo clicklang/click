@@ -20,7 +20,7 @@ int32 id(int32 x) {
     requires forall (z: Integer) { sq(z) >= 0 };
     ensures sq(to_integer(result)) >= 0;
 } by {
-    execute();
+    step_until(function.exit);
     have sq(to_integer(result)) >= 0 by {
         instantiate(forall (z: Integer) { sq(z) >= 0 }, to_integer(result));
     }
@@ -30,7 +30,7 @@ int32* keep(int32* p) {
     requires forall (q: int32*) { same(q, q) };
     ensures same(result, result);
 } by {
-    execute();
+    step_until(function.exit);
     have same(result, result) by {
         instantiate(forall (q: int32*) { same(q, q) }, result);
     }

@@ -42,7 +42,7 @@ int32 initialize_box(struct box* owner, int32 value) {
     ensures result == value;
     ensures owner->value == value;
 } by {
-    execute();
+    step_until(function.exit);
     fold(box(owner));
     simp();
 }

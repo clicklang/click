@@ -47,7 +47,7 @@ uint64 fit_explicit(uint64 x) {
     requires x >= 32u64;
     ensures x < 32u64 implies result == x;
 } by {
-    execute();
+    step_until(function.exit);
     have x < 32u64 implies result == x by {
         intro();
         contradiction(x < 32u64);

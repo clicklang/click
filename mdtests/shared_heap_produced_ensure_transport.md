@@ -57,7 +57,7 @@ void parent_attach(struct parent* p, struct child* kid) {
     ensures link.link == ParentLink::Linked(kid);
     ensures p->kid == kid;
 } by {
-    execute();
+    step_until(function.exit);
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
     simp();
 }

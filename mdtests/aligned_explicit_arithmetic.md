@@ -16,7 +16,7 @@ int32 aligned_explicit_arithmetic(uint8* p) {
     requires aligned(p, 16);
     ensures aligned(p + 24, 8);
 } by {
-    execute();
+    step_until(function.exit);
     have aligned(p + 24, 8) by {
         arithmetic_certificate rules {
             premise 0: aligned(p, 16) => aligned(p, 16);

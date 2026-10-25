@@ -73,7 +73,7 @@ void frame_top(struct tree_node* node) {
     produces ctx: ctx_at(node);
     ensures ctx.model == Context::Top;
 } by {
-    execute();
+    step_until(function.exit);
     let ctx = fold(ctx_at(node), { model: Context::Top }, {});
     simp();
 }
@@ -88,7 +88,7 @@ void frame_push(struct tree_node* node, struct tree_node* up, int value) {
     produces ctx: ctx_at(node);
     ensures ctx.model == Context::Left(up, value, old(r.model), old(u.model));
 } by {
-    execute();
+    step_until(function.exit);
     let ctx = fold(ctx_at(node), {
         model: Context::Left(up, value, r.model, u.model)
     }, { right: r, up: u });

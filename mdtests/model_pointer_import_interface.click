@@ -5,6 +5,6 @@ void imported_node(struct model_node* p) {
     produces held: imported_node_token();
     ensures held.model == ImportedNodeRef::At(p);
 } by {
-    execute();
+    step_until(function.exit);
     let held = fold(imported_node_token(), { model: ImportedNodeRef::At(p) });
 }

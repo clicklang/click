@@ -155,7 +155,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
         memory(*(region->arena->data + (region->start + index)))
     ) by { simp(); }
     mark w;
-    execute();
+    step_until(function.exit);
     have region->arena == old(region->arena) by { simp(); }
     have region->arena->data == old(region->arena->data) by { simp(); }
 

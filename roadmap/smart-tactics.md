@@ -1181,6 +1181,11 @@ mdtests and examples.
     output, expansion fixtures and the documentation examples paired with
     them), refusal tests that name `execute`'s message, and arms of a proof
     `if` or `branch`.
+    The second migration rewrote `execute();` as `step_until(function.exit);`
+    in 176 files, 221 uses, wherever the file still verified; it was tried
+    file by file, since which C has one path is not in the source text. It
+    left 21 files whose C splits, and the files tests compare by text or
+    documentation examples quote.
 
     `execute` then names only the tail's stepping and splitting. *Verdicts*
     only where a migration misses; each is explained in the PR.

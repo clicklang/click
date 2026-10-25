@@ -29,7 +29,7 @@ int32 unchanged(int32 x) {
 } by {
     apply(integer_reflexive(to_integer(x + 1)));
     apply(integer::truncation_identity(to_integer(x), 3));
-    execute();
+    step_until(function.exit);
     apply(integer_reflexive(to_integer(result)));
     simp();
 }

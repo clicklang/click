@@ -42,7 +42,7 @@ int32 keep_h() {
         peel(icount(h, 0, 0)) using { 0 <= 0; };
         normalize();
     }
-    execute();
+    step_until(function.exit);
     have icount(h, 0, 0) == 0;
     simp();
 }

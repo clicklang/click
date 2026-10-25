@@ -26,7 +26,7 @@ void probe(int32 amount, int32 n) {
     owns amount of bundle(n);
 } by {
     unfold(amount of bundle(n));
-    execute();
+    step_until(function.exit);
     fold(bundle(n));
 }
 void probe_have(int32 amount, int32 n) {
@@ -35,7 +35,7 @@ void probe_have(int32 amount, int32 n) {
 } by {
     have amount == 1;
     unfold(amount of bundle(n));
-    execute();
+    step_until(function.exit);
     fold(bundle(n));
 }
 ```

@@ -37,7 +37,7 @@ void unchanged(int32 x) {
     requires to_integer(x) == 10;
     ensures 10 == old(to_integer(x));
 } by {
-    execute();
+    step_until(function.exit);
     apply(equal_arguments(10, old(to_integer(x)))) using { old(to_integer(x)) == 10; };
     simp();
 }

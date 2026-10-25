@@ -20,7 +20,7 @@ int32 sorted_pair_unfold_requirement(int32 p[2]) {
     requires viewable(p[0..2]);
     requires sorted_pair(p);
     ensures consequence: p[0] <= p[1] by {
-        execute();
+        step_until(function.exit);
         unfold(sorted_pair);
         simp();
     }

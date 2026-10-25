@@ -20,7 +20,7 @@ theorem symmetric<T>(left: T, right: T) {
 int32 passthrough(int32 value) {
     ensures value == result;
 } by {
-    execute();
+    step_until(function.exit);
     apply(symmetric(result, value));
     simp();
 }

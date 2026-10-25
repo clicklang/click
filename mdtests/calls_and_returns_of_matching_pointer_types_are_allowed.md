@@ -34,7 +34,7 @@ long caller_ok() {
 struct a *same(struct a *pa) {
     ensures address(result) == address(pa);
 } by {
-    execute();
+    step_until(function.exit);
     normalize();
 }
 ```

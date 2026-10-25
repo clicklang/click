@@ -36,7 +36,7 @@ void mark(int32 p[], int32 n) {
     views p[0..n];
     produces valid(p, n);
 } by {
-    execute();
+    step_until(function.exit);
     fold(valid(p, n));
 }
 ```

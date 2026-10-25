@@ -33,7 +33,7 @@ struct node* finish(struct node* p, struct node* q) {
     consumes q->tag;
     ensures 1 == 1;
 } by {
-    execute();
+    step_until(function.exit);
     fold(tag_at(result));
     unfold(tag_at(result));
     simp();

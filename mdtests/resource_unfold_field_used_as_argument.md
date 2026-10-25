@@ -23,7 +23,7 @@ int32 read_value(int32* p) {
 } by {
     let { value: v, child: child } = unfold(root);
     unfold(child);
-    execute();
+    step_until(function.exit);
     let child = fold(cell(p, v), { value: v });
     let root = fold(holder(p), { value: v }, { child: child });
     simp();

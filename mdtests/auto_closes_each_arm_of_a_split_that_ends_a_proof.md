@@ -19,7 +19,7 @@ int32 f(int32 n) {
     ensures n < 5 or n >= 5;
     ensures n == n;
 } by {
-    execute();
+    step_until(function.exit);
     if n < 5 {
         simp();
         auto();

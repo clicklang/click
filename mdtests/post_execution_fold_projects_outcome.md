@@ -26,7 +26,7 @@ int32 seal(int32 x) {
     produces bundle(x);
     ensures result_matches: result == x;
 } by {
-    execute();
+    step_until(function.exit);
     fold(bundle(x));
     simp();
 }

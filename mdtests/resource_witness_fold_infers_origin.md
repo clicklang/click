@@ -30,7 +30,7 @@ void link(struct node* node, struct node* tail) {
     consumes *node;
     produces packed(node);
 } by {
-    execute();
+    step_until(function.exit);
     fold(packed(node));
     simp();
 }

@@ -32,7 +32,7 @@ void bump(struct holder* h) {
     owns holder_of(h);
 } by {
     let { cell: p } = unfold(holder_of(h));
-    execute();
+    step_until(function.exit);
     fold(holder_of(h));
     simp();
 }

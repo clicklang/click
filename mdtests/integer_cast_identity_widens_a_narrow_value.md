@@ -22,7 +22,7 @@ verifying "widen_cert.c";
 int widen8(signed char x) {
     ensures to_integer(result) == to_integer(x);
 } by {
-    execute();
+    step_until(function.exit);
     arithmetic_certificate rules {
         premise 0: (int32)old(x) >= -128 => (int32)old(x) >= -128;
         premise 1: (int32)old(x) <= 127 => (int32)old(x) <= 127;
@@ -34,7 +34,7 @@ int widen8(signed char x) {
 long widen8l(signed char x) {
     ensures to_integer(result) == to_integer(x);
 } by {
-    execute();
+    step_until(function.exit);
     arithmetic_certificate rules {
         premise 0: (int32)old(x) >= -128 => (int32)old(x) >= -128;
         premise 1: (int32)old(x) <= 127 => (int32)old(x) <= 127;
@@ -46,7 +46,7 @@ long widen8l(signed char x) {
 unsigned int widenu8(unsigned char x) {
     ensures to_integer(result) == to_integer(x);
 } by {
-    execute();
+    step_until(function.exit);
     arithmetic_certificate rules {
         premise 0: (int32)old(x) >= 0 => (int32)old(x) >= 0;
         premise 1: (int32)old(x) <= 255 => (int32)old(x) <= 255;
@@ -58,7 +58,7 @@ unsigned int widenu8(unsigned char x) {
 unsigned long widenu16(unsigned short x) {
     ensures to_integer(result) == to_integer(x);
 } by {
-    execute();
+    step_until(function.exit);
     arithmetic_certificate rules {
         premise 0: (int32)old(x) >= 0 => (int32)old(x) >= 0;
         premise 1: (int32)old(x) <= 65535 => (int32)old(x) <= 65535;

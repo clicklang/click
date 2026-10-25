@@ -9,7 +9,7 @@ int32 one(void) { return 1; }
 ```click
 verifying "post_simp.c";
 int32 one() { ensures result == 1; } by {
- execute();
+ step_until(function.exit);
  have result == 1;
  simp() using { result == 1; };
 }

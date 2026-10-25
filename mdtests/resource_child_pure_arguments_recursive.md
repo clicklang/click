@@ -36,7 +36,7 @@ int32 read_left(int32* p, int32* left, int32* right) {
     have root_pointer(Tree::Leaf(right, 3)) == right by { unfold(root_pointer(Tree::Leaf(right, 3))); normalize(); }
     let { left: l, right: r } = unfold(root);
     unfold(l);
-    execute();
+    step_until(function.exit);
     let l = fold(cache(left), { model: Tree::Leaf(left, 2) });
     let root = fold(cache(p), { model: old(root.model) }, { left: l, right: r });
     simp();

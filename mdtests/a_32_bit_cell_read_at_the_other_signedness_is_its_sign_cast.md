@@ -61,7 +61,7 @@ int stated_unsigned_read_signed(unsigned *u, int i) {
     requires u[i] == 4294967295u32;
     ensures result == -1;
 } by {
-    execute();
+    step_until(function.exit);
     simp();
 }
 ```

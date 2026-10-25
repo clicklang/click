@@ -16,7 +16,7 @@ uint32 shift(uint32 value, uint64 count) {
     requires count == 31u64;
     ensures result == 2147483648u32;
 } by {
-    execute();
+    step_until(function.exit);
     rewrite(count == 31u64);
     rewrite(value == 1u32);
     normalize();

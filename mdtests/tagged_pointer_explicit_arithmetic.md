@@ -22,7 +22,7 @@ unsigned long set_black(unsigned long word, struct node* next) {
     requires word == address(next) + 1;
     ensures result == address(next) + 3;
 } by {
-    execute();
+    step_until(function.exit);
     have result == address(next) + 3 by {
         arithmetic_certificate rules {
             premise 0: word == address(next) + 1 => word == address(next) + 1;

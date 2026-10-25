@@ -43,7 +43,7 @@ int32 count_to(int32 n) diverges {
             close_invariants() by simp();
         }
     }
-    execute();
+    step_until(function.exit);
     normalize();
 }
 ```

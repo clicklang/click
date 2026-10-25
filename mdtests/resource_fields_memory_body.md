@@ -26,7 +26,7 @@ int32 read(int32* p) {
     ensures c.mark == old(c.mark);
 } by {
     unfold(c);
-    execute();
+    step_until(function.exit);
     fold(c);
     simp();
 }

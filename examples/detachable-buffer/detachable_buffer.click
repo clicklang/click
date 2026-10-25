@@ -43,7 +43,7 @@ int32 detachable_buffer_init(
     ensures owner->len == length;
     ensures owner->data == data;
 } by {
-    execute();
+    step_until(function.exit);
     fold(attached_buffer(owner));
     simp();
 }
@@ -64,7 +64,7 @@ int32 detachable_buffer_detach(
     ensures owner->data == data;
 } by {
     unfold(attached_buffer(owner));
-    execute();
+    step_until(function.exit);
     fold(detached_backing(data, length));
     fold(detached_buffer(owner));
     simp();
@@ -82,7 +82,7 @@ int32 detachable_buffer_set_first(
     ensures data[0] == value;
 } by {
     unfold(detached_backing(data, length));
-    execute();
+    step_until(function.exit);
     fold(detached_backing(data, length));
     simp();
 }

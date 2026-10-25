@@ -14,7 +14,7 @@ void sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
 } by {
     unfold(source);
     unfold(target);
-    execute();
+    step_until(function.exit);
     fold(source);
     let target = fold(size_metadata(rb_new), { value: old(source.value) });
     simp();

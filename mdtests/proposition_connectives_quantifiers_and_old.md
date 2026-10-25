@@ -22,7 +22,7 @@ int32 first_matches(int32 p[], int32 n, int32 x) {
     ensures p[0] == old(p[0]) by auto();
     ensures forall (k: int32) { 0 <= k and k < n implies p[k] == old(p[k]) } by auto();
     ensures exists (k: int32) { 0 <= k and k < n and p[k] == x } by {
-        execute();
+        step_until(function.exit);
         witness { k: 0 };
         simp();
     }
