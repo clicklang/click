@@ -1810,15 +1810,18 @@ fn a_load_projection_jump_does_not_restore_a_havocked_cell() {
         &assumptions,
         None,
     );
-    assert_eq!(havocked.known_value(&loaded), None, "the havoc erases the cell");
+    assert_eq!(
+        havocked.known_value(&loaded),
+        None,
+        "the havoc erases the cell"
+    );
     assert!(
         havocked.known_value(&sibling).is_some(),
         "the separated sibling's materialization survives the havoc"
     );
-    let projected =
-        crate::kernel::reasoning::memory_resolution::canonical_memory_for_pointer_load(
-            &havocked, &loaded,
-        );
+    let projected = crate::kernel::reasoning::memory_resolution::canonical_memory_for_pointer_load(
+        &havocked, &loaded,
+    );
     assert_eq!(
         projected.known_value(&loaded),
         None,
