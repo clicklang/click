@@ -7252,12 +7252,14 @@ impl CMemory {
         value_type: CType,
     ) -> CValue {
         let snapshot = crate::kernel::intern_c_memory(self.clone());
-        // A version read is a named read, or a cell's own materialized read,
-        // either of which already carries its definition.
-        let value = Pointer::version_read(&snapshot, pointer);
-        CValue::Pointer(CPointerValue::from_read(
-            value, value_type, &snapshot, pointer,
-        ))
+        // A version read is a named read, or a value the memory holds for the
+        // cell, either of which already carries its definition.
+        match Pointer::version_read_value(&snapshot, pointer) {
+            Ok(held) => CValue::Pointer(held.with_type(value_type)),
+            Err(value) => CValue::Pointer(CPointerValue::from_read(
+                value, value_type, &snapshot, pointer,
+            )),
+        }
     }
 
     pub(in crate::kernel) fn symbolic_pointer_load(

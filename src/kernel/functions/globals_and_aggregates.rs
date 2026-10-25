@@ -522,7 +522,7 @@ pub(super) fn symbolic_pointer_placeholder(value: &CValue, storage: &Pointer) ->
 /// backing memory contains only the storage block, so resource lowering and
 /// ordinary function entry derive the same load identity even when the
 /// caller has not yet materialized the surrounding object.
-pub(super) fn symbolic_memory_base(memory: &CMemory, pointer: &Pointer) -> CMemory {
+pub(in crate::kernel) fn symbolic_memory_base(memory: &CMemory, pointer: &Pointer) -> CMemory {
     let size = memory
         .blocks
         .get(&pointer.block)

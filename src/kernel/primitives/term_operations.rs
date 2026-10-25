@@ -4749,6 +4749,20 @@ impl Pointer {
     /// (`eval::pointer_read_over_write_value`). A cell holding its own read
     /// is that read.
     pub(crate) fn version_read(memory: &SharedCMemory, address: &Pointer) -> Self {
+        match Self::version_read_value(memory, address) {
+            Ok(held) => held.pointer().clone(),
+            Err(read) => read,
+        }
+    }
+
+    /// [`Self::version_read`] with the whole pointer value when the read is a
+    /// value the memory already holds for the cell (its own materialized
+    /// read, or static storage's symbolic initial contents), designation and
+    /// extent included; otherwise the named read, as `Err`.
+    pub(crate) fn version_read_value(
+        memory: &SharedCMemory,
+        address: &Pointer,
+    ) -> Result<CPointerValue, Self> {
         // An address through a stored read is the address through the
         // stored pointer: one place (`eval::read_over_write_address`).
         let address = crate::kernel::eval::read_over_write_address(address)
@@ -4776,12 +4790,32 @@ impl Pointer {
                         .is_some_and(|(_, registered)| registered == *address)
                 ) =>
             {
-                Some(stored.pointer().clone())
+                Some(stored)
             }
             _ => None,
         };
         if let Some(read) = own_read(&source).or_else(|| own_read(&canonical)) {
-            return read;
+            return Ok(read);
+        }
+        // A static-storage cell never written since its block was declared
+        // holds the storage's symbolic initial contents, which function entry
+        // materializes from the storage's symbolic base; it is named there.
+        if address.block.is_static_storage_block()
+            && source
+                .memory()
+                .blocks
+                .get(&address.block)
+                .is_some_and(|block| block.size().as_const().is_some())
+            && !canonical.memory().blocks.contains_key(&address.block)
+            && canonical.memory().known_value(address).is_none()
+            && let Some(CValue::Pointer(initial)) = crate::kernel::eval::symbolic_storage_cell_value(
+                &crate::kernel::functions::symbolic_memory_base(source.memory(), address),
+                address,
+                CType::VoidPointerPointer,
+                false,
+            )
+        {
+            return Ok(initial);
         }
         // A pointer is named by the read of its word, as every pointer read
         // is (`Pointer::loaded`), so the C program and the logic name one
@@ -4798,7 +4832,7 @@ impl Pointer {
                 .is_some_and(|(_, registered)| registered == *address)
             && let Some(named) = canonical_pointer_read(&Bitvector32Term::Variable(variable))
         {
-            return named_pointer_read(named);
+            return Err(named_pointer_read(named));
         }
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &canonical,
@@ -4807,10 +4841,10 @@ impl Pointer {
             crate::kernel::C_POINTER_BYTE_WIDTH,
             memory,
         );
-        match canonical_pointer_read(&Bitvector32Term::Variable(variable)) {
+        Err(match canonical_pointer_read(&Bitvector32Term::Variable(variable)) {
             Some(named) => named_pointer_read(named),
             None => Self::loaded_value(&source, address),
-        }
+        })
     }
 
     pub(crate) fn symbolic_function(variable: Variable) -> Self {

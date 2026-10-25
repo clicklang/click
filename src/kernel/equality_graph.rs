@@ -734,6 +734,18 @@ impl EqualityGraph {
                     }
                 }
             }
+            // A load variable's pointer value and the named read of its cell
+            // are one read spelled two ways.
+            if let PointerBlock::Symbolic(variable) = &value.block
+                && value.offset == PointerOffsetTerm::Constant(0)
+                && let Some(named) =
+                    crate::kernel::primitives::pointer_read_of_load_variable(*variable)
+                && named != value
+                && !definitions.contains(&(value.clone(), named.clone()))
+            {
+                pending.push(named.clone());
+                definitions.push((value.clone(), named));
+            }
             if reads.definitions.is_empty() {
                 continue;
             }
