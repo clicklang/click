@@ -9598,7 +9598,8 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::SmartExecute
             }
-            "execute_until" => {
+            // `step_until` is the older spelling of `step_until`.
+            "step_until" | "execute_until" => {
                 self.expect(Token::LParen)?;
                 let region_ref = self.parse_code_region_ref()?;
                 self.expect(Token::RParen)?;
@@ -16068,7 +16069,7 @@ mod tactic_classification_tests {
         ),
         ("user-tactic", "name(x, { cell: c });"),
         ("execute", "execute();"),
-        ("execute-until", "execute_until(label);"),
+        ("step-until", "step_until(label);"),
         ("unfold-predicate", "unfold(name);"),
         ("unfold-function", "unfold(f(x));"),
         ("peel-function", "peel(f(x)) using { x == 1; };"),

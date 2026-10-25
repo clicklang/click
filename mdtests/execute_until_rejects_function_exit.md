@@ -19,5 +19,5 @@ int32 execute_until_after_exit(int32 x) {
 ```
 
 ```expect
-fail: `execute_until(region(0))` cannot run after execution already reached function exit
+fail: `step_until(region(0))` cannot run after execution already reached function exit
 ```

@@ -529,7 +529,7 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
-    /// Runs `execute_until` on checked descendants and stops before the
+    /// Runs `step_until` on checked descendants and stops before the
     /// selected source statement.
     pub(in crate::surface::proof) fn try_execute_until(
         &self,

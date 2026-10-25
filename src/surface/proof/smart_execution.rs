@@ -4,7 +4,7 @@ use super::*;
 use std::collections::BTreeSet;
 
 impl<'a> Proof<'a> {
-    /// Runs `execute_until` on checked descendants: the `execute()` search
+    /// Runs `step_until` on checked descendants: the `execute()` search
     /// with a target, which stops before that source statement and follows
     /// one path, refusing where it would have to split. The returned fact
     /// list is only the prefix's output delta; scope adapters use it to
@@ -19,13 +19,13 @@ impl<'a> Proof<'a> {
         let target = self.resolve_statement_target(region)?;
         let Some(current) = self.current_statement_index()? else {
             return Err(self.step_error(format!(
-                "`execute_until({})` cannot run after execution already reached function exit",
+                "`step_until({})` cannot run after execution already reached function exit",
                 describe_code_region_ref(region)
             )));
         };
         if target < current {
             return Err(self.step_error(format!(
-                "`execute_until({})` cannot move backward from region({current})",
+                "`step_until({})` cannot move backward from region({current})",
                 describe_code_region_ref(region)
             )));
         }
@@ -126,7 +126,7 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// Runs `execute_until` on this Proof and returns only the
+    /// Runs `step_until` on this Proof and returns only the
     /// already-accepted descendant.
     pub(in crate::surface::proof) fn try_execute_until(
         &self,

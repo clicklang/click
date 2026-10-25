@@ -922,6 +922,10 @@ id = "language.word.step"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
+id = "language.word.step_until"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
 id = "language.word.struct"
 path = "reference/language/grammar.md#word-index"
 
@@ -1302,7 +1306,7 @@ id = "tactic.execute"
 path = "reference/tactics/index.md#execution"
 
 [[item]]
-id = "tactic.execute_until"
+id = "tactic.step_until"
 path = "reference/tactics/index.md#execution"
 
 [[item]]
@@ -1479,7 +1483,7 @@ path = "reference/tactics/index.md#resources-and-snapshots"
 id = "tactic-form.execute"
 path = "reference/tactics/index.md#execution"
 [[item]]
-id = "tactic-form.execute-until"
+id = "tactic-form.step-until"
 path = "reference/tactics/index.md#execution"
 [[item]]
 id = "tactic-form.unfold-predicate"

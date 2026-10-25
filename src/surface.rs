@@ -332,6 +332,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "spec",
     "statement",
     "step",
+    "step_until",
     "struct",
     "tactic",
     "take",
@@ -4569,7 +4570,7 @@ pub enum SimpleTactic {
 
 /// The smart tactics, each one engine
 /// (`docs/concepts/smart-and-simple-tactics.md`): `solve` closes one goal
-/// and wraps `arithmetic`; `execute` runs C; `execute_until` is a variant
+/// and wraps `arithmetic`; `execute` runs C; `step_until` is a variant
 /// of `execute`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SmartTacticKind {
@@ -4719,8 +4720,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "smart",
     },
     PublicTacticForm {
-        id: "execute-until",
-        syntax: "execute_until",
+        id: "step-until",
+        syntax: "step_until",
         class: "smart",
     },
     PublicTacticForm {
@@ -5898,7 +5899,7 @@ pub enum CodeRegionRef {
     Region(usize),
     Label(String),
     /// A static local assignment occurrence in the executable layout.
-    /// Currently accepted by `execute_until`, not snapshot expressions.
+    /// Currently accepted by `step_until`, not snapshot expressions.
     Assignment {
         local: String,
         occurrence: usize,
@@ -5967,7 +5968,7 @@ impl CodeRegionRef {
 /// Why a written code region names no C code region.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) enum CodeRegionResolutionError {
-    /// A region only `execute_until` accepts; the text names which.
+    /// A region only `step_until` accepts; the text names which.
     ExecutionTargetOnly(&'static str),
     /// No loop on this execution path was given this label.
     UnknownLabel(String),
@@ -5980,7 +5981,7 @@ impl std::fmt::Display for CodeRegionResolutionError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ExecutionTargetOnly(regions) => {
-                write!(formatter, "{regions} supported only by `execute_until`")
+                write!(formatter, "{regions} supported only by `step_until`")
             }
             Self::UnknownLabel(label) => write!(formatter, "unknown code region label `{label}`"),
             Self::StatementRegionTarget => write!(

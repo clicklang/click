@@ -1173,7 +1173,7 @@ fn apply_frontier_source_tactic<'a>(
             Some(executed) => executed,
             None => {
                 return Err(
-                    proof.step_error("`execute_until` found no checked step from this frontier")
+                    proof.step_error("`step_until` found no checked step from this frontier")
                 );
             }
         }
@@ -5440,7 +5440,7 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
         ProofTactic::UserTactic(application) => application.tactic_spelling(),
         ProofTactic::SmartExecute => "execute()".to_string(),
         ProofTactic::ExecuteUntil(region) => format!(
-            "execute_until({})",
+            "step_until({})",
             crate::surface::diagnostics::describe_code_region_ref(region)
         ),
         // These act on the frontier's memory and program points, which a

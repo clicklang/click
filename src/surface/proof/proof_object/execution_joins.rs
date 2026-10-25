@@ -3196,10 +3196,10 @@ impl<'a> Proof<'a> {
                     Some(current) if current == target => return Ok(Some(proof)),
                     Some(current) if current < target => {}
                     Some(current) => return Err(proof.step_error(format!(
-                        "`execute_until(region({target}))` target is not reachable from the current execution path; execution moved the frontier to region({current})"
+                        "`step_until(region({target}))` target is not reachable from the current execution path; execution moved the frontier to region({current})"
                     ))),
                     None => return Err(proof.step_error(format!(
-                        "`execute_until(region({target}))` reached function exit before its target"
+                        "`step_until(region({target}))` reached function exit before its target"
                     ))),
                 }
             } else if proof.is_at_function_exit() {
@@ -3274,7 +3274,7 @@ impl<'a> Proof<'a> {
                 return match proof.apply_step(ProofStep::Step) {
                     Err(error) => Err(error),
                     Ok(_) => Err(proof.step_error(format!(
-                        "`execute_until(region({target}))` could not advance this statement"
+                        "`step_until(region({target}))` could not advance this statement"
                     ))),
                 };
             }
