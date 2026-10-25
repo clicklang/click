@@ -2357,11 +2357,11 @@ pub(in crate::kernel) fn pointer_index_term(
         | CValue::UInt16(_)) => Some((promote_c_int32_path_value(value)?, false, false)),
         // An unsigned word whose sign bit the path has cleared (`x < 4u`
         // leaves `0 <= x` beside it) names the same element index read as
-        // signed: zero- and sign-extension agree on it. Indexing by the
-        // signed word gives the address the shape a signed index has, so
-        // the formation guard and the element and footprint rules read its
-        // range from the same order facts. Otherwise the index is the exact
-        // zero-extended word.
+        // signed: zero- and sign-extension agree on it. Indexing by its
+        // sign cast σ to `int32` gives the address the shape a signed index
+        // has, so the formation guard and the element and footprint rules
+        // read its range from the same order facts, which read σ(x) as
+        // `x`'s word. Otherwise the index is the exact zero-extended word.
         CValue::UInt32(value)
             if decide_with_facts(
                 assumptions,
@@ -2369,9 +2369,18 @@ pub(in crate::kernel) fn pointer_index_term(
                 &ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), value.clone()),
             ) == Some(true) =>
         {
-            Some((value, false, false))
+            Some((
+                Bitvector32Term::sign_cast32(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    crate::kernel::MachineIntegerType::Int32,
+                    value,
+                ),
+                false,
+                false,
+            ))
         }
         CValue::UInt32(value) => Some((Bitvector32Term::uint64_from_32(value), true, true)),
+
         CValue::Int64(value) => Some((value, false, true)),
         // A 64-bit index keeps its own form, so a body's access and a
         // contract's place name one address in one spelling.

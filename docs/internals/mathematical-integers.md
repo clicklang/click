@@ -493,7 +493,46 @@ full-width boundary checks cover this profile. The checked
 [cast fixture](https://github.com/clicklang/click/blob/master/mdtests/legacy_integer_cast_identity.md)
 includes the unchanged Bitcoin fast-path operand conversion expressions.
 
+## The 32-bit sign cast
+
+A C conversion between `int` and `unsigned int` is the sign cast σ, the
+`MachineIntegerCast` node from `int32` to `uint32` or back
+(`Bitvector32Term::sign_cast32`). C assignment, return, argument and cast
+conversions build it, the usual arithmetic conversions build it for an
+`int` operand of an `unsigned` operation, and so does the modulo boundary
+above (Rust `as`, C++ conversions, specification casts). A sign-cleared
+`unsigned` array index is σ to `int32` (`pointer_index_term`). The
+constructor folds a constant and undoes a σ, so `σ(σ(x))` is `x`.
+Narrow promotions still reuse their canonical carrier (Stage 4 of
+`design/machine-integers.md`).
+
+σ keeps every bit, so the kernel reads σ(x) as `x`'s 32-bit word
+(decision of 2026-10-25):
+
+| Rule | Statement | Where |
+|---|---|---|
+| K1 word identity | `σ(x) == x` as a 32-bit word | 32-bit operator, comparison, overflow and 32-to-64 extension constructors read operands through `word32`; the e-graph interns σ(x) as `x` |
+| K2 observation | `to_integer(σ(x))` at `int32` or `uint32` is `to_integer(x)` at that format | `IntegerTerm::from_machine` |
+| K3 orders and indices | σ(x) has `x`'s `Int32` and `UInt32` difference-graph nodes; an element index is its word; `integer_cast_identity` and the checked-narrowing identity compare conversions by word | `difference_graph::word`, `canonicalized_offset_index_term`, `conversion::cast`, `checked_narrowing_identity` |
+| K4 modular equality | an observation of σ(x) contributes `x`'s word | through K2 |
+
+Soundness: σ_{S→F}(x) is `to_integer_S(x) mod 2^32` read in `F`. Reducing
+modulo 2^32 and reading two's complement are inverse bijections between
+either format's range and the 32-bit words, so `bits(σ(x)) = bits(x)`.
+Every 32-bit operator, comparison and observation is a function of its
+operands' bits, so each may read `x` for σ(x). The peel is one match on a
+term's root (`word32`), with no scan or clone; nested σ are reached as each
+subterm is built, interned or keyed.
+
+Because operators and comparisons read words, σ stays visible only on a
+value at rest: a local, a stored cell, a returned value, or an argument.
+Printed facts and steps show it as `((uint32)x)` or `((int32)x)` there and
+nowhere else. A load still has the erased `Bits32` kind, so a load after a
+store of the other signedness returns the stored σ unchanged; giving loads
+a signedness is a later step.
+
 ## Wide runtime scalars
+
 
 The shared kernel has `CType::Int128` / `UInt128` and corresponding `CValue`
 wrappers in the existing machine-term arena. `c_int128_literal` and

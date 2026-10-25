@@ -668,8 +668,13 @@ tests. A specification read names a value the program produced and files
 nothing. Promotions, casts, and the return conversion state no range of their
 own.
 Scalar `uint32`
-addition, subtraction, and multiplication use the same 32-bit term
-representation without signed overflow obligations. Unsigned division and
+addition, subtraction, and multiplication use the same 32-bit operator
+nodes as `int32`, without signed overflow obligations: the operators read
+words. A conversion between `int32` and `uint32` is the sign cast σ, a
+`MachineIntegerCast` node, not a reuse of the word; the kernel reads σ(x) as
+`x`'s word in every 32-bit operator, comparison, observation, the e-graph,
+the difference graph and element indices
+(`docs/internals/mathematical-integers.md`, "The 32-bit sign cast"). Unsigned division and
 remainder have distinct term nodes so high-bit operands do not inherit signed
 division, and unsigned right shift has a distinct logical-shift node. Equality
 and ordered comparisons select the unsigned conditions. Stores and function

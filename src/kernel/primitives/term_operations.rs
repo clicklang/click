@@ -430,6 +430,7 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn add(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => {
                 Self::Constant(left.wrapping_add(*right))
@@ -467,6 +468,7 @@ impl Bitvector32Term {
     }
 
     pub(in crate::kernel) fn subtract(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => {
                 Self::Constant(left.wrapping_sub(*right))
@@ -510,6 +512,7 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn multiply(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => {
                 Self::Constant(left.wrapping_mul(*right))
@@ -522,6 +525,7 @@ impl Bitvector32Term {
     }
 
     pub(in crate::kernel) fn divide(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_signed_divide_const(*left, *right) {
@@ -538,6 +542,7 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn unsigned_divide(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_unsigned_divide_const(*left, *right) {
@@ -554,6 +559,7 @@ impl Bitvector32Term {
     }
 
     pub(in crate::kernel) fn remainder(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_signed_remainder_const(*left, *right) {
@@ -569,6 +575,7 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn unsigned_remainder(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_unsigned_remainder_const(*left, *right) {
@@ -584,6 +591,7 @@ impl Bitvector32Term {
     }
 
     pub(in crate::kernel) fn shift_left(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_signed_shift_left_const(*left, *right) {
@@ -599,6 +607,7 @@ impl Bitvector32Term {
     }
 
     pub(in crate::kernel) fn unsigned_shift_left(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_shift_count_const(*right) {
@@ -615,6 +624,7 @@ impl Bitvector32Term {
     }
 
     pub(in crate::kernel) fn arithmetic_shift_right(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_arithmetic_shift_right_const(*left, *right) {
@@ -631,6 +641,7 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn logical_shift_right(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_logical_shift_right_const(*left, *right) {
@@ -647,6 +658,7 @@ impl Bitvector32Term {
     }
 
     pub(in crate::kernel) fn bitwise_and(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => Self::Constant(*left & *right),
             (_, Self::Constant(u32::MAX)) => left,
@@ -658,6 +670,7 @@ impl Bitvector32Term {
     }
 
     pub(in crate::kernel) fn bitwise_or(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (&left, &right) {
             (Self::Constant(left), Self::Constant(right)) => Self::Constant(*left | *right),
             (_, Self::Constant(0)) => left,
@@ -671,6 +684,7 @@ impl Bitvector32Term {
     }
 
     pub(in crate::kernel) fn bitwise_xor(left: Self, right: Self) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         fn flatten(term: Bitvector32Term, constant: &mut u32, terms: &mut Vec<Bitvector32Term>) {
             match term {
                 Bitvector32Term::Constant(value) => *constant ^= value,
@@ -712,7 +726,7 @@ impl Bitvector32Term {
     }
 
     pub(in crate::kernel) fn bitwise_not(value: Self) -> Self {
-        match value {
+        match value.into_word32() {
             Self::Constant(value) => Self::Constant(!value),
             Self::BitwiseNot(inner) => *inner,
             value => Self::BitwiseNot(Box::new(value)),
@@ -1478,6 +1492,7 @@ fn int64_shift_count_constant(term: &Bitvector32Term) -> Option<u32> {
 
 impl Bitvector32Term {
     pub(crate) fn int64_from_32(value: Self) -> Self {
+        let value = value.into_word32();
         match value {
             Self::Constant(value) => Self::Int64Constant(i64::from(value as i32)),
             Self::Int64Constant(_) | Self::Int64From32(_) => value,
@@ -1534,6 +1549,7 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn uint64_from_32(value: Self) -> Self {
+        let value = value.into_word32();
         match value {
             Self::Constant(value) => Self::UInt64Constant(u64::from(value)),
             Self::UInt64Constant(_) | Self::UInt64From32(_) => value,
@@ -1542,6 +1558,7 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn int64_from_uint32(value: Self) -> Self {
+        let value = value.into_word32();
         match value {
             Self::Constant(value) => Self::Int64Constant(i64::from(value)),
             Self::Int64Constant(_) | Self::Int64FromUInt32(_) => value,
@@ -1550,6 +1567,7 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn uint64_from_int32(value: Self) -> Self {
+        let value = value.into_word32();
         match value {
             Self::Constant(value) => Self::UInt64Constant((value as i32 as i64) as u64),
             Self::UInt64Constant(_) | Self::UInt64FromInt32(_) => value,
@@ -3231,6 +3249,7 @@ impl ConditionTerm {
     /// A value whose unsigned bound (a constant, a constant mask) lies below
     /// a constant bound decides it.
     pub(crate) fn unsigned_less_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         if let Bitvector32Term::Constant(bound) = &right
             && left.unsigned32_upper_bound() < *bound
         {
@@ -3240,6 +3259,7 @@ impl ConditionTerm {
     }
 
     pub(crate) fn unsigned_less_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         if let Bitvector32Term::Constant(bound) = &right
             && left.unsigned32_upper_bound() <= *bound
         {
@@ -3249,6 +3269,7 @@ impl ConditionTerm {
     }
 
     pub(crate) fn unsigned_greater_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         if let Bitvector32Term::Constant(bound) = &right
             && left.unsigned32_upper_bound() <= *bound
         {
@@ -3258,6 +3279,7 @@ impl ConditionTerm {
     }
 
     pub(crate) fn unsigned_greater_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         if let Bitvector32Term::Constant(bound) = &right
             && left.unsigned32_upper_bound() < *bound
         {
@@ -3293,6 +3315,7 @@ impl ConditionTerm {
         left: Bitvector32Term,
         right: Bitvector32Term,
     ) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant((left as i32) < (right as i32)),
             _ => Self::Compare {
@@ -3308,6 +3331,7 @@ impl ConditionTerm {
         left: Bitvector32Term,
         right: Bitvector32Term,
     ) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant((left as i32) <= (right as i32)),
             _ => Self::Compare {
@@ -3323,6 +3347,7 @@ impl ConditionTerm {
         left: Bitvector32Term,
         right: Bitvector32Term,
     ) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant((left as i32) > (right as i32)),
             _ => Self::Compare {
@@ -3338,6 +3363,7 @@ impl ConditionTerm {
         left: Bitvector32Term,
         right: Bitvector32Term,
     ) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant((left as i32) >= (right as i32)),
             _ => Self::Compare {
@@ -3350,6 +3376,7 @@ impl ConditionTerm {
     }
 
     pub(in crate::kernel) fn equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
             _ => Self::Compare {
@@ -3362,6 +3389,7 @@ impl ConditionTerm {
     }
 
     pub(crate) fn signed_add_overflows(left: Bitvector32Term, right: Bitvector32Term) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => {
                 Self::Constant((left as i32).overflowing_add(right as i32).1)
@@ -3379,6 +3407,7 @@ impl ConditionTerm {
         left: Bitvector32Term,
         right: Bitvector32Term,
     ) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         if right.as_const() == Some(0) {
             return Self::Constant(false);
         }
@@ -3399,6 +3428,7 @@ impl ConditionTerm {
         left: Bitvector32Term,
         right: Bitvector32Term,
     ) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => {
                 Self::Constant((left as i32).overflowing_mul(right as i32).1)
@@ -3416,6 +3446,7 @@ impl ConditionTerm {
         left: Bitvector32Term,
         right: Bitvector32Term,
     ) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => {
                 Self::Constant(left == i32::MIN as u32 && right == (-1i32) as u32)
@@ -3433,6 +3464,7 @@ impl ConditionTerm {
         left: Bitvector32Term,
         right: Bitvector32Term,
     ) -> Self {
+        let (left, right) = (left.into_word32(), right.into_word32());
         match (left.as_const(), right.as_const()) {
             (Some(left_value), Some(right_value)) => {
                 match signed_shift_left_overflows_const(left_value, right_value) {

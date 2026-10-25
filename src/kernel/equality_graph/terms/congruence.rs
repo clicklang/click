@@ -350,7 +350,14 @@ impl TermClasses {
                     continue;
                 }
                 Work::Machine(term, width) => {
+                    // σ(x) is `x`'s 32-bit word (rule K1): one class.
+                    let term = if width == W::Bits32 {
+                        term.word32()
+                    } else {
+                        term
+                    };
                     let wide = width == W::Bits64;
+
                     let binary = if wide {
                         uint64_binary(term).map(|(op, a, b)| (Binary::UInt64(op), a, b))
                     } else if width == W::Bits32 {

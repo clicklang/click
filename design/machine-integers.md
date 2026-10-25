@@ -466,6 +466,22 @@ Progress:
   and `uint64` have these nodes until the 32-bit operators join; the width
   check refuses any other format. Output is unchanged; the derived order
   now sorts every 64-bit binary before every 64-bit complement.
+- The 32-bit operators wait for their leaves to carry a signedness
+  (option D, 2026-10-25): today an `int32` and a `uint32` value share one
+  word with no node between the two readings, and kernel-internal index
+  arithmetic, C conversions, modular equality and the difference graph rely
+  on it. The sequence is: (1) the sign cast σ, (2) constants with a format,
+  (3) loads with a format, (4) the operator merge. Step 1 is done
+  (2026-10-25): every C conversion between `int` and `unsigned int`, the
+  usual arithmetic conversions, the modulo boundary and a sign-cleared
+  `unsigned` index build σ, the `MachineIntegerCast` node between `int32`
+  and `uint32`, and the kernel reads σ(x) as `x`'s word under rules K1–K4
+  ([Decisions](#decisions), 2026-10-25;
+  `docs/internals/mathematical-integers.md`, "The 32-bit sign cast"). No
+  verdict changed. Before the rules, an explicit cast changed 37 tests (28
+  fixture verdicts) across order facts, element indices, arithmetic
+  certificates and checked narrowing.
+
 
 ### Stage 4. Front ends and library
 
@@ -568,3 +584,29 @@ Maintainer direction, 2026-10-24:
   resource parameters are not supported by lowering yet, so they are not
   Integer positions either; an `Integer` resource field's `fold` value is
   one.
+
+Maintainer direction, 2026-10-25:
+
+- **The 32-bit sign cast is read as its word.** σ_{S→F}(x), the
+  `MachineIntegerCast` from `int32` to `uint32` or back, denotes
+  `to_integer_S(x) mod 2^32` read in `F`. The kernel takes four rules for
+  it:
+  - K1 (word identity): `σ(x) == x` as a 32-bit word; σ(x) and `x` are one
+    e-graph class.
+  - K2 (observation): `to_integer` of σ(x) at `int32` or `uint32` is
+    `to_integer` of `x` at that format.
+  - K3 (orders and indices): the difference graph, the order-fact indexes,
+    the certificate readers (`signed_int32`, `arithmetic`, `normalize
+    using`, `integer_cast_identity`) and the memory index rules read σ(x) as
+    `x`.
+  - K4 (modular equality): an observation of σ(x) contributes `x`'s word.
+
+  Soundness: reduction modulo 2^32 and two's-complement reading are inverse
+  bijections between each format's range and the 32-bit words, so
+  `bits(σ(x)) = bits(x)`, and every 32-bit operator, comparison and
+  observation depends only on its operands' bits. A load at a signedness
+  other than the stored value's (K5) is not approved yet; it comes with
+  loads that carry a format.
+- **Printing shows σ where the signedness changes.** A value, fact or step
+  holding σ prints it as `(uint32)x` or `(int32)x`; nothing else changes.
+

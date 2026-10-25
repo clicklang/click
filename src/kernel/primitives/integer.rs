@@ -859,6 +859,14 @@ impl IntegerTerm {
         if ty.format().bits() == 128 && !ty.accepts_wide_term(&value) {
             return None;
         }
+        // An `int32` or `uint32` observation reads its operand's 32 bits,
+        // which σ keeps (rule K2): `to_integer` of σ(x) at either format is
+        // `to_integer` of `x` there.
+        let value = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
+            value.into_word32()
+        } else {
+            value
+        };
         let value = match value {
             // A conversion's result is a carrier of its destination type,
             // and a wider type that contains that type observes the same
