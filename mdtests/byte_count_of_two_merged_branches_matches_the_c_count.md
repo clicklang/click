@@ -31,9 +31,7 @@ import click::bytes;
 int32 count_byte2(uint8 p[], uint8 x) {
     views p[0..2];
     ensures result == bytes::count(p, 0, 2, x) by {
-        execute();
         unfold(bytes::count(p, 0, 2, x));
-        simp();
     }
 }
 ```

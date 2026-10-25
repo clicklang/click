@@ -49,9 +49,6 @@ int32 replace_cells(struct cell_owner* owner) {
     open(allocated_cells(owner)) {
     }
     unfold(allocated_cells(owner));
-    execute();
-    fold(allocated_cells(owner));
-    simp();
 }
 ```
 

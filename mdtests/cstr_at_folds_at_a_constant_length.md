@@ -25,9 +25,6 @@ int32 one(const uint8* p) {
     requires p[1u64] == '\0';
     requires forall (k: uint64) { 0u64 <= k and k < 1u64 + 1u64 implies defined(p[k]) };
     produces cstr_at(p, 1u64);
-} by {
-    step_until(function.exit);
-    fold(cstr_at(p, 1u64));
 }
 
 int32 empty(const uint8* p) {
@@ -35,9 +32,6 @@ int32 empty(const uint8* p) {
     requires p[0] == '\0';
     requires forall (k: uint64) { 0u64 <= k and k < 1u64 implies defined(p[k]) };
     produces cstr_at(p, 0u64);
-} by {
-    step_until(function.exit);
-    fold(cstr_at(p, 0u64));
 }
 ```
 

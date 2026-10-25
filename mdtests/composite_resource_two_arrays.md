@@ -21,8 +21,6 @@ verifying "copy_first.c";
 int32 copy_first(int32 dst[], int32 src[]) {
     owns first_cell_copy_access(dst, src) by {
         unfold(first_cell_copy_access(dst, src));
-        step_until(function.exit);
-        fold(first_cell_copy_access(dst, src));
     }
 }
 ```

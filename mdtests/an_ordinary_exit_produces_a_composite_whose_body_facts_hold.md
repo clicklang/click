@@ -53,9 +53,6 @@ verifying "exit_produces_checked_composite.c";
 void mk(uint8* p) {
     consumes p[0..6];
     produces zt(p);
-} by {
-    step_until(function.exit);
-    fold(zt(p));
 }
 
 void mk_at_exit(uint8* p) {

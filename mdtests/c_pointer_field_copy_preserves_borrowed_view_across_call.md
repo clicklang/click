@@ -62,10 +62,6 @@ int32 input_cursor_init(
     ensures owner->pos == 0;
     ensures owner->len == length;
     ensures owner->data == data;
-} by {
-    step_until(function.exit);
-    fold(input_cursor(owner));
-    simp();
 }
 
 

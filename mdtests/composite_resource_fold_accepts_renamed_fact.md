@@ -30,10 +30,6 @@ int32 make(int32* p, int32 m) {
     consumes p[0..1];
     produces bound(p, m);
     ensures result == 0;
-} by {
-    step_until(function.exit);
-    fold(bound(p, m));
-    simp();
 }
 ```
 

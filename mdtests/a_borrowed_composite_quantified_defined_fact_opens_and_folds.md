@@ -35,9 +35,6 @@ void mark(int32 p[], int32 n) {
     requires forall (k: int32) { 0 <= k and k < n implies defined(p[k]) };
     views p[0..n];
     produces valid(p, n);
-} by {
-    step_until(function.exit);
-    fold(valid(p, n));
 }
 ```
 

@@ -24,9 +24,6 @@ int32 probe(int32* p, uint64* count, int32 input) {
     ensures result == input;
 } by {
     unfold(cell(p, *count));
-    step_until(function.exit);
-    fold(cell(p, old(*count)));
-    simp();
 }
 ```
 
