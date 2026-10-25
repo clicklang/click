@@ -555,7 +555,7 @@ pub(super) fn parse_file_items_for_module(
 /// Whether `name` is the leading word of a built-in tactic or proof form, which
 /// a user-defined tactic may not shadow.
 fn is_builtin_tactic_spelling(name: &str) -> bool {
-    matches!(name, "let" | "by" | "sorry" | "auto")
+    matches!(name, "let" | "by" | "sorry" | "auto" | "simp")
         || crate::surface::PUBLIC_TACTIC_FORMS.iter().any(|form| {
             form.id != "user-tactic"
                 && form
@@ -578,7 +578,7 @@ fn have_proof_as_written_in_full(proof: SourceProof) -> SourceProof {
 }
 
 fn is_tactic_name(name: &str) -> bool {
-    matches!(name, "auto" | "simp")
+    matches!(name, "auto" | "simp" | "solve")
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -8324,7 +8324,7 @@ impl Parser {
         match self.peek_ident() {
             Some("auto") => true,
             // Route the old bare spelling through the missing-parentheses diagnostic.
-            Some("simp") => self.peek_next() != Some(&Token::LParen),
+            Some("simp" | "solve") => self.peek_next() != Some(&Token::LParen),
             _ => false,
         }
     }
@@ -9885,7 +9885,7 @@ impl Parser {
                     });
                 }
             }
-            "simp" => {
+            "simp" | "solve" => {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
                     let premises = self.parse_exact_premises()?;
@@ -11463,7 +11463,7 @@ impl Parser {
     fn parse_tactic(&mut self) -> Result<SmartTactic, ClickError> {
         let tactic = match self.next() {
             Some(Token::Ident(name)) if name == "auto" => SmartTactic::Auto,
-            Some(Token::Ident(name)) if name == "simp" => SmartTactic::Simp,
+            Some(Token::Ident(name)) if name == "simp" || name == "solve" => SmartTactic::Simp,
             Some(Token::Ident(name)) => {
                 return Err(self.error(format!("expected tactic, got `{name}`")));
             }
@@ -16149,8 +16149,8 @@ mod tactic_classification_tests {
         ),
         ("instantiate", "instantiate(F, 1);"),
         ("instantiate-using", "instantiate(F, 1) using { x == 1; };"),
-        ("simp", "simp();"),
-        ("simp-using", "simp() using { x == 1; };"),
+        ("solve", "solve();"),
+        ("solve-using", "solve() using { x == 1; };"),
     ];
 
     fn label(class: TacticClass) -> &'static str {

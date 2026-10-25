@@ -273,14 +273,14 @@ path = "src/surface/tests/tactic_tests/logical_tactics.rs"
 needle = "instantiate(forall (k: int32) {"
 
 [[form]]
-id = "simp"
-path = "mdtests/simp_postconditions.md"
-needle = "simp();"
+id = "solve"
+path = "mdtests/solve_closes_one_goal.md"
+needle = "solve();"
 
 [[form]]
-id = "simp-using"
-path = "mdtests/condition_search_explicit_decomposition.md"
-needle = "simp() using {"
+id = "solve-using"
+path = "mdtests/solve_closes_one_goal.md"
+needle = "solve() using {"
 
 [[form]]
 id = "take-element"
