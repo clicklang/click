@@ -2066,7 +2066,7 @@ int32 last(int32* data, uint64 length) {
 
 #[test]
 #[ignore = "nightly: 4.3s in the parallel gate"]
-fn unfinished_callback_scripts_report_the_missing_authority_to_continue() {
+fn callback_script_tails_report_missing_authority_and_complete_valid_steps() {
     for (fixture_name, expected) in [
         (
             "rb_augment_callbacks_helper_rejects_changed_cell.md",
@@ -2094,7 +2094,9 @@ fn unfinished_callback_scripts_report_the_missing_authority_to_continue() {
             .collect::<Vec<_>>();
         let result = verify_c0_sources(&source, &sources);
         if let Some(expected) = expected {
-            let error = result.unwrap_err();
+            let error = result
+                .err()
+                .expect("missing callback authority must be refused");
             assert!(
                 error.message().contains(expected),
                 "{fixture_name}: {}",
@@ -2108,8 +2110,8 @@ fn unfinished_callback_scripts_report_the_missing_authority_to_continue() {
             let report = error.concise_report();
             assert!(report.contains(expected), "{fixture_name}: {report}");
             assert!(
-                report.contains("the proof stops before this callback"),
-                "{fixture_name}: {report}"
+                report.len() <= 16 * 1024,
+                "{fixture_name}: diagnostic is too long"
             );
         } else {
             result.unwrap_or_else(|error| panic!("{fixture_name}: {}", error.message()));
@@ -2131,7 +2133,7 @@ fn unfinished_callback_scripts_report_the_missing_authority_to_continue() {
 
 #[test]
 #[ignore = "nightly: 1.2s in the parallel gate"]
-fn unfinished_callback_scripts_keep_a_bounded_diagnostic_preview() {
+fn callback_script_tails_complete_or_report_a_bounded_failure() {
     for fixture_name in [
         "rb_augment_callbacks_helper_owns.md",
         "rb_augment_callbacks_helper_rejects_changed_cell.md",
@@ -2142,8 +2144,8 @@ fn unfinished_callback_scripts_keep_a_bounded_diagnostic_preview() {
         let fixture = crate::cli::read_mdtest(&path).unwrap();
         let source = fixture.click_source.unwrap();
         let (source, c_sources) = if fixture_name.ends_with("owns.md") {
-            // A successful diagnostic continuation still cannot certify an
-            // exhausted script: these steps stop after the first callback.
+            // The written steps stop after the first callback; the script's
+            // implicit auto tail must finish the remaining valid callbacks.
             (
                 source
                     .replace("execute();", "step(); step(); step();")
@@ -2151,8 +2153,8 @@ fn unfinished_callback_scripts_keep_a_bounded_diagnostic_preview() {
                 fixture.c_sources,
             )
         } else {
-            // The missing Copy fact lies far beyond the bounded preview.
-            // Keep the written proof and every other C statement unchanged.
+            // Keep a missing Copy fact beyond many valid callbacks. The tail
+            // must report that missing authority with a bounded diagnostic.
             let c_sources = fixture
                 .c_sources
                 .into_iter()
@@ -2172,12 +2174,38 @@ fn unfinished_callback_scripts_keep_a_bounded_diagnostic_preview() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let error = verify_c0_sources(&source, &sources).unwrap_err();
-        assert!(
-            error.message().contains("proof stops before function exit"),
-            "{fixture_name}: {}",
-            error.message()
-        );
+        let result = verify_c0_sources(&source, &sources);
+        if fixture_name.ends_with("owns.md") {
+            let verified =
+                result.unwrap_or_else(|error| panic!("{fixture_name}: {}", error.message()));
+            assert!(!verified.is_empty());
+            // This is the artifact that once made unwrap_err dump pages of
+            // proof internals when the script legitimately succeeded.
+            for theorem in verified {
+                for preview in [format!("{theorem:?}"), format!("{theorem:#?}")] {
+                    assert!(
+                        preview.len() < 1024,
+                        "verified theorem debug output is too long: {} bytes",
+                        preview.len()
+                    );
+                    assert!(preview.contains("erase_augmented"));
+                    assert!(!preview.contains("checked_execution"));
+                }
+            }
+        } else {
+            let error = result
+                .err()
+                .expect("the changed callback must lose its contract authority");
+            let report = error.concise_report();
+            assert!(
+                report.contains("no contract fact for the function pointer `augment->copy`"),
+                "{fixture_name}: {report}"
+            );
+            assert!(
+                report.len() <= 16 * 1024,
+                "{fixture_name}: diagnostic is too long"
+            );
+        }
     }
 }
 

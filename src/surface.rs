@@ -6797,7 +6797,7 @@ impl TheoremEnvironment {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct VerifiedCTheorem {
     pub source_path: String,
     /// Fixed-size identity of all selected compiler imports on which this
@@ -6841,6 +6841,25 @@ pub struct VerifiedCTheorem {
     /// The entry the proof that issued this theorem was built from, shared
     /// by every theorem of that proof.
     pub(in crate::surface) entry_context: Option<std::sync::Arc<proof::ProofEntryContext>>,
+}
+
+// Retained executions and proof states share large graphs. Formatting a
+// verification result (notably unwrap_err's unexpected-success panic) must
+// identify the artifact without recursively dumping those graphs.
+impl fmt::Debug for VerifiedCTheorem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let claim = match &self.claim {
+            VerifiedClaim::Ensure { index, .. } => ("ensures", *index),
+            VerifiedClaim::ExceptionalEnsure { index, .. } => ("exceptional ensures", *index),
+        };
+        f.debug_struct("VerifiedCTheorem")
+            .field("source_path", &self.source_path)
+            .field("function", &self.function_block.signature().name())
+            .field("claim", &claim)
+            .field("proof_kind", &self.proof_kind)
+            .field("target", &self.target)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
