@@ -3491,6 +3491,7 @@ pub(in crate::surface::proof) use match_cases::ExecutionMatchPlan;
 pub(in crate::surface::proof) use match_cases::PureMatchPlan;
 mod execution_entry;
 mod execution_joins;
+pub(in crate::surface::proof) use execution_joins::StepUntilTarget;
 mod execution_statements;
 pub use execution_statements::without_implicit_auto;
 mod fact_index;

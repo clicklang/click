@@ -1,5 +1,6 @@
 //! Smart execute-until search, fact transport, and theorem selection.
 
+use super::proof_object::StepUntilTarget;
 use super::*;
 use std::collections::BTreeSet;
 
@@ -16,24 +17,33 @@ impl<'a> Proof<'a> {
         if let CodeRegionRef::BackEdge(loop_index) = region {
             return self.try_execute_to_back_edge_descendant(*loop_index);
         }
-        let target = self.resolve_statement_target(region)?;
-        let Some(current) = self.current_statement_index()? else {
-            return Err(self.step_error(format!(
-                "`step_until({})` cannot run after execution already reached function exit",
-                describe_code_region_ref(region)
-            )));
+        let target = if *region == CodeRegionRef::FunctionExit {
+            if self.is_at_function_exit() {
+                return Ok(Some((self.clone(), Vec::new())));
+            }
+            StepUntilTarget::FunctionExit
+        } else {
+            StepUntilTarget::Region(self.resolve_statement_target(region)?)
         };
-        if target < current {
-            return Err(self.step_error(format!(
-                "`step_until({})` cannot move backward from region({current})",
-                describe_code_region_ref(region)
-            )));
-        }
-        if target == current {
-            // Reaching the requested frontier is success, including inside
-            // a proof branch or resource scope. `None` means unsupported to
-            // those drivers and incorrectly declines a valid no-op.
-            return Ok(Some((self.clone(), Vec::new())));
+        if let StepUntilTarget::Region(target) = target {
+            let Some(current) = self.current_statement_index()? else {
+                return Err(self.step_error(format!(
+                    "`step_until({})` cannot run after execution already reached function exit",
+                    describe_code_region_ref(region)
+                )));
+            };
+            if target < current {
+                return Err(self.step_error(format!(
+                    "`step_until({})` cannot move backward from region({current})",
+                    describe_code_region_ref(region)
+                )));
+            }
+            if target == current {
+                // Reaching the requested frontier is success, including inside
+                // a proof branch or resource scope. `None` means unsupported to
+                // those drivers and incorrectly declines a valid no-op.
+                return Ok(Some((self.clone(), Vec::new())));
+            }
         }
         let mut introduced_facts = Vec::new();
         let Some(proof) = self.try_focused_execute_to_exit_within(

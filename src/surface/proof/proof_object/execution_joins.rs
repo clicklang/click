@@ -3150,7 +3150,7 @@ impl<'a> Proof<'a> {
         retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
         steps: &mut usize,
         mut introduced: Option<&mut Vec<Proposition>>,
-        until: Option<usize>,
+        until: Option<StepUntilTarget>,
     ) -> Result<Option<Self>, ClickError> {
         enum Pending<'a> {
             Branch {
@@ -3191,7 +3191,11 @@ impl<'a> Proof<'a> {
                 };
                 proof = proof.continue_arm_into_parent_frontier(&record)?;
             }
-            if let Some(target) = until {
+            if let Some(StepUntilTarget::FunctionExit) = until {
+                if proof.is_at_function_exit() {
+                    return Ok(Some(proof));
+                }
+            } else if let Some(StepUntilTarget::Region(target)) = until {
                 match proof.current_statement_index()? {
                     Some(current) if current == target => return Ok(Some(proof)),
                     Some(current) if current < target => {}
@@ -3260,9 +3264,14 @@ impl<'a> Proof<'a> {
                 continue;
             }
             proof.charge_execute_step(steps, splits)?;
-            if let Some(next) =
-                proof.try_smart_statement_step(ProofStep::Step, retried_requirements)?
-            {
+            let stepped = proof.try_smart_statement_step(ProofStep::Step, retried_requirements);
+            let stepped = match (stepped, until) {
+                (Err(error), Some(target)) => {
+                    return Err(step_until_refusal(&proof, target, error)?);
+                }
+                (stepped, _) => stepped?,
+            };
+            if let Some(next) = stepped {
                 if pending.is_empty() {
                     record_added(&next);
                 }
@@ -3272,9 +3281,10 @@ impl<'a> Proof<'a> {
             }
             if let Some(target) = until {
                 return match proof.apply_step(ProofStep::Step) {
-                    Err(error) => Err(error),
+                    Err(error) => Err(step_until_refusal(&proof, target, error)?),
                     Ok(_) => Err(proof.step_error(format!(
-                        "`step_until(region({target}))` could not advance this statement"
+                        "`step_until({})` could not advance this statement",
+                        target.describe()
                     ))),
                 };
             }
@@ -4531,4 +4541,42 @@ mod scaling_tests {
     include!(
         "../../../scaling_tests/surface/proof/proof_object/execution_joins/deep_execute_tests.rs"
     );
+}
+
+/// Where `step_until` stops: the entry of a statement region, in
+/// executable preorder, or function exit. Either way it never splits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::surface::proof) enum StepUntilTarget {
+    Region(usize),
+    FunctionExit,
+}
+
+impl StepUntilTarget {
+    fn describe(self) -> String {
+        match self {
+            Self::Region(index) => format!("region({index})"),
+            Self::FunctionExit => "function.exit".to_string(),
+        }
+    }
+}
+
+/// `step_until` never splits. Its refusal at a branch the facts do not
+/// decide, on the way to function exit, names the split to write there.
+fn step_until_refusal(
+    proof: &Proof<'_>,
+    target: StepUntilTarget,
+    error: ClickError,
+) -> Result<ClickError, ClickError> {
+    if target == StepUntilTarget::FunctionExit
+        && (proof.is_at_call_outcomes_frontier()? || proof.is_at_execution_branch()?)
+    {
+        return Ok(proof.step_error(format!(
+            "`step_until(function.exit)` stopped at a C branch the facts do not decide; it \
+             never splits. Split there with a proof `if <condition> {{ ... }} else {{ ... }}` \
+             (`click docs if`), or `branch` when the arms rejoin (`click docs branch`), and \
+             step each arm\n{}",
+            error.raw_summary()
+        )));
+    }
+    Ok(error)
 }

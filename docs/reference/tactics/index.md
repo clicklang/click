@@ -283,7 +283,7 @@ the one execution transition that fails.
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
 | `let { result: name } = step()` | simple | Specialized | Bind the checked value of a scalar assignment. | [Reference](#binding-a-statement-result) |
 | `execute()` | smart | Core | Execute through the function and split undecided paths. | [Reference](#execution-to-function-exit) |
-| `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point. | [Reference](#execution-to-a-program-point) |
+| `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-program-point) |
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
@@ -614,14 +614,23 @@ and ranking closure are separate. `step_until(loop(i).back_edge())` does the
 same and is refused outside `loop(i)`'s preservation region
 (`mdtests/step_until_refuses_another_loop_s_back_edge.md`).
 
+`step_until(function.exit)` steps until the function returns, and the proof
+continues at exit, where `result` names the returned value. Where the C
+reaches an `if` the facts do not decide, it is refused and names the split
+to write there: a proof `if` in front of the C, each arm stepping to exit on
+its own path, or `branch` when the arms rejoin
+(`mdtests/step_until_steps_to_function_exit.md`,
+`mdtests/step_until_function_exit_refuses_an_undecided_branch.md`).
+
 **Failure, checking, and tools:**
 
-A missing, backward, unreachable, branch-hidden, or function-exit target fails.
+A missing, backward, unreachable, or branch-hidden target fails, and so does
+a statement target once execution has reached function exit.
 The indexed source layout resolves loop entries. Click checks every crossed
 transition; expansion prints those steps, and profiling reports the selected
 site.
 
-**Checked examples:** [`step_until_runs_to_a_statement_region.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_runs_to_a_statement_region.md), [`step_until_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_current_frontier.md), [`step_until_selects_loop_entry.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_selects_loop_entry.md), [`step_until_assignment.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_assignment.md), [`step_until_read.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_read.md), [`step_until_back_edge.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_back_edge.md), [`step_until_back_edge_of_a_named_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_back_edge_of_a_named_loop.md), [`a_chained_region_ends_in_an_assignment_or_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_chained_region_ends_in_an_assignment_or_read.md)
+**Checked examples:** [`step_until_runs_to_a_statement_region.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_runs_to_a_statement_region.md), [`step_until_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_current_frontier.md), [`step_until_selects_loop_entry.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_selects_loop_entry.md), [`step_until_assignment.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_assignment.md), [`step_until_read.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_read.md), [`step_until_back_edge.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_back_edge.md), [`step_until_back_edge_of_a_named_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_back_edge_of_a_named_loop.md), [`a_chained_region_ends_in_an_assignment_or_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_chained_region_ends_in_an_assignment_or_read.md), [`step_until_steps_to_function_exit.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_steps_to_function_exit.md)
 
 ### Source branches
 
