@@ -3804,7 +3804,85 @@ pub(crate) fn load_variable_for_cell_with_origin(
     )
     .map(|point| point.snapshot().clone());
     let memory = version.as_ref().unwrap_or(memory);
+    #[cfg(test)]
+    duplicate_read_names::observe(memory, pointer, kind);
     mint_load_variable_identity(memory, pointer, kind, origin, bytes)
+}
+
+/// A test-only audit of one read, one name (`docs/internals/spellability.md`):
+/// while [`duplicate_read_names::capture`] runs, each load named at a new
+/// version of its cell is compared with the versions earlier loads of that
+/// cell were named at in the same verification, and a pair the kernel's
+/// assumption-free load equality proves equal is reported. Two writes of one
+/// stored value are two versions, which the read-over-write authority
+/// relates, so they are not reported.
+#[cfg(test)]
+pub(crate) mod duplicate_read_names {
+    use super::*;
+
+    #[derive(Default)]
+    struct Census {
+        seen: std::collections::HashMap<(u64, Pointer, LoadKind), Vec<SharedCMemory>>,
+        reports: Vec<String>,
+        comparing: bool,
+    }
+
+    thread_local! {
+        static CENSUS: std::cell::RefCell<Option<Census>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// Runs `run` and returns one line per load that was given a second name
+    /// for a version its cell was already named at.
+    pub(crate) fn capture(run: impl FnOnce()) -> Vec<String> {
+        CENSUS.with(|census| census.replace(Some(Census::default())));
+        run();
+        CENSUS
+            .with(|census| census.take())
+            .map(|census| census.reports)
+            .unwrap_or_default()
+    }
+
+    pub(super) fn observe(version: &SharedCMemory, pointer: &Pointer, kind: LoadKind) {
+        let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
+        let Some(earlier) = CENSUS.with(|census| {
+            let mut census = census.borrow_mut();
+            let census = census.as_mut().filter(|census| !census.comparing)?;
+            let seen = census
+                .seen
+                .entry((epoch, pointer.clone(), kind))
+                .or_default();
+            if seen.contains(version) {
+                return None;
+            }
+            let earlier = seen.clone();
+            seen.push(version.clone());
+            census.comparing = true;
+            Some(earlier)
+        }) else {
+            return;
+        };
+        let stored = version.memory().known_value(pointer);
+        let read = |memory: &SharedCMemory| {
+            Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind)
+        };
+        let empty = PureFactContext::new();
+        let duplicate = earlier.iter().any(|earlier| {
+            !(stored.is_some() && earlier.memory().known_value(pointer) == stored)
+                && crate::kernel::memory_provenance::checked_atomic_load_equality(
+                    &read(earlier),
+                    &read(version),
+                    &empty,
+                )
+        });
+        CENSUS.with(|census| {
+            if let Some(census) = census.borrow_mut().as_mut() {
+                census.comparing = false;
+                if duplicate {
+                    census.reports.push(format!("{pointer:?} {kind:?}"));
+                }
+            }
+        });
+    }
 }
 
 /// The kind is part of the identity: two reads of one address in one
@@ -4013,6 +4091,22 @@ fn load_variable_for_term_uncached(bits: &Bitvector32Term) -> Option<(Variable, 
         let Bitvector32Term::MemoryLoad(origin, _, _) = bits else {
             unreachable!("the pattern above matched a memory load");
         };
+        // A cell of the canonical snapshot holding this cell's own read (a
+        // materialization) names that read: the load is that read. The raw
+        // snapshot can lack the cell while its unchanged-bytes source, which
+        // the canonical snapshot is projected from, holds it, so the cell is
+        // asked of the canonical snapshot. Only a read of the same address
+        // and kind qualifies, so no stored value replaces a read.
+        if let Some(Bitvector32Term::Variable(held)) = memory
+            .memory()
+            .known_value(pointer)
+            .and_then(|value| crate::kernel::spec::c_value_bitvector_term(&value))
+            && is_load_variable(&held)
+            && registered_load_for_variable(&held).is_some_and(|(_, at)| at == **pointer)
+            && registered_load_kind_for_variable(&held) == Some(*kind)
+        {
+            return Some((held, bits.clone()));
+        }
         return Some((
             load_variable_for_cell_with_origin(
                 memory,

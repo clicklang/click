@@ -2385,3 +2385,28 @@ fn simp_keeps_valid_integer_offset_function_goals() {
     verify_c0_sources(source, &[("offset.c", "void good(uint32 input) {}")])
         .expect("valid function equations and zero offsets remain provable");
 }
+
+/// One read, one name: a read through a loop alias of a field a call left
+/// unchanged reads the call's unchanged-bytes source, whose cell holds the
+/// field's read at the loop head. That read names it; it is not named again
+/// at the projected snapshot (`docs/internals/spellability.md`).
+#[test]
+fn a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name() {
+    let mdtest = crate::cli::parse_mdtest(
+        std::path::Path::new("a_retained_pointer_field_fact_transports_through_a_loop_alias.md"),
+        include_str!(
+            "../../../mdtests/a_retained_pointer_field_fact_transports_through_a_loop_alias.md"
+        ),
+    )
+    .unwrap();
+    let click = mdtest.click_source.as_deref().unwrap();
+    let sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let duplicates = crate::kernel::duplicate_read_names::capture(|| {
+        verify_c0_sources(click, &sources).unwrap();
+    });
+    assert!(duplicates.is_empty(), "{duplicates:?}");
+}
