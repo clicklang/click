@@ -172,8 +172,15 @@ int32 owned_split_buffer_pipeline(
         at(region(3).entry, owner->data) == data;
         2 <= length;
     };
-    have 1 < length by auto();
-    have 1 < owner->len by auto();
+    have 1 < length by {
+        arithmetic_certificate {
+            premise 0: at(function.entry, 2 <= length) => at(function.entry, 2 <= length);
+            conclusion 0;
+        }
+    }
+    have 1 < owner->len by {
+        assumption();
+    }
     step();
     transport(at(region(4).entry, owner->data) == data, owner->data == data) using {
         at(region(4).entry, owner->data) == data;
@@ -185,27 +192,51 @@ int32 owned_split_buffer_pipeline(
         2 <= length;
     };
     have data[1] == right_value by {
-        simp() using {
+        normalize() using {
             at(region(5).entry, *(owner->data + 1)) == at(region(5).entry, right_value);
             owner->data == data;
         };
     }
     step();
-    have at(region(5).exit, owner->split) ==
-        at(region(5).entry, owner->split) + 1 by {
-        simp();
+    have to_integer(at(region(5).exit, owner->split)) == (to_integer(at(region(5).entry, owner->split)) + 1) by {
+        assumption();
     }
-    apply(incremented_one_is_two(
-        at(region(5).entry, owner->split),
-        at(region(5).exit, owner->split)
-    ));
+    apply(incremented_one_is_two(at(region(5).entry, owner->split), at(region(5).exit, owner->split))) using {
+        at(region(5).entry, owner->split) == 1;
+        to_integer(at(region(5).exit, owner->split)) == (to_integer(at(region(5).entry,
+            owner->split)) + 1);
+    };
     fold(owned_split_buffer(owner));
     step();
-    apply(int32_equality_transitive(
-        c(result),
-        data[1],
-        right_value
-    ));
+    apply(int32_equality_transitive(c(result), data[1], right_value)) using {
+        c(result) == data[1];
+        data[1] == right_value;
+    };
     step();
-    simp();
+    assumption();
+    have owner->split == 2 by {
+        assumption();
+    }
+    have owner->len == length by {
+        assumption();
+    }
+    have owner->data == data by {
+        assumption();
+    }
+    have data[0] == left_value by {
+        rewrite(data == at(region(3).entry, owner->data));
+        assumption();
+    }
+    have data[1] == right_value by {
+        assumption();
+    }
+    have result == right_value by {
+        assumption();
+    }
+    assumption();
+    assumption();
+    assumption();
+    assumption();
+    assumption();
+    assumption();
 }

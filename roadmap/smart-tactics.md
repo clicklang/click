@@ -1103,6 +1103,17 @@ mdtests and examples.
     accepts more proofs. Expansion writes the loop's steps, splits and
     closers, as it writes `execute`'s today. The misleading refusal above
     goes with it.
+    Done: a script that ends in a statement-level tactic is followed by the
+    closer an omitted proof ends with, which at a live frontier executes
+    what remains and at function exit closes what is open; a script that
+    ends in a split ends in its arms, each with its own closer. The tail's
+    site follows the script's last tactic, so its execution and closing are
+    charged to a smart budget. The implicit closer of a written script had
+    been charged nowhere: `owned_split_buffer_pipeline` spent 2,247,631 units
+    (15.7 s) in it under a 2,000,000-unit smart budget. Its claim is now
+    written in expanded form, and its post-execution work is 47,548 units.
+    `mdtests/a_script_that_stops_with_c_left_is_finished.md` covers the tail.
+    Scripts that end in a split keep the uncharged closer in each arm.
 21. **A written `auto();` is `solve();`.** It closes the first open goal; the
     implicit tail closes the rest and runs any C left. Migrate the three
     mdtests. `SmartTacticKind` becomes `Arithmetic`, `Solve` and `Execute`,
