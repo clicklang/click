@@ -711,13 +711,30 @@ impl EqualityGraph {
         values: impl IntoIterator<Item = &'a Pointer>,
     ) {
         let reads = self.logical_reads.lock().expect("logical pointer reads");
-        if reads.definitions.is_empty() {
-            return;
-        }
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut definitions = Vec::new();
         while let Some(value) = pending.pop() {
             if state.logical_values.contains(&value) {
+                continue;
+            }
+            // A pointer read equals the pointer its snapshot stores at the
+            // read's address (the read-over-write authority): memory records
+            // it, so it is term metadata like a definition, never a fact.
+            if let PointerBlock::LoadedPointer(_) = &value.block {
+                let read = Pointer {
+                    block: value.block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                if !state.logical_values.contains(&read) {
+                    state.logical_values = state.logical_values.with_value(read.clone());
+                    if let Some(stored) = crate::kernel::eval::pointer_read_over_write_value(&read)
+                    {
+                        pending.push(stored.clone());
+                        definitions.push((read, stored));
+                    }
+                }
+            }
+            if reads.definitions.is_empty() {
                 continue;
             }
             let Some((application, address)) = reads.definitions.get(&value) else {

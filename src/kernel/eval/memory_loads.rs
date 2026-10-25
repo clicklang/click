@@ -1988,9 +1988,11 @@ fn canonicalized_symbolic_load_value_with_identity(
     let CValue::Pointer(pointer_value) = &value else {
         return Some(complete_loaded_word(value, memory, &address));
     };
-    // The read keeps its version name; the equality graph learns the pointer
-    // stored there, which the memory alone records, so resource matching and
-    // pointer comparison relate the two.
+    // The read keeps its version name. The equality graph relates it to the
+    // pointer stored there whenever a query names the read
+    // (`EqualityGraph::register_logical_read_values`); the read equation
+    // beside it lets a context that keeps it reach the read from the stored
+    // pointer too. Both come from the memory alone.
     if names_version {
         if let Some(stored) = pointer_read_over_write_c_value(pointer_value.pointer()) {
             facts.push(ExecutionPureFact::logical_read_equation(
@@ -2429,17 +2431,28 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
             resolved = Proposition::ConditionIs(condition, *value);
         }
     }
-    // A pointer value carries qualifiers and a designation beside its address,
-    // so its comparison form is stated only when both addresses resolve to
-    // one stored pointer.
+    // A pointer value carries a designation and an extent beside its address,
+    // so each read side resolves to the whole stored value, and the
+    // comparison is rebuilt from the two values: equal addresses alone never
+    // make two pointer values equal.
     if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), value) =
         &resolved
     {
         let resolve = |side: &CPointerValue| {
-            pointer_read_over_write_value(side.pointer()).unwrap_or_else(|| side.pointer().clone())
+            pointer_read_over_write_c_value(side.pointer())
+                .map(|stored| stored.with_type(side.c_type()))
         };
-        if resolve(left) == resolve(right) && left.pointer() != right.pointer() {
-            resolved = Proposition::ConditionIs(ConditionTerm::Constant(true), *value);
+        let (left_value, right_value) = (resolve(left), resolve(right));
+        if left_value.is_some() || right_value.is_some() {
+            let left = left_value.unwrap_or_else(|| left.as_ref().clone());
+            let right = right_value.unwrap_or_else(|| right.as_ref().clone());
+            let condition = match ConditionTerm::pointer_value_equal(left, right) {
+                ConditionTerm::PointerEqual(left, right) if left == right => {
+                    ConditionTerm::Constant(true)
+                }
+                condition => condition,
+            };
+            resolved = Proposition::ConditionIs(condition, *value);
         }
     }
     (&resolved != proposition).then_some(resolved)
@@ -2451,6 +2464,35 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
 /// read itself resolves to nothing.
 pub(crate) fn pointer_read_over_write_value(pointer: &Pointer) -> Option<Pointer> {
     pointer_read_over_write_c_value(pointer).map(|stored| stored.pointer().clone())
+}
+
+/// `address` with a pointer read at its base replaced by the pointer the
+/// read's snapshot stores there, through stored reads in turn: one address,
+/// spelled by the stored pointer. `None` when the base is no stored read.
+pub(crate) fn read_over_write_address(address: &Pointer) -> Option<Pointer> {
+    let PointerBlock::LoadedPointer(_) = address.block else {
+        return None;
+    };
+    let mut current = address.clone();
+    // A stored read was read before the store holding it, so the chain runs
+    // back through history; the bound only stops a pathological one.
+    for _ in 0..16 {
+        let read = Pointer {
+            block: current.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let Some(stored) = pointer_read_over_write_value(&read) else {
+            break;
+        };
+        current = Pointer {
+            block: stored.block,
+            offset: PointerOffsetTerm::add(stored.offset, current.offset),
+        };
+        if !matches!(current.block, PointerBlock::LoadedPointer(_)) {
+            break;
+        }
+    }
+    (current != *address).then_some(current)
 }
 
 /// [`pointer_read_over_write_value`] with the stored pointer's type and
@@ -4199,6 +4241,18 @@ pub(crate) fn load_variable_for_term(
             memory.clone(),
             pointer.clone(),
             LoadKind::Int32,
+        ));
+    }
+    // One place, one name: an address through a pointer read is the address
+    // through the pointer the read's snapshot stores there (the
+    // read-over-write authority, which reads memory, never facts).
+    if let Bitvector32Term::MemoryLoad(memory, pointer, kind) = bits
+        && let Some(resolved) = read_over_write_address(pointer)
+    {
+        return load_variable_for_term(&Bitvector32Term::MemoryLoad(
+            memory.clone(),
+            Box::new(resolved),
+            *kind,
         ));
     }
     // Naming is deterministic per term, and callers ask per fact atom per
