@@ -7256,9 +7256,14 @@ impl CMemory {
         // cell, either of which already carries its definition.
         match Pointer::version_read_value(&snapshot, pointer) {
             Ok(held) => CValue::Pointer(held.with_type(value_type)),
-            Err(value) => CValue::Pointer(CPointerValue::from_read(
-                value, value_type, &snapshot, pointer,
-            )),
+            // A read of a cell that stores a pointer designates what the stored
+            // pointer designates: the stored value, spelled by the read.
+            Err(value) => CValue::Pointer(
+                match crate::kernel::eval::pointer_read_over_write_c_value(&value) {
+                    Some(stored) => stored.with_type(value_type).with_address(value),
+                    None => CPointerValue::from_read(value, value_type, &snapshot, pointer),
+                },
+            ),
         }
     }
 

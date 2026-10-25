@@ -112,7 +112,8 @@ pub(super) use memory_loads::{
 };
 pub(crate) use memory_loads::{comparison_form, holds_by_read_over_write, read_over_write_value};
 pub(crate) use memory_loads::{
-    loaded_pointer_read_origin, loaded_pointer_stored_block, pointer_read_over_write_value,
+    loaded_pointer_read_origin, loaded_pointer_stored_block, pointer_read_over_write_c_value,
+    pointer_read_over_write_value,
     read_over_write_address,
 };
 pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};

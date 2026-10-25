@@ -1856,7 +1856,9 @@ fn canonicalized_symbolic_load_value_with_identity(
     // alias; only the symbolic value's coordinates change, and C access
     // validity still checks the original pointer and its provenance.
     let address = if purpose == LoadPurpose::Logical {
-        pointer.clone()
+        // An address through a stored pointer read is the address through
+        // the stored pointer: one place, found from memory alone.
+        read_over_write_address(pointer).unwrap_or_else(|| pointer.clone())
     } else {
         logical_memory_load_address(memory, pointer.clone(), value_type, assumptions)
     };
@@ -2508,7 +2510,7 @@ pub(crate) fn read_over_write_address(address: &Pointer) -> Option<Pointer> {
 
 /// [`pointer_read_over_write_value`] with the stored pointer's type and
 /// designation.
-fn pointer_read_over_write_c_value(pointer: &Pointer) -> Option<CPointerValue> {
+pub(crate) fn pointer_read_over_write_c_value(pointer: &Pointer) -> Option<CPointerValue> {
     let read = pointer.as_loaded_value()?;
     if read.displacement != PointerOffsetTerm::Constant(0) {
         return None;
