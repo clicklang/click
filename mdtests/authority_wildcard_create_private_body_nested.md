@@ -41,7 +41,7 @@ void relay(int32* pool, int32* p) {
     produces slot(pool, p);
     ensures p[0] == 7;
     ensures count(slot(pool, _)) == old(count(slot(pool, _))) + 1;
-} by { execute(); simp(); }
+}
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
     branch { execute(); simp(); } else {}

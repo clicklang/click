@@ -24,7 +24,7 @@ resource marker(p: int32*) {
 int append(int x) {
     requires 0 <= x and x <= 1000;
     ensures to_integer(result) == to_integer(x + 1);
-} by { execute(); simp(); }
+}
 
 void user(int32* p) {
     consumes length: marker(p);

@@ -19,7 +19,7 @@ extern void set_one(int32* p) {
 void caller(int32* p) {
     owns p[0..1];
     ensures p[0] == 1;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

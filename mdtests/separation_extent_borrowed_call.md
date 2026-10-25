@@ -13,13 +13,13 @@ int32 read(int32 n) {
     views a[0..1];
     requires separate(memory(a[0..n]), memory(b[0..1]));
     ensures result == a[0];
-} by { execute(); simp(); }
+}
 int32 caller(int32 n) {
     views a[0..1];
     requires 0 <= n;
     requires n <= 1073741823;
     ensures result == a[0];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

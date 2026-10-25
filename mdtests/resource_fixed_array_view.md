@@ -10,7 +10,7 @@ verifying "array_view.c";
 uint8 read(struct packet* p) {
     views p->bytes;
     ensures result == p->bytes[2];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

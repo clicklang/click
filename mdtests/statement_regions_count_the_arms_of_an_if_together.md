@@ -28,7 +28,7 @@ verifying "statement_paths_if.c";
 int32 f(int32 v) {
     requires v < 1000;
     ensures result == v + 1;
-} by { execute(); simp(); }
+}
 
 int32 probe(int32 x) {
     requires x < 10;

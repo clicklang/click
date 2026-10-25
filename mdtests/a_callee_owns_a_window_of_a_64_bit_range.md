@@ -28,20 +28,20 @@ verifying "a_callee_owns_a_window_of_a_64_bit_range.c";
 void set_four(uint8* chunk) {
     owns chunk[0..4];
     ensures chunk[0] == 1;
-} by { execute(); simp(); }
+}
 void write(uint8* bytes, uint64 length, uint64 index) {
     requires index <= length;
     requires to_integer(4u64) <= to_integer(length - index);
     owns bytes[0..length];
-} by { execute(); simp(); }
+}
 void set_tail(uint8* bytes, uint64 i, uint64 length) {
     requires i < length;
     owns bytes[i..length];
-} by { execute(); simp(); }
+}
 void tail(uint8* bytes, uint64 i, uint64 length) {
     requires i < length;
     owns bytes[0..length];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

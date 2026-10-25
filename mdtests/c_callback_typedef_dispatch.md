@@ -30,14 +30,14 @@ verifying "view.c";
 verifying "caller.c";
 const struct item *view(const struct item *p) {
     ensures result == p;
-} by { execute(); simp(); }
+}
 const struct item *relay(const struct item *p) {
     ensures result == p;
-} by { execute(); simp(); }
+}
 int read_view(const struct item *p) {
     views p->value;
     ensures result == p->value;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

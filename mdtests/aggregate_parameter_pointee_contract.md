@@ -16,7 +16,7 @@ int32 touch(struct packet input) {
     ensures result == 7;
     ensures input.data[0] == 7;
     ensures old(input.data[0]) == 3;
-} by { execute(); simp(); }
+}
 
 ```
 

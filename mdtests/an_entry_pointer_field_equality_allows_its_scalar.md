@@ -15,7 +15,7 @@ int32 probe(struct Holder* holder, struct Pair* pair) {
     views holder->link;
     views pair->first;
     views pair->second;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -50,26 +50,26 @@ class Square : Shape {
     function tint(this) -> int32 { this->color }
 }
 int Square::shade() const {
-} by { execute(); simp(); }
+}
 class BigSquare : Square {
     function size(this) -> int32 { this->base.side + this->extra }
 }
 int Square::hue() const {
     ensures result == this->color;
-} by { execute(); simp(); }
+}
 int BigSquare::brighter() const {
     ensures result == this->base.color;
-} by { execute(); simp(); }
+}
 int through_shape(const Shape& shape) {
     ensures result == tint(shape);
-} by { execute(); simp(); }
+}
 int through_square(const Square& square) {
     ensures result == tint(square);
-} by { execute(); simp(); }
+}
 int caller(BigSquare& big) {
     owns big;
     ensures result == big.base.color;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

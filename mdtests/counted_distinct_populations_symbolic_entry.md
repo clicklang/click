@@ -20,7 +20,7 @@ int32 identity(void* p, void* q, int32 n) {
     requires count(ticket(q)) == 1;
     requires n >= 1;
     ensures result == n;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

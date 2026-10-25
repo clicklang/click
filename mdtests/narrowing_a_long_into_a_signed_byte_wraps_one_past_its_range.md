@@ -17,7 +17,7 @@ signed char narrow(long value) {
     ensures result >= -128;
     ensures value == 128 implies result == -128;
     ensures value == 127 implies result == 127;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

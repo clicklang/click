@@ -41,7 +41,7 @@ resource cell(p: struct node*) {
 void set_count(struct node *p) {
     owns p->count;
     ensures p->count == 1;
-} by { execute(); simp(); }
+}
 
 void tag_then_count(struct node *p) {
     consumes c: cell(p);

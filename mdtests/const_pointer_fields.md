@@ -30,31 +30,31 @@ verifying "main.c";
 const int *get(struct holder *h) {
     views h->value;
     ensures result == h->value;
-} by { execute(); simp(); }
+}
 void set(struct holder *h, const int *p) {
     owns h->value;
     ensures h->value == p;
-} by { execute(); simp(); }
+}
 int copy_read(const int *p) {
     views p[0..1];
     ensures result == p[0];
-} by { execute(); simp(); }
+}
 int nested_copy(const int *p) {
     views p[0..1];
     ensures result == p[0];
-} by { execute(); simp(); }
+}
 const int *sequential_set(struct holder *h, const int *p) {
     owns h->value;
     ensures h->value == p;
     ensures result == p;
-} by { execute(); simp(); }
+}
 int alias_write(struct holder *h, int *p) {
     views h->value;
     owns p[0..1];
     requires h->value == p;
     ensures result == 7;
     ensures p[0] == 7;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

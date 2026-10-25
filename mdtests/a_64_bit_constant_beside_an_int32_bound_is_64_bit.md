@@ -16,7 +16,7 @@ uint8 at(const uint8* bytes, int32 i) {
     requires (uint64)i < 4294967296u64;
     views bytes[i..4294967296u64];
     ensures result == bytes[i];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

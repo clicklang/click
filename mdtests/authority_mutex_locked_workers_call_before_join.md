@@ -74,7 +74,7 @@ void* release(void* argument) {
 }
 void nothing() {
     ensures 1 == 1;
-} by { execute(); simp(); }
+}
 int32 run() {
     ensures result == -1 or result == 0 or result == 1;
 } by {

@@ -25,7 +25,7 @@ verifying "modeled_pthread_counted_shared_symbolic.c";
 authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns ticket(argument);
-} by { execute(); simp(); }
+}
 int32 run(void* p, void* q, int32 n) {
     owns authority(ticket(p));
     owns authority(ticket(q));

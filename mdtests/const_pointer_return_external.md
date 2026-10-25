@@ -14,7 +14,7 @@ extern const int *external_view(int *p) {
 
 const int *caller(int *p) {
     ensures result == p;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -33,7 +33,7 @@ void write_one() {
     ensures buf[0] == old(buf[0]);
     ensures buf[2] == old(buf[2]);
     ensures buf[999] == old(buf[999]);
-} by { execute(); simp(); }
+}
 
 int32 clear_other_then_read(int32 n) {
     owns other[0..4];

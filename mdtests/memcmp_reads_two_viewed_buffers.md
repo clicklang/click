@@ -22,13 +22,13 @@ int32 compare_two(const uint8* a, const uint8* b) {
     views b[0..4];
     requires forall (k: uint64) { k < 4u64 implies defined(a[k]) and defined(b[k]) };
     ensures result == 0 implies click::bytes::equal(a, 0u64, b, 0u64, 4u64);
-} by { execute(); simp(); }
+}
 
 int32 compare_self(const uint8* a) {
     views a[0..4];
     requires forall (k: uint64) { k < 4u64 implies defined(a[k]) };
     ensures result == 0 implies click::bytes::equal(a, 0u64, a, 0u64, 4u64);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

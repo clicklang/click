@@ -18,19 +18,19 @@ verifying "an_in_range_argument_to_a_narrow_parameter_is_its_value_at_the_caller
 
 int32 widen(uint8 x) {
     ensures result == x;
-} by { execute(); simp(); }
+}
 
 int32 pass_range(int32 y) {
     requires 0 <= y;
     requires y <= 255;
     ensures result == y;
-} by { execute(); simp(); }
+}
 
 int32 pass_known(int32 y) {
     requires y == 44;
     ensures result == 44;
     ensures result == y;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

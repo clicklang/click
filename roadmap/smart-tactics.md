@@ -1195,6 +1195,11 @@ mdtests and examples.
     (`mdtests/an_omitted_proof_folds_the_resource_its_contract_produces.md`);
     39 files drop `execute(); fold(…);` for it. Folds of other resources
     stay written.
+    The one-line forms followed: a function's `} by { execute(); simp(); }`
+    and a claim's `ensures P by { execute(); simp(); }` become the omitted
+    proof, 462 uses in 257 files. As before, only files that still verify
+    change, and files Rust tests name, by path or by file name, and the
+    mdtests documentation examples quote keep theirs.
 
     `execute` then names only the tail's stepping and splitting. *Verdicts*
     only where a migration misses; each is explained in the PR.

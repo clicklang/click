@@ -40,17 +40,17 @@ Node* push(Node* head, int value) {
     produces *result;
     ensures result->value == value;
     ensures result->next == head;
-} by { execute(); simp(); }
+}
 
 void drop(Node* node) {
     requires node != 0;
     consumes allocation(node, sizeof(Node));
     consumes *node;
-} by { execute(); simp(); }
+}
 
 int round_trip(int value) {
     ensures result == value;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

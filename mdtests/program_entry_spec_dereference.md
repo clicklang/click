@@ -12,13 +12,13 @@ unsigned int bump(unsigned int *p) {
     ensures to_integer(*p) == to_integer(old(*p) + 1u32);
     ensures *p == p[0];
     ensures old(*p) == old(p[0]);
-} by { execute(); simp(); }
+}
 unsigned long bump64(unsigned long *p) {
     owns *p;
     ensures to_integer(*p) == to_integer(old(*p) + 1u64);
     ensures *p == p[0];
     ensures old(*p) == old(p[0]);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

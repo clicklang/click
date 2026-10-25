@@ -10,7 +10,7 @@ verifying "mixed.c";
 uint8 first(const uint8* p) {
  views p[0u64..4u64];
  ensures result == old(p[0]);
-} by { execute(); simp(); }
+}
 uint8 read(const uint8* bytes, uint64 length, uint64 index, uint64 prefix, int32 pos) {
  views bytes[0u64..length];
  requires length <= 2147483647u64;
@@ -21,7 +21,7 @@ uint8 read(const uint8* bytes, uint64 length, uint64 index, uint64 prefix, int32
  requires to_integer(4u64) <= to_integer(length - index);
  requires (bytes + prefix) + pos == bytes + index;
  ensures result == old(((bytes + prefix) + pos)[0]);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

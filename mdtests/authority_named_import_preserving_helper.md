@@ -13,7 +13,7 @@ void preserve(int32* pool) {
     owns member: ticket(pool);
     ensures member.serial == old(member.serial);
     ensures count(ticket(pool)) == old(count(ticket(pool)));
-} by { execute(); simp(); }
+}
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool)));

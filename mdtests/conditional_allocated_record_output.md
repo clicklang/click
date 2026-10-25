@@ -32,7 +32,7 @@ void dispose(struct box* p) {
 }
 int32 probe(int32 value) {
     ensures result == 0;
-} by { execute(); simp(); }
+}
 ```
 ```expect
 pass

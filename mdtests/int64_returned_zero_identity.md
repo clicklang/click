@@ -19,12 +19,12 @@ int64 zero64() { ensures result == 0i64; } by { execute(); simp(); }
 
 int64 returned_zero(int64 x) {
     ensures result == x;
-} by { execute(); simp(); }
+}
 
 int64 subtract_zero(int64 x, int64 z) {
     requires z == 0i64;
     ensures result == x;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

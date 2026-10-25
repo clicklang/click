@@ -36,7 +36,7 @@ verifying "mutex_lifetime_named_runtime.c";
 
 void keep(struct counter *counter) {
     owns lifetime: mutex_live(&counter->mu);
-} by { execute(); simp(); }
+}
 
 int32 read_counter(struct counter *counter) {
     owns counter->mu;

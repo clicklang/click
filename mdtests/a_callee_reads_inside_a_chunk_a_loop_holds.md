@@ -27,7 +27,7 @@ verifying "a_callee_reads_inside_a_chunk_a_loop_holds.c";
 uint8 first_of_four(const uint8* p) {
     views p[0..4];
     ensures result == p[0];
-} by { execute(); simp(); }
+}
 uint32 sum(const uint8* bytes, uint64 length, uint64 start) {
     requires start <= length;
     requires 16 <= to_integer(length - start);

@@ -18,19 +18,19 @@ verifying "members.c";
 int32 one(int32* p) {
     views p[0..1];
     ensures result == p[0];
-} by { execute(); simp(); }
+}
 int32 four(int32* p) {
     views p[0..4];
     ensures result == p[3];
-} by { execute(); simp(); }
+}
 int32 use_one(struct Pair* p) {
     views p->second;
     ensures result == p->second;
-} by { execute(); simp(); }
+}
 int32 use_four(struct Rec* r) {
     views r->arr[0..4];
     ensures result == r->arr[3];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

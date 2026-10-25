@@ -25,22 +25,22 @@ uint8 at(const uint8* bytes, int32 i, uint64 length) {
     requires (uint64)i < length;
     views bytes[i..length];
     ensures result == bytes[i];
-} by { execute(); simp(); }
+}
 uint8 first(const uint8* bytes, int64 n) {
     requires 0i64 < n;
     views bytes[0..n];
     ensures result == bytes[0];
-} by { execute(); simp(); }
+}
 uint8 within(const uint8* bytes, int64 i, int64 n) {
     requires 0i64 <= i;
     requires i < n;
     views bytes[i..n];
     ensures result == bytes[i];
-} by { execute(); simp(); }
+}
 uint8 whole(const uint8* bytes, int64 n) {
     requires 0i64 < n;
     views bytes[0..n];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

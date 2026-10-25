@@ -24,14 +24,14 @@ void inner(struct holder *holder, int32 *out, int32 *value) {
     views value[0..1];
     requires separate(memory(out[0..1]), memory(holder->mu));
     ensures *out == *value;
-} by { execute(); simp(); }
+}
 void outer(struct holder *holder, int32 *out, int32 *value) {
     owns mutex_live(&holder->mu);
     owns out[0..1];
     views value[0..1];
     requires separate(memory(out[0..1]), memory(holder->mu));
     ensures *out == *value;
-} by { execute(); simp(); }
+}
 int32 run(struct holder *holder, int32 *out, int32 *value) {
     owns holder->mu;
     owns out[0..1];
@@ -39,7 +39,7 @@ int32 run(struct holder *holder, int32 *out, int32 *value) {
     requires separate(memory(out[0..1]), memory(holder->mu));
     requires aligned(&holder->mu, 8);
     ensures result == *value;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

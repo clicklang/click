@@ -33,7 +33,7 @@ uint32 read_pair(const uint8* p) {
     ensures to_integer(result) == to_integer((uint32)p[0] + (uint32)p[1]);
     ensures p[0] == old(p[0]);
     ensures p[1] == old(p[1]);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -34,22 +34,22 @@ verifying "c_pointer_same_object_requirement.c";
 int32 compare(int32* left, int32* right) {
     requires same_object(left, right);
     ensures result == 0 or result == 1;
-} by { execute(); simp(); }
+}
 
 int32 compare_array_elements() {
     ensures result == 0 or result == 1;
-} by { execute(); simp(); }
+}
 
 int32 compare_forwarded(int32* left, int32* right) {
     requires same_object(left, right);
     ensures result == 0 or result == 1;
-} by { execute(); simp(); }
+}
 
 int32 members_in_order(struct pair* pair) {
     requires pair != 0;
     views *pair;
     ensures result == 1;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

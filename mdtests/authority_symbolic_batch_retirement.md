@@ -46,7 +46,7 @@ void run(int32* o, int32 n, int32 m) {
     requires defined(n + m);
     requires 0 <= to_integer(n + m);
     ensures count(tok(o)) == 0;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

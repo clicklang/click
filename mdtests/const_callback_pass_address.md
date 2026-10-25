@@ -14,7 +14,7 @@ int use_view(const int *(*f)(int *), int *p) {
     requires View(f);
     views p[0..1];
     ensures result == p[0];
-} by { execute(); simp(); }
+}
 int caller(int *p) { views p[0..1]; ensures result == p[0]; } by { execute(); simp(); }
 ```
 

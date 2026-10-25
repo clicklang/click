@@ -74,7 +74,7 @@ int32 caller(struct input_cursor* owner, int32 data[], int32 length) {
     ensures result == 0;
     ensures owner->data == data;
     ensures owner->len == length;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

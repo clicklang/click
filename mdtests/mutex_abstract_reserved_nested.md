@@ -28,7 +28,7 @@ verifying "mutex_abstract_reserved_nested.c";
 void write_value(struct holder *holder, int *data) {
     owns life: outer(holder);
     owns data[0..1];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

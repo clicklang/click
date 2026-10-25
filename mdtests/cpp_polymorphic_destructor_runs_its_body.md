@@ -34,7 +34,7 @@ Square::Square(int32& out, int32 s) {
     owns this->side;
     ensures this->log == &out;
     ensures this->side == s;
-} by { execute(); simp(); }
+}
 Square::~Square() {
     owns this->log;
     owns this->side;
@@ -42,13 +42,13 @@ Square::~Square() {
     ensures this->log == old(this->log);
     ensures this->side == old(this->side);
     ensures this->log[0] == old(this->side);
-} by { execute(); simp(); }
+}
 int caller(int32& out, int scale) {
     owns out;
     requires 0 <= scale and scale <= 100;
     ensures result == 0;
     ensures out == scale;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

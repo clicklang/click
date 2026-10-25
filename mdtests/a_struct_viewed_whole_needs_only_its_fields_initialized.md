@@ -25,11 +25,11 @@ verifying "padded_pair.c";
 int32 first(const struct pair* s) {
     views *s;
     ensures result == s->a;
-} by { execute(); simp(); }
+}
 
 int32 caller() {
     ensures result == 1;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

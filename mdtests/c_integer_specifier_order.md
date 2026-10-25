@@ -19,19 +19,19 @@ int widths(void) {
 verifying "integer_order.c";
 int long unsigned preserve(long unsigned int value) {
     ensures result == value;
-} by { execute(); simp(); }
+}
 int short signed promote(short int signed value) {
     ensures result == value;
-} by { execute(); simp(); }
+}
 long unsigned int long wide(int long long unsigned value) {
     ensures result == value;
-} by { execute(); simp(); }
+}
 unsigned maximum() {
     ensures result == 4294967295;
-} by { execute(); simp(); }
+}
 int widths() {
     ensures result == 19;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

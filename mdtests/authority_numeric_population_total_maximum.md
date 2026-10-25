@@ -21,7 +21,7 @@ void total(int32* o) {
     produces 1000000000 of tok(o);
     produces 1147483647 of tok(o);
     ensures count(tok(o)) == 2147483647;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

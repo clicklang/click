@@ -17,7 +17,7 @@ verifying "an_out_of_range_narrowing_initializer_wraps_modulo_256.c";
 int32 f(int32 x) {
     requires x == 300;
     ensures result == 44;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

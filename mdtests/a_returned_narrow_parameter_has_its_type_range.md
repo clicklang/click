@@ -33,22 +33,22 @@ verifying "a_returned_narrow_parameter_has_its_type_range.c";
 int32 widen_u8(uint8 x) {
     ensures result >= 0;
     ensures result <= 255;
-} by { execute(); simp(); }
+}
 
 int32 widen_u16(uint16 x) {
     ensures result >= 0;
     ensures result <= 65535;
-} by { execute(); simp(); }
+}
 
 int32 widen_i8(int8 x) {
     ensures result >= -128;
     ensures result <= 127;
-} by { execute(); simp(); }
+}
 
 int32 widen_i16(int16 x) {
     ensures result >= -32768;
     ensures result <= 32767;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect
