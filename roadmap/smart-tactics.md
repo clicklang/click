@@ -1118,6 +1118,13 @@ mdtests and examples.
     implicit tail closes the rest and runs any C left. Migrate the three
     mdtests. `SmartTacticKind` becomes `Arithmetic`, `Solve` and `Execute`,
     with the four classification stores, profiling and trace labels.
+    Done: `auto();` parses as `solve();`. `SmartTacticKind` is `Arithmetic`,
+    `Solve` and `Execute`, and what an omitted proof and the implicit
+    closer stand for is the smart site `SmartSite::Implicit`, still spelled
+    `auto` in refusals until step 24. The three mdtests are now
+    `a_written_auto_closes_one_goal.md`,
+    `a_script_that_stops_after_explicit_steps_executes_the_rest.md` and
+    `a_script_that_stops_after_a_call_reports_the_remaining_goal.md`.
 22. **`execute_until` is `step_until`.** It is repeated `step()` and never
     forks: it refuses at an undecided branch, and each requirement it
     crosses is proved by `solve`. Rename it, keeping the old spelling as an

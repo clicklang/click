@@ -4567,16 +4567,15 @@ pub enum SimpleTactic {
     IteratedOwnership,
 }
 
-/// The four smart tactics, each one engine
-/// (`docs/concepts/smart-and-simple-tactics.md`). `auto` wraps `execute`
-/// and `simp`, and `simp` wraps `arithmetic`; `execute_until` is a variant
+/// The smart tactics, each one engine
+/// (`docs/concepts/smart-and-simple-tactics.md`): `solve` closes one goal
+/// and wraps `arithmetic`; `execute` runs C; `execute_until` is a variant
 /// of `execute`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SmartTacticKind {
     Arithmetic,
-    Simp,
+    Solve,
     Execute,
-    Auto,
 }
 
 /// A simple tactic written with one argument elided. The search behind it
@@ -4612,8 +4611,11 @@ pub enum SmartSite {
     /// A simple tactic whose argument a lookup fills.
     Elided(ElidedArgument),
     /// Bare `close_invariants()`: a fixed expansion into
-    /// `close_invariants() by { ... }` with `simp()` on each member.
+    /// `close_invariants() by { ... }` with `solve()` on each member.
     CloseInvariants,
+    /// What an omitted proof and the end of a script mean: execute the C
+    /// that remains and `solve` each open goal.
+    Implicit,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5127,8 +5129,8 @@ impl ProofTactic {
             Self::SmartExecute | Self::ExecuteUntil(_) => {
                 TacticClass::smart(SmartTacticKind::Execute)
             }
-            Self::Simp | Self::SimpUsing(_) => TacticClass::smart(SmartTacticKind::Simp),
-            Self::AutoClose => TacticClass::smart(SmartTacticKind::Auto),
+            Self::Simp | Self::SimpUsing(_) => TacticClass::smart(SmartTacticKind::Solve),
+            Self::AutoClose => TacticClass::Smart(SmartSite::Implicit),
             Self::Have(_) => TacticClass::Control(ControlTactic::Have),
             Self::Open(_) => TacticClass::Control(ControlTactic::Open),
             Self::If(_) => TacticClass::Control(ControlTactic::If),
@@ -5144,10 +5146,12 @@ impl ProofTactic {
 }
 
 impl SmartTactic {
-    pub fn kind(self) -> SmartTacticKind {
+    /// The smart site a `by` proof of this tactic is: `by auto();` is the
+    /// omitted proof, and `by simp();` is `solve`.
+    pub fn site(self) -> SmartSite {
         match self {
-            Self::Auto => SmartTacticKind::Auto,
-            Self::Simp => SmartTacticKind::Simp,
+            Self::Auto => SmartSite::Implicit,
+            Self::Simp => SmartSite::Engine(SmartTacticKind::Solve),
         }
     }
 }

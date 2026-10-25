@@ -728,14 +728,14 @@ fn parses_and_classifies_simple_and_smart_tactics() {
     ));
     assert!(matches!(
         ProofTactic::Simp.class(),
-        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Simp))
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Solve))
     ));
     assert!(matches!(
         ProofTactic::SimpUsing(ProofSimpUsing {
             premises: Vec::new(),
         })
         .class(),
-        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Simp))
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Solve))
     ));
     assert!(matches!(
         ProofTactic::Step.class(),
@@ -953,7 +953,7 @@ fn proof_certificate_has_no_smart_step_variant() {
         .expect_err("smart tactics cannot appear in a proof certificate");
     assert_eq!(
         smart.tactic_class(),
-        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Simp))
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Solve))
     );
 }
 
@@ -981,7 +981,7 @@ fn tactic_certificate_rejects_a_direct_smart_tactic() {
 
     assert_eq!(
         error.tactic_class(),
-        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Simp))
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Solve))
     );
     assert_eq!(error.path(), &[CertificatePathSegment::Tactic(0)]);
 }
@@ -1016,7 +1016,7 @@ fn tactic_certificate_rejects_smart_tactics_in_nested_control_tactics() {
 
     assert_eq!(
         error.tactic_class(),
-        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Simp))
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Solve))
     );
     assert_eq!(
         error.path(),
@@ -1049,7 +1049,7 @@ fn tactic_certificate_checks_structural_induction_arms() {
         .expect_err("smart tactics cannot be hidden in an induction arm");
     assert_eq!(
         error.tactic_class(),
-        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Simp))
+        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Solve))
     );
     assert_eq!(
         error.path(),
@@ -1077,7 +1077,7 @@ fn tactic_certificate_treats_an_omitted_nested_proof_as_auto() {
 
     assert_eq!(
         error.tactic_class(),
-        TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Auto))
+        TacticClass::Smart(SmartSite::Implicit)
     );
     assert_eq!(
         error.path(),

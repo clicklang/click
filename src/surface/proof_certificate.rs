@@ -1012,14 +1012,14 @@ impl CertificateError {
 pub(super) fn smart_site_spelling(site: SmartSite) -> &'static str {
     match site {
         SmartSite::Engine(SmartTacticKind::Arithmetic) => "arithmetic",
-        SmartSite::Engine(SmartTacticKind::Simp) => "simp",
+        SmartSite::Engine(SmartTacticKind::Solve) => "solve",
         SmartSite::Engine(SmartTacticKind::Execute) => "execute",
-        SmartSite::Engine(SmartTacticKind::Auto) => "auto",
         SmartSite::Elided(ElidedArgument::TheoremPremises | ElidedArgument::InductionPremises) => {
             "apply"
         }
         SmartSite::Elided(ElidedArgument::FrameEvidence) => "transport",
         SmartSite::CloseInvariants => "close_invariants",
+        SmartSite::Implicit => "auto",
     }
 }
 
@@ -1132,7 +1132,7 @@ pub(crate) fn validate_certificate_step(
                     if phase.is_none() {
                         path.push(segment);
                         result = Err(CertificateError {
-                            tactic_class: TacticClass::smart(SmartTacticKind::Auto),
+                            tactic_class: TacticClass::Smart(SmartSite::Implicit),
                             path: path.clone(),
                         });
                         path.pop();
@@ -1348,7 +1348,7 @@ pub(super) fn validate_certificate_tactics(
                     result = match loop_clause.initialize_proof() {
                         Some(proof) => validate_certificate_proof(proof, path),
                         None => Err(CertificateError {
-                            tactic_class: TacticClass::smart(SmartTacticKind::Auto),
+                            tactic_class: TacticClass::Smart(SmartSite::Implicit),
                             path: path.clone(),
                         }),
                     };
@@ -1358,7 +1358,7 @@ pub(super) fn validate_certificate_tactics(
                         result = match loop_clause.preserve_proof() {
                             Some(proof) => validate_certificate_proof(proof, path),
                             None => Err(CertificateError {
-                                tactic_class: TacticClass::smart(SmartTacticKind::Auto),
+                                tactic_class: TacticClass::Smart(SmartSite::Implicit),
                                 path: path.clone(),
                             }),
                         };
@@ -1380,11 +1380,11 @@ pub(super) fn validate_certificate_proof(
 ) -> Result<(), CertificateError> {
     match proof {
         SourceProof::Default => Err(CertificateError {
-            tactic_class: TacticClass::smart(SmartTacticKind::Auto),
+            tactic_class: TacticClass::Smart(SmartSite::Implicit),
             path: path.clone(),
         }),
         SourceProof::Tactic(smart_tactic) => Err(CertificateError {
-            tactic_class: TacticClass::smart(smart_tactic.kind()),
+            tactic_class: TacticClass::Smart(smart_tactic.site()),
             path: path.clone(),
         }),
         SourceProof::Script(tactics) => validate_certificate_tactics(tactics, path),
