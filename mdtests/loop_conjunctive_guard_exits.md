@@ -72,7 +72,7 @@ int32 uprec_owned(int32 a, int32* p) {
         }
     }
     step();
-    simp();
+    solve();
 }
 
 int32 ufor_owned(int32 a, int32* p) {
@@ -96,7 +96,7 @@ int32 ufor_owned(int32 a, int32* p) {
         }
     }
     step();
-    simp();
+    solve();
 }
 
 int32 either(int32 a, int32 b) {
@@ -131,7 +131,7 @@ int32 either(int32 a, int32 b) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -45,9 +45,9 @@ int32 spin(int32 n, int32 m) {
     }
     have match Box::Wrap(m) {
         Box::Wrap(h) => to_integer(i),
-    } == to_integer(m) by { simp(); }
+    } == to_integer(m) by { solve(); }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -51,10 +51,10 @@ int32 spin(struct cell* node, int32 n) {
         invariant i <= 1;
         invariant c.rank == old(c.rank);
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             have c.rank == i;
-            have i == 0 by { simp() using { c.rank == i; c.rank == old(c.rank); old(c.rank) == 0; }; }
+            have i == 0 by { solve() using { c.rank == i; c.rank == old(c.rank); old(c.rank) == 0; }; }
             have 0 <= n - i - 1 by { arithmetic() using { i < n; 0 <= i; }; }
             have n - i - 1 < n - i by { arithmetic() using { i < n; 0 <= i; }; }
             step();
@@ -63,7 +63,7 @@ int32 spin(struct cell* node, int32 n) {
     }
     have n <= 1 by { arithmetic() using { i >= n; i <= 1; }; }
     step();
-    simp();
+    solve();
 }
 ```
 

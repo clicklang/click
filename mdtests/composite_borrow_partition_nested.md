@@ -34,7 +34,7 @@ void update(struct node* p, const struct callbacks* cb) {
     fold(node_cell(p));
     fold(node_layer_1(p));
     fold(node_layer_2(p));
-    simp();
+    solve();
 }
 ```
 ```expect

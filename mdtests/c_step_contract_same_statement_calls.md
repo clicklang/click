@@ -16,7 +16,7 @@ int32 invoke(int32 (*callback)(int32), int32 x) {
     requires Second(callback);
     owns Permit(x);
     ensures result == x;
-} by { step(First); execute(); simp(); }
+} by { step(First); execute(); solve(); }
 ```
 
 ```expect

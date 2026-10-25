@@ -25,7 +25,7 @@ void advance(int32* state) {
     unfold(first);
     execute();
     let first = fold(Counter(), { model: old(first.model), revision: old(first.revision) + 1 });
-    simp();
+    solve();
 }
 
 void advance_once(int32* state) {

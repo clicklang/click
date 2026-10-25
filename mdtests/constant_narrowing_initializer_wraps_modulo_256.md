@@ -10,7 +10,7 @@ int f(void) { int x = -56; unsigned char c = x; return c; }
 
 ```click
 verifying "constant_narrowing_initializer_wraps_modulo_256.c";
-int32 f() { ensures result == 200; } by { execute(); simp(); }
+int32 f() { ensures result == 200; } by { execute(); solve(); }
 ```
 
 ```expect

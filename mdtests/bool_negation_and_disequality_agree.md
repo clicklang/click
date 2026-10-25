@@ -11,27 +11,27 @@ function positive(x: int32) -> bool { x > 0 }
 
 theorem not_false_is_true(x: int32) {
     requires positive(x) != false;
-    ensures positive(x) by { simp(); }
+    ensures positive(x) by { solve(); }
 }
 
 theorem not_is_false(x: int32) {
     requires not positive(x);
-    ensures positive(x) == false by { simp(); }
+    ensures positive(x) == false by { solve(); }
 }
 
 theorem not_true_is_not(x: int32) {
     requires positive(x) != true;
-    ensures not positive(x) by { simp(); }
+    ensures not positive(x) by { solve(); }
 }
 
 theorem parameter_not_false_is_true(flag: bool) {
     requires flag != false;
-    ensures flag by { simp(); }
+    ensures flag by { solve(); }
 }
 
 theorem parameter_not_is_false(flag: bool) {
     requires not flag;
-    ensures flag == false by { simp(); }
+    ensures flag == false by { solve(); }
 }
 
 theorem range(x: int32) {
@@ -39,7 +39,7 @@ theorem range(x: int32) {
         if positive(x) {
             assumption();
         } else {
-            have positive(x) == false by simp();
+            have positive(x) == false by solve();
             assumption();
         }
     }

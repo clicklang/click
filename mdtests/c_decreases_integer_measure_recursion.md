@@ -48,7 +48,7 @@ int32 drain(int32 n) {
         }
         have defined(n - 1) by {
             have defined(n - 1) by auto();
-            simp();
+            solve();
         }
         have 0 <= level(n - 1) by {
             unfold(level(n - 1));
@@ -57,16 +57,16 @@ int32 drain(int32 n) {
             unfold(level(n - 1));
             unfold(level(n));
             have to_integer(n - 1) == to_integer(n) - to_integer(1) by auto();
-            simp() using {
+            solve() using {
                 to_integer(n - 1) == to_integer(n) - to_integer(1);
             };
         }
         step();
         step();
-        simp();
+        solve();
     } else {}
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -28,11 +28,11 @@ int32 early_exit(int32 c) {
     step();
     branch {
         step();
-        simp();
+        solve();
     } else {}
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

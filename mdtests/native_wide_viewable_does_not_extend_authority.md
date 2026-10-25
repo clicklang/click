@@ -11,7 +11,7 @@ void hold(const uint8* bytes, uint64 length) {
  views bytes[0..length];
 } by {
  have viewable(bytes[0u64..length + 1u64]);
- execute(); simp();
+ execute(); solve();
 }
 ```
 

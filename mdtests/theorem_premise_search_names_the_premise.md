@@ -78,7 +78,7 @@ int read_parent_value(struct node* n) {
             step();
             let u = fold(tree_at(n), { model: old(t.model) });
             execute();
-            simp();
+            solve();
         },
     }
 }

@@ -15,7 +15,7 @@ int64_t subtract_zero(int64_t x, int64_t z) { return x - z; }
 ```click
 verifying "int64_returned_zero_identity.c";
 
-int64 zero64() { ensures result == 0i64; } by { execute(); simp(); }
+int64 zero64() { ensures result == 0i64; } by { execute(); solve(); }
 
 int64 returned_zero(int64 x) {
     ensures result == x;

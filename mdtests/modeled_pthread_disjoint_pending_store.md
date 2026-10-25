@@ -47,11 +47,11 @@ int32 run(struct cell *job, struct cell *unrelated) {
     step();
     branch {
         step();
-        simp();
+        solve();
     } else {}
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

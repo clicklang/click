@@ -28,7 +28,7 @@ int32 f(int32* p, int32* q) {
     let left = fold(Cell(p), { tag: 1 });
     have reflexive(q) == 1 by { unfold(reflexive(q)); normalize(); }
     let right = fold(Cell(q), { tag: 2 });
-    simp();
+    solve();
 }
 int32 g(int32* p, int32* q) {
     consumes p[0..1];
@@ -41,7 +41,7 @@ int32 g(int32* p, int32* q) {
     let left = fold(PlainCell(p), { tag: 1 });
     have reflexive(q) == 1 by { unfold(reflexive(q)); normalize(); }
     let right = fold(Cell(q), { tag: 2 });
-    simp();
+    solve();
 }
 ```
 ```expect

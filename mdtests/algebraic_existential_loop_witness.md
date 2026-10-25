@@ -31,7 +31,7 @@ int32 count_to(int32 n) diverges {
     step();
     loop diverges {
         invariant exists (fuel: Nat) { fuel == fuel };
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             step();
             obtain (previous: Nat) { previous == previous }
@@ -40,7 +40,7 @@ int32 count_to(int32 n) diverges {
                 witness { fuel: Nat::Succ(previous) };
                 normalize();
             }
-            close_invariants() by simp();
+            close_invariants() by solve();
         }
     }
     step_until(function.exit);

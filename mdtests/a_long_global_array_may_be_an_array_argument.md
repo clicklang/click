@@ -23,7 +23,7 @@ void f(int32 a[], int32 n) {
     requires a[0] == 5;
     owns buf[500..501];
     ensures a[0] == 5;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

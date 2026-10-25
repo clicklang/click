@@ -864,9 +864,9 @@ function reaches its return frontier:
 execute();
 have exists (k: int32) { k == result } by {
     witness { k: result };
-    simp();
+    solve();
 }
-simp();
+solve();
 ```
 
 The scoped proof may use `obtain` and `witness`. Its established proposition is
@@ -931,7 +931,7 @@ See [conversion examples](https://github.com/clicklang/click/blob/master/mdtests
 ```click
 theorem integer_successor(z: Integer) {
     ensures z + 1 > z by {
-        simp();
+        solve();
     }
 }
 ```
@@ -1194,7 +1194,7 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
     views v[lo..hi];
     requires lo <= k;
     requires k < hi;
-    ensures to_integer(v[k]) == to_integer(v[k]) by simp();
+    ensures to_integer(v[k]) == to_integer(v[k]) by solve();
 }
 ```
 
@@ -1272,7 +1272,7 @@ theorem nonnegative_body(x: int32) {
     requires nonnegative(x);
     ensures x >= 0 by {
         unfold(nonnegative);
-        simp();
+        solve();
     }
 }
 
@@ -1280,7 +1280,7 @@ theorem reuses_nonnegative_body(y: int32) {
     requires nonnegative(y);
     ensures y >= 0 by {
         apply(nonnegative_body(y));
-        simp();
+        solve();
     }
 }
 ```
@@ -1433,7 +1433,7 @@ theorem raw_is_buffered(callback: void (*)(int32*, int32))
         unfold(Buffer(data, count));
         step(Raw);
         fold(Buffer(data, count));
-        simp();
+        solve();
     }
 }
 ```
@@ -1550,7 +1550,7 @@ run by the single call step.
 theorem increment_is_exact() executes increment(int32* state) {
     ensures Exact(&increment) as { cell: c } by {
         step(increment, { first: c });
-        simp();
+        solve();
     }
 }
 ```
@@ -1770,7 +1770,7 @@ uint8 read(const uint8* bytes, uint64 length, uint64 index) {
     requires index < length;
     views bytes[0..length];
     ensures result == bytes[index];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 Top-level verification gets its resource context from the function's resource
 verbs, while function calls apply the callee's verified contract as one opaque
@@ -1818,7 +1818,7 @@ int32 set_then_get(int32* p) {
     ensures result == 1;
     ensures p[0] == 1;
     ensures defined(p[0]);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 `produces uninitialized(result[0..n])` returns bytes the caller then holds
@@ -2057,7 +2057,7 @@ void init(int32* p, int32 value) {
 } by {
     execute();
     let c = fold(cell(p), { value: value });
-    simp();
+    solve();
 }
 ```
 
@@ -2894,7 +2894,7 @@ int32 twice(struct pair* p) {
     ensures result >= 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 
@@ -3273,7 +3273,7 @@ For a symbolic `.any`, the range item name is the existential binder:
 ensures found: (lo..hi).any(|k| { p[k] == result }) by {
     execute();
     witness { k: lo };
-    simp();
+    solve();
 }
 ```
 
@@ -3517,8 +3517,8 @@ have is refused with what it does have
 
 <!-- verified-example: mdtests/statement_regions_name_points_of_statements_as_written.md -->
 ```click
-have at(statement(1).call(f, 1).entry, y) == x + 1 by simp();
-have at(statement(1).region(1).entry, y) == x + 1 by simp();
+have at(statement(1).call(f, 1).entry, y) == x + 1 by solve();
+have at(statement(1).region(1).entry, y) == x + 1 by solve();
 ```
 
 There `y = f(f(y));` is `statement(1)`, and its outer call is both its second
@@ -3732,7 +3732,7 @@ let k: int32 where k == x;
 ensures result_matches_witness: result == k by {
     execute();
     witness { k: x };
-    simp();
+    solve();
 }
 ```
 
@@ -3901,7 +3901,7 @@ remain exact. Click does not unfold predicate bodies unless a proof asks for it:
 ensures still_sorted: sorted(p, n) by {
     execute();
     unfold(sorted);
-    simp();
+    solve();
 }
 ```
 

@@ -48,12 +48,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
         invariant tree.model == old(tree.model);
         invariant old(tree.model) == SizedTree::Node(node, 0, Color::Red, sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model)));
         invariant tree.model == SizedTree::Node(node, 0, Color::Red, sized_value(tree.model), sized_left(tree.model), sized_right(tree.model));
-        initialize by simp();
+        initialize by solve();
         preserve by {
             let { metadata: metadata, left: left, right: right } = unfold(tree);
             step(); step();
             have (node->__rb_parent_color & 1) == color_bit(Color::Black) by {
-                unfold(color_bit(Color::Black)); simp();
+                unfold(color_bit(Color::Black)); solve();
             }
             let tree = fold(sized_at(node), {
                 model: SizedTree::Node(node, 0, Color::Black, sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model)))
@@ -61,13 +61,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             have tree.model == sized_recolor(old(tree.model), Color::Black) by {
                 rewrite(old(tree.model) == SizedTree::Node(node, 0, Color::Red, sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model))));
                 unfold(sized_recolor(SizedTree::Node(node, 0, Color::Red, sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model))), Color::Black));
-                simp();
+                solve();
             }
             step();
         }
     }
     have node == old(node) by { assumption(); }
-    execute(); simp();
+    execute(); solve();
 }
 
 theorem sized_insert_root()
@@ -75,7 +75,7 @@ executes __rb_insert(struct rb_node* node, struct rb_root* root,
                     void (*augment_rotate)(struct rb_node*, struct rb_node*)) {
     ensures InsertSizedRoot(&__rb_insert) as { tree: tree } by {
         step(__rb_insert, { tree: tree });
-        simp();
+        solve();
     }
 }
 
@@ -91,7 +91,7 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures tree.model == sized_recolor(old(tree.model), Color::Black);
 } by {
     step(__rb_insert, { tree: tree });
-    execute(); simp();
+    execute(); solve();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -105,5 +105,5 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures tree.model == sized_recolor(old(tree.model), Color::Black);
 } by {
     step(__rb_insert_augmented, { tree: tree });
-    execute(); simp();
+    execute(); solve();
 }

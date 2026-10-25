@@ -21,13 +21,13 @@ verifying "mutex_use_rejects_view.c";
 
 void inner(struct holder *holder) {
     views mutex_use(&holder->mu);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void keep(struct holder *holder) {
     views mutex_use(&holder->mu);
 } by {
     step(inner, {});
     step();
-    simp();
+    solve();
 }
 int32 run(struct holder *holder) {
     owns holder->mu;
@@ -38,7 +38,7 @@ int32 run(struct holder *holder) {
     step(keep, {});
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

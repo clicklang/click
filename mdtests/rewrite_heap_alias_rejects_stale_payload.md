@@ -28,22 +28,22 @@ void put(struct holder* h, struct child* p) {
     owns uninitialized(h->target);
     ensures h->target == p;
     ensures defined(h->target);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void change(struct child* p) {
     owns uninitialized(p->refs);
     owns p->payload;
     ensures p->payload == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 run(int32 value) {
     ensures result == -1 or result == value;
 } by {
     step(); step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     step(); step();
-    branch { step(); step(); simp(); } else {}
+    branch { step(); step(); solve(); } else {}
     step(); step(); step();
-    have h->target->payload == value by { rewrite(h->target == p); simp(); }
-    execute(); simp();
+    have h->target->payload == value by { rewrite(h->target == p); solve(); }
+    execute(); solve();
 }
 ```
 

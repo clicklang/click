@@ -33,7 +33,7 @@ int32 probe(struct Pair* p, int32 n) {
         preserve by {
             step();
             step();
-            close_invariants() by simp();
+            close_invariants() by solve();
         }
     }
 }

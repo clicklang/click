@@ -31,15 +31,15 @@ int32 spent_count() {
 } by {
     step();
     step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     step();
     fold(authority(reference(obj)));
     fold(control(obj));
     unfold(control(obj));
     unfold(authority(reference(obj)));
-    have count(reference(obj)) == 0 by simp();
+    have count(reference(obj)) == 0 by solve();
     step();
-    have count(reference(obj)) == 0 by simp();
+    have count(reference(obj)) == 0 by solve();
 }
 ```
 

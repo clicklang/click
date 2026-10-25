@@ -19,9 +19,9 @@ theorem unsound(callback: int32 (*)(int32*, int32))
     ensures NeverChanges(callback) by {
         unfold(Cell(cell)); step(Raw);
         if result == 0 {
-            fold(Cell(cell)); assumption(); simp();
+            fold(Cell(cell)); assumption(); solve();
         } else {
-            fold(Cell(cell)); assumption(); simp();
+            fold(Cell(cell)); assumption(); solve();
         }
     }
 }

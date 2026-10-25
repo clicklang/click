@@ -24,12 +24,12 @@ int read(int* p) {
     execute();
     if (result > 0) {
         match old(c.model) {
-            Tri::Zero => { simp(); },
-            Tri::One => { simp(); },
+            Tri::Zero => { solve(); },
+            Tri::One => { solve(); },
             Tri::Other(value) => { have old(c.model) == Tri::Zero; },
         }
     } else {
-        simp();
+        solve();
     }
 }
 ```

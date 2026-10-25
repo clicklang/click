@@ -24,7 +24,7 @@ int32 aligned_explicit_arithmetic(uint8* p) {
             conclusion 0;
         }
     }
-    simp();
+    solve();
 }
 ```
 

@@ -16,7 +16,7 @@ verifying "unwritten_initializer.c";
 void init(int32* p) {
     consumes uninitialized(p[0..1]);
     produces p[0..1];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

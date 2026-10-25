@@ -32,18 +32,18 @@ int32 drain(int32 n, int32 m) {
         decreases level(n);
         invariant 0 <= n;
         invariant 0 <= m;
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             have 0 <= to_integer(m - 1) by auto();
             have 0 <= level(n) by {
                 unfold(level(n));
             }
             step();
-            close_invariants() by { simp(); }
+            close_invariants() by { solve(); }
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

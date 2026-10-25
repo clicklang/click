@@ -29,7 +29,7 @@ void split(int32* b) {
     views b[0..1];
     owns g[0..1];
     ensures g[0] == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 void caller(int32 a[], int32 n) {
     requires 0 < n;
@@ -37,7 +37,7 @@ void caller(int32 a[], int32 n) {
     views a[0..1];
     owns g[0..4];
     ensures a[0] == 5;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

@@ -42,7 +42,7 @@ void join(int32* p, int32* lp, int32* rp, int32* q, int32 value) {
 } by {
     execute();
     let root = fold(tree(p), { model: Tree::Branch(value, lp, l.model, rp, right.model) });
-    simp();
+    solve();
 }
 ```
 

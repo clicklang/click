@@ -46,7 +46,7 @@ void keep(struct buffer* buffer) {
             let suffix = fold(suffix_after_prefix(buffer), {
                 tag: SuffixTag::Available(start)
             });
-            simp();
+            solve();
         },
     }
 }

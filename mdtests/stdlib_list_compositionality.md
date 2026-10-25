@@ -7,14 +7,14 @@ theorem rewrite_append_in_contains(head: int32, tail: List<int32>, ys: List<int3
         apply(list::append_cons(head, tail, ys));
         rewrite(list::append(List<int32>::Cons(head, tail), ys)
             == List<int32>::Cons(head, list::append(tail, ys)));
-        simp();
+        solve();
     }
 }
 
 theorem nested_membership(xs: List<List<int32>>, value: List<int32>) {
     ensures list::contains(List<List<int32>>::Cons(value, xs), value) by {
         apply(list::contains_cons(value, xs, value));
-        simp();
+        solve();
     }
 }
 
@@ -59,7 +59,7 @@ theorem known_distinct(xs: List<List<int32>>, value: int32) {
     ensures list::contains(List<List<int32>>::Cons(List<int32>::Cons(value, List<int32>::Nil), xs), List<int32>::Nil)
         == list::contains(xs, List<int32>::Nil) by {
         apply(list::contains_cons(List<int32>::Cons(value, List<int32>::Nil), xs, List<int32>::Nil));
-        simp();
+        solve();
     }
 }
 

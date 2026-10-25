@@ -14,7 +14,7 @@ int32 invoke(int32 (*callback)(int32), int32 (*other)(int32), int32 x) {
     requires First(callback);
     requires Second(other);
     ensures result == x;
-} by { step(Second); execute(); simp(); }
+} by { step(Second); execute(); solve(); }
 ```
 
 ```expect

@@ -27,7 +27,7 @@ uint64_t read_value(void) { return 7ULL; }
 
 ```click
 verifying "read.c";
-uint64_t read_value() { ensures result == 7u64; } by { execute(); simp(); }
+uint64_t read_value() { ensures result == 7u64; } by { execute(); solve(); }
 ```
 
 ```expect

@@ -21,7 +21,7 @@ int32* allocate_int32s(int32 count) {
 } by {
     execute();
     fold(maybe_allocated_int32s(result, count));
-    simp();
+    solve();
 }
 
 int32 free_int32s(int32 data[], int32 count) {

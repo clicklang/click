@@ -45,7 +45,7 @@ let k: int32 where k == x;
 ensures result_matches_witness: result == k by {
     execute();
     witness { k: x };
-    simp();
+    solve();
 }
 ```
 
@@ -185,7 +185,7 @@ The `by` clause says how a guarantee is proved:
 <!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
 ensures result == 0 by auto();
-ensures result == x by { execute(); simp(); }
+ensures result == x by { execute(); solve(); }
 ```
 
 `auto` runs the function itself. A tactic script such as `simp()` works on

@@ -33,7 +33,7 @@ void probe(struct node *p, struct node *q, struct node *value) {
             have p->next == id->next;
             have id->next == value;
             let b = fold(alias(p), { model: Tag::At(id) });
-            execute(); simp();
+            execute(); solve();
         },
     }
 }

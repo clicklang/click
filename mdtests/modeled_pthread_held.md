@@ -29,7 +29,7 @@ int32 run(struct holder *holder) {
     step();
     have not held(&holder->mu);
     step();
-    simp();
+    solve();
 }
 ```
 

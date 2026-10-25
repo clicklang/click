@@ -41,7 +41,7 @@ int32 branch_count_to_one(int32 flag, int32 i) {
     }
     have at(count.exit, i) == 1;
     step();
-    simp();
+    solve();
 }
 ```
 

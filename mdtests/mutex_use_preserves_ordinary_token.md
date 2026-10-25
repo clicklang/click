@@ -73,7 +73,7 @@ void* increment_counter(void* argument) {
         access: access, guard: guard, state: restored
     });
     step();
-    simp();
+    solve();
 }
 ```
 

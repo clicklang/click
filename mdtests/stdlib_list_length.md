@@ -23,7 +23,7 @@ theorem singleton_length(value: int32) {
     ensures list::length(List<int32>::Cons(value, List<int32>::Nil)) == Nat::Succ(Nat::Zero) by {
         unfold(list::length(List<int32>::Cons(value, List<int32>::Nil)));
         unfold(list::length(List<int32>::Nil));
-        simp();
+        solve();
     }
 }
 ```

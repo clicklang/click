@@ -31,7 +31,7 @@ theorem append_right_identity<T>(xs: TestList<T>) {
         induct(xs) as ih {
             TestList::Nil => {
                 unfold(append(TestList<T>::Nil, TestList<T>::Nil));
-                simp();
+                solve();
             }
             TestList::Cons(head, tail) => {
                 apply(ih(tail));
@@ -44,7 +44,7 @@ theorem append_right_identity<T>(xs: TestList<T>) {
 }
 
 theorem reflexive<T>(value: T) {
-    ensures value == value by simp();
+    ensures value == value by solve();
 }
 
 theorem reflexive_via_generic<T>(value: T) {

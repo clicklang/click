@@ -10,7 +10,7 @@ verifying "wildcard_consume_wrong_member.c";
 void release(int32* pool, int32* member) {
     owns authority(slot(pool, _));
     consumes slot(pool, member);
-} by { unfold(slot(pool, pool)); execute(); simp(); }
+} by { unfold(slot(pool, pool)); execute(); solve(); }
 ```
 
 ```expect

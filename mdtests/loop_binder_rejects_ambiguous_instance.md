@@ -35,14 +35,14 @@ int32 spin(int32 n) {
         invariant i >= 0;
         invariant i <= n;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             step();
             close_invariants();
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

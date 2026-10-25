@@ -57,7 +57,7 @@ verifying "first.c" as first;
 verifying "second.c" as second;
 int32 first::helper() {
     ensures result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 `first::helper` selects `helper` from `first.c`; calls in that translation unit

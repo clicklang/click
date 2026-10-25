@@ -12,7 +12,7 @@ verifying "increment_overflow.c";
 int32 f(int32 x) {
     requires x == 2147483646;
     ensures result == x;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

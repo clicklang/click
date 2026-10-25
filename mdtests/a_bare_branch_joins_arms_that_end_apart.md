@@ -38,7 +38,7 @@ int32 note(int32 x) {
     } else {
     }
     step();
-    simp();
+    solve();
 }
 ```
 

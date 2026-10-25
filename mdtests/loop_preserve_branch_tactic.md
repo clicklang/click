@@ -105,7 +105,7 @@ int32 loop_branch_body(int32 n) {
         invariant t >= 0;
         invariant t <= 100;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             branch ensuring {
                 fact t >= 0;
@@ -116,7 +116,7 @@ int32 loop_branch_body(int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 
 void chain_countdown(int32 n) {
@@ -129,7 +129,7 @@ void chain_countdown(int32 n) {
         decreases c;
         invariant n >= 0;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },
@@ -144,7 +144,7 @@ void chain_countdown(int32 n) {
     have n == 0;
     unfold(c);
     step();
-    simp();
+    solve();
 }
 
 void chain_countdown_decided(int32 n) {
@@ -157,7 +157,7 @@ void chain_countdown_decided(int32 n) {
         decreases c;
         invariant n >= 0;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },
@@ -185,7 +185,7 @@ void chain_countdown_decided(int32 n) {
     have n == 0;
     unfold(c);
     step();
-    simp();
+    solve();
 }
 ```
 

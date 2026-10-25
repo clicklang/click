@@ -12,10 +12,10 @@ verifying "identity.c";
 int32 identity(int32 x) { ensures result == x; } by {
     if x == 0 {
         execute_until(region(0));
-        execute(); simp();
+        execute(); solve();
     } else {
         execute_until(region(0));
-        execute(); simp();
+        execute(); solve();
     }
 }
 ```

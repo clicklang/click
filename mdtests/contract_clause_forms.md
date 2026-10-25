@@ -55,7 +55,7 @@ int32 copy_first(int32 p[]) {
 int32 clear(int32 x) {
     requires x == 0;
     ensures result == 0 by auto();
-    ensures result == x by { execute(); simp(); }
+    ensures result == x by { execute(); solve(); }
 }
 ```
 

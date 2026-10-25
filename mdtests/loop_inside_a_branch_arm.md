@@ -39,7 +39,7 @@ int32 count_up(int32 n) {
         }
     } else {}
     step();
-    simp();
+    solve();
 }
 ```
 

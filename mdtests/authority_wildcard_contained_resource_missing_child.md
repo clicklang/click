@@ -12,7 +12,7 @@ void issue(int32* pool, int32* p) {
     owns authority(slot(pool, _));
     requires defined(count(slot(pool, _)) + 1);
     produces slot(pool, p);
-} by { fold(slot(pool, p)); execute(); simp(); }
+} by { fold(slot(pool, p)); execute(); solve(); }
 ```
 
 ```expect

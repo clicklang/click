@@ -2,13 +2,13 @@
 
 ```click
 theorem reflexive(n: Integer) {
-    ensures n == n by simp();
+    ensures n == n by solve();
 }
 
 theorem undefined_argument(a: int32) {
     ensures 0 == 0 by {
         apply(reflexive(to_integer(a + 1)));
-        simp();
+        solve();
     }
 }
 ```

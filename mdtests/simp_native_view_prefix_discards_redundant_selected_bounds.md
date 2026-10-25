@@ -48,8 +48,8 @@ void prefix(const uint8* p, uint64 held) {
  views p[0u64..held];
  ensures viewable(p[0u64..1u64]);
 } by {
- have viewable(p[0u64..held]) by simp();
- have viewable(p[0u64..1u64]) by simp();
+ have viewable(p[0u64..held]) by solve();
+ have viewable(p[0u64..1u64]) by solve();
  execute(); assumption();
 }
 ```

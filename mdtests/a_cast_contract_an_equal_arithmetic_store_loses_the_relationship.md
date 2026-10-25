@@ -16,7 +16,7 @@ int32 read_packed(unsigned long* slot, struct node* p) {
     requires ((struct node*)(*slot & ~1)) == p;
     owns *slot;
     views p->value;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

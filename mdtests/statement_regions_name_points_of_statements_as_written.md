@@ -31,12 +31,12 @@ int32 probe(int32 x) {
     ensures result == x + 3;
 } by {
     step(); step(); step(); step(); step();
-    have at(statement(0).exit, y) == x + 1 by simp();
-    have at(statement(1).entry, y) == x + 1 by simp();
-    have at(statement(1).call(f, 1).entry, y) == x + 1 by simp();
-    have at(statement(1).region(1).entry, y) == x + 1 by simp();
-    have at(statement(1).exit, y) == x + 3 by simp();
-    simp();
+    have at(statement(0).exit, y) == x + 1 by solve();
+    have at(statement(1).entry, y) == x + 1 by solve();
+    have at(statement(1).call(f, 1).entry, y) == x + 1 by solve();
+    have at(statement(1).region(1).entry, y) == x + 1 by solve();
+    have at(statement(1).exit, y) == x + 3 by solve();
+    solve();
 }
 ```
 

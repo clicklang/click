@@ -37,7 +37,7 @@ uint8 fill_byte_tail(uint8 p[], int32 n) {
         invariant first_byte(p) == old(first_byte(p));
     }
     step();
-    simp();
+    solve();
 }
 ```
 

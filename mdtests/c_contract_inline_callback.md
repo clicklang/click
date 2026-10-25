@@ -13,7 +13,7 @@ verifying "inline_callback.c";
 contract void Quiet() { ensures 1 == 1; }
 void quiet() { ensures 1 == 1; } by { execute(); normalize(); }
 theorem quiet_contract() {
-    ensures Quiet(&quiet) by { unfold(Quiet); simp(); }
+    ensures Quiet(&quiet) by { unfold(Quiet); solve(); }
 }
 theorem quiet_by_execution() executes quiet() {
     ensures Quiet(&quiet) by { execute(); normalize(); }

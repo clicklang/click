@@ -17,7 +17,7 @@ resource counter_state(counter: struct counter*) {
 verifying "mutex_use_resource_type_read.c";
 uint32 read_counter(struct counter *counter) {
     owns access: mutex_use(&counter->mu, counter_state(counter));
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

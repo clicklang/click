@@ -20,7 +20,7 @@ void window(const uint8* p, uint64 held, uint64 start, uint64 requested) {
  ensures viewable((p + start)[0u64..requested]);
 } by {
  step_until(function.exit);
- simp() using { viewable(p[0u64..held]); start <= 9223372036854775807u64; start <= held; to_integer(requested) <= to_integer(held - start); requested <= 9223372036854775807u64; };
+ solve() using { viewable(p[0u64..held]); start <= 9223372036854775807u64; start <= held; to_integer(requested) <= to_integer(held - start); requested <= 9223372036854775807u64; };
 }
 ```
 

@@ -43,7 +43,7 @@ int32* same(int32* p) {
     unfold(allocated(p));
     execute();
     fold(allocated(result));
-    simp();
+    solve();
 }
 
 int32 twice(int32* p, int32 flag) {
@@ -64,7 +64,7 @@ int32 twice(int32* p, int32 flag) {
     step();
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

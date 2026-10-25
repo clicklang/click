@@ -49,7 +49,7 @@ int32 service_step(struct service* owner) {
         have owner->cell == old(owner->cell) by auto();
     }
     step();
-    have owner->cell[0] == owner->phase by simp();
+    have owner->cell[0] == owner->phase by solve();
 }
 ```
 

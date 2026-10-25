@@ -22,7 +22,7 @@ int32 positive_branch(int32 flag) {
     ensures result == 1 by {
         step();
         step();
-        simp();
+        solve();
     }
 }
 ```

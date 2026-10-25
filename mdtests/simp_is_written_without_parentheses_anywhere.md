@@ -7,11 +7,11 @@
 theorem bare_simp_steps(x: int32) {
     requires 0 <= x;
     ensures 0 <= x by {
-        simp();
+        solve();
     }
     ensures 0 <= x by {
-        have 0 <= x by { simp() using { 0 <= x; }; }
-        simp();
+        have 0 <= x by { solve() using { 0 <= x; }; }
+        solve();
     }
 }
 ```

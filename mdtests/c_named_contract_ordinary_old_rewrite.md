@@ -19,9 +19,9 @@ theorem lift(callback: void (*)(int32*)) {
         have cells[0] == old(cells[1]) implies cells[0] >= old(cells[1]) by {
             intro();
             rewrite(cells[0] == old(cells[1]));
-            simp();
+            solve();
         }
-        simp();
+        solve();
     }
 }
 ```

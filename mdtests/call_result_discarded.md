@@ -35,14 +35,14 @@ int classify(int x) {
             unfold(classified(x));
             normalize() using { x == 0; };
         }
-        simp();
+        solve();
     } else {}
     step();
     have result == classified(x) by {
         unfold(classified(x));
         normalize() using { not(x == 0); };
     }
-    simp();
+    solve();
 }
 
 int ignore_class(int x) {

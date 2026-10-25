@@ -15,7 +15,7 @@ theorem one_plus_one() {
         == Nat::Succ(Nat::Succ(Nat::Zero)) by {
         unfold(nat::add(Nat::Succ(Nat::Zero), Nat::Succ(Nat::Zero)));
         unfold(nat::add(Nat::Zero, Nat::Succ(Nat::Zero)));
-        simp();
+        solve();
     }
 }
 ```

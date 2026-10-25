@@ -14,7 +14,7 @@ verifying "an_int8_parameter_claimed_above_its_lower_bound_at_entry_is_refused.c
 
 int32 ignore_i8(int8 x) {
     ensures x >= -127;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

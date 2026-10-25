@@ -18,7 +18,7 @@ contract void Target(int32 x) {
 }
 theorem lift(callback: void (*)(int32)) executes callback(int32 value) {
     requires Raw(callback);
-    ensures Target(callback) as { permit: model } by { step(Raw, { permit: model }); simp(); }
+    ensures Target(callback) as { permit: model } by { step(Raw, { permit: model }); solve(); }
 }
 ```
 

@@ -37,7 +37,7 @@ int32 walk(int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

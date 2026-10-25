@@ -17,7 +17,7 @@ void make(int32 x, int32 y) {
     requires x > 0;
     produces either(x, y);
 } by {
-    fold(either(x, y)) by { simp(); }
+    fold(either(x, y)) by { solve(); }
 }
 ```
 

@@ -11,7 +11,7 @@ theorem original_goal(x: int32) {
         obtain (k: int32) { k > x }
         instantiate(forall (j: int32) { j > x implies j > 1000 }, k)
             using { k > x; };
-        simp();
+        solve();
     }
 }
 ```

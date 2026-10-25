@@ -21,10 +21,10 @@ int32 f(int32 n) {
 } by {
     step_until(function.exit);
     if n < 5 {
-        simp();
+        solve();
         auto();
     } else {
-        simp();
+        solve();
         auto();
     }
 }

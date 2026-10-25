@@ -57,13 +57,13 @@ void touch(struct tree_node* node) {
     ensures t.model == old(t.model);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 theorem touch_preserves() executes touch(struct tree_node* node) {
     ensures Preserve(&touch) as { root: r } by {
         step(touch, { t: r });
-        simp();
+        solve();
     }
 }
 
@@ -72,7 +72,7 @@ int accept(void (*callback)(struct tree_node*)) {
     ensures result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int caller() {
@@ -80,7 +80,7 @@ int caller() {
 } by {
     apply(touch_preserves());
     execute();
-    simp();
+    solve();
 }
 ```
 

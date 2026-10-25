@@ -9,7 +9,7 @@ resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "wildcard_private_wrong_cell.c";
 void update(int32* pool, int32* p) {
     owns slot(pool, p);
-} by { open(slot(pool, p)) { step(); } execute(); simp(); }
+} by { open(slot(pool, p)) { step(); } execute(); solve(); }
 ```
 
 ```expect

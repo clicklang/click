@@ -77,13 +77,13 @@ void overwrite(struct node* p) {
             unfold(s);
             execute();
             let s = fold(slot_at(p), { model: Slot::Empty });
-            simp();
+            solve();
         },
         Slot::Full(v) => {
             let { rest: r } = unfold(s);
             execute();
             let s = fold(slot_at(p), { model: Slot::Full(v) }, { rest: r });
-            simp();
+            solve();
         },
     }
 }

@@ -50,18 +50,18 @@ int32 run(struct cell *task) {
     step();
     branch {
         step();
-        simp();
+        solve();
     } else {}
     step();
     branch {
         step();
         step();
-        simp();
+        solve();
     } else {}
     step();
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -19,7 +19,7 @@ resource control(obj: struct object*) {
 verifying "reopen.c";
 void inspect(struct object* obj) {
     owns control(obj);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void restored(struct object* obj, struct object* alias) {
     owns control(obj);
     requires alias == obj;
@@ -29,7 +29,7 @@ void restored(struct object* obj, struct object* alias) {
         step();
         execute();
     }
-    simp();
+    solve();
 }
 ```
 

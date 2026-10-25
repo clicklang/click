@@ -17,7 +17,7 @@ int32* probe(struct Holder* h, int32* q) {
     views q[0..3];
     requires address(h->link) == address(q);
     ensures true;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

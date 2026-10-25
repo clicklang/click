@@ -29,10 +29,10 @@ struct node* list_prepend(int32 value, struct node* tail) {
 } by {
     execute();
     if result == tail {
-        simp();
+        solve();
     } else {
         fold(allocated_list(result));
-        simp();
+        solve();
     }
 }
 
@@ -62,11 +62,11 @@ void list_destroy(struct node* node) {
     if node == 0 {
         unfold(allocated_list(node));
         execute();
-        simp();
+        solve();
     } else {
         unfold(allocated_list(node));
         execute();
-        simp();
+        solve();
     }
 }
 

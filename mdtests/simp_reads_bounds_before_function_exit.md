@@ -47,12 +47,12 @@ int32 in_arm(int32 x) {
     ensures result >= 0 by {
         branch {
             step();
-            simp();
+            solve();
         } else {
             have to_integer(x + 1) >= 1;
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

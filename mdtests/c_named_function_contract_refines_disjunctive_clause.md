@@ -37,7 +37,7 @@ void increment(int32* state) {
 theorem increment_is_stable() {
     ensures Stable(&increment) by {
         unfold(Stable);
-        simp();
+        solve();
     }
 }
 

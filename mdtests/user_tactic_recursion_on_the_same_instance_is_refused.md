@@ -94,7 +94,7 @@ void user(struct node* p) {
     let { y: b } = convert(p, { x: a });
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

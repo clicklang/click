@@ -21,11 +21,11 @@ int32 run() { ensures result == 0; } by {
     let first = fold(ticket(&pool), { serial: 1 });
     fold(control(&pool));
     step(preserve, { member: first });
-    have first.serial == 1 by simp();
-    have count(ticket(&pool)) == 1 by simp();
+    have first.serial == 1 by solve();
+    have count(ticket(&pool)) == 1 by solve();
     unfold(first);
     unfold(authority(ticket(&pool)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

@@ -69,7 +69,7 @@ int32 f(int32 x, int32 a0, int32 b0, int32 a1, int32 b1, int32 a2, int32 b2, int
             have x <= 1003;
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

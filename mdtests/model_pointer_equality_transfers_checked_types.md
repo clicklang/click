@@ -25,9 +25,9 @@ void keep(struct node* p) {
         Ref::At(identity) => {
             unfold(held);
             have p == identity by assumption();
-            have Ref::At(p) == Ref::At(identity) by { simp(); }
+            have Ref::At(p) == Ref::At(identity) by { solve(); }
             let held = fold(token(p), { model: Ref::At(identity) });
-            execute(); simp();
+            execute(); solve();
         },
     }
 }

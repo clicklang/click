@@ -52,7 +52,7 @@ void* worker(void* argument) {
     let restored = fold(counter_state(counter), { value: counter->value });
     step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
-    simp();
+    solve();
 }
 uint32 run(struct counter* counter) {
     owns counter->mu;
@@ -66,14 +66,14 @@ uint32 run(struct counter* counter) {
     branch {
         step(pthread_mutex_destroy, { lifetime: lifetime });
         step();
-        simp();
+        solve();
     } else {}
     step();
     step();
     step();
     step(pthread_mutex_destroy, { lifetime: lifetime });
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -17,12 +17,12 @@ verifying "a_refused_wide_range_names_its_bound_field.c";
 int32 first(int32* data, uint64 len) {
     requires 0u64 < len;
     views data[0..len];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 f(struct buf* s) {
     views s->len;
     views s->data;
     requires 0u64 < s->len;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

@@ -20,7 +20,7 @@ int32 checked_index(int32 i, int32 n) {
     ensures in_range: 0 <= i and i < n and result == i by {
         step_until(function.exit);
         have 0 <= i and i < n and result == i by {
-            simp() using {
+            solve() using {
                 i >= 0;
                 i < n;
             };

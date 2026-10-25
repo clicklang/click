@@ -30,11 +30,11 @@ void twice(struct cell* p) {
     ensures c.value == 2;
 } by {
     step(increment, { c: c });
-    have c.value == 1 by { simp(); }
+    have c.value == 1 by { solve(); }
     have c.value <= 2147483646 by { rewrite(c.value == 1); normalize(); }
     step(increment, { c: c });
     step();
-    simp();
+    solve();
 }
 ```
 

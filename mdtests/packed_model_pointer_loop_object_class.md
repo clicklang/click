@@ -30,14 +30,14 @@ void follow_model(struct model_node* p, int32 more) {
         decreases more;
         invariant p == old(p);
         invariant 0 <= more;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match held.model { PackedLink::At(q) => {
             let { word: saved_word } = unfold(held);
             have p->parent_word == address(q) by { assumption(); }
             step(); step();
             let held = fold(model_link(old(p)), { word: saved_word, model: PackedLink::At(q) });
-            close_invariants() by simp();
+            close_invariants() by solve();
             } }
         }
     }

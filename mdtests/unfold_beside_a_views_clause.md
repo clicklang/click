@@ -35,7 +35,7 @@ int32 get(struct pool* p, int32* q) {
     let { live: n } = unfold(st);
     step_until(function.exit);
     let st = fold(pool_state(p), { live: n });
-    simp();
+    solve();
 }
 ```
 

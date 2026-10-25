@@ -32,7 +32,7 @@ theorem adds_three_shifts_two(f: int32 (*)(int32)) {
     ensures Shifts(f, { offset: 2 }) by {
         unfold(Adds);
         unfold(Shifts);
-        simp();
+        solve();
     }
 }
 ```

@@ -41,7 +41,7 @@ void loop_views_clause_writes_nothing(int32 p[], int32 n) {
         invariant i >= 0 and i <= n;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

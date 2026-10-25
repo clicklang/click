@@ -87,7 +87,7 @@ void clear(struct cell* c) {
             }
             execute();
             let u = fold(cell_at(c), { model: Owned::Held(c, 0) });
-            simp();
+            solve();
         },
     }
 }
@@ -103,7 +103,7 @@ int32 peek(struct cell* c) {
             unfold(t);
             execute();
             let t = fold(cell_at(c), { model: old(t.model) });
-            simp();
+            solve();
         },
     }
 }

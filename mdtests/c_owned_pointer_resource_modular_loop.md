@@ -77,7 +77,7 @@ int32 service_step(struct service* owner) {
     fold(service(owner));
     observe(service(owner));
     step();
-    simp();
+    solve();
 }
 
 int32 service_run(struct service* owner) diverges {
@@ -87,13 +87,13 @@ int32 service_run(struct service* owner) diverges {
     loop diverges {
         invariant 0 <= owner->phase;
         invariant owner->phase <= 1;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             step();
             close_invariants();
         }
     }
-    simp();
+    solve();
 }
 ```
 

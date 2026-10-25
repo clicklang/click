@@ -18,12 +18,12 @@ int32 local_prefix(int32 i) {
             have i <= 0 by auto();
             have i == 0;
             execute();
-            simp();
+            solve();
         } else {
             have i <= 1 by auto();
             have i == 1;
             execute();
-            simp();
+            solve();
         }
     }
 }

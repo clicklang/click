@@ -46,7 +46,7 @@ uint32 contribute_early(struct counter* p) {
         step();
     }
     open(control(p)) { step(); }
-    simp();
+    solve();
 }
 uint32 overconsume(struct counter* p) {
     owns control(p);
@@ -73,7 +73,7 @@ uint32 overconsume(struct counter* p) {
     }
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

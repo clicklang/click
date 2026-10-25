@@ -34,7 +34,7 @@ void pool_grow(struct pool* pool, int32 amount) {
 } by {
     step();
     fold(amount of pool_slot(pool));
-    execute(); simp();
+    execute(); solve();
 }
 void caller(struct pool* pool, int32 amount) {
     owns *pool;

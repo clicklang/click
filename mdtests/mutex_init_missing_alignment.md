@@ -19,7 +19,7 @@ verifying "mutex_init_missing_alignment.c";
 int32 run(struct holder *holder) {
     owns holder->mu;
     ensures result == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

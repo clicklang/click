@@ -41,11 +41,11 @@ int32 run(int32 value) {
     ensures result == -1 or result == value;
 } by {
     step(); step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     step(); step();
-    branch { step(); step(); simp(); } else {}
+    branch { step(); step(); solve(); } else {}
     step(); step(); step();
-    have h->target->payload == value by { rewrite(h->target == p); simp(); }
+    have h->target->payload == value by { rewrite(h->target == p); solve(); }
 }
 ```
 

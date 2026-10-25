@@ -14,7 +14,7 @@ int32 run() { ensures result == 0; } by {
     let first = fold(ticket(&pool), { serial: 1 });
     fold(control(&pool));
     unfold(first);
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

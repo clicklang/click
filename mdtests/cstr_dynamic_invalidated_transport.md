@@ -39,7 +39,7 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
                 both {
                     both {
                         both {
-                            simp();
+                            solve();
                         } and {
                             transport(
                                 at(function.entry, viewable(bytes[0..known_len + 1u64])),
@@ -49,13 +49,13 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
                             };
                         }
                     } and {
-                        simp();
+                        solve();
                     }
                 } and {
-                    simp();
+                    solve();
                 }
             } and {
-                simp();
+                solve();
             }
         }
     }

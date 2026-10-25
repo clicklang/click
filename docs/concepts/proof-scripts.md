@@ -42,7 +42,7 @@ sequence explicit:
 ```click
 ensures result == x by {
     execute();
-    simp();
+    solve();
 }
 ```
 
@@ -78,7 +78,7 @@ use `using` to mark that boundary:
 
 <!-- verified-example: mdtests/proof_script_execute_and_simp_using.md -->
 ```click
-simp() using {
+solve() using {
     i >= 0;
     i < n;
 };

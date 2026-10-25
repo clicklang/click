@@ -30,7 +30,7 @@ void outer(struct holder *left, struct holder *right) {
     step(inner, {});
     step(inner, {});
     step();
-    simp();
+    solve();
 }
 ```
 

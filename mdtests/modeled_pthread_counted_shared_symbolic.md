@@ -44,7 +44,7 @@ int32 run(void* p, void* q, int32 n) {
         have to_integer(count(ticket(p))) == to_integer(n);
         unfold(ticket(p));
         unfold(ticket(p));
-        step(); simp();
+        step(); solve();
     } else {}
     step();
     branch {
@@ -52,7 +52,7 @@ int32 run(void* p, void* q, int32 n) {
         unfold(ticket(p));
         unfold(ticket(p));
         have to_integer(count(ticket(q))) == 1;
-        step(); simp();
+        step(); solve();
     } else {}
     step();
     unfold(ticket(p));
@@ -61,7 +61,7 @@ int32 run(void* p, void* q, int32 n) {
     unfold(ticket(p));
     have to_integer(count(ticket(p))) == to_integer(n - 2);
     have to_integer(count(ticket(q))) == 1;
-    step(); simp();
+    step(); solve();
 }
 ```
 

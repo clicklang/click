@@ -58,7 +58,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
             }, { metadata: metadata, left: left, right: right });
             unfold(sized_reparent(SizedTree::Node(identity, before, shade, value, left_model, right_model), p));
             unfold(sized_recolor(SizedTree::Node(identity, p, shade, value, left_model, right_model), Color::Black));
-            execute(); simp();
+            execute(); solve();
         },
     }
 }

@@ -63,7 +63,7 @@ int32 write_one(struct buffer* buffer) {
                 tag: PrefixTag::End(end)
             });
             step();
-            simp();
+            solve();
         },
     }
 }

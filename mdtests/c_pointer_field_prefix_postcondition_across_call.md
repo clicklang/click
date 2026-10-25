@@ -55,10 +55,10 @@ int32 vector_push(struct vector* owner, int32 value) {
     step();
     step();
     have owner->data == old(owner->data) by {
-        simp();
+        solve();
     }
     have owner->data[old(owner->len)] == value by {
-        simp();
+        solve();
     }
     fold(vector_storage(owner));
     have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
@@ -86,7 +86,7 @@ int32 caller(struct vector* owner, int32 value) {
     requires owner->len < owner->cap;
     owns vector_storage(owner);
     ensures forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) };
-} by { execute(); assumption(); simp(); }
+} by { execute(); assumption(); solve(); }
 ```
 
 ```expect

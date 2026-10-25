@@ -38,7 +38,7 @@ int32 h(int32* a, int32* b) {
     unfold(wrap(a));
     execute();
     fold(wrap(a));
-    simp();
+    solve();
 }
 int32 caller(int32* p) {
     owns wrap(p);

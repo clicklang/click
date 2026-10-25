@@ -22,21 +22,21 @@ authorized resource ticket(pool: int32*, tag: int32) {
 verifying "private_members.c";
 int32 run() { ensures result == 0 or result == 3; } by {
     step(); step(); step(); step();
-    branch { execute(); simp(); } else {}
+    branch { execute(); solve(); } else {}
     step(); step();
     fold(authority(ticket(&pool, _)));
     let first = fold(ticket(&pool, 7), { cell: p, serial: 1 });
     let second = fold(ticket(&pool, 7), { cell: p, serial: 2 });
-    have count(ticket(&pool, _)) == 2 by simp();
-    have count(ticket(&pool, 7)) == 2 by simp();
-    have first.serial == 1 by simp();
-    have second.serial == 2 by simp();
+    have count(ticket(&pool, _)) == 2 by solve();
+    have count(ticket(&pool, 7)) == 2 by solve();
+    have first.serial == 1 by solve();
+    have second.serial == 2 by solve();
     unfold(first);
-    have count(ticket(&pool, _)) == 1 by simp();
-    have second.serial == 2 by simp();
+    have count(ticket(&pool, _)) == 1 by solve();
+    have second.serial == 2 by solve();
     unfold(second);
     unfold(authority(ticket(&pool, _)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

@@ -35,7 +35,7 @@ int32 count_down(int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -52,7 +52,7 @@ int32 read_cell(struct cell* node) {
             unfold(c);
             execute();
             let c = fold(cell(node), { model: Maybe::Some(value) });
-            simp();
+            solve();
         },
         Maybe::None => { contradiction(c.model == Maybe::None); },
     }

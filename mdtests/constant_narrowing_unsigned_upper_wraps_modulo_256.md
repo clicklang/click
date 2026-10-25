@@ -10,7 +10,7 @@ int f(void) { unsigned int x = 300; unsigned char y = x; return y; }
 
 ```click
 verifying "constant_narrowing_unsigned_upper_wraps_modulo_256.c";
-int32 f() { ensures result == 44; } by { execute(); simp(); }
+int32 f() { ensures result == 44; } by { execute(); solve(); }
 ```
 
 ```expect

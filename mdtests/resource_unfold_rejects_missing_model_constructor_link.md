@@ -31,14 +31,14 @@ void probe(int32* p) {
             unfold(child);
             let child = fold(inner(p), { model: Model::Empty });
             let box = fold(outer(p), { model: Model::Empty, context: Model::Empty }, { child: child });
-            execute(); simp();
+            execute(); solve();
         },
         Model::Full(value) => {
             let { child: child } = unfold(box);
             unfold(child);
             let child = fold(inner(p), { model: Model::Full(value) });
             let box = fold(outer(p), { model: Model::Full(value), context: Model::Full(value) }, { child: child });
-            execute(); simp();
+            execute(); solve();
         },
     }
 }

@@ -432,7 +432,7 @@ When an array parameter is passed to a pure Click function or predicate,
 ensures pair_permutation: permutation::permutation(p, old(p), 0, 2) by {
     execute();
     unfold(permutation::permutation);
-    simp();
+    solve();
 }
 ```
 

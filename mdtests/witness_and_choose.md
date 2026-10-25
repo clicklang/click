@@ -21,7 +21,7 @@ int32 witness_zero(int32 n) {
     ensures found_zero: (0..n).any(|k| { k == result }) by {
         execute();
         witness { k: 0 };
-        simp();
+        solve();
     }
 }
 
@@ -31,13 +31,13 @@ int32 choose_requirement(int32 x) {
         execute();
         obtain (k: int32) { k == x }
         witness { j: k };
-        simp();
+        solve();
     }
     ensures found_again_second: exists (j: int32) { j == x } by {
         execute();
         obtain (k: int32) { k == x }
         witness { j: k };
-        simp();
+        solve();
     }
 }
 ```

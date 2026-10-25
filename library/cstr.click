@@ -62,9 +62,9 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
                     }
                     not (right < left) => {
                         have left <= right by {
-                            simp();
+                            solve();
                         }
-                        simp();
+                        solve();
                     }
                 }
             }
@@ -104,7 +104,7 @@ theorem len_is_viewable(bytes: uint8[], len: uint64) {
 
     ensures viewable(bytes[0..len + 1u64]) by {
         unfold(cstr::len);
-        simp();
+        solve();
     }
 }
 
@@ -113,7 +113,7 @@ theorem len_has_prefix(bytes: uint8[], len: uint64) {
 
     ensures cstr::prefix(bytes, len) by {
         unfold(cstr::len);
-        simp();
+        solve();
     }
 }
 
@@ -122,6 +122,6 @@ theorem len_has_terminator(bytes: uint8[], len: uint64) {
 
     ensures bytes[len] == '\0' by {
         unfold(cstr::len);
-        simp();
+        solve();
     }
 }

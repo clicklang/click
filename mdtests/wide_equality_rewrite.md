@@ -5,14 +5,14 @@ theorem wide_rewrite(x: uint64, y: uint64) {
     requires x == y;
     ensures x + 3u64 == y + 3u64 by {
         rewrite(x == y);
-        simp();
+        solve();
     }
 }
 theorem wide_rewrite_reverse(x: uint64, y: uint64) {
     requires x == y;
     ensures y * 3u64 == x * 3u64 by {
         rewrite(y == x);
-        simp();
+        solve();
     }
 }
 ```

@@ -26,23 +26,23 @@ void bump(int32* pool, int32* p) {
     owns member: ticket(pool, p);
     ensures member.model == old(member.model);
     ensures p[0] == 7;
-} by { unfold(member); step(); fold(member); execute(); simp(); }
+} by { unfold(member); step(); fold(member); execute(); solve(); }
 int32 run() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { execute(); simp(); } else {}
+    branch { execute(); solve(); } else {}
     step(); step();
     fold(authority(ticket(&pool, _)));
     let first = fold(ticket(&pool, p), { model: 1 });
     let second = fold(ticket(&pool, p + 1), { model: List<int32>::Cons(2, List<int32>::Nil) });
     fold(control(&pool));
     step(bump, { member: first });
-    have first.model == List<int32>::Cons(1, List<int32>::Nil) by simp();
-    have second.model == List<int32>::Cons(2, List<int32>::Nil) by simp();
+    have first.model == List<int32>::Cons(1, List<int32>::Nil) by solve();
+    have second.model == List<int32>::Cons(2, List<int32>::Nil) by solve();
     unfold(control(&pool));
-    have count(ticket(&pool, _)) == 2 by simp();
+    have count(ticket(&pool, _)) == 2 by solve();
     unfold(first); unfold(second);
     unfold(authority(ticket(&pool, _)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

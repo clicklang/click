@@ -28,11 +28,11 @@ void* worker(void* argument) {
     owns authority(ticket(argument));
     owns ticket(argument);
     ensures count(ticket(argument)) >= 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void* consumer(void* argument) {
     owns authority(ticket(argument));
     consumes ticket(argument);
-} by { unfold(ticket(argument)); execute(); simp(); }
+} by { unfold(ticket(argument)); execute(); solve(); }
 int32 run(void* p, void* q) {
     owns authority(ticket(p));
     owns authority(ticket(q));
@@ -50,7 +50,7 @@ int32 run(void* p, void* q) {
         have count(ticket(p)) == 2;
         unfold(ticket(p));
         unfold(ticket(p));
-        step(); simp();
+        step(); solve();
     } else {}
     step();
     branch {
@@ -58,13 +58,13 @@ int32 run(void* p, void* q) {
         unfold(ticket(p));
         unfold(ticket(p));
         have count(ticket(q)) == 1;
-        step(); simp();
+        step(); solve();
     } else {}
     step();
     step();
     unfold(ticket(p));
     have count(ticket(p)) == 0;
-    step(); simp();
+    step(); solve();
 }
 ```
 

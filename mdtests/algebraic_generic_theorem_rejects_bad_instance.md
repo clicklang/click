@@ -5,7 +5,7 @@ concrete application can request it.
 
 ```click
 theorem invalid<T>(left: T, right: T) {
-    ensures left == right by simp();
+    ensures left == right by solve();
 }
 
 theorem expose(left: int32, right: int32) {

@@ -24,7 +24,7 @@ void split(struct box* p, int32* q) {
     let t = fold(cell(p->child), { model: Model::Empty });
     execute();
     let u = fold(cell(p->child), { model: Model::Empty });
-    simp();
+    solve();
 }
 int32* caller(struct box* p, int32* q) {
     consumes h: holder(p);
@@ -32,7 +32,7 @@ int32* caller(struct box* p, int32* q) {
     produces u: cell(p->child);
 } by {
     let { t: t, u: u } = step(split, { h: h });
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

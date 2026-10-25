@@ -26,9 +26,9 @@ uint64 drain(uint64 n) {
   decreases n;
   invariant n <= 15u64;
   initialize by { assumption(); }
-  preserve by { execute(); simp(); }
+  preserve by { execute(); solve(); }
  }
- execute(); simp();
+ execute(); solve();
 }
 ```
 

@@ -14,7 +14,7 @@ void make(int32 x) {
     requires x > 0;
     produces positive(x);
 } by {
-    fold(positive(x)) by { simp(); }
+    fold(positive(x)) by { solve(); }
 }
 ```
 

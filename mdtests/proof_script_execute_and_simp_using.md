@@ -23,7 +23,7 @@ verifying "checked_index.c";
 int32 identity_value(int32 x) {
     ensures result == x by {
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -32,7 +32,7 @@ int32 checked_index(int32 i, int32 n) {
     requires i < n;
     ensures in_range: 0 <= i and i < n and result == i by {
         execute();
-        simp() using {
+        solve() using {
             i >= 0;
             i < n;
         };

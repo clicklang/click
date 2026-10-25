@@ -27,7 +27,7 @@ void mint_pair(int32* o, int32 n, int32 m) {
     have count(tok(o)) == n;
     have defined(count(tok(o)) + m) by {
         rewrite(count(tok(o)) == n);
-        simp();
+        solve();
     }
     fold(m of tok(o));
 }

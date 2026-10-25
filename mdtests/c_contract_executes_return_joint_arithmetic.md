@@ -3,7 +3,7 @@
 ```click
 theorem zero_increment_defined(value: int32) {
     requires value == 0;
-    ensures defined(value + 1) by simp();
+    ensures defined(value + 1) by solve();
 }
 theorem zero_successor(value: int32, returned: int32) {
     requires returned == 0;
@@ -25,7 +25,7 @@ theorem lift(callback: int32 (*)(int32*)) executes callback(int32* cell) {
             extract(to_integer(cell[0]) == to_integer(result + 1)); assumption();
         }
         apply(zero_successor(cell[0], result));
-        fold(Cell(cell)); simp();
+        fold(Cell(cell)); solve();
     }
 }
 ```

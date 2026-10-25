@@ -34,7 +34,7 @@ int32 f(struct cell* root) {
     requires root->base.left != (struct base*)(void*)root;
     ensures result == old(child.number);
     ensures root->value == old(child.number);
-} by { unfold(child); step(); step(); step(); step(); step(); fold(child); step(); step(); simp(); }
+} by { unfold(child); step(); step(); step(); step(); step(); fold(child); step(); step(); solve(); }
 ```
 
 ```expect

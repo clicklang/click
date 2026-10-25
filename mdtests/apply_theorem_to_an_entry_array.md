@@ -23,7 +23,7 @@ theorem head_is_three_is_small(a: int32[]) {
     requires a[0] == 3;
 
     ensures a[0] < 4 by {
-        simp();
+        solve();
     }
 }
 

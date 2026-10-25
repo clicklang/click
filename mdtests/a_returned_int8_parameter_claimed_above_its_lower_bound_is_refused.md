@@ -14,7 +14,7 @@ verifying "a_returned_int8_parameter_claimed_above_its_lower_bound_is_refused.c"
 
 int32 widen_i8(int8 x) {
     ensures result >= -127;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

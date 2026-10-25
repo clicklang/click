@@ -20,11 +20,11 @@ int32 next(int32 x) {
 } by {
     step() by {
         cases {
-            x == 5 => { simp(); }
-            x == 7 => { simp(); }
+            x == 5 => { solve(); }
+            x == 7 => { solve(); }
         }
     }
-    simp();
+    solve();
 }
 
 uint32 shifted(uint32 x, int32 s) {
@@ -32,7 +32,7 @@ uint32 shifted(uint32 x, int32 s) {
     ensures result == result;
 } by {
     step();
-    simp();
+    solve();
 }
 ```
 

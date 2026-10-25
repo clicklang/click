@@ -24,7 +24,7 @@ int32 change(int32 p[]) {
     step();
     have p[0] == 0 by assumption();
     step();
-    simp();
+    solve();
 }
 ```
 

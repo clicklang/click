@@ -77,7 +77,7 @@ void spin(uint8* p, int32 n) {
         invariant i >= 0;
         invariant i <= n;
         decreases n - i;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             unfold(zt(p));
             step();

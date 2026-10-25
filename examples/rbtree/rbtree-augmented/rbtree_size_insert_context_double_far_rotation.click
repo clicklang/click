@@ -151,7 +151,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.phase == SizedInsertContextDoubleFarPhase::Before(g, p, above, pv, gv, far);
                 invariant old(state.phase) == SizedInsertContextDoubleFarPhase::Before(g, p, above, pv, gv, far);
                 invariant state.model == sized_context_double_far_before(g, p, node, above, pv, gv, far);
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     let { tree: loop_tree, link: link } = unfold(state);
                     unfold(sized_context_double_far_before(g, p, node, above, pv, gv, far));
@@ -265,7 +265,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(sized_parent_is(SizedTree::Empty, p)); normalize();
                     }
                     let demoted = fold(sized_recompute_at(p), { model: SizedTree::Node(p, node, Color::Red, pv, far, SizedTree::Empty) }, { metadata: p_size, left: p_left, right: p_right });
-                    have node->rb_right == 0 by { simp(); }
+                    have node->rb_right == 0 by { solve(); }
                     let other = fold(sized_at(node->rb_right), { model: SizedTree::Empty });
                     have sized_parent_is(SizedTree::Node(p, node, Color::Red, pv, far, SizedTree::Empty), node) == 1 by { unfold(sized_parent_is(SizedTree::Node(p, node, Color::Red, pv, far, SizedTree::Empty), node)); normalize(); }
                     have sized_parent_is(SizedTree::Empty, node) == 1 by { unfold(sized_parent_is(SizedTree::Empty, node)); normalize(); }
@@ -361,7 +361,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         at(before_parent_update, g->rb_left == 0);
                     };
                     let g_left = fold(sized_at(g->rb_left), { model: SizedTree::Empty });
-                    have g->rb_right == 0 by { simp(); }
+                    have g->rb_right == 0 by { solve(); }
                     let g_right = fold(sized_at(g->rb_right), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, node, Color::Red, gv, SizedTree::Empty, SizedTree::Empty)
@@ -369,14 +369,14 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     transport(at(before_parent_update, node->rb_left == p), node->rb_left == p) using {
                         at(before_parent_update, node->rb_left == p);
                     };
-                    have parent->rb_right == gparent by { simp(); }
+                    have parent->rb_right == gparent by { solve(); }
                     have node->rb_right == g by {
                         rewrite(node == parent);
                         rewrite(g == gparent);
                         assumption();
                     }
                     have parent == node by { assumption(); }
-                    have node->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { simp(); }
+                    have node->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { solve(); }
                     have node->__rb_parent_color == address(above) + (node->__rb_parent_color & 1) by {
                         rewrite(node->__rb_parent_color == at(before_parent_update, g->__rb_parent_color));
                         assumption();
@@ -484,11 +484,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have state.context == old(state.context) by { assumption(); }
                     have state.whole_model == sized_plug(old(state.context), state.model) by { assumption(); }
                     have state.phase == sized_context_double_far_finish(old(state.phase)) by {
-                        unfold(sized_context_double_far_finish(SizedInsertContextDoubleFarPhase::Before(g, p, above, pv, gv, far))); simp();
+                        unfold(sized_context_double_far_finish(SizedInsertContextDoubleFarPhase::Before(g, p, above, pv, gv, far))); solve();
                     }
                     have sized_shape(state.model) == sized_context_double_far_expected(old(state.phase), node) by {
                         rewrite(old(state.phase) == SizedInsertContextDoubleFarPhase::Before(g, p, above, pv, gv, far));
-                        unfold(sized_context_double_far_expected(SizedInsertContextDoubleFarPhase::Before(g, p, above, pv, gv, far), node)); simp();
+                        unfold(sized_context_double_far_expected(SizedInsertContextDoubleFarPhase::Before(g, p, above, pv, gv, far), node)); solve();
                     }
                     step();
 
@@ -496,7 +496,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 }
             }
             have node == old(node) by { assumption(); }
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -513,7 +513,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_context_double_far_expected(old(state.phase), node);
 } by {
     step(insert::__rb_insert, { state: state });
-    execute(); simp();
+    execute(); solve();
 }
 
 void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -529,5 +529,5 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_context_double_far_expected(old(state.phase), node);
 } by {
     step(insert::__rb_insert_augmented, { state: state });
-    execute(); simp();
+    execute(); solve();
 }

@@ -35,14 +35,14 @@ void increment(struct counter *counter) {
     let restored = fold(counter_state(counter), { value: counter->value });
     step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
-    simp();
+    solve();
 }
 void outer(struct counter *counter) {
     owns access: mutex_use(&counter->mu, counter_state(counter));
 } by {
     step(increment, { access: access });
     step();
-    simp();
+    solve();
 }
 uint32 run(struct counter *counter) {
     owns counter->mu;
@@ -56,7 +56,7 @@ uint32 run(struct counter *counter) {
     let { value: observed } = unfold(initial);
     step();
     let initial = fold(counter_state(counter), { value: observed });
-    simp();
+    solve();
 }
 ```
 

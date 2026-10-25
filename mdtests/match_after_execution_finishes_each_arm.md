@@ -23,8 +23,8 @@ int read(int* p) {
 } by {
     step_until(function.exit);
     match old(c.model) {
-        Tri::Zero => { simp(); },
-        Tri::One => { simp(); },
+        Tri::Zero => { solve(); },
+        Tri::One => { solve(); },
         Tri::Other(value) => { have old(c.model) == Tri::Other(value); },
     }
 }

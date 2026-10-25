@@ -44,7 +44,7 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
         invariant parent == gparent->rb_left;
         invariant parent == old(gparent->rb_left);
         decreases 0;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             let { child: c } = unfold(s);
             unfold(c);

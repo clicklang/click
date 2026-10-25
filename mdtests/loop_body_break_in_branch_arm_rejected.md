@@ -37,7 +37,7 @@ int32 branch_arm_break(int32 n) {
     loop {
         invariant i >= 0;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             branch { step(); } else { }
             step();
@@ -45,7 +45,7 @@ int32 branch_arm_break(int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

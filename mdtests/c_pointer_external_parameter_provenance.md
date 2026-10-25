@@ -24,11 +24,11 @@ verifying "c_pointer_external_parameter_provenance.c";
 
 int32 compare(int32* left, int32* right) {
     ensures 0 <= result and result <= 4;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 compare_locals() {
     ensures result == 0 or result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

@@ -157,7 +157,7 @@ void change_child_left(struct rb_node* old_child, struct rb_node* new_child,
     let { sibling: sib, up: u } = unfold(c);
     execute();
     let d = fold(ctx_at(new_child, root), { model: old(c.model) }, { sibling: sib, up: u });
-    simp();
+    solve();
 }
 ```
 

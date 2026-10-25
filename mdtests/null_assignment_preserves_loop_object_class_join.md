@@ -18,8 +18,8 @@ void f(struct node* p, int32 more) {
     loop {
         decreases more;
         invariant 0 <= more;
-        initialize by simp();
-        preserve by { step(); step(); close_invariants() by simp(); }
+        initialize by solve();
+        preserve by { step(); step(); close_invariants() by solve(); }
     }
 }
 ```

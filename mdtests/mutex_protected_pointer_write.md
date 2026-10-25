@@ -41,7 +41,7 @@ void set_one(struct box *b) {
     let restored = fold(box_state(b), { v: *b->slot }, { held: written });
     step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
-    simp();
+    solve();
 }
 ```
 

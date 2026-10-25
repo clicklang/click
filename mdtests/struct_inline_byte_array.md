@@ -38,7 +38,7 @@ uint8 write_packet(struct packet* packet) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 
 uint8 write_array_item(struct item items[2]) {
@@ -48,7 +48,7 @@ uint8 write_array_item(struct item items[2]) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

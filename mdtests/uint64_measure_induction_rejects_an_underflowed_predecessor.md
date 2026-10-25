@@ -6,7 +6,7 @@ theorem wrapped_predecessor(n: uint64) {
     ensures n == n by {
         induct(n) as ih;
         apply(ih(n - 1u64));
-        simp();
+        solve();
     }
 }
 ```

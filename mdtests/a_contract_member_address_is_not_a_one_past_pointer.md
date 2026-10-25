@@ -18,11 +18,11 @@ verifying "member_address.c";
 int32* one_past(struct Pair* p) {
     views *p;
     ensures result == &p->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32* second(struct Pair* p) {
     views *p;
     ensures result == &p->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

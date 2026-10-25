@@ -7,13 +7,13 @@ fall back to a four-byte element width.
 ```click
 theorem int64_array_identity(values: int64[]) {
     ensures values[0] == values[0] by {
-        simp();
+        solve();
     }
 }
 
 theorem uint64_array_identity(values: uint64[]) {
     ensures values[0] == values[0] by {
-        simp();
+        solve();
     }
 }
 ```

@@ -42,7 +42,7 @@ int32 conditional_deallocation_requires_guard(int32* p, int32 error) {
         step();
     }
     step();
-    simp();
+    solve();
 }
 ```
 

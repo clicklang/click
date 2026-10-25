@@ -25,7 +25,7 @@ int32 count_once(int32 flag) {
         decreases 1 - i;
         invariant i >= 0;
         invariant i <= 1;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             step();
             have i == 0 or i == 1;
@@ -37,7 +37,7 @@ int32 count_once(int32 flag) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

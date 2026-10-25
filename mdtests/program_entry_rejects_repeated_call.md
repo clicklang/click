@@ -8,11 +8,11 @@ int again(void) { main(); return main(); }
 
 ```click
 verifying "main.c";
-int main() { ensures result == 8; } by { execute(); simp(); }
+int main() { ensures result == 8; } by { execute(); solve(); }
 int again() {
     owns state;
     ensures result == 8;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

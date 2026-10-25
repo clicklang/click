@@ -46,7 +46,7 @@ int32 peek(struct node* p) {
         },
         Cell::Present(identity) => {
             execute();
-            simp();
+            solve();
         },
     }
 }

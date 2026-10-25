@@ -18,9 +18,9 @@ int32 identity(int32 x) {
     step_until(function.exit);
     have exists (k: int32) { k == result } by {
         witness { k: result };
-        simp();
+        solve();
     }
-    simp();
+    solve();
 }
 ```
 

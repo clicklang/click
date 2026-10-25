@@ -31,11 +31,11 @@ extern int32* make() {
 
 int32 make_one() {
     ensures result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 read_fresh() {
     ensures true;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

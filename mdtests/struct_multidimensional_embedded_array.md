@@ -32,7 +32,7 @@ int32 read_point(struct packet* packet) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

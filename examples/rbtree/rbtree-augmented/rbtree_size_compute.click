@@ -45,7 +45,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
             let parent = fold(size_metadata((struct rb_node*)(void*)node), {
                 value: 1 + old(left.value) + old(right.value)
             });
-            simp();
+            solve();
         } else {
             have old(right.value) == 0 by {
  cases {
@@ -63,7 +63,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
             let parent = fold(size_metadata((struct rb_node*)(void*)node), {
                 value: 1 + old(left.value) + old(right.value)
             });
-            simp();
+            solve();
         }
     } else {
         have old(left.value) == 0 by {
@@ -83,7 +83,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
             let parent = fold(size_metadata((struct rb_node*)(void*)node), {
                 value: 1 + old(left.value) + old(right.value)
             });
-            simp();
+            solve();
         } else {
             have old(right.value) == 0 by {
  cases {
@@ -101,7 +101,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
             let parent = fold(size_metadata((struct rb_node*)(void*)node), {
                 value: 1 + old(left.value) + old(right.value)
             });
-            simp();
+            solve();
         }
     }
 }
@@ -164,7 +164,7 @@ theorem compute_size_has_size_contract()
                     }
                 }
                 step(compute_size, { parent: p, left: l, right: r });
-                simp();
+                solve();
             } else {
                 have separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)node->rb.rb_left)->size)) by {
                     cases {
@@ -179,7 +179,7 @@ theorem compute_size_has_size_contract()
                     }
                 }
                 step(compute_size, { parent: p, left: l, right: r });
-                simp();
+                solve();
             }
         } else {
             if node->rb.rb_right != 0 {
@@ -196,10 +196,10 @@ theorem compute_size_has_size_contract()
                     }
                 }
                 step(compute_size, { parent: p, left: l, right: r });
-                simp();
+                solve();
             } else {
                 step(compute_size, { parent: p, left: l, right: r });
-                simp();
+                solve();
             }
         }
     }

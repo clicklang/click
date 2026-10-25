@@ -24,7 +24,7 @@ int32 loaded(const uint8* p) {
     execute_until(read(0));
     step();
     have 0 <= x and x <= 255;
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

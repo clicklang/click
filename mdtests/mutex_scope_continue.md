@@ -22,7 +22,7 @@ target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 
 verifying "mutex_scope_continue.c";
-int32 run() { ensures result == 0; } by { execute(); simp(); }
+int32 run() { ensures result == 0; } by { execute(); solve(); }
 ```
 
 ```expect

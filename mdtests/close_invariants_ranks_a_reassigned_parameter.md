@@ -42,7 +42,7 @@ int32 drain_to_zero(int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

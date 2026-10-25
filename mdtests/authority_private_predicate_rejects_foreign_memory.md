@@ -19,7 +19,7 @@ void wrap(int32* p, int32* other) {
 } by {
     unfold(is_zero);
     fold(zero_cell(p, other));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

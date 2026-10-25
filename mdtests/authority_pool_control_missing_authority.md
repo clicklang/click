@@ -33,13 +33,13 @@ void checkout(struct pool* pool, struct payload* p) {
     ensures pool->capacity == old(pool->capacity);
 } by {
     open(control(pool)) {
-        have 1 <= count(slot(pool)) by simp();
+        have 1 <= count(slot(pool)) by solve();
         unfold(slot(pool));
         step();
         fold(item(pool, p));
-        have pool->capacity == pool->checked_out + count(slot(pool)) by simp();
+        have pool->capacity == pool->checked_out + count(slot(pool)) by solve();
     }
-    execute(); simp();
+    execute(); solve();
 }
 
 ```

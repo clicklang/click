@@ -28,7 +28,7 @@ theorem marks_nonnegative(lo: int32, hi: int32) {
             peel(marks(lo, hi)) using {
                 hi <= lo;
             };
-            simp();
+            solve();
         } else {
             have lo < hi;
             have 0 <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }

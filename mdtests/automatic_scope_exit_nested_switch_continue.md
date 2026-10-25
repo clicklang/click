@@ -31,7 +31,7 @@ int32 nested_continue_dangling() {
 
 ```click
 verifying "automatic_scope_exit_nested_switch_continue.c";
-int32 nested_continue_dangling() { ensures 0 <= result; } by { execute(); simp(); }
+int32 nested_continue_dangling() { ensures 0 <= result; } by { execute(); solve(); }
 ```
 
 ```expect

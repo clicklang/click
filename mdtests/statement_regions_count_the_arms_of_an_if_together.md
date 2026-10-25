@@ -37,12 +37,12 @@ int32 probe(int32 x) {
     step();
     if x > 0 {
         step(); step(); step();
-        have at(statement(1).statement(0).call(f, 0).entry, y) == x by simp();
-        have at(statement(1).statement(0).exit, y) == x + 1 by simp();
-        have at(statement(1).statement(1).entry, y) == x + 1 by simp();
-        execute(); simp();
+        have at(statement(1).statement(0).call(f, 0).entry, y) == x by solve();
+        have at(statement(1).statement(0).exit, y) == x + 1 by solve();
+        have at(statement(1).statement(1).entry, y) == x + 1 by solve();
+        execute(); solve();
     } else {
-        execute(); simp();
+        execute(); solve();
     }
 }
 ```

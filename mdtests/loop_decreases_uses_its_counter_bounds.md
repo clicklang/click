@@ -37,7 +37,7 @@ int32 caller() { ensures result == 4; } by {
  step();
  step();
  loop { decreases 4 - i; invariant i >= 0; invariant i <= 4; invariant v0 == i; invariant v1 == i; invariant v2 == i; invariant v3 == i; }
- step(); simp();
+ step(); solve();
 }
 ```
 

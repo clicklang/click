@@ -19,7 +19,7 @@ int32 read_member(struct holder* h, struct pair* pair) {
     views pair->first;
     views pair->second;
     ensures result == pair->first;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

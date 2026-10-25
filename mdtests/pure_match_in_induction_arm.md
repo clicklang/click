@@ -13,9 +13,9 @@ theorem copy_identity(xs: List<int32>, choice: Choice) {
             List::Nil => { unfold(copy(List<int32>::Nil)); normalize(); },
             List::Cons(head, tail) => {
                 match choice {
-                    Choice::C => { apply(ih(tail)); unfold(copy(List<int32>::Cons(head, tail))); simp(); },
-                    Choice::A => { apply(ih(tail)); unfold(copy(List<int32>::Cons(head, tail))); simp(); },
-                    Choice::B => { apply(ih(tail)); unfold(copy(List<int32>::Cons(head, tail))); simp(); },
+                    Choice::C => { apply(ih(tail)); unfold(copy(List<int32>::Cons(head, tail))); solve(); },
+                    Choice::A => { apply(ih(tail)); unfold(copy(List<int32>::Cons(head, tail))); solve(); },
+                    Choice::B => { apply(ih(tail)); unfold(copy(List<int32>::Cons(head, tail))); solve(); },
                 }
             },
         }

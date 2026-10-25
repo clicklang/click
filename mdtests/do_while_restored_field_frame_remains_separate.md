@@ -52,7 +52,7 @@ void walk(struct Node* p, int32* marker) {
         decreases t;
         invariant p != 0;
         invariant p == q;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match t.model {
                 Chain::Empty => { unfold(t); contradiction(p == 0); },
@@ -70,7 +70,7 @@ void walk(struct Node* p, int32* marker) {
         Path::Top => { contradiction(c.model == Path::Top); },
         Path::Step(identity, before) => {
             let { up: previous } = unfold(c);
-            execute(); simp();
+            execute(); solve();
         },
     }
 }

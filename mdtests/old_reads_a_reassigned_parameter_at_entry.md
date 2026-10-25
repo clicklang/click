@@ -32,7 +32,7 @@ int32 dec(int32 n) {
     have at(start, n) == 1;
     have at(region(0).entry, n) == 1;
     step();
-    simp();
+    solve();
 }
 ```
 

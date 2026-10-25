@@ -19,7 +19,7 @@ void touch(struct pair* p) {
     owns p->count;
     ensures p->tag == 42;
     ensures p->count == 17;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void keep(struct pair* p, int32 x) {
     requires p != 0;
     owns p->tag;
@@ -34,7 +34,7 @@ void keep(struct pair* p, int32 x) {
     have p->tag == 42 by { assumption(); }
     have p->count == 17 by { assumption(); }
     step();
-    simp();
+    solve();
 }
 ```
 

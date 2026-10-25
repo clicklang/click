@@ -24,7 +24,7 @@ int32 guarded_value(int32* p) {
     unfold(guarded_cell(p));
     execute();
     fold(guarded_cell(p));
-    simp();
+    solve();
 }
 ```
 

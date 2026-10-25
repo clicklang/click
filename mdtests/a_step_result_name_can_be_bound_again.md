@@ -20,9 +20,9 @@ int add_two(int x) {
     ensures to_integer(result) == to_integer(old(x) + 2);
 } by {
     let { result: r } = step();
-    have to_integer(r) == to_integer(old(x) + 1) by simp();
+    have to_integer(r) == to_integer(old(x) + 1) by solve();
     let { result: r } = step();
-    have to_integer(r) == to_integer(old(x) + 2) by simp();
+    have to_integer(r) == to_integer(old(x) + 2) by solve();
 }
 ```
 

@@ -28,16 +28,16 @@ int32 uprec_phases(int32 a, int32* p) {
     loop {
         invariant a >= 0;
         invariant a <= 10;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             step();
             close_invariants() by {
-                both { simp(); } and { simp(); }
+                both { solve(); } and { solve(); }
             }
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

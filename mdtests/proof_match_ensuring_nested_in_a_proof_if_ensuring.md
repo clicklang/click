@@ -102,7 +102,7 @@ int32 bump(struct cell* p, struct cell* q, int32 x) {
         let c = fold(slot(p), { model: p->value });
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -156,22 +156,14 @@ int f() {
     step();
     branch {
         step();
-        simp();
+        solve();
     } else {}
     step();
     step();
     branch {
         step();
         step();
-        simp();
-    } else {}
-    step();
-    step();
-    branch {
-        step();
-        step();
-        step();
-        simp();
+        solve();
     } else {}
     step();
     step();
@@ -179,8 +171,7 @@ int f() {
         step();
         step();
         step();
-        step();
-        simp();
+        solve();
     } else {}
     step();
     step();
@@ -189,8 +180,7 @@ int f() {
         step();
         step();
         step();
-        step();
-        simp();
+        solve();
     } else {}
     step();
     step();
@@ -200,8 +190,7 @@ int f() {
         step();
         step();
         step();
-        step();
-        simp();
+        solve();
     } else {}
     step();
     step();
@@ -212,8 +201,7 @@ int f() {
         step();
         step();
         step();
-        step();
-        simp();
+        solve();
     } else {}
     step();
     step();
@@ -225,8 +213,7 @@ int f() {
         step();
         step();
         step();
-        step();
-        simp();
+        solve();
     } else {}
     step();
     step();
@@ -239,8 +226,7 @@ int f() {
         step();
         step();
         step();
-        step();
-        simp();
+        solve();
     } else {}
     step();
     step();
@@ -254,8 +240,7 @@ int f() {
         step();
         step();
         step();
-        step();
-        simp();
+        solve();
     } else {}
     step();
     step();
@@ -270,8 +255,7 @@ int f() {
         step();
         step();
         step();
-        step();
-        simp();
+        solve();
     } else {}
     step();
     step();
@@ -287,8 +271,24 @@ int f() {
         step();
         step();
         step();
+        solve();
+    } else {}
+    step();
+    step();
+    branch {
         step();
-        simp();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        solve();
     } else {}
     step();
     step();
@@ -303,7 +303,7 @@ int f() {
     step();
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

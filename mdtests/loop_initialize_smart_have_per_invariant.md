@@ -43,10 +43,10 @@ int spin(int n) {
             have i <= n;
             assumption();
         }
-        preserve by simp();
+        preserve by solve();
     }
     step();
-    simp();
+    solve();
 }
 ```
 

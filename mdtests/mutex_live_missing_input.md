@@ -20,13 +20,13 @@ verifying "mutex_live_missing_input.c";
 
 void inner(struct holder *holder) {
     owns mutex_live(&holder->mu);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void keep(struct holder *holder) {
     owns mutex_live(&holder->mu);
 } by {
     step(inner, {});
     step();
-    simp();
+    solve();
 }
 int32 run(struct holder *holder) {
     ensures result == 0;
@@ -34,7 +34,7 @@ int32 run(struct holder *holder) {
     step(keep, {});
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

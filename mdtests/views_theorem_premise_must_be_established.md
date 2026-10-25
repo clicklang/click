@@ -26,7 +26,7 @@ theorem element_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
     requires lo <= k;
     requires k < hi;
     ensures to_integer(v[k]) == to_integer(v[k]) by {
-        simp();
+        solve();
     }
 }
 
@@ -38,7 +38,7 @@ int32 ignore(int32 a[]) {
     apply(element_of_a_viewed_range(a, 0, 3, 1)) using {
         viewable(a[0..2]);
     };
-    simp();
+    solve();
 }
 ```
 

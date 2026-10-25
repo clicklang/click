@@ -41,9 +41,9 @@ int32 loop_preserve_branch(int32 n) {
                 step();
                 step();
                 close_invariants() by {
-                    both { simp(); }
+                    both { solve(); }
                     and {
-                        both { simp(); }
+                        both { solve(); }
                         and { contradiction(at(region(3).entry, i) < 0); }
                     }
                 }
@@ -51,12 +51,12 @@ int32 loop_preserve_branch(int32 n) {
                 have to_integer(i + 1) >= 0 by auto();
                 step();
                 step();
-                close_invariants() by simp();
+                close_invariants() by solve();
             }
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

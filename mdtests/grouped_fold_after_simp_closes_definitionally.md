@@ -28,7 +28,7 @@ int32 initialize(int32 p[]) {
     produces initialized(p);
 } by {
     step_until(function.exit);
-    simp();
+    solve();
     fold(initialized(p));
 }
 ```

@@ -24,7 +24,7 @@ int32 f(int32* p) {
     step_until(function.exit);
     have result == 0 by normalize();
     let after = fold(Cell(p), { tag: 1 });
-    simp();
+    solve();
 }
 ```
 ```expect

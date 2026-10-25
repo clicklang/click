@@ -25,7 +25,7 @@ void helper(struct holder *holder) {
     step(keep_guard, {});
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

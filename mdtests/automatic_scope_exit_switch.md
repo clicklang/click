@@ -6,7 +6,7 @@ int32 f() { int32* q; switch (0) { case 0: int32 a[2]; a[0] = 5; q = &a[0]; brea
 
 ```click
 verifying "automatic_scope_exit_switch.c";
-int32 f() { ensures 0 <= result; } by { execute(); simp(); }
+int32 f() { ensures 0 <= result; } by { execute(); solve(); }
 ```
 
 ```expect

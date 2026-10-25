@@ -23,7 +23,7 @@ void keep(struct node* p) {
 } by {
     unfold(held);
     step();
-    have Ref::At(p) == Ref::At(p) by { simp(); }
+    have Ref::At(p) == Ref::At(p) by { solve(); }
     let held = fold(token(p), { model: old(held.model) });
 }
 ```

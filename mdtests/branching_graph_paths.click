@@ -84,7 +84,7 @@ theorem walk_frame(a: int32[], b: int32[], c: int32[], d: int32[], n: int32, fro
                 apply(ih(a, b, c, d, n, a[from], rest));
                 unfold(walk(a, b, from, Path::Left(rest)));
                 unfold(walk(c, d, from, Path::Left(rest)));
-                simp() using {
+                solve() using {
                     a[from] == c[from];
                     walk(a, b, a[from], rest) == walk(c, d, a[from], rest);
                 };
@@ -101,7 +101,7 @@ theorem walk_frame(a: int32[], b: int32[], c: int32[], d: int32[], n: int32, fro
                 apply(ih(a, b, c, d, n, b[from], rest));
                 unfold(walk(a, b, from, Path::Right(rest)));
                 unfold(walk(c, d, from, Path::Right(rest)));
-                simp() using {
+                solve() using {
                     b[from] == d[from];
                     walk(a, b, b[from], rest) == walk(c, d, b[from], rest);
                 };

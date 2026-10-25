@@ -18,7 +18,7 @@ int32 clamp_low(int32 x) {
 verifying "simp_before_execution.c";
 
 int32 clamp_low(int32 x) {
-    ensures result >= 0 by simp();
+    ensures result >= 0 by solve();
 }
 ```
 

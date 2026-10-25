@@ -25,7 +25,7 @@ int32 count(int32 n) {
         decreases n - i;
         invariant 0 <= i and i <= n;
     }
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

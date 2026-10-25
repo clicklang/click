@@ -43,7 +43,7 @@ theorem sized_double_middle_bounds(pv: int32, nv: int32, far: SizedTree, middle:
             };
         }
         apply(size_children_fit(sized_value(far), sized_value(middle)));
-        simp();
+        solve();
     }
 }
 
@@ -86,7 +86,7 @@ theorem sized_double_middle_valid(p: struct rb_node*, node: struct rb_node*, pv:
         apply(sized_valid_node(node, p, Color::Red, pv,
             SizedTree::Node(p, node, Color::Red, pv - 1, far,
                 sized_recolor(sized_reparent(middle, p), Color::Black)), SizedTree::Empty));
-        simp();
+        solve();
     }
 }
 
@@ -130,6 +130,6 @@ theorem sized_mirrored_double_middle_valid(p: struct rb_node*, node: struct rb_n
         apply(sized_valid_node(node, p, Color::Red, pv, SizedTree::Empty,
             SizedTree::Node(p, node, Color::Red, pv - 1,
                 sized_recolor(sized_reparent(middle, p), Color::Black), far)));
-        simp();
+        solve();
     }
 }

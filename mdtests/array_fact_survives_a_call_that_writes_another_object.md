@@ -44,7 +44,7 @@ int32 keep_h() {
     }
     step_until(function.exit);
     have icount(h, 0, 0) == 0;
-    simp();
+    solve();
 }
 ```
 

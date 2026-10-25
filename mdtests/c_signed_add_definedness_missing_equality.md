@@ -6,7 +6,7 @@ verifying "defined.c";
 int32 f(int32 x, int32 y, int32 z) {
     requires defined(x + z);
     ensures result == y + z;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 ```expect
 fail: signed overflow

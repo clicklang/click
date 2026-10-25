@@ -55,7 +55,7 @@ theorem increment_is_guarded_progress() {
                 intro();
                 contradiction(not (old(cell[0]) < 0));
             } and {
-                simp();
+                solve();
             }
         }
     }

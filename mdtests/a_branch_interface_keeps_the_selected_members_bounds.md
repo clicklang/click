@@ -23,7 +23,7 @@ int32 probe(struct Pair* left, struct Pair* right, int32 choose) {
   views selected->second;
  } then { step(); have selected == left or selected == right by { have selected == left by normalize(); assumption(); } }
  else { step(); have selected == left or selected == right by { have selected == right by normalize(); assumption(); } }
- step(); simp();
+ step(); solve();
  }
 }
 ```

@@ -62,10 +62,10 @@ int32 even(int32 n) {
         }
         step();
         step();
-        simp();
+        solve();
     } else {}
     step();
-    simp();
+    solve();
 }
 
 int32 odd(int32 n) {
@@ -90,10 +90,10 @@ int32 odd(int32 n) {
         }
         step();
         step();
-        simp();
+        solve();
     } else {}
     step();
-    simp();
+    solve();
 }
 ```
 

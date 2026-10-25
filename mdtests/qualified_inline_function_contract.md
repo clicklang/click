@@ -16,8 +16,8 @@ int32 first::helper() {
 int32 second::helper() {
     ensures result == 2;
 }
-int32 first_use() { ensures result == 1; } by { execute(); simp(); }
-int32 second_use() { ensures result == 2; } by { execute(); simp(); }
+int32 first_use() { ensures result == 1; } by { execute(); solve(); }
+int32 second_use() { ensures result == 2; } by { execute(); solve(); }
 ```
 ```expect
 pass

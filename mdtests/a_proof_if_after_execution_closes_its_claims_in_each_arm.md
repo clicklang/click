@@ -22,10 +22,10 @@ int32 f(int32 n) {
     step_until(function.exit);
     if n < 5 {
         have n <= 10 by assumption();
-        simp();
+        solve();
     } else {
         have n <= 10 by assumption();
-        simp();
+        solve();
     }
 }
 ```

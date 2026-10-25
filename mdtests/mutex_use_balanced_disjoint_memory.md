@@ -32,7 +32,7 @@ int32 run(struct holder *holder) {
     step(helper, {});
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

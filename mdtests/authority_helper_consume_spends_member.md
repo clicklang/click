@@ -41,7 +41,7 @@ int32 run() {
 } by {
     step();
     step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     step();
     fold(authority(reference(obj)));
     fold(reference(obj));

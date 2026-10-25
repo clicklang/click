@@ -33,7 +33,7 @@ int32 mark_ready(struct packet* packet) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

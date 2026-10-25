@@ -12,7 +12,7 @@ theorem nonnegative_body(x: int32) {
 
     ensures x >= 0 by {
         unfold(nonnegative);
-        simp();
+        solve();
     }
 }
 
@@ -21,7 +21,7 @@ theorem reuses_nonnegative_body(y: int32) {
 
     ensures y >= 0 by {
         apply(nonnegative_body(y));
-        simp();
+        solve();
     }
 }
 ```

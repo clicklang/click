@@ -26,7 +26,7 @@ void acquire(struct holder *p) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 void release(struct holder *p) {
     owns access: mutex_use(&p->mu);
@@ -34,7 +34,7 @@ void release(struct holder *p) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 void use(struct holder *p) {
     owns permission: mutex_use(&p->mu);
@@ -42,7 +42,7 @@ void use(struct holder *p) {
     let { guard: acquired } = step(acquire, { access: permission });
     step(release, { access: permission, guard: acquired });
     step();
-    simp();
+    solve();
 }
 void run(struct holder *p) {
     owns p->mu;
@@ -54,7 +54,7 @@ void run(struct holder *p) {
     step(use, { permission: lifetime });
     step(pthread_mutex_destroy, { lifetime: lifetime });
     step();
-    simp();
+    solve();
 }
 ```
 

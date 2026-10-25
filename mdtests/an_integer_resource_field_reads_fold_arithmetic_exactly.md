@@ -24,7 +24,7 @@ void create(int32 x) {
 } by {
     step_until(function.exit);
     let model = fold(tally(), { total: x + 1 });
-    simp();
+    solve();
 }
 
 void create_unsigned(uint32 y) {
@@ -34,7 +34,7 @@ void create_unsigned(uint32 y) {
 } by {
     step_until(function.exit);
     let model = fold(tally(), { total: y + 1 });
-    simp();
+    solve();
 }
 ```
 

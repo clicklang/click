@@ -27,7 +27,7 @@ void f(int32* data, int32* occupied, int32 capacity, int32 index) {
     take(data[index..index + 1]);
     give(data[index..index + 1]);
     fold(cells(data, occupied, capacity));
-    simp();
+    solve();
 }
 ```
 

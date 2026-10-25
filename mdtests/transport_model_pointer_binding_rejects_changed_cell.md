@@ -33,7 +33,7 @@ int32 update(int32* p) {
                 decreases 0;
                 invariant state.model == old(state.model);
                 invariant state.model == View::At(alias);
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     unfold(state);
                     step();
@@ -47,7 +47,7 @@ int32 update(int32* p) {
             }
             unfold(state); execute();
             let state = fold(first(p), {model: View::At(alias)});
-            simp();
+            solve();
         },
     }
 }

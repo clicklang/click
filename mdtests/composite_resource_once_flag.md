@@ -58,7 +58,7 @@ int32 complete_once(int32 flag[]) {
         unfold(uncalled(flag));
         execute();
         fold(called(flag));
-        simp();
+        solve();
     }
 }
 ```

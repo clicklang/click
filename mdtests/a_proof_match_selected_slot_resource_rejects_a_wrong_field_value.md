@@ -53,10 +53,10 @@ void f(int32* q) {
     match r.sel {
         Sel::A => {
             let { k: kk } = unfold(r);
-            have kk.v == 3 by { simp(); }
+            have kk.v == 3 by { solve(); }
             execute();
             let r = fold(root(q), { sel: Sel::A, v: 3, u: 4 }, { k: kk });
-            simp();
+            solve();
         },
         Sel::B => { contradiction(r.sel == Sel::B); },
     }

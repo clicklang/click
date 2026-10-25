@@ -18,7 +18,7 @@ Then a contract can use:
 ensures sorted: sorted_pair(p) by {
     execute();
     unfold(sorted_pair);
-    simp();
+    solve();
 }
 ```
 

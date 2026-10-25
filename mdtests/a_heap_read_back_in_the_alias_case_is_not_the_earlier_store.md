@@ -35,7 +35,7 @@ int32 read_back(int32 u) {
     step();
     if buf == 0 {
         execute();
-        simp();
+        solve();
     } else {
         step();
         step();
@@ -46,12 +46,12 @@ int32 read_back(int32 u) {
             have r == 3;
             step();
             step();
-            simp();
+            solve();
         } else {
             step();
             step();
             step();
-            simp();
+            solve();
         }
     }
 }

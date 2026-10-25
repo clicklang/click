@@ -24,7 +24,7 @@ int32 advance_old_state_interface(int32 x, int32 choose_first) {
             step();
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

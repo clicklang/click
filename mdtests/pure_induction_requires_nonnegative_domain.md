@@ -4,7 +4,7 @@
 theorem missing_domain(n: int32) {
     ensures n == n by {
         induct(n) as ih;
-        simp();
+        solve();
     }
 }
 ```

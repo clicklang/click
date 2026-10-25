@@ -14,13 +14,13 @@ function count(x: int32) -> int32 {
 theorem own_count() {
     ensures count(1) == 2 by {
         unfold(count(1));
-        simp();
+        solve();
     }
 }
 
 theorem library_count_is_reflexive(p: int32[], x: int32) {
     ensures permutation::count(p, 0, 3, x) == permutation::count(p, 0, 3, x) by {
-        simp();
+        solve();
     }
 }
 ```

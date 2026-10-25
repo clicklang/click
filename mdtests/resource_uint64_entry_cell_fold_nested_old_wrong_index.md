@@ -26,7 +26,7 @@ int32 probe(int32* p, uint64* count, int32 input) {
     unfold(cell(p, *count));
     execute();
     fold(cell(p, old(*count) + 1u64));
-    simp();
+    solve();
 }
 ```
 

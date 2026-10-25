@@ -49,7 +49,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant parent == ancestor;
                 invariant node == old(node);
                 invariant node == identity;
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     let { focus: focus, path: path } = unfold(state);
                     match old(state.chain) {
@@ -233,7 +233,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 }
             }
             let { whole: whole } = restore_sized_flip_state(root, { state: state });
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -252,7 +252,7 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
     let { whole: whole } = step(__rb_insert, { state: state });
-    execute(); simp();
+    execute(); solve();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -270,5 +270,5 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
     let { whole: whole } = step(__rb_insert_augmented, { state: state });
-    execute(); simp();
+    execute(); solve();
 }

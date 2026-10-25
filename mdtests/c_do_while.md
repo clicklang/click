@@ -93,7 +93,7 @@ int32 do_while_invariant(int32 i) {
         invariant i + 1 == 1;
     }
     step();
-    simp();
+    solve();
 }
 
 ```

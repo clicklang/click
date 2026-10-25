@@ -19,14 +19,14 @@ void set(int32* p, int32* q, int32 x) {
     owns cell(p);
     owns q[0..1];
 } by {
-    open(cell(p)) { step(); } by { simp(); }
+    open(cell(p)) { step(); } by { solve(); }
 }
 void set_last(int32* p, int32 x) {
     requires x > 0;
     owns cell(p);
 } by {
-    open(cell(p)) { execute(); } by { simp(); }
-    simp();
+    open(cell(p)) { execute(); } by { solve(); }
+    solve();
 }
 ```
 

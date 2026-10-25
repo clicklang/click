@@ -21,7 +21,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
         invariant sized_walk_root(walk.model) == sized_walk_root(old(walk.model));
         invariant sized_shape(sized_walk_tree(walk.model)) == sized_shape(sized_walk_tree(old(walk.model)));
         invariant rb_subtree_size(sized_shape(sized_walk_tree(walk.model))) <= 2147483647;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             mark iteration;
             match walk.model {
@@ -39,7 +39,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                             rb == stop => { assumption(); }
                         }
                     }
-                    have address(rb) == address(stop) by { rewrite(rb == stop); simp(); }
+                    have address(rb) == address(stop) by { rewrite(rb == stop); solve(); }
                     contradiction(address(rb) == address(stop));
                 },
                 SizedWalk::Active(previous, sub_model, path_model) => {
@@ -118,7 +118,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                                 have sized_walk_rank(walk.model) < sized_walk_rank(at(iteration, walk.model)) by {
                                     rewrite(sized_walk_rank(at(iteration, walk.model)) == sized_context_depth(sized_path_context(path_model)) + 1); assumption();
                                 }
-                                close_invariants() by { simp(); }
+                                close_invariants() by { solve(); }
                             },
                         }
                     }
@@ -154,7 +154,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                 unfold(sized_walk_pending(SizedWalk::Done(result_model))); normalize();
             }
             let { whole: whole } = finish_sized_walk(rb, stop, { walk: walk });
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -173,6 +173,6 @@ theorem sized_propagate_has_tree_contract()
     executes sized_propagate(struct rb_node* rb, struct rb_node* stop) {
     ensures PropagateTree(&sized_propagate) as { walk: walk, whole: whole } by {
         let { whole: whole } = step(sized_propagate, { walk: walk });
-        simp();
+        solve();
     }
 }

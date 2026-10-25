@@ -42,10 +42,10 @@ int32 f(char buf[], int32 len) {
     step(snprintf, { n1: 0u64 });
     step();
     have result == (int32) format::decimal_length(7u64) by {
-        simp();
+        solve();
     }
     have result == 1 by {
-        simp() using { result == (int32) format::decimal_length(7u64); format::decimal_length(7u64) == 1u64; };
+        solve() using { result == (int32) format::decimal_length(7u64); format::decimal_length(7u64) == 1u64; };
     }
 }
 ```

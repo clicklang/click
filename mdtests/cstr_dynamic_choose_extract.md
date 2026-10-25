@@ -44,7 +44,7 @@ uint64 read_terminator(uint8 bytes[]) {
                 both {
                     both {
                         both {
-                            simp();
+                            solve();
                         } and {
                             extract(at(function.entry, viewable(bytes[0..found_len + 1u64])));
                             transport(
@@ -55,10 +55,10 @@ uint64 read_terminator(uint8 bytes[]) {
                             };
                         }
                     } and {
-                        simp();
+                        solve();
                     }
                 } and {
-                    simp();
+                    solve();
                 }
             } and {
                 extract(at(function.entry, forall (k: uint64) {

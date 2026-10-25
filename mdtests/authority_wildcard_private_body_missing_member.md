@@ -9,7 +9,7 @@ authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "wildcard_private_missing_member.c";
 void update(int32* pool, int32* p) {
     owns authority(slot(pool, _));
-} by { open(slot(pool, p)) { step(); } execute(); simp(); }
+} by { open(slot(pool, p)) { step(); } execute(); solve(); }
 ```
 
 ```expect

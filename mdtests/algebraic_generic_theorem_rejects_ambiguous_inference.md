@@ -2,7 +2,7 @@
 
 ```click
 theorem hidden<T>(value: int32) {
-    ensures value == value by simp();
+    ensures value == value by solve();
 }
 
 theorem use_hidden(value: int32) {

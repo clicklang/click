@@ -40,7 +40,7 @@ void wrap_object(struct object* obj) {
 } by {
     execute();
     fold(wrapper(obj));
-    simp();
+    solve();
 }
 
 void break_wrapper_invariant(struct object* obj) {

@@ -14,23 +14,23 @@ void issue(int32* pool) {
     produces member: ticket(pool);
     ensures member.serial == 7;
     ensures count(ticket(pool)) == old(count(ticket(pool))) + 1;
-} by { let member = fold(ticket(pool), { serial: 7 }); execute(); simp(); }
+} by { let member = fold(ticket(pool), { serial: 7 }); execute(); solve(); }
 void nested(int32* pool) {
     owns authority(ticket(pool));
     produces member: ticket(pool);
     ensures member.serial == 7;
     ensures count(ticket(pool)) == old(count(ticket(pool))) + 1;
-} by { let { member: member } = step(issue, {}); execute(); simp(); }
+} by { let { member: member } = step(issue, {}); execute(); solve(); }
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool)));
     let retained = fold(ticket(&pool), { serial: 3 });
     let { member: member } = step(nested, {});
-    have count(ticket(&pool)) == 2 by simp();
-    have member.serial == 7 by simp();
-    have retained.serial == 3 by simp();
+    have count(ticket(&pool)) == 2 by solve();
+    have member.serial == 7 by solve();
+    have retained.serial == 3 by solve();
     unfold(member); unfold(retained); unfold(authority(ticket(&pool)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

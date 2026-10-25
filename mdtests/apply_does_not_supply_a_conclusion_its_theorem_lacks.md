@@ -14,12 +14,12 @@ theorem lower_bound(x: int32) {
 
     ensures x >= 0 by {
         unfold(small);
-        simp();
+        solve();
     }
 
     ensures x <= 10 by {
         unfold(small);
-        simp();
+        solve();
     }
 }
 
@@ -27,7 +27,7 @@ theorem needs_tighter_upper(x: int32) {
     requires x <= 5;
 
     ensures x <= 20 by {
-        simp();
+        solve();
     }
 }
 

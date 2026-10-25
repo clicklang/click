@@ -12,7 +12,7 @@ void compose(const uint8* base, const uint8* middle, const uint8* end) {
  ensures end == base + 5u64;
 } by {
  execute();
- simp() using { end == middle + 3u64; address(middle) == address(base + 2u64); };
+ solve() using { end == middle + 3u64; address(middle) == address(base + 2u64); };
 }
 ```
 

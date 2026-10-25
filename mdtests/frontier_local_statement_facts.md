@@ -34,14 +34,14 @@ int32 frontier_local_statement_facts(int32 flag) {
             step();
         }
         have y >= 0 by {
-            simp();
+            solve();
         }
         step();
         have y == 2 by {
-            simp();
+            solve();
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

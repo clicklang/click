@@ -78,7 +78,7 @@ void arena_release(struct region* region) {
     let { start: s, end: e } = unfold(freed);
     step_until(function.exit);
     let after = fold(arena_live_count(region->arena), { live: n - 1 });
-    simp();
+    solve();
 }
 ```
 

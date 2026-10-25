@@ -37,7 +37,7 @@ int read(int* p) {
             unfold(c);
             execute();
             fold(c);
-            simp();
+            solve();
         },
     }
 }

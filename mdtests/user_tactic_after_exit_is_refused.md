@@ -50,7 +50,7 @@ void user(struct pr* p) {
     step();
     step();
     let { y: y, z: z } = divide(p, { x: x });
-    simp();
+    solve();
 }
 ```
 

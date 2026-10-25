@@ -31,7 +31,7 @@ int32 inc_extracted(int32 x) {
 } by {
     step_until(function.exit);
     extract(x <= 100);
-    simp();
+    solve();
 }
 ```
 

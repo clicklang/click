@@ -17,7 +17,7 @@ verifying "a_written_simp_that_closes_nothing_is_refused.c";
 int32 zero() {
     ensures result == 0 by {
         execute();
-        simp() using { 1 == 2; }
+        solve() using { 1 == 2; }
     }
 }
 ```

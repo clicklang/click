@@ -38,14 +38,14 @@ int classify(int x) {
             unfold(classified(x));
             normalize() using { x == 0; };
         }
-        simp();
+        solve();
     } else {}
     step();
     have result == classified(x) by {
         unfold(classified(x));
         normalize() using { not(x == 0); };
     }
-    simp();
+    solve();
 }
 
 int has_class(int x) {
@@ -57,9 +57,9 @@ int has_class(int x) {
         rewrite(r == classified(x));
         normalize();
     }
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -37,7 +37,7 @@ uint64 copy_prefix(uint8* dst, const uint8* src, uint64 n, uint64 k) {
 } by {
     open(cstr_at(src, n)) {
         execute();
-        simp();
+        solve();
     }
 }
 ```

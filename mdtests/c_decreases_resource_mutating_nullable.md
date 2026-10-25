@@ -40,11 +40,11 @@ void list_destroy(struct node* node) {
     if node == 0 {
         unfold(allocated_list(node));
         execute();
-        simp();
+        solve();
     } else {
         unfold(allocated_list(node));
         execute();
-        simp();
+        solve();
     }
 }
 ```

@@ -41,7 +41,7 @@ void keep(struct pair* p, int32 x) {
         assumption();
     }
     step();
-    simp();
+    solve();
 }
 ```
 

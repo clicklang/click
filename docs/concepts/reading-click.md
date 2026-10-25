@@ -73,7 +73,7 @@ Only after you understand the claim should you read the proof script:
 by {
     execute();
     unfold(sorted);
-    simp();
+    solve();
 }
 ```
 

@@ -9,11 +9,11 @@ theorem lift(callback: int32 (*)(int32)) executes callback(int32 value) {
         if value == 0 {
             step(Raw);
             have result == 0;
-            simp();
+            solve();
         } else {
             step(Raw);
             have result == value by assumption();
-            simp();
+            solve();
         }
     }
 }

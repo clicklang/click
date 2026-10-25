@@ -49,7 +49,7 @@ int32 get(struct pair* p) {
     let { first: c, first_v: v } = unfold(x);
     step_until(function.exit);
     let x = fold(pair(p), { first_v: v }, { first: c });
-    simp();
+    solve();
 }
 ```
 

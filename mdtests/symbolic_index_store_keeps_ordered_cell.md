@@ -48,7 +48,7 @@ int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
     step();
     fold(zero_terminated(data, len, cap));
     step();
-    simp();
+    solve();
 }
 ```
 

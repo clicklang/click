@@ -9,7 +9,7 @@ the file's theorem.
 import click::integer;
 
 theorem multiply_add(a: uint32) {
-    ensures a == a by simp();
+    ensures a == a by solve();
 }
 
 theorem own_by_bare_name(a: uint32) {
@@ -23,7 +23,7 @@ theorem library_by_path(a: Integer, b: Integer, c: Integer) {
 theorem library_through_a_tactic(a: uint32, b: uint32, c: uint32) {
     requires a < b;
     requires b < c;
-    ensures a < c by simp();
+    ensures a < c by solve();
 }
 ```
 

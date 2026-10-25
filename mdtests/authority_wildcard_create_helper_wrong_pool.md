@@ -13,7 +13,7 @@ void issue(int32* pool, int32* other, int32* member) {
     produces slot(other, member);
 } by {
     fold(slot(other, member));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

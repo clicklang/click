@@ -30,11 +30,11 @@ int32 item_destroy(struct item* item) {
     if item != 0 {
         unfold(owned_item(item));
         execute();
-        simp();
+        solve();
     } else {
         unfold(owned_item(item));
         execute();
-        simp();
+        solve();
     }
 }
 

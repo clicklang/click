@@ -121,7 +121,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.phase == SizedInsertRightThreePhase::Before(g, p);
                 invariant old(state.phase) == SizedInsertRightThreePhase::Before(g, p);
                 invariant state.model == sized_right_three_before(g, p, node);
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     let { tree: loop_tree } = unfold(state);
                     unfold(sized_right_three_before(g, p, node));
@@ -152,25 +152,25 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     have tmp == 0 by { assumption(); }
                     have node != 0 by { assumption(); }
                     step(); step(); step(); step(); step(); step();
-                    have gparent->__rb_parent_color == 1 by { simp(); }
+                    have gparent->__rb_parent_color == 1 by { solve(); }
                     step();
-                    have g->rb_right == 0 by { simp(); }
+                    have g->rb_right == 0 by { solve(); }
                     let p_left = fold(sized_at(g->rb_right), { model: SizedTree::Empty });
-                    have g->rb_left == 0 by { simp(); }
+                    have g->rb_left == 0 by { solve(); }
                     let g_left = fold(sized_at(g->rb_left), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)
                     }, { metadata: g_size, right: p_left, left: g_left });
                     transport(at(region(5).entry, parent->rb_right == node), parent->rb_right == node);
-                    have parent->rb_left == gparent by { simp(); }
+                    have parent->rb_left == gparent by { solve(); }
                     have p->rb_left == g by {
                         rewrite(p == parent);
                         rewrite(g == gparent);
                         assumption();
                     }
                     have parent == p by { assumption(); }
-                    have parent->__rb_parent_color == at(region(13).exit, gparent->__rb_parent_color) by { simp(); }
-                    have parent->__rb_parent_color == 1 by { simp(); }
+                    have parent->__rb_parent_color == at(region(13).exit, gparent->__rb_parent_color) by { solve(); }
+                    have parent->__rb_parent_color == 1 by { solve(); }
                     transport(parent->__rb_parent_color == 1, p->__rb_parent_color == 1);
                     have p->__rb_parent_color == (p->__rb_parent_color & 1) by {
                         rewrite(p->__rb_parent_color == 1); normalize();
@@ -233,17 +233,17 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         phase: SizedInsertRightThreePhase::After(g, p), model: checked.model
                     }, { tree: checked });
                     have state.phase == sized_right_three_finish(old(state.phase)) by {
-                        unfold(sized_right_three_finish(SizedInsertRightThreePhase::Before(g, p))); simp();
+                        unfold(sized_right_three_finish(SizedInsertRightThreePhase::Before(g, p))); solve();
                     }
                     have sized_shape(state.model) == sized_right_three_expected(old(state.phase), node) by {
                         rewrite(old(state.phase) == SizedInsertRightThreePhase::Before(g, p));
-                        unfold(sized_right_three_expected(SizedInsertRightThreePhase::Before(g, p), node)); simp();
+                        unfold(sized_right_three_expected(SizedInsertRightThreePhase::Before(g, p), node)); solve();
                     }
                     step();
                 }
             }
             have node == old(node) by { assumption(); }
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -257,7 +257,7 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_right_three_expected(old(state.phase), node);
 } by {
     step(__rb_insert, { state: state });
-    execute(); simp();
+    execute(); solve();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -270,5 +270,5 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_right_three_expected(old(state.phase), node);
 } by {
     step(__rb_insert_augmented, { state: state });
-    execute(); simp();
+    execute(); solve();
 }

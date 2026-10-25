@@ -24,7 +24,7 @@ int main() {
     have to_integer(result) == to_integer(at(first, counter) + 1u32);
     rewrite(to_integer(result) == to_integer(at(first, counter) + 1u32));
     rewrite(at(first, counter) == 8u32);
-    simp();
+    solve();
 }
 ```
 

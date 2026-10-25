@@ -38,9 +38,9 @@ int32 mint_have(int32 x, int32 k) {
     produces k of ok(x);
 } by {
     step_until(function.exit);
-    have 0 < k by { unfold(positive); simp(); }
+    have 0 < k by { unfold(positive); solve(); }
     fold(k of ok(x));
-    simp();
+    solve();
 }
 ```
 

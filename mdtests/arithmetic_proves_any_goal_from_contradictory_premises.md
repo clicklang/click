@@ -21,7 +21,7 @@ int32 pick(int32 x, int32 y) {
 } by {
     have x < 0 implies to_integer(y) < to_integer(y - x) by { intro(); arithmetic() using { x < 0; x >= 0; }; }
     step();
-    simp();
+    solve();
 }
 ```
 

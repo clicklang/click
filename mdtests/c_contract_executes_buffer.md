@@ -23,7 +23,7 @@ theorem raw_is_buffered(callback: void (*)(int32*, int32))
         unfold(Buffer(data, count));
         step(Raw);
         fold(Buffer(data, count));
-        simp();
+        solve();
     }
 }
 ```

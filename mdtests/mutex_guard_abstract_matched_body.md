@@ -70,7 +70,7 @@ int32 read_counter(struct counter *counter) {
     step();
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

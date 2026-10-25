@@ -772,8 +772,8 @@ unavailable, preserving their separate planned Euclidean policy.
 ```click
 theorem guarded(a: Integer, b: Integer) {
     requires b != 0;
-    ensures truncating_quotient(a, b) == truncating_quotient(a, b) by simp();
-    ensures truncating_remainder(a, b) == truncating_remainder(a, b) by simp();
+    ensures truncating_quotient(a, b) == truncating_quotient(a, b) by solve();
+    ensures truncating_remainder(a, b) == truncating_remainder(a, b) by solve();
 }
 ```
 
@@ -836,7 +836,7 @@ identity automatically.
 <!-- verified-example: mdtests/integer_theorem_observed_arguments.md -->
 ```click
 theorem integer_reflexive(z: Integer) {
-    ensures z == z by simp();
+    ensures z == z by solve();
 }
 
 theorem observe64(x: int64) {
@@ -1280,7 +1280,7 @@ theorem observed_quotient_correction(q: int64, quotient: Integer) {
         have to_integer(q + 1i64) == to_integer(q) + to_integer(1i64) by auto();
         rewrite(to_integer(q + 1i64) == to_integer(q) + 1);
         rewrite(to_integer(q) == quotient);
-        simp();
+        solve();
     }
 }
 ```

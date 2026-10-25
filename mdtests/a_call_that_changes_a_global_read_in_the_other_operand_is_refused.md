@@ -24,7 +24,7 @@ int f() {
     requires g == 0;
     owns g;
     ensures result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

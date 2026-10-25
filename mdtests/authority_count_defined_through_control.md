@@ -24,7 +24,7 @@ void inspect(struct pool* pool) {
         }
         have defined(count(item(pool, _)) + 1) by {
             rewrite(count(item(pool, _)) == pool->checked_out);
-            simp();
+            solve();
         }
     }
 }

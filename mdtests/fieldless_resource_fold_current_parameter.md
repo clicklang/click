@@ -34,7 +34,7 @@ struct node* finish(struct node* p, struct node* q) {
     step_until(function.exit);
     fold(tag_at(result));
     unfold(tag_at(result));
-    simp();
+    solve();
 }
 ```
 

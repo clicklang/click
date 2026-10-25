@@ -37,7 +37,7 @@ theorem walk_in_range(next: int32[], n: int32, from: int32, fuel: Nat) {
         induct(fuel) as ih {
             Nat::Zero => {
                 unfold(walk(next, from, Nat::Zero));
-                simp();
+                solve();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));

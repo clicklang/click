@@ -32,7 +32,7 @@ int32 c(int32 n) {
         assumption();
     }
     have result <= 1 by { arithmetic() using { result - 1 <= 0; }; }
-    simp();
+    solve();
 }
 ```
 

@@ -30,12 +30,12 @@ contract int32 Shifts(int32 x) {
 int32 add3(int32 x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + 3;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 theorem add3_adds_four() executes add3(int32 x) {
     ensures Adds(&add3, { amount: 4 }) by {
         step();
-        simp();
+        solve();
     }
 }
 ```

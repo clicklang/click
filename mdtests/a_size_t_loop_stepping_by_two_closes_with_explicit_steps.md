@@ -57,7 +57,7 @@ theorem step_two(i: uint64, length: uint64) {
                 to_integer(i + 1u64) + 1 <= to_integer(length);
             };
         }
-        simp();
+        solve();
     }
 }
 
@@ -82,7 +82,7 @@ theorem step_two_decreases(i: uint64, length: uint64) {
                 to_integer(i + 2u64) == to_integer(i) + to_integer(2u64);
             };
         }
-        simp();
+        solve();
     }
 }
 
@@ -105,7 +105,7 @@ uint8 last(const uint8* bytes, uint64 length) {
                 apply(step_two_decreases(i, length));
             }
             step(); step();
-            simp();
+            solve();
         }
     }
 }

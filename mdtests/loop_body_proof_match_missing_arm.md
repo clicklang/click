@@ -52,12 +52,12 @@ void spin(struct cell* node, int32 n) {
         invariant i <= n;
         invariant c.model == old(c.model);
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match c.model {
                 Sign::Pos(value) => {
                     have Sign::Pos(value) == old(c.model) by {
-                        simp() using { c.model == Sign::Pos(value); c.model == old(c.model); };
+                        solve() using { c.model == Sign::Pos(value); c.model == old(c.model); };
                     }
                     unfold(c);
                     step();
@@ -68,7 +68,7 @@ void spin(struct cell* node, int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

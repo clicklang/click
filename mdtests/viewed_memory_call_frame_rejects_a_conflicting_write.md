@@ -11,13 +11,13 @@ void mutate(int32* p) { owns item(p); } by {
     unfold(item(p));
     execute();
     fold(item(p));
-    simp();
+    solve();
 }
 int32 observe(int32* p) {
     views *p;
     owns item(p);
     ensures result == *p;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

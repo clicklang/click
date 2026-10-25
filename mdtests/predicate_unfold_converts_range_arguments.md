@@ -19,7 +19,7 @@ int32 widened_range(uint8 p[], uint32 lo, uint32 hi) {
             (uint64) lo <= found and found < (uint64) hi and p[found] == 'x'
         }
         witness { k: found };
-        simp();
+        solve();
     }
 }
 ```

@@ -31,7 +31,7 @@ void mark_prefix(int32 a[], int32 n, int32 m) {
         invariant i <= n;
         invariant a[m] == 7;
         owns a[0..n];
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             step();
             have a[m] == 7;
