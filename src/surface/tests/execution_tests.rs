@@ -2410,3 +2410,75 @@ fn a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name() {
     });
     assert!(duplicates.is_empty(), "{duplicates:?}");
 }
+
+/// One read, one name, over the whole mdtest corpus: every C mdtest is
+/// verified under [`crate::kernel::duplicate_read_names::capture`], and no
+/// read may be named twice for a version the assumption-free load equality
+/// proves the same. Nightly: it verifies the corpus once more, serially.
+#[test]
+#[ignore = "nightly: verifies every C mdtest again under the read-name audit"]
+fn every_mdtest_names_each_read_once() {
+    // The naming walk never crosses a loop havoc (`step_effect::Evidence`):
+    // a loop's checked footprint comes from the proof's own annotation, so a
+    // read on either side keeps its own name and the footprint relates them.
+    // The load equality may cross that footprint, so these reads are
+    // reported though their two names are by design.
+    const LOOP_HAVOC_NAMES: &[&str] = &[
+        "a_callee_reads_inside_a_chunk_a_loop_holds",
+        "entry_alignment_premise_expands",
+        "shifted_loop_effect_preserves_prefix",
+    ];
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+    let mut paths = std::fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "md"))
+        .collect::<Vec<_>>();
+    paths.sort();
+    let mut duplicates = Vec::new();
+    let mut allowed_seen = Vec::new();
+    for path in paths {
+        let name = path.file_stem().unwrap().to_string_lossy().into_owned();
+        let Ok(mdtest) = crate::cli::read_mdtest(&path) else {
+            continue;
+        };
+        let (Some(click), Ok(inputs)) = (
+            mdtest.click_source.as_deref(),
+            crate::cli::prepare_mdtest_inputs(&mdtest),
+        ) else {
+            continue;
+        };
+        let crate::cli::CInput::Bundle(sources) = &inputs else {
+            continue;
+        };
+        let sources = sources
+            .iter()
+            .map(|(file, source)| (file.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let project = crate::cli::read_mdtest_project_if_needed(&path, click, &inputs)
+            .ok()
+            .flatten();
+        let reports = crate::kernel::duplicate_read_names::capture(|| {
+            let _ = match &project {
+                Some(project) => crate::surface::verify_c0_project(project, &sources).map(|_| ()),
+                None => verify_c0_sources(click, &sources).map(|_| ()),
+            };
+        });
+        if reports.is_empty() {
+            continue;
+        }
+        if LOOP_HAVOC_NAMES.contains(&name.as_str()) {
+            allowed_seen.push(name);
+        } else {
+            duplicates.push(format!("{name}: {reports:?}"));
+        }
+    }
+    assert!(duplicates.is_empty(), "{duplicates:#?}");
+    // An entry that no longer reports is stale: remove it.
+    for name in LOOP_HAVOC_NAMES {
+        assert!(
+            allowed_seen.iter().any(|seen| seen == name),
+            "`{name}` no longer names a read twice; remove it from the list"
+        );
+    }
+}
