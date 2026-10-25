@@ -1103,10 +1103,28 @@ mdtests and examples.
     accepts more proofs. Expansion writes the loop's steps, splits and
     closers, as it writes `execute`'s today. The misleading refusal above
     goes with it.
+    Done: a script that ends in a statement-level tactic is followed by the
+    closer an omitted proof ends with, which at a live frontier executes
+    what remains and at function exit closes what is open; a script that
+    ends in a split ends in its arms, each with its own closer. The tail's
+    site follows the script's last tactic, so its execution and closing are
+    charged to a smart budget. The implicit closer of a written script had
+    been charged nowhere: `owned_split_buffer_pipeline` spent 2,247,631 units
+    (15.7 s) in it under a 2,000,000-unit smart budget. Its claim is now
+    written in expanded form, and its post-execution work is 47,548 units.
+    `mdtests/a_script_that_stops_with_c_left_is_finished.md` covers the tail.
+    Scripts that end in a split keep the uncharged closer in each arm.
 21. **A written `auto();` is `solve();`.** It closes the first open goal; the
     implicit tail closes the rest and runs any C left. Migrate the three
     mdtests. `SmartTacticKind` becomes `Arithmetic`, `Solve` and `Execute`,
     with the four classification stores, profiling and trace labels.
+    Done: `auto();` parses as `solve();`. `SmartTacticKind` is `Arithmetic`,
+    `Solve` and `Execute`, and what an omitted proof and the implicit
+    closer stand for is the smart site `SmartSite::Implicit`, still spelled
+    `auto` in refusals until step 24. The three mdtests are now
+    `a_written_auto_closes_one_goal.md`,
+    `a_script_that_stops_after_explicit_steps_executes_the_rest.md` and
+    `a_script_that_stops_after_a_call_reports_the_remaining_goal.md`.
 22. **`execute_until` is `step_until`.** It is repeated `step()` and never
     forks: it refuses at an undecided branch, and each requirement it
     crosses is proved by `solve`. Rename it, keeping the old spelling as an
