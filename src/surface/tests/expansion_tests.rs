@@ -19011,11 +19011,14 @@ fn expanded_string_witness_survives_retained_and_cold_rechecking() {
 #[test]
 #[ignore = "nightly: signed byte conditions across fresh, expanded, and retained proofs"]
 fn known_unsigned_byte_decides_signed_comparison_in_all_proof_modes() {
-    for (fixture, function) in [
-        ("known_byte_decides_signed_char_comparison", "first_is_nul"),
+    for (fixture, claim) in [
+        (
+            "known_byte_decides_signed_char_comparison",
+            "first_is_nul.ensures_0",
+        ),
         (
             "known_byte_decides_signed_char_comparison_cstr",
-            "terminator",
+            "terminator.contract",
         ),
     ] {
         let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
@@ -19026,11 +19029,9 @@ fn known_unsigned_byte_decides_signed_comparison_in_all_proof_modes() {
         let (session, verified_for_expansion) =
             C0VerificationSession::new(&source, &sources).unwrap();
         let expanded =
-            expand_checked_grouped_claim(&source, &verified_for_expansion, function).unwrap();
-        let position = expansion::position_at_offset(
-            &expanded,
-            expanded.find("ensures result == 1;").unwrap(),
-        );
+            expand_checked_function_claim(&source, &verified_for_expansion, claim).unwrap();
+        let position =
+            expansion::position_at_offset(&expanded, expanded.find("ensures result == 1").unwrap());
 
         session
             .verify_at(&expanded, position.line, position.column)
