@@ -16,10 +16,7 @@ int32 first(int32 a[], int32 n) {
     requires 1 <= n;
     requires a[1] == 7;
     views a[0..1];
-    ensures result == 7 by {
-        execute();
-        simp();
-    }
+    ensures result == 7;
 }
 ```
 

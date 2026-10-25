@@ -37,8 +37,6 @@ void mark_somewhere(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
         };
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

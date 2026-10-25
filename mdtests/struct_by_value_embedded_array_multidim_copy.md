@@ -67,9 +67,6 @@ struct packet finish(struct packet value) {
 
 int32 run_struct_by_value_embedded_array_multidim() {
     ensures result == 493;
-} by {
-    execute();
-    simp();
 }
 ```
 

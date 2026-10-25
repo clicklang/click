@@ -39,8 +39,6 @@ void mark_global(int32 v[], int32 n) {
         };
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

@@ -15,9 +15,6 @@ verifying "guard_parameter.c";
 
 void change_local(struct counter *counter, struct counter *other) {
     owns mutex_live(&counter->mu);
-} by {
-    execute();
-    simp();
 }
 ```
 

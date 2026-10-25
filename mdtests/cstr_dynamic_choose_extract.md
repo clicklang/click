@@ -79,8 +79,6 @@ uint64 read_terminator(uint8 bytes[]) {
                 };
             }
         }
-        execute();
-        simp();
     }
 }
 ```

@@ -26,7 +26,6 @@ int32 use_population(int32* cell) {
     open(population(cell)) {
         fold(inner_cell(cell));
     }
-    execute();
 }
 ```
 

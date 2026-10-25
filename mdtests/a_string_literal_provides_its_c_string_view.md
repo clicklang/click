@@ -50,41 +50,26 @@ verifying "literal_views.c";
 
 uint64 measured() {
     ensures result == 3u64;
-} by {
-    execute();
-    simp();
 }
 
 uint64 tail() {
     ensures result == 2u64;
-} by {
-    execute();
-    simp();
 }
 
 int32 unit(char buf[]) {
     owns buf[0..8];
     ensures result == 2;
-} by {
-    execute();
-    simp();
 }
 
 int32 separator(char buf[], int32 no_space) {
     owns buf[0..8];
     ensures (no_space != 0 and result == 0) or (no_space == 0 and result == 1);
-} by {
-    execute();
-    simp();
 }
 
 int32 prefix(char buf[], int32 i) {
     requires i == 1;
     owns buf[0..8];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

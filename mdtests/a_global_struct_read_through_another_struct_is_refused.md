@@ -21,8 +21,6 @@ verifying "globals.c";
 int32 read_shared() {
     owns shared.x;
     ensures true;
-} by {
-    execute();
 }
 ```
 

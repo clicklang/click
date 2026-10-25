@@ -24,9 +24,6 @@ void release(int32 *x, int32 i, int32 j) {
     requires i <= j;
     consumes x[0..(i + 1)];
     consumes x[j..(j + 1)];
-} by {
-    execute();
-    simp();
 }
 ```
 

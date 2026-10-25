@@ -22,9 +22,6 @@ int32 write_twice(int32* a, int32 i) {
     requires 0 <= i;
     requires i < 8;
     ensures result == 3;
-} by {
-    execute();
-    simp();
 }
 ```
 

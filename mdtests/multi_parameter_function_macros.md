@@ -30,16 +30,10 @@ verifying "main.c";
 
 int32 run() {
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 
 int32 nested() {
     ensures result == 9;
-} by {
-    execute();
-    simp();
 }
 ```
 

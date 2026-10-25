@@ -21,9 +21,6 @@ verifying "declarator_depth.c";
 int32 mixed_depth(int32* p) {
     views p[0..1];
     ensures result == p[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

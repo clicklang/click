@@ -39,8 +39,6 @@ void touch(int32* data, int32* occupied, int32 capacity, int32 index, int32 j) {
     give(data[index..index + 1]);
     give(data[j..j + 1]);
     fold(arena_cells(data, occupied, capacity));
-    execute();
-    simp();
 }
 ```
 

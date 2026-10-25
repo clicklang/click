@@ -21,9 +21,6 @@ verifying "a_bounded_symbolic_read_of_a_const_global_table_claimed_above_its_fir
 
 int32 g(int32 x) {
     ensures result >= 2;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -704,19 +704,19 @@ pub(in crate::surface) fn prove_claims_by_grouped_auto(
 /// A written script followed by the implicit tail every script ends with: a
 /// closer at a live frontier executes the C that remains, and at function
 /// exit it closes what is still open, as the implicit closer does. A script
-/// that ends in a split (`if`, `cases`, `match`, `branch`, `outcomes`,
-/// `both`) ends in its arms, each with its own implicit closer, so nothing
-/// is appended after it. Returns whether the tail was appended.
+/// that ends in `match`, `outcomes`, `both` or structural induction ends in
+/// its arms, each with its own implicit closer, so nothing is appended after
+/// it. After a proof `if` or `cases` the tail is appended: before execution
+/// it runs the C the split left, and after execution, where the split forks
+/// the returned paths, it is the closer each forked path runs. Returns
+/// whether the tail was appended.
 pub(super) fn with_implicit_tail(tactics: &[ProofTactic]) -> (Vec<ProofTactic>, bool) {
     let mut tactics = tactics.to_vec();
     let ends_linearly = !matches!(
         tactics.last(),
         None | Some(
             ProofTactic::AutoClose
-                | ProofTactic::If(_)
-                | ProofTactic::Cases(_)
                 | ProofTactic::Match(_)
-                | ProofTactic::Branch(_)
                 | ProofTactic::CallOutcomes(_)
                 | ProofTactic::Both(_)
                 | ProofTactic::StructuralInduct { .. }

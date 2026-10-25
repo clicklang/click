@@ -21,7 +21,6 @@ void f(struct node* p, int32 more) {
         initialize by simp();
         preserve by { step(); step(); close_invariants() by simp(); }
     }
-    execute();
 }
 ```
 

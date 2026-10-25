@@ -22,8 +22,6 @@ void remember(int32* p) {
 } by {
     let record = fold(revision_record(p, target), { revision: target.revision }, { target: target });
     let { target: target } = unfold(record);
-    execute();
-    simp();
 }
 ```
 

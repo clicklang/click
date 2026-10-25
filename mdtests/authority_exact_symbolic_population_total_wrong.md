@@ -32,8 +32,6 @@ void mint_n(int32* o, int32 n) {
     ensures count(tok(o)) == old(count(tok(o))) + n;
 } by {
     fold(n of tok(o));
-    execute();
-    simp();
 }
 
 void wraps_its_population(int32* o, int32 k) {
@@ -44,9 +42,6 @@ void wraps_its_population(int32* o, int32 k) {
     produces k of tok(o);
 
     ensures count(tok(o)) == 2000000001;
-} by {
-    execute();
-    simp();
 }
 
 ```

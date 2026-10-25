@@ -22,18 +22,12 @@ int32 wide_store(uint8* b) {
     views b[0..8];
     owns b[0..5];
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 uint8 caller(uint8* b) {
     views b[0..8];
     owns b[0..5];
     ensures result == old(b[7]);
-} by {
-    execute();
-    simp();
 }
 ```
 

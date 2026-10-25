@@ -22,9 +22,6 @@ verifying "a_zero_field_of_a_million_element_struct_array_is_not_one.c";
 
 int main() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

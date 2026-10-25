@@ -28,9 +28,6 @@ int32 bump() {
     requires counter_is(5);
     ensures counter == 6;
     ensures counter_is(5);
-} by {
-    execute();
-    simp();
 }
 ```
 

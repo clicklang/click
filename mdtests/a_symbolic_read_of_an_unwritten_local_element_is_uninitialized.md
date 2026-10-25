@@ -24,9 +24,6 @@ verifying "a_symbolic_read_of_an_unwritten_local_element_is_uninitialized.c";
 
 int32 inside(int32 x) {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

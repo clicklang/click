@@ -24,9 +24,6 @@ verifying "a_claim_true_on_some_paths_of_a_split_condition_is_refused.c";
 
 int32 both_positive(int32 x, int32 y) {
     ensures result == 2 or y < 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

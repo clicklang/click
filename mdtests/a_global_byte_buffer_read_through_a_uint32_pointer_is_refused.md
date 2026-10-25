@@ -20,8 +20,6 @@ verifying "globals.c";
 uint32 read_buffer() {
     owns buffer[0..4];
     ensures true;
-} by {
-    execute();
 }
 ```
 

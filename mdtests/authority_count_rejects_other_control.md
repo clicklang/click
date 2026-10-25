@@ -23,8 +23,6 @@ void wrong_count(struct object* first, struct object* second) {
     owns control(first);
 } by {
     have count(reference(second)) == 0 by simp();
-    execute();
-    simp();
 }
 ```
 

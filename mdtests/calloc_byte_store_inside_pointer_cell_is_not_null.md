@@ -21,9 +21,6 @@ verifying "calloc_byte_store_inside_pointer_cell_is_not_null.c";
 
 int32 f() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

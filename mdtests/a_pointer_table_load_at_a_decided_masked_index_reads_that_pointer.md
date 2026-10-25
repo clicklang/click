@@ -17,9 +17,6 @@ verifying "k1.c";
 int32 f(uint32 u) {
     requires (u & 1) == 1;
     ensures result == 6;
-} by {
-    execute();
-    simp();
 }
 ```
 

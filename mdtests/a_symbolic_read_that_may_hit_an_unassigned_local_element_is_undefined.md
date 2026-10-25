@@ -27,9 +27,6 @@ verifying "a_symbolic_read_that_may_hit_an_unassigned_local_element_is_undefined
 
 int32 some_assigned(int32 x) {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

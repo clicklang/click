@@ -34,9 +34,6 @@ resource inner_storage(p: struct packet*) {
 uint8 inspect_packet(struct packet* source) {
     views inner_storage(source);
     ensures result == source->inner.flag;
-} by {
-    execute();
-    simp();
 }
 
 int32 run_inspect() {

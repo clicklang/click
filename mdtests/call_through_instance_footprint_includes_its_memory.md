@@ -45,8 +45,6 @@ void set_one(int32* occupied, int32 capacity, int32 start) {
     step();
     have occupied[start] == 1 by simp();
     let w = fold(window(occupied, capacity, start), { tag: t });
-    execute();
-    simp();
 }
 
 void caller(int32* occupied, int32 capacity, int32 start) {
@@ -76,8 +74,6 @@ void caller(int32* occupied, int32 capacity, int32 start) {
         contradiction(occupied[start] == 1);
     }
     let w = fold(window(occupied, capacity, start), { tag: t2 });
-    execute();
-    simp();
 }
 ```
 

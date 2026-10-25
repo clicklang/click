@@ -20,9 +20,6 @@ verifying "string_literal_self_equality.c";
 
 int32 string_literal_self_equality() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

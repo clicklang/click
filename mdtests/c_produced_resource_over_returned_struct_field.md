@@ -35,15 +35,11 @@ struct holder wrap(int32* p) {
     consumes cell(p);
     produces cell(result.p);
     ensures result.p == p;
-} by {
-    execute();
 }
 
 int32 rewrap(int32* p) {
     owns cell(p);
     ensures result == 0;
-} by {
-    execute();
 }
 ```
 

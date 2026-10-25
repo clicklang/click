@@ -29,9 +29,6 @@ verifying "const_destination.c";
 
 int f() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

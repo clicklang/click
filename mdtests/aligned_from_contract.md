@@ -20,9 +20,6 @@ int32 aligned_from_contract(uint8* p) {
     ensures aligned(p + 2, 2);
     ensures aligned(p + 4, 4);
     ensures aligned(p, 4);
-} by {
-    execute();
-    simp();
 }
 ```
 

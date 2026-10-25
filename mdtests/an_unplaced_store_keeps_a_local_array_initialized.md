@@ -46,18 +46,12 @@ int32 may_hit_either(int32 u) {
     requires 0 <= u;
     requires u < 2;
     ensures result >= 5;
-} by {
-    execute();
-    simp();
 }
 
 int32 old_or_new(int32 u) {
     requires 0 <= u;
     requires u < 2;
     ensures result == 5 or result == 7;
-} by {
-    execute();
-    simp();
 }
 
 int32 any_element(int32 u, int32 v) {
@@ -66,9 +60,6 @@ int32 any_element(int32 u, int32 v) {
     requires 0 <= v;
     requires v < 2;
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

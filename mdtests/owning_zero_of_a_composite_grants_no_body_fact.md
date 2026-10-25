@@ -25,8 +25,6 @@ void probe(int32 amount, int32 n) {
     requires amount == 0;
     owns amount of bundle(n);
     ensures n == 3;
-} by {
-    execute();
 }
 int32 caller() {
     ensures 1 == 0;

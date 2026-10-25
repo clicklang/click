@@ -34,8 +34,6 @@ int32 bounded(int32 m, int32 n) {
     have m < 2147483647 by {
         arithmetic() using { m < n; ((uint32)n) <= 1073741823u32; };
     }
-    execute();
-    simp();
 }
 
 int32 bounded_by_expansion(int32 m, int32 n) {

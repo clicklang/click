@@ -26,9 +26,6 @@ int32 field(int32 x) {
     requires 0 <= x;
     requires x < 2;
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

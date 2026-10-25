@@ -54,16 +54,10 @@ verifying "int64_sum_of_widened_32_bit_operands.c";
 
 int64 widened_sum(uint32 t, int32 x) {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 
 int64 widened_difference(uint32 t, int32 x) {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 
 int64 bounded_sum(uint32 t, int32 x) {
@@ -71,9 +65,6 @@ int64 bounded_sum(uint32 t, int32 x) {
     requires 0 <= x;
     requires x <= 1000;
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 
 int64 mixed_load(uint32 tag, int32* p) {
@@ -82,9 +73,6 @@ int64 mixed_load(uint32 tag, int32* p) {
     requires 0 <= p[0];
     requires p[0] <= 1000;
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

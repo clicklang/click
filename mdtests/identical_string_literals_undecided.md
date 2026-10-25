@@ -21,9 +21,6 @@ verifying "identical_string_literals_undecided.c";
 
 int32 identical_string_literals_undecided() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

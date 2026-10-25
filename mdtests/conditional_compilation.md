@@ -53,9 +53,6 @@ int32 add_config(int32 value) {
 int32 run(int32 value) {
     requires value <= 2147483643;
     ensures result == value + 4;
-} by {
-    execute();
-    simp();
 }
 ```
 

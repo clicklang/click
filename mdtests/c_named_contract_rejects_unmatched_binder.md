@@ -39,24 +39,15 @@ void needs_two(int32* p, int32* q) {
     owns u: other_at(q);
     ensures t.model == old(t.model);
     ensures u.model == old(u.model);
-} by {
-    execute();
-    simp();
 }
 
 int32 accept(void (*step)(int32*, int32*)) {
     requires PreserveOne(step);
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 caller() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

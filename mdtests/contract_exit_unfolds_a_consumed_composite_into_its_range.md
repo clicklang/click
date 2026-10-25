@@ -19,8 +19,6 @@ int32 f(int32* p) {
     produces p[0..1];
 } by {
     unfold(wrap(p));
-    execute();
-    simp();
 }
 ```
 

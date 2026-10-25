@@ -35,9 +35,6 @@ int32 heap_all(int32 x) {
     requires 0 <= x;
     requires x < 4;
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

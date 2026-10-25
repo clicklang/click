@@ -39,9 +39,6 @@ int read_both(signed char* s, int i) {
     requires i < 4;
     views s[0..4];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

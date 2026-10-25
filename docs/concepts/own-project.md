@@ -114,17 +114,14 @@ verifying "label_fit.c";
 
 uint64 label_fit(uint64 length) {
     ensures result < 32;
-} by {
-    execute();
-    simp();
 }
 ```
 
 `unsigned long` is `uint64` under Click's default target,
 `x86_64-unknown-linux-gnu` in `userspace` mode; see
-[Supported types](../reference/language/c.md#supported-types). The proof
-`execute(); simp();` runs the C symbolically along every path and then closes
-each postcondition from what execution established.
+[Supported types](../reference/language/c.md#supported-types). The proof is
+omitted: Click runs the C symbolically along every path and then closes each
+postcondition from what execution established.
 
 ## Bring in the build flags
 
@@ -247,9 +244,6 @@ verifying "label_fit.c";
 
 uint64 label_fit(uint64 length) {
     ensures result < 16;
-} by {
-    execute();
-    simp();
 }
 ```
 
@@ -289,9 +283,6 @@ verifying "label_fit.c";
 uint64 label_fit(uint64 length) {
     ensures result < 32;
     ensures result <= length;
-} by {
-    execute();
-    simp();
 }
 ```
 
@@ -370,9 +361,6 @@ uint64 label_measure(const char* src) {
     views click::cstr::cstr_at(src, n);
     ensures result < 32;
     ensures result <= n;
-} by {
-    execute();
-    simp();
 }
 ```
 

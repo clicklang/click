@@ -22,8 +22,6 @@ int32 get(int32* p) {
     ensures result == 5;
 } by {
     unfold(five(p));
-    execute();
-    simp();
 }
 ```
 

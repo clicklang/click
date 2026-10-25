@@ -18,9 +18,6 @@ verifying "a_wide_unsigned_index_at_its_bound_is_refused.c";
 
 void write_at_bound(int32* values, uint64 x) {
     owns values[0..4];
-} by {
-    execute();
-    simp();
 }
 ```
 

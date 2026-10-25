@@ -28,8 +28,6 @@ void retarget(int32 *a, int32 *b, int32 n) {
     ) using {
         forall (k: int32) { 0 <= k and k < n implies old(b[k]) == old(b[k]) };
     };
-    execute();
-    simp();
 }
 ```
 

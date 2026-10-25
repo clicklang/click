@@ -33,9 +33,6 @@ contract void SetsZero(int32* cell) {
 void clear_cell(int32* cell) {
     owns cell[0..1];
     ensures cell[0] == 0;
-} by {
-    execute();
-    simp();
 }
 
 theorem clear_cell_is_sets_zero() {
@@ -50,9 +47,6 @@ void invoke_clear(void (*callback)(int32*), int32* cell) {
     requires SetsZero(callback);
     owns cell[0..1];
     ensures IsZero(cell);
-} by {
-    execute();
-    simp();
 }
 
 void predicate_refinement_caller(int32* cell) {
@@ -60,8 +54,6 @@ void predicate_refinement_caller(int32* cell) {
     ensures IsZero(cell);
 } by {
     apply(clear_cell_is_sets_zero());
-    execute();
-    simp();
 }
 ```
 

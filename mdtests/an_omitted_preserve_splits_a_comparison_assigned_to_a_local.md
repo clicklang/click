@@ -34,8 +34,6 @@ int32 count_evens(int32 n) {
         decreases n - i;
         invariant 0 <= i and i <= n and 0 <= evens and evens <= i;
     }
-    execute();
-    simp();
 }
 ```
 

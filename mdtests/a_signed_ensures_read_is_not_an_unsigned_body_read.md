@@ -25,9 +25,6 @@ int read_unsigned(signed char* s, int i) {
     requires i < 4;
     views s[0..4];
     ensures result == s[i];
-} by {
-    execute();
-    simp();
 }
 ```
 

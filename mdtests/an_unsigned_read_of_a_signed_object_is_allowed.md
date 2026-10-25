@@ -26,18 +26,12 @@ uint64 read_unsigned(int64* p) {
     requires p != 0;
     views *p;
     ensures result == (uint64)*p;
-} by {
-    execute();
-    simp();
 }
 
 int64 read_back(int64* p) {
     requires p != 0;
     views *p;
     ensures result == *p;
-} by {
-    execute();
-    simp();
 }
 ```
 

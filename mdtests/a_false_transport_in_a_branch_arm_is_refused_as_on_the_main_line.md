@@ -38,8 +38,6 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m, int32 c) {
         transport(at(entry, a[m]) == at(entry, a[m]), at(entry, a[m]) == 5);
     } else {
     }
-    execute();
-    simp();
 }
 ```
 

@@ -24,9 +24,6 @@ verifying "zeroed_char_fields.c";
 
 int32 zero_fields() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

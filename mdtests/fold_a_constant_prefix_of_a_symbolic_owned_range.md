@@ -28,7 +28,6 @@ void cut(uint8* s, uint64 n) {
     produces s[1u64..n];
 } by {
     fold(one(s));
-    execute();
 }
 ```
 

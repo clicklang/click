@@ -41,7 +41,6 @@ void follow_model(struct model_node* p, int32 more) {
             } }
         }
     }
-    execute();
 }
 ```
 ```expect

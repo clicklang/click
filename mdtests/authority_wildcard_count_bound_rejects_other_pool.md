@@ -15,9 +15,6 @@ void probe(int32* pool, int32* other, int32 object) {
     owns authority(slot(pool, _));
     owns slot(other, object);
     ensures 1 <= count(slot(pool, _));
-} by {
-    execute();
-    simp();
 }
 ```
 

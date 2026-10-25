@@ -31,8 +31,6 @@ int32 count_down_by_cases(int32 n) {
         invariant n >= 0;
         decreases n;
     }
-    execute();
-    simp();
 }
 ```
 

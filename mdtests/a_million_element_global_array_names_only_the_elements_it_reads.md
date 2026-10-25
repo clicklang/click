@@ -32,9 +32,6 @@ int32 swap_ends() {
     ensures buf[999999] == old(buf[0]);
     ensures result == old(buf[7]);
     ensures buf[5] == old(buf[5]);
-} by {
-    execute();
-    simp();
 }
 ```
 

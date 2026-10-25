@@ -30,9 +30,6 @@ int32 read_after_maybe_aliasing_store(int32* a, int32 i, int32 m) {
     requires m < 8;
     requires a[m] != 7;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

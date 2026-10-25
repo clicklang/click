@@ -31,9 +31,6 @@ int32 read_past_a_surviving_store(int32* a, int32 i, int32 j, int32 m) {
     requires m != j;
     requires i != j;
     ensures result == old(a[m]);
-} by {
-    execute();
-    simp();
 }
 ```
 

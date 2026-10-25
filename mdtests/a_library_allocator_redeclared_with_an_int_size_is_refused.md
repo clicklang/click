@@ -23,9 +23,6 @@ verifying "main.c";
 
 int32 allocate() {
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

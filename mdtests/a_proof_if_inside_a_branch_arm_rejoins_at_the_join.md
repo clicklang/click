@@ -39,8 +39,6 @@ int32 pick(int32 a, int32 c) {
   }
   have x <= 1 by { auto(); }
  }
- execute();
- simp();
  }
 }
 ```

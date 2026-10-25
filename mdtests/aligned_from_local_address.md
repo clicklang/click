@@ -16,9 +16,6 @@ verifying "aligned_from_local_address.c";
 
 int32 local_address_is_aligned() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

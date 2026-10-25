@@ -21,8 +21,6 @@ void check(struct node* p, struct node* q) {
     have p == q by assumption();
     have &p->next == &q->next;
     have p->next == q->next;
-    execute();
-    simp();
 }
 ```
 

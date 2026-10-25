@@ -35,8 +35,6 @@ int32 never_negative(char buf[], int32 len, uint32 value, char name[]) {
 } by {
     have (uint64) len != 0u64 by { auto(); }
     step(snprintf, { n1: 8u64 });
-    execute();
-    simp();
 }
 ```
 

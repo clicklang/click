@@ -26,9 +26,6 @@ verifying "a_struct_field_read_in_a_conjunctive_branch_claimed_without_a_value_i
 
 int32 f(int32 x) {
     ensures result == 0 or result == 2;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -42,23 +42,14 @@ verifying "modeled_pthread_shared_local_nested_reader.c";
 int32 inspect(struct cell *q) {
     views q->value;
     ensures result == q->value;
-} by {
-    execute();
-    simp();
 }
 
 void *reader(void *p) {
     views ((struct cell *)p)->value;
-} by {
-    execute();
-    simp();
 }
 
 int32 run() {
     ensures result == 0 or result == 9;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -15,9 +15,6 @@ verifying "count.c";
 int32 identity(int32 count) {
     requires count;
     ensures result == count;
-} by {
-    execute();
-    simp();
 }
 ```
 

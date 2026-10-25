@@ -169,9 +169,6 @@ struct rb_node* rb_next(struct rb_node* node) {
     produces ctx: ctx_at(result);
     produces sub: rb_at(result);
     ensures plug(ctx.model, sub.model) == plug(old(c.model), old(t.model));
-} by {
-    execute();
-    simp();
 }
 ```
 

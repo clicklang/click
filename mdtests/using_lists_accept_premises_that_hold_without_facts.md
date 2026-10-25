@@ -79,8 +79,6 @@ void empty_prefix(int32 a[], int32 n) {
         peel(icount(a, 0, 0)) using { 0 <= 0; };
         normalize();
     }
-    execute();
-    simp();
 }
 
 void empty_suffix(int32 a[], int32 n) {
@@ -92,8 +90,6 @@ void empty_suffix(int32 a[], int32 n) {
         peel(icount(a, n, n)) using { n <= n; };
         normalize();
     }
-    execute();
-    simp();
 }
 
 int32 probe(int32 n) {

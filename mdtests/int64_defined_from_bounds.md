@@ -57,8 +57,6 @@ int64 sum(int64 a, int64 b) {
             conclusion 0;
         }
     }
-    execute();
-    simp();
 }
 
 int64 difference(int64 a, int64 b) {
@@ -76,8 +74,6 @@ int64 difference(int64 a, int64 b) {
             conclusion 0;
         }
     }
-    execute();
-    simp();
 }
 
 int64 sum_by_simp(int64 a, int64 b) {
@@ -88,8 +84,6 @@ int64 sum_by_simp(int64 a, int64 b) {
     have defined(a + b) by {
         simp();
     }
-    execute();
-    simp();
 }
 
 int64 sum_by_listed_simp(int64 a, int64 b) {
@@ -103,8 +97,6 @@ int64 sum_by_listed_simp(int64 a, int64 b) {
             b == 1;
         };
     }
-    execute();
-    simp();
 }
 
 int64 mixed(uint32 tag, int64 b) {
@@ -118,8 +110,6 @@ int64 mixed(uint32 tag, int64 b) {
             conclusion 0;
         }
     }
-    execute();
-    simp();
 }
 ```
 

@@ -39,9 +39,6 @@ verifying "modeled_pthread_shared_readers.c";
 
 void *reader(void *p) {
     views ((struct cell *)p)->value;
-} by {
-    execute();
-    simp();
 }
 
 int32 run(struct cell *task) {

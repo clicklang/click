@@ -52,8 +52,6 @@ int32 f() {
         invariant i >= 0;
         invariant i <= 4;
     }
-    execute();
-    simp();
 }
 ```
 

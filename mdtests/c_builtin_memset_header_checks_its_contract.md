@@ -19,9 +19,6 @@ verifying "builtin_memset.c";
 int32 fill(uint8 d[]) {
     owns d[0..4];
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

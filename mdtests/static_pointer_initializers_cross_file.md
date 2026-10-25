@@ -70,8 +70,6 @@ int32 run() {
 } by {
     have target_file::target_alias[0] == 3 by simp();
     have target_file::read_static_alias::local_alias[0] == 3 by simp();
-    execute();
-    simp();
 }
 ```
 

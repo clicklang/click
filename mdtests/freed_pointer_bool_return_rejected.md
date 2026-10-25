@@ -26,9 +26,6 @@ verifying "freed_bool_return.c";
 
 bool f() {
     ensures result == 1 or result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

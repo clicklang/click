@@ -26,23 +26,14 @@ verifying "bool_parameter.c";
 
 int32 present(bool flag) {
     ensures result == flag;
-} by {
-    execute();
-    simp();
 }
 
 int32 in_range(bool flag) {
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 in_range_reversed(bool flag) {
     ensures result == 1 or result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 auto_equal(bool flag) {
@@ -55,23 +46,14 @@ int32 auto_range(bool flag) {
 
 int32 forwards(bool b) {
     ensures result == b;
-} by {
-    execute();
-    simp();
 }
 
 int32 converts() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 forwards_range(bool b) {
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

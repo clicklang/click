@@ -24,9 +24,6 @@ void f(int32* p) {
     owns seg(p, k);
     requires k == 5;
     ensures k == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

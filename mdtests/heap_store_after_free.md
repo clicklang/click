@@ -22,9 +22,6 @@ verifying "heap_store_after_free.c";
 
 int32 heap_store_after_free() {
     ensures result == -1 or result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -32,18 +32,12 @@ verifying "modeled_pthread_thread_confined_resource_rejected.c";
 void *worker(void *argument) {
     owns reference((struct cell *)argument);
     ensures count(reference((struct cell *)argument)) >= 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 run(struct cell *cell) {
     owns authority(reference(cell));
     owns reference(cell);
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -24,9 +24,6 @@ verifying "file_scope_table.c";
 char first_letter(int32 i) {
     requires i == 1;
     ensures result == 107;
-} by {
-    execute();
-    simp();
 }
 ```
 

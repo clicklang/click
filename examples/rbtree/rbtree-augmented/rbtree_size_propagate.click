@@ -92,6 +92,4 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             }
         }
     }
-    execute();
-    simp();
 }

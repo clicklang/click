@@ -36,8 +36,6 @@ int32 probe(struct Pair* p, int32 n) {
             close_invariants() by simp();
         }
     }
-    execute();
-    simp();
 }
 ```
 

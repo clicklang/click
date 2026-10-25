@@ -28,9 +28,6 @@ int32 below_idle(struct job *j) {
     requires j->tag == 0;
     views j->tag;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

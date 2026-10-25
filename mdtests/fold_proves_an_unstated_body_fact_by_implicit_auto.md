@@ -16,8 +16,6 @@ void make(int32 x, int32 y) {
     produces either(x, y);
 } by {
     fold(either(x, y));
-    execute();
-    simp();
 }
 ```
 

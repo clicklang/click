@@ -36,9 +36,6 @@ void subtract_assign(struct FeeFrac* self, struct FeeFrac* other) {
     owns self->size;
     ensures self->fee == 0i64;
     ensures self->size == 0;
-} by {
-    execute();
-    simp();
 }
 
 void add_assign(struct FeeFrac* self, struct FeeFrac* other) {
@@ -51,9 +48,6 @@ void add_assign(struct FeeFrac* self, struct FeeFrac* other) {
     requires self->size <= 1073741823;
     ensures to_integer(self->fee) == to_integer(old(self->fee) + old(self->fee));
     ensures to_integer(self->size) == to_integer(old(self->size) + old(self->size));
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -19,9 +19,6 @@ verifying "kernel_plain_char.c";
 
 int32 negative_byte() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

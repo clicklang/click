@@ -16,9 +16,6 @@ verifying "mutex_use_balanced_wrong_mutex.c";
 
 void helper(struct holder *holder) {
     owns mutex_use(&holder->mu);
-} by {
-    execute();
-    simp();
 }
 ```
 

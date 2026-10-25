@@ -16,9 +16,6 @@ verifying "wide_empty_difference.c";
 int32 f(char *dst, uint64 osz) {
     owns dst[0..osz];
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

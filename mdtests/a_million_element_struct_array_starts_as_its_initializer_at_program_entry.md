@@ -38,9 +38,6 @@ verifying "a_million_element_struct_array_starts_as_its_initializer_at_program_e
 
 int main() {
     ensures result == 24;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -14,8 +14,6 @@ void probe(int32* p, int32 amount) {
     ensures count(permit(p)) == amount;
 } by {
     observe(amount of permit(p));
-    execute();
-    simp();
 }
 ```
 

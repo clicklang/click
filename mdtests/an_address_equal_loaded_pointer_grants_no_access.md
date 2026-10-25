@@ -20,8 +20,6 @@ verifying "address-equal.c";
 void f(struct node *p, struct node *g) {
     owns *p;
     owns *g;
-} by {
-    execute();
 }
 ```
 

@@ -42,8 +42,6 @@ int32 any_zero(int32 *a, int32 n) {
         invariant i <= n;
         invariant viewable(a[0..i]);
     }
-    execute();
-    simp();
 }
 ```
 

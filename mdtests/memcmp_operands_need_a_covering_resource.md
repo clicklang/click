@@ -24,8 +24,6 @@ int32 compare4(const uint8* a, const uint8* b) {
     have forall (k: uint64) {
         k < 4u64 implies defined(a[k]) and defined(b[k])
     } by simp();
-    execute();
-    simp();
 }
 ```
 

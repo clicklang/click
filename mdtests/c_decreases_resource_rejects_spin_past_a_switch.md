@@ -37,9 +37,6 @@ int32 spin_past_a_switch(struct node* node, int32 k) {
     decreases zero_list(node);
     requires node != 0;
     views zero_list(node);
-} by {
-    execute();
-    simp();
 }
 ```
 

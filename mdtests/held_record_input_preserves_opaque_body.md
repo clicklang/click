@@ -29,8 +29,6 @@ int32 idle(struct region* region) {
     ensures result == 0;
     ensures r.start == old(r.start);
     ensures r.end == old(r.end);
-} by {
-    execute();
 }
 ```
 

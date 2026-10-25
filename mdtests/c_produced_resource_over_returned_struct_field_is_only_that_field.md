@@ -32,15 +32,11 @@ verifying "c_produced_resource_over_returned_struct_field_is_only_that_field.c";
 struct holder wrap(int32* p) {
     consumes cell(p);
     produces cell(result.p);
-} by {
-    execute();
 }
 
 int32 rewrap(int32* p) {
     owns cell(p);
     ensures result == 0;
-} by {
-    execute();
 }
 ```
 

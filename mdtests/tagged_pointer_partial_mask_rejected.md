@@ -22,9 +22,6 @@ verifying "tagged_pointer_partial_mask_rejected.c";
 struct node* clear_one_of_two(struct node* next) {
     requires aligned(next, 8);
     ensures result == next;
-} by {
-    execute();
-    simp();
 }
 ```
 

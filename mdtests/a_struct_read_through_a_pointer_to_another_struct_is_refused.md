@@ -22,8 +22,6 @@ verifying "structs.c";
 int32 probe(struct a *pa) {
     views pa->x;
     ensures true;
-} by {
-    execute();
 }
 ```
 

@@ -27,8 +27,6 @@ void restored(struct object* obj) {
     open(control(obj)) {
         step();
     }
-    execute();
-    simp();
 }
 ```
 

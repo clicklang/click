@@ -25,8 +25,6 @@ uint64 f(uint8 bytes[], uint64 n) {
         have viewable(bytes[0..3u64]) by {
             simp();
         }
-        execute();
-        simp();
     }
 }
 ```

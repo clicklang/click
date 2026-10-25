@@ -26,9 +26,6 @@ verifying "a_symbolic_read_one_past_an_initialized_local_array_is_refused.c";
 
 int32 one_past(int32 x) {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

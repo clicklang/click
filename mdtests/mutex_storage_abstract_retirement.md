@@ -26,9 +26,6 @@ void release_other(struct holder *holder, int32 *data) {
     owns mutex_guard(&holder->mu);
     consumes allocation(data, 4);
     consumes data[0..1];
-} by {
-    execute();
-    simp();
 }
 ```
 

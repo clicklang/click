@@ -22,9 +22,6 @@ verifying "free_then_return.c";
 
 int f() {
     ensures result == 0 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

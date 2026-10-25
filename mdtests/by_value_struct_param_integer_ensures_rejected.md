@@ -33,16 +33,10 @@ verifying "integer_ensures.c";
 
 int32 bump(struct pair value) {
     ensures to_integer(value.first) == 5;
-} by {
-    execute();
-    simp();
 }
 
 int32 call_bump() {
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

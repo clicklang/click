@@ -52,8 +52,6 @@ void advance_once(int32* state) {
 } by {
     have c.revision < 1000;
     step(advance, { first: c });
-    execute();
-    simp();
 }
 
 void run_twice(int32* state) {
@@ -65,8 +63,6 @@ void run_twice(int32* state) {
     step(increment, { first: c });
     have c.revision == 1;
     step(increment, { first: c });
-    execute();
-    simp();
 }
 ```
 

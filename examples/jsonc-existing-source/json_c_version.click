@@ -9,14 +9,8 @@ const char *json_c_version() {
     ensures major_digit: result[2] == '1';
     ensures minor_digit: result[3] == '7';
     ensures terminator: result[4] == '\0';
-} by {
-    execute();
-    simp();
 }
 
 int json_c_version_num() {
     ensures result == 4352;
-} by {
-    execute();
-    simp();
 }

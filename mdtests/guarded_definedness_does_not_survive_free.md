@@ -27,8 +27,6 @@ void dispose(int32 *data, int32 n) {
     ) using {
         forall (k: int32) { 0 <= k and k < n implies defined(old(data[k])) };
     };
-    execute();
-    simp();
 }
 ```
 

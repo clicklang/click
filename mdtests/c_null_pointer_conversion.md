@@ -96,9 +96,6 @@ int32 clear_pointer(struct holder* owner) {
 
     ensures result == 1;
     ensures owner->data == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 pointer_is_null(int32* p) {

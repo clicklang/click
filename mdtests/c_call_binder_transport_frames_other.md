@@ -35,8 +35,6 @@ void frames(int32* state) {
     ensures other.revision == old(other.revision);
 } by {
     step(increment, { first: c });
-    execute();
-    simp();
 }
 ```
 

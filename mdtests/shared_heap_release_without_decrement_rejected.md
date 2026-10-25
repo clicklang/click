@@ -41,8 +41,6 @@ void forget_reference(struct child* obj) {
     unfold(child_control(obj));
     unfold(child_ref(obj));
     fold(child_control(obj));
-    execute();
-    simp();
 }
 ```
 

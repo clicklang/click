@@ -30,9 +30,6 @@ struct node* stash_and_recover(struct node* node, struct node* next) {
     owns node->word;
     ensures result == next;
     ensures node->word == address(next);
-} by {
-    execute();
-    simp();
 }
 
 int32 read_through_word(struct node* node, struct node* next) {
@@ -41,9 +38,6 @@ int32 read_through_word(struct node* node, struct node* next) {
     owns node->word;
     views next->value;
     ensures result == next->value;
-} by {
-    execute();
-    simp();
 }
 ```
 

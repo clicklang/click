@@ -18,9 +18,6 @@ uint64 offset(uint8 bytes[]) {
     let n: uint64;
     views click::cstr::cstr_at(bytes, n);
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

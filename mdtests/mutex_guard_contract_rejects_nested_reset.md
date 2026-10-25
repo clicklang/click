@@ -43,16 +43,10 @@ void reset(struct counter *counter) {
     owns counter->mu;
     requires aligned(&counter->mu, 8);
     ensures 0 == 0;
-} by {
-    execute();
-    simp();
 }
 
 void keep(struct counter *counter) {
     owns h: holding(counter);
-} by {
-    execute();
-    simp();
 }
 
 int32 read_counter(struct counter *counter) {

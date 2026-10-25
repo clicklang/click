@@ -35,9 +35,6 @@ void increment_first(int32* state) {
     requires state[0] < 100;
     owns state[0..1];
     ensures state[0] == old(state[0]) + 1;
-} by {
-    execute();
-    simp();
 }
 
 theorem increment_first_is_progress() {
@@ -52,9 +49,6 @@ void apply_step(void (*step)(int32*), int32* cells) {
     requires cells[0] < 100;
     owns cells[0..2];
     ensures old(cells[0]) < cells[0];
-} by {
-    execute();
-    simp();
 }
 
 void framed_resource_caller(int32* cells) {
@@ -63,8 +57,6 @@ void framed_resource_caller(int32* cells) {
     ensures old(cells[0]) < cells[0];
 } by {
     apply(increment_first_is_progress());
-    execute();
-    simp();
 }
 ```
 

@@ -32,8 +32,6 @@ void mark(int32 *a, int32 n, int32 i, int32 j, int32 k) {
     step();
     step();
     step();
-    execute();
-    simp();
 }
 ```
 

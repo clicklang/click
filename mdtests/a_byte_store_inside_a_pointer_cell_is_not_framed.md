@@ -33,9 +33,6 @@ verifying "a_byte_store_inside_a_pointer_cell_is_not_framed.c";
 int32* stale_pointer_read(int32** q) {
     owns q[0..1];
     ensures result == old(q[0]);
-} by {
-    execute();
-    simp();
 }
 ```
 

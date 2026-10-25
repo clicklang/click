@@ -24,9 +24,6 @@ int32 pick(bool early) {
     ensures early == true implies result == 7;
     ensures early != true implies result == 9;
     ensures result == (if early { 7 } else { 9 });
-} by {
-    execute();
-    simp();
 }
 ```
 

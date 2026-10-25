@@ -39,7 +39,6 @@ struct node* settle(struct node* p, struct node* q, int32 n) {
         initialize by simp();
         preserve by { step(); step(); close_invariants(); }
     }
-    execute();
 }
 ```
 

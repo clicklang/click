@@ -19,9 +19,6 @@ verifying "pointer_address_rejects_narrow_cast.c";
 
 int32 truncate_pointer(struct node* node) {
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

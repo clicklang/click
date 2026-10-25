@@ -31,8 +31,6 @@ int32 conjunction(int32 x) {
     requires x >= 0 and x <= 100;
     ensures result >= 0 by {
         have to_integer(x + 1) >= 1;
-        execute();
-        simp();
     }
 }
 
@@ -41,8 +39,6 @@ int32 separate(int32 x) {
     requires x <= 100;
     ensures result >= 0 by {
         have to_integer(x + 1) >= 1;
-        execute();
-        simp();
     }
 }
 

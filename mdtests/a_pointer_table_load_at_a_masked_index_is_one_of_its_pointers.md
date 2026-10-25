@@ -19,9 +19,6 @@ int f(unsigned int u)
 verifying "k1.c";
 int32 f(uint32 u) {
     ensures result == 4 or result == 6;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -77,27 +77,18 @@ int32 write_then_read(int32* a, int32* b, int32 s, int32 e, int32 i) {
     owns a[5..6];
     consumes b[s..e];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 beside_the_owner(int32* p) {
     owns p[0..2];
     owns p[5..6];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 below_the_owner(int32* p) {
     owns p[0..2];
     owns p[5..6];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

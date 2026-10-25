@@ -51,7 +51,6 @@ void break_wrapper_invariant(struct object* obj) {
     open(wrapper(obj)) {
         step();
     }
-    execute();
 }
 ```
 

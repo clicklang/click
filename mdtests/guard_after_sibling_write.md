@@ -61,9 +61,6 @@ void run_int(struct pair* x, struct pair* y, int32* out) {
     owns out[0..1];
     requires x->b == 3;
     ensures out[0] == 1;
-} by {
-    execute();
-    simp();
 }
 
 void run_ptr(struct link* x, struct link* y, struct link* z, int32* out) {
@@ -72,9 +69,6 @@ void run_ptr(struct link* x, struct link* y, struct link* z, int32* out) {
     owns out[0..1];
     requires x->next == z;
     ensures out[0] == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

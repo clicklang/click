@@ -26,9 +26,6 @@ uint64 measure(const int8* src) {
     views click::cstr::cstr_at(src, len);
     ensures result == len;
     ensures src[result] == '\0';
-} by {
-    execute();
-    simp();
 }
 
 uint64 outer(const int8* src) {
@@ -36,9 +33,6 @@ uint64 outer(const int8* src) {
     views click::cstr::cstr_at(src, len);
     ensures result == len;
     ensures src[result] == '\0';
-} by {
-    execute();
-    simp();
 }
 ```
 

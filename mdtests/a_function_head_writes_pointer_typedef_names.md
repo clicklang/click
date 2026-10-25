@@ -27,25 +27,16 @@ verifying "main.c";
 int node_value(const node_ptr node) {
     views node->value;
     ensures result == node->value;
-} by {
-    execute();
-    simp();
 }
 
 int first(int_view values) {
     views values[0];
     ensures result == values[0];
-} by {
-    execute();
-    simp();
 }
 
 void set_value(node_ptr node, int value) {
     owns node->value;
     ensures node->value == value;
-} by {
-    execute();
-    simp();
 }
 ```
 

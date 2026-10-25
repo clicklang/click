@@ -25,9 +25,6 @@ resource ready_payload(channel: struct channel*) {
 }
 int32 consume_blindly(struct channel* channel) {
     owns subscriber(&channel->ready, ready_payload(channel));
-} by {
-    execute();
-    simp();
 }
 ```
 

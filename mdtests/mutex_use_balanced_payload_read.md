@@ -19,9 +19,6 @@ verifying "mutex_use_balanced_payload_read.c";
 
 int32 helper(struct holder *holder) {
     owns mutex_use(&holder->mu);
-} by {
-    execute();
-    simp();
 }
 ```
 

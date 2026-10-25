@@ -29,9 +29,6 @@ int32 keep_second(struct pair* p) {
     owns p->second;
 
     ensures result == old(p->second);
-} by {
-    execute();
-    simp();
 }
 ```
 

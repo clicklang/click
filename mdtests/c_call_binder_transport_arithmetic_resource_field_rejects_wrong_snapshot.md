@@ -31,8 +31,6 @@ void caller(int32* state) {
     have at(function.entry, c.revision) == 1 by {
         arithmetic() using { c.revision == 1; };
     }
-    execute();
-    simp();
 }
 ```
 

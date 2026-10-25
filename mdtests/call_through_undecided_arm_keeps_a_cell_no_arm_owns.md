@@ -113,8 +113,6 @@ int32 caller(struct node* p) {
     step();
     let rc0 = fold(spare0(p), { tag: rt0 }, {});
     let o = fold(spare1(p), { tag: rt1 }, { child: rc0 });
-    execute();
-    simp();
 }
 ```
 

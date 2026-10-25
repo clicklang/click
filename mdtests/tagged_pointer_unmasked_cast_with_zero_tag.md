@@ -22,9 +22,6 @@ int32 red_parent_is(unsigned long word, struct node* next, uint64 color) {
     requires word == address(next) + color;
     requires color == 0;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

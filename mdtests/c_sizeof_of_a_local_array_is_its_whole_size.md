@@ -15,9 +15,6 @@ verifying "c_sizeof_local_array.c";
 
 int32 size(int32 value) {
     ensures result == 12;
-} by {
-    execute();
-    simp();
 }
 ```
 

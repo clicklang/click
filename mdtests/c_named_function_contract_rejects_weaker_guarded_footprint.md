@@ -39,9 +39,6 @@ contract int32 GuardedEffect(int32 active, int32* cell) {
 int32 overly_general_effect(int32 active, int32* cell) {
     owns cell[0..1];
     ensures result == active;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_guarded_effect(
@@ -65,9 +62,6 @@ int32 apply_guarded_effect(
 int32 weaker_guard_caller(int32* cell) {
     owns maybe_cell(1, cell);
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

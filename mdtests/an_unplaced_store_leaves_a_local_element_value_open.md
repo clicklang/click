@@ -22,9 +22,6 @@ int32 may_hit(int32 u) {
     requires 0 <= u;
     requires u < 2;
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

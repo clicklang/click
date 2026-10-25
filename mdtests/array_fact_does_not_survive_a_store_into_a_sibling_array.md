@@ -43,8 +43,6 @@ void mark_other(int32 a[], int32 b[], int32 n, int32 j) {
     }
     step();
     have icount(a, 0, 1) == 5;
-    execute();
-    simp();
 }
 ```
 

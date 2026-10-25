@@ -20,9 +20,6 @@ verifying "signed_enum_parameter.c";
 int32 below_two(int32 d) {
     requires d == 1;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

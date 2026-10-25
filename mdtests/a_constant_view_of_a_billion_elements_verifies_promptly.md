@@ -25,9 +25,6 @@ int32 get(int32 *a, int32 i) {
     requires 0 <= i;
     requires i < 1000000000;
     ensures result == a[i];
-} by {
-    execute();
-    simp();
 }
 ```
 

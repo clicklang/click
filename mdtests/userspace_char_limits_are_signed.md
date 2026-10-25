@@ -31,9 +31,6 @@ verifying "userspace_char_limits.c";
 
 int32 char_range() {
     ensures result == 255;
-} by {
-    execute();
-    simp();
 }
 ```
 

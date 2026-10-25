@@ -24,8 +24,6 @@ verifying "heap.c";
 
 long long rank() {
     ensures true;
-} by {
-    execute();
 }
 ```
 

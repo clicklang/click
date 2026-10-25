@@ -30,9 +30,6 @@ verifying "a_bounded_wrapped_product_does_not_define_the_signed_one.c";
 
 int32 product(int32 a, int32 b) {
     ensures result >= 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -64,8 +64,6 @@ int32 list_is_marked(struct node* node) {
     ensures result == 0 or result == 1;
 } by {
     observe(marked_list(node));
-    execute();
-    simp();
 }
 
 struct node* list_next(struct node* node) {
@@ -118,7 +116,4 @@ void list_destroy(struct node* node) {
 
 int32 list_pipeline(int32 first, int32 second) {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }

@@ -21,9 +21,6 @@ verifying "tagged_pointer_needs_alignment.c";
 
 struct node* clear_without_evidence(struct node* next) {
     ensures result == next;
-} by {
-    execute();
-    simp();
 }
 ```
 

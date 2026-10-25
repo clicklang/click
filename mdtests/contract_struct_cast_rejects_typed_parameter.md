@@ -21,9 +21,6 @@ verifying "typed_cast.c";
 int32 read_cell(int32 *p) {
     views ((struct cell *)p)->value;
     ensures result == ((struct cell *)p)->value;
-} by {
-    execute();
-    simp();
 }
 ```
 

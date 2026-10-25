@@ -30,7 +30,6 @@ int32 at_offset(int32* a, uint64 n, uint64 k) {
             to_integer(n - k) < 18446744073709551615;
         };
     }
-    execute();
 }
 ```
 

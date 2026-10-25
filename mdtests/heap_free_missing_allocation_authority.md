@@ -28,8 +28,6 @@ void free_second_without_authority(struct two_buffers* buffers) {
     consumes first_buffer_owned(buffers);
 } by {
     unfold(first_buffer_owned(buffers));
-    execute();
-    simp();
 }
 ```
 

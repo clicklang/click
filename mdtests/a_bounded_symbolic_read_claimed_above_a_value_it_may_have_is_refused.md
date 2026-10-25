@@ -20,9 +20,6 @@ verifying "a_bounded_symbolic_read_claimed_above_a_value_it_may_have_is_refused.
 
 int32 f(int32 x) {
     ensures result >= 2;
-} by {
-    execute();
-    simp();
 }
 ```
 

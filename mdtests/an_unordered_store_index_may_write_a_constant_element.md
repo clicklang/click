@@ -23,9 +23,6 @@ int32 may_write(int32* a, int32 u) {
     requires u < 2;
     consumes a[0..2];
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

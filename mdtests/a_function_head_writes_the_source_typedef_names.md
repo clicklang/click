@@ -40,42 +40,27 @@ verifying "main.c";
 u32 twice(u32 n) {
     requires n <= 1000u32;
     ensures to_integer(result) == to_integer(n + n);
-} by {
-    execute();
-    simp();
 }
 
 json_bool is_zero(wide *p) {
     views p[0];
     requires p[0] == 0;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int read_fixed(fixed *p) {
     views p[0];
     ensures result == p[0];
-} by {
-    execute();
-    simp();
 }
 
 int node_value(node_t *node) {
     views node->value;
     ensures result == node->value;
-} by {
-    execute();
-    simp();
 }
 
 int point_x(const point_t *point) {
     views point->x;
     ensures result == point->x;
-} by {
-    execute();
-    simp();
 }
 ```
 

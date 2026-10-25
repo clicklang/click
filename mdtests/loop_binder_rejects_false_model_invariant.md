@@ -50,8 +50,6 @@ void bump_n(struct cell* p, int32 n) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 ```
 

@@ -20,9 +20,6 @@ verifying "cursor_advance.c";
 void advance(char **str) {
     owns str[0..1];
     ensures true;
-} by {
-    execute();
-    simp();
 }
 ```
 

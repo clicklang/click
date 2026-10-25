@@ -62,8 +62,6 @@ int32 loop_writes_past_tag() {
         invariant i >= 0;
         invariant i <= 2;
     }
-    execute();
-    simp();
 }
 ```
 

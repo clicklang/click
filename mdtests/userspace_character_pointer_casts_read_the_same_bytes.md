@@ -32,27 +32,18 @@ int32 as_signed(char* p) {
     views p[0..1];
     requires p[0] == -56;
     ensures result == -56;
-} by {
-    execute();
-    simp();
 }
 
 int32 as_unsigned(char* p) {
     views p[0..1];
     requires ((uint8*)p)[0] == 200;
     ensures result == 200;
-} by {
-    execute();
-    simp();
 }
 
 int32 back_to_char(uint8* u) {
     views u[0..1];
     requires u[0] == 200;
     ensures result == -56;
-} by {
-    execute();
-    simp();
 }
 ```
 

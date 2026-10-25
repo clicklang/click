@@ -35,7 +35,6 @@ int32 peek(struct node* q) {
     ensures result == 0;
 } by {
     have keep(Ref::At(q->left)) == 1 by { unfold(keep(Ref::At(q->left))); normalize(); }
-    execute();
 }
 ```
 

@@ -24,9 +24,6 @@ verifying "tagged_pointer_address_bit_rejected.c";
 struct node* set_address_bit(struct node* next) {
     requires aligned(next, 8);
     ensures result == next;
-} by {
-    execute();
-    simp();
 }
 ```
 

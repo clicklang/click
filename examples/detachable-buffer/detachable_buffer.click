@@ -98,9 +98,6 @@ int32 detachable_buffer_attach(
     ensures result == length;
     ensures owner->len == length;
     ensures owner->data == data;
-} by {
-    execute();
-    simp();
 }
 
 int32 detachable_buffer_get(

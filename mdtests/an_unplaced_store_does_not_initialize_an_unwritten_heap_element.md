@@ -29,9 +29,6 @@ int32 unwritten_neighbour(int32 u) {
     requires 0 <= u;
     requires u < 2;
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -40,8 +40,6 @@ int32 caller(int32* p) {
     ensures c.rank == 3;
 } by {
     step(bump, { c: c });
-    execute();
-    simp();
 }
 ```
 

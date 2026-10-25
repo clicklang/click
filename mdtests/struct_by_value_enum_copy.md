@@ -61,9 +61,6 @@ struct packet finish(struct packet value) {
 
 int32 run_struct_by_value_enum() {
     ensures result == 462;
-} by {
-    execute();
-    simp();
 }
 ```
 

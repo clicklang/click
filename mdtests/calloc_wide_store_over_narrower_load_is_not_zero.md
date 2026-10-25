@@ -22,9 +22,6 @@ verifying "calloc_wide_store_over_narrower_load_is_not_zero.c";
 
 int32 f() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -22,25 +22,16 @@ verifying "cell.cpp";
 template<class T> void Cell<T>::set(T v) {
     owns *this;
     ensures this->value == v;
-} by {
-    execute();
-    simp();
 }
 
 void Cell<int>::set(int v) {
     owns *this;
     ensures this->value == v;
-} by {
-    execute();
-    simp();
 }
 
 void store(Cell<int>& cell, int x) {
     owns cell;
     ensures cell.value == x;
-} by {
-    execute();
-    simp();
 }
 ```
 

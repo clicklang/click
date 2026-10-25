@@ -37,9 +37,6 @@ verifying "forward_goto_cleanup_chain.c";
 
 int32 cleanup_two_allocations() {
     ensures result == -1 or result == -2 or result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -20,9 +20,6 @@ uint64* read_cell(int64** pp) {
     requires pp != 0;
     views *pp;
     ensures true;
-} by {
-    execute();
-    simp();
 }
 ```
 

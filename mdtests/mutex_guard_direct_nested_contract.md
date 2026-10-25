@@ -43,8 +43,6 @@ void inner(struct counter *counter) {
     owns mutex_guard(&counter->mu);
 } by {
     have held(&counter->mu);
-    execute();
-    simp();
 }
 
 void keep(struct counter *counter) {

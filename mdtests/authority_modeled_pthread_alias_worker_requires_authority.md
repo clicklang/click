@@ -34,8 +34,6 @@ void* worker(void* argument) {
     consumes ticket(argument);
 } by {
     unfold(ticket(argument));
-    execute();
-    simp();
 }
 int32 run(void* p, void* q) {
     owns authority(ticket(p));
@@ -43,9 +41,6 @@ int32 run(void* p, void* q) {
     consumes ticket(q);
     requires count(ticket(p)) == 2;
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

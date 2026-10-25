@@ -81,8 +81,6 @@ void regraft(int32* p) {
     produces g: tree(p);
 } by {
     let { g: g } = step(graft, { t: t });
-    execute();
-    simp();
 }
 ```
 

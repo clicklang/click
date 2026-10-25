@@ -79,9 +79,6 @@ int32_t narrow_store_leaves_the_distinct_element(int32_t* a, int32_t i, int32_t 
     requires i != j;
     owns a[0..4];
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 
 int32_t upper_half_survives(int32_t* a, int32_t i, int32_t j) {
@@ -92,9 +89,6 @@ int32_t upper_half_survives(int32_t* a, int32_t i, int32_t j) {
     requires i != j;
     owns a[0..4];
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

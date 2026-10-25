@@ -25,9 +25,6 @@ void clear_one(int32* a, int32 j) {
     owns a[0..8];
     requires 0 <= j;
     requires j < 8;
-} by {
-    execute();
-    simp();
 }
 
 int32 read_after_a_call(int32* a, int32 i, int32 j, int32 m) {
@@ -40,9 +37,6 @@ int32 read_after_a_call(int32* a, int32 i, int32 j, int32 m) {
     requires m < 8;
     requires m != j;
     ensures result == old(a[m]);
-} by {
-    execute();
-    simp();
 }
 ```
 

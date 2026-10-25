@@ -66,8 +66,6 @@ int32 current_have(int32 x) {
         witness { j: x };
         simp();
     }
-    execute();
-    simp();
 }
 ```
 

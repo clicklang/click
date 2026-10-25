@@ -32,8 +32,6 @@ int32 clear_last(int32 p[], int32 n) {
 } by {
     have 0 <= to_integer(n - 1);
     have to_integer(n - 1) < to_integer(n);
-    execute();
-    simp();
 }
 
 int32 call_clear_last(int32 p[], int32 n) {
@@ -41,9 +39,6 @@ int32 call_clear_last(int32 p[], int32 n) {
     views p[0..n - 1];
     owns (p + (n - 1))[0..1];
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

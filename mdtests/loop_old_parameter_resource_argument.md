@@ -53,8 +53,6 @@ void advance(int32* rb, int32* stop) {
             close_invariants();
         }
     }
-    execute();
-    simp();
 }
 void change_index(int32* p, int32 index) {
     requires index >= 0;
@@ -69,8 +67,6 @@ void change_index(int32* p, int32 index) {
         initialize by simp();
         preserve by { step(); close_invariants(); }
     }
-    execute();
-    simp();
 }
 ```
 ```expect

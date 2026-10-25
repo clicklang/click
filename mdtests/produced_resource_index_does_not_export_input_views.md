@@ -40,7 +40,6 @@ struct node* caller(struct root* root) {
     consumes state: bundled(root);
 } by {
     let { leaf: leaf } = step(release, { state: state });
-    execute();
 }
 ```
 

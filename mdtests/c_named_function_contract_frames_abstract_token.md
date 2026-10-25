@@ -36,9 +36,6 @@ contract int32 PreservePair(int32 key, int32 spare) {
 int32 keep_first(int32 key, int32 spare) {
     owns permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_keep(
@@ -50,18 +47,12 @@ int32 apply_keep(
     owns permit(key);
     owns permit(spare);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 framed_token_caller(int32 key, int32 spare) {
     owns permit(key);
     owns permit(spare);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 ```
 

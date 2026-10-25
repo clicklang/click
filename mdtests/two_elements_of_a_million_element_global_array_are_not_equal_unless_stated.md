@@ -27,16 +27,10 @@ verifying "two_elements_of_a_million_element_global_array_are_not_equal_unless_s
 int32 same_when_stated() {
     requires buf[0] == buf[1];
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 same() {
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -51,8 +51,6 @@ int32 loop_writes_global() {
         invariant i >= 0;
         invariant i <= 2;
     }
-    execute();
-    simp();
 }
 ```
 

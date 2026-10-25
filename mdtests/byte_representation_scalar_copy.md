@@ -39,9 +39,6 @@ verifying "scalar_memcpy.c";
 
 int h() {
     ensures result == 7 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

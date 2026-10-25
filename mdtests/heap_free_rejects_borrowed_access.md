@@ -23,9 +23,6 @@ int32 heap_free_rejects_borrowed_access(struct item* item) {
     views item_storage(item);
 
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -44,8 +44,6 @@ void mark(int32 *next, int32 *visited, int32 n, int32 j) {
         };
         simp();
     }
-    execute();
-    simp();
 }
 ```
 

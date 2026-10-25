@@ -24,8 +24,6 @@ int32 slice_get(int32* data, int32 index, int32 len) {
 
     ensures result == data[index] by {
         observe(readable_slice(data, len));
-        execute();
-        simp();
     }
 }
 ```

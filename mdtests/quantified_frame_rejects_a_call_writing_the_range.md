@@ -19,9 +19,6 @@ verifying "quantified_frame_rejects_a_call_writing_the_range.c";
 void fill(int32 *v, int32 n) {
     requires 0 < n;
     owns v[0..n];
-} by {
-    execute();
-    simp();
 }
 
 void caller(int32 *v, int32 n) {
@@ -36,8 +33,6 @@ void caller(int32 *v, int32 n) {
     ) using {
         forall (k: int32) { 0 <= k and k < n implies old(v[k]) == old(v[k]) };
     };
-    execute();
-    simp();
 }
 ```
 

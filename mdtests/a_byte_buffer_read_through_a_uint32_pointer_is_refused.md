@@ -21,9 +21,6 @@ uint32 load32(const uint8* buf) {
     requires buf != 0;
     views buf[0u64..4u64];
     ensures true;
-} by {
-    execute();
-    simp();
 }
 ```
 

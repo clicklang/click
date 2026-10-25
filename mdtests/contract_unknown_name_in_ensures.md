@@ -9,9 +9,6 @@ verifying "unknown_name.c";
 int32 is_positive(int32 x) {
     requires x > 0;
     ensures result == one;
-} by {
-    execute();
-    simp();
 }
 ```
 

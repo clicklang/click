@@ -4,9 +4,6 @@ verifying "use_copy.c";
 
 int f() {
     ensures result == 18 or result == -1;
-} by {
-    execute();
-    simp();
 }
 
 int32 g(uint32 tag, int32 *p, int32 **restored) {
@@ -37,8 +34,6 @@ int32 g(uint32 tag, int32 *p, int32 **restored) {
             conclusion 0;
         }
     }
-    execute();
-    auto();
 }
 
 int use_copy() {

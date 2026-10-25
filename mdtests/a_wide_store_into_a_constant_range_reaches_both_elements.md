@@ -29,17 +29,11 @@ verifying "a_wide_store_into_a_constant_range_reaches_both_elements.c";
 int32_t third_element_kept(int32_t* a) {
     owns a[0..1000000];
     ensures result == old(a[3]);
-} by {
-    execute();
-    simp();
 }
 
 int32_t second_element_written(int32_t* a) {
     owns a[0..1000000];
     ensures result == old(a[2]);
-} by {
-    execute();
-    simp();
 }
 ```
 

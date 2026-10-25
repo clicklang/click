@@ -33,9 +33,6 @@ verifying "modeled_pthread_disjoint_pending_store.c";
 
 void *worker(void *p) {
     owns ((struct cell *)p)->value;
-} by {
-    execute();
-    simp();
 }
 
 int32 run(struct cell *job, struct cell *unrelated) {

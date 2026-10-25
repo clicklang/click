@@ -46,8 +46,6 @@ void f() {
     step();
     have a == &g[0];
     have a[0] == 1;
-    execute();
-    simp();
 }
 ```
 

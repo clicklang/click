@@ -30,9 +30,6 @@ verifying "widened_order.c";
 
 int32 f(int32 x, int64 y) {
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -72,9 +72,6 @@ long long take(long long value) {
 
 long pass_long(long value) {
     ensures result == value;
-} by {
-    execute();
-    simp();
 }
 
 long long read_both(long *a, long long *b) {
@@ -83,9 +80,6 @@ long long read_both(long *a, long long *b) {
     requires a[0] >= 0 and a[0] <= 100;
     requires b[0] >= 0 and b[0] <= 100;
     ensures to_integer(result) == to_integer(a[0] + b[0]);
-} by {
-    execute();
-    simp();
 }
 ```
 

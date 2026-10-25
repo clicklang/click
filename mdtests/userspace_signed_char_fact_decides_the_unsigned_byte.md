@@ -43,36 +43,24 @@ int32 first_unsigned(char* p) {
     views p[0..1];
     requires p[0] == 7;
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 
 int32 is_high(char* p) {
     views p[0..1];
     requires p[0] == -56;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 
 int32 need_seven(uint8* u) {
     views u[0..1];
     requires u[0] == 7;
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 
 int32 pass_seven(char* p) {
     views p[0..1];
     requires p[0] == 7;
     ensures result == 7;
-} by {
-    execute();
-    simp();
 }
 ```
 

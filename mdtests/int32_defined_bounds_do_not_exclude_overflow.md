@@ -29,8 +29,6 @@ int32 sum(int32 a, int32 b) {
             conclusion 0;
         }
     }
-    execute();
-    simp();
 }
 ```
 

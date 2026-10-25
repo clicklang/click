@@ -59,8 +59,6 @@ int32 initialize_two_boxes(struct box* left, struct box* right, int32 value) {
 } by {
     execute_until(region(2));
     step();
-    execute();
-    simp();
 }
 ```
 

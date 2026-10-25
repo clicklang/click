@@ -36,7 +36,6 @@ uint64 f() {
     step();
     step();
     let { result: r } = step(measure, { n: 1u64 });
-    execute();
 }
 ```
 

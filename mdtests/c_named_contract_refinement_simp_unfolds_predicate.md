@@ -24,9 +24,6 @@ contract void SetsZero(int32* cell) {
 void clear_cell(int32* cell) {
     owns cell[0..1];
     ensures cell[0] == 0;
-} by {
-    execute();
-    simp();
 }
 
 theorem clear_cell_is_sets_zero() {

@@ -31,9 +31,6 @@ void walk(int32 *a, int32 *b, int32 n) {
     views a[0..n];
     owns b[0..n];
     requires 1 <= n;
-} by {
-    execute();
-    simp();
 }
 ```
 

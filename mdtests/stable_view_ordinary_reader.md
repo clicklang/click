@@ -19,17 +19,11 @@ verifying "stable_view_reader.c";
 int32 stable_view_reader(int32 p[]) {
     views p[0..1];
     ensures result == p[0];
-} by {
-    execute();
-    simp();
 }
 
 int32 stable_view_reader_caller(int32 p[]) {
     owns p[0..1];
     ensures result == p[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

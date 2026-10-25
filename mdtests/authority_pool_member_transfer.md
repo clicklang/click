@@ -38,8 +38,6 @@ void move_slot() { ensures 1 == 1; } by {
     unfold(moved);
     unfold(authority(slot(&source, _)));
     unfold(authority(slot(&destination, _)));
-    execute();
-    simp();
 }
 ```
 

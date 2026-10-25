@@ -35,17 +35,11 @@ verifying "pointer_disequality_rejects_undecided.c";
 int32 only_one_side_is_null(struct node* p, struct node* q) {
     requires p == 0;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 only_one_object_is_owned(struct node* a, struct node* b) {
     owns a->left;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

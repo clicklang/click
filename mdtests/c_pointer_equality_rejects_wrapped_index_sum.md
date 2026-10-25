@@ -26,9 +26,6 @@ int32 ptr_cmp(int32 data[], int32 i, int32 j, int32 k) {
     requires j == 1;
     requires k == -2147483647 - 1;
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 

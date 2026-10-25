@@ -22,8 +22,6 @@ int probe() {
     step();
     step();
     have pair.second == 7 by normalize();
-    execute();
-    simp();
 }
 ```
 

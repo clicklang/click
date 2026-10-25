@@ -27,9 +27,6 @@ void increment_cell(int32* cell) {
     requires cell[0] < 1000;
     owns cell[0..1];
     ensures cell[0] == old(cell[0]) + 1;
-} by {
-    execute();
-    simp();
 }
 
 theorem increment_cell_makes_progress() {

@@ -28,8 +28,6 @@ void update(struct node* parent, struct node* child) {
     step();
     step();
     let c = fold(cell(child), { value: 1u64 });
-    execute();
-    simp();
 }
 ```
 

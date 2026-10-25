@@ -25,8 +25,6 @@ void f(struct P* p, struct S* r, int32* a) {
     ensures 1 == 1;
 } by {
     have a[p->q->idx] == 5 by assumption();
-    execute();
-    simp();
 }
 ```
 

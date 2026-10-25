@@ -61,9 +61,6 @@ struct packet finish(struct packet value) {
 
 int32 run_initialized_embedded_arrays() {
     ensures result == 4759;
-} by {
-    execute();
-    simp();
 }
 ```
 

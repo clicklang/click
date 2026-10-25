@@ -24,25 +24,16 @@ verifying "stable_view_nested_reader.c";
 int32 stable_view_inner(int32 p[]) {
     views p[0..1];
     ensures result == p[0];
-} by {
-    execute();
-    simp();
 }
 
 int32 stable_view_outer(int32 p[]) {
     views p[0..1];
     ensures result == p[0];
-} by {
-    execute();
-    simp();
 }
 
 int32 stable_view_nested_caller(int32 p[]) {
     owns p[0..1];
     ensures result == p[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

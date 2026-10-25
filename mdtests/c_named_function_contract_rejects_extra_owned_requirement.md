@@ -32,9 +32,6 @@ void needs_two_cells(int32* state) {
     views state[1..2];
     owns state[0..1];
     ensures state[0] == old(state[0]) + 1;
-} by {
-    execute();
-    simp();
 }
 
 void apply_step(void (*step)(int32*), int32* cells) {
@@ -42,18 +39,12 @@ void apply_step(void (*step)(int32*), int32* cells) {
     requires cells[0] < 100;
     owns cells[0..1];
     ensures old(cells[0]) < cells[0];
-} by {
-    execute();
-    simp();
 }
 
 void extra_resource_caller(int32* cells) {
     requires cells[0] < 100;
     owns cells[0..1];
     ensures old(cells[0]) < cells[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

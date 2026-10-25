@@ -40,9 +40,6 @@ int32 touch(int32 p[], int32 length) {
     requires 0 <= length;
     owns p[0..length];
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 call_with_zero(int32 p[], int32 length) {
@@ -50,18 +47,12 @@ int32 call_with_zero(int32 p[], int32 length) {
     views p[0..1];
     owns p[0..length];
     ensures result == old(p[0]);
-} by {
-    execute();
-    simp();
 }
 
 int32 call_with_positive(int32 p[], int32 length) {
     requires 1 <= length;
     owns p[0..length];
     ensures result == old(p[0]);
-} by {
-    execute();
-    simp();
 }
 ```
 

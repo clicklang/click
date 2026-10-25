@@ -20,8 +20,6 @@ int32 store_three(int32* p) {
     ensures p[0] == 3;
 } by {
     let { result: stored } = step();
-    execute();
-    simp();
 }
 ```
 

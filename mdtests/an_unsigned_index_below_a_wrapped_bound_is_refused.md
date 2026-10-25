@@ -21,9 +21,6 @@ verifying "an_unsigned_index_below_a_wrapped_bound_is_refused.c";
 void store_wrapped(int32* values, uint32 x, uint32 n) {
     requires n <= 4u32;
     owns values[0..4];
-} by {
-    execute();
-    simp();
 }
 ```
 

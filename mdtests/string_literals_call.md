@@ -25,16 +25,10 @@ uint8* literal_source() {
     ensures result[0] == 'o';
     ensures result[1] == 'k';
     ensures result[2] == '\0';
-} by {
-    execute();
-    simp();
 }
 
 int32 read_literal() {
     ensures result == 'k';
-} by {
-    execute();
-    simp();
 }
 ```
 

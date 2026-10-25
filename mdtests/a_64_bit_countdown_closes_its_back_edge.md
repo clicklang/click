@@ -39,8 +39,6 @@ int64 countdown(int64 n) {
         decreases i;
         invariant 0 <= i and i <= n;
     }
-    execute();
-    simp();
 }
 
 uint64 countdown_unsigned(uint64 n) {
@@ -51,8 +49,6 @@ uint64 countdown_unsigned(uint64 n) {
         decreases i;
         invariant i <= n;
     }
-    execute();
-    simp();
 }
 ```
 

@@ -66,9 +66,6 @@ verifying "freed_pointer_compare.c";
 
 int f() {
     ensures result == 1 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

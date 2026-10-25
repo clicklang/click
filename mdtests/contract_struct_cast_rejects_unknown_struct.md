@@ -12,9 +12,6 @@ verifying "unknown_cast.c";
 int32 pick(void *argument) {
     requires ((struct missing *)argument) != 0;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

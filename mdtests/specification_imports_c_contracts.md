@@ -22,8 +22,6 @@ int32 imported_caller(int32 x) {
     ensures result == x;
 } by {
     retain_equal(x, x);
-    execute();
-    simp();
 }
 void imported_resource_caller(int32* p) {
     consumes input: imported_cell(p);
@@ -32,8 +30,6 @@ void imported_resource_caller(int32* p) {
 } by {
     let { after: middle } = step(imported_keep, { before: input });
     let { after: output } = imported_rename(p, { before: middle });
-    execute();
-    simp();
 }
 ```
 

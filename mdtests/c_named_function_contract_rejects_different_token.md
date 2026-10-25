@@ -34,9 +34,6 @@ contract int32 UseKey(int32 key, int32 other) {
 int32 use_other_token(int32 key, int32 other) {
     owns permit(other);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_token(
@@ -47,17 +44,11 @@ int32 apply_token(
     requires UseKey(callback);
     owns permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 different_token_caller(int32 key, int32 other) {
     owns permit(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 ```
 

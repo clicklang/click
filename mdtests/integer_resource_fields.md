@@ -21,9 +21,6 @@ int32 identity(int32 value) {
     owns model: account();
     ensures result == value;
     ensures model.total == old(model.total);
-} by {
-    execute();
-    simp();
 }
 
 void create() {

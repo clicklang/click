@@ -45,8 +45,6 @@ void inner(struct counter *counter) {
     unfold(h);
     have held(&counter->mu);
     fold(h);
-    execute();
-    simp();
 }
 
 void keep(struct counter *counter) {

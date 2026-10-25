@@ -107,6 +107,22 @@ fn post_execution_if_forks_the_proof() -> ClickError {
     )
 }
 
+/// Whether nothing is written after a split: the script ends there, or only
+/// the implicit closer follows it, which each forked path runs as its own.
+fn ends_after_split(continuation: &InternalProofNode) -> bool {
+    match continuation {
+        InternalProofNode::Done => true,
+        InternalProofNode::Linear {
+            tactics,
+            continuation,
+        } => {
+            matches!(tactics.as_slice(), [only] if matches!(only.tactic, ProofTactic::AutoClose))
+                && matches!(continuation.as_ref(), InternalProofNode::Done)
+        }
+        _ => false,
+    }
+}
+
 /// Defers a proof `if` or `cases` reached at function exit onto the outcome
 /// paths. Where its case is open on some path, the paths fork, one per arm;
 /// a fork with tactics written after the split is refused, since they would
@@ -173,7 +189,7 @@ fn defer_post_execution_case_split<'a>(
         }
         // What follows a case split is checked once, after execution as
         // before it: a split that forks paths would check it once per arm.
-        if outcome_path_count(&proof) > before && !matches!(continuation, InternalProofNode::Done) {
+        if outcome_path_count(&proof) > before && !ends_after_split(continuation) {
             return Err(if disjunction {
                 post_execution_cases_forks_the_proof()
             } else {
@@ -216,7 +232,7 @@ fn defer_post_execution_match<'a>(
             return decline();
         }
     };
-    if outcome_path_count(&proof) > before && !matches!(continuation, InternalProofNode::Done) {
+    if outcome_path_count(&proof) > before && !ends_after_split(continuation) {
         return Err(post_execution_match_forks_the_proof());
     }
     Ok(Ok(proof.defer_post_execution_source_tactic(
@@ -3360,6 +3376,24 @@ fn advance_focused_execution_arm<'a>(
 ) -> Driven<Proof<'a>> {
     for indexed in tactics {
         proof = proof.at_source_tactic(indexed.source_index);
+        // The implicit closer at a live frontier first runs the C that
+        // remains, as in a linear continuation, then closes at exit.
+        if matches!(indexed.tactic, ProofTactic::AutoClose) && !proof.is_at_function_exit() {
+            let execute = IndexedTactic {
+                index: indexed.index,
+                source_index: indexed.source_index,
+                tactic: ProofTactic::SmartExecute,
+            };
+            let claim_label = proof.claim_label().to_string();
+            proof = driven!(apply_frontier_source_tactic(
+                proof,
+                &execute,
+                expansion_capture.as_deref_mut(),
+                proof_site,
+                owning_source_index,
+                Some(&claim_label),
+            ));
+        }
         if proof.is_at_function_exit() {
             if let Some(reason) = post_exit_execution_tactic_error(&indexed.tactic) {
                 return Err(proof
@@ -3631,7 +3665,7 @@ fn advance_prepared_execution_match<'a>(
     if proof.is_at_function_exit()
         && live.len() > 1
         && source.ensuring.is_none()
-        && !matches!(continuation, InternalProofNode::Done)
+        && !ends_after_split(continuation)
     {
         return Err(post_execution_match_forks_the_proof());
     }

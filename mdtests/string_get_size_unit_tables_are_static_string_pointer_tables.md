@@ -84,17 +84,11 @@ verifying "unit_tables.c";
 char unit_letter(uint32 units, int32 i, int32 k) {
     requires units == 1 and i == 1 and k == 1;
     ensures result == 105;
-} by {
-    execute();
-    simp();
 }
 
 char unit_initial(uint32 units, int32 i) {
     requires units == 1073741824u32 and i == 2;
     ensures result == 77;
-} by {
-    execute();
-    simp();
 }
 ```
 

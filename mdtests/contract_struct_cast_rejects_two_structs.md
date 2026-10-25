@@ -25,9 +25,6 @@ verifying "two_casts.c";
 int32 pick(void *argument) {
     views ((struct a *)argument)->x;
     ensures result == ((struct b *)argument)->y;
-} by {
-    execute();
-    simp();
 }
 ```
 

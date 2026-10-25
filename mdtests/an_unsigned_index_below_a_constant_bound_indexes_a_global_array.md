@@ -49,31 +49,19 @@ verifying "an_unsigned_index_below_a_constant_bound_indexes_a_global_array.c";
 int32 read_global(uint32 x) {
     owns values[0..4];
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 
 void write_global(uint32 x) {
     owns values[0..4];
-} by {
-    execute();
-    simp();
 }
 
 int32 read_global_wide(uint64 x) {
     owns values[0..4];
     ensures result == result;
-} by {
-    execute();
-    simp();
 }
 
 void write_global_wide(uint64 x) {
     owns values[0..4];
-} by {
-    execute();
-    simp();
 }
 ```
 

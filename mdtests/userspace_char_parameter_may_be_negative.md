@@ -17,9 +17,6 @@ verifying "userspace_char_parameter.c";
 
 int32 is_negative(char c) {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

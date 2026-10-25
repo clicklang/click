@@ -73,7 +73,6 @@ int32 count_down(int32 n) {
             execute_until(back_edge());
         }
     }
-    execute();
 }
 ```
 

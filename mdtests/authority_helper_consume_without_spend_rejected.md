@@ -45,8 +45,6 @@ int32 run() {
     step();
     unfold(control(obj));
     unfold(authority(reference(obj)));
-    execute();
-    simp();
 }
 ```
 

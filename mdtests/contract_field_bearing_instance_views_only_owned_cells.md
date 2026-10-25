@@ -33,8 +33,6 @@ void probe(struct node* node) {
     requires node != 0;
     owns link: left(node);
     owns node->right->augmented;
-} by {
-    execute();
 }
 ```
 

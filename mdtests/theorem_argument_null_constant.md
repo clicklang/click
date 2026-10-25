@@ -54,9 +54,6 @@ int peek(struct node* p) {
     requires p != 0;
     views p->value;
     ensures result == p->value;
-} by {
-    execute();
-    simp();
 }
 ```
 

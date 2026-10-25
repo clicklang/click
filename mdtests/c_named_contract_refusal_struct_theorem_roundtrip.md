@@ -39,9 +39,6 @@ contract void AugmentRotate(struct node* p) {
 void bump(struct node* p) {
     owns tree: tree_at(p);
     ensures tree.model == old(tree.model);
-} by {
-    execute();
-    simp();
 }
 
 theorem bump_is_augment_rotate() executes bump(struct node* p) {
@@ -54,17 +51,12 @@ theorem bump_is_augment_rotate() executes bump(struct node* p) {
 int32 accept(void (*step)(struct node*)) {
     requires AugmentRotate(step);
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 caller() {
     ensures result == 0;
 } by {
     apply(bump_is_augment_rotate());
-    execute();
-    simp();
 }
 ```
 

@@ -93,8 +93,6 @@ int32 count_up(int32 *a, int32 n) {
             }
         }
     }
-    execute();
-    simp();
 }
 ```
 

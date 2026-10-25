@@ -41,16 +41,10 @@ int32 touch(int32 k) {
     ensures counts[3] == old(counts[4]);
     ensures bytes[99999] == 1;
     ensures wide[5] == 7;
-} by {
-    execute();
-    simp();
 }
 
 int32 read_pointer() {
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

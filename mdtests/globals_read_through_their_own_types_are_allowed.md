@@ -32,25 +32,16 @@ verifying "globals.c";
 long read_counter() {
     owns counter;
     ensures result == counter;
-} by {
-    execute();
-    simp();
 }
 
 int32 read_shared() {
     owns shared.x;
     ensures result == shared.x;
-} by {
-    execute();
-    simp();
 }
 
 uint8 read_byte() {
     owns buffer[0..4];
     ensures result == buffer[1];
-} by {
-    execute();
-    simp();
 }
 ```
 

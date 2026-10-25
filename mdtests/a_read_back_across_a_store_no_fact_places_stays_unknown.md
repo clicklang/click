@@ -34,9 +34,6 @@ int32 read_back(int32 u, int32 v) {
     requires 0 <= v;
     requires v < 4;
     ensures result == 0 or u == 0 or v == 0 or result == 3;
-} by {
-    execute();
-    simp();
 }
 ```
 

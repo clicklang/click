@@ -1169,6 +1169,18 @@ mdtests and examples.
     never splits; at a branch the facts do not decide it is refused, naming
     the proof `if` or `branch` to write there
     (`mdtests/step_until_steps_to_function_exit.md`).
+    The first migration also landed: a written `execute();` followed only by
+    closers at the end of a `by { … }` block is deleted, 1,481 of
+    them across the corpus and documentation, and a proof left with nothing
+    is omitted. It found the tail missing in three places, now fixed: the
+    arm that continues past a `branch` whose other arm returned, a script
+    that ends in that `branch`, and a script that ends in a proof `if` or
+    `cases` before execution
+    (`mdtests/a_script_that_stops_in_the_arm_that_continues_runs_the_rest.md`).
+    Left for the removal step: the files tests compare by text (importer
+    output, expansion fixtures and the documentation examples paired with
+    them), refusal tests that name `execute`'s message, and arms of a proof
+    `if` or `branch`.
 
     `execute` then names only the tail's stepping and splitting. *Verdicts*
     only where a migration misses; each is explained in the PR.

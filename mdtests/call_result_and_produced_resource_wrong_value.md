@@ -32,8 +32,6 @@ void caller(int32* p) {
 } by {
     let { result: status, output: checked } = step(set, { input: input });
     have status == 2 by { assumption(); }
-    execute();
-    simp();
 }
 ```
 ```expect

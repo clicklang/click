@@ -50,8 +50,6 @@ void spin(uint8* p, int32 n) {
             step();
         }
     }
-    execute();
-    simp();
 }
 
 uint8 use(uint8* p, int32 n) {
@@ -62,8 +60,6 @@ uint8 use(uint8* p, int32 n) {
 } by {
     step();
     unfold(zt(p));
-    execute();
-    simp();
 }
 ```
 

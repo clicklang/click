@@ -20,9 +20,6 @@ verifying "an_unsigned_index_one_past_a_global_array_is_refused.c";
 
 void write_global(uint32 x) {
     owns values[0..4];
-} by {
-    execute();
-    simp();
 }
 ```
 

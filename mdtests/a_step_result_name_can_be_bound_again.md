@@ -23,8 +23,6 @@ int add_two(int x) {
     have to_integer(r) == to_integer(old(x) + 1) by simp();
     let { result: r } = step();
     have to_integer(r) == to_integer(old(x) + 2) by simp();
-    execute();
-    simp();
 }
 ```
 

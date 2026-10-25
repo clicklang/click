@@ -35,17 +35,11 @@ verifying "inline_helper_concrete_loop_without_contract.c";
 int32 run(int32 n) diverges {
     requires n >= 0;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 
 int32 run_zero(int32 n) diverges {
     requires n == 0;
     ensures result == 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

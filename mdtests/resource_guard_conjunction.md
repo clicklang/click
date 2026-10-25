@@ -33,8 +33,6 @@ int32 read_both(int32* p, int32* q) {
     owns pair(p, q);
 } by {
     unfold(pair(p, q));
-    execute();
-    simp();
 }
 ```
 

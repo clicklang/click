@@ -13,9 +13,6 @@ verifying "missing_acquire.c";
 void acquire(struct holder *p) {
     owns access: mutex_use(&p->mu);
     produces guard: mutex_guard(&p->mu);
-} by {
-    execute();
-    simp();
 }
 ```
 

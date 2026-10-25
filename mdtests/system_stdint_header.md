@@ -35,9 +35,6 @@ int32 increment(uint8 value) {
 
 int32 run(uint8 value) {
     ensures result == value;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -41,17 +41,11 @@ verifying "do_div.c";
 uint64 reduce(uint64 blk_size, uint32 divisor) {
     requires blk_size == 2005 and divisor == 1000;
     ensures result == 2;
-} by {
-    execute();
-    simp();
 }
 
 int32 discard_cast(int32 x) {
     requires x == 4;
     ensures result == 5;
-} by {
-    execute();
-    simp();
 }
 ```
 

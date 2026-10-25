@@ -45,8 +45,6 @@ void keep(struct counter *counter) {
     have held(&counter->mu) by simp();
     let first = fold(holding(counter), { tag: 0 });
     let second = fold(holding(counter), { tag: 0 });
-    execute();
-    simp();
 }
 
 int32 read_counter(struct counter *counter) {

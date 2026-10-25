@@ -72,9 +72,6 @@ struct outer finish(struct outer value) {
 
 int32 run_struct_by_value_embedded() {
     ensures result == 474;
-} by {
-    execute();
-    simp();
 }
 ```
 

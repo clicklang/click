@@ -31,9 +31,6 @@ int32 planned(int32 u) {
     requires g[0] < 100;
     owns g[0..4];
     ensures result == 8;
-} by {
-    execute();
-    simp();
 }
 ```
 

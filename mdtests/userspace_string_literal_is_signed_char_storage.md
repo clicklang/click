@@ -27,23 +27,14 @@ verifying "literal_bytes.c";
 int32 first_byte(const uint8* bytes) {
     views bytes[0..1];
     ensures result == bytes[0];
-} by {
-    execute();
-    simp();
 }
 
 int32 as_bytes() {
     ensures result == 200;
-} by {
-    execute();
-    simp();
 }
 
 int32 as_char() {
     ensures result == -56;
-} by {
-    execute();
-    simp();
 }
 ```
 

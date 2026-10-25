@@ -19,9 +19,6 @@ uint8* string_literal() {
     ensures readable: viewable(result[0..3]);
     ensures first_byte: result[0] == 'o';
     ensures terminator: result[2] == '\0';
-} by {
-    execute();
-    simp();
 }
 ```
 

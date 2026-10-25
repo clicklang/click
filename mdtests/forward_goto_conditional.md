@@ -44,9 +44,6 @@ verifying "forward_goto_conditional.c";
 
 int32 conditional_cleanup(int32 failed) {
     ensures result == (if failed != 0 { 1 } else { 2 });
-} by {
-    execute();
-    simp();
 }
 
 int32 conditional_cleanup_step(int32 failed) {

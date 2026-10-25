@@ -14,9 +14,6 @@ verifying "positive.c";
 
 bool positive(int32 x) {
     ensures result == (x > 0);
-} by {
-    execute();
-    simp();
 }
 ```
 

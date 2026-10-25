@@ -59,8 +59,6 @@ int32 caller(struct object* obj) {
         step();
         step();
     }
-    execute();
-    simp();
 }
 ```
 

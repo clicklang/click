@@ -17,9 +17,6 @@ verifying "main.c";
 wide first(long *p) {
     views p[0];
     ensures result == p[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

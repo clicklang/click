@@ -21,9 +21,6 @@ uint8* concatenated_string() {
     ensures space: result[6] == ' ';
     ensures last: result[11] == 'd';
     ensures terminator: result[12] == '\0';
-} by {
-    execute();
-    simp();
 }
 ```
 

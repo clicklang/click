@@ -22,8 +22,6 @@ verifying "container.c";
 int32 wrong_container(struct rb_node *rb) {
     views rb[0..2];
     ensures true;
-} by {
-    execute();
 }
 ```
 

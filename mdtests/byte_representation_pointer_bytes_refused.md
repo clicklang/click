@@ -64,9 +64,6 @@ verifying "pointer_byte_read.c";
 
 int f() {
     ensures result == 0 or result == -1;
-} by {
-    execute();
-    simp();
 }
 ```
 

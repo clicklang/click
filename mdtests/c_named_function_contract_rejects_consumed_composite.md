@@ -35,26 +35,17 @@ contract int32 PreserveBundle(int32 key) {
 int32 consume_bundle(int32 key) {
     consumes bundle(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 apply_bundle(int32 (*callback)(int32), int32 key) {
     requires PreserveBundle(callback);
     owns bundle(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 
 int32 consumed_bundle_caller(int32 key) {
     owns bundle(key);
     ensures result == key;
-} by {
-    execute();
-    simp();
 }
 ```
 

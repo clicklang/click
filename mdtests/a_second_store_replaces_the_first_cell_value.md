@@ -24,8 +24,6 @@ void mark_twice(int32 a[], int32 n, int32 i) {
     have a[i] == 1;
     step();
     have a[i] == 1;
-    execute();
-    simp();
 }
 ```
 

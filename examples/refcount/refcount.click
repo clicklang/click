@@ -16,9 +16,6 @@ void object_init(struct object* obj) {
     owns uninitialized(*obj);
     ensures obj->refs == 1;
     ensures defined(obj->refs);
-} by {
-    execute();
-    simp();
 }
 
 void object_retain(struct object* obj) {
@@ -30,8 +27,6 @@ void object_retain(struct object* obj) {
         step();
         fold(reference(obj));
     }
-    execute();
-    simp();
 }
 
 void object_release_nonfinal(struct object* obj) {
@@ -43,8 +38,6 @@ void object_release_nonfinal(struct object* obj) {
         unfold(reference(obj));
         step();
     }
-    execute();
-    simp();
 }
 
 void object_release_final(struct object* obj) {
@@ -55,8 +48,6 @@ void object_release_final(struct object* obj) {
     unfold(control(obj));
     unfold(reference(obj));
     unfold(authority(reference(obj)));
-    execute();
-    simp();
 }
 
 verifying "object_retain_many.c";
@@ -73,8 +64,6 @@ void object_retain_many(struct object* obj, int32 amount) {
         step();
         fold(amount of reference(obj));
     }
-    execute();
-    simp();
 }
 
 void object_release_many_nonfinal(struct object* obj, int32 amount) {
@@ -89,8 +78,6 @@ void object_release_many_nonfinal(struct object* obj, int32 amount) {
         unfold(amount of reference(obj));
         step();
     }
-    execute();
-    simp();
 }
 
 verifying "refcount_pipeline.c";

@@ -42,8 +42,6 @@ void empty(int32* p) {
     ensures c.model == Maybe<int32>::None;
 } by {
     let c = fold(cell(p), { model: Maybe<int32>::None });
-    execute();
-    simp();
 }
 
 void nullable(int32* p, int32 value) {

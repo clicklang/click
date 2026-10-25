@@ -31,15 +31,10 @@ void consume_cell(int32* state) {
 void apply_step(void (*step)(int32*), int32* cell) {
     requires Preserve(step);
     owns cell[0..1];
-} by {
-    execute();
-    simp();
 }
 
 void missing_resource_return_caller(int32* cell) {
     owns cell[0..1];
-} by {
-    execute();
 }
 ```
 

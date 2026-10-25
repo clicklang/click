@@ -25,8 +25,6 @@ void object_retain(int32* obj) {
     ensures count(object_ref(obj)) == 1;
 } by {
     fold(object_ref(obj));
-    execute();
-    simp();
 }
 ```
 

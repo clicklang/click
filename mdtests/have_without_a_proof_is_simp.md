@@ -23,8 +23,6 @@ int32 add_one(int32 x) {
     step();
     step();
     have to_integer(y) == to_integer(x + 1);
-    execute();
-    simp();
 }
 ```
 

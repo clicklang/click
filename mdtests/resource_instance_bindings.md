@@ -26,9 +26,6 @@ int32 identity(int32 value) {
     ensures result == value;
     ensures cell.model == old(cell.model);
     ensures cell.revision == old(cell.revision);
-} by {
-    execute();
-    simp();
 }
 ```
 

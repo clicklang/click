@@ -31,9 +31,6 @@ int32 write_back_then_read(int32* a, int32 i, int32 j, int32 m) {
     requires m < 8;
     requires m != i;
     ensures result == old(a[m]);
-} by {
-    execute();
-    simp();
 }
 ```
 

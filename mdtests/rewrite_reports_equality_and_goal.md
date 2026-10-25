@@ -32,8 +32,6 @@ int pick(int a, int b, int c) {
         rewrite(a == b);
         normalize();
     }
-    execute();
-    simp();
 }
 ```
 

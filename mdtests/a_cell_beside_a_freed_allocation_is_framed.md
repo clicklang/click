@@ -27,8 +27,6 @@ void dispose_beside(int32* data, int32 n, int32* r) {
     ensures r[0] == old(r[0]);
 } by {
     unfold(cell(data, n));
-    execute();
-    simp();
 }
 ```
 

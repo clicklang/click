@@ -34,9 +34,6 @@ verifying "modeled_pthread_delayed_create.c";
 
 void *worker(void *p) {
     owns ((struct cell *)p)->value;
-} by {
-    execute();
-    simp();
 }
 
 int32 run(struct cell *p) {

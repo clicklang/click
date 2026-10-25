@@ -23,17 +23,11 @@ verifying "main.c";
 void clear(int values[3]) {
     owns values[2];
     ensures values[2] == 0;
-} by {
-    execute();
-    simp();
 }
 
 int first(int values[3]) {
     views values[0];
     ensures result == values[0];
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -23,7 +23,6 @@ int32 f(int32 x) {
         x == 2 => { have x > 0; }
         x == 3 => { have x > 0; }
     }
-    execute();
 }
 ```
 

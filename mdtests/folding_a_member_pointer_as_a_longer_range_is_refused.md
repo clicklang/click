@@ -26,8 +26,6 @@ int32 probe(struct Pair* p) {
     step();
     fold(two(q));
     unfold(two(q));
-    execute();
-    simp();
 }
 ```
 

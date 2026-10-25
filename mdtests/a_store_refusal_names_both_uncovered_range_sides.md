@@ -18,9 +18,6 @@ verifying "a_store_refusal_names_both_uncovered_range_sides.c";
 void walk(int32 *b, int32 i, int32 n) {
     owns b[i..n];
     requires 0 <= i and i < n;
-} by {
-    execute();
-    simp();
 }
 ```
 

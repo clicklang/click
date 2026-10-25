@@ -91,7 +91,6 @@ struct node* h(struct node* p) {
             close_invariants();
         }
     }
-    execute();
 }
 ```
 

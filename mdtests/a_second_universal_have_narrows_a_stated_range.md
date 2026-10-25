@@ -41,8 +41,6 @@ void walk(int32 *a, int32 *b, int32 n) {
         have k + 1 <= n by { arithmetic() using { 0 <= k; k < n; n <= 1073741823; }; }
         simp();
     }
-    execute();
-    simp();
 }
 ```
 

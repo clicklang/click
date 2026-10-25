@@ -24,10 +24,7 @@ int32 unit_of(char buf[], const char* name) {
     let n: uint64;
     views click::cstr::cstr_at(name, n);
     requires n < 4u64;
-    ensures result == (int32) n by {
-        execute();
-        simp();
-    }
+    ensures result == (int32) n;
 }
 ```
 

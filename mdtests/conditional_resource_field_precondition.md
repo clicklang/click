@@ -28,9 +28,6 @@ int32 known_nonempty_next(struct link* node) {
     views maybe_link(node);
 
     ensures result == 1;
-} by {
-    execute();
-    simp();
 }
 ```
 
