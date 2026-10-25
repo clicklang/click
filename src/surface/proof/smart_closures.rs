@@ -3939,16 +3939,21 @@ impl<'a> Proof<'a> {
             scope.succeed();
             return Ok(Some(proof));
         }
+        // A goal that reads stored cells is first tried over the stored
+        // values, the goal the search saw before reads kept their version
+        // names; the full search over the reads follows only when that
+        // misses.
+        if let Some(proof) = self.try_stored_value_goal()? {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
         let result = match self.try_simp_closure_after_direct(false)? {
             Some(proof) => Some(proof),
             None => match self.try_restated_constant_upper_bound()? {
                 Some(proof) => Some(proof),
                 None => match self.try_connected_fact_closure()? {
                     Some(proof) => Some(proof),
-                    None => match self.try_late_arithmetic_with_selected_premises()? {
-                        Some(proof) => Some(proof),
-                        None => self.try_stored_value_goal()?,
-                    },
+                    None => self.try_late_arithmetic_with_selected_premises()?,
                 },
             },
         };
