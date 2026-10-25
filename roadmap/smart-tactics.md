@@ -807,6 +807,15 @@ Decided by the maintainer on 2026-10-20.
      and applies the rest of the script to each.
    - `by solve();` stays accepted although it is redundant: it is a handy
      place holder to replace with another tactic.
+   - Refined the same day. The only slow parts of a proof are `solve` and
+     the searches behind elided arguments, and both expand to simple
+     tactics. Out as written tactics: `simp`, `auto`, `execute`,
+     `execute_until` and `arithmetic`. In: `solve`, with an optional `using`
+     list, and `step_until` beside `step` and `branch` to advance.
+     `arithmetic_certificate { … }` stays as the explicit form `solve`
+     expands an arithmetic step to. No written tactic forks, so a script is never
+     copied onto several paths: the only split a script sees is one it
+     writes (`branch`, `if`, `cases`, `match`) or the implicit tail's.
 
 ## Plan
 
@@ -1137,23 +1146,56 @@ mdtests and examples.
     facts decide, as `execute` does, and still never splits. A miss inside
     it still reads "`step()` is missing prerequisite … refused by
     `step_until`": the step that missed, and the tactic that ran it.
-23. **`execute()` keeps one program point.** It refuses when execution
-    would leave more than one exit path and names the `branch` to write.
-    Migrate the 263 multi-path proofs: the 237 path-selecting `if`s become
-    `branch` arms, and the 26 that repeat work repeat it in each arm.
-    *Verdicts* only where a migration misses; each is explained in the PR.
-24. **Spelling migration.** Rewrite `simp()` as `solve()` across the corpus
-    and library, and drop the `by auto();` and `by simp();` that only
-    restate the omitted proof. Printing, expansion and diagnostics spell
-    `solve`.
+23. **Remove `execute()` as a written tactic.** Its uses, from the
+    2026-10-25 count of 5,079 written `execute();`:
+    - followed only by closers, or by nothing (about 4,350, nearly all
+      `execute(); simp();`): delete them, since the implicit tail runs the
+      C, splits, and solves each goal;
+    - followed by exit work on one path (about 557, such as
+      `execute(); fold(…); apply(…);`): `step_until(function.exit)` and
+      the same work. `step_until` first learns to target function exit; it
+      never forks, so it is refused where the C would split;
+    - followed by exit work on several paths (263): the 237 path-selecting
+      proof `if`s become `branch` arms at the C `if`, and the 26 that
+      repeat work repeat it in each arm.
+
+    `execute` then names only the tail's stepping and splitting. *Verdicts*
+    only where a migration misses; each is explained in the PR.
+24. **Spelling migration and removal.** Rewrite `simp()` as `solve()`,
+    `arithmetic()` as `solve() using {}`, `arithmetic() using { … }` as
+    `solve() using { … }`, and `execute_until` as `step_until` across the
+    corpus and library; drop the `by auto();` and `by simp();` that only
+    restate the omitted proof, and turn a written `auto();` into `solve();`
+    or nothing. Then remove `simp`, `auto`, `execute`, `execute_until` and
+    `arithmetic` from the parser, with a refusal that names the
+    replacement. Printing, expansion and diagnostics spell `solve` and
+    `step_until`.
+
+    Measured 2026-10-25, with every `arithmetic()` read as
+    `solve() using {}` and every `arithmetic() using { … }` as
+    `solve() using { … }`. At first `solve() using` lost 42 proofs and
+    `examples/rust-chunks-exact`: it never called the arithmetic engine, so
+    it missed even `(x & 255) <= 255` from no premises, simplex refutation
+    of contradictory premises, and unsigned zero floors. It now tries the
+    listed premises in the arithmetic engine first, as `arithmetic() using`
+    does, which changed no gate verdict; read that way, every proof the gate
+    expects verifies. 29 refusal mdtests still refuse but print the generic
+    `solve() using` miss instead of arithmetic's specific refusal ("reads no
+    facts from the context", "stays within uint64", "no combination of the
+    listed premises proves it"), so before removal `solve() using` reports
+    its arithmetic refusal when that attempt got furthest. One,
+    `arithmetic_uint32_mask_refusal_names_no_signed_overflow`, now proves its
+    goal, which is true: `x < 1u32` from `x <= 1u32` and `x != 1u32`, which
+    arithmetic alone could not use; it needs a goal that does not follow.
 25. **Documentation review.** Read every page that describes proof tactics
     and update it for this phase: `docs/concepts/` (smart and simple
     tactics, tracing, proof-failure triage), `docs/reference/tactics/` and
     `click docs` text, the CLI reference for `expand`, `profile` and
     `audit`, the language reference, the tracing skill, example and mdtest
     prose, `README.md`, and this roadmap. No page may still describe
-    `simp` and `auto` as different tactics, an omitted proof as
-    `execute(); auto();`, or a proof that holds several exit paths.
+    `simp`, `auto`, `execute` or `execute_until` as tactics to write, an
+    omitted proof as `execute(); auto();`, or a proof that holds several
+    exit paths.
 
 Out of scope: a default join at C branches. The implicit tail splits each
 branch to exit as `execute` does today, so `n` sequential undecided `if`s
@@ -1190,6 +1232,9 @@ tracing work in step 15 can start once step 10 lands.
   `simp` wraps `arithmetic`. After phase F, three remain: `solve`, which
   wraps `arithmetic`; `execute`; and `arithmetic`. An omitted proof is the
   implicit loop over `step`, `branch` and `solve`, not a fourth tactic.
+  Refined (decision 6): the only written smart tactic is `solve`, besides
+  the searches behind elided arguments, and `execute` survives only inside
+  the implicit tail.
 - **Every search outside those four is a helper** for an elided argument of a
   simple tactic. `click expand` writes the helper's result into that tactic,
   and the written form checks with no search.
