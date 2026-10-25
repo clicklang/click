@@ -4753,19 +4753,10 @@ impl Pointer {
         // The read is named at its cell's version: the projection is taken
         // at the point the assumption-free walk finds the cell last written,
         // so two points the walk relates project, and name, alike.
-        let version = crate::kernel::resource_tracker::last_same_point(
-            crate::kernel::resource_tracker::Resource::Cell {
-                pointer: address,
-                bytes: crate::kernel::C_POINTER_BYTE_WIDTH,
-            },
-            &crate::kernel::resource_tracker::ProgramPoint::at(&source),
-        )
-        .map_or(source.clone(), |point| point.snapshot().clone());
-        let canonical = crate::kernel::intern_c_memory(
-            crate::kernel::reasoning::memory_resolution::canonical_memory_for_pointer_load(
-                version.memory(),
-                address,
-            ),
+        let canonical = crate::kernel::memory_provenance::canonical_value_load_memory(
+            &source,
+            address,
+            crate::kernel::C_POINTER_BYTE_WIDTH,
         );
         if let Some(CValue::Pointer(stored)) = canonical.memory().known_value(address)
             && stored.pointer().as_loaded_value().is_some_and(|read| {
