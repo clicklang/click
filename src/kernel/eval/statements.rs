@@ -2284,7 +2284,10 @@ fn execute_c_heap_free_paths(
             .direct_match_candidates_for(&allocation_query, &effective_assumptions)
             .into_iter()
             .filter_map(CResourceFact::allocation)
-            .find(|(base, _)| **base == *pointer.pointer())
+            .find(|(base, _)| {
+                crate::kernel::primitives::heap_allocation_key(base)
+                    == crate::kernel::primitives::heap_allocation_key(pointer.pointer())
+            })
             .map(|(_, bytes)| bytes.clone());
         let element_width = pointer
             .c_type()

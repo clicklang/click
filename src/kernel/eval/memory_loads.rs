@@ -2470,21 +2470,27 @@ pub(crate) fn pointer_read_over_write_value(pointer: &Pointer) -> Option<Pointer
 /// read's snapshot stores there, through stored reads in turn: one address,
 /// spelled by the stored pointer. `None` when the base is no stored read.
 pub(crate) fn read_over_write_address(address: &Pointer) -> Option<Pointer> {
-    let mut current = match &address.block {
-        PointerBlock::LoadedPointer(_) => address.clone(),
-        // A load variable's pointer value is the named read of its cell.
+    // A load variable's pointer value is the named read of its cell: one
+    // read, spelled the way a named read is.
+    let named = |pointer: Pointer| match &pointer.block {
         PointerBlock::Symbolic(variable) => {
-            let read = crate::kernel::primitives::pointer_read_of_load_variable(*variable)?;
-            Pointer {
-                block: read.block,
-                offset: PointerOffsetTerm::add(read.offset, address.offset.clone()),
+            match crate::kernel::primitives::pointer_read_of_load_variable(*variable) {
+                Some(read) => Pointer {
+                    block: read.block,
+                    offset: PointerOffsetTerm::add(read.offset, pointer.offset),
+                },
+                None => pointer,
             }
         }
-        _ => return None,
+        _ => pointer,
     };
+    let mut current = named(address.clone());
     // A stored read was read before the store holding it, so the chain runs
     // back through history; the bound only stops a pathological one.
     for _ in 0..16 {
+        if !matches!(current.block, PointerBlock::LoadedPointer(_)) {
+            break;
+        }
         let read = Pointer {
             block: current.block.clone(),
             offset: PointerOffsetTerm::Constant(0),
@@ -2492,13 +2498,10 @@ pub(crate) fn read_over_write_address(address: &Pointer) -> Option<Pointer> {
         let Some(stored) = pointer_read_over_write_value(&read) else {
             break;
         };
-        current = Pointer {
+        current = named(Pointer {
             block: stored.block,
             offset: PointerOffsetTerm::add(stored.offset, current.offset),
-        };
-        if !matches!(current.block, PointerBlock::LoadedPointer(_)) {
-            break;
-        }
+        });
     }
     (current != *address).then_some(current)
 }
@@ -3072,6 +3075,17 @@ pub(crate) fn loaded_pointer_read_predates_block(
     POINTER_LOAD_SOURCES
         .with(|sources| sources.borrow().get(&identity).copied())
         .is_some_and(|variable| loaded_pointer_predates_block(&variable, block))
+}
+
+/// The memory a pointer-load name was read in, as lowering read it: its
+/// source load's live origin, or the snapshot it names when it has none. A
+/// read moved by a rewrite is named again from here, as lowering names it.
+pub(crate) fn loaded_pointer_read_origin(identity: PointerLoadId) -> Option<SharedCMemory> {
+    POINTER_LOAD_SOURCES
+        .with(|sources| sources.borrow().get(&identity).copied())
+        .and_then(|variable| registered_load_origin_for_variable(&variable))
+        .map(|(origin, _)| origin)
+        .or_else(|| registered_pointer_load(identity).map(|(memory, _)| memory))
 }
 
 /// The heap identities a pointer-load name can point into, ascending: those

@@ -4463,7 +4463,14 @@ impl<'a> TermRewrite<'a> {
             self.charge_rewrite_work(1);
             let address = self.pointer(&read.defining_address);
             if address != read.defining_address {
-                let moved = Pointer::version_read(&read.defining_memory, &address);
+                let memory = match &p.block {
+                    PointerBlock::LoadedPointer(identity) => {
+                        crate::kernel::eval::loaded_pointer_read_origin(*identity)
+                    }
+                    _ => None,
+                }
+                .unwrap_or_else(|| read.defining_memory.clone());
+                let moved = Pointer::version_read(&memory, &address);
                 self.changed = true;
                 return Pointer {
                     block: moved.block,

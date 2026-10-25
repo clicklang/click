@@ -96,6 +96,7 @@ pub(crate) use observed_population_families::ObservedPopulationFamilies;
 mod persistent_map;
 pub(crate) use memory_state::BlockMembership;
 pub(crate) use memory_state::held_term_fingerprint;
+pub(in crate::kernel) use memory_state::heap_allocation_key;
 mod statement_sequence;
 pub(in crate::kernel) use memory_state::CallKeptOwnership;
 pub use memory_state::CallKeptRanges;

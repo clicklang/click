@@ -3389,6 +3389,7 @@ impl CMemory {
         pointer: &Pointer,
         assumptions: &PureFactContext,
     ) -> Result<Self, CInvalidFree> {
+        let pointer = &heap_allocation_key(pointer);
         // An aliased spelling of this allocation (a contract-returned pointer
         // proven equal to it, e.g. `ensures result == p`) is one address too.
         // Retiring through one identity has to retire it through both, else a
@@ -3484,7 +3485,7 @@ impl CMemory {
         &self,
         pointer: &Pointer,
     ) -> Option<&Bitvector32Term> {
-        self.heap.live_allocations.get(pointer)
+        self.heap.live_allocations.get(&heap_allocation_key(pointer))
     }
 
     pub(crate) fn is_live_heap_address(
@@ -3494,6 +3495,7 @@ impl CMemory {
     ) -> bool {
         // An allocation based in a block proven distinct from the pointer's
         // never contains it, so only the candidate entries are asked.
+        let pointer = &heap_allocation_key(pointer);
         self.heap.live_allocations.contains_key(pointer)
             || AliasCandidates::of_block(&pointer.block)
                 .any_entry(&self.heap.live_allocations, |base, _| {
@@ -3730,6 +3732,7 @@ impl CMemory {
         bytes: impl Into<Bitvector32Term>,
     ) -> Option<Self> {
         let bytes = bytes.into();
+        let base = heap_allocation_key(&base);
         if bytes.as_const() == Some(0) || self.heap.deallocated_allocations.contains_key(&base) {
             return None;
         }
@@ -10390,4 +10393,12 @@ mod kept_range_identity_tests {
         assert!(empty.flat_owned_memory_ranges().is_empty());
         assert!(empty.memory_input_facts().is_empty());
     }
+}
+
+/// The key an allocation is recorded under: a pointer read is the pointer its
+/// snapshot stores at the read's address (the read-over-write authority,
+/// which reads memory, never facts), so a read of a cell holding an
+/// allocation's base names that allocation.
+pub(in crate::kernel) fn heap_allocation_key(pointer: &Pointer) -> Pointer {
+    crate::kernel::eval::read_over_write_address(pointer).unwrap_or_else(|| pointer.clone())
 }

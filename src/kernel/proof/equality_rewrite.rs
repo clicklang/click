@@ -646,7 +646,8 @@ fn rewrite_through_loaded_pointer_block(
     // never by a pointer its cell holds (`a[j]` to `a[i]`, not to what
     // `a[i]` stores).
     if let PointerBlock::LoadedPointer(identity) = &pointer.block {
-        let (memory, address) = crate::kernel::eval::registered_pointer_load(*identity)?;
+        let (_, address) = crate::kernel::eval::registered_pointer_load(*identity)?;
+        let memory = crate::kernel::eval::loaded_pointer_read_origin(*identity)?;
         let rewritten_address = {
             let direct = rewrite_pointer(&address);
             if direct != address {
