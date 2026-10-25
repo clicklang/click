@@ -865,8 +865,22 @@ verdict change.
    `mdtests/c_named_function_contract_refines_vacuous_guarded_clause.md`.
    The restricted chain is `simp() using`'s, which reads no ambient fact.
    Switched off together, they also cost the `authority_symbolic` mdtests
-   and `examples/bounded-pool`, so they overlap. Covering those with the
-   connected chain is still to do. *Verdicts.*
+   and `examples/bounded-pool`, so they overlap. *Verdicts.*
+
+   Done in part, 2026-10-25: the selected-premise chain and `simp() using`'s
+   restricted chain were one greedy loop over a premise list. Both now run
+   the connected chain's search (`rewrite_search`), with the listed
+   equalities as its candidates and each used at most once
+   (`try_premise_equality_chain_closure`). `RewriteClosers` says what may
+   close a rewritten goal: `Selected` keeps the old chain's direct, typed
+   atomic and `normalize` closers, with no nested `simp`, which would
+   select the same premises again; `Listed` reads only the `using` list.
+   The greedy loop is gone, and no gate verdict changed. Switched off on
+   the day before, the selected chain alone cost a step of
+   `examples/arena`, and the restricted chain `examples/input-cursor` and
+   15 mdtests. The indexed goal-local search is still separate: switched
+   off alone, it costs a step of `examples/modeled-binary-tree` and
+   `mdtests/loop_old_parameter_resource_argument.md`.
 8. **Move definition-condition reading and constructor join into `simp`.**
    Done: both are part of `simp`'s last strategy over the connected facts
    (`try_connected_fact_closure`), definition reading first and constructor

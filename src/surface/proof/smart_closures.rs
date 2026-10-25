@@ -1,5 +1,6 @@
 //! Smart closure search and linear script interpretation.
 
+use super::selected_arithmetic::RewriteClosers;
 use super::*;
 use crate::kernel::CFloatCondition;
 use crate::kernel::proof::arithmetic_special::signed_definedness_operands;
@@ -4282,7 +4283,11 @@ impl<'a> Proof<'a> {
             };
             typed_atomic
                 .or_else(|| self.try_selected_pointer_inequality_rewrite(&goal, premise_pairs))
-                .or_else(|| self.try_selected_equality_rewrite_chain(premise_pairs))
+                .or_else(|| {
+                    self.try_premise_equality_chain_closure(premise_pairs, RewriteClosers::Selected)
+                        .ok()
+                        .flatten()
+                })
                 .or_else(|| self.try_selected_constant_bound_weakening(&goal, &derivation))
                 .or_else(|| {
                     self.surface_goal().and_then(|surface_goal| {
@@ -8009,126 +8014,7 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// Rewrites with only the explicitly selected equality premises, at most
-    /// once each. Every candidate rewrite is checked transactionally, and
-    /// the finite user-written premise list is the entire search space.
-    pub(super) fn try_selected_equality_rewrite_chain(
-        &self,
-        premise_pairs: &[(Proposition, ClickProposition)],
-    ) -> Option<Self> {
-        self.try_selected_equality_rewrite_chain_with_scope(premise_pairs, false)
-    }
-
-    /// The explicit-premise counterpart of
-    /// [`Self::try_selected_equality_rewrite_chain`]. After each checked
-    /// rewrite it may normalize without context or run a typed atomic plan
-    /// against the same named premises, but it cannot consult ambient facts.
-    fn try_restricted_equality_rewrite_chain(
-        &self,
-        premise_pairs: &[(Proposition, ClickProposition)],
-    ) -> Option<Self> {
-        self.try_selected_equality_rewrite_chain_with_scope(premise_pairs, true)
-    }
-
-    fn try_selected_equality_rewrite_chain_with_scope(
-        &self,
-        premise_pairs: &[(Proposition, ClickProposition)],
-        restricted: bool,
-    ) -> Option<Self> {
-        let mut proof = self.clone();
-        let mut remaining = premise_pairs
-            .iter()
-            .filter(|(kernel, _)| {
-                matches!(
-                    kernel,
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::Equal,
-                            left: _,
-                            right: _
-                        },
-                        true
-                    ) | Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int64,
-                            relation: CompareRelation::Equal,
-                            left: _,
-                            right: _
-                        },
-                        true
-                    ) | Proposition::ConditionIs(ConditionTerm::PointerEqual(_, _), true)
-                        | Proposition::ConditionIs(ConditionTerm::PointerValueEqual(_, _), true)
-                        | Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(_, _), true)
-                        | Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
-                )
-            })
-            .map(|(_, surface)| surface.clone())
-            .collect::<Vec<_>>();
-        while !remaining.is_empty() {
-            let mut selected = None;
-            for (index, surface) in remaining.iter().enumerate() {
-                // Once an earlier equality applies, a later one is only a
-                // probe for the rewrite that closes the goal outright.
-                let probing = selected.is_some();
-                for oriented in
-                    std::iter::once(surface.clone()).chain(reverse_surface_equality(surface))
-                {
-                    // Each candidate rewrite applies a checked step and a
-                    // closure, quadratically in the equalities; observe the
-                    // tactic's deadline and budget between candidates.
-                    if crate::instrumentation::deadline_exceeded() {
-                        return None;
-                    }
-                    if let Ok(rewritten) = proof.apply_step(ProofStep::Rewrite(oriented)) {
-                        let closed = if probing {
-                            rewritten.try_direct_logical_closure().ok().flatten()
-                        } else if restricted {
-                            rewritten.try_typed_atomic_simp_from_selected_premises(premise_pairs)
-                        } else {
-                            rewritten
-                                .try_direct_logical_closure()
-                                .ok()
-                                .flatten()
-                                .or_else(|| rewritten.try_typed_atomic_simp_closure())
-                        }
-                        // A rewrite can leave a goal over constructors only,
-                        // such as `ParentLink::Linked(kid) != ParentLink::Empty`
-                        // after rewriting by `link.link == ParentLink::Linked(kid)`;
-                        // normalization decides it without consulting context.
-                        .or_else(|| {
-                            rewritten
-                                .apply_step(ProofStep::Normalize)
-                                .ok()
-                                .filter(Proof::is_complete)
-                        });
-                        if let Some(closed) = closed {
-                            return Some(closed);
-                        }
-                        selected.get_or_insert((index, rewritten));
-                    }
-                }
-                // Every remaining equality is offered the chance to close
-                // the goal before one that merely applies is committed to.
-                // A rewrite that applies without closing can move the goal
-                // away from the equality that would: with `q == p` stated at
-                // two points, rewriting `p` to the older `q` first leaves no
-                // rewrite by the newer one that reaches a reflexive goal.
-                // The probe asks only the direct logical closer (the
-                // reflexive goal is its case): giving every later equality
-                // the whole typed simp closure made each round cost that
-                // closure once per remaining equality, and took the arena
-                // `have` at arena_cells.click:3846 from 208,305 to 957,192
-                // units.
-            }
-            let (index, rewritten) = selected?;
-            remaining.remove(index);
-            proof = rewritten;
-        }
-        None
-    }
-
-    fn try_typed_atomic_simp_from_selected_premises(
+    pub(super) fn try_typed_atomic_simp_from_selected_premises(
         &self,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Self> {
@@ -9861,7 +9747,15 @@ impl<'a> Proof<'a> {
             try_typed_derivation()
         };
         typed
-            .or_else(|| proof.try_restricted_equality_rewrite_chain(&premise_pairs))
+            .or_else(|| {
+                proof
+                    .try_premise_equality_chain_closure(
+                        &premise_pairs,
+                        RewriteClosers::Listed(&premise_pairs),
+                    )
+                    .ok()
+                    .flatten()
+            })
             .or_else(|| proof.try_outcome_anchored_order_transitivity(&premise_pairs))
             .or_else(|| proof.try_outcome_anchored_increment_order(&premise_pairs))
             // An exact selected premise or context-free normalization may
