@@ -593,8 +593,8 @@ completeness metric.
 The optional `migrated_sidecar` field records a separate proof port for an
 unchanged source and contract. `rust-loops`, `rust-byte-sum`, `rust-chunks-exact`,
 `rust-iterators`, and `rust-iter-references` now pass with these sidecars, so
-source-and-contract coverage with migrated proofs is **16/16 (100%)**. A regression compares their parsed contracts and specification
-functions with the frozen originals, and the live sweep verifies each port
+source-and-contract coverage with migrated proofs is **16/16 (100%)**. A regression checks that each frozen original is digest-pinned and
+parses, and the live sweep verifies each port
 against freshly extracted original source. It still checks the original
 sidecar and its recorded outcome separately; frozen-sidecar parity remains
 11/16. Five digest-pinned archived sidecars retain their proof-interface gaps;
@@ -818,10 +818,15 @@ preconditions, and postconditions. Their fresh native artifacts and locks are
 checked in for offline example verification.
 
 `parity.json` records each replaced original sidecar's archived path and SHA-256
-digest. The live gate checks every current canonical proof after fresh
-extraction, then independently checks archived frozen outcomes. Contract
-regressions compare the adopted canonical sidecars directly with the archives;
-legacy-backend regressions also explicitly use archived legacy proofs.
+digest. On 2026-10-26 the archives were respelled once in today's syntax
+(tactic names, Rust signatures, `as` casts, qualified library citations):
+each respelled file is byte-identical to what the retired reading adapter
+produced from the original bytes, so its contracts, specification functions
+and proofs, gaps included, are the original's. `frozen_sha256` pins the
+respelled bytes and `original_sha256` the originals, which git history
+holds. The live gate checks every current canonical proof after fresh
+extraction, then independently checks archived frozen outcomes.
+Legacy-backend regressions also explicitly use archived legacy proofs.
 No historical frozen failure is relabeled as a success.
 
 Imports, original source/contract proof coverage, and canonical adoption are

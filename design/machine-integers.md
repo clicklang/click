@@ -798,7 +798,8 @@ Maintainer direction, 2026-10-26 (syntax):
   The migration was mechanical: the parser recorded every C-form cast it
   read, a rewrite applied each as `e as T`, and every rewritten source
   parsed back to the same file (its position-free form compared by hash). The
-  hash-pinned historical Rust proofs (`design/charon-trial/parity.json`) keep
-  their bytes; the fixture adapter in `tests/rust_import/parity.rs` reads
-  their casts as `e as T`, as it reads their old tactic spellings.
+  hash-pinned historical Rust proofs (`design/charon-trial/parity.json`) were
+  respelled once, with their old tactic names, signatures and citations, and
+  re-pinned; each is byte-identical to what the retired reading adapter
+  produced from its original.
 
