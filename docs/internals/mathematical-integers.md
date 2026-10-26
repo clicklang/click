@@ -527,7 +527,14 @@ subterm is built, interned or keyed.
 Because operators and comparisons read words, σ stays visible only on a
 value at rest: a local, a stored cell, a returned value, or an argument.
 Printed facts and steps show it as `((uint32)x)` or `((int32)x)` there and
-nowhere else.
+nowhere else. A comparison reads its operands' words, so an `int32` order
+of a `uint32` value's word is spelled with the operand converted: the case
+condition `execute` synthesizes for `bool set = (int)u < 0;` is
+`(int32)u < 0`, which lowers back to that order, where the bare `u < 0` would
+be the `uint32` order (`surface_synthesis::bitvector_spells_uint32`,
+`mdtests/execute_splits_a_sign_cast_order_as_a_signed_comparison.md`,
+`rust_execute_splits_a_sign_cast_order_as_a_signed_comparison` in
+`tests/rust_import.rs`).
 
 A 32-bit load carries its signedness, `LoadKind::Int32` or
 `LoadKind::UInt32`, taken from the lvalue's type in every front end (C, C++

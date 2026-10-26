@@ -2185,6 +2185,27 @@ fn rust_a_u32_cell_read_as_i32_is_its_sign_cast() {
     assert!(C0VerificationSession::new_program_prepared(&wrong, &prepared).is_err());
 }
 
+/// `(u as i32) < 0` compares `u`'s word as `int32`. `execute` splits on that
+/// order, spelled `(int32)u < 0`: written `u < 0`, it lowered to the
+/// unsigned order, which is false, and `execute` could not advance. Both
+/// cases verify, and a claim of the wrong case is refused.
+#[test]
+#[ignore = "nightly: 1.3s in the parallel gate (2026-10-26); the C mdtest and the integer fixture's Rust `sign_bit_set` cover it in the gate"]
+fn rust_execute_splits_a_sign_cast_order_as_a_signed_comparison() {
+    let p = Project::new("pub fn sign_bit_set(u: u32) -> bool { (u as i32) < 0 }\n");
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let claim = "verifying \"borrow.rs\";\n\
+        fn sign_bit_set(u: u32) -> bool {\n\
+            ensures result implies u > 2147483647u32;\n\
+            ensures u > 2147483647u32 implies result;\n\
+        } by { execute(); auto(); }\n";
+    C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
+    let wrong = claim.replace("implies result;", "implies not result;");
+    assert_ne!(wrong, claim);
+    assert!(C0VerificationSession::new_program_prepared(&wrong, &prepared).is_err());
+}
+
 /// A Rust `u32` literal above `i32::MAX` is a `uint32` constant: stated,
 /// stored through `&mut u32`, read back and returned as that number, and a
 /// refusal prints it in its own type, not as the negative `int32` reading.
