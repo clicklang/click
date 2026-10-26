@@ -1871,12 +1871,19 @@ impl CreationEvents {
                 return Err(CreationRefusal::InvalidMember);
             }
             let selected = import.wildcard_member.as_ref();
+            // The member is matched as written: the facts never choose which
+            // member's key a count reads.
             let matches = selected.is_some_and(|member| {
                 member
                     .arguments()
                     .iter()
                     .zip(description.arguments())
-                    .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
+                    .all(|(a, b)| match (a, b) {
+                        (AlgebraicValue::C(a), AlgebraicValue::C(b)) => {
+                            a.numeric_value() == b.numeric_value()
+                        }
+                        _ => a == b,
+                    })
             });
             // The initial authority-only entry may describe a future birth.
             // Once a member is selected, do not assume another potentially

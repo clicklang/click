@@ -2855,6 +2855,31 @@ mod wildcard_scope_tests {
     }
 
     #[test]
+    fn selected_member_count_matches_its_key_as_written() {
+        let (scope, member) = opaque_scope(0);
+        let imported = CreationEvents::new()
+            .import_opaque_wildcard_population(&scope, &member)
+            .unwrap();
+        let key = Bitvector32Term::Variable(Variable(9_870_001));
+        let mut arguments = member.arguments().to_vec();
+        arguments[1] = AlgebraicValue::C(CValue::Int32(key.clone()));
+        let aliased = ResourceDescription::new(
+            member.family().into(),
+            arguments.into(),
+            member.schema().clone(),
+        );
+        let equal = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(key, Bitvector32Term::Constant(7)),
+            true,
+        );
+        assert!(imported.observe_exact_member(&member, &equal).is_ok());
+        assert!(
+            imported.observe_exact_member(&aliased, &equal).is_err(),
+            "a proven-equal key does not select the member's count"
+        );
+    }
+
+    #[test]
     fn exclusive_wildcard_members_keep_exact_custody_through_a_call() {
         let (scope, first) = opaque_scope(0);
         let different = |index| {
