@@ -4572,8 +4572,8 @@ fn step_until_refusal(
     {
         return Ok(proof.step_error(format!(
             "`step_until(function.exit)` stopped at a C branch the facts do not decide; it \
-             never splits. Split there with a proof `if <condition> {{ ... }} else {{ ... }}` \
-             (`click docs if`), or `branch` when the arms rejoin (`click docs branch`), and \
+             never splits. Split there with `branch` at the C `if` (`click docs branch`), or \
+             with a proof `if <condition> {{ ... }} else {{ ... }}` (`click docs if`), and \
              step each arm\n{}",
             error.raw_summary()
         )));

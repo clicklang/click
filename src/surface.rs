@@ -328,6 +328,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "separate",
     "simp",
     "sizeof",
+    "solve",
     "sorry",
     "spec",
     "statement",

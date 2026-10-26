@@ -23,5 +23,5 @@ int32 clamp_low(int32 x) {
 ```
 
 ```expect
-fail: Step to the exit first with `step()` (the end of the body is one step) or `execute()`, or prove the claim `by auto();`
+fail: Step to the exit first with `step_until(function.exit)` or `step()` (the end of the body is one step), or omit the proof
 ```
