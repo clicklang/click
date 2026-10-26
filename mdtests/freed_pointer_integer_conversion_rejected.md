@@ -27,5 +27,5 @@ int f() {
 
 ```expect
 fail: use of a pointer into a freed allocation: its value is indeterminate after the free
-  operation: `(uint64)p`
+  operation: `p as uint64`
 ```

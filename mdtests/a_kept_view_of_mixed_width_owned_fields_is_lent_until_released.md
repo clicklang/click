@@ -30,7 +30,7 @@ extern void set_a(struct S* p) {
     ensures p->a == 9;
 }
 void keep(struct S* p) {
-    requires ((uint64)p & 7u64) == 0u64;
+    requires (p as uint64 & 7u64) == 0u64;
     owns p->x;
     owns p->a;
     owns p->b;

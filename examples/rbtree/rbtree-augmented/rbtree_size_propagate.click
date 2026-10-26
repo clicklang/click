@@ -20,7 +20,7 @@ resource leaf_links(rb: struct rb_node*, stop: struct rb_node*) {
     fact rb->rb_right == 0;
     fact aligned(stop, 8);
     fact rb->__rb_parent_color == address(stop) + (rb->__rb_parent_color & 1);
-    fact ((struct rb_node*)(rb->__rb_parent_color & ~3)) == stop;
+    fact ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == stop;
 }
 
 void sized_propagate(struct rb_node* rb, struct rb_node* stop) {

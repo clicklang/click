@@ -19,7 +19,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
     requires aligned(p, 8);
     requires color == sized_root_color_bit(tree.model);
     ensures after.model == sized_reparent(old(tree.model), p);
-    ensures ((struct rb_node*)(rb->__rb_parent_color & ~3)) == p;
+    ensures ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p;
 } by {
     match tree.model {
         SizedTree::Empty => {
@@ -59,7 +59,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                             conclusion 0;
                         }
                     }
-                    have ((struct rb_node*)(rb->__rb_parent_color & ~3)) == p by {
+                    have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by {
                         assumption();
                     }
                     have (rb->__rb_parent_color & 1) == 1 by {
@@ -101,7 +101,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                             conclusion 0;
                         }
                     }
-                    have ((struct rb_node*)(rb->__rb_parent_color & ~3)) == p by {
+                    have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by {
                         assumption();
                     }
                     have (rb->__rb_parent_color & 1) == 0 by {

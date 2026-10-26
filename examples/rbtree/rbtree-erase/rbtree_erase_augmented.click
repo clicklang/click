@@ -1071,7 +1071,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             let { frame: link_frame } = open_erase_spine_link(successor, parent, child, { c: path });
                                                             mark moving;
                                                             step(); step(); step(); step();
-                                                            have ((struct rb_node*)(child->__rb_parent_color & ~3)) == mid by { assumption(); }
+                                                            have ((child->__rb_parent_color & ~3) as (struct rb_node *)) == mid by { assumption(); }
                                                             apply(packed_parent_word(mid, at(moving, child->__rb_parent_color)));
                                                             have child->__rb_parent_color == address(mid) + (child->__rb_parent_color & 1) by {
                                                                 rewrite(child->__rb_parent_color == ((at(moving, child->__rb_parent_color) & 1) | address(mid)));
@@ -1118,7 +1118,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                 fact child->__rb_parent_color == address(mid) + (child->__rb_parent_color & 1);
                                                                 fact (child->__rb_parent_color & 1) == color_bit(rc);
                                                                 fact child->__rb_parent_color == address(mid) + color_bit(rc);
-                                                                fact ((struct rb_node*)(child->__rb_parent_color & ~3)) == mid;
+                                                                fact ((child->__rb_parent_color & ~3) as (struct rb_node *)) == mid;
                                                                 fact mid->rb_left == lid;
                                                                 fact mid->rb_right == child;
                                                             } {

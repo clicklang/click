@@ -12,13 +12,13 @@ void tag(struct node *n, struct node *p, int32 color) {
 ```click
 verifying "roundtrip.c";
 theorem direct_roundtrip(p: struct node*) {
-    ensures ((struct node*)address(p)) == p by { normalize(); }
+    ensures (address(p) as (struct node *)) == p by { normalize(); }
 }
 void tag(struct node* n, struct node* p, int32 color) {
     owns n->word;
     requires aligned(p, 8);
     requires color == 1;
-    ensures ((struct node*)(n->word & ~3)) == p;
+    ensures ((n->word & ~3) as (struct node *)) == p;
 } by {
     have 0 <= color by { rewrite(color == 1); normalize(); }
     have color <= 1 by { rewrite(color == 1); normalize(); }
@@ -38,7 +38,7 @@ void tag(struct node* n, struct node* p, int32 color) {
             conclusion 0;
         }
     }
-    have ((struct node*)(n->word & ~3)) == p by {
+    have ((n->word & ~3) as (struct node *)) == p by {
         assumption();
     }
 }

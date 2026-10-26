@@ -11,7 +11,7 @@ uint64 identity(uint64 mid) {
     requires 0u64 < mid;
     ensures result == mid;
 } by {
-    have 0 < (int32)(uint32)mid by { solve() using { 0u64 < mid; }; }
+    have 0 < mid as uint32 as int32 by { solve() using { 0u64 < mid; }; }
 }
 ```
 

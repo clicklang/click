@@ -7,7 +7,7 @@ it: `step(snprintf, { n1: 0u64 })`. The format comes from the call at the
 frontier and picks the formatted-output function. The length of the `%s` that converts argument `N`, counting from zero, is `nN`.
 The string `cstr_at(tmp, 0u64)` is checked at the call, from `tmp`'s bytes.
 
-`buf` is owned as `buf[0..(uint64) len]`, the range the contract's `size`
+`buf` is owned as `buf[0..len as uint64]`, the range the contract's `size`
 names.
 
 ```c filename=snprintf_call_map_names_a_local_c_string.c
@@ -31,7 +31,7 @@ verifying "snprintf_call_map_names_a_local_c_string.c";
 
 int32 f(char buf[], int32 len) {
     requires 9 <= len;
-    owns buf[0..(uint64) len];
+    owns buf[0..len as uint64];
     ensures result == 1;
 } by {
     step();
@@ -41,11 +41,11 @@ int32 f(char buf[], int32 len) {
     }
     step(snprintf, { n1: 0u64 });
     step();
-    have result == (int32) format::decimal_length(7u64) by {
+    have result == format::decimal_length(7u64) as int32 by {
         solve();
     }
     have result == 1 by {
-        solve() using { result == (int32) format::decimal_length(7u64); format::decimal_length(7u64) == 1u64; };
+        solve() using { result == format::decimal_length(7u64) as int32; format::decimal_length(7u64) == 1u64; };
     }
 }
 ```

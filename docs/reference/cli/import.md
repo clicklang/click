@@ -872,7 +872,7 @@ nonstandard enum targets, const removal and general character-pointer
 reinterpretation remain refused. Concrete byte stores use the shared byte
 representation rules; on the selected target, four checked stores can initialize
 an unwritten declared uint32, while partial stores cannot. Native contract
-casts such as `result == (uint8*)p` express pointer identity across access
+casts such as `result == p as (uint8 *)` express pointer identity across access
 types without granting authority. Dynamic-extent `std::span<std::byte>` now
 retains authenticated standard-byte template arguments, including their
 positions and locked declaration metadata even when fields do not mention
@@ -2360,7 +2360,7 @@ resource-clause evaluation names that place.
 
 The catalog also covers dynamic-extent
 `std::as_writable_bytes(std::span<int>)`. It returns a byte view of the
-same storage: its data is `(uint8*)std_span_data(input)` and its native uint64
+same storage: its data is `std_span_data(input) as (uint8 *)` and its native uint64
 length is `std_span_size(input) * 4u64`. It copies no backing bytes, requires no
 backing ownership, and establishes no backing initialization or write permission.
 The integer-to-byte pointer cast preserves allocation identity and lifetime.

@@ -7,22 +7,22 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
     requires rb_old != 0;
     requires rb_new != 0;
     requires rb_old != rb_new;
-    views ((struct sized_node*)(void*)rb_old)->rb.rb_left;
-    views ((struct sized_node*)(void*)rb_old)->rb.rb_right;
+    views (rb_old as (void *) as (struct sized_node *))->rb.rb_left;
+    views (rb_old as (void *) as (struct sized_node *))->rb.rb_right;
     owns source: size_metadata(rb_old);
     owns target: size_metadata(rb_new);
-    owns left: optional_size(((struct sized_node*)(void*)rb_old)->rb.rb_left);
-    owns right: optional_size(((struct sized_node*)(void*)rb_old)->rb.rb_right);
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_left != 0 or left.value == 0;
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_left != rb_old;
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_left == 0 or separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size));
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_left == 0 or separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size));
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_right != 0 or right.value == 0;
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_right != rb_old;
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 or separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size));
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 or separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size));
-    requires separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)rb_new)->size));
-    requires separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)rb_new)->size));
+    owns left: optional_size((rb_old as (void *) as (struct sized_node *))->rb.rb_left);
+    owns right: optional_size((rb_old as (void *) as (struct sized_node *))->rb.rb_right);
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_left != 0 or left.value == 0;
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_left != rb_old;
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 or separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size));
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 or separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size));
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_right != 0 or right.value == 0;
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_right != rb_old;
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 or separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size));
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 or separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size));
+    requires separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory((rb_new as (void *) as (struct sized_node *))->size));
+    requires separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory((rb_new as (void *) as (struct sized_node *))->size));
     requires 0 <= left.value;
     requires 0 <= right.value;
     requires right.value <= 2147483646;
@@ -39,46 +39,46 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
     fold(source);
     let target = fold(size_metadata(rb_new), { value: old(source.value) });
     apply(size_sum_defined(left.value, right.value));
-        if ((struct sized_node*)(void*)rb_old)->rb.rb_left != 0 {
-            if ((struct sized_node*)(void*)rb_old)->rb.rb_right != 0 {
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) by {
+        if (rb_old as (void *) as (struct sized_node *))->rb.rb_left != 0 {
+            if (rb_old as (void *) as (struct sized_node *))->rb.rb_right != 0 {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_left == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_left == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) by {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_left == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_left == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) by {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_right == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) by {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_right == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
                 step(compute_size, { parent: source, left: left, right: right });
                 step();
                 solve();
             } else {
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) by {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_left == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_left == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) by {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_left == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_left == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
                 step(compute_size, { parent: source, left: left, right: right });
@@ -86,17 +86,17 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                 solve();
             }
         } else {
-            if ((struct sized_node*)(void*)rb_old)->rb.rb_right != 0 {
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) by {
+            if (rb_old as (void *) as (struct sized_node *))->rb.rb_right != 0 {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_right == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) by {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_right == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
                 step(compute_size, { parent: source, left: left, right: right });
@@ -114,22 +114,22 @@ contract void RotateSize(struct rb_node* rb_old, struct rb_node* rb_new) {
     requires rb_old != 0;
     requires rb_new != 0;
     requires rb_old != rb_new;
-    views ((struct sized_node*)(void*)rb_old)->rb.rb_left;
-    views ((struct sized_node*)(void*)rb_old)->rb.rb_right;
+    views (rb_old as (void *) as (struct sized_node *))->rb.rb_left;
+    views (rb_old as (void *) as (struct sized_node *))->rb.rb_right;
     owns source: size_metadata(rb_old);
     owns target: size_metadata(rb_new);
-    owns left: optional_size(((struct sized_node*)(void*)rb_old)->rb.rb_left);
-    owns right: optional_size(((struct sized_node*)(void*)rb_old)->rb.rb_right);
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_left != 0 or left.value == 0;
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_left != rb_old;
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_left == 0 or separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size));
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_left == 0 or separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size));
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_right != 0 or right.value == 0;
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_right != rb_old;
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 or separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size));
-    requires ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 or separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size));
-    requires separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)rb_new)->size));
-    requires separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)rb_new)->size));
+    owns left: optional_size((rb_old as (void *) as (struct sized_node *))->rb.rb_left);
+    owns right: optional_size((rb_old as (void *) as (struct sized_node *))->rb.rb_right);
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_left != 0 or left.value == 0;
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_left != rb_old;
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 or separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size));
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 or separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size));
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_right != 0 or right.value == 0;
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_right != rb_old;
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 or separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size));
+    requires (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 or separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size));
+    requires separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory((rb_new as (void *) as (struct sized_node *))->size));
+    requires separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory((rb_new as (void *) as (struct sized_node *))->size));
     requires 0 <= left.value;
     requires 0 <= right.value;
     requires right.value <= 2147483646;
@@ -144,62 +144,62 @@ theorem sized_rotate_has_size_contract()
     executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
     ensures RotateSize(&sized_rotate) as { source: s, target: t, left: l, right: r } by {
         apply(size_sum_defined(l.value, r.value));
-        if ((struct sized_node*)(void*)rb_old)->rb.rb_left != 0 {
-            if ((struct sized_node*)(void*)rb_old)->rb.rb_right != 0 {
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) by {
+        if (rb_old as (void *) as (struct sized_node *))->rb.rb_left != 0 {
+            if (rb_old as (void *) as (struct sized_node *))->rb.rb_right != 0 {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_left == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_left == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) by {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_left == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_left == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) by {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_right == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) by {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_right == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
                 step(sized_rotate, { source: s, target: t, left: l, right: r });
                 solve();
             } else {
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) by {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_left == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_left == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) by {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_left == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_left == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_left as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
                 step(sized_rotate, { source: s, target: t, left: l, right: r });
                 solve();
             }
         } else {
-            if ((struct sized_node*)(void*)rb_old)->rb.rb_right != 0 {
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) by {
+            if (rb_old as (void *) as (struct sized_node *))->rb.rb_right != 0 {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_right == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) by {
+                have separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) by {
                     cases {
-                        ((struct sized_node*)(void*)rb_old)->rb.rb_right == 0 => { contradiction(((struct sized_node*)(void*)rb_old)->rb.rb_right == 0); }
-                        separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
+                        (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0); }
+                        separate(memory((rb_old as (void *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (void *) as (struct sized_node *))->rb.rb_right as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
                 step(sized_rotate, { source: s, target: t, left: l, right: r });

@@ -1,56 +1,56 @@
 import "window.click";
-function zlib_batch_remaining(n: uint32) -> uint64 { 16u64 * (uint64)n }
+function zlib_batch_remaining(n: uint32) -> uint64 { 16u64 * n as uint64 }
 function zlib_batch_count(n: uint32) -> int32 { zlib_prefix_count(5552u64, zlib_batch_remaining(n)) }
 theorem zlib_batch_count_bounds(n: uint32) {
  requires n <= 347u32;
- ensures to_integer((int32)n) == to_integer(n) by {
+ ensures to_integer(n as int32) == to_integer(n) by {
   have 0 <= to_integer(n); have to_integer(n) <= 4294967295;
   arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 347 => to_integer(n) <= 347;
-   integer_cast_identity bounds [0, 1] => to_integer((int32)n) == to_integer(n);
+   integer_cast_identity bounds [0, 1] => to_integer(n as int32) == to_integer(n);
    conclusion 0;
   }
  }
- ensures 0 <= (int32)n and (int32)n <= 347 by {
+ ensures 0 <= n as int32 and n as int32 <= 347 by {
   have 0 <= to_integer(n); have to_integer(n) <= 4294967295;
-  have to_integer((int32)n) == to_integer(n) by { arithmetic_certificate rules {
+  have to_integer(n as int32) == to_integer(n) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 347 => to_integer(n) <= 347;
-   integer_cast_identity bounds [0, 1] => to_integer((int32)n) == to_integer(n); conclusion 0;
+   integer_cast_identity bounds [0, 1] => to_integer(n as int32) == to_integer(n); conclusion 0;
   } }
-  have 0 <= to_integer((int32)n) by solve() using { 0 <= to_integer(n); to_integer((int32)n) == to_integer(n); };
-  have to_integer((int32)n) <= 347 by solve() using { to_integer(n) <= 347; to_integer((int32)n) == to_integer(n); };
+  have 0 <= to_integer(n as int32) by solve() using { 0 <= to_integer(n); to_integer(n as int32) == to_integer(n); };
+  have to_integer(n as int32) <= 347 by solve() using { to_integer(n) <= 347; to_integer(n as int32) == to_integer(n); };
   solve();
  }
 }
 theorem zlib_batch_native_capacity_observation(n: uint32) {
  requires n <= 347u32;
- ensures to_integer(16u64 * (uint64)n) == 16 * to_integer(n) by {
+ ensures to_integer(16u64 * n as uint64) == 16 * to_integer(n) by {
   have 0 <= to_integer(n); have to_integer(n) <= 4294967295;
-  have to_integer((uint64)n) == to_integer(n) by { arithmetic_certificate rules {
+  have to_integer(n as uint64) == to_integer(n) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 347 => to_integer(n) <= 347;
-   integer_cast_identity bounds [0, 1] => to_integer((uint64)n) == to_integer(n); conclusion 0;
+   integer_cast_identity bounds [0, 1] => to_integer(n as uint64) == to_integer(n); conclusion 0;
   } }
-  have to_integer(16u64) * to_integer((uint64)n) <= 18446744073709551615 by solve() using { to_integer(n) <= 347; to_integer((uint64)n) == to_integer(n); };
-  apply(integer::uint64_multiply_to_integer(16u64, (uint64)n));
-  solve() using { to_integer(16u64 * (uint64)n) == to_integer(16u64) * to_integer((uint64)n); to_integer((uint64)n) == to_integer(n); };
+  have to_integer(16u64) * to_integer(n as uint64) <= 18446744073709551615 by solve() using { to_integer(n) <= 347; to_integer(n as uint64) == to_integer(n); };
+  apply(integer::uint64_multiply_to_integer(16u64, n as uint64));
+  solve() using { to_integer(16u64 * n as uint64) == to_integer(16u64) * to_integer(n as uint64); to_integer(n as uint64) == to_integer(n); };
  }
 }
 theorem zlib_batch_remaining_bounds(n: uint32) {
  requires n <= 347u32;
  ensures to_integer(zlib_batch_remaining(n)) == 16 * to_integer(n) by {
   have 0 <= to_integer(n); have to_integer(n) <= 4294967295;
-  have to_integer((uint64)n) == to_integer(n) by { arithmetic_certificate rules {
+  have to_integer(n as uint64) == to_integer(n) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 347 => to_integer(n) <= 347;
-   integer_cast_identity bounds [0, 1] => to_integer((uint64)n) == to_integer(n); conclusion 0;
+   integer_cast_identity bounds [0, 1] => to_integer(n as uint64) == to_integer(n); conclusion 0;
   } }
-  have to_integer(16u64) * to_integer((uint64)n) <= 18446744073709551615 by solve() using { to_integer(n) <= 347; to_integer((uint64)n) == to_integer(n); };
-  apply(integer::uint64_multiply_to_integer(16u64, (uint64)n));
+  have to_integer(16u64) * to_integer(n as uint64) <= 18446744073709551615 by solve() using { to_integer(n) <= 347; to_integer(n as uint64) == to_integer(n); };
+  apply(integer::uint64_multiply_to_integer(16u64, n as uint64));
   unfold(zlib_batch_remaining(n));
-  solve() using { to_integer(16u64 * (uint64)n) == to_integer(16u64) * to_integer((uint64)n); to_integer((uint64)n) == to_integer(n); };
+  solve() using { to_integer(16u64 * n as uint64) == to_integer(16u64) * to_integer(n as uint64); to_integer(n as uint64) == to_integer(n); };
  }
 }
 theorem zlib_batch_remaining_limit(n: uint32) {
@@ -240,7 +240,7 @@ theorem zlib_batch_positive(n: uint32) {
 theorem zlib_batch_capacity_step(n: uint32) {
  requires 1u32 <= n;
  requires n <= 347u32;
- ensures to_integer(16u64 * (uint64)(n - 1u32)) == to_integer(16u64 * (uint64)n - 16u64) by {
+ ensures to_integer(16u64 * (n - 1u32) as uint64) == to_integer(16u64 * n as uint64 - 16u64) by {
   apply(zlib_batch_predecessor(n));
   apply(zlib_batch_remaining_bounds(n));
   apply(zlib_batch_remaining_bounds(n - 1u32));
@@ -248,15 +248,15 @@ theorem zlib_batch_capacity_step(n: uint32) {
   unfold(zlib_batch_remaining(n));
   unfold(zlib_batch_remaining(n - 1u32));
   have to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
-  have to_integer(16u64) <= to_integer(16u64 * (uint64)n) by solve();
-  have to_integer((16u64 * (uint64)n) - 16u64) == to_integer(16u64 * (uint64)n) - to_integer(16u64);
+  have to_integer(16u64) <= to_integer(16u64 * n as uint64) by solve();
+  have to_integer((16u64 * n as uint64) - 16u64) == to_integer(16u64 * n as uint64) - to_integer(16u64);
   apply(zlib_batch_native_capacity_observation(n));
   apply(zlib_batch_native_capacity_observation(n - 1u32));
-  have to_integer(16u64 * (uint64)(n - 1u32)) == to_integer(16u64 * (uint64)n - 16u64) by solve() using {
-   to_integer(16u64 * (uint64)(n - 1u32)) == 16 * to_integer(n - 1u32);
-   to_integer(16u64 * (uint64)n) == 16 * to_integer(n);
+  have to_integer(16u64 * (n - 1u32) as uint64) == to_integer(16u64 * n as uint64 - 16u64) by solve() using {
+   to_integer(16u64 * (n - 1u32) as uint64) == 16 * to_integer(n - 1u32);
+   to_integer(16u64 * n as uint64) == 16 * to_integer(n);
    to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
-   to_integer(16u64 * (uint64)n - 16u64) == to_integer(16u64 * (uint64)n) - to_integer(16u64);
+   to_integer(16u64 * n as uint64 - 16u64) == to_integer(16u64 * n as uint64) - to_integer(16u64);
   };
   assumption();
  }

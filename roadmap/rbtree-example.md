@@ -833,7 +833,7 @@ commit that closed it. Reproductions live in the named fixtures.
 | 72 | A read through a symbolic identity proved equal to a C pointer was refused: the read lookup resolved to the alias and looked only there | a3b96c12 |
 | 73 | `if (parent != tmp)` undecided with both nodes owned: the separation rule read only assumed compositions, and two instances opened one at a time never shared one; a comparison now composes its own two holders through the alias component | 9e1c4281 |
 | 74 | A fold's arm fact lowered a frame identity through its proved-equal C local inside a pure-function argument, so the fact proved in the model's spelling did not count; body facts are now also matched after substituting one pointer by an exact alias | this change (frontier leaves) |
-| 75 | `rewrite(p == 0)` did not reach `(uint64)p` in a 64-bit goal, and `address(null)` was opaque to `normalize` | this change, `mdtests/rewrite_pointer_null_into_an_address.md` |
+| 75 | `rewrite(p == 0)` did not reach `p as uint64` in a 64-bit goal, and `address(null)` was opaque to `normalize` | this change, `mdtests/rewrite_pointer_null_into_an_address.md` |
 
 ## Open findings, not scheduled
 

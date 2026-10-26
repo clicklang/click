@@ -5524,6 +5524,77 @@ impl Drop for ReferenceResultSourceScope {
     }
 }
 
+/// Click's cast, `operand as target`, from their spellings. A pointer
+/// target is parenthesized, `p as (uint8 *)`. `as` binds tighter than every
+/// binary operator and looser than every unary one, so an operand that is
+/// not a unary expression, or a chain of casts, is parenthesized; a caller
+/// that puts the cast under a unary operator parenthesizes the cast.
+pub(in crate::surface) fn click_cast(operand: &str, target: &str) -> String {
+    let target = click_cast_target(target);
+    if spells_cast_operand(operand) {
+        format!("{operand} as {target}")
+    } else {
+        format!("({operand}) as {target}")
+    }
+}
+
+/// A cast target as Click source writes it: an integer bare, a pointer
+/// parenthesized with a space before its `*`, `(uint8 *)`.
+pub(in crate::surface) fn click_cast_target(target: &str) -> String {
+    let Some(star) = target.find('*') else {
+        return target.to_string();
+    };
+    let (pointee, stars) = target.split_at(star);
+    format!("({} {stars})", pointee.trim_end())
+}
+
+/// Whether `text` reads as the operand of an `as` cast without parentheses:
+/// a unary expression (no space outside brackets), optionally followed by
+/// casts of it, `x as int32 as uint64`.
+pub(in crate::surface) fn spells_cast_operand(text: &str) -> bool {
+    let mut depth = 0i32;
+    let mut quoted = false;
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        match byte {
+            b'"' => quoted = !quoted,
+            _ if quoted => {}
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            b' ' if depth == 0 => {
+                // Only a cast may follow at the top level: ` as T`.
+                let rest = &text[index..];
+                let Some(target) = rest.strip_prefix(" as ") else {
+                    return false;
+                };
+                let end = if target.starts_with('(') {
+                    let mut nesting = 0i32;
+                    target
+                        .char_indices()
+                        .find_map(|(at, ch)| {
+                            match ch {
+                                '(' => nesting += 1,
+                                ')' => nesting -= 1,
+                                _ => {}
+                            }
+                            (nesting == 0).then_some(at + 1)
+                        })
+                        .unwrap_or(target.len())
+                } else {
+                    target.find(' ').unwrap_or(target.len())
+                };
+                index += 4 + end;
+                continue;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    !text.is_empty()
+}
+
 pub(super) fn describe_c_expression(expression: &CExpression) -> String {
     match expression {
         CExpression::Value(value) => describe_c_value(value, ParameterBinding::default()),
@@ -5552,8 +5623,11 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             }
             if let Some(struct_name) = pointee_struct {
                 return format!(
-                    "((struct {struct_name} *){})",
-                    describe_c_expression(expression)
+                    "({})",
+                    click_cast(
+                        &describe_c_expression(expression),
+                        &format!("struct {struct_name} *")
+                    )
                 );
             }
             if rust_spelling()
@@ -5562,10 +5636,13 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
                 return format!("({} as {spelling})", describe_c_expression(expression));
             }
             let spelling = crate::kernel::c_type_spelling(*target_type);
-            // Contract expressions use the `(type) expression` cast syntax.
+            // Contract expressions use the `expression as type` cast syntax.
             // Wrap the complete cast so it remains a single term when it is
             // embedded in a generated comparison or another proposition.
-            format!("(({spelling}){})", describe_c_expression(expression))
+            format!(
+                "({})",
+                click_cast(&describe_c_expression(expression), spelling)
+            )
         }
         CExpression::FloatNegate(expression) => format!("-{}", describe_c_expression(expression)),
         CExpression::EnumConstruct {
@@ -6084,7 +6161,7 @@ pub(super) fn describe_pointee_place(base: &str) -> String {
 /// returns, so a snapshot before the return cannot spell it; it has one
 /// value along a path, though, so the snapshot is written around the parts
 /// of a C fragment that do not mention it and `result` stays outside, as in
-/// `((uint64)result) + at(function.entry, node->word & 1)`.
+/// `(result as uint64) + at(function.entry, node->word & 1)`.
 fn describe_snapshot_expression(
     selector: Option<&SnapshotSelector>,
     expression: &ContractExpression,
@@ -6591,7 +6668,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                         .unwrap_or_else(|| {
                             crate::kernel::c_type_spelling(*target_type).to_string()
                         });
-                    format!("(({spelling}){operand})")
+                    format!("({})", click_cast(&operand, &spelling))
                 }
                 CExpression::PointerOffsetBytes { bytes, .. } => {
                     format!("byte_offset({operand}, {bytes})")
@@ -6911,7 +6988,7 @@ pub(super) fn aligned_sugar(proposition: &ClickProposition) -> Option<(&CExpress
 /// renders as `at(S, aligned(p, n))`. The pointer-to-`uint64` conversion
 /// inside has no cast spelling in Click (only `address(p)` or `aligned`),
 /// so rendering the qualified sides expression by expression would emit an
-/// unparseable `(uint64)p`.
+/// unparseable `p as uint64`.
 pub(super) fn snapshot_aligned_sugar(
     proposition: &ClickProposition,
 ) -> Option<(&SnapshotSelector, &CExpression, u64)> {
@@ -7099,9 +7176,11 @@ pub(super) fn describe_bitvector_with_context(
         Bitvector32Term::MachineIntegerCast {
             value, destination, ..
         } => format!(
-            "(({}){})",
-            format!("{destination:?}").to_ascii_lowercase(),
-            describe_bitvector_with_context(value, parameter_binding)
+            "({})",
+            click_cast(
+                &describe_bitvector_with_context(value, parameter_binding),
+                &format!("{destination:?}").to_ascii_lowercase()
+            )
         ),
 
         Bitvector32Term::Constant(value) => format!("{}", *value as i32),
@@ -7146,18 +7225,27 @@ pub(super) fn describe_bitvector_with_context(
             )
         }
         Bitvector32Term::Int64From32(value) | Bitvector32Term::Int64FromUInt32(value) => format!(
-            "((int64){})",
-            describe_bitvector_with_context(value, parameter_binding)
+            "({})",
+            click_cast(
+                &describe_bitvector_with_context(value, parameter_binding),
+                "int64"
+            )
         ),
         Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt64FromInt32(value)
         | Bitvector32Term::UInt64FromInt64(value) => format!(
-            "((uint64){})",
-            describe_bitvector_with_context(value, parameter_binding)
+            "({})",
+            click_cast(
+                &describe_bitvector_with_context(value, parameter_binding),
+                "uint64"
+            )
         ),
         Bitvector32Term::UInt32From64(value) => format!(
-            "((uint32){})",
-            describe_bitvector_with_context(value, parameter_binding)
+            "({})",
+            click_cast(
+                &describe_bitvector_with_context(value, parameter_binding),
+                "uint32"
+            )
         ),
         Bitvector32Term::Unary { operand: value, .. } => {
             format!(
@@ -7213,7 +7301,10 @@ pub(super) fn describe_bitvector_with_context(
         Bitvector32Term::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
         Bitvector32Term::MemoryLoad(_, pointer, _) => describe_load_at(pointer, parameter_binding),
         Bitvector32Term::PointerAddress(pointer, _) => {
-            format!("((uint64){})", describe_pointer(pointer, parameter_binding))
+            format!(
+                "({})",
+                click_cast(&describe_pointer(pointer, parameter_binding), "uint64")
+            )
         }
         Bitvector32Term::IntegerToMachine { value, destination } => format!(
             "to_{}({})",

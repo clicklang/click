@@ -1,6 +1,6 @@
 # a converted unsigned index sum is not split into index plus constant
 
-An `int32` scaled index is a 32-bit word: `a + (int32)w` is
+An `int32` scaled index is a 32-bit word: `a + w as int32` is
 `a + sext(w) * 4`. For a sum `w == u + c` that is `sext(u) * 4 + c * 4` only
 when `u + c` does not wrap. A signed C addition never wraps (overflowing it
 is undefined behavior, which the kernel refuses), but an unsigned addition

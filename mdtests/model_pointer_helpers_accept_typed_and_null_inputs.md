@@ -20,7 +20,7 @@ void null_input() { produces held: token(); ensures true; } by {
     step_until(function.exit); let held = fold(token(), { model: forwarded(0) });
 }
 void known_null(void* p) { requires p == 0; produces held: token(); ensures true; } by {
-    step_until(function.exit); let held = fold(token(), { model: forwarded((struct model_node*)p) });
+    step_until(function.exit); let held = fold(token(), { model: forwarded(p as (struct model_node *)) });
 }
 ```
 

@@ -8,7 +8,7 @@ unsigned long blacken(unsigned long word) { return word + 1; }
 ```click
 verifying "tag.c";
 unsigned long blacken(unsigned long word) {
-    ensures ((struct node*)(result & ~3)) == old((struct node*)(word & ~3));
+    ensures ((result & ~3) as (struct node *)) == old((word & ~3) as (struct node *));
 }
 ```
 

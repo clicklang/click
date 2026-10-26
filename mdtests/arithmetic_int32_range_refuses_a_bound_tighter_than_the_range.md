@@ -25,15 +25,15 @@ theorem successor_nonnegative(i: int32, n: int32) {
             premise 0: 0 <= i => 0 <= i;
             premise 1: i <= n => i <= n;
             int32_range => n <= 2147483646;
-            add 1, 2 => ((int32)(i + n)) <= ((int32)(n + 2147483646));
+            add 1, 2 => ((i + n) as int32) <= ((n + 2147483646) as int32);
             interval_from_affine 0 (i) (0) (2147483647);
             interval_from_affine 3 (i) (-2147483648) (2147483646);
             interval_intersect 4, 5 (0) (2147483646);
             interval_atom (1) (1) (1);
             interval_add_bounded 6, 7 (1) (2147483647);
             trivial => -1 <= 0;
-            add 0, 9 => ((int32)(0 + -1)) <= ((int32)(i + 0));
-            affine_conclusion 10 8 => ((int32)0) <= ((int32)(i + 1));
+            add 0, 9 => ((0 + -1) as int32) <= ((i + 0) as int32);
+            affine_conclusion 10 8 => (0 as int32) <= ((i + 1) as int32);
             conclusion 11;
         }
     }

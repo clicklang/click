@@ -12,7 +12,7 @@ int32* caller(struct Pair* p) { return probe(&p->first); }
 ```click
 verifying "cast.c";
 int32* probe(int32* p) {
-    views ((uint8*)(void*)p)[0..12];
+    views (p as (void *) as (uint8 *))[0..12];
     ensures true;
 }
 int32* caller(struct Pair* p) {

@@ -45,7 +45,7 @@ int32 inspect(struct cell *q) {
 }
 
 void *reader(void *p) {
-    views ((struct cell *)p)->value;
+    views (p as (struct cell *))->value;
 }
 
 int32 run() {

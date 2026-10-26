@@ -3,7 +3,7 @@
 Linux augmented rbtrees embed a `struct rb_node` in a larger node and
 recover the container from the `struct rb_node *` the core code passes.
 A contract states the cached `size` of that container as a resource
-argument, `((struct sized_node*)(void*)old)->size`, as
+argument, `(old as (void *) as (struct sized_node *))->size`, as
 `examples/rbtree/rbtree-augmented/rbtree_size_change_child.click` does. A
 resource argument is a specification: it reads memory as a value, so the
 strict-aliasing check, which applies to C accesses, does not apply to it
@@ -39,26 +39,26 @@ resource sized_link(node: struct rb_node*, previous: int32) {
 }
 
 void clear_left(struct rb_node* old) {
-    consumes before: sized_link(old, ((struct sized_node*)(void*)old)->size);
-    owns ((struct sized_node*)(void*)old)->size;
+    consumes before: sized_link(old, (old as (void *) as (struct sized_node *))->size);
+    owns (old as (void *) as (struct sized_node *))->size;
     owns old->rb_left;
-    produces after: sized_link(old, ((struct sized_node*)(void*)old)->size);
+    produces after: sized_link(old, (old as (void *) as (struct sized_node *))->size);
     ensures after.model == old(before.model);
     ensures old->rb_left == 0;
-    ensures ((struct sized_node*)(void*)old)->size == old(((struct sized_node*)(void*)old)->size);
+    ensures (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size);
 } by {
     unfold(before);
     step_until(function.exit);
-    let after = fold(sized_link(old, ((struct sized_node*)(void*)old)->size), { model: old(before.model) });
+    let after = fold(sized_link(old, (old as (void *) as (struct sized_node *))->size), { model: old(before.model) });
     solve();
 }
 
 int32 clear_and_size(struct rb_node* node) {
-    owns link: sized_link(node, ((struct sized_node*)(void*)node)->size);
-    owns ((struct sized_node*)(void*)node)->size;
+    owns link: sized_link(node, (node as (void *) as (struct sized_node *))->size);
+    owns (node as (void *) as (struct sized_node *))->size;
     owns node->rb_left;
     ensures node->rb_left == 0;
-    ensures result == ((struct sized_node*)(void*)node)->size;
+    ensures result == (node as (void *) as (struct sized_node *))->size;
 } by {
     let { after: link } = step(clear_left, { before: link });
 }

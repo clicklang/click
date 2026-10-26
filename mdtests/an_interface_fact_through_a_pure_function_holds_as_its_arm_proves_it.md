@@ -22,7 +22,7 @@ int n(int j)
 ```click
 verifying "an_interface_fact_through_a_pure_function_holds_as_its_arm_proves_it.c";
 function tl(j: int32) -> uint64 {
-    if j == 0 { 0u64 } else { (uint64) j + 1u64 }
+    if j == 0 { 0u64 } else { j as uint64 + 1u64 }
 }
 int32 n(int32 j) {
     requires 1 <= j and j <= 2;

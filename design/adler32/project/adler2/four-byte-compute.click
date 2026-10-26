@@ -800,7 +800,7 @@ impl adler2::Adler32 {
      have __rust_mir_89 <= 65521u32;
      have to_integer(__rust_mir_89) <= 65521 by { have to_integer(__rust_mir_89) <= to_integer(65521u32); solve(); }
      have to_integer(b_vec.0[1]) + to_integer(__rust_mir_89) <= 4294967295 by solve() using { to_integer(b_vec.0[1]) <= 1020; to_integer(__rust_mir_89) <= 65521; };
-     have to_integer((int64)b_vec.0[1] + (int64)__rust_mir_89) <= 4294967295;
+     have to_integer(b_vec.0[1] as int64 + __rust_mir_89 as int64) <= 4294967295;
      have b_vec.0[1] <= 4294967295u32 - __rust_mir_89;
      step_until(assignment(__rust_mir_94, 0));
      have at(weighted_b, b_vec.0[0]) == old((bytes[0] as u32));
@@ -861,7 +861,7 @@ impl adler2::Adler32 {
      have __rust_mir_95 == (65521u32 - old((bytes[2] as u32))) * 2u32 by solve() using { __rust_mir_100 == (65521u32 - old((bytes[2] as u32))) * 2u32; };
      have to_integer(b_vec.0[2]) <= 1020;
      have to_integer(b_vec.0[2]) + to_integer(__rust_mir_95) <= 4294967295 by solve() using { to_integer(b_vec.0[2]) <= 1020; to_integer(__rust_mir_95) <= 131042; };
-     have to_integer((int64)b_vec.0[2] + (int64)__rust_mir_95) <= 4294967295;
+     have to_integer(b_vec.0[2] as int64 + __rust_mir_95 as int64) <= 4294967295;
      have b_vec.0[2] <= 4294967295u32 - __rust_mir_95;
      step_until(assignment(__rust_mir_102, 0));
      mark add_lane_2;
@@ -912,7 +912,7 @@ impl adler2::Adler32 {
      have __rust_mir_103 == (65521u32 - old((bytes[3] as u32))) * 3u32 by solve() using { __rust_mir_108 == (65521u32 - old((bytes[3] as u32))) * 3u32; };
      have to_integer(b_vec.0[3]) <= 1020;
      have to_integer(b_vec.0[3]) + to_integer(__rust_mir_103) <= 4294967295 by solve() using { to_integer(b_vec.0[3]) <= 1020; to_integer(__rust_mir_103) <= 196563; };
-     have to_integer((int64)b_vec.0[3] + (int64)__rust_mir_103) <= 4294967295;
+     have to_integer(b_vec.0[3] as int64 + __rust_mir_103 as int64) <= 4294967295;
      have b_vec.0[3] <= 4294967295u32 - __rust_mir_103;
      step_until(assignment(__rust_mir_110, 0));
      mark add_lane_3;
@@ -963,7 +963,7 @@ impl adler2::Adler32 {
      have __rust_mir_121 == old((bytes[0] as u32)) by solve() using { av == old((bytes[0] as u32)); };
      have to_integer(__rust_mir_121) <= 255 by solve() using { to_integer(av) <= 255; };
      have to_integer(a) + to_integer(__rust_mir_121) <= 4294967295 by solve() using { to_integer(a) <= 1; to_integer(__rust_mir_121) <= 255; };
-     have to_integer((int64)a + (int64)__rust_mir_121) <= 4294967295;
+     have to_integer(a as int64 + __rust_mir_121 as int64) <= 4294967295;
      have a <= 4294967295u32 - __rust_mir_121;
      step_until(assignment(__rust_mir_122, 0));
      mark sum_a_1;
@@ -993,7 +993,7 @@ impl adler2::Adler32 {
      have __rust_mir_121 == old((bytes[1] as u32)) by solve() using { av == old((bytes[1] as u32)); };
      have to_integer(__rust_mir_121) <= 255 by solve() using { to_integer(av) <= 255; };
      have to_integer(a) + to_integer(__rust_mir_121) <= 4294967295 by solve() using { to_integer(a) <= 256; to_integer(__rust_mir_121) <= 255; };
-     have to_integer((int64)a + (int64)__rust_mir_121) <= 4294967295;
+     have to_integer(a as int64 + __rust_mir_121 as int64) <= 4294967295;
      have a <= 4294967295u32 - __rust_mir_121;
      step_until(assignment(__rust_mir_122, 0));
      mark sum_a_2;
@@ -1023,7 +1023,7 @@ impl adler2::Adler32 {
      have __rust_mir_121 == old((bytes[2] as u32)) by solve() using { av == old((bytes[2] as u32)); };
      have to_integer(__rust_mir_121) <= 255 by solve() using { to_integer(av) <= 255; };
      have to_integer(a) + to_integer(__rust_mir_121) <= 4294967295 by solve() using { to_integer(a) <= 511; to_integer(__rust_mir_121) <= 255; };
-     have to_integer((int64)a + (int64)__rust_mir_121) <= 4294967295;
+     have to_integer(a as int64 + __rust_mir_121 as int64) <= 4294967295;
      have a <= 4294967295u32 - __rust_mir_121;
      step_until(assignment(__rust_mir_122, 0));
      mark sum_a_3;
@@ -1053,7 +1053,7 @@ impl adler2::Adler32 {
      have __rust_mir_121 == old((bytes[3] as u32)) by solve() using { av == old((bytes[3] as u32)); };
      have to_integer(__rust_mir_121) <= 255 by solve() using { to_integer(av) <= 255; };
      have to_integer(a) + to_integer(__rust_mir_121) <= 4294967295 by solve() using { to_integer(a) <= 766; to_integer(__rust_mir_121) <= 255; };
-     have to_integer((int64)a + (int64)__rust_mir_121) <= 4294967295;
+     have to_integer(a as int64 + __rust_mir_121 as int64) <= 4294967295;
      have a <= 4294967295u32 - __rust_mir_121;
      step_until(assignment(__rust_mir_122, 0));
      mark sum_a_4;
@@ -1090,7 +1090,7 @@ impl adler2::Adler32 {
      have __rust_mir_133 == old((bytes[0] as u32)) * 4u32 by solve() using { bv == old((bytes[0] as u32)) * 4u32; };
      have to_integer(__rust_mir_133) <= 1020 by solve() using { to_integer(bv) <= 1020; };
      have to_integer(b) + to_integer(__rust_mir_133) <= 4294967295 by solve() using { to_integer(b) <= 4; to_integer(__rust_mir_133) <= 1020; };
-     have to_integer((int64)b + (int64)__rust_mir_133) <= 4294967295;
+     have to_integer(b as int64 + __rust_mir_133 as int64) <= 4294967295;
      have b <= 4294967295u32 - __rust_mir_133;
      step_until(assignment(__rust_mir_134, 0));
      mark sum_b_1;
@@ -1120,7 +1120,7 @@ impl adler2::Adler32 {
      have __rust_mir_133 == old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))) by solve() using { bv == old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))); };
      have to_integer(__rust_mir_133) <= 66541 by solve() using { to_integer(bv) <= 66541; };
      have to_integer(b) + to_integer(__rust_mir_133) <= 4294967295 by solve() using { to_integer(b) <= 1024; to_integer(__rust_mir_133) <= 66541; };
-     have to_integer((int64)b + (int64)__rust_mir_133) <= 4294967295;
+     have to_integer(b as int64 + __rust_mir_133 as int64) <= 4294967295;
      have b <= 4294967295u32 - __rust_mir_133;
      step_until(assignment(__rust_mir_134, 0));
      mark sum_b_2;
@@ -1150,7 +1150,7 @@ impl adler2::Adler32 {
      have __rust_mir_133 == old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32) by solve() using { bv == old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32); };
      have to_integer(__rust_mir_133) <= 132062 by solve() using { to_integer(bv) <= 132062; };
      have to_integer(b) + to_integer(__rust_mir_133) <= 4294967295 by solve() using { to_integer(b) <= 67565; to_integer(__rust_mir_133) <= 132062; };
-     have to_integer((int64)b + (int64)__rust_mir_133) <= 4294967295;
+     have to_integer(b as int64 + __rust_mir_133 as int64) <= 4294967295;
      have b <= 4294967295u32 - __rust_mir_133;
      step_until(assignment(__rust_mir_134, 0));
      mark sum_b_3;
@@ -1180,7 +1180,7 @@ impl adler2::Adler32 {
      have __rust_mir_133 == old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32) by solve() using { bv == old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32); };
      have to_integer(__rust_mir_133) <= 197583 by solve() using { to_integer(bv) <= 197583; };
      have to_integer(b) + to_integer(__rust_mir_133) <= 4294967295 by solve() using { to_integer(b) <= 199627; to_integer(__rust_mir_133) <= 197583; };
-     have to_integer((int64)b + (int64)__rust_mir_133) <= 4294967295;
+     have to_integer(b as int64 + __rust_mir_133 as int64) <= 4294967295;
      have b <= 4294967295u32 - __rust_mir_133;
      step_until(assignment(__rust_mir_134, 0));
      mark sum_b_4;

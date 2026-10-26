@@ -33,7 +33,7 @@ runtime "modeled-pthread";
 verifying "modeled_pthread_delayed_create.c";
 
 void *worker(void *p) {
-    owns ((struct cell *)p)->value;
+    owns (p as (struct cell *))->value;
 }
 
 int32 run(struct cell *p) {

@@ -39,9 +39,9 @@ uint64 label_copy(char* dst, const char* src) {
         have bytes::equal(dst, 0u64, src, 0u64, n) by {
             transport(
                 at(copied, (0u64..n).all(|k| {
-                    ((uint8*)dst)[0u64 + k] == old(((uint8*)src)[0u64 + k])
+                    (dst as (uint8 *))[0u64 + k] == old((src as (uint8 *))[0u64 + k])
                 })),
-                (0u64..n).all(|k| { ((uint8*)dst)[0u64 + k] == ((uint8*)src)[0u64 + k] })
+                (0u64..n).all(|k| { (dst as (uint8 *))[0u64 + k] == (src as (uint8 *))[0u64 + k] })
             );
         }
         step_until(function.exit);

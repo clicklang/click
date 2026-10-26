@@ -309,7 +309,7 @@ Status: resource-valued arguments accepted. Implementation is in progress;
 the worker contract below remains a target, not a verified example.
 
 The frozen counter worker was tried with the existing requirement
-`owns access: mutex_use(&((struct mutex_counter *)argument)->mutex);`.
+`owns access: mutex_use(&(argument as (struct mutex_counter *))->mutex);`.
 Its lock succeeds, but its ordinary increment fails for missing read authority
 on the counter's `value` field. A declaration-level mutex annotation on
 `counter_state` could not have supplied the missing association either: an
@@ -324,9 +324,9 @@ yet specify how a named contract is attached to the pthread worker):
 
 ```text
 contract void * Increment(void *argument) {
-    // `state: counter_state((struct mutex_counter *)argument)` is a
+    // `state: counter_state(argument as (struct mutex_counter *))` is a
     // reference-only handle; its declaring clause is not yet designed.
-    owns access: mutex_use(&((struct mutex_counter *)argument)->mutex, state);
+    owns access: mutex_use(&(argument as (struct mutex_counter *))->mutex, state);
     ensures result == 0;
 }
 ```

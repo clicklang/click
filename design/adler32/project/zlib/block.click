@@ -11,7 +11,7 @@ theorem zlib_component_step(bytes: uint8[], n: int32) {
   apply(adler_sum_append(bytes, n + 1));
   have to_integer(n + 1 - 1) == to_integer(n) by solve() using { 0 <= n; n < 2147483647; };
   unfold(zlib_byte_integer(bytes[n]));
-  normalize() using { adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n + 1 - 1) + to_integer((int32)bytes[n + 1 - 1]); to_integer(n + 1 - 1) == to_integer(n); };
+  normalize() using { adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n + 1 - 1) + to_integer(bytes[n + 1 - 1] as int32); to_integer(n + 1 - 1) == to_integer(n); };
  }
  ensures adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n, n) + adler_byte_sum(bytes, n + 1) by {
   have 0 < to_integer(n + 1) by solve() using { 0 <= n; n < 2147483647; };
@@ -66,15 +66,15 @@ theorem zlib_reduced_result(bytes: uint8[], length: int32, a: uint64, b: uint64)
 theorem zlib_native_component_step(bytes: uint8[], n: int32, a: uint64, b: uint64, value: uint8) {
  requires 0 <= n;
  requires n < 5552;
- requires (int32)value == (int32)bytes[n];
+ requires value as int32 == bytes[n] as int32;
  requires to_integer(a) == 1 + adler_byte_sum(bytes, n);
  requires to_integer(b) == to_integer(n) + adler_weighted_sum(bytes, n, n);
  requires to_integer(a) <= 1 + 255 * to_integer(n);
  requires to_integer(b) <= 1415761 * to_integer(n);
- ensures to_integer(a + (uint64)(uint32)value) == 1 + adler_byte_sum(bytes, n + 1)
-     and to_integer(b + (a + (uint64)(uint32)value)) == to_integer(n + 1) + adler_weighted_sum(bytes, n + 1, n + 1)
-     and to_integer(a + (uint64)(uint32)value) <= 1 + 255 * to_integer(n + 1)
-     and to_integer(b + (a + (uint64)(uint32)value)) <= 1415761 * to_integer(n + 1) by {
+ ensures to_integer(a + value as uint32 as uint64) == 1 + adler_byte_sum(bytes, n + 1)
+     and to_integer(b + (a + value as uint32 as uint64)) == to_integer(n + 1) + adler_weighted_sum(bytes, n + 1, n + 1)
+     and to_integer(a + value as uint32 as uint64) <= 1 + 255 * to_integer(n + 1)
+     and to_integer(b + (a + value as uint32 as uint64)) <= 1415761 * to_integer(n + 1) by {
   have n <= 5551 by solve() using { n < 5552; };
   have n < 2147483647 by solve() using { n < 5552; };
   have defined(n + 1) by solve();
@@ -83,50 +83,50 @@ theorem zlib_native_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
   apply(zlib_byte_integer_identity(value));
   apply(zlib_equal_byte_integers(value, bytes[n]));
   apply(zlib_component_step(bytes, n));
-  have to_integer(a) + to_integer((uint64)(uint32)value) <= 1415761 by solve() using {
+  have to_integer(a) + to_integer(value as uint32 as uint64) <= 1415761 by solve() using {
    to_integer(a) <= 1 + 255 * to_integer(n);
    to_integer(n) <= 5551;
-   to_integer((uint64)(uint32)value) == to_integer((int32)value);
-   to_integer((int32)value) <= 255;
+   to_integer(value as uint32 as uint64) == to_integer(value as int32);
+   to_integer(value as int32) <= 255;
   };
-  have to_integer(a) + to_integer((uint64)(uint32)value) <= 18446744073709551615 by solve() using { to_integer(a) + to_integer((uint64)(uint32)value) <= 1415761; };
-  have to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
-  have to_integer(a + (uint64)(uint32)value) <= 1415761 by solve() using {
-   to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
-   to_integer(a) + to_integer((uint64)(uint32)value) <= 1415761;
+  have to_integer(a) + to_integer(value as uint32 as uint64) <= 18446744073709551615 by solve() using { to_integer(a) + to_integer(value as uint32 as uint64) <= 1415761; };
+  have to_integer(a + value as uint32 as uint64) == to_integer(a) + to_integer(value as uint32 as uint64);
+  have to_integer(a + value as uint32 as uint64) <= 1415761 by solve() using {
+   to_integer(a + value as uint32 as uint64) == to_integer(a) + to_integer(value as uint32 as uint64);
+   to_integer(a) + to_integer(value as uint32 as uint64) <= 1415761;
   };
-  have to_integer(b) + to_integer(a + (uint64)(uint32)value) <= 18446744073709551615 by solve() using {
+  have to_integer(b) + to_integer(a + value as uint32 as uint64) <= 18446744073709551615 by solve() using {
    to_integer(b) <= 1415761 * to_integer(n);
    to_integer(n) <= 5551;
-   to_integer(a + (uint64)(uint32)value) <= 1415761;
+   to_integer(a + value as uint32 as uint64) <= 1415761;
   };
-  have to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b) + to_integer(a + (uint64)(uint32)value);
-  have to_integer(a + (uint64)(uint32)value) == 1 + adler_byte_sum(bytes, n + 1) by solve() using {
-   to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
+  have to_integer(b + (a + value as uint32 as uint64)) == to_integer(b) + to_integer(a + value as uint32 as uint64);
+  have to_integer(a + value as uint32 as uint64) == 1 + adler_byte_sum(bytes, n + 1) by solve() using {
+   to_integer(a + value as uint32 as uint64) == to_integer(a) + to_integer(value as uint32 as uint64);
    to_integer(a) == 1 + adler_byte_sum(bytes, n);
-   to_integer((uint64)(uint32)value) == to_integer((int32)value);
-   zlib_byte_integer(value) == to_integer((int32)value);
+   to_integer(value as uint32 as uint64) == to_integer(value as int32);
+   zlib_byte_integer(value) == to_integer(value as int32);
    zlib_byte_integer(value) == zlib_byte_integer(bytes[n]);
    adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n) + zlib_byte_integer(bytes[n]);
   };
-  have to_integer(b + (a + (uint64)(uint32)value)) == to_integer(n + 1) + adler_weighted_sum(bytes, n + 1, n + 1) by solve() using {
-   to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b) + to_integer(a + (uint64)(uint32)value);
+  have to_integer(b + (a + value as uint32 as uint64)) == to_integer(n + 1) + adler_weighted_sum(bytes, n + 1, n + 1) by solve() using {
+   to_integer(b + (a + value as uint32 as uint64)) == to_integer(b) + to_integer(a + value as uint32 as uint64);
    to_integer(b) == to_integer(n) + adler_weighted_sum(bytes, n, n);
-   to_integer(a + (uint64)(uint32)value) == 1 + adler_byte_sum(bytes, n + 1);
+   to_integer(a + value as uint32 as uint64) == 1 + adler_byte_sum(bytes, n + 1);
    adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n, n) + adler_byte_sum(bytes, n + 1);
    to_integer(n + 1) == to_integer(n) + to_integer(1);
   };
-  have to_integer(a + (uint64)(uint32)value) <= 1 + 255 * to_integer(n + 1) by solve() using {
-   to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
+  have to_integer(a + value as uint32 as uint64) <= 1 + 255 * to_integer(n + 1) by solve() using {
+   to_integer(a + value as uint32 as uint64) == to_integer(a) + to_integer(value as uint32 as uint64);
    to_integer(a) <= 1 + 255 * to_integer(n);
-   to_integer((uint64)(uint32)value) == to_integer((int32)value);
-   to_integer((int32)value) <= 255;
+   to_integer(value as uint32 as uint64) == to_integer(value as int32);
+   to_integer(value as int32) <= 255;
    to_integer(n + 1) == to_integer(n) + to_integer(1);
   };
-  have to_integer(b + (a + (uint64)(uint32)value)) <= 1415761 * to_integer(n + 1) by solve() using {
-   to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b) + to_integer(a + (uint64)(uint32)value);
+  have to_integer(b + (a + value as uint32 as uint64)) <= 1415761 * to_integer(n + 1) by solve() using {
+   to_integer(b + (a + value as uint32 as uint64)) == to_integer(b) + to_integer(a + value as uint32 as uint64);
    to_integer(b) <= 1415761 * to_integer(n);
-   to_integer(a + (uint64)(uint32)value) <= 1415761;
+   to_integer(a + value as uint32 as uint64) <= 1415761;
    to_integer(n + 1) == to_integer(n) + to_integer(1);
   };
   solve();

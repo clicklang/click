@@ -26,7 +26,7 @@ resource sized_recompute_at(p: struct rb_node*) {
             fact aligned(p, 8);
             fact aligned(parent, 8);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
-            fact ((struct rb_node*)(p->__rb_parent_color & ~3)) == parent;
+            fact ((p->__rb_parent_color & ~3) as (struct rb_node *)) == parent;
             fact (p->__rb_parent_color & 1) == color_bit(color);
             fact sized_parent_is(left_model, p) == 1;
             fact sized_parent_is(right_model, p) == 1;
@@ -35,8 +35,8 @@ resource sized_recompute_at(p: struct rb_node*) {
 }
 
 contract int32 RecomputeTree(struct sized_node* node, int32 exit) {
-    consumes tree: sized_recompute_at((struct rb_node*)(void*)node);
-    produces checked: sized_at((struct rb_node*)(void*)node);
+    consumes tree: sized_recompute_at(node as (void *) as (struct rb_node *));
+    produces checked: sized_at(node as (void *) as (struct rb_node *));
     requires node != 0;
     requires 0 <= sized_value(sized_left(tree.model));
     requires 0 <= sized_value(sized_right(tree.model));
@@ -141,7 +141,7 @@ theorem compute_size_restores_subtree_size()
                                         at(before_compute, metadata.value) == 1 + at(before_compute, l.value) + at(before_compute, r.value) => { assumption(); }
                                     }
                                 }
-                                let checked = fold(sized_at((struct rb_node*)(void*)node), { model: SizedTree::Node(identity, parent, color, 1, left_model, right_model) }, { metadata: metadata, left: left, right: right });
+                                let checked = fold(sized_at(node as (void *) as (struct rb_node *)), { model: SizedTree::Node(identity, parent, color, 1, left_model, right_model) }, { metadata: metadata, left: left, right: right });
                                 have sized_counts_valid(checked.model) == 1 by {
                                     rewrite(checked.model == SizedTree::Node(identity, parent, color, 1, left_model, right_model));
                                     unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, 1, left_model, right_model)));
@@ -219,7 +219,7 @@ theorem compute_size_restores_subtree_size()
                                         at(before_compute, metadata.value) == 1 + at(before_compute, l.value) + at(before_compute, r.value) => { assumption(); }
                                     }
                                 }
-                                let checked = fold(sized_at((struct rb_node*)(void*)node), { model: SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model) }, { metadata: metadata, left: left, right: right });
+                                let checked = fold(sized_at(node as (void *) as (struct rb_node *)), { model: SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model) }, { metadata: metadata, left: left, right: right });
                                 have sized_counts_valid(checked.model) == 1 by {
                                     rewrite(checked.model == SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model));
                                     unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)));
@@ -315,7 +315,7 @@ theorem compute_size_restores_subtree_size()
                                         at(before_compute, metadata.value) == 1 + at(before_compute, l.value) + at(before_compute, r.value) => { assumption(); }
                                     }
                                 }
-                                let checked = fold(sized_at((struct rb_node*)(void*)node), { model: SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model) }, { metadata: metadata, left: left, right: right });
+                                let checked = fold(sized_at(node as (void *) as (struct rb_node *)), { model: SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model) }, { metadata: metadata, left: left, right: right });
                                 have sized_counts_valid(checked.model) == 1 by {
                                     rewrite(checked.model == SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model));
                                     unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)));
@@ -403,7 +403,7 @@ theorem compute_size_restores_subtree_size()
                                         at(before_compute, metadata.value) == 1 + at(before_compute, l.value) + at(before_compute, r.value) => { assumption(); }
                                     }
                                 }
-                                let checked = fold(sized_at((struct rb_node*)(void*)node), { model: SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model) }, { metadata: metadata, left: left, right: right });
+                                let checked = fold(sized_at(node as (void *) as (struct rb_node *)), { model: SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model) }, { metadata: metadata, left: left, right: right });
                                 have sized_counts_valid(checked.model) == 1 by {
                                     rewrite(checked.model == SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model));
                                     unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)));

@@ -942,8 +942,8 @@ fn adler_c_rust_correspondence_requires_matched_inputs() {
             "requires to_integer(rust_result) == adler_spec_checksum_u64(rust_bytes, length, initial_a + 1, initial_b);",
         ),
         (
-            "ensures c_result == (uint64)rust_result by",
-            "ensures c_result == (uint64)rust_result + 1u64 by",
+            "ensures c_result == rust_result as uint64 by",
+            "ensures c_result == rust_result as uint64 + 1u64 by",
         ),
         ("requires rust_a == 1u32;", "requires rust_a == 2u32;"),
     ] {
@@ -1363,12 +1363,12 @@ fn pinned_zlib_seeded_batch_lemmas_have_checked_bodies() {
         .expect("expanded seeded batch lemmas and every dependency");
     for (correct, incorrect) in [
         (
-            "ensures to_integer(a + (uint64)(uint32)value) == to_integer(a0) + adler_byte_sum(bytes, n + 1)",
-            "ensures to_integer(a + (uint64)(uint32)value) == to_integer(a0) + adler_byte_sum(bytes, n + 1) + 1",
+            "ensures to_integer(a + value as uint32 as uint64) == to_integer(a0) + adler_byte_sum(bytes, n + 1)",
+            "ensures to_integer(a + value as uint32 as uint64) == to_integer(a0) + adler_byte_sum(bytes, n + 1) + 1",
         ),
         (
-            "and to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b0) + to_integer(n + 1) * to_integer(a0)",
-            "and to_integer(b + (a + (uint64)(uint32)value)) == to_integer(n + 1) * to_integer(a0)",
+            "and to_integer(b + (a + value as uint32 as uint64)) == to_integer(b0) + to_integer(n + 1) * to_integer(a0)",
+            "and to_integer(b + (a + value as uint32 as uint64)) == to_integer(n + 1) * to_integer(a0)",
         ),
         (
             "ensures to_integer(b % 65521u64) == adler_spec_b(bytes, prefix + length, 1, 0)",

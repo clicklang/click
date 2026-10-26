@@ -72,11 +72,11 @@ resource counter_control(counter: struct mutex_counter*) {
 
 void* increment_counter(void* argument) {
     owns access: mutex_use(
-        &((struct mutex_counter*)argument)->mutex,
-        counter_control((struct mutex_counter*)argument)
+        &(argument as (struct mutex_counter *))->mutex,
+        counter_control(argument as (struct mutex_counter *))
     );
-    consumes credit((struct mutex_counter*)argument);
-    produces 2 of contribution((struct mutex_counter*)argument);
+    consumes credit(argument as (struct mutex_counter *));
+    produces 2 of contribution(argument as (struct mutex_counter *));
     ensures result == 0;
 } by {
     step();

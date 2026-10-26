@@ -30,7 +30,7 @@ resource cell_at(cell: struct cell*) {
 verifying "modeled_pthread_composite_resource_transfer.c";
 
 void *worker(void *argument) {
-    owns cell_at((struct cell *)argument);
+    owns cell_at(argument as (struct cell *));
 }
 
 int32 run(struct cell *cell) {

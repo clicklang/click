@@ -34,10 +34,10 @@ same checked population; pointer reuse must not revive an older association.
 The intended worker clauses can use the existing forms:
 
 ```text
-consumes remaining((struct mutex_counter*)argument);
+consumes remaining(argument as (struct mutex_counter *));
 owns access: mutex_use(
-    &((struct mutex_counter*)argument)->mutex,
-    remaining((struct mutex_counter*)argument)
+    &(argument as (struct mutex_counter *))->mutex,
+    remaining(argument as (struct mutex_counter *))
 );
 ```
 
@@ -303,10 +303,10 @@ part of the essential protocol or add one to the C source.
 The worker's contract consumes an ordinary unit:
 
 ```text
-consumes remaining((struct mutex_counter*)argument);
+consumes remaining(argument as (struct mutex_counter *));
 owns access: mutex_use(
-    &((struct mutex_counter*)argument)->mutex,
-    counter_state((struct mutex_counter*)argument)
+    &(argument as (struct mutex_counter *))->mutex,
+    counter_state(argument as (struct mutex_counter *))
 );
 ```
 

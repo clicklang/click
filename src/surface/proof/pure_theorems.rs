@@ -3577,7 +3577,7 @@ mod tests {
             );
             crate::surface::verify_c0_sources(&caller, &[]).unwrap();
         }
-        let source = "theorem byte_at_next(bytes: uint8[], n: int32, value: Integer) { requires defined(n + 1); requires value == to_integer((int32)bytes[n + 1]); ensures value == to_integer((int32)bytes[n + 1]) by { assumption(); } }";
+        let source = "theorem byte_at_next(bytes: uint8[], n: int32, value: Integer) { requires defined(n + 1); requires value == to_integer(bytes[n + 1] as int32); ensures value == to_integer(bytes[n + 1] as int32) by { assumption(); } }";
         crate::surface::verify_c0_sources(source, &[]).unwrap();
         assert!(
             crate::surface::verify_c0_sources(&source.replace("requires defined(n + 1);", ""), &[])

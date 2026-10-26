@@ -53,7 +53,7 @@ the full relationship using existing cast syntax:
 
 <!-- verified-example: mdtests/a_cast_contract_preserves_an_incoming_packed_pointer.md -->
 ```click
-requires ((struct node*)(word & ~1)) == p;
+requires ((word & ~1) as (struct node *)) == p;
 ```
 
 This equality includes designation and selected extent. It lets a copied word

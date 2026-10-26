@@ -3,7 +3,7 @@
 `cstr_at(p, len)` from `click::cstr` has a `const uint8*` parameter, and a
 resource argument follows the predicate rule: a `char`, `signed char`, or
 `unsigned char` pointer is passed as `uint8` bytes. A signed character
-pointer is read through its explicit byte view `(uint8*)src`, as
+pointer is read through its explicit byte view `src as (uint8 *)`, as
 `cstr::readable(src)` is, so the resource's facts state the string's unsigned
 bytes. `measure` lends the borrowed
 string to a callee whose parameter has the same character type, and
@@ -84,7 +84,7 @@ uint64 copy_prefix(char* dst, const char* src, uint64 n, uint64 k) {
     requires k <= n;
     owns dst[0..k];
     ensures result == k;
-    ensures ((uint8*)src)[n] == '\0';
+    ensures (src as (uint8 *))[n] == '\0';
 } by {
     open(cstr_at(src, n)) {
     }

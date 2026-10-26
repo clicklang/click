@@ -37,7 +37,7 @@ void capture_known_null(void* p) {
     ensures true;
 } by {
     step_until(function.exit);
-    let held = fold(token(), { model: NodeRef::At((struct model_node*)p) });
+    let held = fold(token(), { model: NodeRef::At(p as (struct model_node *)) });
 }
 ```
 

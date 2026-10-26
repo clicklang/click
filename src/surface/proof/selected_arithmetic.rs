@@ -2283,9 +2283,9 @@ function color_bit(color: Color) -> int32 {
     match color { Color::Red => 0, Color::Black => 1, }
 }
 theorem low_bit_is_the_color_bit(bits: uint64, color: Color) {
-    requires (bits & 1u64) == (uint64)color_bit(color);
-    ensures (bits & 1u64) == (uint64)color_bit(color) by {
-        have (bits & 1u64) == (uint64)color_bit(color) by solve();
+    requires (bits & 1u64) == color_bit(color) as uint64;
+    ensures (bits & 1u64) == color_bit(color) as uint64 by {
+        have (bits & 1u64) == color_bit(color) as uint64 by solve();
         assumption();
     }
 }

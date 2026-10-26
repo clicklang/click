@@ -19,7 +19,7 @@ proof error:
 
 The nightly examples `rbtree-erase` and `rbtree-augmented`, which import the
 same model, also report `fold` refusals at this point
-(`((struct rb_node *)(load_uint64(p) & ~3)) == parent` and
+(`((load_uint64(p) & ~3) as (struct rb_node *)) == parent` and
 `node->rb_right != node` not established). Those two have not been checked on
 `master` separately.
 

@@ -27,8 +27,8 @@ theorem byte_call() {
 }
 theorem nested_call(word: int32) {
     requires word == 0;
-    ensures is_zero((uint64) identity(word)) == 1 by {
-        unfold(is_zero((uint64) identity(word)));
+    ensures is_zero(identity(word) as uint64) == 1 by {
+        unfold(is_zero(identity(word) as uint64));
         unfold(identity(word)); solve();
     }
 }

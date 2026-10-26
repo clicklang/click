@@ -12,8 +12,8 @@ verifying "frame.c";
 resource child_value(p: struct base*) {
     field number: int32;
     if p != 0 {
-        owns ((struct cell*)(void*)p)->value;
-        fact ((struct cell*)(void*)p)->value == number;
+        owns (p as (void *) as (struct cell *))->value;
+        fact (p as (void *) as (struct cell *))->value == number;
     }
 }
 contract void Linked(struct cell* root) {
@@ -23,7 +23,7 @@ contract void Linked(struct cell* root) {
     owns child: child_value(root->base.left);
     owns root->value;
     requires root->base.left != 0;
-    requires root->base.left != (struct base*)(void*)root;
+    requires root->base.left != root as (void *) as (struct base *);
     ensures child.number == old(child.number);
     ensures root->value == old(child.number);
 }
@@ -34,7 +34,7 @@ void f(struct cell* root) {
     owns child: child_value(root->base.left);
     owns root->value;
     requires root->base.left != 0;
-    requires root->base.left != (struct base*)(void*)root;
+    requires root->base.left != root as (void *) as (struct base *);
     ensures child.number == old(child.number);
     ensures root->value == old(child.number);
 } by { unfold(child); step_until(function.exit); fold(child); solve(); }

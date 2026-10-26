@@ -3,13 +3,13 @@ import click::integer;
 
 // Widen the Rust result into the LP64 C return type without losing bits.
 theorem adler_result_widen(word: uint32) {
- ensures to_integer((uint64)word) == to_integer(word) by {
+ ensures to_integer(word as uint64) == to_integer(word) by {
   have 0 <= to_integer(word);
   have to_integer(word) <= 4294967295;
   arithmetic_certificate rules {
    premise 0: 0 <= to_integer(word) => 0 <= to_integer(word);
    premise 1: to_integer(word) <= 4294967295 => to_integer(word) <= 4294967295;
-   integer_cast_identity bounds [0, 1] => to_integer((uint64)word) == to_integer(word);
+   integer_cast_identity bounds [0, 1] => to_integer(word as uint64) == to_integer(word);
    conclusion 0;
   }
  }
@@ -25,7 +25,7 @@ theorem adler_c_rust_results(c_bytes: uint8[], rust_bytes: uint8[], length: uint
  requires forall (k: uint64) { k < length implies c_bytes[k] == rust_bytes[k] };
  requires to_integer(c_result) == adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b);
  requires to_integer(rust_result) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b);
- ensures c_result == (uint64)rust_result by {
+ ensures c_result == rust_result as uint64 by {
   apply(adler_spec_extensional_u64(c_bytes, rust_bytes, length, initial_a, initial_b));
   have adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b) by {
    unfold(adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b));
@@ -35,11 +35,11 @@ theorem adler_c_rust_results(c_bytes: uint8[], rust_bytes: uint8[], length: uint
    normalize();
   }
   apply(adler_result_widen(rust_result));
-  have to_integer(c_result) == to_integer((uint64)rust_result) by solve() using {
+  have to_integer(c_result) == to_integer(rust_result as uint64) by solve() using {
    to_integer(c_result) == adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b);
    to_integer(rust_result) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b);
    adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b);
-   to_integer((uint64)rust_result) == to_integer(rust_result);
+   to_integer(rust_result as uint64) == to_integer(rust_result);
   };
   assumption();
  }
@@ -51,7 +51,7 @@ theorem adler_c_rust_reset(c_result: uint64, rust_a: uint32, rust_b: uint32) {
  requires c_result == 1u64;
  requires rust_a == 1u32;
  requires rust_b == 0u32;
- ensures c_result == (uint64)(rust_a | (rust_b << 16)) by {
+ ensures c_result == (rust_a | (rust_b << 16)) as uint64 by {
   rewrite(c_result == 1u64);
   rewrite(rust_a == 1u32);
   rewrite(rust_b == 0u32);

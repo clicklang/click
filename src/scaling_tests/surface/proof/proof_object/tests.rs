@@ -168,7 +168,7 @@ fn same_block_offset_rewrite_work(
         true,
     );
     facts.push(bound.clone());
-    let fixture = crate::surface::parse("theorem shifted(cursor: int32*, base: int32*, k: uint64) { requires ((int32)(uint32)k) == 4; requires cursor == base + (4 - ((int32)(uint32)k)); ensures true; }").unwrap();
+    let fixture = crate::surface::parse("theorem shifted(cursor: int32*, base: int32*, k: uint64) { requires (k as uint32 as int32) == 4; requires cursor == base + (4 - (k as uint32 as int32)); ensures true; }").unwrap();
     let surface = fixture.theorem_definitions()[0].requires[0]
         .proposition()
         .unwrap()

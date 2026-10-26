@@ -25,7 +25,7 @@ the same byte at every index `k < n`.
 to identify these two mathematical checksums. `adler_result_widen` proves that
 converting the Rust `uint32` word to the C LP64 `uint64` word preserves its
 Integer observation. Checked uint64 injectivity then gives
-`c_result == (uint64)rust_result`. The result premises come from the producers;
+`c_result == rust_result as uint64`. The result premises come from the producers;
 the correspondence theorem does not establish memory authority or execute them.
 
 For the standard seed, take `A0=1`, `B0=0` and use Rust's checked

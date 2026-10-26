@@ -29,7 +29,7 @@ runtime "modeled-pthread";
 verifying "modeled_pthread_retire_after_join.c";
 authorized resource reference(obj: struct object*) {}
 void* worker(void* argument) {
-    owns authority(reference((struct object*)argument));
+    owns authority(reference(argument as (struct object *)));
 }
 int32 run() {
     ensures result == -1 or result == 0 or result == 1;

@@ -18,7 +18,7 @@ resource self_link(p: struct node*) {
     owns p->parent_word;
     fact p->parent_word == word;
     fact word == address(p);
-    fact ((struct node*)p->parent_word) == p;
+    fact (p->parent_word as (struct node *)) == p;
 }
 void follow(struct node* p, int32 more) {
     owns held: self_link(p);

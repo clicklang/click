@@ -1,7 +1,8 @@
 # Shared slices through IntoIterator
 
-`sum.rs` and `sum.click` are byte-for-byte copies of the unchanged
-`rust-iterators` fixture. Its implicit `for &byte in bytes` now imports through
+`sum.rs` is a byte-for-byte copy of the unchanged `rust-iterators` source, and
+`sum.click` equals its archived original sidecar, respelled once in today's
+syntax (`../README.md`, Complete canonical proof-port adoption). Its implicit `for &byte in bytes` now imports through
 Charon using the compiler-selected `IntoIterator for &[T]` implementation.
 Its original proof still fails on `__rust_iter_3_5_remaining`, a legacy proof
 observation; it remains a proof gap rather than a verified parity entry.

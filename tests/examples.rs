@@ -757,7 +757,7 @@ fn rbtree_insert_refuses_a_skipped_recolour() {
     .expect_err("the insert proof must refuse C that skips the root recolour");
     let message = error.message();
     assert!(
-        message.contains("could not establish `(node->__rb_parent_color & 1) == ((int32)1)`"),
+        message.contains("could not establish `(node->__rb_parent_color & 1) == (1 as int32)`"),
         "unexpected refusal: {message}"
     );
 }
@@ -1925,7 +1925,7 @@ fn rbtree_erase_color_general_flips_outer_requires_near_parent() {
         "rb_set_parent(tmp2, parent);",
         "rb_set_parent(tmp2, sibling);",
         2,
-        "`have` failed for `tmp2->__rb_parent_color == (color_bit(nc) | ((uint64)parent))`",
+        "`have` failed for `tmp2->__rb_parent_color == (color_bit(nc) | (parent as uint64))`",
     );
 }
 
@@ -2046,7 +2046,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_near_parent() {
         "rb_set_parent_color(tmp1, parent, RB_BLACK);",
         "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
         2,
-        "`have` failed for `tmp1->__rb_parent_color == (((uint64)parent) | 1)`",
+        "`have` failed for `tmp1->__rb_parent_color == ((parent as uint64) | 1)`",
     );
 }
 
@@ -2057,7 +2057,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_near_blackening() {
         "rb_set_parent_color(tmp1, parent, RB_BLACK);",
         "rb_set_parent_color(tmp1, parent, RB_RED);",
         2,
-        "`have` failed for `tmp1->__rb_parent_color == (((uint64)parent) | 1)`",
+        "`have` failed for `tmp1->__rb_parent_color == ((parent as uint64) | 1)`",
     );
 }
 
@@ -2068,7 +2068,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_red_parent() {
         "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\t\tRB_RED);",
         "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\t\tRB_BLACK);",
         2,
-        "`have` failed for `parent->__rb_parent_color == ((uint64)sibling)`",
+        "`have` failed for `parent->__rb_parent_color == (sibling as uint64)`",
     );
 }
 
@@ -2101,7 +2101,7 @@ fn rbtree_erase_color_general_outer_left_requires_parent_blackening() {
         "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\tRB_BLACK);",
         "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\tRB_RED);",
         2,
-        "`have` failed for `parent->__rb_parent_color == (((uint64)iid) + 1)`",
+        "`have` failed for `parent->__rb_parent_color == ((iid as uint64) + 1)`",
     );
 }
 

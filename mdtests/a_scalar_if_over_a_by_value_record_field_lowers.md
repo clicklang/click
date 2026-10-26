@@ -35,7 +35,7 @@ uint32 pick(struct pair p) {
 }
 
 uint8 flag_or_one(struct pair p) {
-    ensures result == (if p.flag != 0 { p.flag } else { (uint8)1 });
+    ensures result == (if p.flag != 0 { p.flag } else { 1 as uint8 });
 }
 ```
 

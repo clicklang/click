@@ -39,33 +39,33 @@ int32 render(char buf[], uint32 n) {
             apply(format::decimal_length_2(42u64));
         }
         have result == 2 by {
-            solve() using { result == (int32) format::decimal_length((uint64) n); n == 42u32; format::decimal_length(42u64) == 2u64; };
+            solve() using { result == format::decimal_length(n as uint64) as int32; n == 42u32; format::decimal_length(42u64) == 2u64; };
         }
     }
     ensures buf[0] == 52 by {
         step_until(function.exit);
-        have (uint64) n == 42u64 by { solve(); }
-        have format::decimal_length((uint64) n) == 2u64 by {
-            rewrite((uint64) n == 42u64);
+        have n as uint64 == 42u64 by { solve(); }
+        have format::decimal_length(n as uint64) == 2u64 by {
+            rewrite(n as uint64 == 42u64);
             apply(format::decimal_length_2(42u64));
         }
-        have format::decimal_digit((uint64) n, 0u64) == 52u8 by {
-            rewrite((uint64) n == 42u64);
+        have format::decimal_digit(n as uint64, 0u64) == 52u8 by {
+            rewrite(n as uint64 == 42u64);
             apply(format::decimal_digit_of_length(42u64, 2u64, 0u64));
             apply(format::pow10_1());
             solve() using {
-                format::decimal_digit(42u64, 0u64) == (uint8) (48u64 + 42u64 / format::pow10(2u64 - 1u64 - 0u64) % 10u64);
+                format::decimal_digit(42u64, 0u64) == (48u64 + 42u64 / format::pow10(2u64 - 1u64 - 0u64) % 10u64) as uint8;
                 format::pow10(1u64) == 10u64;
             };
         }
-        have buf[0] == format::decimal_digit((uint64) n, 0u64) by {
+        have buf[0] == format::decimal_digit(n as uint64, 0u64) by {
             instantiate(forall (k: uint64) {
-                k < format::decimal_length((uint64) n) and k + 1u64 < 8u64 implies buf[k] == format::decimal_digit((uint64) n, k)
-            }, 0u64) using { format::decimal_length((uint64) n) == 2u64; };
+                k < format::decimal_length(n as uint64) and k + 1u64 < 8u64 implies buf[k] == format::decimal_digit(n as uint64, k)
+            }, 0u64) using { format::decimal_length(n as uint64) == 2u64; };
             solve();
         }
         have buf[0] == 52 by {
-            solve() using { buf[0] == format::decimal_digit((uint64) n, 0u64); format::decimal_digit((uint64) n, 0u64) == 52u8; };
+            solve() using { buf[0] == format::decimal_digit(n as uint64, 0u64); format::decimal_digit(n as uint64, 0u64) == 52u8; };
         }
     }
 }
@@ -75,19 +75,19 @@ int32 fraction(char tmp[], uint32 remainder) {
     owns tmp[0..12];
     ensures result == 4 by {
         step_until(function.exit);
-        have (uint64) remainder == 5u64 by { solve(); }
+        have remainder as uint64 == 5u64 by { solve(); }
         have format::decimal_length(5u64) == 1u64 by {
             apply(format::decimal_length_1(5u64));
         }
-        have format::padded_length((uint64) remainder, 3u64) == 3u64 by {
-            rewrite((uint64) remainder == 5u64);
+        have format::padded_length(remainder as uint64, 3u64) == 3u64 by {
+            rewrite(remainder as uint64 == 5u64);
             unfold(format::padded_length(5u64, 3u64));
             solve() using { format::decimal_length(5u64) == 1u64; };
         }
         have result == 4 by {
             solve() using {
-                result == (int32) (1u64 + format::padded_length((uint64) remainder, 3u64));
-                format::padded_length((uint64) remainder, 3u64) == 3u64;
+                result == (1u64 + format::padded_length(remainder as uint64, 3u64)) as int32;
+                format::padded_length(remainder as uint64, 3u64) == 3u64;
             };
         }
     }

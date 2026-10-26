@@ -2,7 +2,7 @@
 
 [`loop_initialize_narrows_a_held_range_under_a_universal.md`](loop_initialize_narrows_a_held_range_under_a_universal.md)
 without `requires n <= 1073741823`. At the back edge the extent member
-`forall (k: int32) { 0 <= k and k <= n implies ((uint32)k) <= 1073741823u32 }`
+`forall (k: int32) { 0 <= k and k <= n implies (k as uint32) <= 1073741823u32 }`
 needs `n <= 1073741823`, and the only clause that says so is `views a[0..n]`,
 whose extent half is a fact beside the range it states. The closer cites that
 half as it cites a written precondition.

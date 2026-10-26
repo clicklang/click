@@ -45,15 +45,15 @@ fn keep_above_int32_max(u: u32) -> u32 {
 }
 
 fn to_signed_i32(u: u32) -> i32 {
-    ensures result == (int32) u;
+    ensures result == u as int32;
     ensures u == 4294967295u32 implies result == -1;
     ensures u == 2147483648u32 implies result == -2147483648;
 }
 
 fn to_unsigned_u32(x: i32) -> u32 {
-    ensures result == (uint32) x;
+    ensures result == x as uint32;
     ensures x == -1 implies result == 4294967295u32;
-    ensures (int32) result == x;
+    ensures result as int32 == x;
 }
 
 fn div_u32(a: u32, b: u32) -> u32 {
@@ -97,7 +97,7 @@ fn shr_i32(a: i32, n: u32) -> i32 {
 }
 
 fn narrow_u8(x: u32) -> u8 {
-    ensures (uint32) result == (x & 255u32);
+    ensures result as uint32 == (x & 255u32);
     ensures x == 4000000000u32 implies result == 0u8;
     ensures x == 300u32 implies result == 44u8;
 }

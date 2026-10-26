@@ -3,7 +3,7 @@
 A loop's back edge owes a stated range's extent bound over the new index
 `i + 1`, and the loop head supplies both the invariant `0 <= i + 1` and, through
 the guard, `i < n` with `n <= 1073741823`. The extent bound is the `uint32`
-order `((uint32)(i + 1)) <= 1073741823u32`, which the signed-arithmetic
+order `((i + 1) as uint32) <= 1073741823u32`, which the signed-arithmetic
 certificate decides from an interval for `i + 1` read as unsigned.
 
 The planner read that interval off the premise that bounds `i + 1` directly and
@@ -32,7 +32,7 @@ int32 next_index(int32 i, int32 n) {
     have 0 <= to_integer(i + 1) by {
         solve() using { 0 <= i; i < n; n <= 1073741823; };
     }
-    have ((uint32)(i + 1)) <= 1073741823u32 by {
+    have ((i + 1) as uint32) <= 1073741823u32 by {
         solve() using {
             0 <= to_integer(i + 1);
             0 <= i;

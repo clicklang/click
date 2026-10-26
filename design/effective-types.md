@@ -228,7 +228,7 @@ allowed cases:
     `SpecificationAccessScope`, and so is a C fragment of a specification
     proposition. Its loads skip the check. Before, such a load carried no
     access class, and the kernel's fallback gave it its kernel type's class:
-    `((struct sized_node*)(void*)old)->size` as a resource argument read as
+    `(old as (void *) as (struct sized_node *))->size` as a resource argument read as
     `int` and was refused against the `struct rb_node` its parameter
     designates, which stopped `examples/rbtree/rbtree-augmented` wherever a contract
     names a node's cached count.

@@ -3594,7 +3594,7 @@ mod tests {
 
     /// A `uint32` order goal is planned from its operands' signed
     /// intervals and closed by the unsigned `interval_compare`, here the
-    /// byte-count bound `(uint32)(i + 1) <=u 1073741823` of a loop back edge
+    /// byte-count bound `(i + 1) as uint32 <=u 1073741823` of a loop back edge
     /// whose premise bounds `i + 1` on one side only.
     #[test]
     fn an_unsigned_order_goal_reads_its_operands_signed_intervals() {

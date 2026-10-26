@@ -12,8 +12,8 @@ void write(const struct base* p) {
 ```click
 verifying "const.c";
 void write(const struct base* p) {
-    views ((struct item*)(void*)p)->value;
-    ensures ((struct item*)(void*)p)->value == 1;
+    views (p as (void *) as (struct item *))->value;
+    ensures (p as (void *) as (struct item *))->value == 1;
 }
 ```
 

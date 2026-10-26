@@ -15,8 +15,8 @@ verifying "metadata-symbolic.c";
 spec enum Shape { One(struct node*, int32) }
 resource size_metadata(node: struct node*) {
     field value: int32;
-    owns ((struct sized_node*)(void*)node)->size;
-    fact ((struct sized_node*)(void*)node)->size == value;
+    owns (node as (void *) as (struct sized_node *))->size;
+    fact (node as (void *) as (struct sized_node *))->size == value;
 }
 resource tree(node: struct node*) {
     field model: Shape;

@@ -13,7 +13,7 @@ theorem tail_bounds(n: uint64, size: uint64) {
 }
 theorem complete_prefix(n: uint64) {
     requires n <= 2147483647u64;
-    ensures (((int32)(uint32)(n - n % 4u64)) % 4) == 0 by {
+    ensures (((n - n % 4u64) as uint32 as int32) % 4) == 0 by {
         normalize() using { n <= 2147483647u64; };
     }
 }

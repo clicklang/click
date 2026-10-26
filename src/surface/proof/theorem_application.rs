@@ -1445,7 +1445,7 @@ mod observed_integer_argument_tests {
         for (ty, expression, guard) in [
             ("int32", "x + 1", "defined(x + 1)"),
             ("int64", "x + 1i64", "defined(x + 1i64)"),
-            ("int128", "x / (int128)3", "defined(x / (int128)3)"),
+            ("int128", "x / 3 as int128", "defined(x / 3 as int128)"),
         ] {
             let source = format!(
                 "{prefix} theorem observed(x: {ty}) {{ requires {guard}; ensures to_integer({expression}) == to_integer({expression}) by {{ apply(reflexive(to_integer({expression}))); }} }}"

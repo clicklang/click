@@ -28,10 +28,10 @@ resource ready_payload(channel: struct channel*) {
 }
 void* producer(void* argument) {
     consumes publisher(
-        &((struct channel*)argument)->ready,
-        ready_payload((struct channel*)argument)
+        &(argument as (struct channel *))->ready,
+        ready_payload(argument as (struct channel *))
     );
-    consumes ((struct channel*)argument)->payload;
+    consumes (argument as (struct channel *))->payload;
 } by {
     step();
     step();

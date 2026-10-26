@@ -57,8 +57,8 @@ resource control(obj: struct object*) {
     fact refs == count(reference(obj));
 }
 void* release(void* argument) {
-    owns access: mutex_use(&((struct object*)argument)->mu, control((struct object*)argument));
-    consumes reference((struct object*)argument);
+    owns access: mutex_use(&(argument as (struct object *))->mu, control(argument as (struct object *)));
+    consumes reference(argument as (struct object *));
 } by {
     step();
     step();

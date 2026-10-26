@@ -38,7 +38,7 @@ runtime "modeled-pthread";
 verifying "modeled_pthread_shared_owned_readers.c";
 
 void *reader(void *p) {
-    views ((struct cell *)p)->value;
+    views (p as (struct cell *))->value;
 }
 
 int32 run(struct cell *task) {

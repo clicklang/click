@@ -14,7 +14,7 @@ int32 probe(struct Pair* pair, int32* q) {
 ```click
 verifying "probe.c";
 int32 probe(struct Pair* pair, int32* q) {
-    requires (void*)q == (void*)pair;
+    requires q as (void *) == pair as (void *);
     views q[0];
     views pair->second;
 }

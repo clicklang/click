@@ -619,7 +619,7 @@ claims a narrow format is not promoted (a zero-extended `0xffff` read as
 `int16` is negative, not `65535`). The kernel does not take a binder's
 canonicity on trust: a widening of an unregistered variable cites, as its
 two bounds, the range facts the binder's introduction filed, the native
-comparisons `w >= lo` and `w <= hi` (written `(int32)x >= lo`), which the
+comparisons `w >= lo` and `w <= hi` (written `x as int32 >= lo`), which the
 checker reads as `lo <= int32(w)` and `int32(w) <= hi` and requires inside
 the source's range; bounds on the narrow observation alone are refused, and
 a variable nested inside another form is not a carrier to this rule

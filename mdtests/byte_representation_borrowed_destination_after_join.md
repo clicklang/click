@@ -47,7 +47,7 @@ runtime "modeled-pthread";
 verifying "borrowed_destination_after_join.c";
 
 void *reader(void *p) {
-    views ((struct cell *)p)->value;
+    views (p as (struct cell *))->value;
 }
 
 int32 run() {

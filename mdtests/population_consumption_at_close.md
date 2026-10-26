@@ -1118,8 +1118,8 @@ uint32 sequential_early(struct counter* p) {
     fold(control(p));
     step() by {
         arithmetic_certificate signed_int32 {
-            premise 0: old(((int32)count(remaining(p)))) >= at(function.entry, 0) =>
-                old(((int32)count(remaining(p)))) >= at(function.entry, 0);
+            premise 0: old((count(remaining(p)) as int32)) >= at(function.entry, 0) =>
+                old((count(remaining(p)) as int32)) >= at(function.entry, 0);
             premise 1: at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0)
                 => at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0);
             less_equal_from_equal 1 => at(function.entry, to_integer(count(remaining(p)))) <=
@@ -1132,16 +1132,16 @@ uint32 sequential_early(struct counter* p) {
             interval_atom (3) (3) (3);
             interval_add_bounded 5, 6 (3) (3);
             trivial => -1 <= 0;
-            add 0, 8 => ((int32)(at(function.entry, 0) + -1)) <= ((int32)(old(count(remaining(p))) +
-                0));
-            affine_conclusion 9 7 => ((int32)count(remaining(p))) > ((int32)1);
+            add 0, 8 => ((at(function.entry, 0) + -1) as int32) <= ((old(count(remaining(p))) +
+                0) as int32);
+            affine_conclusion 9 7 => (count(remaining(p)) as int32) > (1 as int32);
             conclusion 10;
         }
     }
     step() by {
         arithmetic_certificate signed_int32 {
-            premise 0: old(((int32)count(remaining(p)))) >= at(function.entry, 0) =>
-                old(((int32)count(remaining(p)))) >= at(function.entry, 0);
+            premise 0: old((count(remaining(p)) as int32)) >= at(function.entry, 0) =>
+                old((count(remaining(p)) as int32)) >= at(function.entry, 0);
             premise 1: at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0)
                 => at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0);
             less_equal_from_equal 1 => at(function.entry, to_integer(count(remaining(p)))) <=
@@ -1153,7 +1153,7 @@ uint32 sequential_early(struct counter* p) {
             interval_intersect 3, 4 (0) (0);
             interval_atom (2) (2) (2);
             interval_add_bounded 5, 6 (2) (2);
-            affine_conclusion 0 7 => ((int32)count(remaining(p))) > ((int32)1);
+            affine_conclusion 0 7 => (count(remaining(p)) as int32) > (1 as int32);
             conclusion 8;
         }
     }

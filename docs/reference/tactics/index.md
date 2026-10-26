@@ -1133,7 +1133,7 @@ only expandable-automation sites.
 
 Explicit full-width unsigned bounds can also normalize pointer offsets.
 For a native uint64 `index <= 2147483647u64`, `pointer + index` and
-`pointer + (int32)index` denote the same address. `solve() using { ... }` checks
+`pointer + index as int32` denote the same address. `solve() using { ... }` checks
 that the cited native bound is available and preserves the pointer stride.
 A bound on the low word or a signed comparison cannot establish this unsigned
 projection, and address equality grants no permission to access the backing
@@ -1672,7 +1672,7 @@ spelling, and the two never coerce into each other. For `int32`, affine terms
 plus bounded products and constant remainder, shift, and bit-mask terms are
 supported. A `uint32` order goal is checked in the same family from its
 operands' signed intervals, so explicit signed bounds `0 <= n` and
-`n <= 536870911` give `((uint32)n) <= 1073741823u32`. A chain of `uint32`
+`n <= 536870911` give `(n as uint32) <= 1073741823u32`. A chain of `uint32`
 order premises, such as `x < n` and `n <= 4u32` giving `x < 4u32`, is summed
 over the operands' `uint32` observations in the `Integer` family, as a
 `uint64` chain is.
@@ -2005,7 +2005,7 @@ the current goal. The goal becomes the rewritten proposition; no fact changes.
   quantified bodies whose binder `P` does not mention; in conditional
   expressions' guards and arms; in pure-function arguments; in
   algebraic-constructor fields; under `to_integer` and width conversions such
-  as `(int64)x`; and in memory-resource ranges. Native equalities preserve
+  as `x as int64`; and in memory-resource ranges. Native equalities preserve
   signed and unsigned comparison kinds and widths, including full-width
   64-bit order.
 - An `Integer` equality also rewrites a native comparison goal through its
@@ -2023,7 +2023,7 @@ the current goal. The goal becomes the rewritten proposition; no fact changes.
   is itself loaded (`o->in->cells[2]` under `o->in == a`); it keeps the read's
   observed snapshot and load type. An equality whose left side is a whole
   symbolic pointer (`p == q`, `p == 0`) replaces that pointer everywhere,
-  including inside `(uint64)p`; null's address is the integer zero.
+  including inside `p as uint64`; null's address is the integer zero.
 - When exact substitution misses an atomic native equality goal, its two
   operands may match `L` through checked corresponding read leaves, for both
   32-bit and 64-bit reads inside matching arithmetic operators. Alias and

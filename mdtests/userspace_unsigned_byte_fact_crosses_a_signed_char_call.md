@@ -42,7 +42,7 @@ int32 first_of_bytes(uint8* q) {
 
 int32 first_of_chars(char* p) {
     views p[0..1];
-    requires ((uint8*)p)[0] == 200;
+    requires (p as (uint8 *))[0] == 200;
     ensures result == -56;
 }
 ```

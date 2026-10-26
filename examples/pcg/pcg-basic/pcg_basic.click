@@ -9,8 +9,8 @@ uint32 pcg32_random_r(struct pcg_state_setseq_64* rng) {
     owns *rng;
     ensures rng->state == old(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(rng->state, 6364136223846793005u64), rng->inc));
     ensures rng->inc == old(rng->inc);
-    ensures result == old((((uint32)(((rng->state >> 18u64) ^ rng->state) >> 27u64)) >> ((uint32)(rng->state >> 59u64)))
-        | (((uint32)(((rng->state >> 18u64) ^ rng->state) >> 27u64)) << ((0u32 - (uint32)(rng->state >> 59u64)) & 31u32)));
+    ensures result == old((((((rng->state >> 18u64) ^ rng->state) >> 27u64) as uint32) >> ((rng->state >> 59u64) as uint32))
+        | (((((rng->state >> 18u64) ^ rng->state) >> 27u64) as uint32) << ((0u32 - (rng->state >> 59u64) as uint32) & 31u32)));
 }
 
 void pcg32_srandom_r(struct pcg_state_setseq_64* rng, uint64 initstate, uint64 initseq) {
@@ -31,6 +31,6 @@ uint32 pcg32_random() {
     owns pcg32_global;
     ensures pcg32_global.state == old(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(pcg32_global.state, 6364136223846793005u64), pcg32_global.inc));
     ensures pcg32_global.inc == old(pcg32_global.inc);
-    ensures result == old((((uint32)(((pcg32_global.state >> 18u64) ^ pcg32_global.state) >> 27u64)) >> ((uint32)(pcg32_global.state >> 59u64)))
-        | (((uint32)(((pcg32_global.state >> 18u64) ^ pcg32_global.state) >> 27u64)) << ((0u32 - (uint32)(pcg32_global.state >> 59u64)) & 31u32)));
+    ensures result == old((((((pcg32_global.state >> 18u64) ^ pcg32_global.state) >> 27u64) as uint32) >> ((pcg32_global.state >> 59u64) as uint32))
+        | (((((pcg32_global.state >> 18u64) ^ pcg32_global.state) >> 27u64) as uint32) << ((0u32 - (pcg32_global.state >> 59u64) as uint32) & 31u32)));
 }

@@ -453,7 +453,7 @@ const CATALOG: &[CatalogEntry] = &[CatalogEntry {
     qualified_name: "std::as_writable_bytes",
     signature: "class std::span<enum std::byte> (class std::span<int>) noexcept",
     contract: "extern struct {result_record} {name}(struct {argument_record} {p0}) {
-    ensures std_span_data(result) == old((uint8*)std_span_data({p0}));
+    ensures std_span_data(result) == old(std_span_data({p0}) as (uint8 *));
     ensures std_span_size(result) == old(std_span_size({p0})) * 4u64;
 }",
 }];

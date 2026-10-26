@@ -15,118 +15,39 @@ struct Entry {
     frozen_sidecar: Option<String>,
     #[serde(default)]
     frozen_sha256: Option<String>,
+    /// The digest of the archive's bytes before its one-time respelling to
+    /// today's syntax (git history holds those bytes).
+    #[serde(default)]
+    original_sha256: Option<String>,
 }
 fn inventory() -> Vec<Entry> {
     serde_json::from_str(include_str!("../../design/charon-trial/parity.json")).unwrap()
 }
 
-/// Read hash-pinned historical proofs through today's signature and tactic spelling.
-/// This is a fixture adapter, not a production compatibility mode. The files
-/// and their proof scripts stay unchanged, including their original proof gaps.
-pub(super) fn frozen_proof_input(source: &str) -> String {
-    let hash = format!("{:x}", Sha256::digest(source.as_bytes()));
-    assert!(
-        inventory()
-            .iter()
-            .any(|entry| entry.frozen_sha256.as_deref() == Some(hash.as_str())),
-        "only a hash-pinned historical fixture may use this adapter"
-    );
-    let mut input = frozen_tactic_spelling(
-        source
-            .replace("close_invariants by", "close_invariants() by")
-            .replace("statement(", "region("),
-    );
-    for (old, current) in [
-        (
-            "int32 sum(const uint8* bytes, uint64 bytes_len)",
-            "fn sum(bytes: &[u8]) -> i32",
-        ),
-        (
-            "uint64 cover(const uint8* bytes, uint64 bytes_len)",
-            "fn cover(bytes: &[u8]) -> usize",
-        ),
-        ("int32 count(int32 n)", "fn count(n: i32) -> i32"),
-        (
-            "int32 accumulate(int32 n, int32 value)",
-            "fn accumulate(n: i32, value: i32) -> i32",
-        ),
-        (
-            "uint64 walk(const uint8* bytes, uint64 bytes_len)",
-            "fn walk(bytes: &[u8]) -> usize",
-        ),
-    ] {
-        input = input.replace(old, current);
-    }
-    frozen_library_names(input.replace("bytes_len", "bytes.len()")) + FROZEN_LIBRARY_IMPORTS
-}
-
-/// `source` with the tactic spellings the pinned proofs use and the parser
-/// no longer reads spelled as today's: `simp()` is `solve()`, `arithmetic()`
-/// is `solve() using`, `execute_until` is `step_until`, and the pinned
-/// proofs' `execute()`, written where one path runs on to function exit, is
-/// `step_until(function.exit)`.
-fn frozen_tactic_spelling(source: String) -> String {
-    source
-        .replace("execute();", "step_until(function.exit);")
-        .replace("simp()", "solve()")
-        .replace("arithmetic() using", "solve() using")
-        .replace("arithmetic()", "solve() using {}")
-        .replace("execute_until(", "step_until(")
-}
-
-/// `source` with each bare library theorem citation of the pinned proofs
-/// spelled by its qualified `integer::` path.
-fn frozen_library_names(mut source: String) -> String {
-    for name in FROZEN_LIBRARY_THEOREMS {
-        source = source.replace(&format!("{name}("), &format!("integer::{name}("));
-    }
-    source
-}
-
-/// The bare `click::integer` theorem names the pinned proofs cite, which
-/// today's qualified library spells `integer::name`.
-const FROZEN_LIBRARY_THEOREMS: &[&str] = &[
-    "int32_add_defined_by_integer_bounds",
-    "int32_add_to_integer",
-    "int32_increment_below_max_is_defined",
-    "int32_less_equal_to_integer",
-    "int32_nonnegative_predecessor_upper_bound",
-    "int32_nonnegative_subtract_within_value_is_defined",
-];
-
-/// The pinned files predate Click library imports. Their proofs cite
-/// `click::integer` theorems; the import goes
-/// last so every pinned line keeps its position.
-const FROZEN_LIBRARY_IMPORTS: &str = "\nimport click::integer;\n";
-
+/// Each archived sidecar is pinned by digest and reads in today's syntax.
+/// The archives were respelled once (2026-10-26) from their original bytes,
+/// whose digests `original_sha256` records: tactic names, Rust signatures,
+/// `as` casts and qualified library citations. Each respelled file is
+/// byte-identical to what the retired reading adapter produced from the
+/// original, so its contracts, specification functions and proofs, gaps
+/// included, are the original's. The live parity sweep still checks each
+/// archive's recorded outcome.
 #[test]
-fn charon_frozen_proof_adapter_preserves_the_contracts_and_pinned_bytes() {
+fn charon_frozen_sidecars_are_pinned_and_parse() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for entry in inventory()
         .iter()
         .filter(|entry| entry.frozen_sidecar.is_some())
     {
-        let source = fs::read_to_string(root.join(entry.frozen_sidecar.as_ref().unwrap())).unwrap();
-        let input = frozen_proof_input(&source);
-        // Keep the original C signatures and update the shared tactic spelling
-        // on both sides. The parsed contracts must still agree.
-        let c_input = frozen_library_names(
-            source
-                .replace(".rs\"", ".c\"")
-                .replace("close_invariants by", "close_invariants() by")
-                .replace("statement(", "region("),
-        );
-        let c_input = frozen_tactic_spelling(c_input) + FROZEN_LIBRARY_IMPORTS;
-        assert_eq!(
-            click::surface::parse(&input).unwrap().function_blocks(),
-            click::surface::parse(&c_input).unwrap().function_blocks(),
-            "{}",
-            entry.frozen_sidecar.as_ref().unwrap()
-        );
+        let frozen = entry.frozen_sidecar.as_ref().unwrap();
+        let source = fs::read_to_string(root.join(frozen)).unwrap();
         assert_eq!(
             format!("{:x}", Sha256::digest(source.as_bytes())),
-            entry.frozen_sha256.as_deref().unwrap()
+            entry.frozen_sha256.as_deref().unwrap(),
+            "{frozen}"
         );
+        assert_ne!(entry.original_sha256, entry.frozen_sha256, "{frozen}");
+        click::surface::parse(&source).unwrap();
     }
 }
 #[test]
@@ -177,6 +98,10 @@ fn charon_parity_inventory_covers_every_rust_example() {
         );
         assert_eq!(
             entry.frozen_sha256.is_some(),
+            entry.frozen_sidecar.is_some()
+        );
+        assert_eq!(
+            entry.original_sha256.is_some(),
             entry.frozen_sidecar.is_some()
         );
         if let Some(frozen) = &entry.frozen_sidecar {
@@ -332,7 +257,7 @@ fn charon_legacy_parity_live_refresh_and_unchanged_contracts() {
                 // Preserve original frozen outcomes independently of canonical adoption.
                 let frozen_error = if let Some(frozen) = &entry.frozen_sidecar {
                     C0VerificationSession::new_program_prepared(
-                        &frozen_proof_input(&fs::read_to_string(root.join(frozen)).unwrap()),
+                        &fs::read_to_string(root.join(frozen)).unwrap(),
                         &prepared,
                     )
                     .err()

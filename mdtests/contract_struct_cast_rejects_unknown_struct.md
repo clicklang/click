@@ -10,7 +10,7 @@ int pick(void *argument) {
 verifying "unknown_cast.c";
 
 int32 pick(void *argument) {
-    requires ((struct missing *)argument) != 0;
+    requires (argument as (struct missing *)) != 0;
     ensures result == 0;
 }
 ```

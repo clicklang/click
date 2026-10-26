@@ -25,7 +25,8 @@
     "diagnostic": "local `i` has no value at this frontier",
     "migrated_sidecar": "design/charon-trial/loop-headers/sum-proof.click",
     "frozen_sidecar": "design/charon-trial/loop-headers/sum.click",
-    "frozen_sha256": "1afb6f97d57a035f80f0ec44493ad3494592af572349068f500c05d76e740149"
+    "frozen_sha256": "6eedb5596f1fbba32469855dc26c0b5d4f8a9a96453410088e58449b9fcf7750",
+    "original_sha256": "1afb6f97d57a035f80f0ec44493ad3494592af572349068f500c05d76e740149"
   },
   {
     "sidecar": "examples/rust-chunks-exact/chunks.click",
@@ -33,7 +34,8 @@
     "diagnostic": "local `chunks_remaining` has no value at this frontier",
     "migrated_sidecar": "design/charon-trial/chunk-proof/chunks.click",
     "frozen_sidecar": "design/charon-trial/chunk-proof/frozen.click",
-    "frozen_sha256": "204ae1f5cd7ef4f0ceb5ed697674a9c0510300728d6964c85be45f51cbaa448c"
+    "frozen_sha256": "9d9733fc4653f521257850d7e939f0979cdb64b271537617d5547113c8ce79b7",
+    "original_sha256": "204ae1f5cd7ef4f0ceb5ed697674a9c0510300728d6964c85be45f51cbaa448c"
   },
   {
     "sidecar": "examples/rust-enums/shapes.click",
@@ -56,7 +58,8 @@
     "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
     "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/sum.click",
     "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/frozen.click",
-    "frozen_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
+    "frozen_sha256": "819a95f694ec4f47187d06fd90f3ab24c0b535779bc25b9f3c62be473942e106",
+    "original_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
   },
   {
     "sidecar": "examples/rust-iterators/sum.click",
@@ -64,7 +67,8 @@
     "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
     "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iterators/sum.click",
     "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iterators/frozen.click",
-    "frozen_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
+    "frozen_sha256": "819a95f694ec4f47187d06fd90f3ab24c0b535779bc25b9f3c62be473942e106",
+    "original_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
   },
   {
     "sidecar": "examples/rust-loops/loops.click",
@@ -72,7 +76,8 @@
     "diagnostic": "requires the execution frontier to be at a loop",
     "migrated_sidecar": "design/charon-trial/loop-headers/loops-assignments.click",
     "frozen_sidecar": "design/charon-trial/loop-headers/loops.click",
-    "frozen_sha256": "09bdc6efadf71d1e4e94ce4c5aed012bd04a3a8271362466ae5dddcc4d787cae"
+    "frozen_sha256": "63900b8621e24dd0b08227ff648e3cc0819eaacf9e2428444ad010e7e7ff7cd7",
+    "original_sha256": "09bdc6efadf71d1e4e94ce4c5aed012bd04a3a8271362466ae5dddcc4d787cae"
   },
   {
     "sidecar": "examples/rust-move-drop/guard.click",

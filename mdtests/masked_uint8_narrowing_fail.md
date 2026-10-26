@@ -14,10 +14,10 @@ unsigned char low_byte(unsigned value) {
 ```click
 verifying "masked_uint8_narrowing.c";
 uint8 low_byte(uint32 value) {
-    ensures ((uint32)result) == (value & 511u32);
+    ensures (result as uint32) == (value & 511u32);
 }
 ```
 
 ```expect
-fail: `ensures ((uint32)result) == (value & 511u32)` failed
+fail: `ensures (result as uint32) == (value & 511u32)` failed
 ```

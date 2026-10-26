@@ -3,28 +3,28 @@ import click::integer;
 // The 32-bit view of a 64-bit iterator count.
 // A chunk iterator counts its remaining bytes as `usize`. The lane and tail
 // bound libraries state their ceilings over an `int32` count; within one
-// batch the count is at most 22208, where the view `(int32)(uint32)count`
+// batch the count is at most 22208, where the view `count as uint32 as int32`
 // is the count itself. These carry the iterator's 64-bit facts to that view.
 
 theorem adler_count_observation(r: uint64) {
  requires r <= 22208u64;
- ensures to_integer((int32)(uint32)r) == to_integer(r) by {
+ ensures to_integer(r as uint32 as int32) == to_integer(r) by {
   have 0u64 <= r by normalize();
   arithmetic_certificate rules {
    premise 0: 0 <= to_integer(r) => 0 <= to_integer(r);
    premise 1: to_integer(r) <= 22208 => to_integer(r) <= 22208;
-   integer_cast_identity bounds [0, 1] => to_integer((int32)(uint32)r) == to_integer(r);
+   integer_cast_identity bounds [0, 1] => to_integer(r as uint32 as int32) == to_integer(r);
    conclusion 0;
   }
  }
 }
 theorem adler_count_bounds(r: uint64) {
  requires r <= 22208u64;
- ensures 0 <= (int32)(uint32)r and (int32)(uint32)r <= 22208 by {
+ ensures 0 <= r as uint32 as int32 and r as uint32 as int32 <= 22208 by {
   apply(adler_count_observation(r)) using { r <= 22208u64; };
   have 0u64 <= r by normalize();
-  have 0 <= to_integer((int32)(uint32)r) by { rewrite(to_integer((int32)(uint32)r) == to_integer(r)); assumption(); }
-  have to_integer((int32)(uint32)r) <= 22208 by { rewrite(to_integer((int32)(uint32)r) == to_integer(r)); assumption(); }
+  have 0 <= to_integer(r as uint32 as int32) by { rewrite(to_integer(r as uint32 as int32) == to_integer(r)); assumption(); }
+  have to_integer(r as uint32 as int32) <= 22208 by { rewrite(to_integer(r as uint32 as int32) == to_integer(r)); assumption(); }
   both {
    assumption();
   } and {
@@ -35,13 +35,13 @@ theorem adler_count_bounds(r: uint64) {
 theorem adler_count_at_least(r: uint64, k: uint64) {
  requires k <= r;
  requires r <= 22208u64;
- ensures (int32)(uint32)k <= (int32)(uint32)r by {
+ ensures k as uint32 as int32 <= r as uint32 as int32 by {
   have k <= 22208u64 by solve() using { k <= r; r <= 22208u64; };
   apply(adler_count_observation(r)) using { r <= 22208u64; };
   apply(adler_count_observation(k)) using { k <= 22208u64; };
-  have to_integer((int32)(uint32)k) <= to_integer((int32)(uint32)r) by {
-   rewrite(to_integer((int32)(uint32)k) == to_integer(k));
-   rewrite(to_integer((int32)(uint32)r) == to_integer(r));
+  have to_integer(k as uint32 as int32) <= to_integer(r as uint32 as int32) by {
+   rewrite(to_integer(k as uint32 as int32) == to_integer(k));
+   rewrite(to_integer(r as uint32 as int32) == to_integer(r));
    assumption();
   }
   assumption();
@@ -50,7 +50,7 @@ theorem adler_count_at_least(r: uint64, k: uint64) {
 theorem adler_count_step(r: uint64, k: uint64) {
  requires k <= r;
  requires r <= 22208u64;
- ensures to_integer((int32)(uint32)(r - k)) == to_integer((int32)(uint32)r - (int32)(uint32)k) by {
+ ensures to_integer((r - k) as uint32 as int32) == to_integer(r as uint32 as int32 - k as uint32 as int32) by {
   have k <= 22208u64 by solve() using { k <= r; r <= 22208u64; };
   have to_integer(r - k) <= to_integer(22208u64) by solve() using { k <= r; r <= 22208u64; };
   apply(adler_count_observation(r)) using { r <= 22208u64; };
@@ -60,13 +60,13 @@ theorem adler_count_step(r: uint64, k: uint64) {
   apply(adler_count_bounds(k)) using { k <= 22208u64; };
   apply(adler_count_at_least(r, k)) using { k <= r; r <= 22208u64; };
   have to_integer(r - k) == to_integer(r) - to_integer(k);
-  have to_integer(((int32)(uint32)r) - ((int32)(uint32)k)) == to_integer(((int32)(uint32)r)) - to_integer(((int32)(uint32)k));
-  have to_integer((int32)(uint32)(r - k)) == to_integer((int32)(uint32)r - (int32)(uint32)k) by {
-   rewrite(to_integer((int32)(uint32)(r - k)) == to_integer(r - k));
+  have to_integer((r as uint32 as int32) - (k as uint32 as int32)) == to_integer((r as uint32 as int32)) - to_integer((k as uint32 as int32));
+  have to_integer((r - k) as uint32 as int32) == to_integer(r as uint32 as int32 - k as uint32 as int32) by {
+   rewrite(to_integer((r - k) as uint32 as int32) == to_integer(r - k));
    rewrite(to_integer(r - k) == to_integer(r) - to_integer(k));
-   rewrite(to_integer((int32)(uint32)r - (int32)(uint32)k) == to_integer((int32)(uint32)r) - to_integer((int32)(uint32)k));
-   rewrite(to_integer((int32)(uint32)r) == to_integer(r));
-   rewrite(to_integer((int32)(uint32)k) == to_integer(k));
+   rewrite(to_integer(r as uint32 as int32 - k as uint32 as int32) == to_integer(r as uint32 as int32) - to_integer(k as uint32 as int32));
+   rewrite(to_integer(r as uint32 as int32) == to_integer(r));
+   rewrite(to_integer(k as uint32 as int32) == to_integer(k));
    normalize();
   }
   assumption();
@@ -75,34 +75,34 @@ theorem adler_count_step(r: uint64, k: uint64) {
 theorem adler_count_lane_step(r: uint64) {
  requires 4u64 <= r;
  requires r <= 22208u64;
- ensures 4 <= (int32)(uint32)r by {
+ ensures 4 <= r as uint32 as int32 by {
   apply(adler_count_at_least(r, 4u64)) using { 4u64 <= r; r <= 22208u64; };
-  normalize() using { (int32)(uint32)4u64 <= (int32)(uint32)r; };
+  normalize() using { 4u64 as uint32 as int32 <= r as uint32 as int32; };
  }
- ensures to_integer((int32)(uint32)(r - 4u64)) == to_integer((int32)(uint32)r - 4) by {
+ ensures to_integer((r - 4u64) as uint32 as int32) == to_integer(r as uint32 as int32 - 4) by {
   apply(adler_count_step(r, 4u64)) using { 4u64 <= r; r <= 22208u64; };
-  normalize() using { to_integer((int32)(uint32)(r - 4u64)) == to_integer((int32)(uint32)r - (int32)(uint32)4u64); };
+  normalize() using { to_integer((r - 4u64) as uint32 as int32) == to_integer(r as uint32 as int32 - 4u64 as uint32 as int32); };
  }
 }
 theorem adler_count_tail_step(r: uint64) {
  requires 1u64 <= r;
  requires r <= 22208u64;
- ensures 1 <= (int32)(uint32)r by {
+ ensures 1 <= r as uint32 as int32 by {
   apply(adler_count_at_least(r, 1u64)) using { 1u64 <= r; r <= 22208u64; };
-  normalize() using { (int32)(uint32)1u64 <= (int32)(uint32)r; };
+  normalize() using { 1u64 as uint32 as int32 <= r as uint32 as int32; };
  }
- ensures to_integer((int32)(uint32)(r - 1u64)) == to_integer((int32)(uint32)r - 1) by {
+ ensures to_integer((r - 1u64) as uint32 as int32) == to_integer(r as uint32 as int32 - 1) by {
   apply(adler_count_step(r, 1u64)) using { 1u64 <= r; r <= 22208u64; };
-  normalize() using { to_integer((int32)(uint32)(r - 1u64)) == to_integer((int32)(uint32)r - (int32)(uint32)1u64); };
+  normalize() using { to_integer((r - 1u64) as uint32 as int32) == to_integer(r as uint32 as int32 - 1u64 as uint32 as int32); };
  }
 }
 theorem adler_count_zero(r: uint64) {
  requires r <= 22208u64;
- requires (int32)(uint32)r == 0;
+ requires r as uint32 as int32 == 0;
  ensures r == 0u64 by {
   apply(adler_count_observation(r)) using { r <= 22208u64; };
-  have to_integer((int32)(uint32)r) == 0 by { rewrite((int32)(uint32)r == 0); normalize(); }
-  have to_integer(r) == 0 by solve() using { to_integer((int32)(uint32)r) == to_integer(r); to_integer((int32)(uint32)r) == 0; };
+  have to_integer(r as uint32 as int32) == 0 by { rewrite(r as uint32 as int32 == 0); normalize(); }
+  have to_integer(r) == 0 by solve() using { to_integer(r as uint32 as int32) == to_integer(r); to_integer(r as uint32 as int32) == 0; };
   have to_integer(r) == to_integer(0u64) by normalize() using { to_integer(r) == 0; };
   assumption();
  }
@@ -112,19 +112,19 @@ theorem adler_count_zero(r: uint64) {
 // specification index denote exactly the same byte address.
 theorem adler_count_byte_pointer(base: const uint8*, count: uint64) {
  requires count <= 22208u64;
- ensures base + count == base + (int32)(uint32)count by {
+ ensures base + count == base + count as uint32 as int32 by {
   apply(adler_count_observation(count)) using { count <= 22208u64; };
-  normalize() using { to_integer((int32)(uint32)count) == to_integer(count); };
+  normalize() using { to_integer(count as uint32 as int32) == to_integer(count); };
  }
 }
 
 // Read equality first, then transport the native byte into the Integer spec.
 theorem adler_count_byte_observation(bytes: uint8[], count: uint64) {
  requires count <= 22208u64;
- ensures to_integer((int32)bytes[count]) == to_integer((int32)bytes[(int32)(uint32)count]) by {
+ ensures to_integer(bytes[count] as int32) == to_integer(bytes[count as uint32 as int32] as int32) by {
   apply(adler_count_byte_pointer(bytes, count)) using { count <= 22208u64; };
-  have bytes[count] == bytes[(int32)(uint32)count] by solve() using { bytes + count == bytes + (int32)(uint32)count; };
-  rewrite(bytes[count] == bytes[(int32)(uint32)count]);
+  have bytes[count] == bytes[count as uint32 as int32] by solve() using { bytes + count == bytes + count as uint32 as int32; };
+  rewrite(bytes[count] == bytes[count as uint32 as int32]);
   normalize();
  }
 }
@@ -132,18 +132,18 @@ theorem adler_count_chunk_byte_observation(bytes: uint8[], count: uint64, lane: 
  requires count <= 22204u64;
  requires 0 <= lane;
  requires lane <= 3;
- ensures to_integer((int32)(bytes + count)[lane]) == to_integer((int32)bytes[(int32)(uint32)count + lane]) by {
+ ensures to_integer((bytes + count)[lane] as int32) == to_integer(bytes[count as uint32 as int32 + lane] as int32) by {
   have count <= 22208u64 by normalize() using { count <= 22204u64; };
   apply(adler_count_byte_pointer(bytes, count)) using { count <= 22208u64; };
   apply(adler_count_bounds(count)) using { count <= 22208u64; };
-  have (int32)(uint32)count <= 22204;
-  have defined((int32)(uint32)count + lane);
-  have bytes + count + lane == bytes + ((int32)(uint32)count + lane) by {
-   rewrite(bytes + count == bytes + (int32)(uint32)count);
-   normalize() using { defined((int32)(uint32)count + lane); };
+  have count as uint32 as int32 <= 22204;
+  have defined(count as uint32 as int32 + lane);
+  have bytes + count + lane == bytes + (count as uint32 as int32 + lane) by {
+   rewrite(bytes + count == bytes + count as uint32 as int32);
+   normalize() using { defined(count as uint32 as int32 + lane); };
   }
-  have (bytes + count)[lane] == bytes[(int32)(uint32)count + lane] by solve() using { bytes + count + lane == bytes + ((int32)(uint32)count + lane); };
-  rewrite((bytes + count)[lane] == bytes[(int32)(uint32)count + lane]);
+  have (bytes + count)[lane] == bytes[count as uint32 as int32 + lane] by solve() using { bytes + count + lane == bytes + (count as uint32 as int32 + lane); };
+  rewrite((bytes + count)[lane] == bytes[count as uint32 as int32 + lane]);
   normalize();
  }
 }
@@ -154,25 +154,25 @@ theorem adler_count_previous_chunk_byte_observation(bytes: uint8[], total: uint6
  requires remaining <= total;
  requires to_integer(4u64) <= to_integer(total - remaining);
  requires total <= 22204u64;
- requires 0 <= (int32)(uint32)remaining;
- requires (int32)(uint32)remaining <= (int32)(uint32)total;
- requires (int32)(uint32)total <= 22204;
+ requires 0 <= remaining as uint32 as int32;
+ requires remaining as uint32 as int32 <= total as uint32 as int32;
+ requires total as uint32 as int32 <= 22204;
  requires 0 <= lane;
  requires lane <= 3;
- ensures to_integer((int32)(bytes + (total - remaining - 4u64))[lane]) == to_integer((int32)bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 4 + lane]) by {
+ ensures to_integer((bytes + (total - remaining - 4u64))[lane] as int32) == to_integer(bytes[(total as uint32 as int32 - remaining as uint32 as int32) - 4 + lane] as int32) by {
   have total <= 22208u64 by normalize() using { total <= 22204u64; };
   have to_integer(total - remaining) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 22204u64; };
   have to_integer(total - remaining - 4u64) <= to_integer(22204u64) by solve() using { remaining <= total; to_integer(4u64) <= to_integer(total - remaining); total <= 22204u64; };
   apply(adler_count_step(total, remaining)) using { remaining <= total; total <= 22208u64; };
   apply(adler_count_lane_step(total - remaining)) using { to_integer(4u64) <= to_integer(total - remaining); to_integer(total - remaining) <= to_integer(22208u64); };
   apply(adler_count_chunk_byte_observation(bytes, total - remaining - 4u64, lane)) using { to_integer(total - remaining - 4u64) <= to_integer(22204u64); 0 <= lane; lane <= 3; };
-  have to_integer((int32)(uint32)(total - remaining - 4u64)) == to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 4) by {
-   rewrite(to_integer((int32)(uint32)(total - remaining - 4u64)) == to_integer((int32)(uint32)(total - remaining) - 4));
-   rewrite(to_integer((int32)(uint32)(total - remaining)) == to_integer((int32)(uint32)total - (int32)(uint32)remaining));
+  have to_integer((total - remaining - 4u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 4) by {
+   rewrite(to_integer((total - remaining - 4u64) as uint32 as int32) == to_integer((total - remaining) as uint32 as int32 - 4));
+   rewrite(to_integer((total - remaining) as uint32 as int32) == to_integer(total as uint32 as int32 - remaining as uint32 as int32));
    normalize();
   }
-  have to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 4) == to_integer((int32)(uint32)(total - remaining - 4u64)) by normalize() using { to_integer((int32)(uint32)(total - remaining - 4u64)) == to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 4); };
-  rewrite(to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 4) == to_integer((int32)(uint32)(total - remaining - 4u64)));
+  have to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 4) == to_integer((total - remaining - 4u64) as uint32 as int32) by normalize() using { to_integer((total - remaining - 4u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 4); };
+  rewrite(to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 4) == to_integer((total - remaining - 4u64) as uint32 as int32));
   assumption();
  }
 }
@@ -197,10 +197,10 @@ theorem adler_count_previous_byte_observation(bytes: uint8[], total: uint64, rem
  requires remaining <= total;
  requires to_integer(1u64) <= to_integer(total - remaining);
  requires total <= 22207u64;
- requires 0 <= (int32)(uint32)remaining;
- requires (int32)(uint32)remaining <= (int32)(uint32)total;
- requires (int32)(uint32)total <= 22207;
- ensures to_integer((int32)(bytes + (total - remaining - 1u64))[0]) == to_integer((int32)bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 1]) by {
+ requires 0 <= remaining as uint32 as int32;
+ requires remaining as uint32 as int32 <= total as uint32 as int32;
+ requires total as uint32 as int32 <= 22207;
+ ensures to_integer((bytes + (total - remaining - 1u64))[0] as int32) == to_integer(bytes[(total as uint32 as int32 - remaining as uint32 as int32) - 1] as int32) by {
   have total <= 22208u64 by normalize() using { total <= 22207u64; };
   have to_integer(total - remaining) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 22207u64; };
   have to_integer(total - remaining - 1u64) <= to_integer(22207u64) by solve() using { remaining <= total; to_integer(1u64) <= to_integer(total - remaining); total <= 22207u64; };
@@ -208,13 +208,13 @@ theorem adler_count_previous_byte_observation(bytes: uint8[], total: uint64, rem
   apply(adler_count_tail_step(total - remaining)) using { to_integer(1u64) <= to_integer(total - remaining); to_integer(total - remaining) <= to_integer(22208u64); };
   have to_integer(total - remaining - 1u64) <= to_integer(22208u64) by normalize() using { to_integer(total - remaining - 1u64) <= to_integer(22207u64); };
   apply(adler_count_byte_observation(bytes, total - remaining - 1u64)) using { to_integer(total - remaining - 1u64) <= to_integer(22208u64); };
-  have to_integer((int32)(uint32)(total - remaining - 1u64)) == to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 1) by {
-   rewrite(to_integer((int32)(uint32)(total - remaining - 1u64)) == to_integer((int32)(uint32)(total - remaining) - 1));
-   rewrite(to_integer((int32)(uint32)(total - remaining)) == to_integer((int32)(uint32)total - (int32)(uint32)remaining));
+  have to_integer((total - remaining - 1u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1) by {
+   rewrite(to_integer((total - remaining - 1u64) as uint32 as int32) == to_integer((total - remaining) as uint32 as int32 - 1));
+   rewrite(to_integer((total - remaining) as uint32 as int32) == to_integer(total as uint32 as int32 - remaining as uint32 as int32));
    normalize();
   }
-  have to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 1) == to_integer((int32)(uint32)(total - remaining - 1u64)) by normalize() using { to_integer((int32)(uint32)(total - remaining - 1u64)) == to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 1); };
-  rewrite(to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 1) == to_integer((int32)(uint32)(total - remaining - 1u64)));
-  normalize() using { to_integer((int32)bytes[total - remaining - 1u64]) == to_integer((int32)bytes[(int32)(uint32)(total - remaining - 1u64)]); };
+  have to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1) == to_integer((total - remaining - 1u64) as uint32 as int32) by normalize() using { to_integer((total - remaining - 1u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1); };
+  rewrite(to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1) == to_integer((total - remaining - 1u64) as uint32 as int32));
+  normalize() using { to_integer(bytes[total - remaining - 1u64] as int32) == to_integer(bytes[(total - remaining - 1u64) as uint32 as int32] as int32); };
  }
 }

@@ -6,8 +6,8 @@ import "size_arithmetic.click";
 resource optional_size(node: struct rb_node*) {
     field value: int32;
     if node != 0 {
-        owns ((struct sized_node*)(void*)node)->size;
-        fact ((struct sized_node*)(void*)node)->size == value;
+        owns (node as (void *) as (struct sized_node *))->size;
+        fact (node as (void *) as (struct sized_node *))->size == value;
     }
 }
 
@@ -16,13 +16,13 @@ int32 compute_size(struct sized_node* node, int32 exit) {
     requires defined(&node->size);
     views node->rb.rb_left;
     views node->rb.rb_right;
-    owns parent: size_metadata((struct rb_node*)(void*)node);
+    owns parent: size_metadata(node as (void *) as (struct rb_node *));
     owns left: optional_size(node->rb.rb_left);
     owns right: optional_size(node->rb.rb_right);
     requires node->rb.rb_left != 0 or left.value == 0;
     requires node->rb.rb_right != 0 or right.value == 0;
-    requires node->rb.rb_left != (struct rb_node*)(void*)node;
-    requires node->rb.rb_right != (struct rb_node*)(void*)node;
+    requires node->rb.rb_left != node as (void *) as (struct rb_node *);
+    requires node->rb.rb_right != node as (void *) as (struct rb_node *);
     requires 0 <= left.value;
     requires 0 <= right.value;
     requires right.value <= 2147483646;
@@ -43,7 +43,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                 step_until(function.exit);
                 fold(left);
                 fold(right);
-                let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), {
                     value: 1 + old(left.value) + old(right.value)
                 });
                 solve();
@@ -53,7 +53,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                     step_until(function.exit);
                     fold(left);
                     fold(right);
-                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                    let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), {
                         value: 1 + old(left.value) + old(right.value)
                     });
                     solve();
@@ -61,7 +61,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                     step_until(function.exit);
                     fold(left);
                     fold(right);
-                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                    let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), {
                         value: 1 + old(left.value) + old(right.value)
                     });
                     solve();
@@ -82,7 +82,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                 step_until(function.exit);
                 fold(left);
                 fold(right);
-                let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), {
                     value: 1 + old(left.value) + old(right.value)
                 });
                 solve();
@@ -92,7 +92,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                     step_until(function.exit);
                     fold(left);
                     fold(right);
-                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                    let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), {
                         value: 1 + old(left.value) + old(right.value)
                     });
                     solve();
@@ -100,7 +100,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                     step_until(function.exit);
                     fold(left);
                     fold(right);
-                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                    let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), {
                         value: 1 + old(left.value) + old(right.value)
                     });
                     solve();
@@ -123,7 +123,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                 step_until(function.exit);
                 fold(left);
                 fold(right);
-                let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), {
                     value: 1 + old(left.value) + old(right.value)
                 });
                 solve();
@@ -133,7 +133,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                     step_until(function.exit);
                     fold(left);
                     fold(right);
-                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                    let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), {
                         value: 1 + old(left.value) + old(right.value)
                     });
                     solve();
@@ -141,7 +141,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                     step_until(function.exit);
                     fold(left);
                     fold(right);
-                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                    let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), {
                         value: 1 + old(left.value) + old(right.value)
                     });
                     solve();
@@ -162,7 +162,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                 step_until(function.exit);
                 fold(left);
                 fold(right);
-                let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), {
                     value: 1 + old(left.value) + old(right.value)
                 });
                 solve();
@@ -172,7 +172,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                     step_until(function.exit);
                     fold(left);
                     fold(right);
-                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                    let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), {
                         value: 1 + old(left.value) + old(right.value)
                     });
                     solve();
@@ -180,7 +180,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                     step_until(function.exit);
                     fold(left);
                     fold(right);
-                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                    let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), {
                         value: 1 + old(left.value) + old(right.value)
                     });
                     solve();
@@ -195,17 +195,17 @@ contract int32 ComputeSize(struct sized_node* node, int32 exit) {
     requires defined(&node->size);
     views node->rb.rb_left;
     views node->rb.rb_right;
-    owns parent: size_metadata((struct rb_node*)(void*)node);
+    owns parent: size_metadata(node as (void *) as (struct rb_node *));
     owns left: optional_size(node->rb.rb_left);
     owns right: optional_size(node->rb.rb_right);
     requires node->rb.rb_left != 0 or left.value == 0;
     requires node->rb.rb_right != 0 or right.value == 0;
-    requires node->rb.rb_left != (struct rb_node*)(void*)node;
-    requires node->rb.rb_right != (struct rb_node*)(void*)node;
-    requires node->rb.rb_left == 0 or separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)node->rb.rb_left)->size));
-    requires node->rb.rb_left == 0 or separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_left)->size));
-    requires node->rb.rb_right == 0 or separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)node->rb.rb_right)->size));
-    requires node->rb.rb_right == 0 or separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_right)->size));
+    requires node->rb.rb_left != node as (void *) as (struct rb_node *);
+    requires node->rb.rb_right != node as (void *) as (struct rb_node *);
+    requires node->rb.rb_left == 0 or separate(memory(node->rb.rb_left), memory((node->rb.rb_left as (void *) as (struct sized_node *))->size));
+    requires node->rb.rb_left == 0 or separate(memory(node->rb.rb_right), memory((node->rb.rb_left as (void *) as (struct sized_node *))->size));
+    requires node->rb.rb_right == 0 or separate(memory(node->rb.rb_left), memory((node->rb.rb_right as (void *) as (struct sized_node *))->size));
+    requires node->rb.rb_right == 0 or separate(memory(node->rb.rb_right), memory((node->rb.rb_right as (void *) as (struct sized_node *))->size));
     requires 0 <= left.value;
     requires 0 <= right.value;
     requires right.value <= 2147483646;
@@ -223,43 +223,43 @@ theorem compute_size_has_size_contract()
         apply(size_sum_defined(l.value, r.value));
         if node->rb.rb_left != 0 {
             if node->rb.rb_right != 0 {
-                have separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)node->rb.rb_left)->size)) by {
+                have separate(memory(node->rb.rb_left), memory((node->rb.rb_left as (void *) as (struct sized_node *))->size)) by {
                     cases {
                         node->rb.rb_left == 0 => { contradiction(node->rb.rb_left == 0); }
-                        separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)node->rb.rb_left)->size)) => { assumption(); }
+                        separate(memory(node->rb.rb_left), memory((node->rb.rb_left as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_left)->size)) by {
+                have separate(memory(node->rb.rb_right), memory((node->rb.rb_left as (void *) as (struct sized_node *))->size)) by {
                     cases {
                         node->rb.rb_left == 0 => { contradiction(node->rb.rb_left == 0); }
-                        separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_left)->size)) => { assumption(); }
+                        separate(memory(node->rb.rb_right), memory((node->rb.rb_left as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)node->rb.rb_right)->size)) by {
+                have separate(memory(node->rb.rb_left), memory((node->rb.rb_right as (void *) as (struct sized_node *))->size)) by {
                     cases {
                         node->rb.rb_right == 0 => { contradiction(node->rb.rb_right == 0); }
-                        separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)node->rb.rb_right)->size)) => { assumption(); }
+                        separate(memory(node->rb.rb_left), memory((node->rb.rb_right as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_right)->size)) by {
+                have separate(memory(node->rb.rb_right), memory((node->rb.rb_right as (void *) as (struct sized_node *))->size)) by {
                     cases {
                         node->rb.rb_right == 0 => { contradiction(node->rb.rb_right == 0); }
-                        separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_right)->size)) => { assumption(); }
+                        separate(memory(node->rb.rb_right), memory((node->rb.rb_right as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
                 step(compute_size, { parent: p, left: l, right: r });
                 solve();
             } else {
-                have separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)node->rb.rb_left)->size)) by {
+                have separate(memory(node->rb.rb_left), memory((node->rb.rb_left as (void *) as (struct sized_node *))->size)) by {
                     cases {
                         node->rb.rb_left == 0 => { contradiction(node->rb.rb_left == 0); }
-                        separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)node->rb.rb_left)->size)) => { assumption(); }
+                        separate(memory(node->rb.rb_left), memory((node->rb.rb_left as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_left)->size)) by {
+                have separate(memory(node->rb.rb_right), memory((node->rb.rb_left as (void *) as (struct sized_node *))->size)) by {
                     cases {
                         node->rb.rb_left == 0 => { contradiction(node->rb.rb_left == 0); }
-                        separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_left)->size)) => { assumption(); }
+                        separate(memory(node->rb.rb_right), memory((node->rb.rb_left as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
                 step(compute_size, { parent: p, left: l, right: r });
@@ -267,16 +267,16 @@ theorem compute_size_has_size_contract()
             }
         } else {
             if node->rb.rb_right != 0 {
-                have separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)node->rb.rb_right)->size)) by {
+                have separate(memory(node->rb.rb_left), memory((node->rb.rb_right as (void *) as (struct sized_node *))->size)) by {
                     cases {
                         node->rb.rb_right == 0 => { contradiction(node->rb.rb_right == 0); }
-                        separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)node->rb.rb_right)->size)) => { assumption(); }
+                        separate(memory(node->rb.rb_left), memory((node->rb.rb_right as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
-                have separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_right)->size)) by {
+                have separate(memory(node->rb.rb_right), memory((node->rb.rb_right as (void *) as (struct sized_node *))->size)) by {
                     cases {
                         node->rb.rb_right == 0 => { contradiction(node->rb.rb_right == 0); }
-                        separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_right)->size)) => { assumption(); }
+                        separate(memory(node->rb.rb_right), memory((node->rb.rb_right as (void *) as (struct sized_node *))->size)) => { assumption(); }
                     }
                 }
                 step(compute_size, { parent: p, left: l, right: r });
@@ -295,11 +295,11 @@ tactic child_size_separation(node: struct sized_node*, child: struct rb_node*) {
     owns metadata: optional_size(child);
     requires child != 0;
     ensures metadata.value == old(metadata.value);
-    ensures separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)child)->size));
-    ensures separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)child)->size));
+    ensures separate(memory(node->rb.rb_left), memory((child as (void *) as (struct sized_node *))->size));
+    ensures separate(memory(node->rb.rb_right), memory((child as (void *) as (struct sized_node *))->size));
 } by {
     unfold(metadata);
-    have separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)child)->size)) by assumption();
-    have separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)child)->size)) by assumption();
+    have separate(memory(node->rb.rb_left), memory((child as (void *) as (struct sized_node *))->size)) by assumption();
+    have separate(memory(node->rb.rb_right), memory((child as (void *) as (struct sized_node *))->size)) by assumption();
     fold(metadata);
 }

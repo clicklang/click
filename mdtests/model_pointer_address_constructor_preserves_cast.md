@@ -17,8 +17,8 @@ spec enum Model { Empty, At(void*), }
 resource box() { field model: Model; }
 void attach(struct child* kid) {
     produces held: box();
-    ensures held.model == Model::At((void*)kid);
-} by { step_until(function.exit); let held = fold(box(), {model: Model::At((void*)kid)}); solve(); }
+    ensures held.model == Model::At(kid as (void *));
+} by { step_until(function.exit); let held = fold(box(), {model: Model::At(kid as (void *))}); solve(); }
 void caller(struct child* kid) { ensures true; } by {
     let {held: held} = step(attach, {});
     have held.model != Model::Empty by solve();

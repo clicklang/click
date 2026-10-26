@@ -374,7 +374,7 @@ qualification metadata. An opaque pointer cannot be dereferenced, indexed,
 or used in pointer arithmetic, and it does not create an ownership or memory
 view. Convert it to a modeled typed pointer before accessing an object. A
 sidecar contract describes the object such a parameter carries by casting the
-parameter, `(struct name *)argument`, in its clauses; see
+parameter, `argument as (struct name *)`, in its clauses; see
 [contract pointer casts](index.md#old).
 Function pointers are not object pointers, so a `void *` position does not
 change a callback's signature. Opaque-pointer fields are not supported;
@@ -492,7 +492,7 @@ Signed overflow in arithmetic remains undefined behavior and is refused.
 A conversion is its operand when the operand is inside the destination range;
 see [Supported expressions and statements](#supported-expressions-and-statements)
 for how proofs use that.
-A cast written in a Click specification is the same conversion: `(uint8)x` is
+A cast written in a Click specification is the same conversion: `x as uint8` is
 `x` modulo 256 there too. A specification states a checked conversion, which
 owes the destination range, with `to_uint8(...)` and its relatives.
 
@@ -1174,9 +1174,9 @@ Supported C surface includes:
   pass a `char` or `signed char` pointer where a predicate or pure function
   takes `uint8` bytes, as in `requires cstr::readable(s);` for a `const char *s`.
   For a signed character type, the argument is elaborated to the explicit byte view
-  `(uint8*)s`: the predicate reads the string's bytes as unsigned values,
+  `s as (uint8 *)`: the predicate reads the string's bytes as unsigned values,
   and since a signed read of a byte is the conversion of its unsigned read,
-  `s[k] == '\0'` holds exactly when `((uint8*)s)[k] == '\0'` does. A library
+  `s[k] == '\0'` holds exactly when `(s as (uint8 *))[k] == '\0'` does. A library
   contract over `uint8` bytes, such as `strlen`'s, likewise accepts a `char`
   pointer of either signedness. As in C, the `strlen`
   contract's result and every C-string length in the library are `size_t`
@@ -1705,11 +1705,11 @@ The contract, for `buffer`, `size`, and the arguments `a0`, `a1`, ...:
 - ensures each character at an index below `size - 1` is the format's
   character there, stated with the functions of
   [`click::format`](../library/index.md#decimal-formatting): `%u` writes
-  `format::decimal_digit((uint64) a, k)` for `k < format::decimal_length(...)`,
+  `format::decimal_digit(a as uint64, k)` for `k < format::decimal_length(...)`,
   a field width `format::padded_digit`, and `%d` `format::signed_digit`;
 - ensures the terminator follows the output when it fits and is the last byte
   of the buffer when it does not, stated both at the count and at
-  `(uint64) result`, and that the bytes after the terminator are unchanged
+  `result as uint64`, and that the bytes after the terminator are unchanged
   (`mdtests/snprintf_states_its_result_sign_and_terminator.md`);
 - ensures every character and terminator it writes is `defined`, so a caller
   may read a buffer `snprintf` filled, such as a local array it passes on as a
@@ -2237,7 +2237,7 @@ declared return type
 The check applies to the C program's accesses only. A specification reads
 memory as a value, so a contract's reads, resource arguments included, are
 not checked: a contract may state a Linux augmented rbtree node's cached
-count as `((struct sized_node*)(void*)old)->size` for a `struct rb_node*`
+count as `(old as (void *) as (struct sized_node *))->size` for a `struct rb_node*`
 parameter, while a C read of the same object through an unrelated struct is
 still refused
 (`mdtests/a_resource_argument_reads_the_containing_struct_as_a_value.md`,

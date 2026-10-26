@@ -1121,7 +1121,7 @@ fn load_variable_project(statement_count: usize, axis: LoadAxis) -> (String, Str
         LoadAxis::OneCellAcrossStores => ("owns data[0..length];", 2 * statement_count),
     };
     let mut click_source = format!(
-        "verifying \"load_line.c\";\n\nint32 load_line(int32 data[], int32 length) {{\n    requires {statement_count} <= length;\n    requires 2 <= length;\n    requires ((uint32)length) <= 1073741823u32;\n    {permission}\n    ensures result == data[{last}];\n}} by {{\n"
+        "verifying \"load_line.c\";\n\nint32 load_line(int32 data[], int32 length) {{\n    requires {statement_count} <= length;\n    requires 2 <= length;\n    requires (length as uint32) <= 1073741823u32;\n    {permission}\n    ensures result == data[{last}];\n}} by {{\n"
     );
     let statement_count = statements;
     for _ in 0..=statement_count + 1 {
@@ -4827,7 +4827,7 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
          \n\
          int32 transport_copy(int32 dst[], int32 src[], int32 length) {{\n    \
              requires 0 <= length;\n    \
-             requires ((uint32)length) <= 1073741823u32;\n    \
+             requires (length as uint32) <= 1073741823u32;\n    \
              owns dst[0..length];\n    \
              views src[0..length];\n    \
              requires separate(memory(dst[0..length]), memory(src[0..length]));\n\

@@ -1,7 +1,9 @@
 # Original chunks_exact proof through Charon
 
-`chunks.rs` and `frozen.click` are byte-identical copies of the original
-`examples/rust-chunks-exact` fixture. `chunks.click` preserves its full contract
+`chunks.rs` is a byte-identical copy of the original
+`examples/rust-chunks-exact` source, and `frozen.click` archives its original
+sidecar, respelled once in today's syntax with its contract and proof
+unchanged (`../README.md`, Complete canonical proof-port adoption). `chunks.click` preserves its full contract
 and adapts only the proof to the actual iterator storage and checked frontiers.
 The native Charon artifact and import lock are committed for offline checks.
 

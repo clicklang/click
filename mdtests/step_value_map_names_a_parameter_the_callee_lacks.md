@@ -25,7 +25,7 @@ verifying "step_value_map_names_a_parameter_the_callee_lacks.c";
 
 int32 f(char buf[], int32 len) {
     requires 9 <= len;
-    owns buf[0..(uint64) len];
+    owns buf[0..len as uint64];
     ensures result >= 0;
 } by {
     step();

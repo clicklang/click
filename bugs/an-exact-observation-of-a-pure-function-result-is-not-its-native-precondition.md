@@ -22,7 +22,7 @@ int native_call(void) { return take(123u); }
 import click::format;
 verifying "call.c";
 extern int32 take(uint32 a) {
-    requires to_integer(click::format::decimal_length((uint64) a)) <= 2147483647;
+    requires to_integer(click::format::decimal_length(a as uint64)) <= 2147483647;
     ensures result == 0;
 }
 int32 native_call() {
@@ -33,7 +33,7 @@ int32 native_call() {
 The implicit tail refuses: "condition-certificate premise search did not derive
 `click::format::decimal_length(123u64) <= 2147483647u64` from 1 ambient
 condition facts". The same file with
-`requires click::format::decimal_length((uint64) a) <= 2147483647u64;`
+`requires click::format::decimal_length(a as uint64) <= 2147483647u64;`
 verifies.
 
 The generated `snprintf` contract (`src/languages/c/formatted_output.rs`)

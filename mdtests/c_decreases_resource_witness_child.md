@@ -4,7 +4,7 @@ A `let` witness of a recursive resource has no C spelling, so a recursive
 call cannot name it syntactically. The structural measure accepts the call
 when the exact definition, instantiated over a symbolic entry state, lets the
 pure kernel decide that the call's argument is the witness pointer: here the
-where-fact and the alignment evidence make `(struct node *)(node->word & ~1)`
+where-fact and the alignment evidence make `(node->word & ~1) as (struct node *)`
 the witness. The ordinary contract still certifies the resource transfer.
 
 ```c filename=c_decreases_resource_witness_child.c
@@ -28,7 +28,7 @@ resource marked_list(node: struct node*) {
         owns allocation(node, sizeof(struct node));
         owns *node;
         fact aligned(node, 8);
-        let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1) and ((struct node*)(node->word & ~1)) == next;
+        let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1) and ((node->word & ~1) as (struct node *)) == next;
         owns marked_list(next);
     }
 }

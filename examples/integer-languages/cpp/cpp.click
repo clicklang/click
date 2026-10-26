@@ -57,15 +57,15 @@ uint32 keep_above_int32_max(uint32 u) {
 }
 
 int32 to_signed_i32(uint32 u) {
-    ensures result == (int32) u;
+    ensures result == u as int32;
     ensures u == 4294967295u32 implies result == -1;
     ensures u == 2147483648u32 implies result == -2147483648;
 }
 
 uint32 to_unsigned_u32(int32 x) {
-    ensures result == (uint32) x;
+    ensures result == x as uint32;
     ensures x == -1 implies result == 4294967295u32;
-    ensures (int32) result == x;
+    ensures result as int32 == x;
 }
 
 uint32 div_u32(uint32 a, uint32 b) {
@@ -97,7 +97,7 @@ int32 rem_i32(int32 a, int32 b) {
 }
 
 uint8 narrow_u8(uint32 x) {
-    ensures (uint32) result == (x & 255u32);
+    ensures result as uint32 == (x & 255u32);
     ensures x == 4000000000u32 implies result == 0u8;
     ensures x == 300u32 implies result == 44u8;
 }

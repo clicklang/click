@@ -23,9 +23,7 @@ fn charon_slice_into_iter_imports_unchanged_sum_and_tracks_the_remaining_proof_g
     let p = project("sum");
     let prepared = p.prepared().unwrap();
     let error = C0VerificationSession::new_program_prepared(
-        &super::parity::frozen_proof_input(
-            &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
-        ),
+        &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
         &prepared,
     )
     .err()
@@ -69,9 +67,7 @@ fn charon_slice_into_iter_live_refresh_and_rejected_mutable_or_owned_shapes() {
         let prepared = p.prepared().unwrap();
         if name == "sum" {
             let error = C0VerificationSession::new_program_prepared(
-                &super::parity::frozen_proof_input(
-                    &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
-                ),
+                &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
                 &prepared,
             )
             .err()

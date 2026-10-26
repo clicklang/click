@@ -904,6 +904,8 @@ struct Parser {
     algebraic_type_nesting: usize,
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
+    /// Whether the unary expression being parsed is the operand of a prefix
+    /// operator (cast migration only).
     /// Every braced proof block parsed so far, in parse order: the block's
     /// braces and the first token of each tactic it holds.
     proof_block_spans: Vec<ProofBlockSpan>,
@@ -1061,12 +1063,20 @@ struct ParsedType {
     reference: bool,
 }
 
-/// A recognized `(struct name *)` cast prefix in a contract expression.
+/// A recognized `(struct name *)` cast target in a contract expression.
 struct StructPointerCast {
     struct_name: String,
     pointee_constant: bool,
     /// Tokens the prefix occupies, from `(` through `)`.
     tokens: usize,
+}
+
+impl StructPointerCast {
+    /// The target as Click writes it inside the parentheses of `as (...)`.
+    fn spelling(&self) -> String {
+        let constant = if self.pointee_constant { "const " } else { "" };
+        format!("{constant}struct {} *", self.struct_name)
+    }
 }
 
 pub(super) fn is_c_type_keyword(name: &str) -> bool {
@@ -2533,6 +2543,7 @@ impl Parser {
         if self.peek_ident() == Some("as") {
             self.position += 1;
             let alias = self.expect_ident("C source alias")?;
+            self.refuse_cast_type_binder(&alias)?;
             if self
                 .source_aliases
                 .insert(alias.clone(), source_path.clone())
@@ -5235,11 +5246,11 @@ impl Parser {
         Ok(index)
     }
 
-    /// The right operand of a binary operator, with any Rust `as` casts.
+    /// The right operand of a binary operator, with any `as` casts.
     #[inline(never)]
     fn parse_binary_operand(&mut self) -> Result<ContractExpression, ClickError> {
         let operand = self.parse_contract_unary()?;
-        self.parse_rust_casts(operand)
+        self.parse_casts(operand)
     }
 
     /// `true` and `false` are `bool` literals unless a C name in scope, or a
@@ -9320,7 +9331,9 @@ impl Parser {
         if name == "loop" {
             let label = if self.peek_ident() == Some("as") {
                 self.position += 1;
-                Some(self.expect_ident("loop label")?)
+                let label = self.expect_ident("loop label")?;
+                self.refuse_cast_type_binder(&label)?;
+                Some(label)
             } else {
                 None
             };
@@ -9466,6 +9479,7 @@ impl Parser {
             self.expect(Token::RParen)?;
             self.expect_ident_spelling("as")?;
             let hypothesis = self.expect_ident("induction hypothesis name")?;
+            self.refuse_cast_type_binder(&hypothesis)?;
             if self.peek() == Some(&Token::LBrace) {
                 self.position += 1;
                 let mut arms = Vec::new();
@@ -9836,6 +9850,7 @@ impl Parser {
                 if self.peek_ident() == Some("as") {
                     self.position += 1;
                     let name = self.expect_ident("name for the introduced variable")?;
+                    self.refuse_cast_type_binder(&name)?;
                     self.names.hide_for_proof_binder(&name, false);
                     self.names.ended_fact_names.remove(&name);
                     ProofTactic::IntroAs(name)
@@ -11496,7 +11511,7 @@ impl Parser {
         &mut self,
         first: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
-        let mut values = vec![self.parse_rust_casts(first)?];
+        let mut values = vec![self.parse_casts(first)?];
         let mut operators: Vec<(usize, ContractBinaryConstructor)> = Vec::new();
         // Each precedence level has the same independently enforced chain
         // limit as the former recursive-descent level. A lower-precedence
@@ -13076,6 +13091,138 @@ impl Parser {
         }
     }
 
+    /// A name an `as` clause binds may not be a cast's type name: `e as T`
+    /// is a cast, so `induct(x) as uint32` would read as one.
+    fn refuse_cast_type_binder(&self, name: &str) -> Result<(), ClickError> {
+        if rust_syntax::click_integer_cast_type(name).is_some()
+            || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
+        {
+            return Err(self.error(format!(
+                "`{name}` is a type name, which `as` reads as a cast; bind another name"
+            )));
+        }
+        Ok(())
+    }
+
+    /// The refusal of a C-style cast in Click text: a Click cast is written
+    /// after its operand, `e as T`, with a pointer target parenthesized.
+    fn legacy_cast_error(&self, target: &str, pointer: bool) -> ClickError {
+        let written = if pointer {
+            format!("e as ({target})")
+        } else {
+            format!("e as {target}")
+        };
+        self.error(format!(
+            "a Click cast is written after its operand: write `{written}`, not `({target}) e`"
+        ))
+    }
+
+    /// The target of a Click cast at the cursor, after its `(` or inside the
+    /// parentheses of a pointer target: an integer type, `void *`, or an
+    /// integer pointer type such as `uint8 *`, unqualified.
+    fn parse_click_cast_type(&mut self) -> Result<CType, ClickError> {
+        let parsed_type = self.parse_type()?;
+        let target_type = parsed_type.c_type.to_kernel_type();
+        if parsed_type.reference
+            || (target_type.is_pointer() && (parsed_type.constant || parsed_type.pointee_constant))
+        {
+            return Err(self.error("contract cast targets must be unqualified native types; byte views inherit the source qualification"));
+        }
+        Ok(target_type)
+    }
+
+    /// A struct-pointer cast of `source_operand`, `p as (struct s *)`: the
+    /// `void *` parameter it reads takes the struct's layout.
+    fn lower_struct_pointer_cast(
+        &mut self,
+        cast: StructPointerCast,
+        source_operand: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
+        let Some(operand) = contract_expression_as_c_fragment(&source_operand) else {
+            return Err(self.error(
+                "struct pointer cast expects a current C `void *` expression; put old(...) around the whole cast for an entry-state value",
+            ));
+        };
+        let integer_source = crate::surface::validation::infer_c_expression_type(
+            &operand,
+            &self.names.c_parameter_types,
+        )
+        .is_some_and(|ty| matches!(ty, C0Type::Int64(_) | C0Type::UInt64(_)));
+        if !integer_source {
+            self.record_parameter_struct_cast(&operand, &cast.struct_name)?;
+        }
+        Ok(crate::surface::lowering::contract_c_unary(
+            source_operand,
+            CExpression::Cast {
+                expression: Box::new(operand),
+                target_type: CType::Int32Pointer,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                pointee_struct: Some(cast.struct_name),
+                pointee_volatile: false,
+                pointee_constant: cast.pointee_constant,
+                explicit_qualification: false,
+            },
+        ))
+    }
+
+    /// A Click cast of `operand` to an integer or pointer `target_type`,
+    /// `x as uint32` or `p as (uint8 *)`.
+    fn lower_click_cast(
+        &mut self,
+        target_type: CType,
+        operand: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
+        let historical = crate::surface::validation::contains_old_expression(&operand)
+            || crate::surface::validation::contains_at_expression(&operand);
+        // Integer casts consume the value observed by their operand.
+        // Other cast families retain their current-expression validation.
+        let integer_target = matches!(
+            target_type,
+            CType::Int8
+                | CType::Int16
+                | CType::Int32
+                | CType::UInt8
+                | CType::UInt16
+                | CType::UInt32
+                | CType::Int64
+                | CType::UInt64
+                | CType::Int128
+                | CType::UInt128
+        );
+        if historical && !integer_target {
+            return Err(self.error("scalar cast expects a current expression; put old(...) around the whole cast for an entry-state value"));
+        }
+        let expression =
+            contract_expression_as_c_fragment(&operand).unwrap_or(CExpression::Value(int32(0)));
+        if target_type == CType::VoidPointer {
+            crate::surface::validation::validate_void_pointer_cast_source(
+                &expression,
+                &self.names.c_parameter_types,
+                "contract expression",
+            )?;
+        }
+        Ok(ContractExpression::CUnary {
+            operand: Box::new(operand),
+            lowered: CExpression::Cast {
+                expression: Box::new(expression),
+                target_type,
+                // This cast was written in the contract. Pointer targets
+                // use the specification cast rule, not the C conversion
+                // marker also used for inserted pointer coercions. Authored
+                // void and byte casts select the enclosing-object view.
+                integer_mode: if target_type.is_pointer() {
+                    crate::kernel::CIntegerCastMode::Standard
+                } else {
+                    crate::kernel::CIntegerCastMode::CConversion
+                },
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            },
+        })
+    }
+
     fn parse_contract_unary(&mut self) -> Result<ContractExpression, ClickError> {
         self.parse_contract_unary_at_depth(0)
     }
@@ -13085,98 +13232,24 @@ impl Parser {
         depth: usize,
     ) -> Result<ContractExpression, ClickError> {
         if let Some(cast) = self.peek_struct_pointer_cast() {
-            self.check_unary_nesting_limit(depth)?;
-            self.consume_struct_pointer_cast(&cast)?;
-            let operand = self.parse_contract_unary_at_depth(depth + 1)?;
-            let source_operand = operand;
-            let Some(operand) = contract_expression_as_c_fragment(&source_operand) else {
-                return Err(self.error(
-                    "struct pointer cast expects a current C `void *` expression; put old(...) around the whole cast for an entry-state value",
-                ));
-            };
-            let integer_source = crate::surface::validation::infer_c_expression_type(
-                &operand,
-                &self.names.c_parameter_types,
-            )
-            .is_some_and(|ty| matches!(ty, C0Type::Int64(_) | C0Type::UInt64(_)));
-            if !integer_source {
-                self.record_parameter_struct_cast(&operand, &cast.struct_name)?;
-            }
-            return Ok(crate::surface::lowering::contract_c_unary(
-                source_operand,
-                CExpression::Cast {
-                    expression: Box::new(operand),
-                    target_type: CType::Int32Pointer,
-                    integer_mode: crate::kernel::CIntegerCastMode::Standard,
-                    pointee_struct: Some(cast.struct_name),
-                    pointee_volatile: false,
-                    pointee_constant: cast.pointee_constant,
-                    explicit_qualification: false,
-                },
-            ));
+            return Err(self.legacy_cast_error(&cast.spelling(), true));
         }
         if self.starts_contract_scalar_cast() {
-            self.check_unary_nesting_limit(depth)?;
+            let open = self.position;
             self.position += 1;
-            let parsed_type = self.parse_type()?;
-            let target_type = parsed_type.c_type.to_kernel_type();
-            if parsed_type.reference
-                || (target_type.is_pointer()
-                    && (parsed_type.constant || parsed_type.pointee_constant))
-            {
-                return Err(self.error("contract cast targets must be unqualified native types; byte views inherit the source qualification"));
-            }
+            let target_type = self.parse_click_cast_type()?;
+            let close = self.position;
             self.expect(Token::RParen)?;
-            let operand = self.parse_contract_unary_at_depth(depth + 1)?;
-            let historical = crate::surface::validation::contains_old_expression(&operand)
-                || crate::surface::validation::contains_at_expression(&operand);
-            // Integer casts consume the value observed by their operand.
-            // Other cast families retain their current-expression validation.
-            let integer_target = matches!(
-                target_type,
-                CType::Int8
-                    | CType::Int16
-                    | CType::Int32
-                    | CType::UInt8
-                    | CType::UInt16
-                    | CType::UInt32
-                    | CType::Int64
-                    | CType::UInt64
-                    | CType::Int128
-                    | CType::UInt128
-            );
-            if historical && !integer_target {
-                return Err(self.error("scalar cast expects a current expression; put old(...) around the whole cast for an entry-state value"));
-            }
-            let expression =
-                contract_expression_as_c_fragment(&operand).unwrap_or(CExpression::Value(int32(0)));
-            if target_type == CType::VoidPointer {
-                crate::surface::validation::validate_void_pointer_cast_source(
-                    &expression,
-                    &self.names.c_parameter_types,
-                    "contract expression",
-                )?;
-            }
-            return Ok(ContractExpression::CUnary {
-                operand: Box::new(operand),
-                lowered: CExpression::Cast {
-                    expression: Box::new(expression),
-                    target_type,
-                    // This cast was written in the contract. Pointer targets
-                    // use the specification cast rule, not the C conversion
-                    // marker also used for inserted pointer coercions. Authored
-                    // void and byte casts select the enclosing-object view.
-                    integer_mode: if target_type.is_pointer() {
-                        crate::kernel::CIntegerCastMode::Standard
-                    } else {
-                        crate::kernel::CIntegerCastMode::CConversion
-                    },
-                    pointee_struct: None,
-                    pointee_volatile: false,
-                    pointee_constant: false,
-                    explicit_qualification: false,
-                },
-            });
+            let target = self.tokens[open + 1..close]
+                .iter()
+                .map(|token| match token {
+                    Token::Ident(name) => name.clone(),
+                    Token::Star => "*".to_string(),
+                    token => token.to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            return Err(self.legacy_cast_error(&target, target_type.is_pointer()));
         }
         if self.peek() == Some(&Token::Minus) {
             self.check_unary_nesting_limit(depth)?;
@@ -15256,7 +15329,28 @@ impl Parser {
                     | Token::Arrow
                     | Token::Dot
             )
-        )
+        ) || self.starts_cast_at(close + 1)
+    }
+
+    /// Whether `as` at `index` begins a cast: `as` and an integer type name,
+    /// or `as (` with a pointer type, so `(a + b) as uint32 == c` reads its
+    /// parentheses as an expression.
+    fn starts_cast_at(&self, index: usize) -> bool {
+        if !matches!(self.tokens.get(index), Some(Token::Ident(name)) if name == "as") {
+            return false;
+        }
+        match self.tokens.get(index + 1) {
+            Some(Token::Ident(name)) => {
+                rust_syntax::click_integer_cast_type(name).is_some()
+                    || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
+            }
+            Some(Token::LParen) => matches!(
+                self.tokens.get(index + 2),
+                Some(Token::Ident(name)) if matches!(name.as_str(), "void" | "struct" | "const")
+                    || rust_syntax::click_integer_cast_type(name).is_some()
+            ),
+            _ => false,
+        }
     }
 
     /// The source position of the next unconsumed token, or of the last
@@ -15916,7 +16010,7 @@ mod integer_quantifier_parser_tests {
     #[test]
     fn widened_unsigned_rule_result_keeps_its_native_domain() {
         let mut parser = Parser::new(
-            "rules { unsigned_sum_bound bounds [] => ((int64)a + (int64)b) <= 4294967295i64; conclusion 0; } ((int64)a + (int64)b) <= 4294967295i64"
+            "rules { unsigned_sum_bound bounds [] => (a as int64 + b as int64) <= 4294967295i64; conclusion 0; } (a as int64 + b as int64) <= 4294967295i64"
         ).unwrap();
         parser.integer_arithmetic = true;
         let ProofTactic::ArithmeticCertificate(ArithmeticCertificate {

@@ -1,7 +1,9 @@
 # Original shared byte iteration proof through Charon
 
-`rust-iterators/sum.rs` and `frozen.click` are byte-identical copies of the
-original `examples/rust-iterators` fixture. The migrated `sum.click` retains
+`rust-iterators/sum.rs` is a byte-identical copy of the original
+`examples/rust-iterators` source, and `frozen.click` archives its original
+sidecar, respelled once in today's syntax with its contract and proof
+unchanged (`../README.md`, Complete canonical proof-port adoption). The migrated `sum.click` retains
 every signature, specification function, precondition, and postcondition.
 The native Charon artifact and import lock support offline checks.
 

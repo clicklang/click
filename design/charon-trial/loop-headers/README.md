@@ -1,7 +1,8 @@
 # Split while headers
 
-`loops.rs`/`loops.click` and `sum.rs`/`sum.click` are byte-for-byte copies of
-`rust-loops` and `rust-byte-sum`. Both now import through Charon. The frozen
+`loops.rs` and `sum.rs` are byte-for-byte copies of the `rust-loops` and
+`rust-byte-sum` sources; `loops.click` and `sum.click` archive their original
+sidecars, respelled once in today's syntax (`../README.md`, Complete canonical proof-port adoption). Both now import through Charon. The frozen
 sidecars retain their numeric-frontier failures: respectively “requires the
 execution frontier to be at a loop” and “local `i` has no value at this frontier”.
 They remain proof gaps in the parity inventory.
@@ -58,7 +59,7 @@ Both syntax and typed-kernel layouts index these targets once, with immutable
 sharing and deterministic scaling at 8, 128, and 1024 store pairs. Live Charon
 re-extraction verifies the same proof after inserting an unrelated compiler
 local in an isolated probe. Verification, profiling, auditing, and expanded
-certificates agree. Frozen sources and original sidecars are unchanged; parity
+certificates agree. Frozen sources are unchanged and the original sidecars keep their contracts and proofs; parity
 remains 10/16 and imports 14/16. Numeric-selector compatibility and stable
 iterator observations remain migration work.
 

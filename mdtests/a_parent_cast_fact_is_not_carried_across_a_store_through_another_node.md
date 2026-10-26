@@ -3,7 +3,7 @@
 `rb_parent(g)` recovers the parent from `g`'s parent-color word with an
 integer-to-pointer cast. The cast result is named by the read of
 `g->__rb_parent_color` it came from, and `node_at`'s fact
-`((struct rb_node*)(p->__rb_parent_color & ~3)) == parent` relates that read,
+`((p->__rb_parent_color & ~3) as (struct rb_node *)) == parent` relates that read,
 at the state where `n` was unfolded, to `parent`. Here `gp == xid`, so the
 parent is `up_at`'s frame node, whose cells the function holds.
 
@@ -74,7 +74,7 @@ resource node_at(p: struct rb_node*) {
             fact p == identity;
             fact aligned(parent, 8);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
-            fact ((struct rb_node*)(p->__rb_parent_color & ~3)) == parent;
+            fact ((p->__rb_parent_color & ~3) as (struct rb_node *)) == parent;
         },
     }
 }

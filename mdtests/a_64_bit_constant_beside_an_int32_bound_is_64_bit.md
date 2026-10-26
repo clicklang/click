@@ -13,7 +13,7 @@ unsigned char at(const unsigned char *bytes, int i) { return bytes[i]; }
 ```click
 verifying "a_64_bit_constant_beside_an_int32_bound_is_64_bit.c";
 uint8 at(const uint8* bytes, int32 i) {
-    requires (uint64)i < 4294967296u64;
+    requires i as uint64 < 4294967296u64;
     views bytes[i..4294967296u64];
     ensures result == bytes[i];
 }

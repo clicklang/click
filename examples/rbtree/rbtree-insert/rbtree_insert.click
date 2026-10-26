@@ -797,7 +797,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have separate(memory(gparent->rb_right), memory(parent->rb_right)) by { assumption(); }
                                                     have separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color)) by { assumption(); }
                                                     have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color)) by { assumption(); }
-                                                    have at(before_grandparent_links, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) by { assumption(); }
+                                                    have at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { assumption(); }
                                                     have separate(memory(gparent->__rb_parent_color), memory(gparent->rb_right)) by { assumption(); }
                                                     have separate(memory(gparent->__rb_parent_color), memory(parent->rb_left)) by { assumption(); }
                                                     step();
@@ -955,7 +955,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         match cs.model ensuring {
                                                             owns sn: rb_at(tmp);
                                                             fact sn.model == rb_reparent(csib, gparent);
-                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
+                                                            fact ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp;
                                                             fact gparent->rb_right == at(before_uncle_pointer_changes, tmp);
                                                             fact parent->rb_left == node;
                                                         } {
@@ -979,7 +979,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(rb_reparent(csib, gparent) == RbTree::Empty);
                                                                     solve();
                                                                 }
-                                                                transport(at(before_grandparent_links, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                transport(at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                                 transport(at(before_uncle_pointer_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp)), gparent->rb_right == at(before_uncle_pointer_changes, tmp)) using {
                                                                     at(before_uncle_pointer_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp));
                                                                     separate(memory(gparent->rb_right), memory(gparent->rb_left));
@@ -1031,7 +1031,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(rb_reparent(csib, gparent) == RbTree::Node(sx, gparent, scol, sl, sr));
                                                                     solve();
                                                                 }
-                                                                transport(at(before_grandparent_links, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                transport(at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                                 transport(at(before_uncle_pointer_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp)), gparent->rb_right == at(before_uncle_pointer_changes, tmp)) using {
                                                                     at(before_uncle_pointer_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp));
                                                                     separate(memory(gparent->rb_right), memory(gparent->rb_left));
@@ -1046,7 +1046,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 };
                                                             },
                                                         }
-                                                        transport(at(before_grandparent_links, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                        transport(at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                         have (gparent->__rb_parent_color & 1) == 1 by {
                                                             rewrite((gparent->__rb_parent_color & 1) == color_bit(ucolor));
                                                             rewrite(ucolor == Color::Black);
@@ -1146,7 +1146,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have separate(memory(gparent->rb_right), memory(xid->rb_right)) by { assumption(); }
                                                                 have separate(memory(parent->rb_left), memory(xid->rb_right)) by { assumption(); }
                                                                 mark before_upper_child_change;
-                                                                have at(before_upper_child_change, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp) by { assumption(); }
+                                                                have at(before_upper_child_change, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) by { assumption(); }
                                                                 have separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color)) by { assumption(); }
                                                                 have separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color)) by { assumption(); }
                                                                 have separate(memory(xid->__rb_parent_color), memory(xid->rb_left)) by { assumption(); }
@@ -1156,7 +1156,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     fact xs.model == xsib;
                                                                     fact gparent->rb_right == at(before_uncle_pointer_changes, tmp);
                                                                     fact parent->rb_left == node;
-                                                                    fact ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp;
+                                                                    fact ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp;
                                                                 } {
                                                                     RbTree::Empty => {
                                                                         unfold(xs);
@@ -1176,7 +1176,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             separate(memory(parent->rb_left), memory(xid->rb_right));
                                                                         };
                                                                         let xs = fold(rb_at(0), { model: xsib });
-                                                                        transport(at(before_upper_child_change, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp), ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp);
+                                                                        transport(at(before_upper_child_change, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
                                                                     },
                                                                     RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                         let { left: yl_at, right: yr_at } = unfold(xs);
@@ -1196,7 +1196,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             separate(memory(parent->rb_left), memory(xid->rb_right));
                                                                         };
                                                                         let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
-                                                                        transport(at(before_upper_child_change, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp), ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp);
+                                                                        transport(at(before_upper_child_change, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
                                                                     },
                                                                 }
                                                                 let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
@@ -1578,7 +1578,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         have separate(memory(node->rb_left), memory(node->rb_right)) by { assumption(); }
                                                         mark before_triangle_grandparent_tag;
                                                         have at(before_triangle_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)) by { assumption(); }
-                                                        have at(before_triangle_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) by { assumption(); }
+                                                        have at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { assumption(); }
                                                         have separate(memory(gparent->__rb_parent_color), memory(parent->rb_left)) by { assumption(); }
                                                         have separate(memory(gparent->__rb_parent_color), memory(node->rb_right)) by { assumption(); }
                                                         have at(before_triangle_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp)) by { assumption(); }
@@ -1590,7 +1590,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             fact node->rb_right == parent;
                                                             fact gparent->rb_left == at(triangle_uncle_pointer, tmp);
                                                             fact (gparent->__rb_parent_color & 1) == color_bit(ucolor);
-                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
+                                                            fact ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp;
                                                             fact parent->rb_left == tmp;
                                                             fact node->rb_left == at(before_inner_node_left, node->rb_left);
                                                             fact parent->rb_right == at(before_inner_parent_right, parent->rb_right);
@@ -1622,8 +1622,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
                                                                     separate(memory(gparent->__rb_parent_color), memory(node->rb_right));
                                                                 };
-                                                                transport(at(before_triangle_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) using {
-                                                                    at(before_triangle_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                transport(at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
+                                                                    at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
                                                                     separate(memory(gparent->__rb_parent_color), memory(node->rb_right));
                                                                 };
@@ -1706,8 +1706,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     separate(memory(gparent->__rb_parent_color), memory(node->rb_right));
                                                                     separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
                                                                 };
-                                                                transport(at(before_triangle_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) using {
-                                                                    at(before_triangle_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                transport(at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
+                                                                    at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
                                                                     separate(memory(gparent->__rb_parent_color), memory(node->rb_right));
                                                                     separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
@@ -1732,7 +1732,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         have at(before_inner_parent_color, gparent->rb_left == at(triangle_uncle_pointer, tmp)) by { assumption(); }
                                                         have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color)) by { assumption(); }
                                                         have at(before_inner_parent_color, (gparent->__rb_parent_color & 1) == color_bit(ucolor)) by { assumption(); }
-                                                        have at(before_inner_parent_color, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) by { assumption(); }
+                                                        have at(before_inner_parent_color, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { assumption(); }
                                                         have separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color)) by { assumption(); }
                                                         have at(before_inner_parent_color, parent->rb_left == tmp) by { assumption(); }
                                                         have at(before_inner_parent_color, node->rb_left == at(before_inner_node_left, node->rb_left)) by { assumption(); }
@@ -1757,8 +1757,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             at(before_inner_parent_color, (gparent->__rb_parent_color & 1) == color_bit(ucolor));
                                                             separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color));
                                                         };
-                                                        transport(at(before_inner_parent_color, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) using {
-                                                            at(before_inner_parent_color, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                        transport(at(before_inner_parent_color, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
+                                                            at(before_inner_parent_color, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                             separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color));
                                                         };
                                                         transport(at(before_inner_parent_color, gparent->rb_left == at(triangle_uncle_pointer, tmp)), gparent->rb_left == at(triangle_uncle_pointer, tmp)) using {
@@ -1780,7 +1780,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         step();
                                                         mark before_outer_grandparent_tag;
                                                         have at(before_outer_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)) by { assumption(); }
-                                                        have at(before_outer_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) by { assumption(); }
+                                                        have at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { assumption(); }
                                                         have separate(memory(gparent->__rb_parent_color), memory(gparent->rb_right)) by { assumption(); }
                                                         have separate(memory(gparent->__rb_parent_color), memory(parent->rb_left)) by { assumption(); }
                                                         have at(before_outer_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp)) by { assumption(); }
@@ -1795,7 +1795,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             fact node->rb_right == at(triangle_old_parent, parent);
                                                             fact gparent->rb_left == at(triangle_uncle_pointer, tmp);
                                                             fact (gparent->__rb_parent_color & 1) == color_bit(ucolor);
-                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
+                                                            fact ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp;
                                                         } {
                                                             RbTree::Empty => {
                                                                 unfold(nl_at);
@@ -1813,8 +1813,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     separate(memory(gparent->__rb_parent_color), memory(gparent->rb_right));
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
                                                                 };
-                                                                transport(at(before_outer_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) using {
-                                                                    at(before_outer_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                transport(at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
+                                                                    at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                                     separate(memory(gparent->__rb_parent_color), memory(gparent->rb_right));
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
                                                                 };
@@ -1864,8 +1864,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
                                                                     separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
                                                                 };
-                                                                transport(at(before_outer_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) using {
-                                                                    at(before_outer_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                transport(at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
+                                                                    at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                                     separate(memory(gparent->__rb_parent_color), memory(gparent->rb_right));
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
                                                                     separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
@@ -1992,7 +1992,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have separate(memory(gparent->rb_left), memory(xid->rb_right)) by { assumption(); }
                                                                 have separate(memory(node->rb_right), memory(xid->rb_right)) by { assumption(); }
                                                                 mark before_triangle_upper_link;
-                                                                have at(before_triangle_upper_link, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp) by { assumption(); }
+                                                                have at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) by { assumption(); }
                                                                 have separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color)) by { assumption(); }
                                                                 have separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color)) by { assumption(); }
                                                                 have separate(memory(xid->__rb_parent_color), memory(xid->rb_left)) by { assumption(); }
@@ -2002,13 +2002,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     fact xs.model == xsib;
                                                                     fact node->rb_right == at(triangle_old_parent, parent);
                                                                     fact gparent->rb_left == at(triangle_uncle_pointer, tmp);
-                                                                    fact ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp;
+                                                                    fact ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp;
                                                                 } {
                                                                     RbTree::Empty => {
                                                                         unfold(xs);
                                                                         step();
-                                                                        transport(at(before_triangle_upper_link, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp), ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp) using {
-                                                                            at(before_triangle_upper_link, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp);
+                                                                        transport(at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) using {
+                                                                            at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
                                                                             separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color));
                                                                             separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color));
                                                                             separate(memory(xid->__rb_parent_color), memory(xid->rb_left));
@@ -2033,8 +2033,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                         let { left: yl_at, right: yr_at } = unfold(xs);
                                                                         step();
-                                                                        transport(at(before_triangle_upper_link, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp), ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp) using {
-                                                                            at(before_triangle_upper_link, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp);
+                                                                        transport(at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) using {
+                                                                            at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
                                                                             separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color));
                                                                             separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color));
                                                                             separate(memory(xid->__rb_parent_color), memory(xid->rb_left));
@@ -2579,7 +2579,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         have separate(memory(node->rb_right), memory(node->rb_left)) by { assumption(); }
                                                         mark before_triangle_grandparent_tag;
                                                         have at(before_triangle_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)) by { assumption(); }
-                                                        have at(before_triangle_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) by { assumption(); }
+                                                        have at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { assumption(); }
                                                         have separate(memory(gparent->__rb_parent_color), memory(parent->rb_right)) by { assumption(); }
                                                         have separate(memory(gparent->__rb_parent_color), memory(node->rb_left)) by { assumption(); }
                                                         have at(before_triangle_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp)) by { assumption(); }
@@ -2591,7 +2591,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             fact node->rb_left == parent;
                                                             fact gparent->rb_right == at(triangle_uncle_pointer, tmp);
                                                             fact (gparent->__rb_parent_color & 1) == color_bit(ucolor);
-                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
+                                                            fact ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp;
                                                             fact parent->rb_right == tmp;
                                                             fact node->rb_right == at(before_inner_node_left, node->rb_right);
                                                             fact parent->rb_left == at(before_inner_parent_right, parent->rb_left);
@@ -2623,8 +2623,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
                                                                     separate(memory(gparent->__rb_parent_color), memory(node->rb_left));
                                                                 };
-                                                                transport(at(before_triangle_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) using {
-                                                                    at(before_triangle_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                transport(at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
+                                                                    at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
                                                                     separate(memory(gparent->__rb_parent_color), memory(node->rb_left));
                                                                 };
@@ -2707,8 +2707,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     separate(memory(gparent->__rb_parent_color), memory(node->rb_left));
                                                                     separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
                                                                 };
-                                                                transport(at(before_triangle_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) using {
-                                                                    at(before_triangle_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                transport(at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
+                                                                    at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
                                                                     separate(memory(gparent->__rb_parent_color), memory(node->rb_left));
                                                                     separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
@@ -2733,7 +2733,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         have at(before_inner_parent_color, gparent->rb_right == at(triangle_uncle_pointer, tmp)) by { assumption(); }
                                                         have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color)) by { assumption(); }
                                                         have at(before_inner_parent_color, (gparent->__rb_parent_color & 1) == color_bit(ucolor)) by { assumption(); }
-                                                        have at(before_inner_parent_color, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) by { assumption(); }
+                                                        have at(before_inner_parent_color, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { assumption(); }
                                                         have separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color)) by { assumption(); }
                                                         have at(before_inner_parent_color, parent->rb_right == tmp) by { assumption(); }
                                                         have at(before_inner_parent_color, node->rb_right == at(before_inner_node_left, node->rb_right)) by { assumption(); }
@@ -2758,8 +2758,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             at(before_inner_parent_color, (gparent->__rb_parent_color & 1) == color_bit(ucolor));
                                                             separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color));
                                                         };
-                                                        transport(at(before_inner_parent_color, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) using {
-                                                            at(before_inner_parent_color, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                        transport(at(before_inner_parent_color, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
+                                                            at(before_inner_parent_color, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                             separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color));
                                                         };
                                                         transport(at(before_inner_parent_color, gparent->rb_right == at(triangle_uncle_pointer, tmp)), gparent->rb_right == at(triangle_uncle_pointer, tmp)) using {
@@ -2781,7 +2781,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         step();
                                                         mark before_outer_grandparent_tag;
                                                         have at(before_outer_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)) by { assumption(); }
-                                                        have at(before_outer_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) by { assumption(); }
+                                                        have at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { assumption(); }
                                                         have separate(memory(gparent->__rb_parent_color), memory(gparent->rb_left)) by { assumption(); }
                                                         have separate(memory(gparent->__rb_parent_color), memory(parent->rb_right)) by { assumption(); }
                                                         have at(before_outer_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp)) by { assumption(); }
@@ -2796,7 +2796,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             fact node->rb_left == at(triangle_old_parent, parent);
                                                             fact gparent->rb_right == at(triangle_uncle_pointer, tmp);
                                                             fact (gparent->__rb_parent_color & 1) == color_bit(ucolor);
-                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
+                                                            fact ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp;
                                                         } {
                                                             RbTree::Empty => {
                                                                 unfold(nr_at);
@@ -2814,8 +2814,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     separate(memory(gparent->__rb_parent_color), memory(gparent->rb_left));
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
                                                                 };
-                                                                transport(at(before_outer_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) using {
-                                                                    at(before_outer_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                transport(at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
+                                                                    at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                                     separate(memory(gparent->__rb_parent_color), memory(gparent->rb_left));
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
                                                                 };
@@ -2865,8 +2865,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
                                                                     separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
                                                                 };
-                                                                transport(at(before_outer_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) using {
-                                                                    at(before_outer_grandparent_tag, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                transport(at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
+                                                                    at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                                     separate(memory(gparent->__rb_parent_color), memory(gparent->rb_left));
                                                                     separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
                                                                     separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
@@ -2993,7 +2993,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have separate(memory(gparent->rb_right), memory(xid->rb_left)) by { assumption(); }
                                                                 have separate(memory(node->rb_left), memory(xid->rb_left)) by { assumption(); }
                                                                 mark before_triangle_upper_link;
-                                                                have at(before_triangle_upper_link, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp) by { assumption(); }
+                                                                have at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) by { assumption(); }
                                                                 have separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color)) by { assumption(); }
                                                                 have separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color)) by { assumption(); }
                                                                 have separate(memory(xid->__rb_parent_color), memory(xid->rb_right)) by { assumption(); }
@@ -3003,13 +3003,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     fact xs.model == xsib;
                                                                     fact node->rb_left == at(triangle_old_parent, parent);
                                                                     fact gparent->rb_right == at(triangle_uncle_pointer, tmp);
-                                                                    fact ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp;
+                                                                    fact ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp;
                                                                 } {
                                                                     RbTree::Empty => {
                                                                         unfold(xs);
                                                                         step();
-                                                                        transport(at(before_triangle_upper_link, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp), ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp) using {
-                                                                            at(before_triangle_upper_link, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp);
+                                                                        transport(at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) using {
+                                                                            at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
                                                                             separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color));
                                                                             separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color));
                                                                             separate(memory(xid->__rb_parent_color), memory(xid->rb_right));
@@ -3034,8 +3034,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                         let { left: yl_at, right: yr_at } = unfold(xs);
                                                                         step();
-                                                                        transport(at(before_triangle_upper_link, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp), ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp) using {
-                                                                            at(before_triangle_upper_link, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp);
+                                                                        transport(at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) using {
+                                                                            at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
                                                                             separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color));
                                                                             separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color));
                                                                             separate(memory(xid->__rb_parent_color), memory(xid->rb_right));
@@ -3296,7 +3296,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have separate(memory(gparent->rb_left), memory(parent->rb_left)) by { assumption(); }
                                                     have separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color)) by { assumption(); }
                                                     have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color)) by { assumption(); }
-                                                    have at(before_grandparent_links, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp) by { assumption(); }
+                                                    have at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { assumption(); }
                                                     have separate(memory(gparent->__rb_parent_color), memory(gparent->rb_left)) by { assumption(); }
                                                     have separate(memory(gparent->__rb_parent_color), memory(parent->rb_right)) by { assumption(); }
                                                     step();
@@ -3454,7 +3454,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         match cs.model ensuring {
                                                             owns sn: rb_at(tmp);
                                                             fact sn.model == rb_reparent(csib, gparent);
-                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
+                                                            fact ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp;
                                                             fact gparent->rb_left == at(before_uncle_pointer_changes, tmp);
                                                             fact parent->rb_right == node;
                                                         } {
@@ -3478,7 +3478,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(rb_reparent(csib, gparent) == RbTree::Empty);
                                                                     solve();
                                                                 }
-                                                                transport(at(before_grandparent_links, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                transport(at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                                 transport(at(before_uncle_pointer_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp)), gparent->rb_left == at(before_uncle_pointer_changes, tmp)) using {
                                                                     at(before_uncle_pointer_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp));
                                                                     separate(memory(gparent->rb_left), memory(gparent->rb_right));
@@ -3530,7 +3530,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(rb_reparent(csib, gparent) == RbTree::Node(sx, gparent, scol, sl, sr));
                                                                     solve();
                                                                 }
-                                                                transport(at(before_grandparent_links, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                transport(at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                                 transport(at(before_uncle_pointer_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp)), gparent->rb_left == at(before_uncle_pointer_changes, tmp)) using {
                                                                     at(before_uncle_pointer_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp));
                                                                     separate(memory(gparent->rb_left), memory(gparent->rb_right));
@@ -3545,7 +3545,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 };
                                                             },
                                                         }
-                                                        transport(at(before_grandparent_links, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                        transport(at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
                                                         have (gparent->__rb_parent_color & 1) == 1 by {
                                                             rewrite((gparent->__rb_parent_color & 1) == color_bit(ucolor));
                                                             rewrite(ucolor == Color::Black);
@@ -3645,7 +3645,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have separate(memory(gparent->rb_left), memory(xid->rb_left)) by { assumption(); }
                                                                 have separate(memory(parent->rb_right), memory(xid->rb_left)) by { assumption(); }
                                                                 mark before_upper_child_change;
-                                                                have at(before_upper_child_change, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp) by { assumption(); }
+                                                                have at(before_upper_child_change, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) by { assumption(); }
                                                                 have separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color)) by { assumption(); }
                                                                 have separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color)) by { assumption(); }
                                                                 have separate(memory(xid->__rb_parent_color), memory(xid->rb_right)) by { assumption(); }
@@ -3655,7 +3655,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     fact xs.model == xsib;
                                                                     fact gparent->rb_left == at(before_uncle_pointer_changes, tmp);
                                                                     fact parent->rb_right == node;
-                                                                    fact ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp;
+                                                                    fact ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp;
                                                                 } {
                                                                     RbTree::Empty => {
                                                                         unfold(xs);
@@ -3675,7 +3675,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             separate(memory(parent->rb_right), memory(xid->rb_left));
                                                                         };
                                                                         let xs = fold(rb_at(0), { model: xsib });
-                                                                        transport(at(before_upper_child_change, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp), ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp);
+                                                                        transport(at(before_upper_child_change, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
                                                                     },
                                                                     RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                         let { left: yl_at, right: yr_at } = unfold(xs);
@@ -3695,7 +3695,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             separate(memory(parent->rb_right), memory(xid->rb_left));
                                                                         };
                                                                         let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
-                                                                        transport(at(before_upper_child_change, ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp), ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp);
+                                                                        transport(at(before_upper_child_change, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
                                                                     },
                                                                 }
                                                                 let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });

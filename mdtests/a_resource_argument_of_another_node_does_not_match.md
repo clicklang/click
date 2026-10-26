@@ -4,7 +4,7 @@
 enclosing `rb_old`. Resource argument identity ignores the view a cast
 selects, but it still compares address and designation: `rb_other` is a
 different pointer, so the held instance does not supply the callee's
-`size_metadata((struct rb_node*)(void*)node)`. The positive form, with the
+`size_metadata(node as (void *) as (struct rb_node *))`. The positive form, with the
 same node through another view, is
 [`a_resource_argument_matches_across_a_cast_that_selects_another_view.md`](a_resource_argument_matches_across_a_cast_that_selects_another_view.md).
 
@@ -32,18 +32,18 @@ verifying "a_resource_argument_of_another_node_does_not_match.c";
 
 resource size_metadata(node: struct rb_node*) {
     field value: int32;
-    owns ((struct sized_node*)(void*)node)->size;
-    fact ((struct sized_node*)(void*)node)->size == value;
+    owns (node as (void *) as (struct sized_node *))->size;
+    fact (node as (void *) as (struct sized_node *))->size == value;
 }
 
 int32 set_size(struct sized_node* node) {
     requires defined(&node->size);
-    owns parent: size_metadata((struct rb_node*)(void*)node);
+    owns parent: size_metadata(node as (void *) as (struct rb_node *));
     ensures parent.value == 1;
 } by {
     unfold(parent);
     step_until(function.exit);
-    let parent = fold(size_metadata((struct rb_node*)(void*)node), { value: 1 });
+    let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), { value: 1 });
     solve();
 }
 

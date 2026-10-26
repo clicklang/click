@@ -1,7 +1,7 @@
 # A resource argument matches across a cast that selects another view
 
 `caller` holds `size_metadata(rb_old)`, with `rb_old`'s own view. `set_size`
-requires `size_metadata((struct rb_node*)(void*)node)` where `node` is
+requires `size_metadata(node as (void *) as (struct rb_node *))` where `node` is
 `container_of(rb_old, ...)`: the cast selects the enclosing `sized_node`'s
 view, but the pointer has the same address and designation. A resource names
 the object at its argument's address, so the held instance matches; the view
@@ -34,18 +34,18 @@ verifying "a_resource_argument_matches_across_a_cast_that_selects_another_view.c
 
 resource size_metadata(node: struct rb_node*) {
     field value: int32;
-    owns ((struct sized_node*)(void*)node)->size;
-    fact ((struct sized_node*)(void*)node)->size == value;
+    owns (node as (void *) as (struct sized_node *))->size;
+    fact (node as (void *) as (struct sized_node *))->size == value;
 }
 
 int32 set_size(struct sized_node* node) {
     requires defined(&node->size);
-    owns parent: size_metadata((struct rb_node*)(void*)node);
+    owns parent: size_metadata(node as (void *) as (struct rb_node *));
     ensures parent.value == 1;
 } by {
     unfold(parent);
     step_until(function.exit);
-    let parent = fold(size_metadata((struct rb_node*)(void*)node), { value: 1 });
+    let parent = fold(size_metadata(node as (void *) as (struct rb_node *)), { value: 1 });
     solve();
 }
 

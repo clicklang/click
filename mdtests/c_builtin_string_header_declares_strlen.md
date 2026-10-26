@@ -9,7 +9,7 @@ the terminator without any narrowing.
 
 Under the user-space target plain `char` is signed, so `s` points at `int8`
 bytes while `cstr_at` and the `strlen` contract read `uint8` bytes. The
-resource's facts state the explicit byte view `(uint8*)s`, the contract
+resource's facts state the explicit byte view `s as (uint8 *)`, the contract
 accepts the `char` pointer as its byte pointer, and `s[result]`, a signed
 read, is the conversion of the terminator byte the string holds at its
 length, so it is zero too.

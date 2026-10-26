@@ -2466,7 +2466,7 @@ fn synthesize_surface_atomic_proposition(
     // An `int32` order reads its operands' words as `int32`. An operand
     // spelled in `uint32` (a `uint32` local or parameter whose word a sign
     // cast compared signed) would make the spelled comparison unsigned, a
-    // different fact, so it is written converted, as `(int32)u < 0`.
+    // different fact, so it is written converted, as `u as int32 < 0`.
     let signed_order = matches!(
         condition,
         ConditionTerm::Compare {

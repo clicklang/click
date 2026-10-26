@@ -178,7 +178,7 @@ pub(crate) fn contract_source(name: &str, pieces: &[FormatPiece]) -> String {
                 contents.push(Content::Bytes(bytes.clone()));
             }
             FormatPiece::Unsigned { width, pad } => {
-                let value = format!("(uint64) a{argument}");
+                let value = format!("a{argument} as uint64");
                 parameters.push(format!("uint32 a{argument}"));
                 if *width == 0 {
                     lengths.push(format!("click::format::decimal_length({value})"));
@@ -256,7 +256,7 @@ pub(crate) fn contract_source(name: &str, pieces: &[FormatPiece]) -> String {
         ),
     });
     clauses.push("    owns uninitialized(buffer[0..size]);".to_string());
-    clauses.push(format!("    ensures result == (int32) ({total});"));
+    clauses.push(format!("    ensures result == ({total}) as int32;"));
     // The count is at most `INT_MAX` by the requirement above, so the
     // result is never negative; stating it spares each caller the cast.
     clauses.push("    ensures 0 <= result;".to_string());
@@ -297,13 +297,13 @@ pub(crate) fn contract_source(name: &str, pieces: &[FormatPiece]) -> String {
     // The same terminator read through the result, which is the count: a
     // caller states where its output ends with the value `snprintf` returned.
     clauses.push(
-        "    ensures (uint64) result < size implies buffer[(uint64) result] == 0u8;".to_string(),
+        "    ensures result as uint64 < size implies buffer[result as uint64] == 0u8;".to_string(),
     );
     clauses.push(format!(
         "    ensures size != 0u64 implies ({total} >= size implies buffer[size - 1u64] == 0u8);"
     ));
     clauses.push(
-        "    ensures size != 0u64 implies ((uint64) result >= size implies buffer[size - 1u64] == 0u8);"
+        "    ensures size != 0u64 implies (result as uint64 >= size implies buffer[size - 1u64] == 0u8);"
             .to_string(),
     );
     clauses.push(format!(
@@ -373,13 +373,13 @@ mod tests {
         for clause in [
             "extern int32 __click_snprintf_2575206b42(uint8 buffer[], uint64 size, uint32 a0) {",
             "    requires size <= 2147483647u64;",
-            "    requires click::format::decimal_length((uint64) a0) <= 2147483644u64;",
+            "    requires click::format::decimal_length(a0 as uint64) <= 2147483644u64;",
             "    owns uninitialized(buffer[0..size]);",
-            "    ensures result == (int32) (click::format::decimal_length((uint64) a0) + 3u64);",
+            "    ensures result == (click::format::decimal_length(a0 as uint64) + 3u64) as int32;",
             "    ensures 0 <= result;",
-            "    ensures (uint64) result < size implies buffer[(uint64) result] == 0u8;",
-            "    ensures forall (k: uint64) { k < click::format::decimal_length((uint64) a0) and k + 1u64 < size implies buffer[k] == click::format::decimal_digit((uint64) a0, k) };",
-            "    ensures click::format::decimal_length((uint64) a0) + 1u64 + 1u64 < size implies buffer[click::format::decimal_length((uint64) a0) + 1u64] == 107u8;",
+            "    ensures result as uint64 < size implies buffer[result as uint64] == 0u8;",
+            "    ensures forall (k: uint64) { k < click::format::decimal_length(a0 as uint64) and k + 1u64 < size implies buffer[k] == click::format::decimal_digit(a0 as uint64, k) };",
+            "    ensures click::format::decimal_length(a0 as uint64) + 1u64 + 1u64 < size implies buffer[click::format::decimal_length(a0 as uint64) + 1u64] == 107u8;",
         ] {
             assert!(contract.contains(clause), "{clause}\n{contract}");
         }

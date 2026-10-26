@@ -108,10 +108,10 @@ theorem list_has_typed_heads(xs: List<struct node*>) {
                 apply(typed_head(retain(head)));
                 apply(typed_tail(tail));
                 apply(list::append_cons(head, tail, tail));
-                apply(list::append_cons((void*)head, List<void*>::Nil, List<void*>::Nil));
-                apply(list::append_cons((int32*)head, List<int32*>::Nil, List<int32*>::Nil));
-                apply(list::append_cons(retain((void*)head), List<void*>::Nil, List<void*>::Nil));
-                apply(list::append_cons(retain((int32*)head), List<int32*>::Nil, List<int32*>::Nil));
+                apply(list::append_cons(head as (void *), List<void*>::Nil, List<void*>::Nil));
+                apply(list::append_cons(head as (int32 *), List<int32*>::Nil, List<int32*>::Nil));
+                apply(list::append_cons(retain(head as (void *)), List<void*>::Nil, List<void*>::Nil));
+                apply(list::append_cons(retain(head as (int32 *)), List<int32*>::Nil, List<int32*>::Nil));
                 normalize();
             }
         }
@@ -2032,12 +2032,12 @@ fn expanded_uint8_facts_print_as_parseable_typed_literals() {
 verifying "contains.c";
 int32 contains(uint8 p[], int32 n) {
     requires viewable(p[0..n]);
-    requires bytes::contains(p, 0, (uint64) n, 'x');
-    ensures bytes::contains(p, 0, (uint64) n, 'x') by {
+    requires bytes::contains(p, 0, n as uint64, 'x');
+    ensures bytes::contains(p, 0, n as uint64, 'x') by {
         step_until(function.exit);
         unfold(bytes::contains);
         obtain (found: uint64) {
-            0u64 <= found and found < (uint64) n and p[found] == 'x'
+            0u64 <= found and found < n as uint64 and p[found] == 'x'
         };
         witness { k: found };
         solve();
@@ -2071,7 +2071,7 @@ int32 contains(uint8 p[], int32 n) {
     };
     assert_eq!(
         crate::surface::printing::source_click_proposition(claim),
-        "click::bytes::contains(p, 0, ((uint64)n), 120u8)"
+        "click::bytes::contains(p, 0, (n as uint64), 120u8)"
     );
 }
 
@@ -3187,7 +3187,7 @@ fn nat_addition_agrees_with_integer_addition_and_rechecks_expansion() {
 
 #[test]
 fn signed_to_unsigned_interval_comparisons_expand_and_recheck_both_sides() {
-    for goal in ["1u32 <= ((uint32)x)", "((uint32)x) <= 4u32"] {
+    for goal in ["1u32 <= (x as uint32)", "(x as uint32) <= 4u32"] {
         let source = format!(
             "theorem cast_bound(x: int32) {{ requires 0 < x; requires x <= 4; ensures {goal} by {{ solve() using {{ 0 < x; x <= 4; }} }} }}"
         );
@@ -3195,7 +3195,7 @@ fn signed_to_unsigned_interval_comparisons_expand_and_recheck_both_sides() {
         let expanded =
             expand_c0_claim_source_by_label(&source, &[], "cast_bound.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
-        assert!(verify_c0_sources(&source.replace(goal, "5u32 <= ((uint32)x)"), &[]).is_err());
+        assert!(verify_c0_sources(&source.replace(goal, "5u32 <= (x as uint32)"), &[]).is_err());
     }
 }
 

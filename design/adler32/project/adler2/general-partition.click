@@ -38,14 +38,14 @@ theorem adler_general_short_integer_remainder(n: Integer, d: Integer) {
 theorem adler_u64_index_observation(value: uint64) {
  requires 0 <= to_integer(value);
  requires to_integer(value) <= 2147483647;
- ensures to_integer((int32)(uint32)value) == to_integer(value) and (0 <= (int32)(uint32)value and (int32)(uint32)value <= 2147483647) by {
-  have to_integer((int32)(uint32)value) == to_integer(value) by { arithmetic_certificate rules {
+ ensures to_integer(value as uint32 as int32) == to_integer(value) and (0 <= value as uint32 as int32 and value as uint32 as int32 <= 2147483647) by {
+  have to_integer(value as uint32 as int32) == to_integer(value) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer(value) => 0 <= to_integer(value);
    premise 1: to_integer(value) <= 2147483647 => to_integer(value) <= 2147483647;
-   integer_cast_identity bounds [0, 1] => to_integer((int32)(uint32)value) == to_integer(value);
+   integer_cast_identity bounds [0, 1] => to_integer(value as uint32 as int32) == to_integer(value);
    conclusion 0;
   } }
-  have 0 <= to_integer((int32)(uint32)value) by { rewrite(to_integer((int32)(uint32)value) == to_integer(value)); assumption(); }
+  have 0 <= to_integer(value as uint32 as int32) by { rewrite(to_integer(value as uint32 as int32) == to_integer(value)); assumption(); }
   both { assumption(); } and { both { assumption(); } and { normalize(); } }
  }
 }
@@ -97,7 +97,7 @@ theorem adler_full_batch_within_advance(remaining: int32) {
  ensures to_integer((22208 - remaining - 4) + 4) == to_integer(22208 - remaining) by solve() using { 0 <= remaining; remaining <= 22204; };
 }
 
-// Full-width (uint64) partition facts for the per-batch general proof.
+// Full-width partition as uint64 facts for the per-batch general proof.
 // They need no signed-range bound: each is proved through exact Integers.
 
 theorem adler_aligned_outer_partition_u64(p: Integer) {
@@ -287,18 +287,18 @@ theorem adler_outer_remainder_integer_bounds_u64(p: uint64) {
 
 theorem adler_outer_remainder_signed_bound_u64(p: uint64) {
  requires p % 4u64 == 0u64;
- ensures 0 <= (int32)(uint32)(p % 22208u64) and (int32)(uint32)(p % 22208u64) <= 22204 by {
+ ensures 0 <= (p % 22208u64) as uint32 as int32 and (p % 22208u64) as uint32 as int32 <= 22204 by {
   apply(adler_outer_remainder_integer_bounds_u64(p)) using { p % 4u64 == 0u64; };
   have to_integer(p % 22208u64) <= 2147483647 by solve() using { to_integer(p % 22208u64) <= 22204; };
   apply(adler_u64_index_observation(p % 22208u64)) using { 0 <= to_integer(p % 22208u64); to_integer(p % 22208u64) <= 2147483647; };
-  have to_integer((int32)(uint32)(p % 22208u64)) <= 22204 by { rewrite(to_integer((int32)(uint32)(p % 22208u64)) == to_integer(p % 22208u64)); assumption(); }
+  have to_integer((p % 22208u64) as uint32 as int32) <= 22204 by { rewrite(to_integer((p % 22208u64) as uint32 as int32) == to_integer(p % 22208u64)); assumption(); }
   both { assumption(); } and { assumption(); }
  }
 }
 
 theorem adler_outer_remainder_signed_divisible_u64(p: uint64) {
  requires p % 4u64 == 0u64;
- ensures ((int32)(uint32)(p % 22208u64)) % 4 == 0 by {
+ ensures ((p % 22208u64) as uint32 as int32) % 4 == 0 by {
   apply(adler_outer_remainder_bounds_u64(p)) using { p % 4u64 == 0u64; };
   apply(adler_outer_remainder_integer_bounds_u64(p)) using { p % 4u64 == 0u64; };
   have to_integer(p % 22208u64) <= 2147483647 by solve() using { to_integer(p % 22208u64) <= 22204; };
@@ -306,11 +306,11 @@ theorem adler_outer_remainder_signed_divisible_u64(p: uint64) {
   apply(integer::uint64_remainder_to_integer(p % 22208u64, 4u64)) using { 4u64 != 0u64; to_integer(4u64) != 0; };
   have to_integer((p % 22208u64) % 4u64) == 0 by { rewrite((p % 22208u64) % 4u64 == 0u64); normalize(); }
   have truncating_remainder(to_integer(p % 22208u64), 4) == 0 by solve() using { to_integer((p % 22208u64) % 4u64) == truncating_remainder(to_integer(p % 22208u64), to_integer(4u64)); to_integer((p % 22208u64) % 4u64) == 0; };
-  have defined(((int32)(uint32)(p % 22208u64)) % 4) by normalize();
-  apply(integer::int32_remainder_to_integer((int32)(uint32)(p % 22208u64), 4)) using { defined(((int32)(uint32)(p % 22208u64)) % 4); to_integer(4) != 0; };
-  have to_integer(((int32)(uint32)(p % 22208u64)) % 4) == 0 by {
-   rewrite(to_integer(((int32)(uint32)(p % 22208u64)) % 4) == truncating_remainder(to_integer((int32)(uint32)(p % 22208u64)), to_integer(4)));
-   rewrite(to_integer((int32)(uint32)(p % 22208u64)) == to_integer(p % 22208u64));
+  have defined(((p % 22208u64) as uint32 as int32) % 4) by normalize();
+  apply(integer::int32_remainder_to_integer((p % 22208u64) as uint32 as int32, 4)) using { defined(((p % 22208u64) as uint32 as int32) % 4); to_integer(4) != 0; };
+  have to_integer(((p % 22208u64) as uint32 as int32) % 4) == 0 by {
+   rewrite(to_integer(((p % 22208u64) as uint32 as int32) % 4) == truncating_remainder(to_integer((p % 22208u64) as uint32 as int32), to_integer(4)));
+   rewrite(to_integer((p % 22208u64) as uint32 as int32) == to_integer(p % 22208u64));
    assumption();
   }
   assumption();

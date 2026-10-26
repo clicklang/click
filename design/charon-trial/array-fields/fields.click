@@ -14,7 +14,7 @@ fn write(state: &mut Lanes, index: usize, value: u32) {
     ensures state.values[3] == old(state.values[3]);
     ensures state.marker == old(state.marker);
 } by {
-    have ((int32)(uint32)index) == 1 by { rewrite(index == 1u64); solve(); }
+    have (index as uint32 as int32) == 1 by { rewrite(index == 1u64); solve(); }
 }
 fn array_first(values: &[u32; 4]) -> u32 {
     views values[0..4];

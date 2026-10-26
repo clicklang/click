@@ -8,9 +8,9 @@ fn integer_parameter_preserves_machine_literal_and_cast_behavior() {
         ("int64", "2147483648"),
         ("int64", "-2147483649"),
         ("uint64", "18446744073709551615"),
-        ("uint32", "(uint32) 1"),
-        ("uint32", "(uint32) (-1)"),
-        ("uint32", "(uint32) (1 + 2)"),
+        ("uint32", "1 as uint32"),
+        ("uint32", "(-1) as uint32"),
+        ("uint32", "(1 + 2) as uint32"),
     ] {
         for extra in ["", ", unused: Integer"] {
             let source = format!(
@@ -1558,7 +1558,7 @@ fn signed_int32_direct_compound_interval_is_publicly_checked() {
         .expect_err("out-of-range signed interval endpoints must be rejected");
     let wrong_carrier = source.replace(
         "premise 0: 0 <= to_integer(n + 1) => 0 <= to_integer(n + 1);",
-        "premise 0: 0 <= to_integer(n + 1) => ((uint32)(n + 1)) <= 2u32;",
+        "premise 0: 0 <= to_integer(n + 1) => ((n + 1) as uint32) <= 2u32;",
     );
     assert_ne!(wrong_carrier, source);
     verify_click_theorems(&wrong_carrier)
@@ -4598,7 +4598,7 @@ fn a_rust_sidecar_compares_a_bitwise_operand_without_parentheses() {
 fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     let c_shaped = "verifying \"arithmetic.c\"; \
         uint32 add_byte(uint32 sum, uint8 byte) { requires sum <= 4294967040u32; \
-        ensures result == sum + (uint32)byte; } \
+        ensures result == sum + byte as uint32; } \
         bool touch(uint64 count, bool flag) { ensures result == flag; }";
     let rust = "verifying \"arithmetic.rs\"; \
         fn add_byte(sum: u32, byte: u8) -> u32 { requires sum <= 4294967040u32; \
@@ -5133,7 +5133,7 @@ fn a_whole_struct_view_reads_and_does_not_write() {
 /// A function-entry alignment fact cited after execution is qualified side
 /// by side, `at(S, address(p) & 7u64) == at(S, 0u64)`. Click has no cast
 /// spelling for the address inside, so it renders as the `aligned` sugar
-/// read at that snapshot rather than as an unparseable `(uint64)p`.
+/// read at that snapshot rather than as an unparseable `p as uint64`.
 #[test]
 fn snapshot_read_alignment_fact_renders_as_aligned() {
     let source = "theorem entry_alignment(arena: int32*) { \
@@ -5222,7 +5222,7 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
             (0..end).fold(0, |acc, k| { acc + to_integer(bytes[k] as i32) })
         }
         function c_prefix(bytes: const uint8*, end: uint64) -> Integer {
-            (0..end).fold(0, |acc, k| { acc + to_integer((int32)bytes[k]) })
+            (0..end).fold(0, |acc, k| { acc + to_integer(bytes[k] as int32) })
         }
         theorem three_hundred_is_big() {
             ensures big(300u32) by { unfold(big(300u32)); normalize(); }

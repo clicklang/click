@@ -449,10 +449,10 @@ arena. Its terms come from the one conversion table
 (`machine_integer::conversion::lower` and `convert_term`), which C's
 conversions use too, so a conversion has one term in every language: a
 result of 8 or 16 bits is the `MachineIntegerCast` node C builds, printed
-`(uint8)x` or `(int8)x`, and is filed with its destination's range as C's
+`x as uint8` or `x as int8`, and is filed with its destination's range as C's
 is, and with nothing else: the identity with its operand is a checked
 (specification) narrowing's, filed beside its range obligations. Rule K7 (below) makes its word the operand's low bits, so
-`(uint8)x == (x & 255u32)` holds with no fact. Widening uses source
+`x as uint8 == (x & 255u32)` holds with no fact. Widening uses source
 signedness before the destination interpretation. Conversion construction
 inspects only a bounded number of root nodes.
 
@@ -532,11 +532,11 @@ subterm is built, interned or keyed.
 
 Because operators and comparisons read words, σ stays visible only on a
 value at rest: a local, a stored cell, a returned value, or an argument.
-Printed facts and steps show it as `((uint32)x)` or `((int32)x)` there and
+Printed facts and steps show it as `(x as uint32)` or `(x as int32)` there and
 nowhere else. A comparison reads its operands' words, so an `int32` order
 of a `uint32` value's word is spelled with the operand converted: the case
 condition the implicit tail synthesizes for `bool set = (int)u < 0;` is
-`(int32)u < 0`, which lowers back to that order, where the bare `u < 0` would
+`u as int32 < 0`, which lowers back to that order, where the bare `u < 0` would
 be the `uint32` order (`surface_synthesis::bitvector_spells_uint32`,
 `mdtests/execute_splits_a_sign_cast_order_as_a_signed_comparison.md`,
 `rust_execute_splits_a_sign_cast_order_as_a_signed_comparison` in
@@ -644,7 +644,7 @@ stated range (`conversion::narrow_widening`), never by the bare word
 comparison it uses for σ: a word merely tagged narrow is not promoted. A
 checked narrowing of a widened value is the narrowing of `v` from `v`'s
 format, and files its identity as before. A promoted narrow value at rest
-prints as `(int32)c` or `(uint32)c`, as σ does; inside an operation it
+prints as `c as int32` or `c as uint32`, as σ does; inside an operation it
 prints as `c`.
 
 ## Wide runtime scalars
@@ -1141,7 +1141,7 @@ extension (zero extension for an unsigned source); the word is the value's
 canonical carrier, so the source's own range serves as the two bounds. C's narrowing into those types is a typed
 `MachineIntegerCast` node; the rule compares it with the canonical cast, and
 also looks through a C conversion from a 32-bit type that contains the
-destination (`(uint16)(int32)w`) to the carrier beneath it, under the same
+destination (`w as int32 as uint16`) to the carrier beneath it, under the same
 bounds. A different mask, operand, or destination is refused; widening after an intervening truncation cannot be
 mistaken for a direct cast of the original value. These forms connect native
 Rust narrowing stores to their full-width modulo results.
@@ -1231,7 +1231,7 @@ closes by `assumption`.
 
 A typed integral cast is assumed the same way: `to_integer((T)x) ==
 to_integer(x)`, proved by `integer_cast_identity` from `x`'s bounds inside
-`T`'s range. With `1u64 <= x` and `x < 1000u64`, `1u32 <= (uint32)x` follows,
+`T`'s range. With `1u64 <= x` and `x < 1000u64`, `1u32 <= x as uint32` follows,
 and an `int` narrowed from a `long` reads its value the same way. A 64-to-32-bit
 word narrowing does not record its operand's signedness, so the identity names
 the operand the facts observe. An identity whose spelling names a different

@@ -6,7 +6,7 @@ Rewriting x to its constant must leave a closed goal that normalize can prove.
 ```click
 theorem cast_shift(x: uint64) {
     requires x == 1753877967969059832u64;
-    ensures (182457789u32 << ((0u32 - (uint32)(x >> 59u64)) & 31u32)) == 2684354560u32 by {
+    ensures (182457789u32 << ((0u32 - (x >> 59u64) as uint32) & 31u32)) == 2684354560u32 by {
         rewrite(x == 1753877967969059832u64);
         normalize();
     }

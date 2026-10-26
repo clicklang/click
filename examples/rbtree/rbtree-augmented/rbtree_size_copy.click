@@ -2,8 +2,8 @@ verifying "rbtree_size_copy.c";
 
 resource size_metadata(node: struct rb_node*) {
     field value: int32;
-    owns ((struct sized_node*)(void*)node)->size;
-    fact ((struct sized_node*)(void*)node)->size == value;
+    owns (node as (void *) as (struct sized_node *))->size;
+    fact (node as (void *) as (struct sized_node *))->size == value;
 }
 
 void sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {

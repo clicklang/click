@@ -58,8 +58,8 @@ resource counter_state(counter: struct mutex_counter*) {
     fact value == credits;
 }
 void* increment_counter(void* argument) {
-    owns access: mutex_use(&((struct mutex_counter*)argument)->mutex, counter_state((struct mutex_counter*)argument));
-    consumes increment_credit((struct mutex_counter*)argument);
+    owns access: mutex_use(&(argument as (struct mutex_counter *))->mutex, counter_state(argument as (struct mutex_counter *)));
+    consumes increment_credit(argument as (struct mutex_counter *));
     ensures result == 0;
 } by {
     step();

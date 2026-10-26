@@ -30,8 +30,8 @@ authorized resource reference(cell: struct cell*) {}
 verifying "modeled_pthread_thread_confined_resource_rejected.c";
 
 void *worker(void *argument) {
-    owns reference((struct cell *)argument);
-    ensures count(reference((struct cell *)argument)) >= 1;
+    owns reference(argument as (struct cell *));
+    ensures count(reference(argument as (struct cell *))) >= 1;
 }
 
 int32 run(struct cell *cell) {

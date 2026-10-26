@@ -278,7 +278,7 @@ theorem zlib_one_seeded_components(bytes: uint8[], initial_a: Integer, initial_b
   have adler_byte_sum(bytes, 1) == zlib_byte_integer(bytes[0]) by solve() using { adler_byte_sum(bytes, 1) == adler_byte_sum(bytes, 0) + zlib_byte_integer(bytes[0]); adler_byte_sum(bytes, 0) == 0; };
   have adler_weighted_sum(bytes, 1, 1) == zlib_byte_integer(bytes[0]) by solve() using { adler_weighted_sum(bytes, 1, 1) == adler_weighted_sum(bytes, 0, 0) + adler_byte_sum(bytes, 1); adler_weighted_sum(bytes, 0, 0) == 0; adler_byte_sum(bytes, 1) == zlib_byte_integer(bytes[0]); };
   apply(adler_byte_bounds(bytes[0])); apply(zlib_byte_integer_identity(bytes[0]));
-  have 0 <= initial_a + zlib_byte_integer(bytes[0]) by solve() using { 0 <= initial_a; 0 <= to_integer((int32)bytes[0]); zlib_byte_integer(bytes[0]) == to_integer((int32)bytes[0]); };
+  have 0 <= initial_a + zlib_byte_integer(bytes[0]) by solve() using { 0 <= initial_a; 0 <= to_integer(bytes[0] as int32); zlib_byte_integer(bytes[0]) == to_integer(bytes[0] as int32); };
   apply(adler_residue_add_left(initial_a + zlib_byte_integer(bytes[0]), initial_b));
   have (initial_a + zlib_byte_integer(bytes[0])) + initial_b == initial_b + initial_a + zlib_byte_integer(bytes[0]) by solve() using {};
   have truncating_remainder(initial_a + zlib_byte_integer(bytes[0]), 65521) + initial_b == initial_b + to_integer(a) by { rewrite(truncating_remainder(initial_a + zlib_byte_integer(bytes[0]), 65521) == to_integer(a)); solve() using {}; }

@@ -42,6 +42,9 @@ struct Spelled {
 // Contract-expression precedence, from `docs/reference/language/grammar.md`.
 const ATOM: u8 = 30;
 const UNARY: u8 = 20;
+/// `e as T`: looser than a unary operator, tighter than every binary one,
+/// and left-associative, `x as int32 as uint64`.
+const CAST: u8 = 15;
 const MULTIPLY: u8 = 14;
 const ADD: u8 = 13;
 const SHIFT: u8 = 12;
@@ -154,7 +157,8 @@ fn cast(type_name: &str, value: Spelled) -> Spelled {
         };
         return atom(format!("({} as {rust_name})", value.text));
     }
-    spelled(format!("({type_name}){}", operand(value, UNARY)), UNARY)
+    let target = crate::surface::diagnostics::click_cast_target(type_name);
+    spelled(format!("{} as {target}", operand(value, CAST)), CAST)
 }
 
 pub(super) fn display(proposition: &Proposition, labels: &mut SnapshotLabels) -> Option<String> {
@@ -1066,7 +1070,7 @@ impl Printer<'_> {
                 (wanted, Some(own)) => wanted != own,
             };
         // A value of unknown type shown converted keeps its own constants
-        // plain: `(uint32)(x + 1)`.
+        // plain: `(x + 1) as uint32`.
         let inner_hint = if hint == Hint::Unsigned32 && own.is_none() && !literal {
             None
         } else {
@@ -1877,7 +1881,7 @@ impl Printer<'_> {
                 let bytes = self
                     .bitvector(bytes, hint, depth)
                     .map_or_else(|| "…".into(), |bytes| bytes.text);
-                format!("((uint8 *){})[0..{bytes}]", operand(address, UNARY))
+                format!("({} as (uint8 *))[0..{bytes}]", operand(address, CAST))
             }
         }
     }
@@ -2757,9 +2761,9 @@ mod tests {
         );
         assert_eq!(
             render(&fact, &mut labels).unwrap(),
-            "(int32)(uint32)size < 0"
+            "size as uint32 as int32 < 0"
         );
-        assert_eq!(source(&fact, &mut labels), "(int32)(uint32)size < 0");
+        assert_eq!(source(&fact, &mut labels), "size as uint32 as int32 < 0");
     }
 
     #[test]
@@ -2798,7 +2802,7 @@ mod tests {
             },
             true,
         );
-        assert_eq!(source(&order, &mut labels), "(uint32)a <= 1073741823u32");
+        assert_eq!(source(&order, &mut labels), "a as uint32 <= 1073741823u32");
     }
 
     #[test]

@@ -25,7 +25,7 @@ verifying "same_type.c";
 uint64 read_unsigned(int64* p) {
     requires p != 0;
     views *p;
-    ensures result == (uint64)*p;
+    ensures result == *p as uint64;
 }
 
 int64 read_back(int64* p) {

@@ -13,8 +13,8 @@ verifying "frame.c";
 resource child_value(p: struct base*) {
     field number: int32;
     if p != 0 {
-        owns ((struct cell*)(void*)p)->value;
-        fact ((struct cell*)(void*)p)->value == number;
+        owns (p as (void *) as (struct cell *))->value;
+        fact (p as (void *) as (struct cell *))->value == number;
     }
 }
 int32 f(struct cell* root) {
@@ -22,7 +22,7 @@ int32 f(struct cell* root) {
     views root->base.left;
     owns child: child_value(root->base.left);
     owns root->value;
-    requires root->base.left != (struct base*)(void*)root;
+    requires root->base.left != root as (void *) as (struct base *);
     ensures result == old(child.number);
     ensures child.number == old(child.number);
     ensures root->value == old(child.number);

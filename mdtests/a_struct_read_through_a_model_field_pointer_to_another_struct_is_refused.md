@@ -25,13 +25,13 @@ resource held_a(w: uint64, decoded: struct a*) {
     match model { Held::At(q) => { owns q->x; fact w == address(q); fact decoded == q; }, }
 }
 int32 read_b(uint64 w) {
-    owns h: held_a(w, (struct a*)w);
+    owns h: held_a(w, w as (struct a *));
     ensures 1 == 1;
 } by {
     match h.model { Held::At(obj) => {
         unfold(h);
         step();
-        let h = fold(held_a(w, (struct a*)w), { model: Held::At(obj) });
+        let h = fold(held_a(w, w as (struct a *)), { model: Held::At(obj) });
         step_until(function.exit);
     } }
 }

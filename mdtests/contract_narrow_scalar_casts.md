@@ -11,17 +11,17 @@ uint16 retain(uint16 x) { return x; }
 verifying "contract_narrow_scalar_casts.c";
 
 theorem narrow_boundaries() {
-    ensures (int8)(-128) == -128 by solve();
-    ensures 127 == (int8)127 by solve();
-    ensures (uint8)255 == 255 by solve();
-    ensures (int16)(-32768) == -32768 by solve();
-    ensures 32767 == (int16)32767 by solve();
-    ensures (uint16)65521 == (uint16)65521 by solve();
-    ensures (uint32)(uint16)65535 == 65535u32 by solve();
+    ensures (-128) as int8 == -128 by solve();
+    ensures 127 == 127 as int8 by solve();
+    ensures 255 as uint8 == 255 by solve();
+    ensures (-32768) as int16 == -32768 by solve();
+    ensures 32767 == 32767 as int16 by solve();
+    ensures 65521 as uint16 == 65521 as uint16 by solve();
+    ensures 65535 as uint16 as uint32 == 65535u32 by solve();
 }
 
 uint16 retain(uint16 x) {
-    ensures result == old((uint16)(int32)x);
+    ensures result == old(x as int32 as uint16);
 }
 ```
 

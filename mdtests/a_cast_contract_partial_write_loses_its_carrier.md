@@ -16,7 +16,7 @@ int32 read_packed(unsigned long word, unsigned long* slot, struct node* p) {
 verifying "packed.c";
 int32 read_packed(unsigned long word, unsigned long* slot, struct node* p) {
     requires p != 0;
-    requires ((struct node*)(word & ~1)) == p;
+    requires ((word & ~1) as (struct node *)) == p;
     owns *slot;
     views p->value;
     ensures result == p->value;

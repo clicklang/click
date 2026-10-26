@@ -70,9 +70,9 @@ int32 vector_copy(
     requires length <= src_capacity;
     requires 1 <= dst_capacity;
     requires 1 <= src_capacity;
-    requires ((uint32)length) <= 1073741823u32;
-    requires ((uint32)dst_capacity) <= 1073741823u32;
-    requires ((uint32)src_capacity) <= 1073741823u32;
+    requires (length as uint32) <= 1073741823u32;
+    requires (dst_capacity as uint32) <= 1073741823u32;
+    requires (src_capacity as uint32) <= 1073741823u32;
     owns uninitialized(dst[0..dst_capacity]);
     views src[0..src_capacity];
     requires separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]));
@@ -177,7 +177,7 @@ int32 vector_grow(struct vector* owner) {
         have 0 <= owner->cap;
         assumption();
     }
-    have ((uint32)old_capacity) <= 1073741823u32 by {
+    have (old_capacity as uint32) <= 1073741823u32 by {
         rewrite(old_capacity == owner->cap);
         solve() using {
             1 <= owner->cap;
