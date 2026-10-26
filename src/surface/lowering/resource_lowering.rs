@@ -2555,61 +2555,7 @@ fn evaluate_resource_argument_with_snapshot(
             ),
             &BTreeSet::new(),
         )?;
-        if !matches!(&direct, CValue::Pointer(pointer) if pointer.is_null()) {
-            return Ok(direct);
-        }
-
-        // An entry-state external cell may still contain the verifier's
-        // placeholder null even though checked execution has established its
-        // loadable entry value in a path fact. Re-evaluate only typed loads,
-        // using the indexed loadable snapshot for the exact field address.
-        // This keeps old resource arguments tied to checked memory evidence;
-        // it does not guess from a resource family's argument list.
-        let pointer_expression = match lowered {
-            CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => pointer,
-            _ => return Ok(direct),
-        };
-        let CValue::Pointer(address) =
-            crate::surface::proof::evaluate_resource_fragment_through_kernel(
-                pointer_expression,
-                assumptions,
-                contract_environment,
-                entry_state,
-                result,
-            )?
-        else {
-            return Ok(direct);
-        };
-        let mut recovered = Vec::new();
-        for proposition in assumptions.memory_loadable_candidates_for_base(address.pointer()) {
-            let Proposition::CMemoryLoadable { memory, base, .. } = proposition else {
-                continue;
-            };
-            if base != address.pointer() {
-                continue;
-            }
-            let mut candidate_entry = entry_state.clone();
-            candidate_entry.set_memory(memory.clone());
-            let value = crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
-                original,
-                assumptions,
-                contract_environment,
-                FixedStateFrame::new(&candidate_entry, state, result, &RecordedSnapshots::new()),
-                SpecDefinitions::new(
-                    &PredicateEnvironment::new(&[]),
-                    &ClickFunctionEnvironment::new(&[]),
-                ),
-                &BTreeSet::new(),
-            )?;
-            if !recovered.contains(&value) {
-                recovered.push(value);
-            }
-        }
-        return if recovered.len() == 1 {
-            Ok(recovered.remove(0))
-        } else {
-            Ok(direct)
-        };
+        return Ok(direct);
     }
     crate::surface::proof::evaluate_resource_argument_through_kernel(
         original,
@@ -2919,6 +2865,7 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
         ContractExpression::Old(_)
         | ContractExpression::ResourceCount(_)
         | ContractExpression::ResourceWildcard
+        | ContractExpression::RegionResult(_)
         | ContractExpression::At { .. }
         | ContractExpression::If { .. }
         | ContractExpression::RangeFold { .. }

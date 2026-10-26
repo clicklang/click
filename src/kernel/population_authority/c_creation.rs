@@ -952,6 +952,7 @@ impl CreationEvents {
                     family: Arc::from(description.family()),
                     anchor: pointer.pointer().clone(),
                     wildcards: description.population_arity().map_or(0, |arity| arity - 1),
+                    member: None,
                 },
             );
         }
@@ -1777,6 +1778,25 @@ impl CreationEvents {
             .map_err(CreationRefusal::from)
     }
 
+    /// A fresh entry count for the exact member `member`, registered so a
+    /// diagnostic spells it `old(count(R(a, k)))`.
+    fn fresh_member_entry_count(member: &ResourceDescription) -> Bitvector32Term {
+        let variable =
+            crate::kernel::Variable::allocate_fresh().expect("exact count identity exhausted");
+        if let Some(AlgebraicValue::C(CValue::Pointer(anchor))) = member.arguments().first() {
+            crate::kernel::model_fields::register_population_entry_count(
+                variable,
+                crate::kernel::model_fields::PopulationEntryCount {
+                    family: Arc::from(member.family()),
+                    anchor: anchor.pointer().clone(),
+                    wildcards: 0,
+                    member: Some(member.arguments().to_vec().into()),
+                },
+            );
+        }
+        Bitvector32Term::Variable(variable)
+    }
+
     /// An exact count is global to the family, not the caller's owned quantity.
     /// Concrete keys need decidable identity; imported keys have arbitrary entry
     /// counts and change only when the checked selected member changes.
@@ -1810,12 +1830,7 @@ impl CreationEvents {
                     .lock()
                     .expect("exact entry counts")
                     .entry(key.clone())
-                    .or_insert_with(|| {
-                        Bitvector32Term::Variable(
-                            crate::kernel::Variable::allocate_fresh()
-                                .expect("exact count identity exhausted"),
-                        )
-                    })
+                    .or_insert_with(|| Self::fresh_member_entry_count(description))
                     .clone();
                 let change = import.named_counts.get(&key).cloned().unwrap_or_default();
                 return Ok(SymbolicPopulationCount {
@@ -1867,18 +1882,14 @@ impl CreationEvents {
             if selected.is_some() && !matches {
                 return Err(CreationRefusal::InvalidMember);
             }
-            let key = Self::exact_count_key(selected.filter(|_| matches).unwrap_or(description));
+            let member = selected.filter(|_| matches).unwrap_or(description);
+            let key = Self::exact_count_key(member);
             let entry_count = import
                 .exact_entry_counts
                 .lock()
                 .expect("exact entry counts")
                 .entry(key)
-                .or_insert_with(|| {
-                    Bitvector32Term::Variable(
-                        crate::kernel::Variable::allocate_fresh()
-                            .expect("exact count identity exhausted"),
-                    )
-                })
+                .or_insert_with(|| Self::fresh_member_entry_count(member))
                 .clone();
             return Ok(SymbolicPopulationCount {
                 entry_count,

@@ -1365,12 +1365,28 @@ pub(super) fn local_naming_tables(state: &CState) -> (Vec<syntax::C0Parameter>, 
         .filter(|(name, _)| !name.starts_with("__rust_"))
         .map(|(name, value)| {
             (
-                crate::kernel::c_local_source_name(name).to_string(),
+                call_result_spelling(name)
+                    .unwrap_or_else(|| crate::kernel::c_local_source_name(name).to_string()),
                 value.clone(),
             )
         })
         .collect();
     value_naming_tables(&values)
+}
+
+/// `<region>.result` for a call's result temporary, which no source name
+/// spells: the call that introduced the value names it.
+pub(in crate::surface) fn call_result_spelling(local: &str) -> Option<String> {
+    if !is_call_result_temporary(local) {
+        return None;
+    }
+    let layout = spelling_layout()?;
+    let region = layout.temporary_call_region(local)?;
+    let steps = layout.source_path_spelling(region, ProgramPointKind::Exit)?;
+    Some(format!(
+        "{}.result",
+        describe_code_region_ref(&CodeRegionRef::Path(steps))
+    ))
 }
 
 /// Name current locals with their source declarations, when available.
@@ -6554,6 +6570,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         return describe_add_contract_expression(expression);
     }
     match expression {
+        ContractExpression::RegionResult(region) => {
+            format!("{}.result", describe_code_region_ref(region))
+        }
         ContractExpression::IntegerLiteral(value) => value.clone(),
         ContractExpression::ResourceField(access) => {
             // A body names its own fields bare; `__body` is the parser's

@@ -1331,6 +1331,13 @@ impl Printer<'_> {
                 }
                 if let Some(count) =
                     crate::kernel::model_fields::registered_population_entry_count(*variable)
+                    && let Some(member) = &count.member
+                {
+                    let member = self.resource_arguments(&count.family, member);
+                    return Some(atom(format!("old(count({member}))")));
+                }
+                if let Some(count) =
+                    crate::kernel::model_fields::registered_population_entry_count(*variable)
                     && let Some(anchor) = self.pointer(&count.anchor, depth + 1)
                 {
                     let wildcards = ", _".repeat(count.wildcards);
@@ -2072,7 +2079,16 @@ impl Printer<'_> {
         let binding = ParameterBinding::new(parameters, arguments);
         match resource {
             CResource::Memory(range) => {
-                crate::surface::diagnostics::describe_memory_range(range, binding)
+                let text = crate::surface::diagnostics::describe_memory_range(range, binding);
+                if !text.starts_with('…') {
+                    return text;
+                }
+                // A base only a recorded snapshot names, a call's result.
+                let (parameters, arguments) = self.labels.naming_with_snapshot_values();
+                crate::surface::diagnostics::describe_memory_range(
+                    range,
+                    ParameterBinding::new(&parameters, &arguments),
+                )
             }
             CResource::Instance(instance) => {
                 let application = self.resource_arguments(instance.name(), instance.arguments());

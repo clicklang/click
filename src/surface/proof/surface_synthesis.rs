@@ -579,6 +579,9 @@ fn synthesize_snapshot_local(term: &Bitvector32Term) -> Option<ContractExpressio
                 Some(crate::kernel::integer_c_value!(local)) if local == term
             )
         })?;
+        if let Some(result) = call_result_expression(name) {
+            return Some(result);
+        }
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(if name == "result" {
@@ -599,6 +602,9 @@ fn synthesize_recorded_local(term: &Bitvector32Term) -> Option<ContractExpressio
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
         let (selector, name, _) = slot.as_ref()?.point_naming_integer(term)?;
+        if let Some(result) = call_result_expression(name) {
+            return Some(result);
+        }
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(if name == "result" {
@@ -3183,7 +3189,21 @@ fn synthesize_surface_bitvector(
     }
     // The locals' held-term index finds the first local, in name order,
     // holding exactly this term, without comparing it with every local.
-    if let Some(name) = state.locals().names_holding_integer(term).next() {
+    // A source local is preferred to a call's result temporary, which is
+    // spelled by its call.
+    let mut holders = state.locals().names_holding_integer(term);
+    let first = holders.next();
+    let named = first
+        .filter(|name| !crate::surface::diagnostics::is_call_result_temporary(name))
+        .or_else(|| {
+            holders.find(|name| !crate::surface::diagnostics::is_call_result_temporary(name))
+        });
+    if named.is_none()
+        && let Some(result) = first.and_then(call_result_expression)
+    {
+        return Some(result);
+    }
+    if let Some(name) = named {
         return Some(if name == crate::kernel::C_CONTRACT_RESULT_NAME {
             ContractExpression::CFragment(CExpression::Variable("result".to_string()))
         } else if name == "result" {
@@ -4579,6 +4599,9 @@ fn synthesize_surface_pointer(
     if let Some(expression) = state
         .locals()
         .pointer_objects_in_block(&pointer.block)
+        // A call's result temporary is spelled by its call, never by the
+        // frontend's name for it.
+        .filter(|(name, _)| !crate::surface::diagnostics::is_call_result_temporary(name))
         .find_map(|(name, base)| {
             crate::instrumentation::record_deterministic_work(1);
             let element_width = base.c_type().pointee_type()?.byte_width();
@@ -4679,6 +4702,33 @@ fn synthesize_surface_pointer(
     )?)
 }
 
+/// `<region>.result` for a call's result temporary `local`, which no source
+/// name spells.
+fn call_result_expression(local: &str) -> Option<ContractExpression> {
+    if !crate::surface::diagnostics::is_call_result_temporary(local) {
+        return None;
+    }
+    let layout = crate::surface::diagnostics::spelling_layout()?;
+    let region = layout.temporary_call_region(local)?;
+    let steps = layout.source_path_spelling(region, ProgramPointKind::Exit)?;
+    Some(ContractExpression::RegionResult(CodeRegionRef::Path(steps)))
+}
+
+/// `<region>.result` for a pointer a call's result temporary holds: the
+/// call names the value it introduced, which no source name spells.
+fn synthesize_call_result_pointer(pointer: &Pointer, state: &CState) -> Option<ContractExpression> {
+    state
+        .locals()
+        .pointer_objects_in_block(&pointer.block)
+        .find_map(|(name, base)| {
+            crate::instrumentation::record_deterministic_work(1);
+            if base.pointer() != pointer {
+                return None;
+            }
+            call_result_expression(name)
+        })
+}
+
 fn synthesize_surface_pointer_expression(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
@@ -4705,6 +4755,9 @@ fn synthesize_surface_pointer_expression(
         synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)
     {
         return Some(ContractExpression::CFragment(pointer));
+    }
+    if let Some(result) = synthesize_call_result_pointer(pointer, state) {
+        return Some(result);
     }
     if parameter_binding.arguments.iter().any(|argument| {
         matches!(

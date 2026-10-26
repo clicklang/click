@@ -2590,6 +2590,7 @@ pub(crate) fn collect_current_contract_expression_variables(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
+        ContractExpression::RegionResult(_) => {}
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::AlgebraicVariable { name, .. } => {
             names.insert(name.clone());
@@ -2836,6 +2837,11 @@ pub enum ContractExpression {
     /// A wildcard argument inside the resource pattern accepted by
     /// `count(...)`. It is never a standalone contract expression.
     ResourceWildcard,
+    /// The value a region produced, written `<region>.result`: for a call's
+    /// region, the call's result. A region has `entry` and `exit` points and
+    /// this one value; it is the result its region assigned, read at the
+    /// region's exit.
+    RegionResult(CodeRegionRef),
     Old(Box<ContractExpression>),
     At {
         selector: SnapshotSelector,
@@ -3220,6 +3226,44 @@ impl RecordedSnapshots {
             region: CodeRegionRef::Region(layout.source_path_region(steps, point.kind)?),
             kind: point.kind,
         })
+    }
+
+    /// The exit point of the call region `region` names, recorded as its
+    /// `region(N)`, and the local that call assigns its result to: what
+    /// `<region>.result` reads.
+    pub(crate) fn region_result(
+        &self,
+        region: &CodeRegionRef,
+    ) -> Result<(ProgramPointRef, String), String> {
+        let fallback;
+        let layout = match &self.source_layout {
+            Some(layout) => layout,
+            None => {
+                fallback = diagnostics::spelling_layout()
+                    .ok_or("`.result` names a region of a function body being executed")?;
+                &fallback
+            }
+        };
+        let index = match region {
+            CodeRegionRef::Path(steps) => {
+                layout.source_path_region(steps, ProgramPointKind::Exit)?
+            }
+            CodeRegionRef::Region(index) => *index,
+            _ => return Err("`.result` names a call's region".to_string()),
+        };
+        let local = layout.call_result_local(index).ok_or_else(|| {
+            format!(
+                "`{}` is not a call that produces a result, so it has no `.result`",
+                diagnostics::describe_code_region_ref(region)
+            )
+        })?;
+        Ok((
+            ProgramPointRef {
+                region: CodeRegionRef::Region(index),
+                kind: ProgramPointKind::Exit,
+            },
+            local.to_string(),
+        ))
     }
 
     /// The program point `selector` names, spelled as it is recorded: a
@@ -6489,6 +6533,7 @@ fn contract_expression_reads_memory(
     callees: &mut Vec<String>,
 ) -> bool {
     match expression {
+        ContractExpression::RegionResult(_) => false,
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)

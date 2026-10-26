@@ -104,6 +104,7 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         fixed_measure_state(left).or_else(|| fixed_measure_state(right))
     };
     match expression {
+        ContractExpression::RegionResult(_) => None,
         ContractExpression::Old(_) => Some(FixedMeasureState::Old),
         ContractExpression::At { selector, .. } => Some(FixedMeasureState::At(selector.clone())),
         ContractExpression::IntegerLiteral(_)
@@ -6276,6 +6277,27 @@ impl AnnotationLowerer<'_> {
             }
             ContractExpression::ResourceWildcard => {
                 Err("`_` is only valid inside a `count(...)` resource pattern".to_string())
+            }
+            ContractExpression::RegionResult(region) => {
+                let snapshots = self
+                    .snapshots
+                    .ok_or("`.result` names a region of a function body being executed")?;
+                let (point, local) = snapshots.region_result(region)?;
+                let state = snapshots
+                    .get(&SnapshotSelector::ProgramPoint(point))
+                    .ok_or_else(|| {
+                        format!(
+                            "`{}.result` names a call this proof has not executed yet",
+                            crate::surface::diagnostics::describe_code_region_ref(region)
+                        )
+                    })?;
+                let value = state.locals().get(&local).ok_or_else(|| {
+                    format!(
+                        "`{}.result` was not recorded at the call's exit",
+                        crate::surface::diagnostics::describe_code_region_ref(region)
+                    )
+                })?;
+                Ok(SpecExpression::Value(value.clone()))
             }
             ContractExpression::Old(expression) => {
                 let old_environment =

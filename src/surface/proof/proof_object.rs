@@ -1251,6 +1251,9 @@ struct ProofDiagnosticProofState(
     // The recorded snapshots an outcome goal's `at(...)` cites. A shared
     // handle; the citable ones are selected only when a report is rendered.
     Option<crate::surface::RecordedSnapshots>,
+    // The function's source layout, so names registered after the proof has
+    // unwound still spell a call's result as `<region>.result`.
+    Option<crate::surface::lowering::SourceExecutionLayout>,
 );
 
 /// The names a captured diagnostic gives the proof's values: the naming
@@ -1461,6 +1464,21 @@ fn register_snapshot_names(
     }
     for (point, state) in citable {
         for (name, value) in state.locals().object_values() {
+            // A call's result temporary is spelled by its call,
+            // `<region>.result`, at any point that holds it.
+            if let Some(spelling) = crate::surface::diagnostics::call_result_spelling(name) {
+                match value.numeric_value() {
+                    crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) => {
+                        labels.fallback_source_name(*variable, spelling, value.c_type());
+                    }
+                    CValue::Pointer(pointer) => {
+                        labels.fallback_pointer_name(pointer.pointer(), spelling.clone());
+                        labels.fallback_value_name(spelling, value.clone());
+                    }
+                    _ => {}
+                }
+                continue;
+            }
             // A pointer's offset variable is not the pointer; a scalar
             // local's value, or a pointer local's whole address, is exactly
             // the local.
@@ -1507,6 +1525,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         &self,
         labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
     ) {
+        let _spelling = self
+            .15
+            .as_ref()
+            .map(crate::surface::diagnostics::SourcePathSpellingScope::enter);
         self.13.register(labels);
         for (variable, name) in &self.2 {
             labels.source_name(*variable, name.clone());
@@ -2134,6 +2156,7 @@ impl Proof<'_> {
                     .outcome_fixed_state_view()
                     .map(|view| view.fixed_state.recorded_snapshots.clone()),
             },
+            crate::surface::diagnostics::spelling_layout(),
         )
     }
 }

@@ -39,7 +39,10 @@ checked. Each one costs completeness, expansion, or a readable report.
   value or memory state (a call result, a havoc, an allocation, a state
   between recorded points) gives it a name from its provenance at that
   point. Do not recover a name later from whatever locals happen to hold the
-  value.
+  value. A call's result is `<region>.result`, its call's region read at that
+  region's exit (`RecordedSnapshots::region_result`): the source layout maps
+  each call region to the local it assigns, and each frontend result
+  temporary back to its call (`SourceExecutionLayout::temporary_call_region`).
   Recorded points index each integer value, and each pointer's block, by the
   point and the local it was first given to (`RecordedSnapshots::value_points`
   and `pointer_points`, filled from the locals each recorded state changed),

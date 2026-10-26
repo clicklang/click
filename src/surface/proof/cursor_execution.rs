@@ -1706,6 +1706,7 @@ pub(super) fn prepare_call_outcome_split(
     execution: &ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
     available_pure_facts: &PureFactList,
+    context: Option<&PureFactContext>,
     tactic_name: &str,
 ) -> Result<Option<PreparedCallOutcomeSplit>, ClickError> {
     let mut prepared = execution.clone();
@@ -1824,7 +1825,7 @@ pub(super) fn prepare_call_outcome_split(
         &mut next_opaque_call,
         &mut next_kernel_variable,
         StatementPrerequisitePolicy::Retained,
-        None,
+        context,
     )?;
     let normal = transitions
         .iter()
@@ -1864,6 +1865,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
     introduced_facts: &mut Vec<Proposition>,
     prepared: &PreparedCallOutcomeSplit,
     transition: &crate::surface::CertifiedStatementTransition,
+    context: Option<&PureFactContext>,
 ) -> Result<(), ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
@@ -1954,14 +1956,24 @@ pub(super) fn apply_prepared_call_outcome_transition(
             tactic_index,
             "outcomes",
             StatementPrerequisitePolicy::Retained,
-            None,
+            context,
             value,
             state,
             &transition.pure_facts,
         )? {
             // No handler: the throw is this path's function outcome.
             record_completed_continuation_exits(&mut execution.core.frontier);
-            let return_assumptions = transition.pure_facts.context();
+            // Over a proof context the transition's facts are only what the
+            // call added; the return is decided under that context with them.
+            let return_assumptions = match context {
+                Some(context) => transition
+                    .pure_facts
+                    .iter()
+                    .fold(context.clone(), |assumptions, fact| {
+                        assumptions.assume_proposition(fact.clone())
+                    }),
+                None => transition.pure_facts.context(),
+            };
             let case_outcomes =
                 crate::kernel::c_function_outcomes_from_statement_outcome_with_resource_cases(
                     &prepared.execution_start_state,

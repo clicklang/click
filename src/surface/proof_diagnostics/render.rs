@@ -60,6 +60,10 @@ pub(crate) struct SnapshotLabels {
     /// Addresses no structural spelling names, spelled as the pointer local
     /// that held them at a recorded snapshot: `at(region(2).exit, p)`.
     snapshot_pointers: HashMap<Pointer, String>,
+    /// Typed values a recorded snapshot names that the current state no
+    /// longer holds: a call's result, `<region>.result`. A range over one is
+    /// spelled from that name.
+    snapshot_values: Vec<(String, crate::kernel::CValue)>,
     /// Source names of mathematical `Integer` variables. Kept apart from
     /// `source_names` because the kernel numbers `Integer` variables
     /// separately from machine ones.
@@ -516,6 +520,35 @@ impl SnapshotLabels {
                 .entry(pointer.clone())
                 .or_insert(name);
         }
+    }
+
+    /// Records `value` under `name` for spellings that need a typed value,
+    /// a memory range's base, when nothing current names it.
+    pub(crate) fn fallback_value_name(&mut self, name: String, value: crate::kernel::CValue) {
+        if self.snapshot_values.len() < 128 && !self.snapshot_values.iter().any(|(n, _)| n == &name)
+        {
+            self.snapshot_values.push((name, value));
+        }
+    }
+
+    /// The naming tables extended by the typed snapshot values.
+    pub(crate) fn naming_with_snapshot_values(
+        &self,
+    ) -> (
+        Vec<crate::languages::c::syntax::C0Parameter>,
+        Vec<crate::kernel::CExpression>,
+    ) {
+        let (mut parameters, mut arguments) = self
+            .naming
+            .as_deref()
+            .map(|tables| (tables.0.clone(), tables.1.clone()))
+            .unwrap_or_default();
+        let (more_parameters, more_arguments) = crate::surface::diagnostics::value_naming_tables(
+            &self.snapshot_values.iter().cloned().collect(),
+        );
+        parameters.extend(more_parameters);
+        arguments.extend(more_arguments);
+        (parameters, arguments)
     }
 
     /// Whether a read of `memory` is qualified by a recorded point rather

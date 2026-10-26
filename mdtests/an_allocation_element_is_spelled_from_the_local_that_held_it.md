@@ -1,12 +1,12 @@
 # An address inside an allocation is spelled from the local that held it
 
-After `free(p)` no local holds the allocation, but `p` held it at the end of
-statement 2. The refusal's goal, its premises and its proof context all name
-values by what a local held at a recorded point: the value read is
-`at(region(9).exit, r)`, the freed allocation is
-`at(region(2).exit, p)`, and the byte the store changed, five bytes into
-it, is `*((char *)at(region(2).exit, p) + 5)`, rather than report-local
-`<pointer A>` placeholders.
+After `free(p)` no local holds the allocation, but `p` held it at recorded
+points. The refusal's goal, its premises and its proof context all name
+values by what a local held at a recorded point, written by the statement
+that point ends: the value read is `at(statement(4).exit, r)`, the freed
+allocation is `at(statement(1).exit, p)`, and the byte the store changed, five
+bytes into it, is `*((char *)at(statement(1).exit, p) + 5)`, rather than
+report-local `<pointer A>` placeholders.
 
 ```c filename=an_allocation_element_is_spelled_from_the_local_that_held_it.c
 int32 f(int32 k) {
@@ -31,5 +31,5 @@ int32 f(int32 k) {
 ```
 
 ```expect
-fail: goal: at(region(9).exit, r) == 0
+fail: goal: at(statement(4).exit, r) == 0
 ```
