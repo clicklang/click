@@ -18,7 +18,7 @@ void caller(struct box* b, struct box* q0, struct box* q1, struct box* q2, struc
     requires q5 == b;
     requires q6 == b;
     requires q7 == b;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

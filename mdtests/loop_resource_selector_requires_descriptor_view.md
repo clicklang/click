@@ -32,7 +32,6 @@ void probe(struct holder* h, int32* data, int32 n) {
             close_invariants();
         }
     }
-    execute(); solve();
 }
 ```
 ```expect

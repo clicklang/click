@@ -28,7 +28,7 @@ int h(void) {
 
 ```click
 verifying "partial_memset.c";
-int h() { ensures true; } by { execute(); solve(); }
+int h() { ensures true; }
 ```
 
 ```expect

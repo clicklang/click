@@ -60,7 +60,7 @@ void probe(struct node *p, struct node *q, struct node *value) {
             have parent->next == successor;
         },
     }
-    execute(); solve();
+    step_until(function.exit); solve();
 }
 ```
 

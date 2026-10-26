@@ -27,7 +27,7 @@ void touch(int32* p) {
     ensures c.rank == old(c.rank);
 } by {
     unfold(c);
-    execute();
+    step_until(function.exit);
     let c = fold(cell(p), { rank: c.rank });
     solve();
 }

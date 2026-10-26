@@ -39,7 +39,7 @@ int32 make_zero(struct box* box) {
     produces zero_box(box);
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     fold(zero_box(box));
     solve();
 }

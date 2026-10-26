@@ -54,7 +54,7 @@ void update(struct node* p, struct node* q) {
     owns b: metadata(q);
     ensures a.value == 1;
     ensures b.value == 2;
-} by { unfold(a); unfold(b); execute(); let a = fold(metadata(p), { value: 1 }); let b = fold(metadata(q), { value: 2 }); solve(); }
+} by { unfold(a); unfold(b); step_until(function.exit); let a = fold(metadata(p), { value: 1 }); let b = fold(metadata(q), { value: 2 }); solve(); }
 struct node* caller(struct node* p, struct node* q, struct node* parent) {
     consumes f: framed(p, q, parent);
     ensures result == parent;

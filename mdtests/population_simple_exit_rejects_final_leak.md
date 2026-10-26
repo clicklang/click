@@ -28,7 +28,7 @@ void release(struct object* obj) {
     unfold(control(obj));
     unfold(reference(obj));
     unfold(authority(reference(obj)));
-    execute();
+    step_until(function.exit);
     normalize();
 }
 ```

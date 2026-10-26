@@ -36,7 +36,7 @@ int32 clear_head(int32 box[2]) {
     requires box[1] == 0;
     owns box[0..2];
     ensures false_old_head_doubled: to_integer(old(box[0]) + old(box[0])) < 2 by {
-        execute();
+        step_until(function.exit);
         have to_integer(0 - 1) < to_integer(box[0]) by {
             solve();
         }

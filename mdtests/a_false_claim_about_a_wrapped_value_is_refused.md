@@ -14,7 +14,7 @@ verifying "a_false_claim_about_a_wrapped_value_is_refused.c";
 int32 f(int32 x) {
     requires x == 300;
     ensures result == 300;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

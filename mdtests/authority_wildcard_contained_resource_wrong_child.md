@@ -13,7 +13,7 @@ void issue(int32* pool, int32* p) {
     consumes cell(pool, p + 1);
     requires defined(count(slot(pool, _)) + 1);
     produces slot(pool, p);
-} by { fold(slot(pool, p)); execute(); solve(); }
+} by { fold(slot(pool, p)); }
 ```
 
 ```expect

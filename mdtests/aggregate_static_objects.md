@@ -103,9 +103,6 @@ int32 run() {
     requires private_file::file_private.value == 0;
     requires private_file::file_private.value < 1000;
     ensures result == 5;
-} by {
-    execute();
-    solve();
 }
 ```
 

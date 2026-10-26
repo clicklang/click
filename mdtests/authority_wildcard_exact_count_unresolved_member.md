@@ -13,7 +13,6 @@ void inspect(int32* pool, int32* p, int32* q) {
 } by {
     unfold(slot(pool, p));
     have count(slot(pool, q)) == 0 by solve();
-    execute(); solve();
 }
 ```
 

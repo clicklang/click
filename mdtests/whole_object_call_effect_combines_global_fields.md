@@ -7,11 +7,11 @@ void caller(void) { set_pair(&state); }
 ```
 ```click
 verifying "pairs.c" as unit;
-void set_pair(struct pair* p) { owns *p; } by { execute(); solve(); }
+void set_pair(struct pair* p) { owns *p; }
 void caller() {
     owns unit::state.left;
     owns unit::state.right;
-} by { execute(); solve(); }
+}
 ```
 ```expect
 pass

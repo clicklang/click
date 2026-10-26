@@ -104,7 +104,7 @@ int64 bounded_identity(int64 a, int32 b) {
     requires to_integer(b) <= 2147483647;
     ensures to_integer(result) * to_integer(b) <= 170141183460469231731687303715884105727;
 } by {
-    execute();
+    step_until(function.exit);
     arithmetic_certificate rules {
         premise 0: -9223372036854775808 <= to_integer(a) => -9223372036854775808 <= to_integer(a);
         premise 1: to_integer(a) <= 9223372036854775807 => to_integer(a) <= 9223372036854775807;

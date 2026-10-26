@@ -15,7 +15,6 @@ void touch(int32* p) {
         have p[0] == 0 by solve();
         step();
     }
-    execute(); solve();
 }
 ```
 

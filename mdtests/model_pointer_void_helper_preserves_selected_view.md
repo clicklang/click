@@ -21,7 +21,7 @@ void keep(struct pair* p) {
     ensures identity(&p->first) == &p->first;
     ensures link(&p->first) == Link::At(&p->first);
 } by {
-    execute();
+    step_until(function.exit);
     unfold(identity(0));
     unfold(link(0));
     unfold(identity(&p->first));

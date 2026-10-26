@@ -76,7 +76,7 @@ void keep(struct cell* c) {
                 rewrite(up == 0);
                 normalize();
             }
-            execute();
+            step_until(function.exit);
             solve();
         },
     }

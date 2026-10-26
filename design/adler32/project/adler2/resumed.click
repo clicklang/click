@@ -110,5 +110,4 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
   65536 * to_integer(__rust_mir_14.b) + to_integer(__rust_mir_14.a) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));
  };
  have forall (k: uint64) { k < bytes.len() implies bytes[k] == old(bytes[k]) } by solve();
- execute(); solve();
 }

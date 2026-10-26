@@ -19,7 +19,7 @@ int32 identity(int32 x) {
     requires nonnegative(x);
     ensures result >= 0;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
     unfold(nonnegative);
 }

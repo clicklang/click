@@ -133,7 +133,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
             }
-            execute(); solve();
+            step_until(function.exit);
         },
         SizedContext::Left(id, above, pc, count, sibling, up) => {
             let { frames: frames } = unfold(c);
@@ -182,7 +182,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
             }
-            execute(); solve();
+            step_until(function.exit);
         },
         SizedContext::Right(id, above, pc, count, sibling, up) => {
             let { frames: frames } = unfold(c);
@@ -231,7 +231,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
             }
-            execute(); solve();
+            step_until(function.exit);
         },
     }
 }

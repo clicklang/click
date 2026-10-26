@@ -17,7 +17,7 @@ struct node* zero_list_empty() {
 
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     fold(zero_list(result));
     solve();
 }
@@ -32,7 +32,7 @@ int32 zero_list_push(struct node* node, struct node* tail) {
     ensures node->value == 0;
     ensures node->next == tail;
 } by {
-    execute();
+    step_until(function.exit);
     fold(zero_list(node));
     solve();
 }
@@ -46,10 +46,10 @@ int32 zero_list_sum(struct node* node) {
 } by {
     observe(zero_list(node));
     if node->next == 0 {
-        execute();
+        step_until(function.exit);
         solve();
     } else {
-        execute();
+        step_until(function.exit);
         solve();
     }
 }
@@ -64,14 +64,14 @@ int32 zero_list_sum_bounded(struct node* node, int32 fuel) {
     observe(zero_list(node));
     if fuel > 0 {
         if node->next == 0 {
-            execute();
+            step_until(function.exit);
             solve();
         } else {
-            execute();
+            step_until(function.exit);
             solve();
         }
     } else {
-        execute();
+        step_until(function.exit);
         solve();
     }
 }
@@ -94,6 +94,6 @@ int32 zero_list_pipeline(struct node* first, struct node* second) {
     step();
     step();
     fold(zero_list(first));
-    execute();
+    step_until(function.exit);
     solve();
 }

@@ -24,10 +24,10 @@ unsigned int read_pair(const unsigned char *p) {
 
 ```click
 verifying "updates.c";
-int32 old_value() { ensures result == 5; } by { execute(); solve(); }
-int32 new_value() { ensures result == 6; } by { execute(); solve(); }
-uint64 exit_decrement() { ensures result == 18446744073709551615u64; } by { execute(); solve(); }
-int32 continue_condition() { ensures result == 3; } by { execute(); solve(); }
+int32 old_value() { ensures result == 5; }
+int32 new_value() { ensures result == 6; }
+uint64 exit_decrement() { ensures result == 18446744073709551615u64; }
+int32 continue_condition() { ensures result == 3; }
 uint32 read_pair(const uint8* p) {
     views p[0..2];
     ensures to_integer(result) == to_integer((uint32)p[0] + (uint32)p[1]);

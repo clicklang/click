@@ -161,7 +161,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
         assumption();
     }
     mark w;
-    execute();
+    step_until(function.exit);
     have forall (k: int32) {
         0 <= k and k < at(w, region->arena->capacity) implies
             at(w, region->arena->occupied[k]) == region->arena->occupied[k]

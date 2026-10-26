@@ -17,13 +17,13 @@ int32* probe(int32* p, int32* q) {
     views q[0..3];
     requires address(p) == address(q);
     ensures true;
-} by { execute(); solve(); }
+}
 int32* caller(struct Pair* x) {
     views x->first;
     views x->second;
     views x->third;
     ensures true;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

@@ -29,8 +29,6 @@ void mark_one(int32 a[], int32 n, int32 i) {
     have icount(a, 0, n) == icount(at(entry, a), 0, n) by {
         solve();
     }
-    execute();
-    solve();
 }
 ```
 

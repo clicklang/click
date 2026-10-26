@@ -23,9 +23,6 @@ int32 element_is_aligned(struct pair* p, int32 i) {
     requires 0 <= i and i < 4;
     views p[0..4];
     ensures result == 1;
-} by {
-    execute();
-    solve();
 }
 ```
 

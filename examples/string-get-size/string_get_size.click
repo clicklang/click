@@ -108,21 +108,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             if (units & 1073741824u32) != 0u32 {
                 if (units & 2147483648u32) != 0u32 {
                     step(snprintf, { n1: 0u64 });
-                    execute();
+                    step_until(function.exit);
                     solve();
                 } else {
                     step(snprintf, { n1: 0u64 });
-                    execute();
+                    step_until(function.exit);
                     solve();
                 }
             } else {
                 if (units & 2147483648u32) != 0u32 {
                     step(snprintf, { n1: 0u64 });
-                    execute();
+                    step_until(function.exit);
                     solve();
                 } else {
                     step(snprintf, { n1: 0u64 });
-                    execute();
+                    step_until(function.exit);
                     solve();
                 }
             }
@@ -132,21 +132,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             if (units & 1073741824u32) != 0u32 {
                 if (units & 2147483648u32) != 0u32 {
                     step(snprintf, { n1: 0u64 });
-                    execute();
+                    step_until(function.exit);
                     solve();
                 } else {
                     step(snprintf, { n1: 0u64 });
-                    execute();
+                    step_until(function.exit);
                     solve();
                 }
             } else {
                 if (units & 2147483648u32) != 0u32 {
                     step(snprintf, { n1: 0u64 });
-                    execute();
+                    step_until(function.exit);
                     solve();
                 } else {
                     step(snprintf, { n1: 0u64 });
-                    execute();
+                    step_until(function.exit);
                     solve();
                 }
             }
@@ -170,21 +170,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 if (units & 1073741824u32) != 0u32 {
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: 0u64 });
-                        execute();
+                        step_until(function.exit);
                         solve();
                     } else {
                         step(snprintf, { n1: 0u64 });
-                        execute();
+                        step_until(function.exit);
                         solve();
                     }
                 } else {
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: 0u64 });
-                        execute();
+                        step_until(function.exit);
                         solve();
                     } else {
                         step(snprintf, { n1: 0u64 });
-                        execute();
+                        step_until(function.exit);
                         solve();
                     }
                 }
@@ -194,21 +194,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 if (units & 1073741824u32) != 0u32 {
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: 0u64 });
-                        execute();
+                        step_until(function.exit);
                         solve();
                     } else {
                         step(snprintf, { n1: 0u64 });
-                        execute();
+                        step_until(function.exit);
                         solve();
                     }
                 } else {
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: 0u64 });
-                        execute();
+                        step_until(function.exit);
                         solve();
                     } else {
                         step(snprintf, { n1: 0u64 });
-                        execute();
+                        step_until(function.exit);
                         solve();
                     }
                 }
@@ -832,21 +832,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 if (units & 1073741824u32) != 0u32 {
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: tmp_len(j) });
-                        execute();
+                        step_until(function.exit);
                         solve();
                     } else {
                         step(snprintf, { n1: tmp_len(j) });
-                        execute();
+                        step_until(function.exit);
                         solve();
                     }
                 } else {
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: tmp_len(j) });
-                        execute();
+                        step_until(function.exit);
                         solve();
                     } else {
                         step(snprintf, { n1: tmp_len(j) });
-                        execute();
+                        step_until(function.exit);
                         solve();
                     }
                 }
@@ -862,21 +862,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         if (units & 1073741824u32) != 0u32 {
                             if (units & 2147483648u32) != 0u32 {
                                 step(snprintf, { n1: tmp_len(j) });
-                                execute();
+                                step_until(function.exit);
                                 solve();
                             } else {
                                 step(snprintf, { n1: tmp_len(j) });
-                                execute();
+                                step_until(function.exit);
                                 solve();
                             }
                         } else {
                             if (units & 2147483648u32) != 0u32 {
                                 step(snprintf, { n1: tmp_len(j) });
-                                execute();
+                                step_until(function.exit);
                                 solve();
                             } else {
                                 step(snprintf, { n1: tmp_len(j) });
-                                execute();
+                                step_until(function.exit);
                                 solve();
                             }
                         }
@@ -889,21 +889,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             if (units & 1073741824u32) != 0u32 {
                                 if (units & 2147483648u32) != 0u32 {
                                     step(snprintf, { n1: tmp_len(j) });
-                                    execute();
+                                    step_until(function.exit);
                                     solve();
                                 } else {
                                     step(snprintf, { n1: tmp_len(j) });
-                                    execute();
+                                    step_until(function.exit);
                                     solve();
                                 }
                             } else {
                                 if (units & 2147483648u32) != 0u32 {
                                     step(snprintf, { n1: tmp_len(j) });
-                                    execute();
+                                    step_until(function.exit);
                                     solve();
                                 } else {
                                     step(snprintf, { n1: tmp_len(j) });
-                                    execute();
+                                    step_until(function.exit);
                                     solve();
                                 }
                             }
@@ -916,21 +916,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 if (units & 1073741824u32) != 0u32 {
                                     if (units & 2147483648u32) != 0u32 {
                                         step(snprintf, { n1: tmp_len(j) });
-                                        execute();
+                                        step_until(function.exit);
                                         solve();
                                     } else {
                                         step(snprintf, { n1: tmp_len(j) });
-                                        execute();
+                                        step_until(function.exit);
                                         solve();
                                     }
                                 } else {
                                     if (units & 2147483648u32) != 0u32 {
                                         step(snprintf, { n1: tmp_len(j) });
-                                        execute();
+                                        step_until(function.exit);
                                         solve();
                                     } else {
                                         step(snprintf, { n1: tmp_len(j) });
-                                        execute();
+                                        step_until(function.exit);
                                         solve();
                                     }
                                 }
@@ -943,21 +943,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                     if (units & 1073741824u32) != 0u32 {
                                         if (units & 2147483648u32) != 0u32 {
                                             step(snprintf, { n1: tmp_len(j) });
-                                            execute();
+                                            step_until(function.exit);
                                             solve();
                                         } else {
                                             step(snprintf, { n1: tmp_len(j) });
-                                            execute();
+                                            step_until(function.exit);
                                             solve();
                                         }
                                     } else {
                                         if (units & 2147483648u32) != 0u32 {
                                             step(snprintf, { n1: tmp_len(j) });
-                                            execute();
+                                            step_until(function.exit);
                                             solve();
                                         } else {
                                             step(snprintf, { n1: tmp_len(j) });
-                                            execute();
+                                            step_until(function.exit);
                                             solve();
                                         }
                                     }
@@ -970,21 +970,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                         if (units & 1073741824u32) != 0u32 {
                                             if (units & 2147483648u32) != 0u32 {
                                                 step(snprintf, { n1: tmp_len(j) });
-                                                execute();
+                                                step_until(function.exit);
                                                 solve();
                                             } else {
                                                 step(snprintf, { n1: tmp_len(j) });
-                                                execute();
+                                                step_until(function.exit);
                                                 solve();
                                             }
                                         } else {
                                             if (units & 2147483648u32) != 0u32 {
                                                 step(snprintf, { n1: tmp_len(j) });
-                                                execute();
+                                                step_until(function.exit);
                                                 solve();
                                             } else {
                                                 step(snprintf, { n1: tmp_len(j) });
-                                                execute();
+                                                step_until(function.exit);
                                                 solve();
                                             }
                                         }
@@ -997,21 +997,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                             if (units & 1073741824u32) != 0u32 {
                                                 if (units & 2147483648u32) != 0u32 {
                                                     step(snprintf, { n1: tmp_len(j) });
-                                                    execute();
+                                                    step_until(function.exit);
                                                     solve();
                                                 } else {
                                                     step(snprintf, { n1: tmp_len(j) });
-                                                    execute();
+                                                    step_until(function.exit);
                                                     solve();
                                                 }
                                             } else {
                                                 if (units & 2147483648u32) != 0u32 {
                                                     step(snprintf, { n1: tmp_len(j) });
-                                                    execute();
+                                                    step_until(function.exit);
                                                     solve();
                                                 } else {
                                                     step(snprintf, { n1: tmp_len(j) });
-                                                    execute();
+                                                    step_until(function.exit);
                                                     solve();
                                                 }
                                             }
@@ -1024,21 +1024,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                 if (units & 1073741824u32) != 0u32 {
                                                     if (units & 2147483648u32) != 0u32 {
                                                         step(snprintf, { n1: tmp_len(j) });
-                                                        execute();
+                                                        step_until(function.exit);
                                                         solve();
                                                     } else {
                                                         step(snprintf, { n1: tmp_len(j) });
-                                                        execute();
+                                                        step_until(function.exit);
                                                         solve();
                                                     }
                                                 } else {
                                                     if (units & 2147483648u32) != 0u32 {
                                                         step(snprintf, { n1: tmp_len(j) });
-                                                        execute();
+                                                        step_until(function.exit);
                                                         solve();
                                                     } else {
                                                         step(snprintf, { n1: tmp_len(j) });
-                                                        execute();
+                                                        step_until(function.exit);
                                                         solve();
                                                     }
                                                 }
@@ -1051,21 +1051,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                     if (units & 1073741824u32) != 0u32 {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         }
                                                     } else {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         }
                                                     }
@@ -1078,21 +1078,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                     if (units & 1073741824u32) != 0u32 {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         }
                                                     } else {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         }
                                                     }
@@ -1112,21 +1112,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         if (units & 1073741824u32) != 0u32 {
                             if (units & 2147483648u32) != 0u32 {
                                 step(snprintf, { n1: tmp_len(j) });
-                                execute();
+                                step_until(function.exit);
                                 solve();
                             } else {
                                 step(snprintf, { n1: tmp_len(j) });
-                                execute();
+                                step_until(function.exit);
                                 solve();
                             }
                         } else {
                             if (units & 2147483648u32) != 0u32 {
                                 step(snprintf, { n1: tmp_len(j) });
-                                execute();
+                                step_until(function.exit);
                                 solve();
                             } else {
                                 step(snprintf, { n1: tmp_len(j) });
-                                execute();
+                                step_until(function.exit);
                                 solve();
                             }
                         }
@@ -1139,21 +1139,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             if (units & 1073741824u32) != 0u32 {
                                 if (units & 2147483648u32) != 0u32 {
                                     step(snprintf, { n1: tmp_len(j) });
-                                    execute();
+                                    step_until(function.exit);
                                     solve();
                                 } else {
                                     step(snprintf, { n1: tmp_len(j) });
-                                    execute();
+                                    step_until(function.exit);
                                     solve();
                                 }
                             } else {
                                 if (units & 2147483648u32) != 0u32 {
                                     step(snprintf, { n1: tmp_len(j) });
-                                    execute();
+                                    step_until(function.exit);
                                     solve();
                                 } else {
                                     step(snprintf, { n1: tmp_len(j) });
-                                    execute();
+                                    step_until(function.exit);
                                     solve();
                                 }
                             }
@@ -1166,21 +1166,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 if (units & 1073741824u32) != 0u32 {
                                     if (units & 2147483648u32) != 0u32 {
                                         step(snprintf, { n1: tmp_len(j) });
-                                        execute();
+                                        step_until(function.exit);
                                         solve();
                                     } else {
                                         step(snprintf, { n1: tmp_len(j) });
-                                        execute();
+                                        step_until(function.exit);
                                         solve();
                                     }
                                 } else {
                                     if (units & 2147483648u32) != 0u32 {
                                         step(snprintf, { n1: tmp_len(j) });
-                                        execute();
+                                        step_until(function.exit);
                                         solve();
                                     } else {
                                         step(snprintf, { n1: tmp_len(j) });
-                                        execute();
+                                        step_until(function.exit);
                                         solve();
                                     }
                                 }
@@ -1193,21 +1193,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                     if (units & 1073741824u32) != 0u32 {
                                         if (units & 2147483648u32) != 0u32 {
                                             step(snprintf, { n1: tmp_len(j) });
-                                            execute();
+                                            step_until(function.exit);
                                             solve();
                                         } else {
                                             step(snprintf, { n1: tmp_len(j) });
-                                            execute();
+                                            step_until(function.exit);
                                             solve();
                                         }
                                     } else {
                                         if (units & 2147483648u32) != 0u32 {
                                             step(snprintf, { n1: tmp_len(j) });
-                                            execute();
+                                            step_until(function.exit);
                                             solve();
                                         } else {
                                             step(snprintf, { n1: tmp_len(j) });
-                                            execute();
+                                            step_until(function.exit);
                                             solve();
                                         }
                                     }
@@ -1220,21 +1220,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                         if (units & 1073741824u32) != 0u32 {
                                             if (units & 2147483648u32) != 0u32 {
                                                 step(snprintf, { n1: tmp_len(j) });
-                                                execute();
+                                                step_until(function.exit);
                                                 solve();
                                             } else {
                                                 step(snprintf, { n1: tmp_len(j) });
-                                                execute();
+                                                step_until(function.exit);
                                                 solve();
                                             }
                                         } else {
                                             if (units & 2147483648u32) != 0u32 {
                                                 step(snprintf, { n1: tmp_len(j) });
-                                                execute();
+                                                step_until(function.exit);
                                                 solve();
                                             } else {
                                                 step(snprintf, { n1: tmp_len(j) });
-                                                execute();
+                                                step_until(function.exit);
                                                 solve();
                                             }
                                         }
@@ -1247,21 +1247,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                             if (units & 1073741824u32) != 0u32 {
                                                 if (units & 2147483648u32) != 0u32 {
                                                     step(snprintf, { n1: tmp_len(j) });
-                                                    execute();
+                                                    step_until(function.exit);
                                                     solve();
                                                 } else {
                                                     step(snprintf, { n1: tmp_len(j) });
-                                                    execute();
+                                                    step_until(function.exit);
                                                     solve();
                                                 }
                                             } else {
                                                 if (units & 2147483648u32) != 0u32 {
                                                     step(snprintf, { n1: tmp_len(j) });
-                                                    execute();
+                                                    step_until(function.exit);
                                                     solve();
                                                 } else {
                                                     step(snprintf, { n1: tmp_len(j) });
-                                                    execute();
+                                                    step_until(function.exit);
                                                     solve();
                                                 }
                                             }
@@ -1274,21 +1274,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                 if (units & 1073741824u32) != 0u32 {
                                                     if (units & 2147483648u32) != 0u32 {
                                                         step(snprintf, { n1: tmp_len(j) });
-                                                        execute();
+                                                        step_until(function.exit);
                                                         solve();
                                                     } else {
                                                         step(snprintf, { n1: tmp_len(j) });
-                                                        execute();
+                                                        step_until(function.exit);
                                                         solve();
                                                     }
                                                 } else {
                                                     if (units & 2147483648u32) != 0u32 {
                                                         step(snprintf, { n1: tmp_len(j) });
-                                                        execute();
+                                                        step_until(function.exit);
                                                         solve();
                                                     } else {
                                                         step(snprintf, { n1: tmp_len(j) });
-                                                        execute();
+                                                        step_until(function.exit);
                                                         solve();
                                                     }
                                                 }
@@ -1301,21 +1301,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                     if (units & 1073741824u32) != 0u32 {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         }
                                                     } else {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         }
                                                     }
@@ -1328,21 +1328,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                     if (units & 1073741824u32) != 0u32 {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         }
                                                     } else {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
-                                                            execute();
+                                                            step_until(function.exit);
                                                             solve();
                                                         }
                                                     }

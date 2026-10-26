@@ -37,8 +37,8 @@ fn readonly_scalar_initialization_checks_converted_helper_results() {
         &project,
         &import,
         r#"verifying "readonly_wide.cpp";
-int32 seven() { ensures result == 7; } by { execute(); solve(); }
-uint64 probe() { ensures result == 7u64; } by { execute(); solve(); }
+int32 seven() { ensures result == 7; }
+uint64 probe() { ensures result == 7u64; }
 "#,
     );
 }
@@ -79,9 +79,9 @@ fn check_readonly_scalar_initialization(tools: bool) {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "readonly.cpp";
-int32 seven() { ensures result == 7; } by { execute(); solve(); }
-int32 read(const int32& value) { views value; ensures result == value; } by { execute(); solve(); }
-int32 probe() { ensures result == 11; } by { execute(); solve(); }
+int32 seven() { ensures result == 7; }
+int32 read(const int32& value) { views value; ensures result == value; }
+int32 probe() { ensures result == 11; }
 "#;
     check_arithmetic_sidecar_with_tools(&project, &import, proof, tools);
     if tools {
@@ -182,7 +182,7 @@ int32 change(struct View value) {
  owns value.data[0..1];
  ensures result == 7;
  ensures load_int32(old(value.data)) == 9;
-} by { execute(); solve(); }
+}
 int32 probe(struct View& input) {
  views input.data; views input.size;
  owns input.data[0..1];
@@ -191,7 +191,7 @@ int32 probe(struct View& input) {
  ensures input.size == old(input.size);
  ensures input.data == old(input.data);
  ensures input.data[0] == 9;
-} by { execute(); solve(); }
+}
 "#;
     check_arithmetic_sidecar_with_tools(&project, &import, proof, tools);
     if tools {
@@ -292,7 +292,7 @@ struct View copy(const struct View& input) {
  ensures result.extent.size == input.extent.size;
  ensures input.data == old(input.data);
  ensures input.extent.size == old(input.extent.size);
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, proof);
     let whole = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
@@ -385,7 +385,7 @@ struct Extent copy(const struct View& input) {
  views input.extent.size;
  ensures result.size == input.extent.size;
  ensures input.extent.size == old(input.extent.size);
-} by { execute(); solve(); }
+}
 "#,
     );
 }
@@ -435,10 +435,10 @@ Node::Node(int32 input) {
  owns this->self;
  ensures this->value == input;
  ensures this->self == &this->value;
-} by { execute(); solve(); }
+}
 int32 probe(int32 input) {
  ensures result == input;
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, proof);
     let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
@@ -478,7 +478,7 @@ const int32& probe(const struct Node& input) {
  views input.value;
  ensures &result == &input.value;
  ensures result == input.value;
-} by { execute(); solve(); }
+}
 "#,
     );
     use sha2::{Digest, Sha256};
@@ -521,7 +521,7 @@ int32* probe(struct Node& target, const struct Node& source) {
  requires source.self == &source.value;
  ensures target.self == source.self;
  ensures result == &source.value;
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, proof);
     let invalid = proof.replace("result == &source.value", "result == &target.value");
@@ -558,7 +558,7 @@ int32 probe(struct View& target, const struct View& source) {
  ensures target.extent.size == source.extent.size;
  ensures source.extent.size == old(source.extent.size);
  ensures result == 0;
-} by { execute(); solve(); }
+}
 "#;
     let path = project.directory.join("copy.click");
     fs::write(&path, source).unwrap();
@@ -1138,7 +1138,7 @@ int32 probe(int32& value) {
  owns value;
  ensures value == 7;
  ensures result == 7;
-} by { execute(); solve(); }
+}
 "#,
         );
     }
@@ -1211,7 +1211,7 @@ int32 probe(int32& value) {
  owns value;
  ensures value == old(value);
  ensures result == old(value);
-} by { execute(); solve(); }
+}
 "#;
     let path = project.directory.join("observer.click");
     fs::write(&path, source).unwrap();
@@ -1238,11 +1238,11 @@ fn expression_observers_preserve_symbolic_field_reads_offline() {
 uint64 Count::size() const {
  views this->value;
  ensures result == this->value;
-} by { execute(); solve(); }
+}
 uint64 probe(const struct Count& count) {
  views count.value;
  ensures result == count.value + count.value;
-} by { execute(); solve(); }
+}
 "#;
     check_selected_claim_certificate(&project, &import, source);
     let path = project.directory.join("observe.click");
@@ -1319,9 +1319,9 @@ fn expression_observers_normalize_nested_arguments_and_widened_results() {
         &project,
         &import,
         r#"verifying "observe.cpp";
-uint64 Count::size() const { views this->value; ensures result == this->value; } by { execute(); solve(); }
-uint64 echo(uint64 value) { ensures result == value; } by { execute(); solve(); }
-uint64 probe(const struct Count& count) { views count.value; ensures result == count.value + count.value; } by { execute(); solve(); }
+uint64 Count::size() const { views this->value; ensures result == this->value; }
+uint64 echo(uint64 value) { ensures result == value; }
+uint64 probe(const struct Count& count) { views count.value; ensures result == count.value + count.value; }
 "#,
     );
     let project = Project::with_fixture(
@@ -1335,8 +1335,8 @@ uint64 probe(const struct Count& count) { views count.value; ensures result == c
         &project,
         &import,
         r#"verifying "relay.cpp";
-int32 echo(int32 value) { ensures result == value; } by { execute(); solve(); }
-int64 relay(int32 value) { requires value == 0; ensures result == 1i64; } by { execute(); solve(); }
+int32 echo(int32 value) { ensures result == value; }
+int64 relay(int32 value) { requires value == 0; ensures result == 1i64; }
 "#,
     );
 }
@@ -1358,9 +1358,9 @@ fn expression_observers_preserve_short_circuit_read_permissions() {
         let numeric = if condition == "false" { 0 } else { 1 };
         let source = format!(
             r#"verifying "observe.cpp";
-bool enabled() {{ ensures result == {numeric}; }} by {{ execute(); solve(); }}
-bool read(const struct Count& count) {{ views count.value; requires count.value == 0u64; ensures result == 1; }} by {{ execute(); solve(); }}
-bool probe(const struct Count& count) {{ ensures result == result; }} by {{ execute(); solve(); }}
+bool enabled() {{ ensures result == {numeric}; }}
+bool read(const struct Count& count) {{ views count.value; requires count.value == 0u64; ensures result == 1; }}
+bool probe(const struct Count& count) {{ ensures result == result; }}
 "#
         );
         if condition == "false" {
@@ -1391,8 +1391,8 @@ fn expression_observers_form_checked_reference_results() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "observe.cpp";
-int32* View::data() const { views this->pointer; ensures result == this->pointer; } by { execute(); solve(); }
-int32& probe(const struct View& view) { views view.pointer; views view.pointer[0..1]; ensures &result == view.pointer; } by { execute(); solve(); }
+int32* View::data() const { views this->pointer; ensures result == this->pointer; }
+int32& probe(const struct View& view) { views view.pointer; views view.pointer[0..1]; ensures &result == view.pointer; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
     let path = project.directory.join("observe.click");
@@ -1417,11 +1417,11 @@ fn expression_observers_refuse_mutation_despite_a_matching_native_signature() {
 uint64 Count::size() {
  views this->value;
  ensures result == 5u64;
-} by { execute(); solve(); }
+}
 uint64 probe(struct Count& count) {
  views count.value;
  ensures result == count.value + 5u64;
-} by { execute(); solve(); }
+}
 "#;
     let path = project.directory.join("observe.click");
     fs::write(&path, source).unwrap();
@@ -1456,7 +1456,7 @@ fn declared_macro_definitions_keep_expansion_locations_and_locks_offline() {
             .iter()
             .any(|file| file.canonical_path == canonical_header.to_string_lossy())
     );
-    let sidecar = "verifying \"macro.cpp\";\nint32 read(int32 value) { ensures result == value; } by { execute(); solve(); }\nint32 probe(int32 value) { ensures result == value; } by { execute(); solve(); }\n";
+    let sidecar = "verifying \"macro.cpp\";\nint32 read(int32 value) { ensures result == value; }\nint32 probe(int32 value) { ensures result == value; }\n";
     check_selected_claim_certificate(&project, &import, sidecar);
     let artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
@@ -1483,8 +1483,8 @@ fn reference_result_claim_and_simp_expansion_preserve_address_and_value_spelling
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "reference.cpp";
-int32& helper(int32& value) { views value; ensures &result == &value; ensures result == old(value); } by { execute(); solve(); }
-int32& probe(int32& value) { views value; ensures &result == &value; ensures result == old(value); } by { execute(); solve(); }
+int32& helper(int32& value) { views value; ensures &result == &value; ensures result == old(value); }
+int32& probe(int32& value) { views value; ensures &result == &value; ensures result == old(value); }
 "#;
     let path = project.directory.join("reference.click");
     fs::write(&path, source).unwrap();
@@ -1529,7 +1529,7 @@ fn reference_aliases_preserve_resolved_types_and_const_qualification_offline() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"reference.cpp\";\n{sidecar_type} probe(int32* data) {{ views data[0..1]; ensures &result == data; }} by {{ execute(); solve(); }}\n"
+            "verifying \"reference.cpp\";\n{sidecar_type} probe(int32* data) {{ views data[0..1]; ensures &result == data; }}\n"
         );
         check_selected_claim_certificate(&project, &import, &source);
         let path = project.directory.join("bad.click");
@@ -1583,12 +1583,12 @@ fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline(
             .iter()
             .any(|function| function.name == "evaluated")
         {
-            "bool evaluated() { ensures result == 0; } by { execute(); solve(); }\n"
+            "bool evaluated() { ensures result == 0; }\n"
         } else {
             ""
         };
         let source = format!(
-            "verifying \"evaluation.cpp\";\n{helper}bool probe() {{ ensures result == {expected}; }} by {{ execute(); solve(); }}\n"
+            "verifying \"evaluation.cpp\";\n{helper}bool probe() {{ ensures result == {expected}; }}\n"
         );
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace(
@@ -1656,7 +1656,7 @@ fn unreachable_builtin_requires_an_unreachable_execution_path_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let source = "verifying \"unreachable.cpp\";\nint32 probe(bool enter) { requires enter == 0; ensures result == 0; } by { execute(); solve(); }\n";
+    let source = "verifying \"unreachable.cpp\";\nint32 probe(bool enter) { requires enter == 0; ensures result == 0; }\n";
     check_selected_claim_certificate(&project, &import, source);
     for hostile in [
         source.replace("requires enter == 0;", ""),
@@ -1693,13 +1693,13 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
         ),
         (
             "bool ready() noexcept { return false; } bool probe() noexcept { return !ready(); }",
-            "bool ready() { ensures result == 0; } by { execute(); solve(); }",
+            "bool ready() { ensures result == 0; }",
             "",
             "1 == 1",
         ),
         (
             "bool ready() noexcept { return false; } bool probe() noexcept { if (!ready()) { return true; } else { return false; } }",
-            "bool ready() { ensures result == 0; } by { execute(); solve(); }",
+            "bool ready() { ensures result == 0; }",
             "",
             "1 == 1",
         ),
@@ -1709,7 +1709,7 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"negation.cpp\";\n{helper}\nbool probe({parameters}) {{ requires {requires}; ensures result == 1; }} by {{ execute(); solve(); }}\n"
+            "verifying \"negation.cpp\";\n{helper}\nbool probe({parameters}) {{ requires {requires}; ensures result == 1; }}\n"
         );
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace("ensures result == 1;", "ensures result == 0;");
@@ -2390,7 +2390,7 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
             ensures this->saved == old(slot[0]);
             ensures slot[0] == 9;
             ensures separate(memory(*this), memory(this->pointer[0..1]));
-        } by { execute(); solve(); }
+        }
         Restore::~Restore() {
             requires separate(memory(*this), memory(this->pointer[0..1]));
             owns this->pointer;
@@ -2399,7 +2399,7 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
             ensures this->pointer == old(this->pointer);
             ensures this->saved == old(this->saved);
             ensures this->pointer[0] == old(this->saved);
-        } by { execute(); solve(); }
+        }
         int32 helper(bool should_throw) throws int32 {
             ensures result == 5;
             exceptional ensures exception == 7;
@@ -2414,7 +2414,7 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
                 step();
                 outcomes {
                     returned => { step(); step(); }
-                    threw => { step(); execute(); solve(); }
+                    threw => { step(); step_until(function.exit); solve(); }
                 }
             } else { }
             step();
@@ -2479,8 +2479,8 @@ fn graph_place_indices_preserve_reference_calls_with_growing_unrelated_places() 
             .join(", ");
         let source = format!(
             r#"verifying "places.cpp";
-int32 read(int32& value) {{ owns value; ensures result == old(value); ensures value == old(value); }} by {{ execute(); solve(); }}
-int32 many({parameters}, int32& value) {{ owns value; requires value == 7; ensures result == 7; ensures value == 7; }} by {{ execute(); solve(); }}
+int32 read(int32& value) {{ owns value; ensures result == old(value); ensures value == old(value); }}
+int32 many({parameters}, int32& value) {{ owns value; requires value == 7; ensures result == 7; ensures value == 7; }}
 "#
         );
         check_selected_claim_certificate(&project, &import, &source);
@@ -2489,8 +2489,8 @@ int32 many({parameters}, int32& value) {{ owns value; requires value == 7; ensur
         let hostile = source
             .replace("ensures result == 7;", "ensures result == 8;")
             .replace(
-                "ensures value == 7; } by { execute(); solve(); }",
-                "ensures value == 7; } by { execute(); assumption(); }",
+                "ensures value == 7; }",
+                "ensures value == 7; } by { step_until(function.exit); assumption(); }",
             );
         let sidecar = project.directory.join("bad.click");
         fs::write(&sidecar, &hostile).unwrap();
@@ -4779,7 +4779,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
         .expect("expanded terminal-cleanup proof must reverify");
 
     let missing_destructor = TERMINAL_DESTRUCTOR_SIDECAR.replace(
-        "RestoreState::~RestoreState() {\n    requires separate(memory(*this), memory(this->pointer[0..1]));\n    owns this->pointer;\n    owns this->saved;\n    owns this->pointer[0..1];\n    ensures this->pointer == old(this->pointer);\n    ensures this->saved == old(this->saved);\n    ensures this->pointer[0] == old(this->saved);\n} by {\n    execute();\n    solve();\n}\n\n",
+        "RestoreState::~RestoreState() {\n    requires separate(memory(*this), memory(this->pointer[0..1]));\n    owns this->pointer;\n    owns this->saved;\n    owns this->pointer[0..1];\n    ensures this->pointer == old(this->pointer);\n    ensures this->saved == old(this->saved);\n    ensures this->pointer[0] == old(this->saved);\n}\n\n",
         "",
     );
     fs::write(&sidecar, &missing_destructor).unwrap();
@@ -5345,16 +5345,16 @@ fn third_sibling_scope_preserves_independent_cleanup_and_frames() {
         .rsplit_once("} by {")
         .unwrap();
     let proof = r#"step(); step();
-    branch { execute(); solve(); } else { }
+    branch { step_until(function.exit); solve(); } else { }
     step(); step();
     have value == old(value) by { solve(); }
     step(); step();
-    branch { execute(); solve(); } else { }
+    branch { step_until(function.exit); solve(); } else { }
     step(); step();
     have value == old(value) by { solve(); }
     step(); step(); step(); step();
     have value == old(value) by { solve(); }
-    execute(); solve();"#;
+    step_until(function.exit); solve();"#;
     let source = format!("{contracts}}} by {{\n{proof}\n}}\n");
     check_selected_claim_certificate(&growing, &growing_import, &source);
 }
@@ -5791,7 +5791,7 @@ int32 read(int32* data, {click_type} index) {{
  owns data[0..3]; requires index == {index};
  ensures result == old(data[{expected}]);
  ensures data[0] == old(data[0]); ensures data[2] == old(data[2]);
-}} by {{ execute(); solve(); }}
+}}
 "#
         );
         check_selected_claim_certificate(&project, &import, &sidecar);
@@ -5818,7 +5818,7 @@ fn cpp_native_size_t_last_load_checks_nonempty_and_actual_backing_bounds() {
 int32 last(int32* data, uint64 length) {
  owns data[0..1]; requires length == 1u64;
  ensures result == old(data[0]);
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, fixed_index);
     let unresolved = fixed_index
@@ -5847,7 +5847,7 @@ int32 last(int32* data, uint64 length) {
 int32 last(int32* data, uint64 length) {{
  owns data[0..{end}]; requires length == {length};
  ensures result == old(data[{expected}]);
-}} by {{ execute(); solve(); }}
+}}
 "#
         );
         check_first_claim_certificate(&project, &import, &sidecar);
@@ -5861,7 +5861,7 @@ int32 last(int32* data, uint64 length) {{
             r#"verifying "last.cpp";
 int32 last(int32* data, uint64 length) {{
  owns data[0..{end}]; requires length == {length}; ensures 0 == 0;
-}} by {{ execute(); solve(); }}
+}}
 "#
         );
         let path = project.directory.join("bad.click");
@@ -5975,7 +5975,7 @@ fn cpp_record_slice_rejects_unresolved_methods_bitfields_and_inheritance() {
 int32 stage_restore(struct First& first, struct Second& second) {
  owns first.value; owns second.value;
  ensures result == old(second.value); ensures first.value == old(second.value);
-} by { execute(); solve(); }
+}
 "#,
     );
 }
@@ -6331,7 +6331,7 @@ fn cpp_fixed_byte_enum_forwarding_verifies_and_retains_nominal_identity_offline(
     check_selected_claim_certificate(
         &project,
         &import,
-        "verifying \"enum.cpp\"; uint8 echo(uint8 value) { ensures result == value; } by { execute(); solve(); } uint8 probe(uint8 value) { ensures result == value; } by { execute(); solve(); }",
+        "verifying \"enum.cpp\"; uint8 echo(uint8 value) { ensures result == value; } uint8 probe(uint8 value) { ensures result == value; }",
     );
 }
 
@@ -6348,7 +6348,7 @@ fn cpp_fixed_byte_enum_explicit_cast_preserves_all_representation_bits_offline()
     check_selected_claim_certificate(
         &project,
         &import,
-        "verifying \"enum.cpp\"; uint8 probe(uint32 value) { requires value == 511u32; ensures result == 255u8; } by { execute(); solve(); }",
+        "verifying \"enum.cpp\"; uint8 probe(uint32 value) { requires value == 511u32; ensures result == 255u8; }",
     );
 }
 
@@ -6366,7 +6366,7 @@ fn cpp_fixed_byte_enum_converted_call_results_verify_offline() {
     check_selected_claim_certificate(
         &project,
         &import,
-        "verifying \"enum.cpp\"; uint32 echo(uint32 value) { ensures result == value; } by { execute(); solve(); } uint8 probe(uint32 value) { requires value == 511u32; ensures result == 255u8; } by { execute(); solve(); }",
+        "verifying \"enum.cpp\"; uint32 echo(uint32 value) { ensures result == value; } uint8 probe(uint32 value) { requires value == 511u32; ensures result == 255u8; }",
     );
 }
 
@@ -6387,7 +6387,7 @@ fn cpp_fixed_byte_enum_call_conversions_cannot_erase_nominal_identity() {
     check_selected_claim_certificate(
         &project,
         &import,
-        "verifying \"enum.cpp\"; uint8 echo(uint8 value) { ensures result == value; } by { execute(); solve(); } uint8 probe(uint8 value) { ensures result == value; } by { execute(); solve(); }",
+        "verifying \"enum.cpp\"; uint8 echo(uint8 value) { ensures result == value; } uint8 probe(uint8 value) { ensures result == value; }",
     );
     let artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
@@ -6498,7 +6498,7 @@ fn cpp_unsigned_byte_call_capture_verifies_offline() {
     check_selected_claim_certificate(
         &project,
         &import,
-        "verifying \"bytes.cpp\"; uint8 echo(uint8 value) { ensures result == value; } by { execute(); solve(); } uint8 probe(uint8 value) { ensures result == value; } by { execute(); solve(); }",
+        "verifying \"bytes.cpp\"; uint8 echo(uint8 value) { ensures result == value; } uint8 probe(uint8 value) { ensures result == value; }",
     );
 }
 
@@ -6512,7 +6512,7 @@ fn cpp_unsigned_byte_narrowing_preserves_modulo_values_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"bytes.cpp\"; uint8 probe(uint32 value) { requires value == 511u32; ensures result == 255u8; } by { execute(); solve(); }";
+    let proof = "verifying \"bytes.cpp\"; uint8 probe(uint32 value) { requires value == 511u32; ensures result == 255u8; }";
     check_selected_claim_certificate(&project, &import, proof);
     let bad = proof.replace("255u8", "0u8");
     let path = project.directory.join("bad.click");
@@ -6538,7 +6538,7 @@ fn cpp_unsigned_byte_arithmetic_preserves_integer_promotions_offline() {
     check_selected_claim_certificate(
         &project,
         &import,
-        "verifying \"bytes.cpp\"; uint32 probe(uint8 value) { requires value == 255u8; ensures result == 65025u32; } by { execute(); solve(); }",
+        "verifying \"bytes.cpp\"; uint32 probe(uint8 value) { requires value == 255u8; ensures result == 65025u32; }",
     );
 }
 
@@ -6555,7 +6555,7 @@ fn cpp_unsigned_byte_record_fields_preserve_layout_and_authority_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"bytes.cpp\"; uint8 probe(struct Bytes& bytes, uint8 value) { owns bytes.first; views bytes.second; views bytes.tail; ensures bytes.first == value; ensures result == old(bytes.second); ensures bytes.second == old(bytes.second); ensures bytes.tail == old(bytes.tail); } by { execute(); solve(); }";
+    let proof = "verifying \"bytes.cpp\"; uint8 probe(struct Bytes& bytes, uint8 value) { owns bytes.first; views bytes.second; views bytes.tail; ensures bytes.first == value; ensures result == old(bytes.second); ensures bytes.second == old(bytes.second); ensures bytes.tail == old(bytes.tail); }";
     check_selected_claim_certificate(&project, &import, proof);
     let bad = proof.replace("owns bytes.first", "views bytes.first");
     let path = project.directory.join("bad.click");
@@ -6598,7 +6598,7 @@ fn cpp_uninitialized_integer_local_verifies_only_after_assignment_offline() {
     check_selected_claim_certificate(
         &project,
         &import,
-        "verifying \"uninitialized.cpp\"; uint32 probe(uint32 value) { ensures result == value; } by { execute(); solve(); }",
+        "verifying \"uninitialized.cpp\"; uint32 probe(uint32 value) { ensures result == value; }",
     );
 }
 
@@ -6612,7 +6612,7 @@ fn cpp_uninitialized_integer_read_rejects_even_a_reflexive_claim_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let source = "verifying \"uninitialized.cpp\"; uint32 probe() { ensures result == result; } by { execute(); solve(); }";
+    let source = "verifying \"uninitialized.cpp\"; uint32 probe() { ensures result == result; }";
     let path = project.directory.join("bad.click");
     fs::write(&path, source).unwrap();
     let parsed = read_click_project(&path, source).unwrap();
@@ -7340,7 +7340,7 @@ fn signed_division_correction_covers_rounding_directions_and_boundary_cases() {
         (i64::MIN, i32::MAX, true, -4294967299),
     ] {
         let source = format!(
-            "verifying \"arithmetic.cpp\";\nint64 rounded_divide(int64 n, int32 d, bool round_down) {{\nrequires n == {n}i64;\nrequires d == {d};\nrequires round_down == {};\nensures result == {result}i64;\n}} by {{ execute(); solve(); }}\n",
+            "verifying \"arithmetic.cpp\";\nint64 rounded_divide(int64 n, int32 d, bool round_down) {{\nrequires n == {n}i64;\nrequires d == {d};\nrequires round_down == {};\nensures result == {result}i64;\n}}\n",
             i32::from(down)
         );
         check_selected_claim_certificate(&project, &import, &source);
@@ -7412,7 +7412,7 @@ fn signed_scalar_arithmetic_rejects_undefined_operations_and_false_claims() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"arithmetic.cpp\";\nint64 {selector}({parameters}) {{ {preconditions} ensures {claim}; }} by {{ execute(); solve(); }}\n"
+            "verifying \"arithmetic.cpp\";\nint64 {selector}({parameters}) {{ {preconditions} ensures {claim}; }}\n"
         );
         let source = source.replace(
             "-9223372036854775808i64",
@@ -7479,7 +7479,7 @@ fn signed_scalar_casts_preserve_cpp20_boolean_and_narrowing_semantics() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"arithmetic.cpp\";\n{result_type} {selector}({parameters}) {{ {preconditions} ensures result == {expected}; }} by {{ execute(); solve(); }}\n"
+            "verifying \"arithmetic.cpp\";\n{result_type} {selector}({parameters}) {{ {preconditions} ensures result == {expected}; }}\n"
         );
         check_first_claim_certificate(&project, &import, &source);
     }
@@ -7497,12 +7497,12 @@ fn signed_scalar_casts_preserve_cpp20_boolean_and_narrowing_semantics() {
 int64 quotient(int64 n, int64 d) {
  requires n == 4294967297i64; requires d == 1i64;
  ensures result == 4294967297i64;
-} by { execute(); solve(); }
+}
 int64 relay(int64 n, int64 d, int32& untouched) {
  views untouched;
  requires n == 4294967297i64; requires d == 1i64;
  ensures result == 1i64; ensures untouched == old(untouched);
-} by { execute(); solve(); }
+}
 "#,
     );
 }
@@ -7694,7 +7694,7 @@ fn unsigned_scalar_operations_wrap_and_preserve_conversion_semantics() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"unsigned.cpp\";\n{result_type} {name}({params}) {{ {requires} ensures result == {expected}; }} by {{ execute(); solve(); }}"
+            "verifying \"unsigned.cpp\";\n{result_type} {name}({params}) {{ {requires} ensures result == {expected}; }}"
         );
         check_arithmetic_sidecar(&project, &import, &source);
     }
@@ -7707,12 +7707,12 @@ fn unsigned_modular_calls_frame_unrelated_memory_and_reject_false_wrap_claims() 
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "unsigned.cpp";
-uint64 add64(uint64 a, uint64 b) { ensures result == a + b; } by { execute(); solve(); }
+uint64 add64(uint64 a, uint64 b) { ensures result == a + b; }
 uint64 relay(uint64 a, uint64 b, int32& untouched) {
  owns untouched;
  ensures result == a + b;
  ensures untouched == old(untouched);
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, source);
     let project = Project::with_fixture("unsigned.cpp", "add64", UNSIGNED_ARITHMETIC_SOURCE);
@@ -7722,7 +7722,7 @@ uint64 relay(uint64 a, uint64 b, int32& untouched) {
 uint64 add64(uint64 a, uint64 b) {
  requires a == 18446744073709551615u64; requires b == 1u64;
  ensures result == 1u64;
-} by { execute(); solve(); }
+}
 "#;
     fs::write(project.directory.join("bad.click"), source).unwrap();
     let parsed = read_click_project(&project.directory.join("bad.click"), source).unwrap();
@@ -7741,7 +7741,7 @@ fn unsigned_division_rejects_zero() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"unsigned.cpp\"; uint64 {name}(uint64 a, uint64 b) {{ requires b == 0u64; ensures result == 0u64; }} by {{ execute(); solve(); }}"
+            "verifying \"unsigned.cpp\"; uint64 {name}(uint64 a, uint64 b) {{ requires b == 0u64; ensures result == 0u64; }}"
         );
         fs::write(project.directory.join("bad.click"), &source).unwrap();
         let parsed = read_click_project(&project.directory.join("bad.click"), &source).unwrap();
@@ -7771,7 +7771,7 @@ fn compiler_constants_retain_their_origin_and_reject_runtime_calls() {
     check_first_claim_certificate(
         &project,
         &import,
-        "verifying \"constants.cpp\"; uint32 size() { ensures result == 10u32; } by { execute(); solve(); }",
+        "verifying \"constants.cpp\"; uint32 size() { ensures result == 10u32; }",
     );
     let project = Project::with_fixture(
         "constants.cpp",
@@ -7790,7 +7790,7 @@ fn unsigned_positive_divisor_contract_expands_and_reverifies() {
     check_first_claim_certificate(
         &project,
         &import,
-        "verifying \"unsigned.cpp\"; uint64 div64(uint64 a, uint64 b) { requires b > 0u64; ensures result == a / b; } by { execute(); solve(); }",
+        "verifying \"unsigned.cpp\"; uint64 div64(uint64 a, uint64 b) { requires b > 0u64; ensures result == a / b; }",
     );
 }
 
@@ -7817,7 +7817,7 @@ fn unsigned_fee_fast_path_expressions_cover_large_products_and_rounding() {
                 numerator / size as u64
             };
             let proof = format!(
-                "verifying \"fast_path.cpp\"; uint64 {name}(int64 fee, int32 at_size, int32 size) {{ requires fee == {fee}i64; requires at_size == {at_size}; requires size == {size}; ensures result == {expected}u64; }} by {{ execute(); solve(); }}"
+                "verifying \"fast_path.cpp\"; uint64 {name}(int64 fee, int32 at_size, int32 size) {{ requires fee == {fee}i64; requires at_size == {at_size}; requires size == {size}; ensures result == {expected}u64; }}"
             );
             check_selected_claim_certificate(&project, &import, &proof);
         }
@@ -7829,7 +7829,7 @@ fn mixed_unsigned_return_preserves_signed_intermediate_overflow() {
     let project = Project::with_fixture("unsigned.cpp", "mixed", UNSIGNED_ARITHMETIC_SOURCE);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let source = "verifying \"unsigned.cpp\"; uint64 mixed(int64 a, uint32 b) { requires a == 9223372036854775807i64; requires b == 4294967295u32; ensures result == 0u64; } by { execute(); solve(); }";
+    let source = "verifying \"unsigned.cpp\"; uint64 mixed(int64 a, uint32 b) { requires a == 9223372036854775807i64; requires b == 4294967295u32; ensures result == 0u64; }";
     fs::write(project.directory.join("bad.click"), source).unwrap();
     let parsed = read_click_project(&project.directory.join("bad.click"), source).unwrap();
     let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
@@ -7848,9 +7848,9 @@ fn compiler_constant_calls_preserve_runtime_constant_evaluation_context() {
     check_first_claim_certificate(
         &project,
         &import,
-        "verifying \"constant_context.cpp\"; uint64 probe() { ensures result == 2u64; } by { execute(); solve(); }",
+        "verifying \"constant_context.cpp\"; uint64 probe() { ensures result == 2u64; }",
     );
-    let bad = "verifying \"constant_context.cpp\"; uint64 probe() { ensures result == 1u64; } by { execute(); solve(); }";
+    let bad = "verifying \"constant_context.cpp\"; uint64 probe() { ensures result == 1u64; }";
     fs::write(project.directory.join("bad.click"), bad).unwrap();
     let parsed = read_click_project(&project.directory.join("bad.click"), bad).unwrap();
     assert!(verify_program_prepared_project(&parsed, &import).is_err());
@@ -7900,18 +7900,18 @@ fn concrete_template_instances_have_distinct_identities_and_modular_contracts() 
 int32 choose<true>(int32 a, int32 b) {
  requires a >= -1073741824; requires a <= 1073741823;
  ensures result == a; ensures result >= -1073741824; ensures result <= 1073741823;
-} by { execute(); solve(); }
+}
 int32 choose<false>(int32 a, int32 b) {
  requires b >= -1073741824; requires b <= 1073741823;
  ensures result == b; ensures result >= -1073741824; ensures result <= 1073741823;
-} by { execute(); solve(); }
+}
 int32 both(int32 a, int32 b, int32* untouched) {
  requires a >= -1073741824; requires a <= 1073741823;
  requires b >= -1073741824; requires b <= 1073741823;
  owns untouched[0..1];
  ensures result == a + b;
  ensures untouched[0] == old(untouched[0]);
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, sidecar);
     let hostile = sidecar.replace("ensures result == b;", "ensures result == a;");
@@ -7932,12 +7932,12 @@ fn concrete_scalar_type_template_instances_preserve_width_and_signedness() {
         "identity__unsigned_long"
     );
     let sidecar = r#"verifying "instances.cpp";
-int32 identity<int>(int32 value) { ensures result == value; } by { execute(); solve(); }
-uint64 identity<unsigned long>(uint64 value) { ensures result == value; } by { execute(); solve(); }
+int32 identity<int>(int32 value) { ensures result == value; }
+uint64 identity<unsigned long>(uint64 value) { ensures result == value; }
 uint64 widths(int32 a, uint64 b) {
  requires a == 1; requires b == 18446744073709551615u64;
  ensures result == 0u64;
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, sidecar);
 }
@@ -7953,17 +7953,17 @@ int64 Value::select<true>() const {
  views this->fee;
  ensures result == this->fee;
  ensures this->fee == old(this->fee);
-} by { execute(); solve(); }
+}
 int64 Value::select<false>() const {
  views this->fee;
  ensures result == 0i64;
  ensures this->fee == old(this->fee);
-} by { execute(); solve(); }
+}
 int64 member(const struct Value& value) {
  owns value.fee;
  ensures result == value.fee;
  ensures value.fee == old(value.fee);
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, sidecar);
     let hostile = sidecar.replace(" owns value.fee;", "");
@@ -7980,8 +7980,8 @@ fn constexpr_discards_only_the_compiler_selected_arm() {
     let import = load_import(&project.config()).unwrap();
     assert_eq!(import.export().reachable_functions.len(), 1);
     let sidecar = r#"verifying "instances.cpp";
-int32 bounded<true>(int32 value) { ensures result == value; } by { execute(); solve(); }
-int32 accepted(int32 value) { ensures result == value; } by { execute(); solve(); }
+int32 bounded<true>(int32 value) { ensures result == value; }
+int32 accepted(int32 value) { ensures result == value; }
 "#;
     check_first_claim_certificate(&project, &import, sidecar);
     let rejected = Project::with_fixture("instances.cpp", "rejected", TEMPLATE_INSTANCE_SOURCE);
@@ -8004,9 +8004,9 @@ fn template_type_identity_does_not_merge_equal_width_cpp_types() {
     assert_ne!(helpers[0].declaration_id, helpers[1].declaration_id);
     let source = r#"import click::integer;
 verifying "instances.cpp";
-uint64 identity<unsigned long>(uint64 value) { ensures result == value; } by { execute(); solve(); }
-uint64 identity<unsigned long long>(uint64 value) { ensures result == value; } by { execute(); solve(); }
-uint64 exact_types(uint64 a, uint64 b) { ensures result == integer::uint64_wrapping_add(a, b); } by { execute(); solve(); }
+uint64 identity<unsigned long>(uint64 value) { ensures result == value; }
+uint64 identity<unsigned long long>(uint64 value) { ensures result == value; }
+uint64 exact_types(uint64 a, uint64 b) { ensures result == integer::uint64_wrapping_add(a, b); }
 "#;
     check_first_claim_certificate(&project, &import, source);
 }
@@ -8023,7 +8023,7 @@ fn constexpr_conditions_use_constant_context_and_allow_absent_else() {
         let import = load_import(&project.config()).unwrap();
         assert!(import.export().reachable_functions.is_empty());
         let source = format!(
-            "verifying \"instances.cpp\"; int32 {selected}({params}) {{ ensures result == {expected}; }} by {{ execute(); solve(); }}"
+            "verifying \"instances.cpp\"; int32 {selected}({params}) {{ ensures result == {expected}; }}"
         );
         check_first_claim_certificate(&project, &import, &source);
     }
@@ -8042,8 +8042,8 @@ fn substituted_boolean_template_arguments_are_typed_values() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "instances.cpp";
-int32 flag<true>() { ensures result == 1; } by { execute(); solve(); }
-int32 get_flag() { ensures result == 1; } by { execute(); solve(); }
+int32 flag<true>() { ensures result == 1; }
+int32 get_flag() { ensures result == 1; }
 "#;
     check_first_claim_certificate(&project, &import, source);
 }
@@ -8083,12 +8083,10 @@ fn integral_template_values_preserve_exact_type_sign_and_full_width() {
         // sidecar names the instance as the importer does.
         let name = click::languages::cpp::names::path_name(&helper.path);
         sidecar.push_str(&format!(
-            "int32 {name}(int32 value) {{ ensures result == value; }} by {{ execute(); solve(); }}\n"
+            "int32 {name}(int32 value) {{ ensures result == value; }}\n"
         ));
     }
-    sidecar.push_str(
-        "int32 call(int32 value) { ensures result == value; } by { execute(); solve(); }",
-    );
+    sidecar.push_str("int32 call(int32 value) { ensures result == value; }");
     check_first_claim_certificate(&project, &import, &sidecar);
 }
 
@@ -8117,7 +8115,7 @@ uint64 size(struct Extent__value_unsigned_long_18446744073709551615& span) {
  ensures result == 18446744073709551615u64;
  ensures span.length == old(span.length);
  ensures span.marker == 4294967295u32;
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, sidecar);
     for denied in [" owns span.length;", " owns span.marker;"] {
@@ -8142,7 +8140,7 @@ fn explicitly_defaulted_trivial_destructor_uses_ordinary_local_lifetime() {
     check_first_claim_certificate(
         &project,
         &import,
-        "verifying \"defaulted.cpp\"; int32 read(int32 input) { ensures result == input; } by { execute(); solve(); }",
+        "verifying \"defaulted.cpp\"; int32 read(int32 input) { ensures result == input; }",
     );
 }
 
@@ -8220,7 +8218,7 @@ fn instantiated_fee_fast_paths_preserve_both_rounding_expressions() {
                 "requires fee == {fee}i64; requires at_size == {at_size}; requires size == {size}; ensures result == {expected}u64;"
             );
             let source = format!(
-                "verifying \"instances.cpp\"; uint64 {instance}(int64 fee, int32 at_size, int32 size) {{ {contract} }} by {{ execute(); solve(); }} uint64 {selected}(int64 fee, int32 at_size, int32 size) {{ {contract} }} by {{ execute(); solve(); }}"
+                "verifying \"instances.cpp\"; uint64 {instance}(int64 fee, int32 at_size, int32 size) {{ {contract} }} uint64 {selected}(int64 fee, int32 at_size, int32 size) {{ {contract} }}"
             );
             check_selected_claim_certificate(&project, &import, &source);
             let hostile = source.replace(
@@ -8292,7 +8290,7 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
         // the instance Clang prints, a defaulted argument left out.
         assert_eq!(instance.path, [spelling]);
         let sidecar = format!(
-            "verifying \"instances.cpp\"; int32 {spelling}::Read() const {{ views this->value; ensures result == this->value; }} by {{ execute(); solve(); }} int32 {selected}(const {spelling}& box) {{ views box.value; ensures result == box.value; }} by {{ execute(); solve(); }}"
+            "verifying \"instances.cpp\"; int32 {spelling}::Read() const {{ views this->value; ensures result == this->value; }} int32 {selected}(const {spelling}& box) {{ views box.value; ensures result == box.value; }}"
         );
         fs::remove_file(&project.exporter).unwrap();
         check_selected_claim_certificate(
@@ -8403,16 +8401,16 @@ fn class_template_instances_use_resolved_storage_types_and_constructor_names() {
         verifying "stored.cpp";
         Stored<long long>::Stored(int64 next) {
             owns this->value; ensures this->value == next;
-        } by { execute(); solve(); }
+        }
         int64 Stored<long long>::Read() const {
             views this->value; ensures result == this->value;
-        } by { execute(); solve(); }
+        }
         Stored<long long>::~Stored() {
             owns this->value; ensures this->value == 0i64;
-        } by { execute(); solve(); }
+        }
         int64 create(int64 next) {
             ensures result == next;
-        } by { execute(); solve(); }
+        }
     "#;
         // A class template instance's members are written as C++ writes
         // them, as an ordinary class's are.
@@ -8420,16 +8418,16 @@ fn class_template_instances_use_resolved_storage_types_and_constructor_names() {
         verifying "stored.cpp";
         Stored::Stored(int64 next) {
             owns this->value; ensures this->value == next;
-        } by { execute(); solve(); }
+        }
         int64 Stored::Read() const {
             views this->value; ensures result == this->value;
-        } by { execute(); solve(); }
+        }
         Stored::~Stored() {
             owns this->value; ensures this->value == 0i64;
-        } by { execute(); solve(); }
+        }
         int64 create(int64 next) {
             ensures result == next;
-        } by { execute(); solve(); }
+        }
     "#;
         fs::remove_file(&project.exporter).unwrap();
         check_selected_claim_certificate(
@@ -8463,13 +8461,13 @@ fn class_template_instances_reject_cross_instance_bindings_even_with_equal_layou
         verifying "instances.cpp";
         int32 Box<SizeTag, true>::Read() const {
             views this->value; ensures result == this->value;
-        } by { execute(); solve(); }
+        }
         int32 both(const Box<SizeTag, true>& left,
                    const struct Box__tag_WeightTag__bool_true& right) {
             views left.value; views right.value;
             ensures result == left.value;
             ensures right.value == old(right.value);
-        } by { execute(); solve(); }
+        }
     "#;
     fs::remove_file(&project.exporter).unwrap();
     check_selected_claim_certificate(&project, &import, sidecar);
@@ -8506,7 +8504,6 @@ fn class_template_instances_complete_unused_parameter_types_without_source_edits
         r#"
         verifying "unused.cpp";
         int32 call(const Box<int>& box) { ensures result == 7; }
-        by { execute(); solve(); }
     "#,
     );
 }
@@ -8613,7 +8610,7 @@ fn single_base_layouts_preserve_nominal_subobjects_and_verify_offline() {
             ensures result == state.untouched;
             ensures state.left.base.fee == old(state.left.base.fee);
             ensures state.right.base.size == old(state.right.base.size);
-        } by { execute(); solve(); }
+        }
     "#,
     );
 }
@@ -8776,8 +8773,7 @@ fn inherited_field_paths_preserve_base_authority_and_verify_offline() {
         let project = Project::with_fixture("inherited.cpp", selected, INHERITED_SOURCE);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let sidecar =
-            format!("verifying \"inherited.cpp\"; {contract} by {{ execute(); solve(); }}");
+        let sidecar = format!("verifying \"inherited.cpp\"; {contract}");
         fs::remove_file(&project.exporter).unwrap();
         check_selected_claim_certificate(&project, &import, &sidecar);
     }
@@ -8790,29 +8786,29 @@ fn inherited_method_and_reference_calls_verify_offline_with_sibling_frames() {
         (
             "Envelope::Via",
             r#"
-        int32 Base::Read() const { views this->size; ensures result == this->size; } by { execute(); solve(); }
-        int32 Envelope::Via() const { views this->left.base.base.size; views this->right.base.size; ensures result == this->left.base.base.size; ensures this->right.base.size == old(this->right.base.size); } by { execute(); solve(); }
+        int32 Base::Read() const { views this->size; ensures result == this->size; }
+        int32 Envelope::Via() const { views this->left.base.base.size; views this->right.base.size; ensures result == this->left.base.base.size; ensures this->right.base.size == old(this->right.base.size); }
         "#,
         ),
         (
             "Envelope::Write",
             r#"
-        void Base::Set(int32 next) { owns this->size; ensures this->size == next; } by { execute(); solve(); }
-        void Envelope::Write(int32 next) { owns this->right.base.size; views this->left.base.base.size; ensures this->right.base.size == next; ensures this->left.base.base.size == old(this->left.base.base.size); } by { execute(); solve(); }
+        void Base::Set(int32 next) { owns this->size; ensures this->size == next; }
+        void Envelope::Write(int32 next) { owns this->right.base.size; views this->left.base.base.size; ensures this->right.base.size == next; ensures this->left.base.base.size == old(this->left.base.base.size); }
         "#,
         ),
         (
             "call",
             r#"
-        int32 Helper(const struct Base& value) { views value.size; ensures result == value.size; } by { execute(); solve(); }
-        int32 call(const struct Envelope& state) { views state.left.base.base.size; views state.unrelated.size; ensures result == state.left.base.base.size; ensures state.unrelated.size == old(state.unrelated.size); } by { execute(); solve(); }
+        int32 Helper(const struct Base& value) { views value.size; ensures result == value.size; }
+        int32 call(const struct Envelope& state) { views state.left.base.base.size; views state.unrelated.size; ensures result == state.left.base.base.size; ensures state.unrelated.size == old(state.unrelated.size); }
         "#,
         ),
         (
             "change",
             r#"
-        void SetHelper(struct Base& value, int32 next) { owns value.size; ensures value.size == next; } by { execute(); solve(); }
-        void change(struct Envelope& state, int32 next) { owns state.right.base.size; views state.left.base.base.size; ensures state.right.base.size == next; ensures state.left.base.base.size == old(state.left.base.base.size); } by { execute(); solve(); }
+        void SetHelper(struct Base& value, int32 next) { owns value.size; ensures value.size == next; }
+        void change(struct Envelope& state, int32 next) { owns state.right.base.size; views state.left.base.base.size; ensures state.right.base.size == next; ensures state.left.base.base.size == old(state.left.base.base.size); }
         "#,
         ),
     ] {
@@ -8897,8 +8893,8 @@ fn inherited_calls_reject_missing_authority_and_false_frames() {
     let import = load_import(&project.config()).unwrap();
     let sidecar = r#"
         verifying "inherited.cpp";
-        int32 Helper(const struct Base& value) { views value.size; ensures result == value.size; } by { execute(); solve(); }
-        int32 call(const struct Envelope& state) { views state.left.base.base.size; views state.unrelated.size; ensures result == state.left.base.base.size; ensures state.unrelated.size == old(state.unrelated.size); } by { execute(); solve(); }
+        int32 Helper(const struct Base& value) { views value.size; ensures result == value.size; }
+        int32 call(const struct Envelope& state) { views state.left.base.base.size; views state.unrelated.size; ensures result == state.left.base.base.size; ensures state.unrelated.size == old(state.unrelated.size); }
     "#;
     for hostile in [
         sidecar.replace("views state.left.base.base.size;", ""),
@@ -8940,7 +8936,7 @@ fn cpp20_unsigned_to_signed64_preserves_all_bits_at_boundaries() {
             let import = load_import(&project.config()).unwrap();
             let expected = value as i64;
             let source = format!(
-                "verifying \"conversion.cpp\"; int64 {selected}(uint64 value) {{ requires value == {value}u64; ensures result == {expected}i64; }} by {{ execute(); solve(); }}"
+                "verifying \"conversion.cpp\"; int64 {selected}(uint64 value) {{ requires value == {value}u64; ensures result == {expected}i64; }}"
             );
             check_selected_claim_certificate(&project, &import, &source);
             let hostile = source.replace(
@@ -8973,7 +8969,7 @@ fn cpp20_signed_unsigned_round_trips_verify_without_input_bounds() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"conversion.cpp\"; {value_type} {selected}({value_type} value) {{ ensures result == value; }} by {{ execute(); solve(); }}"
+            "verifying \"conversion.cpp\"; {value_type} {selected}({value_type} value) {{ ensures result == value; }}"
         );
         check_first_claim_certificate(&project, &import, &source);
     }
@@ -8986,12 +8982,12 @@ fn cpp20_modular_conversion_contract_preserves_bits_and_frames_memory() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "conversion.cpp";
-int64 explicit_cast(uint64 value) { ensures ((uint64)result) == value; } by { execute(); solve(); }
+int64 explicit_cast(uint64 value) { ensures ((uint64)result) == value; }
 int64 relay(uint64 value, int32* untouched) {
  owns untouched[0..1];
  ensures ((uint64)result) == value;
  ensures untouched[0] == old(untouched[0]);
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, source);
 }
@@ -9004,9 +9000,9 @@ fn cpp20_conversion_keeps_following_signed_overflow_obligations() {
     check_first_claim_certificate(
         &project,
         &import,
-        "verifying \"conversion.cpp\"; int64 arithmetic(uint64 value) { requires value == 18446744073709551615u64; ensures result == 0i64; } by { execute(); solve(); }",
+        "verifying \"conversion.cpp\"; int64 arithmetic(uint64 value) { requires value == 18446744073709551615u64; ensures result == 0i64; }",
     );
-    let source = "verifying \"conversion.cpp\"; int64 arithmetic(uint64 value) { requires value == 9223372036854775807u64; ensures result == 0i64; } by { execute(); solve(); }";
+    let source = "verifying \"conversion.cpp\"; int64 arithmetic(uint64 value) { requires value == 9223372036854775807u64; ensures result == 0i64; }";
     fs::write(project.directory.join("bad.click"), source).unwrap();
     let parsed = read_click_project(&project.directory.join("bad.click"), source).unwrap();
     let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
@@ -9039,7 +9035,7 @@ fn cpp20_fee_fast_paths_preserve_the_signed_return_conversion() {
             );
             let caller_contract = contract.replace("requires fee ==", "requires fee_value ==");
             let source = format!(
-                "verifying \"conversion.cpp\"; int64 {instance}(int64 fee, int32 at_size, int32 size) {{ {contract} }} by {{ execute(); solve(); }} int64 {selected}(int64 fee_value, int32 at_size, int32 size) {{ {caller_contract} }} by {{ execute(); solve(); }}"
+                "verifying \"conversion.cpp\"; int64 {instance}(int64 fee, int32 at_size, int32 size) {{ {contract} }} int64 {selected}(int64 fee_value, int32 at_size, int32 size) {{ {caller_contract} }}"
             );
             check_selected_claim_certificate(&project, &import, &source);
         }
@@ -9085,12 +9081,12 @@ fn direct_return_calls_verify_modular_contracts_and_frame_memory() {
     assert!(cleanups.is_empty());
     assert_eq!(span.file, "relay.cpp");
     let source = r#"verifying "relay.cpp";
-int32 echo(int32 value) { ensures result == value; } by { execute(); solve(); }
+int32 echo(int32 value) { ensures result == value; }
 int32 relay(int32 value, int32* untouched) {
  owns untouched[0..1];
  ensures result == value;
  ensures untouched[0] == old(untouched[0]);
-} by { execute(); solve(); }
+}
 "#;
     check_selected_claim_certificate(&project, &import, source);
 }
@@ -9108,7 +9104,7 @@ fn direct_return_calls_preserve_each_scalar_type_and_branch_result() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"relay.cpp\"; {value_type} {helper}({value_type} value) {{ ensures result == value; }} by {{ execute(); solve(); }} {value_type} {selected}({value_type} value) {{ ensures result == value; }} by {{ execute(); solve(); }}"
+            "verifying \"relay.cpp\"; {value_type} {helper}({value_type} value) {{ ensures result == value; }} {value_type} {selected}({value_type} value) {{ ensures result == value; }}"
         );
         check_selected_claim_certificate(&project, &import, &source);
     }
@@ -9116,11 +9112,11 @@ fn direct_return_calls_preserve_each_scalar_type_and_branch_result() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "relay.cpp";
-int32 echo(int32 value) { ensures result == value; } by { execute(); solve(); }
+int32 echo(int32 value) { ensures result == value; }
 int32 choose(bool first, int32 value) {
  ensures first != 0 implies result == value;
  ensures first == 0 implies result == 7;
-} by { execute(); solve(); }
+}
 "#;
     check_selected_claim_certificate(&project, &import, source);
 }
@@ -9135,8 +9131,8 @@ fn direct_return_calls_keep_internal_capture_names_fresh_and_reject_false_result
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "relay.cpp";
-int32 echo(int32 value) { ensures result == value; } by { execute(); solve(); }
-int32 relay(int32 __click_cpp_return_value) { ensures result == __click_cpp_return_value; } by { execute(); solve(); }
+int32 echo(int32 value) { ensures result == value; }
+int32 relay(int32 __click_cpp_return_value) { ensures result == __click_cpp_return_value; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
     let hostile = source.replace("result == __click_cpp_return_value", "result == 7");
@@ -9167,7 +9163,7 @@ fn direct_return_calls_preserve_fee_method_template_wrappers() {
             "views this->fee; views this->size; requires this->fee == 7i64; requires this->size == 3; requires at_size == 2; ensures result == {expected}i64; ensures this->fee == old(this->fee); ensures this->size == old(this->size);"
         );
         let source = format!(
-            "verifying \"relay.cpp\"; int64 {instance}(int32 at_size) const {{ {contract} }} by {{ execute(); solve(); }} int64 {selected}(int32 at_size) const {{ {contract} }} by {{ execute(); solve(); }}"
+            "verifying \"relay.cpp\"; int64 {instance}(int32 at_size) const {{ {contract} }} int64 {selected}(int32 at_size) const {{ {contract} }}"
         );
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace(
@@ -9268,12 +9264,10 @@ fn check_return_cleanup_cases(selected_type: &str) {
         let helper_definition = if helper.is_empty() {
             String::new()
         } else {
-            format!(
-                "{value_type} {helper}({helper_parameters}) {{ {helper_contract} }} by {{ execute(); solve(); }}"
-            )
+            format!("{value_type} {helper}({helper_parameters}) {{ {helper_contract} }}")
         };
         let nested_helper = if selected == "capture_nested" {
-            "int32 echo(int32 value) { ensures result == value; } by { execute(); solve(); }"
+            "int32 echo(int32 value) { ensures result == value; }"
         } else {
             ""
         };
@@ -9283,18 +9277,18 @@ Restore::Restore(int32* slot) {{
  owns this->p; owns this->saved; owns slot[0..1];
  ensures this->p == slot; ensures this->saved == old(slot[0]); ensures slot[0] == 7;
  ensures separate(memory(*this), memory(this->p[0..1]));
-}} by {{ execute(); solve(); }}
+}}
 Restore::~Restore() {{
  requires separate(memory(*this), memory(this->p[0..1]));
  owns this->p; owns this->saved; owns this->p[0..1];
  ensures this->p == old(this->p); ensures this->saved == old(this->saved);
  ensures this->p[0] == old(this->saved);
-}} by {{ execute(); solve(); }}
+}}
 {helper_definition}
 {nested_helper}
 {value_type} {selected}(int32& value) {{
  owns value; ensures result == {expected}; ensures value == old(value);
-}} by {{ execute(); solve(); }}
+}}
 "#
         );
         check_selected_claim_certificate(&project, &import, &source);
@@ -9361,8 +9355,8 @@ fn direct_return_calls_propagate_object_free_exception_contracts() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "relay.cpp";
-int32 helper(bool should_throw) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
-int32 relay(bool should_throw) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
+int32 helper(bool should_throw) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
+int32 relay(bool should_throw) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
     let hostile = source.replace(
@@ -9408,7 +9402,7 @@ fn nested_return_calls_verify_scalar_types_and_fresh_captures() {
         assert_eq!(span.file, "nested.cpp");
         assert_eq!(capture_type, &import.export().functions[0].return_type);
         let source = format!(
-            "verifying \"nested.cpp\"; {value_type} {helper}({value_type} value) {{ ensures result == value; }} by {{ execute(); solve(); }} {value_type} {selected}({value_type} value) {{ ensures result == value; }} by {{ execute(); solve(); }}"
+            "verifying \"nested.cpp\"; {value_type} {helper}({value_type} value) {{ ensures result == value; }} {value_type} {selected}({value_type} value) {{ ensures result == value; }}"
         );
         check_selected_claim_certificate(&project, &import, &source);
         let mut hostile = source.clone();
@@ -9428,10 +9422,10 @@ fn nested_return_calls_verify_scalar_types_and_fresh_captures() {
         &project,
         &import,
         r#"verifying "nested.cpp";
-int32 echo(int32 value) { ensures result == value; } by { execute(); solve(); }
+int32 echo(int32 value) { ensures result == value; }
 int32 collision(int32 __click_cpp_nested_value_0, int32 __click_cpp_nested_value_1) {
  ensures result == __click_cpp_nested_value_0;
-} by { execute(); solve(); }
+}
 "#,
     );
 }
@@ -9473,13 +9467,13 @@ fn nested_return_calls_propagate_inner_exceptions_without_evaluating_outer_call(
         &import,
         r#"verifying "nested.cpp";
 int32 inner(bool fail) throws int32 {
- ensures result == 5 by { execute(); solve(); }
- exceptional ensures exception == 7 by { execute(); solve(); }
+ ensures result == 5;
+ exceptional ensures exception == 7;
 }
-int32 outer(int32 value) { ensures result == value; } by { execute(); solve(); }
+int32 outer(int32 value) { ensures result == value; }
 int32 relay(bool fail) throws int32 {
- ensures result == 5 by { execute(); solve(); }
- exceptional ensures exception == 7 by { execute(); solve(); }
+ ensures result == 5;
+ exceptional ensures exception == 7;
 }
 "#,
     );
@@ -9499,10 +9493,10 @@ fn nested_return_calls_use_distinct_capture_types_across_branches() {
         &project,
         &import,
         r#"verifying "nested.cpp";
-int32 echo(int32 value) { ensures result == value; } by { execute(); solve(); }
-int64 echo64(int64 value) { ensures result == value; } by { execute(); solve(); }
-int64 outer32(int32 value) { requires value == 7; ensures result == 7i64; } by { execute(); solve(); }
-int64 choose(bool first, int32 value) { requires value == 7; ensures result == 7i64; } by { execute(); solve(); }
+int32 echo(int32 value) { ensures result == value; }
+int64 echo64(int64 value) { ensures result == value; }
+int64 outer32(int32 value) { requires value == 7; ensures result == 7i64; }
+int64 choose(bool first, int32 value) { requires value == 7; ensures result == 7i64; }
 "#,
     );
 }
@@ -9558,7 +9552,7 @@ fn nested_calls_with_stable_siblings_preserve_each_argument_position_and_casts()
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"arguments.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); solve(); }} int32 {outer}(int32 a, int32 b, int32 c) {{ ensures result == {slot}; }} by {{ execute(); solve(); }} int32 {selected}(int32 value) {{ ensures result == value; }} by {{ execute(); solve(); }}"
+            "verifying \"arguments.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} int32 {outer}(int32 a, int32 b, int32 c) {{ ensures result == {slot}; }} int32 {selected}(int32 value) {{ ensures result == value; }}"
         );
         check_selected_claim_certificate(&project, &import, &source);
         let [CppStatement::ReturnCall { arguments, .. }] =
@@ -9588,7 +9582,7 @@ fn nested_calls_with_stable_siblings_preserve_each_argument_position_and_casts()
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"arguments.cpp\"; {value_type} {inner}({value_type} value) {{ ensures result == value; }} by {{ execute(); solve(); }} {value_type} {outer}({value_type} left, {value_type} right) {{ ensures result == right; }} by {{ execute(); solve(); }} {value_type} {selected}({value_type} value, int32 other) {{ ensures result == value; }} by {{ execute(); solve(); }}"
+            "verifying \"arguments.cpp\"; {value_type} {inner}({value_type} value) {{ ensures result == value; }} {value_type} {outer}({value_type} left, {value_type} right) {{ ensures result == right; }} {value_type} {selected}({value_type} value, int32 other) {{ ensures result == value; }}"
         );
         check_selected_claim_certificate(&project, &import, &source);
     }
@@ -9613,9 +9607,9 @@ fn nested_calls_with_stable_siblings_preserve_fee_rounding_pattern() {
         let down = i32::from(round_down);
         let source = format!(
             r#"verifying "arguments.cpp";
-int64 Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); solve(); }}
-int64 Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); solve(); }}
-int64 EvaluateFee(int64 fee, int32 at_size, int32 divisor, bool round_down) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); solve(); }}
+int64 Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }}
+int64 Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }}
+int64 EvaluateFee(int64 fee, int32 at_size, int32 divisor, bool round_down) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; requires round_down == {down}; ensures result == {expected}i64; }}
 "#
         );
         check_return_call_sidecar(&project, &import, &source);
@@ -9662,9 +9656,9 @@ fn nested_calls_with_stable_siblings_propagate_inner_exceptions() {
         &project,
         &import,
         r#"verifying "arguments.cpp";
-int32 inner(bool fail) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
-int32 outer(int32 left, int32 value, bool flag) { ensures result == value; } by { execute(); solve(); }
-int32 relay(bool fail, int32 left) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
+int32 inner(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
+int32 outer(int32 left, int32 value, bool flag) { ensures result == value; }
+int32 relay(bool fail, int32 left) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
 "#,
     );
 }
@@ -9723,11 +9717,11 @@ fn stable_siblings_remain_valid_when_the_nested_call_writes_memory() {
         r#"verifying "arguments.cpp";
 int32 write_seven(int32* slot) {
  owns slot[0..1]; ensures slot[0] == 7; ensures result == 7;
-} by { execute(); solve(); }
-int32 second(int32 a, int32 b, int32 c) { ensures result == b; } by { execute(); solve(); }
+}
+int32 second(int32 a, int32 b, int32 c) { ensures result == b; }
 int32 effectful_inner(int32* slot, int32 snapshot) {
  owns slot[0..1]; ensures slot[0] == 7; ensures result == 7;
-} by { execute(); solve(); }
+}
 "#,
     );
 }
@@ -9737,11 +9731,11 @@ fn fee_pattern_contracts_reject_zero_divisors_and_unproved_product_bounds() {
     for (selected, source) in [
         (
             "Div",
-            "verifying \"arguments.cpp\"; int64 Div(int64 n, int32 d, bool round_down) { requires n == 21i64; requires d == 0; ensures result == result; } by { execute(); solve(); }",
+            "verifying \"arguments.cpp\"; int64 Div(int64 n, int32 d, bool round_down) { requires n == 21i64; requires d == 0; ensures result == result; }",
         ),
         (
             "Mul",
-            "verifying \"arguments.cpp\"; int64 Mul(int64 fee, int32 at_size) { requires fee == 9223372036854775807i64; requires at_size == 3; ensures result == result; } by { execute(); solve(); }",
+            "verifying \"arguments.cpp\"; int64 Mul(int64 fee, int32 at_size) { requires fee == 9223372036854775807i64; requires at_size == 3; ensures result == result; }",
         ),
     ] {
         let project = Project::with_fixture("arguments.cpp", selected, MULTIPLE_ARGUMENTS_SOURCE);
@@ -9780,9 +9774,9 @@ fn scalar_local_siblings_survive_nested_memory_effects() {
         &project,
         &import,
         r#"verifying "arguments.cpp";
-int32 write_seven(int32* slot) { owns slot[0..1]; ensures slot[0] == 7; ensures result == 7; } by { execute(); solve(); }
-int32 first(int32 a, int32 b, int32 c) { ensures result == a; } by { execute(); solve(); }
-int32 local_sibling(int32* slot, int32 value) { owns slot[0..1]; ensures slot[0] == 7; ensures result == value; } by { execute(); solve(); }
+int32 write_seven(int32* slot) { owns slot[0..1]; ensures slot[0] == 7; ensures result == 7; }
+int32 first(int32 a, int32 b, int32 c) { ensures result == a; }
+int32 local_sibling(int32* slot, int32 value) { owns slot[0..1]; ensures slot[0] == 7; ensures result == value; }
 "#,
     );
 }
@@ -9808,10 +9802,10 @@ fn nested_stable_siblings_preserve_concrete_boolean_template_rounding_wrappers()
         let product = fee * 3;
         let source = format!(
             r#"verifying "arguments.cpp";
-int64 Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); solve(); }}
-int64 Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); solve(); }}
-int64 {instance}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); solve(); }}
-int64 {selected}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); solve(); }}
+int64 Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }}
+int64 Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }}
+int64 {instance}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }}
+int64 {selected}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }}
 "#
         );
         check_selected_claim_certificate(&project, &import, &source);
@@ -9844,7 +9838,7 @@ fn static_helpers_preserve_scalar_types_class_identity_and_no_receiver() {
         assert_eq!(import.export().functions[0].parameters.len(), 1);
         assert!(import.export().records.is_empty());
         let source = format!(
-            "verifying \"static.cpp\"; static {value_type} Scalar::{member}({value_type} value) {{ ensures result == value; }} by {{ execute(); solve(); }}"
+            "verifying \"static.cpp\"; static {value_type} Scalar::{member}({value_type} value) {{ ensures result == value; }}"
         );
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace("result == value", "result != value");
@@ -9863,14 +9857,17 @@ fn static_helpers_support_modular_nested_and_initializer_calls() {
         let import = load_import(&project.config()).unwrap();
         let source = format!(
             r#"verifying "static.cpp";
-static int32 Scalar::echo(int32 value) {{ ensures result == value; }} by {{ execute(); solve(); }}
-static int32 Other::echo(int32 value) {{ ensures result == value; }} by {{ execute(); solve(); }}
-int32 {selected}(int32 value) {{ ensures result == value; }} by {{ execute(); solve(); }}
+static int32 Scalar::echo(int32 value) {{ ensures result == value; }}
+static int32 Other::echo(int32 value) {{ ensures result == value; }}
+int32 {selected}(int32 value) {{ ensures result == value; }}
 "#
         );
         // The local caller reaches only Scalar::echo.
         let source = if selected == "static_local" {
-            source.replace("static int32 Other::echo(int32 value) { ensures result == value; } by { execute(); solve(); }\n", "")
+            source.replace(
+                "static int32 Other::echo(int32 value) { ensures result == value; }\n",
+                "",
+            )
         } else {
             source
         };
@@ -9899,10 +9896,10 @@ fn static_helpers_preserve_nested_fee_rounding_template_shape() {
         let instance = &cpp_spelling(&import, &callee.declaration_id);
         let source = format!(
             r#"verifying "static.cpp";
-static int64 FeeMath::Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); solve(); }}
-static int64 FeeMath::Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); solve(); }}
-static int64 {instance}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); solve(); }}
-int64 {selected}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); solve(); }}
+static int64 FeeMath::Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }}
+static int64 FeeMath::Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }}
+static int64 {instance}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }}
+int64 {selected}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }}
 "#
         );
         check_selected_claim_certificate(&project, &import, &source);
@@ -9963,9 +9960,9 @@ fn static_helpers_propagate_scalar_exceptions_through_nested_calls() {
         &project,
         &import,
         r#"verifying "static.cpp";
-static int32 H::inner(bool fail) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
-static int32 H::outer(int32 value) { ensures result == value; } by { execute(); solve(); }
-static int32 H::relay(bool fail) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
+static int32 H::inner(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
+static int32 H::outer(int32 value) { ensures result == value; }
+static int32 H::relay(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
 "#,
     );
 }
@@ -9977,14 +9974,14 @@ fn static_helpers_called_from_value_methods_preserve_field_authority() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "static.cpp";
-static int64 FeeMath::Mul(int64 fee, int32 at_size) { requires fee == 7i64; requires at_size == 3; ensures result == 21i64; } by { execute(); solve(); }
+static int64 FeeMath::Mul(int64 fee, int32 at_size) { requires fee == 7i64; requires at_size == 3; ensures result == 21i64; }
 int64 FeeValue::Evaluate(int32 at_size) const {
  owns this->fee;
  requires this->fee == 7i64;
  requires at_size == 3;
  ensures result == 21i64;
  ensures this->fee == old(this->fee);
-} by { execute(); solve(); }
+}
 "#;
     check_selected_claim_certificate(&project, &import, source);
     let hostile = source.replace(" owns this->fee;\n", "");
@@ -9998,11 +9995,11 @@ fn static_helpers_cannot_skip_arithmetic_definedness_with_trivial_postconditions
     for (selected, contract) in [
         (
             "FeeMath::Mul",
-            "static int64 FeeMath::Mul(int64 fee, int32 at_size) { ensures result == result; } by { execute(); solve(); }",
+            "static int64 FeeMath::Mul(int64 fee, int32 at_size) { ensures result == result; }",
         ),
         (
             "FeeMath::Div",
-            "static int64 FeeMath::Div(int64 n, int32 d, bool round_down) { ensures result == result; } by { execute(); solve(); }",
+            "static int64 FeeMath::Div(int64 n, int32 d, bool round_down) { ensures result == result; }",
         ),
     ] {
         let project = Project::with_fixture("static.cpp", selected, STATIC_HELPERS_SOURCE);
@@ -10024,15 +10021,15 @@ fn normalized_scalar_calls_agree_across_returns_initializers_and_discarded_resul
     for (selected, contract) in [
         (
             "direct",
-            "int32 direct(int32 value, int32 sibling) { ensures result == value; } by { execute(); solve(); }",
+            "int32 direct(int32 value, int32 sibling) { ensures result == value; }",
         ),
         (
             "initialized",
-            "int32 initialized(int32 value, int32 sibling) { ensures result == value; } by { execute(); solve(); }",
+            "int32 initialized(int32 value, int32 sibling) { ensures result == value; }",
         ),
         (
             "discarded",
-            "int32 discarded(int32 value) { ensures result == value; } by { execute(); solve(); }",
+            "int32 discarded(int32 value) { ensures result == value; }",
         ),
     ] {
         let project =
@@ -10042,10 +10039,10 @@ fn normalized_scalar_calls_agree_across_returns_initializers_and_discarded_resul
         let helpers = if selected == "discarded" {
             ""
         } else {
-            "int32 first(int32 value, int32 sibling) { ensures result == value; } by { execute(); solve(); }"
+            "int32 first(int32 value, int32 sibling) { ensures result == value; }"
         };
         let source = format!(
-            "verifying \"evaluation.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); solve(); }} {helpers} {contract}"
+            "verifying \"evaluation.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} {helpers} {contract}"
         );
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace("ensures result == value", "ensures result != value");
@@ -10069,7 +10066,7 @@ fn normalized_initializer_calls_preserve_scalar_types_and_static_helpers() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"evaluation.cpp\"; {storage}{value_type} {helper}({value_type} value) {{ ensures result == value; }} by {{ execute(); solve(); }} {storage}{value_type} {selected}({value_type} value) {{ ensures result == value; }} by {{ execute(); solve(); }}"
+            "verifying \"evaluation.cpp\"; {storage}{value_type} {helper}({value_type} value) {{ ensures result == value; }} {storage}{value_type} {selected}({value_type} value) {{ ensures result == value; }}"
         );
         check_selected_claim_certificate(&project, &import, &source);
     }
@@ -10093,17 +10090,17 @@ Restore::Restore(int32* value) {
  ensures this->saved == old(value[0]);
  ensures value[0] == 7;
  ensures separate(memory(*this), memory(this->slot[0..1]));
-} by { execute(); solve(); }
+}
 Restore::~Restore() {
  requires separate(memory(*this), memory(this->slot[0..1]));
  owns this->slot; owns this->saved; owns this->slot[0..1];
  ensures this->slot == old(this->slot);
  ensures this->saved == old(this->saved);
  ensures this->slot[0] == old(this->saved);
-} by { execute(); solve(); }
-int32 read(int32* slot) { owns slot[0..1]; ensures result == old(slot[0]); ensures slot[0] == old(slot[0]); } by { execute(); solve(); }
-int32 echo(int32 value) { ensures result == value; } by { execute(); solve(); }
-int32 initialized_cleanup(int32& value) { owns value; ensures result == 7; ensures value == old(value); } by { execute(); solve(); }
+}
+int32 read(int32* slot) { owns slot[0..1]; ensures result == old(slot[0]); ensures slot[0] == old(slot[0]); }
+int32 echo(int32 value) { ensures result == value; }
+int32 initialized_cleanup(int32& value) { owns value; ensures result == 7; ensures value == old(value); }
 "#;
     check_selected_claim_certificate(&project, &import, source);
     let lowered = lower_import(&import).unwrap();
@@ -10156,9 +10153,9 @@ fn normalized_initializer_calls_propagate_inner_exceptions() {
         &project,
         &import,
         r#"verifying "evaluation.cpp";
-int32 inner(bool fail) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
-int32 outer(int32 value) { ensures result == value; } by { execute(); solve(); }
-int32 relay(bool fail) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
+int32 inner(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
+int32 outer(int32 value) { ensures result == value; }
+int32 relay(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
 "#,
     );
 }
@@ -10331,7 +10328,9 @@ fn resolved_declaration_identities_bind_overloads_scopes_and_equal_width_types()
             } => "int64",
             _ => "int32",
         };
-        sidecar.push_str(&format!("int32 {name}({parameter_type} x) {{ ensures result == {value}; }} by {{ execute(); solve(); }}\n"));
+        sidecar.push_str(&format!(
+            "int32 {name}({parameter_type} x) {{ ensures result == {value}; }}\n"
+        ));
         assert!(
             lowered
                 .contract_functions()
@@ -10345,7 +10344,7 @@ fn resolved_declaration_identities_bind_overloads_scopes_and_equal_width_types()
                 .any(|function| function.name() == name)
         );
     }
-    sidecar.push_str("int32 relay(int64 x, int64 y, int32 z) { ensures result == 76; } by { execute(); solve(); }\n");
+    sidecar.push_str("int32 relay(int64 x, int64 y, int32 z) { ensures result == 76; }\n");
     check_selected_claim_certificate(&project, &import, &sidecar);
     let false_claim = sidecar.replace("result == 76", "result == 74");
     let path = project.directory.join("wrong.click");
@@ -10371,7 +10370,7 @@ fn qualified_namespace_selection_has_an_ordinary_readable_contract_name() {
     check_selected_claim_certificate(
         &project,
         &import,
-        "verifying \"namespace.cpp\"; int32 A::Nested::echo(int32 x) { ensures result == x; } by { execute(); solve(); }",
+        "verifying \"namespace.cpp\"; int32 A::Nested::echo(int32 x) { ensures result == x; }",
     );
 }
 
@@ -10394,7 +10393,7 @@ fn selected_function_collision_uses_the_same_identity_binding_as_its_helper() {
     assert_ne!(selected, helper);
     assert_eq!(lowered.kernel_function().name(), selected);
     let sidecar = format!(
-        "verifying \"selected.cpp\"; int32 {helper}(int32 x) {{ ensures result == 5; }} by {{ execute(); solve(); }} int32 {selected}(int32 x) {{ ensures result == 5; }} by {{ execute(); solve(); }}"
+        "verifying \"selected.cpp\"; int32 {helper}(int32 x) {{ ensures result == 5; }} int32 {selected}(int32 x) {{ ensures result == 5; }}"
     );
     check_sidecar_tactic(&project, &import, &sidecar, Some(&format!("{selected}.")));
 }
@@ -10417,7 +10416,7 @@ fn anonymous_namespace_helper_is_named_by_its_path() {
         Some("(anonymous namespace)::same")
     );
     let sidecar = format!(
-        "verifying \"anonymous.cpp\"; int32 {name}(int32 x) {{ ensures result == x; }} by {{ execute(); solve(); }} int32 relay(int32 x) {{ ensures result == x; }} by {{ execute(); solve(); }}"
+        "verifying \"anonymous.cpp\"; int32 {name}(int32 x) {{ ensures result == x; }} int32 relay(int32 x) {{ ensures result == x; }}"
     );
     check_selected_claim_certificate(&project, &import, &sidecar);
 }
@@ -10460,7 +10459,7 @@ fn bounded_constant_forests_scale_without_expanding_dependency_chains() {
         check_return_call_sidecar(
             &project,
             &import,
-            "verifying \"forest.cpp\"; int64 total() { ensures result == 4i64; } by { execute(); solve(); }",
+            "verifying \"forest.cpp\"; int64 total() { ensures result == 4i64; }",
         );
     }
 }
@@ -10473,15 +10472,16 @@ fn record_inventories_and_function_lowering_share_indexes_across_sizes() {
         let mut sidecar = String::from("verifying \"records.cpp\";\n");
         for index in 0..size {
             cpp.push_str(&format!("struct R{index} {{ int value; }}; int read{index}(int x) noexcept {{ R{index} local{{x}}; return local.value; }}\n"));
-            sidecar.push_str(&format!("int32 read{index}(int32 x) {{ ensures result == x; }} by {{ execute(); solve(); }}\n"));
+            sidecar.push_str(&format!(
+                "int32 read{index}(int32 x) {{ ensures result == x; }}\n"
+            ));
         }
         cpp.push_str("int relay(int x) noexcept {\n");
         for index in 0..size {
             cpp.push_str(&format!("int y{index} = read{index}(x);\n"));
         }
         cpp.push_str(&format!("return y{}; }}\n", size - 1));
-        sidecar
-            .push_str("int32 relay(int32 x) { ensures result == x; } by { execute(); solve(); }\n");
+        sidecar.push_str("int32 relay(int32 x) { ensures result == x; }\n");
         let project = Project::with_fixture("records.cpp", "relay", &cpp);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
@@ -10609,7 +10609,7 @@ fn distinct_record_layouts_keep_field_widths_offsets_and_ownership() {
         ),
         (16, 8, 8)
     );
-    let sidecar = "verifying \"layouts.cpp\"; int64 choose(struct First& first, struct Second& second) { owns first.value; owns second.value; ensures first.value == 7; ensures result == old(second.value); ensures second.value == old(second.value); } by { execute(); solve(); }";
+    let sidecar = "verifying \"layouts.cpp\"; int64 choose(struct First& first, struct Second& second) { owns first.value; owns second.value; ensures first.value == 7; ensures result == old(second.value); ensures second.value == old(second.value); }";
     check_selected_claim_certificate(&project, &import, sidecar);
     let missing_authority = sidecar.replace("owns second.value;", "");
     let path = project.directory.join("wrong.click");
@@ -10693,14 +10693,14 @@ fn check_growing_lifetime_inventory(mode: &str) {
         // exercise complete proofs, rewritten certificates, and audit.
         if size <= 8 {
             let source = r#"verifying "guards.cpp";
-Guard::Guard(int32 initial) { owns this->value; ensures this->value == initial; } by { execute(); solve(); }
-Guard::~Guard() { owns this->value; ensures this->value == 0; } by { execute(); solve(); }
-int32 many(bool early, int32 value) { ensures result == value; } by { execute(); solve(); }
+Guard::Guard(int32 initial) { owns this->value; ensures this->value == initial; }
+Guard::~Guard() { owns this->value; ensures this->value == 0; }
+int32 many(bool early, int32 value) { ensures result == value; }
 "#;
             check_selected_claim_certificate(&project, &import, source);
             let hostile = source.replace(
-                "ensures result == value; } by { execute(); solve(); }",
-                "requires value == 5; ensures result == 6; } by { execute(); assumption(); }",
+                "ensures result == value; }",
+                "requires value == 5; ensures result == 6; } by { step_until(function.exit); assumption(); }",
             );
             let sidecar = project.directory.join("bad.click");
             fs::write(&sidecar, &hostile).unwrap();
@@ -10780,7 +10780,7 @@ fn shared_scalar_interpretation_keeps_execution_and_proof_signatures_aligned() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let proof = format!(
-            "verifying \"scalar.cpp\"; {signature} {{ requires {precondition}; ensures result == {expected}; }} by {{ execute(); solve(); }}"
+            "verifying \"scalar.cpp\"; {signature} {{ requires {precondition}; ensures result == {expected}; }}"
         );
         check_selected_claim_certificate(&project, &import, &proof);
         let false_value = if signature.starts_with("int64") {
@@ -10813,12 +10813,11 @@ fn compiler_assumptions_require_proof_and_keep_normal_cleanup() {
         CppStatement::Assume { .. }
     ));
     let contracts = r#"verifying "assume.cpp";
-Guard::Guard(int32 n) { owns this->value; ensures this->value == n; } by { execute(); solve(); }
-Guard::~Guard() { owns this->value; ensures this->value == 0; } by { execute(); solve(); }
+Guard::Guard(int32 n) { owns this->value; ensures this->value == n; }
+Guard::~Guard() { owns this->value; ensures this->value == 0; }
 "#;
-    let source = format!(
-        "{contracts}\nint32 guarded(int32 n) {{ requires n > 0; ensures result == n; }} by {{ execute(); solve(); }}"
-    );
+    let source =
+        format!("{contracts}\nint32 guarded(int32 n) {{ requires n > 0; ensures result == n; }}");
     check_selected_claim_certificate(&project, &import, &source);
     for requires in ["", "requires n == 0;"] {
         let hostile = source.replace("requires n > 0;", requires);
@@ -10861,7 +10860,7 @@ fn compiler_assumptions_cover_total_predicates_and_scale_with_statements() {
         lowered.unwrap();
         assert!(work <= 32 * size + 128, "{size}: {work}");
         if size == 4 {
-            let proof = "verifying \"assume.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); solve(); }";
+            let proof = "verifying \"assume.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; }";
             check_return_call_sidecar(&project, &import, proof);
         }
     }
@@ -10902,7 +10901,7 @@ fn user_named_assume_calls_are_not_compiler_assumptions() {
         import.export().functions[0].body[0],
         CppStatement::Call { .. }
     ));
-    let proof = "verifying \"assume.cpp\"; void Assume(bool condition) { ensures condition == condition; } by { execute(); solve(); } int32 guarded(int32 n) { ensures result == n; } by { execute(); solve(); }";
+    let proof = "verifying \"assume.cpp\"; void Assume(bool condition) { ensures condition == condition; } int32 guarded(int32 n) { ensures result == n; }";
     check_return_call_sidecar(&project, &import, proof);
     let hostile = proof.replace("ensures result == n;", "ensures n > 0;");
     let path = project.directory.join("false.click");
@@ -10933,7 +10932,7 @@ fn compiler_assumptions_preserve_conditional_execution_and_constant_reachability
             usize::from(cpp.starts_with("constexpr"))
         );
         let proof = format!(
-            "verifying \"assume.cpp\"; int32 guarded(int32 n) {{ {requires} ensures result == n; }} by {{ execute(); solve(); }}"
+            "verifying \"assume.cpp\"; int32 guarded(int32 n) {{ {requires} ensures result == n; }}"
         );
         check_selected_claim_certificate(&project, &import, &proof);
     }
@@ -10961,7 +10960,7 @@ fn isolated_nested_calls_snapshot_field_siblings_in_every_scalar_context() {
             ""
         };
         let proof = format!(
-            "verifying \"fields.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); solve(); }} int32 {outer}(int32 a, int32 b, int32 c) {{ ensures result == {slot}; }} by {{ execute(); solve(); }} int32 {selected}(const struct Box& box) {{ owns box.value; owns box.other; {requires} ensures result == {claim}; }} by {{ execute(); solve(); }}"
+            "verifying \"fields.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} int32 {outer}(int32 a, int32 b, int32 c) {{ ensures result == {slot}; }} int32 {selected}(const struct Box& box) {{ owns box.value; owns box.other; {requires} ensures result == {claim}; }}"
         );
         check_selected_claim_certificate(&project, &import, &proof);
         for hostile in [
@@ -11018,10 +11017,10 @@ fn check_field_sibling_rounding(direction: &str) {
         let product = fee * 3;
         let proof = format!(
             r#"verifying "fields.cpp";
-static int64 Fee::Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); solve(); }}
-static int64 Fee::Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == {divisor}; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); solve(); }}
-int64 {instance}(int32 at_size) const {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); solve(); }}
-int64 Fee::{selected}(int32 at_size) const {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); solve(); }}
+static int64 Fee::Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }}
+static int64 Fee::Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == {divisor}; requires round_down == {down}; ensures result == {expected}i64; }}
+int64 {instance}(int32 at_size) const {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }}
+int64 Fee::{selected}(int32 at_size) const {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }}
 "#
         );
         check_selected_claim_certificate(&project, &import, &proof);
@@ -11046,12 +11045,12 @@ fn field_sibling_authority_is_checked_even_when_inner_call_throws() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "fields.cpp";
-int32 inner(bool fail) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
-int32 outer(int32 a, int32 b) { ensures result == b; } by { execute(); solve(); }
+int32 inner(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
+int32 outer(int32 a, int32 b) { ensures result == b; }
 int32 relay(bool fail, const struct Box& box) throws int32 {
  requires fail == true;
- ensures result == result by { execute(); solve(); }
- exceptional ensures exception == 7 by { execute(); solve(); }
+ ensures result == result;
+ exceptional ensures exception == 7;
 }
 "#;
     let path = project.directory.join("hostile.click");
@@ -11165,9 +11164,8 @@ fn wide_intermediates_preserve_high_bits_casts_and_signed_products() {
             lowered.kernel_function().return_type().byte_width(),
             if result_type == "bool" { 1 } else { 8 }
         );
-        let source = format!(
-            "verifying \"wide.cpp\"; {result_type} {name}({params}) {{ {contract} }} by {{ execute(); solve(); }}"
-        );
+        let source =
+            format!("verifying \"wide.cpp\"; {result_type} {name}({params}) {{ {contract} }}");
         check_arithmetic_sidecar(&project, &import, &source);
     }
 }
@@ -11194,9 +11192,8 @@ fn wide_intermediates_cannot_hide_narrow_or_wide_signed_overflow() {
         } else {
             "uint64"
         };
-        let source = format!(
-            "verifying \"wide.cpp\"; {return_type} {name}({params}) {{ {contract} }} by {{ execute(); solve(); }}"
-        );
+        let source =
+            format!("verifying \"wide.cpp\"; {return_type} {name}({params}) {{ {contract} }}");
         fs::write(project.directory.join("wide.click"), &source).unwrap();
         let parsed = read_click_project(&project.directory.join("wide.click"), &source).unwrap();
         let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
@@ -11257,7 +11254,7 @@ fn wide_intermediates_compiler_constants_keep_full_payloads() {
         assert_eq!(initializer["value"], payload);
         assert_eq!(initializer["value_type"]["bits"], 128);
         let source = format!(
-            "verifying \"wide.cpp\"; {result_type} {name}() {{ ensures result == {expected}; }} by {{ execute(); solve(); }}"
+            "verifying \"wide.cpp\"; {result_type} {name}() {{ ensures result == {expected}; }}"
         );
         check_first_claim_certificate(&project, &import, &source);
     }
@@ -11272,8 +11269,8 @@ fn wide_intermediates_modular_calls_preserve_cast_round_trips() {
         &project,
         &import,
         r#"verifying "wide.cpp";
-int64 signed_round_trip(int64 value) { ensures result == value; } by { execute(); solve(); }
-int64 relay(int64 value) { ensures result == value; } by { execute(); solve(); }
+int64 signed_round_trip(int64 value) { ensures result == value; }
+int64 relay(int64 value) { ensures result == value; }
 "#,
     );
 }
@@ -11289,7 +11286,7 @@ fn wide_intermediates_reject_false_high_bit_and_narrowing_claims() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"wide.cpp\"; {return_type} {name}(int64 a, int64 b) {{ requires a == 4294967296i64; requires b == 4294967296i64; ensures result == {expected}; }} by {{ execute(); solve(); }}"
+            "verifying \"wide.cpp\"; {return_type} {name}(int64 a, int64 b) {{ requires a == 4294967296i64; requires b == 4294967296i64; ensures result == {expected}; }}"
         );
         fs::write(project.directory.join("wide.click"), &source).unwrap();
         let parsed = read_click_project(&project.directory.join("wide.click"), &source).unwrap();
@@ -11376,9 +11373,7 @@ fn wide_contracts_observe_full_width_inputs_and_results_offline() {
                 .byte_width(),
             16
         );
-        let source = format!(
-            "verifying \"wide.cpp\"; {ty} {name}({params}) {{ {contract} }} by {{ execute(); solve(); }}"
-        );
+        let source = format!("verifying \"wide.cpp\"; {ty} {name}({params}) {{ {contract} }}");
         check_first_claim_certificate(&project, &import, &source);
     }
 }
@@ -11390,12 +11385,12 @@ fn wide_contracts_compose_modular_calls_and_frame_narrow_memory() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "wide.cpp";
-int128 identity(int128 value) { ensures to_integer(result) == to_integer(value); } by { execute(); solve(); }
+int128 identity(int128 value) { ensures to_integer(result) == to_integer(value); }
 int128 relay(int128 value, int32& untouched) {
     owns untouched;
     ensures to_integer(result) == to_integer(value);
     ensures untouched == old(untouched);
-} by { execute(); solve(); }
+}
 "#;
     check_selected_claim_certificate(&project, &import, source);
 }
@@ -11424,7 +11419,7 @@ fn wide_contracts_reject_high_bit_false_claims() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"wide.cpp\"; {ty} {name}({ty} value) {{ requires to_integer(value) == {value}; ensures to_integer(result) == 0; }} by {{ execute(); solve(); }}"
+            "verifying \"wide.cpp\"; {ty} {name}({ty} value) {{ requires to_integer(value) == {value}; ensures to_integer(result) == 0; }}"
         );
         fs::write(project.directory.join("wide.click"), &source).unwrap();
         let parsed = read_click_project(&project.directory.join("wide.click"), &source).unwrap();
@@ -11450,7 +11445,7 @@ fn wide_contracts_refuse_signedness_and_width_mismatches() {
         "int128 identity(int64 value)",
     ] {
         let proof = format!(
-            "verifying \"wide.cpp\"; {signature} {{ ensures to_integer(result) == to_integer(result); }} by {{ execute(); solve(); }}"
+            "verifying \"wide.cpp\"; {signature} {{ ensures to_integer(result) == to_integer(result); }}"
         );
         let sidecar = project.directory.join("mismatch.click");
         fs::write(&sidecar, &proof).unwrap();
@@ -11471,8 +11466,8 @@ fn wide_contracts_nested_calls_compose_observer_chains() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "wide.cpp";
-int128 identity(int128 value) { ensures to_integer(result) == to_integer(value); } by { execute(); solve(); }
-int128 nested(int128 value) { ensures to_integer(result) == to_integer(result); } by { execute(); solve(); }
+int128 identity(int128 value) { ensures to_integer(result) == to_integer(value); }
+int128 nested(int128 value) { ensures to_integer(result) == to_integer(result); }
 "#;
     check_selected_claim_certificate(&project, &import, proof);
     // The caller composes both identity contracts through the observer chain.
@@ -11523,7 +11518,7 @@ fn wide_contracts_parameter_preparation_scales_with_the_signature() {
             .collect::<Vec<_>>()
             .join(", ");
         let proof = format!(
-            "verifying \"wide.cpp\"; int128 select({params}) {{ ensures to_integer(result) == to_integer(p0); }} by {{ execute(); solve(); }}"
+            "verifying \"wide.cpp\"; int128 select({params}) {{ ensures to_integer(result) == to_integer(p0); }}"
         );
         check_arithmetic_sidecar(&project, &import, &proof);
     }
@@ -11574,7 +11569,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         let import = load_import(&project.config()).unwrap();
         assert_eq!(import.export().schema, 60);
         let source = format!(
-            "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); solve(); }}"
+            "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }}"
         );
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace("requires to_integer(b) != 0;", "");
@@ -11622,7 +11617,7 @@ fn wide_division_full_width_constant_results_keep_all_bits() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"wide.cpp\"; {ty} {name}() {{ ensures to_integer(result) == {expected}; }} by {{ execute(); solve(); }}"
+            "verifying \"wide.cpp\"; {ty} {name}() {{ ensures to_integer(result) == {expected}; }}"
         );
         check_first_claim_certificate(&project, &import, &source);
     }
@@ -11639,13 +11634,13 @@ fn wide_division_modular_calls_frame_narrow_memory() {
 int128 signed_quotient(int128 a, int128 b) {{
     {WIDE_SIGNED_DOMAIN}
     ensures to_integer(result) == truncating_quotient(to_integer(a), to_integer(b));
-}} by {{ execute(); solve(); }}
+}}
 int128 signed_relay(int128 a, int128 b, int32* untouched) {{
     {WIDE_SIGNED_DOMAIN}
     owns untouched[0..1];
     ensures to_integer(result) == truncating_quotient(to_integer(a), to_integer(b));
     ensures untouched[0] == old(untouched[0]);
-}} by {{ execute(); solve(); }}
+}}
 "#
     );
     check_selected_claim_certificate(&project, &import, &source);
@@ -11682,7 +11677,7 @@ fn wide_division_preserves_clang_promotions_and_concrete_modulo_casts() {
         lower_import(&import).unwrap();
         if signed {
             let proof = format!(
-                "verifying \"wide.cpp\"; int128 narrow_divisor(int128 a, int64 b) {{ {WIDE_SIGNED_DOMAIN} ensures to_integer(result) == truncating_quotient(to_integer(a), to_integer(b)); }} by {{ execute(); solve(); }}"
+                "verifying \"wide.cpp\"; int128 narrow_divisor(int128 a, int64 b) {{ {WIDE_SIGNED_DOMAIN} ensures to_integer(result) == truncating_quotient(to_integer(a), to_integer(b)); }}"
             );
             check_first_claim_certificate(&project, &import, &proof);
         }
@@ -11693,7 +11688,7 @@ fn wide_division_preserves_clang_promotions_and_concrete_modulo_casts() {
     check_first_claim_certificate(
         &project,
         &import,
-        "verifying \"wide.cpp\"; uint128 mixed_constant() { ensures to_integer(result) == 113427455640312821154458202477256070485; } by { execute(); solve(); }",
+        "verifying \"wide.cpp\"; uint128 mixed_constant() { ensures to_integer(result) == 113427455640312821154458202477256070485; }",
     );
 }
 
@@ -11730,7 +11725,7 @@ fn wide_division_native_undefined_behavior_cannot_be_hidden_by_trivial_posts() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let proof = format!(
-            "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures 0 == 0; }} by {{ execute(); solve(); }}"
+            "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures 0 == 0; }}"
         );
         let path = project.directory.join("unsafe.click");
         fs::write(&path, &proof).unwrap();
@@ -11763,7 +11758,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             assert_eq!(import.export().schema, 60);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
-                "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); solve(); }}"
+                "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }}"
             );
             check_selected_claim_certificate(&project, &import, &proof);
             let false_proof = proof.replace(
@@ -11791,9 +11786,8 @@ fn wide_comparisons_constants_preserve_high_bits_signedness_and_promotions() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let expected = u32::from(expected);
-        let proof = format!(
-            "verifying \"wide.cpp\"; bool {name}() {{ ensures result == {expected}; }} by {{ execute(); solve(); }}"
-        );
+        let proof =
+            format!("verifying \"wide.cpp\"; bool {name}() {{ ensures result == {expected}; }}");
         check_arithmetic_sidecar(&project, &import, &proof);
         let false_proof = proof.replace(&format!("== {expected}"), &format!("== {}", 1 - expected));
         let path = project.directory.join("false.click");
@@ -11807,7 +11801,7 @@ fn wide_comparisons_constants_preserve_high_bits_signedness_and_promotions() {
     check_arithmetic_sidecar(
         &project,
         &import,
-        "verifying \"wide.cpp\"; bool narrow_compare(int128 a, int64 b) { ensures result == 1 implies to_integer(a) < to_integer(b); ensures result == 0 implies not (to_integer(a) < to_integer(b)); } by { execute(); solve(); }",
+        "verifying \"wide.cpp\"; bool narrow_compare(int128 a, int64 b) { ensures result == 1 implies to_integer(a) < to_integer(b); ensures result == 0 implies not (to_integer(a) < to_integer(b)); }",
     );
 }
 
@@ -11817,7 +11811,7 @@ fn wide_comparisons_control_branches_and_frame_modular_call_memory() {
     let project = Project::with_fixture("wide.cpp", "choose", WIDE_COMPARISONS_SOURCE);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"wide.cpp\"; int32 choose(int128 a, int128 b) { ensures to_integer(a) < to_integer(b) implies result == 7; ensures not (to_integer(a) < to_integer(b)) implies result == 11; } by { execute(); solve(); }";
+    let proof = "verifying \"wide.cpp\"; int32 choose(int128 a, int128 b) { ensures to_integer(a) < to_integer(b) implies result == 7; ensures not (to_integer(a) < to_integer(b)) implies result == 11; }";
     check_first_claim_certificate(&project, &import, proof);
     let project = Project::with_fixture("wide.cpp", "relay", WIDE_COMPARISONS_SOURCE);
     refresh_import(&project.config()).unwrap();
@@ -11826,13 +11820,13 @@ fn wide_comparisons_control_branches_and_frame_modular_call_memory() {
 bool signed_less(int128 a, int128 b) {
     requires to_integer(a) < to_integer(b);
     ensures result == 1;
-} by { execute(); solve(); }
+}
 bool relay(int128 a, int128 b, int32* untouched) {
     requires to_integer(a) < to_integer(b);
     owns untouched[0..1];
     ensures result == 1;
     ensures untouched[0] == old(untouched[0]);
-} by { execute(); solve(); }
+}
 "#;
     check_selected_claim_certificate(&project, &import, proof);
 }
@@ -11844,7 +11838,7 @@ fn wide_comparisons_do_not_erase_operand_division_guards() {
     let import = load_import(&project.config()).unwrap();
     for domain in ["", "requires to_integer(b) != 0;"] {
         let proof = format!(
-            "verifying \"wide.cpp\"; bool unsafe_operand(int128 a, int128 b) {{ {domain} ensures 0 == 0; }} by {{ execute(); solve(); }}"
+            "verifying \"wide.cpp\"; bool unsafe_operand(int128 a, int128 b) {{ {domain} ensures 0 == 0; }}"
         );
         let path = project.directory.join("unsafe.click");
         fs::write(&path, &proof).unwrap();
@@ -11875,7 +11869,7 @@ fn wide_comparisons_recognize_complementary_contract_premises() {
             refresh_import(&project.config()).unwrap();
             let import = load_import(&project.config()).unwrap();
             let proof = format!(
-                "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ requires to_integer(a) {inverse} to_integer(b); ensures result == 0; }} by {{ execute(); solve(); }}"
+                "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ requires to_integer(a) {inverse} to_integer(b); ensures result == 0; }}"
             );
             check_arithmetic_sidecar(&project, &import, &proof);
         }
@@ -11896,7 +11890,7 @@ fn not_equal_source_supports_the_existing_narrow_scalar_widths() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let proof = format!(
-            "verifying \"comparison.cpp\"; bool unequal({ty} a, {ty} b) {{ ensures result == 1 implies a != b; ensures result == 0 implies a == b; }} by {{ execute(); solve(); }}"
+            "verifying \"comparison.cpp\"; bool unequal({ty} a, {ty} b) {{ ensures result == 1 implies a != b; ensures result == 0 implies a == b; }}"
         );
         check_arithmetic_sidecar(&project, &import, &proof);
     }
@@ -11941,7 +11935,7 @@ fn wide_narrowing_preserves_symbolic_values_only_with_checked_destination_bounds
         let import = load_import(&project.config()).unwrap();
         let cert = cast_identity_certificate("to_integer(a)", lo, hi);
         let proof = format!(
-            "verifying \"narrow.cpp\"; {result} {name}({source} a) {{ requires {lo} <= to_integer(a); requires to_integer(a) <= {hi}; ensures to_integer(result) == to_integer(a); }} by {{ execute(); have to_integer(result) == to_integer(a) by {{ {cert} }} solve(); }}"
+            "verifying \"narrow.cpp\"; {result} {name}({source} a) {{ requires {lo} <= to_integer(a); requires to_integer(a) <= {hi}; ensures to_integer(result) == to_integer(a); }} by {{ step_until(function.exit); have to_integer(result) == to_integer(a) by {{ {cert} }} solve(); }}"
         );
         check_selected_claim_certificate(&project, &import, &proof);
         for missing in [
@@ -11976,11 +11970,11 @@ fn wide_narrowing_quotient_and_remainder_keep_native_definedness_and_range_bound
         let observed = format!("to_integer(a {op} b)");
         let cert = cast_identity_certificate(&observed, lo, hi);
         let proof = format!(
-            "verifying \"narrow.cpp\"; {result} {name}(int128 a, int128 b) {{ requires to_integer(b) != 0; requires to_integer(a) != -170141183460469231731687303715884105728 or to_integer(b) != -1; requires {lo} <= {observed}; requires {observed} <= {hi}; ensures to_integer(result) == {observed}; }} by {{ execute(); have to_integer(result) == {observed} by {{ {cert} }} solve(); }}"
+            "verifying \"narrow.cpp\"; {result} {name}(int128 a, int128 b) {{ requires to_integer(b) != 0; requires to_integer(a) != -170141183460469231731687303715884105728 or to_integer(b) != -1; requires {lo} <= {observed}; requires {observed} <= {hi}; ensures to_integer(result) == {observed}; }} by {{ step_until(function.exit); have to_integer(result) == {observed} by {{ {cert} }} solve(); }}"
         );
         check_first_claim_certificate(&project, &import, &proof);
         let unsafe_proof = format!(
-            "verifying \"narrow.cpp\"; {result} {name}(int128 a, int128 b) {{ ensures 0 == 0; }} by {{ execute(); solve(); }}"
+            "verifying \"narrow.cpp\"; {result} {name}(int128 a, int128 b) {{ ensures 0 == 0; }}"
         );
         let path = project.directory.join("unsafe.click");
         fs::write(&path, &unsafe_proof).unwrap();
@@ -12006,7 +12000,7 @@ fn wide_narrowing_still_wraps_outside_the_destination_range() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let proof = format!(
-            "verifying \"narrow.cpp\"; {ty} {name}() {{ ensures to_integer(result) == {expected}; }} by {{ execute(); solve(); }}"
+            "verifying \"narrow.cpp\"; {ty} {name}() {{ ensures to_integer(result) == {expected}; }}"
         );
         check_first_claim_certificate(&project, &import, &proof);
         let false_proof = proof.replace(
@@ -12039,14 +12033,14 @@ int64 ss64(int128 a) {{
     requires {lo} <= to_integer(a);
     requires to_integer(a) <= {hi};
     ensures to_integer(result) == to_integer(a);
-}} by {{ execute(); have to_integer(result) == to_integer(a) by {{ {cert} }} solve(); }}
+}} by {{ step_until(function.exit); have to_integer(result) == to_integer(a) by {{ {cert} }} solve(); }}
 int64 relay(int128 a, int32* untouched) {{
     requires {lo} <= to_integer(a);
     requires to_integer(a) <= {hi};
     owns untouched[0..1];
     ensures to_integer(result) == to_integer(a);
     ensures untouched[0] == old(untouched[0]);
-}} by {{ execute(); solve(); }}"#
+}}"#
     );
     check_selected_claim_certificate(&project, &import, &proof);
 }
@@ -12082,9 +12076,8 @@ fn scalar_brace_initialization_preserves_resolved_conversions_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let source = format!(
-            "verifying \"braces.cpp\"; {ty} {name}({params}) {{ ensures {post}; }} by {{ execute(); solve(); }}"
-        );
+        let source =
+            format!("verifying \"braces.cpp\"; {ty} {name}({params}) {{ ensures {post}; }}");
         check_first_claim_certificate(&project, &import, &source);
     }
 }
@@ -12131,7 +12124,7 @@ int128 relay(int64 a, int32 b, int32& untouched) {{
     owns untouched;
     ensures to_integer(result) == to_integer(a) * to_integer(b);
     ensures untouched == old(untouched);
-}} by {{ execute(); solve(); }}
+}}
 "#
     );
     check_selected_claim_certificate(&project, &import, &source);
@@ -12151,12 +12144,13 @@ fn scalar_braces_keep_argument_and_assumption_effect_restrictions() {
     let project = Project::with_fixture("braces.cpp", "argument", SCALAR_BRACES_SOURCE);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"braces.cpp\"; int64 identity(int64 n) { ensures result == n; } by { execute(); solve(); } int64 argument(int32 n) { ensures result == n; } by { execute(); solve(); }";
+    let proof = "verifying \"braces.cpp\"; int64 identity(int64 n) { ensures result == n; } int64 argument(int32 n) { ensures result == n; }";
     check_selected_claim_certificate(&project, &import, proof);
     let project = Project::with_fixture("braces.cpp", "guarded", SCALAR_BRACES_SOURCE);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"braces.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); solve(); }";
+    let proof =
+        "verifying \"braces.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; }";
     check_first_claim_certificate(&project, &import, proof);
     let path = project.directory.join("missing.click");
     let missing = proof.replace("requires n > 0;", "");
@@ -12232,9 +12226,9 @@ fn assumed_library_assertions_require_proof_and_preserve_cleanup() {
     assert_eq!(contract.header, "gate.h");
     assert_eq!(span.file, "library.cpp");
     let source = r#"verifying "library.cpp";
-Guard::Guard(int32 n) { owns this->value; ensures this->value == n; } by { execute(); solve(); }
-Guard::~Guard() { owns this->value; ensures this->value == 0; } by { execute(); solve(); }
-int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); solve(); }
+Guard::Guard(int32 n) { owns this->value; ensures this->value == n; }
+Guard::~Guard() { owns this->value; ensures this->value == 0; }
+int32 guarded(int32 n) { requires n > 0; ensures result == n; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
     for precondition in ["", "requires n == 0;"] {
@@ -12334,7 +12328,7 @@ int32 guarded(const struct Box& box, int32 n) {
  requires n >= 0;
  ensures result == n;
  ensures box.size == old(box.size);
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, proof);
     for bad in [
@@ -12405,7 +12399,7 @@ fn branch_likelihood_attributes_preserve_both_outcomes() {
 int32 choose(bool positive) {
  ensures positive != 0 implies result == 7;
  ensures positive == 0 implies result == -3;
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, proof);
     let bad = proof.replace("result == 7", "result == 8");
@@ -12544,7 +12538,7 @@ fn assumed_library_assertions_scale_with_explicit_statement_count() {
         lowered.unwrap();
         assert!(work <= 32 * size + 128, "{size}: {work}");
         if size == 4 {
-            let proof = "verifying \"library.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); solve(); }";
+            let proof = "verifying \"library.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; }";
             check_selected_claim_certificate(&project, &import, proof);
         }
     }
@@ -12559,8 +12553,8 @@ fn assumed_library_assertions_compose_with_modular_callers_and_memory_framing() 
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "library.cpp";
-int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); solve(); }
-int32 guarded(int32& memory, int32 n) { owns memory; requires memory == 7; requires n > 0; ensures memory == 7; ensures result == n; } by { execute(); solve(); }
+int32 checked(int32 n) { requires n > 0; ensures result == n; }
+int32 guarded(int32& memory, int32 n) { owns memory; requires memory == 7; requires n > 0; ensures memory == 7; ensures result == n; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
     for hostile in [
@@ -12682,7 +12676,7 @@ fn consteval_library_metadata_keeps_proof_obligations_and_compiler_provenance() 
         "compile-time-only opaque metadata does not become a runtime record model"
     );
     assert!(import.export().reachable_functions.is_empty());
-    let proof = "verifying \"library.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); solve(); }";
+    let proof = "verifying \"library.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; }";
     check_selected_claim_certificate(&project, &import, proof);
     for hostile in [
         proof.replace("requires n > 0;", ""),
@@ -12756,10 +12750,10 @@ fn consteval_library_metadata_preserves_normal_cleanup_and_modular_framing() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "library.cpp";
-Guard::Guard(int32 n) { owns this->value; ensures this->value == n; } by { execute(); solve(); }
-Guard::~Guard() { owns this->value; ensures this->value == 0; } by { execute(); solve(); }
-int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); solve(); }
-int32 guarded(int32& memory, int32 n) { owns memory; requires memory == 7; requires n > 0; ensures memory == 7; ensures result == n; } by { execute(); solve(); }
+Guard::Guard(int32 n) { owns this->value; ensures this->value == n; }
+Guard::~Guard() { owns this->value; ensures this->value == 0; }
+int32 checked(int32 n) { requires n > 0; ensures result == n; }
+int32 guarded(int32& memory, int32 n) { owns memory; requires memory == 7; requires n > 0; ensures memory == 7; ensures result == n; }
 "#;
     check_selected_claim_certificate(&project, &import, proof);
 }
@@ -12902,7 +12896,7 @@ fn literal_library_metadata_proves_conditions_and_retains_both_assumptions() {
         );
         assert!(import.export().records.is_empty());
         assert!(import.export().reachable_functions.is_empty());
-        let proof = "verifying \"library.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); solve(); }";
+        let proof = "verifying \"library.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; }";
         check_return_call_sidecar(&project, &import, proof);
         for hostile in [
             proof.replace("requires n > 0;", ""),
@@ -13082,13 +13076,13 @@ int guarded(int& value, int* untouched) noexcept { int n = value; int result = c
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "library.cpp";
-Guard::Guard(int32 n) { owns this->value; ensures this->value == n; } by { execute(); solve(); }
-Guard::~Guard() { owns this->value; ensures this->value == 0; } by { execute(); solve(); }
-int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); solve(); }
+Guard::Guard(int32 n) { owns this->value; ensures this->value == n; }
+Guard::~Guard() { owns this->value; ensures this->value == 0; }
+int32 checked(int32 n) { requires n > 0; ensures result == n; }
 int32 guarded(int32& value, int32* untouched) {
     owns value; owns untouched[0..1]; requires value > 0; requires untouched[0] == 7;
     ensures result == old(value); ensures value == old(value); ensures untouched[0] == 7;
-} by { execute(); solve(); }
+}
 "#;
     check_selected_claim_certificate(&project, &import, proof);
 }
@@ -13104,7 +13098,7 @@ fn literal_library_metadata_const_reference_does_not_execute_a_nontrivial_copy()
     let project = literal_library_fixture(&text, &header, cpp);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"library.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); solve(); }";
+    let proof = "verifying \"library.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; }";
     check_selected_claim_certificate(&project, &import, proof);
     fs::write(
         project.directory.join("text.h"),
@@ -13186,7 +13180,7 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
 }} by {{
     have {lower} by {{ {lower_cert} }}
     have {upper} by {{ {upper_cert} }}
-    execute();
+    step_until(function.exit);
     have {lo} <= {observed} by {{ arithmetic_certificate rules {{
         premise 0: {observed} == {expression} => {observed} == {expression};
         premise 1: {lower} => {lower};
@@ -13262,7 +13256,7 @@ int128 {name}(int128 a, int128 b) {{
         premise 0: 1 <= to_integer(b) => 1 <= to_integer(b);
         integer_bound_exclusion bounds [0] => to_integer(b) != -1; conclusion 0;
     }} }}
-    execute(); solve();
+    step_until(function.exit); solve();
 }}"#
         );
         check_first_claim_certificate(&project, &import, &source);
@@ -13316,7 +13310,7 @@ verifying "narrow.cpp";
     ensures -100{suffix} <= result;
     ensures result <= 100{suffix};
 }} by {{
-    execute();
+    step_until(function.exit);
     have to_integer(result) == to_integer(a) by {{ {cert} }}
     have -100 <= to_integer(result) by {{ arithmetic_certificate rules {{
         premise 0: to_integer(result) == to_integer(a) => to_integer(result) == to_integer(a);
@@ -13341,7 +13335,7 @@ int64 relay(int128 a, int32* untouched) {
     ensures -100i64 <= result;
     ensures result <= 100i64;
     ensures untouched[0] == old(untouched[0]);
-} by { execute(); solve(); }
+}
 "#,
             );
             check_selected_claim_certificate(&project, &import, &proof);
@@ -13399,7 +13393,7 @@ ensures round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer
 ensures round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d);
 ensures round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d);
 ensures round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n);
-} by { execute(); solve(); }
+}
 "#,
         );
     }
@@ -13554,7 +13548,7 @@ int32 choose(const struct Box& box) {
  views box.fee;
  ensures result == 1 or result == 2;
  ensures box.fee == old(box.fee);
-} by { execute(); solve(); }
+}
 "#;
     check_arithmetic_sidecar(&project, &import, source);
     for (fee, result) in [("-1i64", 2), ("1i64", 1), ("8589934592i64", 2)] {
@@ -14095,7 +14089,7 @@ fn nested_record_shared_layout_expansion_has_a_bounded_leaf_budget() {
     let project = Project::with_fixture("nested.cpp", "Envelope::Read", &source);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let sidecar = "verifying \"nested.cpp\"; int Envelope::Read() const { ensures result == 0; } by { execute(); solve(); }";
+    let sidecar = "verifying \"nested.cpp\"; int Envelope::Read() const { ensures result == 0; }";
     let path = project.directory.join("budget.click");
     fs::write(&path, sidecar).unwrap();
     let parsed = read_click_project(&path, sidecar).unwrap();
@@ -14358,11 +14352,11 @@ fn nested_pointer_fields_keep_const_object_and_pointee_authority_separate() {
     for (selected, sidecar) in [
         (
             "read",
-            "verifying \"pointer_nested.cpp\"; int read(const struct Outer& state, int* value) { views state.child.pointer; views value[0..1]; requires state.child.pointer == value; ensures result == value[0]; } by { execute(); solve(); }",
+            "verifying \"pointer_nested.cpp\"; int read(const struct Outer& state, int* value) { views state.child.pointer; views value[0..1]; requires state.child.pointer == value; ensures result == value[0]; }",
         ),
         (
             "write",
-            "verifying \"pointer_nested.cpp\"; void write(const struct Outer& state, int* value, int next) { views state.child.pointer; owns value[0..1]; requires state.child.pointer == value; ensures value[0] == next; ensures state.child.pointer == old(state.child.pointer); } by { execute(); solve(); }",
+            "verifying \"pointer_nested.cpp\"; void write(const struct Outer& state, int* value, int next) { views state.child.pointer; owns value[0..1]; requires state.child.pointer == value; ensures value[0] == next; ensures state.child.pointer == old(state.child.pointer); }",
         ),
     ] {
         let project = Project::with_fixture("pointer_nested.cpp", selected, source);
@@ -14616,7 +14610,7 @@ fn projected_calls_require_certified_callee_contracts_and_true_results() {
         let project = nested_record_project(selected);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let (_, caller) = sidecar.split_once("} by { execute(); solve(); }").unwrap();
+        let (_, caller) = sidecar.split_once("}").unwrap();
         for hostile in [
             format!("verifying \"nested_record.cpp\";\n{caller}"),
             sidecar.replace("result ==", "result !="),
@@ -14662,8 +14656,8 @@ fn condition_calls_evaluate_once_before_branch_and_verify_offline() {
     for (answer, expected) in [(0, 2), (1, 1)] {
         let sidecar = format!(
             r#"verifying "condition.cpp";
-        bool update(int32& value, bool answer) {{ owns value; requires value == 4; ensures value == 5; ensures result == answer; }} by {{ execute(); solve(); }}
-        int32 choose(struct State& state, bool answer) {{ owns state.sibling; views state.left.base.value; requires answer == {answer}; requires state.sibling == 4; ensures result == {expected}; ensures state.sibling == 5; ensures state.left.base.value == old(state.left.base.value); }} by {{ execute(); solve(); }}
+        bool update(int32& value, bool answer) {{ owns value; requires value == 4; ensures value == 5; ensures result == answer; }}
+        int32 choose(struct State& state, bool answer) {{ owns state.sibling; views state.left.base.value; requires answer == {answer}; requires state.sibling == 4; ensures result == {expected}; ensures state.sibling == 5; ensures state.left.base.value == old(state.left.base.value); }}
         "#
         );
         check_selected_claim_certificate(&project, &import, &sidecar);
@@ -14680,8 +14674,8 @@ fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
     for (value, expected) in [(0, 1), (3, 2)] {
         let sidecar = format!(
             r#"verifying "condition.cpp";
-        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); solve(); }}
-        int32 observe(const struct State& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {expected}; ensures state.sibling == old(state.sibling); }} by {{ execute(); solve(); }}
+        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }}
+        int32 observe(const struct State& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {expected}; ensures state.sibling == old(state.sibling); }}
         "#
         );
         check_selected_claim_certificate(&project, &import, &sidecar);
@@ -14775,8 +14769,8 @@ fn expression_observers_admit_composed_boolean_conditions() {
         };
         let sidecar = format!(
             r#"verifying "condition.cpp";
-{helper} {{ ensures result == 1; }} by {{ execute(); solve(); }}
-int32 choose() {{ ensures result == 1; }} by {{ execute(); solve(); }}
+{helper} {{ ensures result == 1; }}
+int32 choose() {{ ensures result == 1; }}
 "#
         );
         check_first_claim_certificate(&project, &import, &sidecar);
@@ -14797,8 +14791,8 @@ fn condition_calls_propagate_scalar_exception_contracts() {
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let source = r#"verifying "condition.cpp";
-    bool predicate(bool fail) throws int32 { ensures result == 1 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
-    int32 choose(bool fail) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
+    bool predicate(bool fail) throws int32 { ensures result == 1; exceptional ensures exception == 7; }
+    int32 choose(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
     "#;
     check_selected_claim_certificate(&project, &import, source);
 }
@@ -14858,9 +14852,9 @@ int choose(int value) noexcept {
         &project,
         &import,
         r#"verifying "condition.cpp";
-    bool predicate(int32 value) { requires value == 7; ensures result == 1; } by { execute(); solve(); }
-    int32 echo(int32 value) { ensures result == value; } by { execute(); solve(); }
-    int32 choose(int32 value) { requires value == 7; ensures result == 9; } by { execute(); solve(); }
+    bool predicate(int32 value) { requires value == 7; ensures result == 1; }
+    int32 echo(int32 value) { ensures result == value; }
+    int32 choose(int32 value) { requires value == 7; ensures result == 9; }
     "#,
     );
 }
@@ -14879,12 +14873,12 @@ fn condition_calls_preserve_the_enclosing_catch_scope() {
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let sidecar = r#"verifying "condition.cpp";
-        bool predicate(bool fail) throws int32 { ensures result == 1 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
+        bool predicate(bool fail) throws int32 { ensures result == 1; exceptional ensures exception == 7; }
         int32 choose(bool fail) { ensures result == 5 or result == 7; } by {
             step();
             outcomes {
-                returned => { step(); execute(); solve(); }
-                threw => { step(); execute(); solve(); }
+                returned => { step(); step_until(function.exit); solve(); }
+                threw => { step(); step_until(function.exit); solve(); }
             }
         }
     "#;
@@ -15003,10 +14997,10 @@ fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
     for (value, result) in [(0, 1), (3, 3)] {
         let sidecar = format!(
             r#"verifying "graph.cpp";
-        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); solve(); }}
-        bool predicate(const struct Base& state) {{ views state.value; ensures result == (if state.value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); solve(); }}
-        int32 Read(const struct Base& state) {{ views state.value; ensures result == state.value; }} by {{ execute(); solve(); }}
-        int32 choose(const struct Box& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {result}; ensures state.sibling == old(state.sibling); }} by {{ execute(); solve(); }}
+        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }}
+        bool predicate(const struct Base& state) {{ views state.value; ensures result == (if state.value == 0 {{ 1 }} else {{ 0 }}); }}
+        int32 Read(const struct Base& state) {{ views state.value; ensures result == state.value; }}
+        int32 choose(const struct Box& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {result}; ensures state.sibling == old(state.sibling); }}
         "#
         );
         check_selected_claim_certificate(&project, &import, &sidecar);
@@ -15031,9 +15025,9 @@ fn locked_header_graph_mutators_verify_offline_and_require_leaf_authority() {
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let sidecar = r#"verifying "graph.cpp";
-    void Base::Set(int32 next) { owns this->value; ensures this->value == next; } by { execute(); solve(); }
-    void Store(struct Base& state, int32 next) { owns state.value; ensures state.value == next; } by { execute(); solve(); }
-    void change(struct Box& state, int32 next) { owns state.left.base.value; views state.sibling; ensures state.left.base.value == next; ensures state.sibling == old(state.sibling); } by { execute(); solve(); }
+    void Base::Set(int32 next) { owns this->value; ensures this->value == next; }
+    void Store(struct Base& state, int32 next) { owns state.value; ensures state.value == next; }
+    void change(struct Box& state, int32 next) { owns state.left.base.value; views state.sibling; ensures state.left.base.value == next; ensures state.sibling == old(state.sibling); }
     "#;
     check_selected_claim_certificate(&project, &import, sidecar);
     for hostile in [
@@ -15202,8 +15196,8 @@ fn locked_header_graph_preserves_scalar_exception_contracts_offline() {
     );
     fs::remove_file(&project.exporter).unwrap();
     let sidecar = r#"verifying "header-exception.cpp";
-    bool predicate(bool fail) throws int32 { ensures result == 1 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
-    int32 choose(bool fail) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
+    bool predicate(bool fail) throws int32 { ensures result == 1; exceptional ensures exception == 7; }
+    int32 choose(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
     "#;
     check_selected_claim_certificate(&project, &import, sidecar);
     let hostile = sidecar.replace(
@@ -15244,9 +15238,9 @@ fn locked_header_graph_can_call_back_into_the_selected_source() {
         &project,
         &import,
         r#"verifying "callback.cpp";
-    int32 callback(int32 value) { ensures result == value; } by { execute(); solve(); }
-    int32 bridge(int32 value) { ensures result == value; } by { execute(); solve(); }
-    int32 choose(int32 value) { ensures result == value; } by { execute(); solve(); }
+    int32 callback(int32 value) { ensures result == value; }
+    int32 bridge(int32 value) { ensures result == value; }
+    int32 choose(int32 value) { ensures result == value; }
     "#,
     );
 }
@@ -15273,8 +15267,8 @@ fn locked_header_graph_verifies_concrete_template_instances_only() {
         &import,
         &format!(
             r#"verifying "template-graph.cpp";
-    int32 {}(int32 value) {{ ensures result == value; }} by {{ execute(); solve(); }}
-    int32 choose(int32 value) {{ ensures result == value; }} by {{ execute(); solve(); }}
+    int32 {}(int32 value) {{ ensures result == value; }}
+    int32 choose(int32 value) {{ ensures result == value; }}
     "#,
             cpp_spelling(&import, &callee.declaration_id)
         ),
@@ -15341,8 +15335,8 @@ fn converted_call_initializers_preserve_aliases_and_header_contracts_offline() {
         &project,
         &import,
         r#"verifying "converted.cpp";
-int64 echo(int64 value) { ensures result == value; } by { execute(); solve(); }
-int64 relay(int64 value) { ensures result == value; } by { execute(); solve(); }
+int64 echo(int64 value) { ensures result == value; }
+int64 relay(int64 value) { ensures result == value; }
 "#,
     );
 }
@@ -15358,8 +15352,8 @@ fn converted_call_initializers_preserve_modulo_narrowing_and_reject_false_fit() 
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "converted.cpp";
-uint64 echo(uint64 value) { ensures result == value; } by { execute(); solve(); }
-int32 relay(uint64 value) { requires value == 18446744073709551615u64; ensures result == -1; } by { execute(); solve(); }
+uint64 echo(uint64 value) { ensures result == value; }
+int32 relay(uint64 value) { requires value == 18446744073709551615u64; ensures result == -1; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
     let hostile = source.replace(
@@ -15416,8 +15410,8 @@ fn converted_call_initializers_keep_implicit_and_boolean_conversion_order() {
             &import,
             &format!(
                 r#"verifying "converted.cpp";
-int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); solve(); }}
-int64 relay(int32 value) {{ requires value == 7; ensures result == {expected}; }} by {{ execute(); solve(); }}
+int32 echo(int32 value) {{ ensures result == value; }}
+int64 relay(int32 value) {{ requires value == 7; ensures result == {expected}; }}
 "#
             ),
         );
@@ -15435,8 +15429,8 @@ fn converted_call_initializers_evaluate_mutators_once_and_frame_siblings() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "converted.cpp";
-int32 bump(struct Box& box) { owns box.value; requires box.value == 0; ensures box.value == 1; ensures result == 1; } by { execute(); solve(); }
-int64 relay(struct Box& box) { owns box.value; views box.sibling; requires box.value == 0; ensures box.value == 1; ensures result == 1i64; ensures box.sibling == old(box.sibling); } by { execute(); solve(); }
+int32 bump(struct Box& box) { owns box.value; requires box.value == 0; ensures box.value == 1; ensures result == 1; }
+int64 relay(struct Box& box) { owns box.value; views box.sibling; requires box.value == 0; ensures box.value == 1; ensures result == 1i64; ensures box.sibling == old(box.sibling); }
 "#;
     check_selected_claim_certificate(&project, &import, source);
     let hostile = source.replace("owns box.value; views", "views box.value; views");
@@ -15550,8 +15544,8 @@ fn converted_call_initializers_preserve_scalar_exception_contracts_offline() {
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let source = r#"verifying "converted.cpp";
-int32 helper(bool fail) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
-int64 relay(bool fail) throws int32 { ensures result == 5i64 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
+int32 helper(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
+int64 relay(bool fail) throws int32 { ensures result == 5i64; exceptional ensures exception == 7; }
 "#;
     check_return_call_sidecar(&project, &import, source);
     let hostile = source.replace("exception == 7 by", "exception == 8 by");
@@ -15573,8 +15567,8 @@ fn converted_call_initializers_keep_source_overflow_before_widening() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "converted.cpp";
-int32 next(int32 value) { requires value == 7; ensures result == 8; } by { execute(); solve(); }
-int64 relay(int32 value) { requires value == 7; ensures result == 8i64; } by { execute(); solve(); }
+int32 next(int32 value) { requires value == 7; ensures result == 8; }
+int64 relay(int32 value) { requires value == 7; ensures result == 8i64; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
     let hostile = source
@@ -15603,8 +15597,8 @@ fn converted_call_initializers_preserve_boolean_results() {
         &project,
         &import,
         r#"verifying "converted.cpp";
-bool echo(bool value) { ensures result == value; } by { execute(); solve(); }
-int32 relay(bool value) { requires value == 1; ensures result == 1; } by { execute(); solve(); }
+bool echo(bool value) { ensures result == value; }
+int32 relay(bool value) { requires value == 1; ensures result == 1; }
 "#,
     );
 }
@@ -15622,8 +15616,8 @@ fn converted_return_calls_preserve_implicit_widening_and_original_refused_source
         &project,
         &import,
         r#"verifying "relay.cpp";
-int32 echo(int32 value) { ensures result == value; } by { execute(); solve(); }
-int64 relay(int32 value) { ensures result == value; } by { execute(); solve(); }
+int32 echo(int32 value) { ensures result == value; }
+int64 relay(int32 value) { ensures result == value; }
 "#,
     );
 }
@@ -15682,8 +15676,8 @@ fn converted_return_calls_preserve_modulo_boolean_and_ordered_chains() {
         let import = load_import(&project.config()).unwrap();
         let source = format!(
             r#"verifying "relay.cpp";
-{proof_type} echo({proof_type} value) {{ ensures result == value; }} by {{ execute(); solve(); }}
-{result_type} relay({proof_type} value) {{ requires {requirement}; ensures result == {expected}; }} by {{ execute(); solve(); }}
+{proof_type} echo({proof_type} value) {{ ensures result == value; }}
+{result_type} relay({proof_type} value) {{ requires {requirement}; ensures result == {expected}; }}
 "#
         );
         check_selected_claim_certificate(&project, &import, &source);
@@ -15747,8 +15741,8 @@ using Amount = long; inline Amount echo(Amount value) noexcept { return value; }
         &project,
         &import,
         r#"verifying "relay.cpp";
-int64 echo(int64 value) { ensures result == value; } by { execute(); solve(); }
-int64 relay(int64 value) { ensures result == value; } by { execute(); solve(); }
+int64 echo(int64 value) { ensures result == value; }
+int64 relay(int64 value) { ensures result == value; }
 "#,
     );
 }
@@ -15777,20 +15771,20 @@ Restore::Restore(int32* slot) {
  owns this->p; owns this->saved; owns slot[0..1];
  ensures this->p == slot; ensures this->saved == old(slot[0]); ensures slot[0] == 7;
  ensures separate(memory(*this), memory(this->p[0..1]));
-} by { execute(); solve(); }
+}
 Restore::~Restore() {
  requires separate(memory(*this), memory(this->p[0..1]));
  owns this->p; owns this->saved; owns this->p[0..1];
  ensures this->p == old(this->p); ensures this->saved == old(this->saved);
  ensures this->p[0] == old(this->saved);
-} by { execute(); solve(); }
+}
 int64 read(int32* slot) {
  views slot[0..1]; requires slot[0] == 7; ensures result == 4294967303i64;
  ensures slot[0] == old(slot[0]);
-} by { execute(); solve(); }
+}
 int32 relay(int32& value) {
  owns value; ensures result == 7; ensures value == old(value);
-} by { execute(); solve(); }
+}
 "#;
     check_selected_claim_certificate(&project, &import, source);
     for hostile in [
@@ -15817,8 +15811,8 @@ fn converted_return_calls_evaluate_mutators_once_and_preserve_sibling_authority(
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "relay.cpp";
-int64 bump(struct Box& box) { owns box.value; requires box.value == 0; ensures box.value == 1; ensures result == 1i64; } by { execute(); solve(); }
-int32 relay(struct Box& box) { owns box.value; views box.sibling; requires box.value == 0; ensures box.value == 1; ensures result == 1; ensures box.sibling == old(box.sibling); } by { execute(); solve(); }
+int64 bump(struct Box& box) { owns box.value; requires box.value == 0; ensures box.value == 1; ensures result == 1i64; }
+int32 relay(struct Box& box) { owns box.value; views box.sibling; requires box.value == 0; ensures box.value == 1; ensures result == 1; ensures box.sibling == old(box.sibling); }
 "#;
     check_selected_claim_certificate(&project, &import, source);
     let hostile = source.replace("owns box.value; views", "views box.value; views");
@@ -15844,8 +15838,8 @@ fn converted_return_calls_preserve_scalar_exceptions_offline() {
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let source = r#"verifying "relay.cpp";
-int32 helper(bool fail) throws int32 { ensures result == 5 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
-int64 relay(bool fail) throws int32 { ensures result == 5i64 by { execute(); solve(); } exceptional ensures exception == 7 by { execute(); solve(); } }
+int32 helper(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
+int64 relay(bool fail) throws int32 { ensures result == 5i64; exceptional ensures exception == 7; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
     let hostile = source.replace("exception == 7 by", "exception == 8 by");
@@ -15925,8 +15919,8 @@ fn converted_return_expression_observers_verify_composed_values() {
         let import = load_import(&project.config()).unwrap();
         let sidecar = format!(
             r#"verifying "relay.cpp";
-int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); solve(); }}
-int32 relay(int32 value) {{ requires value == 0; ensures result == {result}; }} by {{ execute(); solve(); }}
+int32 echo(int32 value) {{ ensures result == value; }}
+int32 relay(int32 value) {{ requires value == 0; ensures result == {result}; }}
 "#
         );
         check_first_claim_certificate(&project, &import, &sidecar);
@@ -15997,8 +15991,8 @@ fn converted_return_calls_keep_source_overflow_before_widening() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "relay.cpp";
-int32 next(int32 value) { requires value == 7; ensures result == 8; } by { execute(); solve(); }
-int64 relay(int32 value) { requires value == 7; ensures result == 8i64; } by { execute(); solve(); }
+int32 next(int32 value) { requires value == 7; ensures result == 8; }
+int64 relay(int32 value) { requires value == 7; ensures result == 8i64; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
     let hostile = source
@@ -16027,7 +16021,7 @@ fn execution_theorem_proof_retains_struct_argument_field_metadata() {
 int32 read(const struct State& state) {
     views state.child.value;
     ensures result == state.child.value;
-} by { execute(); solve(); }
+}
 contract int32 PositiveRead(const struct State& state) {
     views state.child.value;
     requires state.child.value == 2;
@@ -16036,7 +16030,7 @@ contract int32 PositiveRead(const struct State& state) {
 theorem read_application() executes read(const struct State& state) {
     ensures PositiveRead(&read) by {
         have state.child.value > 0 by { solve() using { state.child.value == 2; } }
-        execute(); solve();
+        step_until(function.exit); solve();
     }
 }
 "#;
@@ -16184,7 +16178,7 @@ fn check_converted_wide_call_results(initializer: bool) {
         let cert = cast_identity_certificate("to_integer(captured)", lo, hi);
         let proof = format!(
             r#"verifying "wide.cpp";
-{source} echo({source} value) {{ ensures result == value; }} by {{ execute(); solve(); }}
+{source} echo({source} value) {{ ensures result == value; }}
 {result} relay({source} value) {{
  requires {lo} <= to_integer(value); requires to_integer(value) <= {hi};
  ensures to_integer(result) == to_integer(value);
@@ -16193,7 +16187,7 @@ fn check_converted_wide_call_results(initializer: bool) {
  let {{ result: captured }} = step(echo, {{}});
  have {lo} <= to_integer(captured) by {{ solve() using {{ {lo} <= to_integer(value); to_integer(captured) == to_integer(value); }} }}
  have to_integer(captured) <= {hi} by {{ solve() using {{ to_integer(value) <= {hi}; to_integer(captured) == to_integer(value); }} }}
- execute();
+ step_until(function.exit);
  have to_integer(result) == to_integer(captured) by {{ {cert} }}
  solve() using {{ to_integer(result) == to_integer(captured); to_integer(captured) == to_integer(value); }}
 }}
@@ -16271,12 +16265,12 @@ fn converted_wide_boolean_calls_observe_high_bits() {
         };
         let proof = format!(
             r#"verifying "wide.cpp";
-uint128 echo(uint128 value) {{ ensures result == value; }} by {{ execute(); solve(); }}
+uint128 echo(uint128 value) {{ ensures result == value; }}
 bool relay(uint128 value) {{ requires to_integer(value) == {point}; ensures result == {answer}; }} by {{
  step(); let {{ result: captured }} = step(echo, {{}});
  have to_integer(captured) == {point} by {{ solve() using {{ to_integer(value) == {point}; to_integer(captured) == to_integer(value); }} }}
  {zero_fact}
- execute(); solve();
+ step_until(function.exit); solve();
 }}
 "#
         );
@@ -16308,8 +16302,8 @@ fn cpp_pointer_returns_preserve_identity_and_modular_results_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let sidecar = r#"verifying "return.cpp";
-int32* identity(int32* data) { ensures result == data; } by { execute(); solve(); }
-int32* run(int32* data) { ensures result == data; } by { execute(); solve(); }
+int32* identity(int32* data) { ensures result == data; }
+int32* run(int32* data) { ensures result == data; }
 "#;
     check_first_claim_certificate(&project, &import, sidecar);
     let hostile = sidecar.replace(
@@ -16374,8 +16368,8 @@ fn cpp_native_reference_results_preserve_aliases_and_require_backing_authority_o
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let aliases = r#"verifying "return.cpp";
-int32& identity(int32& value) { ensures &result == &value; } by { execute(); solve(); }
-int32& run(int32& value) { ensures &result == &value; } by { execute(); solve(); }
+int32& identity(int32& value) { ensures &result == &value; }
+int32& run(int32& value) { ensures &result == &value; }
 "#;
     check_first_claim_certificate(&project, &import, aliases);
     let values = aliases.replace(
@@ -16465,7 +16459,7 @@ fn cpp_reference_results_bind_live_pointer_referents_without_loading() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let aliases = r#"verifying "return.cpp";
-int32& run(int32* data) { views data[0..1]; ensures &result == data; } by { execute(); solve(); }
+int32& run(int32* data) { views data[0..1]; ensures &result == data; }
 "#;
     check_first_claim_certificate(&project, &import, aliases);
     let values = aliases.replace(
@@ -16498,8 +16492,8 @@ fn cpp_reference_locals_preserve_aliases_and_modular_call_results_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let sidecar = r#"verifying "local.cpp";
-int32& helper(int32& value) { ensures &result == &value; } by { execute(); solve(); }
-int32& run(int32& value) { owns value; ensures &result == &value; ensures result == 9; ensures value == 9; } by { execute(); solve(); }
+int32& helper(int32& value) { ensures &result == &value; }
+int32& run(int32& value) { owns value; ensures &result == &value; ensures result == 9; ensures value == 9; }
 "#;
     check_first_claim_certificate(&project, &import, sidecar);
     for hostile in [
@@ -16538,19 +16532,21 @@ int32 run(int32& value) { owns value; ensures result == 1; ensures value == 1; }
     check_first_claim_certificate(
         &project,
         &import,
-        &proof("step(); step(); step(); have r == 1; have &r == &value; execute(); solve();"),
+        &proof(
+            "step(); step(); step(); have r == 1; have &r == &value; step_until(function.exit); solve();",
+        ),
     );
     for (body, expected) in [
         (
-            "step(); step(); step(); have r == 2; execute(); solve();",
+            "step(); step(); step(); have r == 2; step_until(function.exit); solve();",
             "r == 2",
         ),
         (
-            "step(); step(); step(); have r[0] == 1; execute(); solve();",
+            "step(); step(); step(); have r[0] == 1; step_until(function.exit); solve();",
             "`r` is a reference and names the value it refers to, so it takes no index",
         ),
         (
-            "step_until(assignment(r, 0)); execute(); solve();",
+            "step_until(assignment(r, 0)); step_until(function.exit); solve();",
             "`r` is a reference, and binding a reference is not an assignment",
         ),
     ] {
@@ -16581,7 +16577,7 @@ fn cpp_scalar_reference_reads_print_as_referents_in_a_c_operation_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let text = "verifying \"local.cpp\";\nint32 read(int32& value) { ensures result == result; } by { execute(); solve(); }\n";
+    let text = "verifying \"local.cpp\";\nint32 read(int32& value) { ensures result == result; }\n";
     let path = project.directory.join("bad.click");
     fs::write(&path, text).unwrap();
     let error = verify_program_prepared_project(&read_click_project(&path, text).unwrap(), &import)
@@ -16611,7 +16607,7 @@ fn cpp_struct_reference_reads_print_as_fields_in_a_c_operation_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let text = "verifying \"local.cpp\";\nint32 get(struct cell& c) { views c.second; ensures result == result; } by { execute(); solve(); }\n";
+    let text = "verifying \"local.cpp\";\nint32 get(struct cell& c) { views c.second; ensures result == result; }\n";
     let path = project.directory.join("bad.click");
     fs::write(&path, text).unwrap();
     let error = verify_program_prepared_project(&read_click_project(&path, text).unwrap(), &import)
@@ -16640,7 +16636,7 @@ fn cpp_expansion_writes_a_branch_over_a_reference_by_its_referent_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let text = "verifying \"local.cpp\";\nint32 pick(int32& value) { views value; ensures result >= 0; } by { execute(); solve(); }\n";
+    let text = "verifying \"local.cpp\";\nint32 pick(int32& value) { views value; ensures result >= 0; }\n";
     let path = project.directory.join("pick.click");
     fs::write(&path, text).unwrap();
     let parsed = read_click_project(&path, text).unwrap();
@@ -16679,7 +16675,7 @@ fn cpp_expansion_writes_a_branch_over_a_struct_reference_by_its_field_offline() 
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let text = "verifying \"local.cpp\";\nint32 pick(struct cell& c) { views c.second; ensures result >= 0; } by { execute(); solve(); }\n";
+    let text = "verifying \"local.cpp\";\nint32 pick(struct cell& c) { views c.second; ensures result >= 0; }\n";
     let path = project.directory.join("pick.click");
     fs::write(&path, text).unwrap();
     let parsed = read_click_project(&path, text).unwrap();
@@ -16722,7 +16718,7 @@ fn cpp_const_reference_locals_bind_pointer_storage_without_loading_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let sidecar = r#"verifying "local.cpp";
-const int32& run(int32* data) { views data[0..2]; ensures &result == data + 1; ensures result == old(data[1]); } by { execute(); solve(); }
+const int32& run(int32* data) { views data[0..2]; ensures &result == data + 1; ensures result == old(data[1]); }
 "#;
     check_first_claim_certificate(&project, &import, sidecar);
     let hostile = sidecar.replace("views data[0..2];", "views data[0..1];");
@@ -16746,7 +16742,7 @@ fn cpp_unknown_pointer_formation_requires_bounds_before_any_dereference() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let sidecar = r#"verifying "formation.cpp";
-int32* run(int32* data) { ensures true; } by { execute(); solve(); }
+int32* run(int32* data) { ensures true; }
 "#;
     let path = project.directory.join("bad.click");
     fs::write(&path, sidecar).unwrap();
@@ -16775,7 +16771,7 @@ fn cpp_reference_formation_rejects_one_past_even_under_trivial_postconditions() 
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let sidecar = r#"verifying "return.cpp";
-int32& run(int32* data) { views data[0..1]; ensures true; } by { execute(); solve(); }
+int32& run(int32* data) { views data[0..1]; ensures true; }
 "#;
     let path = project.directory.join("bad.click");
     fs::write(&path, sidecar).unwrap();
@@ -16804,8 +16800,8 @@ fn cpp_const_reference_results_preserve_native_qualification_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let aliases = r#"verifying "return.cpp";
-const int32& identity(const int32& value) { ensures &result == &value; } by { execute(); solve(); }
-const int32& run(const int32& value) { ensures &result == &value; } by { execute(); solve(); }
+const int32& identity(const int32& value) { ensures &result == &value; }
+const int32& run(const int32& value) { ensures &result == &value; }
 "#;
     check_first_claim_certificate(&project, &import, aliases);
     let values = aliases.replace(
@@ -16844,8 +16840,6 @@ int32& run(const struct View& view) {
  requires 1u64 <= view.size;
  ensures &result == view.data + (view.size - 1u64);
  ensures result == old(view.data[view.size - 1u64]);
-} by {
- execute(); solve();
 }
  "#;
     check_first_claim_certificate(&project, &import, source);
@@ -16861,14 +16855,14 @@ int32& Cell::operator[](uint64 index) {
  views this->data[0..1];
  ensures &result == this->data;
  ensures result == old(this->data[0]);
-} by { execute(); solve(); }
+}
 "#;
     let caller = r#"int32& probe(struct Cell& cell, uint64 index) {
  views cell.data;
  views cell.data[0..1];
  ensures &result == cell.data;
  ensures result == old(cell.data[0]);
-} by { execute(); solve(); }
+}
 "#;
     for selector in ["Cell::operator[]", "probe"] {
         let project = Project::with_fixture("index.cpp", selector, cpp);
@@ -16950,21 +16944,21 @@ fn check_cpp_descriptor_backing_lifetime(writes: bool) {
 View::View(int32* input) {
  owns this->data;
  ensures this->data == input;
-} by { execute(); solve(); }
+}
 View::~View() {
  owns this->data;
-} by { execute(); solve(); }
+}
 int32& View::get() const {
  views this->data;
  views this->data[0..1];
  ensures &result == this->data;
  ensures result == old(this->data[0]);
-} by { execute(); solve(); }
+}
 int32& run(int32* data) {
  views data[0..1];
  ensures &result == data;
  ensures result == old(data[0]);
-} by { execute(); solve(); }
+}
 "#;
     let source = if writes {
         format!(
@@ -16974,7 +16968,7 @@ int32 write(int32* data, int32 input) {
  owns data[0..1];
  ensures result == input;
  ensures data[0] == input;
-} by { execute(); solve(); }
+}
 "#
         )
     } else {
@@ -17022,7 +17016,7 @@ fn cpp_literal_null_pointer_values_verify_without_storage_authority_offline() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = r#"verifying "null.cpp";
-int32* run() { ensures result == 0; } by { execute(); solve(); }
+int32* run() { ensures result == 0; }
 "#;
         check_return_call_sidecar(&project, &import, source);
         let bad = source.replace("result == 0", "result != 0");
@@ -17046,8 +17040,8 @@ fn cpp_literal_null_pointer_dereference_requires_live_backing_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "null.cpp";
-int32 read(int32* data) { views data[0..1]; ensures result == data[0]; } by { execute(); solve(); }
-int32 run() { ensures 1 == 1; } by { execute(); solve(); }
+int32 read(int32* data) { views data[0..1]; ensures result == data[0]; }
+int32 run() { ensures 1 == 1; }
 "#;
     let path = project.directory.join("null.click");
     fs::write(&path, source).unwrap();
@@ -17098,17 +17092,17 @@ Cell::Cell(int32 input) {
  owns this->state;
  ensures this->value == input;
  ensures this->state == 1;
-} by { execute(); solve(); }
+}
 Cell::~Cell() {
  owns this->state;
  ensures this->state == 0;
-} by { execute(); solve(); }
+}
 int32& Cell::get() {
  views this->value;
  ensures &result == &this->value;
  ensures result == old(this->value);
-} by { execute(); solve(); }
-int32& run(int32 input) { ensures result == input; } by { execute(); solve(); }
+}
+int32& run(int32 input) { ensures result == input; }
 "#;
     let path = project.directory.join("expired.click");
     fs::write(&path, source).unwrap();
@@ -17144,12 +17138,12 @@ int32& Cell::get() {
  views this->value;
  ensures &result == &this->value;
  ensures result == old(this->value);
-} by { execute(); solve(); }
+}
 int32 write(struct Cell& cell, int32 input) {
  owns cell.value;
  ensures result == input;
  ensures cell.value == input;
-} by { execute(); solve(); }
+}
 "#;
     check_selected_claim_certificate(&project, &import, source);
     for bad in [
@@ -17181,12 +17175,12 @@ const int32& Cell::get() const {
  views this->value;
  ensures &result == &this->value;
  ensures result == old(this->value);
-} by { execute(); solve(); }
+}
 const int32& run(const struct Cell& cell) {
  views cell.value;
  ensures &result == &cell.value;
  ensures result == old(cell.value);
-} by { execute(); solve(); }
+}
 "#;
     check_return_call_sidecar(&project, &import, source);
     let bad = source.replace("const int32& run", "int32& run");
@@ -17209,7 +17203,7 @@ fn cpp_same_type_explicit_pointer_cast_preserves_identity_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "pointer.cpp";
-int32* run(int32* input) { ensures result == input; } by { execute(); solve(); }
+int32* run(int32* input) { ensures result == input; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
 }
@@ -17258,18 +17252,18 @@ unsigned long probe(int* backing, unsigned long count) noexcept {
 Extent::Extent(uint64 input) {
  owns this->size;
  ensures this->size == input;
-} by { execute(); solve(); }
+}
 View::View(int32* backing, uint64 count) {
  owns this->data;
  owns this->extent.size;
  ensures this->data == backing;
  ensures this->extent.size == count;
-} by { execute(); solve(); }
+}
 uint64 probe(int32* backing, uint64 count) {
  views backing[0];
  ensures result == count;
  ensures backing[0] == old(backing[0]);
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, proof);
     let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
@@ -17361,7 +17355,7 @@ Node::Node(int32 input) {
  owns this->value;
  ensures this->self == &this->value;
  ensures this->value == input;
-} by { execute(); solve(); }
+}
 Parent::Parent(int32 input) {
  owns this->prefix;
  owns this->child.self;
@@ -17369,10 +17363,10 @@ Parent::Parent(int32 input) {
  ensures this->prefix == 7;
  ensures this->child.self == &this->child.value;
  ensures this->child.value == input;
-} by { execute(); solve(); }
+}
 int32 probe(int32 input) {
  ensures result == input;
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, proof);
     let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
@@ -17423,22 +17417,22 @@ struct Descriptor {
             .all(|function| function.span.file == "descriptor.h")
     );
     let proof = r#"verifying "header-construction.cpp";
-int32* address(int32* value) { ensures result == value; } by { execute(); solve(); }
+int32* address(int32* value) { ensures result == value; }
 Extent::Extent(uint64 input) {
  owns this->size;
  ensures this->size == input;
-} by { execute(); solve(); }
+}
 Descriptor::Descriptor(int32* backing, uint64 count) {
  owns this->data;
  owns this->extent.size;
  ensures this->data == backing;
  ensures this->extent.size == count;
-} by { execute(); solve(); }
+}
 uint64 probe(int32* backing, uint64 count) {
  views backing[0];
  ensures result == count;
  ensures backing[0] == old(backing[0]);
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, proof);
     let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
@@ -17502,35 +17496,35 @@ fn check_construction_return_descriptor_factories(expand_and_retain: bool) {
         click::kernel::CAggregateReturnMode::Construction
     );
     let proof = r#"verifying "construct-return.cpp";
-int32* identity(int32* p) { ensures result == p; } by { execute(); solve(); }
-int32* address(int32* p) { ensures result == p; } by { execute(); solve(); }
+int32* identity(int32* p) { ensures result == p; }
+int32* address(int32* p) { ensures result == p; }
 Extent::Extent(uint64 n) {
  owns this->size;
  ensures this->size == n;
-} by { execute(); solve(); }
+}
 View::View(int32* p, uint64 n) {
  owns this->data;
  owns this->extent.size;
  ensures this->data == p;
  ensures this->extent.size == n;
-} by { execute(); solve(); }
+}
 struct View make(int32* p, uint64 n) {
  ensures result.data == p;
  ensures result.extent.size == n;
-} by { execute(); solve(); }
+}
 struct View forward(int32* p, uint64 n) {
  ensures result.data == p;
  ensures result.extent.size == n;
-} by { execute(); solve(); }
+}
 struct View relay(int32* p, uint64 n) {
  ensures result.data == p;
  ensures result.extent.size == n;
-} by { execute(); solve(); }
+}
 uint64 probe(int32* p, uint64 n) {
  views p[0..1];
  ensures result == n;
  ensures p[0] == old(p[0]);
-} by { execute(); solve(); }
+}
 "#;
     check_arithmetic_sidecar_with_tools(&project, &import, proof, expand_and_retain);
     if !expand_and_retain {
@@ -17665,19 +17659,19 @@ unsigned long probe(View& view, unsigned long n) noexcept {
         click::languages::cpp::CppStatement::AssignConstructionCall { .. }
     ));
     let proof = r#"verifying "construct-assignment.cpp";
-int32* identity(int32* p) { ensures result == p; } by { execute(); solve(); }
+int32* identity(int32* p) { ensures result == p; }
 View::View(int32* p, uint64 n) {
  owns this->data;
  owns this->size;
  ensures this->data == p;
  ensures this->size == n;
-} by { execute(); solve(); }
+}
 struct View resize(const struct View& view, uint64 n) {
  views view.data;
  ensures result.data == old(view.data);
  ensures result.size == n;
  ensures view.data == old(view.data);
-} by { execute(); solve(); }
+}
 uint64 probe(struct View& view, uint64 n) {
  owns view.data;
  owns view.size;
@@ -17686,7 +17680,7 @@ uint64 probe(struct View& view, uint64 n) {
  ensures view.data == old(view.data);
  ensures view.size == n;
  ensures view.data[0] == 19;
-} by { execute(); solve(); }
+}
 "#;
     check_arithmetic_sidecar_with_tools(&project, &import, proof, expand_and_retain);
     if !expand_and_retain {
@@ -17752,19 +17746,19 @@ int& probe(View& view, unsigned long n) noexcept {
         click::languages::cpp::CppStatement::AssignConstructionCall { .. }
     ));
     let proof = r#"verifying "construct-assignment.cpp";
-int32* identity(int32* p) { ensures result == p; } by { execute(); solve(); }
+int32* identity(int32* p) { ensures result == p; }
 View::View(int32* p, uint64 n) {
  owns this->data;
  owns this->size;
  ensures this->data == p;
  ensures this->size == n;
-} by { execute(); solve(); }
+}
 struct View resize(const struct View& view, uint64 n) {
  views view.data;
  ensures result.data == old(view.data);
  ensures result.size == n;
  ensures view.data == old(view.data);
-} by { execute(); solve(); }
+}
 int32& probe(struct View& view, uint64 n) {
  owns view.data;
  owns view.size;
@@ -17774,7 +17768,7 @@ int32& probe(struct View& view, uint64 n) {
  ensures view.data == old(view.data);
  ensures view.size == n;
 
-} by { execute(); solve(); }
+}
 "#;
     check_first_claim_certificate(&project, &import, proof);
     let missing = proof.replace(" views view.data[0..1];", "");
@@ -17819,19 +17813,19 @@ int& probe(View& view, int n) noexcept {
         click::languages::cpp::CppStatement::AssignConstructionCall { .. }
     ));
     let proof = r#"verifying "construct-assignment.cpp";
-int32* identity(int32* p) { ensures result == p; } by { execute(); solve(); }
+int32* identity(int32* p) { ensures result == p; }
 View::View(int32* p, int32 n) {
  owns this->data;
  owns this->size;
  ensures this->data == p;
  ensures this->size == n;
-} by { execute(); solve(); }
+}
 struct View resize(const struct View& view, int32 n) {
  views view.data;
  ensures result.data == old(view.data);
  ensures result.size == n;
  ensures view.data == old(view.data);
-} by { execute(); solve(); }
+}
 int32& last(const struct View& view) {
  views view.data;
  views view.size;
@@ -17840,7 +17834,7 @@ int32& last(const struct View& view) {
  requires view.size <= 1073741823;
  ensures &result == old(view.data) + (old(view.size) - 1);
  ensures result == old(view.data[view.size - 1]);
-} by { have 0 <= view.size - 1 by { solve() using { 1 <= view.size; view.size <= 1073741823; } } have view.size - 1 < view.size by { solve() using { 1 <= view.size; view.size <= 1073741823; } } execute(); solve(); }
+} by { have 0 <= view.size - 1 by { solve() using { 1 <= view.size; view.size <= 1073741823; } } have view.size - 1 < view.size by { solve() using { 1 <= view.size; view.size <= 1073741823; } } step_until(function.exit); solve(); }
 int32& probe(struct View& view, int32 n) {
  owns view.data;
  owns view.size;
@@ -17852,7 +17846,7 @@ int32& probe(struct View& view, int32 n) {
  ensures view.data == old(view.data);
  ensures view.size == old(view.size) - 1;
 
-} by { have 0 <= view.size - 1 by { solve() using { 1 <= view.size; view.size <= 1073741823; } } have view.size - 1 < view.size by { solve() using { 1 <= view.size; view.size <= 1073741823; } } execute(); solve(); }
+} by { have 0 <= view.size - 1 by { solve() using { 1 <= view.size; view.size <= 1073741823; } } have view.size - 1 < view.size by { solve() using { 1 <= view.size; view.size <= 1073741823; } } step_until(function.exit); solve(); }
 "#;
     check_arithmetic_sidecar(&project, &import, proof);
     let missing = proof.replace(
@@ -17883,9 +17877,9 @@ fn returned_constructor_composed_observers_verify_and_reject_writes_offline() {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "observe-result.cpp";
-uint64 Count::size() const { views this->value; ensures result == this->value; } by { execute(); solve(); }
-Box::Box(uint64 input) { owns this->value; ensures this->value == input; } by { execute(); solve(); }
-struct Box probe(const struct Count& count) { views count.value; ensures result.value == count.value + 1u64; ensures count.value == old(count.value); } by { execute(); solve(); }
+uint64 Count::size() const { views this->value; ensures result == this->value; }
+Box::Box(uint64 input) { owns this->value; ensures this->value == input; }
+struct Box probe(const struct Count& count) { views count.value; ensures result.value == count.value + 1u64; ensures count.value == old(count.value); }
 "#;
     check_selected_claim_certificate(&project, &import, proof);
     let owning = proof
@@ -17939,7 +17933,8 @@ fn locked_unsigned_header_constants_verify_and_reject_forged_values_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"sentinel.cpp\"; uint64 probe() { ensures result == 18446744073709551615u64; } by { execute(); solve(); }";
+    let proof =
+        "verifying \"sentinel.cpp\"; uint64 probe() { ensures result == 18446744073709551615u64; }";
     check_first_claim_certificate(&project, &import, proof);
     assert!(
         import
@@ -17998,7 +17993,7 @@ fn scalar_assignment_observers_verify_and_reject_writes_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"assign-observer.cpp\"; uint64 Count::size() const { views this->value; ensures result == this->value; } by { execute(); solve(); } uint64 probe(const struct Count& count, uint64 n) { views count.value; ensures result == count.value + 1u64; ensures count.value == old(count.value); } by { execute(); solve(); }";
+    let proof = "verifying \"assign-observer.cpp\"; uint64 Count::size() const { views this->value; ensures result == this->value; } uint64 probe(const struct Count& count, uint64 n) { views count.value; ensures result == count.value + 1u64; ensures count.value == old(count.value); }";
     check_selected_claim_certificate(&project, &import, proof);
     for bad in [
         proof
@@ -18031,7 +18026,7 @@ fn cpp_native_word_and_byte_pointer_stores_verify_offline() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let sidecar = format!(
-            "verifying \"pointer.cpp\"; {contract_type} probe({contract_type}* p, {contract_type} value) {{ owns p[0..2]; requires value == {literal}; ensures p[1] == value; ensures p[0] == old(p[0]); ensures result == value; }} by {{ execute(); solve(); }}"
+            "verifying \"pointer.cpp\"; {contract_type} probe({contract_type}* p, {contract_type} value) {{ owns p[0..2]; requires value == {literal}; ensures p[1] == value; ensures p[0] == old(p[0]); ensures result == value; }}"
         );
         check_selected_claim_certificate(&project, &import, &sidecar);
         let bad = sidecar.replace("owns p[0..2];", "views p[0..2];");
@@ -18054,7 +18049,7 @@ fn cpp_native_scalar_addresses_initialize_automatic_storage_offline() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let sidecar = format!(
-            "verifying \"address.cpp\"; {contract_type} probe({contract_type} value) {{ ensures result == value; }} by {{ execute(); solve(); }}"
+            "verifying \"address.cpp\"; {contract_type} probe({contract_type} value) {{ ensures result == value; }}"
         );
         check_selected_claim_certificate(&project, &import, &sidecar);
     }
@@ -18074,7 +18069,7 @@ fn cpp_native_byte_field_address_uses_one_byte_storage_offline() {
     check_selected_claim_certificate(
         &project,
         &import,
-        "verifying \"field.cpp\"; uint8 probe(struct Pair& pair, uint8 value) { owns pair.b; ensures pair.b == value; ensures result == value; } by { execute(); solve(); }",
+        "verifying \"field.cpp\"; uint8 probe(struct Pair& pair, uint8 value) { owns pair.b; ensures pair.b == value; ensures result == value; }",
     );
 }
 
@@ -18156,7 +18151,7 @@ fn cpp_native_scalar_modular_write_uses_allocation_ownership_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"initialize.cpp\"; void fill(uint32* p, uint32 value) { owns p[0..1]; ensures p[0] == value; } by { execute(); solve(); } uint32 probe(uint32 value) { ensures result == value; } by { execute(); solve(); }";
+    let proof = "verifying \"initialize.cpp\"; void fill(uint32* p, uint32 value) { owns p[0..1]; ensures p[0] == value; } uint32 probe(uint32 value) { ensures result == value; }";
     check_return_call_sidecar(&project, &import, proof);
     let stale_claim = proof.replace("result == value", "result == 0");
     let path = project.directory.join("stale.click");
@@ -18176,7 +18171,7 @@ fn cpp_native_scalar_modular_ownership_does_not_imply_initialization_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"initialize.cpp\"; void fill(uint32* p, uint32 value) { owns p[0..1]; ensures p[0] == value; } by { execute(); solve(); } uint32 probe(uint32 value) { ensures result == value; } by { execute(); solve(); }";
+    let proof = "verifying \"initialize.cpp\"; void fill(uint32* p, uint32 value) { owns p[0..1]; ensures p[0] == value; } uint32 probe(uint32 value) { ensures result == value; }";
     let path = project.directory.join("uninitialized.click");
     fs::write(&path, proof).unwrap();
     let parsed = read_click_project(&path, proof).unwrap();
@@ -18223,12 +18218,13 @@ fn axiomatic_system_header_calls_export_interfaces_only() {
     let sidecar = project.directory.join("forward.click");
     assert_eq!(axiom.name, "ministd_identity");
     // The `extern` head is the C++ declaration, qualified name and all.
-    let assumed = "verifying \"driver.cpp\";\nextern int* ministd::identity(int* p) { ensures result == p; }\nint* forward(int* p) { ensures result == p; } by { execute(); solve(); }\n";
+    let assumed = "verifying \"driver.cpp\";\nextern int* ministd::identity(int* p) { ensures result == p; }\nint* forward(int* p) { ensures result == p; }\n";
     fs::write(&sidecar, assumed).unwrap();
     let parsed = read_click_project(&sidecar, assumed).unwrap();
     verify_program_prepared_project(&parsed, &import)
         .unwrap_or_else(|error| panic!("{}", error.message()));
-    let unassumed = "verifying \"driver.cpp\";\nint32* forward(int32* p) { ensures result == p; } by { execute(); solve(); }\n";
+    let unassumed =
+        "verifying \"driver.cpp\";\nint32* forward(int32* p) { ensures result == p; }\n";
     fs::write(&sidecar, unassumed).unwrap();
     let parsed = read_click_project(&sidecar, unassumed).unwrap();
     let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
@@ -18274,7 +18270,7 @@ fn axiomatic_member_function_extern_heads_are_cpp_declarations() {
     };
     assert_eq!(axiom.name, "Box_get");
     let sidecar = project.directory.join("read.click");
-    let native = "verifying \"driver.cpp\";\nextern int ministd::Box::get() const { views this->value; ensures result == this->value; }\nint read(const Box& box) { views box.value; ensures result == box.value; } by { execute(); solve(); }\n";
+    let native = "verifying \"driver.cpp\";\nextern int ministd::Box::get() const { views this->value; ensures result == this->value; }\nint read(const Box& box) { views box.value; ensures result == box.value; }\n";
     fs::write(&sidecar, native).unwrap();
     let parsed = read_click_project(&sidecar, native).unwrap();
     verify_program_prepared_project(&parsed, &import)
@@ -18321,7 +18317,7 @@ fn cpp_initialized_native_pointer_locals_reassign_offline() {
     check_selected_claim_certificate(
         &project,
         &import,
-        "verifying \"pointer-local.cpp\"; uint8* probe(uint8* p, uint8* q) { ensures result == q; } by { execute(); solve(); }",
+        "verifying \"pointer-local.cpp\"; uint8* probe(uint8* p, uint8* q) { ensures result == q; }",
     );
 }
 
@@ -18355,7 +18351,7 @@ fn cpp_native_pointer_local_from_reference_verifies_offline() {
     check_return_call_sidecar(
         &project,
         &import,
-        "verifying \"bump_reference.cpp\"; int32 bump_reference(int32& value) { views value; ensures result == value; ensures value == old(value); } by { execute(); solve(); }",
+        "verifying \"bump_reference.cpp\"; int32 bump_reference(int32& value) { views value; ensures result == value; ensures value == old(value); }",
     );
 }
 
@@ -18374,19 +18370,19 @@ contract int Doubling(int x) {
 int twice(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 theorem twice_doubles() executes twice(int x) {
-    ensures Doubling(&twice) by { execute(); solve(); }
+    ensures Doubling(&twice);
 }
 int apply(int (*f)(int), int x) {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 int caller(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { apply(twice_doubles()); execute(); solve(); }
+} by { apply(twice_doubles()); step_until(function.exit); solve(); }
 "#;
 
 // A pointer call may be a returned call, a local's initializer, or a
@@ -18433,7 +18429,8 @@ fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let sidecar = project.directory.join("callback.click");
-    let theorem = "theorem twice_doubles() executes twice(int x) {\n    ensures Doubling(&twice) by { execute(); solve(); }\n}\n";
+    let theorem =
+        "theorem twice_doubles() executes twice(int x) {\n    ensures Doubling(&twice);\n}\n";
     let without_theorem = FUNCTION_POINTER_SIDECAR
         .replace(theorem, "")
         .replace("apply(twice_doubles()); ", "");
@@ -18443,7 +18440,7 @@ fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
         verify_program_prepared_project(&parsed, &import)
     };
     verify(&without_theorem).unwrap_or_else(|error| panic!("{}", error.message()));
-    let weak_twice = "    ensures result >= 0;\n} by { execute(); solve(); }";
+    let weak_twice = "    ensures result >= 0;\n}";
     for hostile in [
         FUNCTION_POINTER_SIDECAR.replace("    requires Doubling(f);\n", ""),
         FUNCTION_POINTER_SIDECAR.replacen(
@@ -18451,11 +18448,7 @@ fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
             "    ensures result == x + x + 1;\n}\nint twice",
             1,
         ),
-        without_theorem.replacen(
-            "    ensures result == x + x;\n} by { execute(); solve(); }",
-            weak_twice,
-            1,
-        ),
+        without_theorem.replacen("    ensures result == x + x;\n}", weak_twice, 1),
     ] {
         assert_ne!(hostile, FUNCTION_POINTER_SIDECAR);
         let Err(error) = verify(&hostile) else {
@@ -18492,21 +18485,21 @@ contract int Doubling(int x) {
 int twice(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 int stored(int (*f)(int), int x) {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 int relay(int (*f)(int), int x) {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 int caller(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 "#;
 
 // A function-pointer local holds `&twice` or a parameter's pointer, a call
@@ -18555,8 +18548,8 @@ fn stored_and_forwarded_cpp_function_pointers_keep_their_contract() {
         assert!(error.message().contains(expected), "{}", error.message());
     }
     let weak_twice = STORED_FUNCTION_POINTER_SIDECAR.replacen(
-        "    ensures result == x + x;\n} by { execute(); solve(); }\nint stored",
-        "    ensures result >= 0;\n} by { execute(); solve(); }\nint stored",
+        "    ensures result == x + x;\n}\nint stored",
+        "    ensures result >= 0;\n}\nint stored",
         1,
     );
     assert_ne!(weak_twice, STORED_FUNCTION_POINTER_SIDECAR);
@@ -18685,16 +18678,16 @@ int apply(int (*f)(int), int x) {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 int caller::(lambda#0)(int y) {
     requires 0 <= y and y <= 1000;
     ensures 0 <= result and result <= 2000;
     ensures result == y + y;
-} by { execute(); solve(); }
+}
 int caller(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 "#;
 
 // A lambda that captures nothing, passed for a function pointer, is its call
@@ -18765,21 +18758,21 @@ int apply(int (*f)(int), int x) {
     requires Bounded(f);
     requires 0 <= x and x <= 1000;
     ensures 0 <= result and result <= 2000;
-} by { execute(); solve(); }
+}
 int pair::(lambda#0)(int y) {
     requires 0 <= y and y <= 1000;
     ensures 0 <= result and result <= 2000;
     ensures result == y + 1;
-} by { execute(); solve(); }
+}
 int pair::(lambda#1)(int y) {
     requires 0 <= y and y <= 1000;
     ensures 0 <= result and result <= 2000;
     ensures result == y + y;
-} by { execute(); solve(); }
+}
 int pair(int x) {
     requires 0 <= x and x <= 1000;
     ensures 0 <= result and result <= 4000;
-} by { execute(); solve(); }
+}
 "#;
     let sidecar = project.directory.join("callback.click");
     fs::write(&sidecar, source).unwrap();
@@ -18834,8 +18827,8 @@ fn cpp_project_unit_exports_several_functions_from_an_external_tree() {
     fs::write(
         root.join("proofs/checks/pair.click"),
         "verifying \"../../vendor/basic/src/pair.cpp\";\n\
-         int32 increment(int32& value) { requires value < 2147483647; owns value; ensures value == old(value) + 1; ensures result == value; } by { execute(); solve(); }\n\
-         int32 add_two(int32& value) { requires value < 2147483646; owns value; ensures value == old(value) + 2; ensures result == value; } by { execute(); solve(); }\n",
+         int32 increment(int32& value) { requires value < 2147483647; owns value; ensures value == old(value) + 1; ensures result == value; }\n\
+         int32 add_two(int32& value) { requires value < 2147483646; owns value; ensures value == old(value) + 2; ensures result == value; }\n",
     )
     .unwrap();
     fs::write(
@@ -19038,7 +19031,7 @@ extern int Shape::area(int scale) const {
 int total(const Shape& shape, int scale) {
     requires 0 <= scale and scale <= 1000;
     ensures scale < result;
-} by { execute(); solve(); }
+}
 "#,
         &import,
     )
@@ -19083,14 +19076,14 @@ class Square : Shape {
     function size(this) -> int32 { this->side }
 }
 int Square::area(int scale) const {
-} by { execute(); solve(); }
+}
 int Tile::area(int scale) const {
-} by { execute(); solve(); }
+}
 int total(const Shape& shape, int scale) {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(shape) and size(shape) <= 100;
     ensures result == size(shape) + scale;
-} by { execute(); solve(); }
+}
 "#;
     let project = Project::with_fixture("shapes.cpp", "total", source);
     refresh_import(&project.config()).unwrap();
@@ -19108,7 +19101,7 @@ int total(const Shape& shape, int scale) {
             "`Square::area` overrides `Shape::area`, whose class's object carries state",
         ),
         (
-            "int Tile::area(int scale) const {\n} by { execute(); solve(); }\n",
+            "int Tile::area(int scale) const {\n}\n",
             "class Tile : Square {\n}\n",
             "`Tile::area` overrides the virtual method `Square::area` but has no contract",
         ),
@@ -19185,7 +19178,7 @@ fn diagnostics_print_record_types_by_their_cpp_paths() {
     let project = Project::with_fixture("instances.cpp", "both", CLASS_INSTANCE_SOURCE);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let swapped = "verifying \"instances.cpp\"; int32 both(const Box<WeightTag, true>& left, const Box<SizeTag, true>& right) { views left.value; ensures result == left.value; } by { execute(); solve(); }";
+    let swapped = "verifying \"instances.cpp\"; int32 both(const Box<WeightTag, true>& left, const Box<SizeTag, true>& right) { views left.value; ensures result == left.value; }";
     fs::write(project.directory.join("bad.click"), swapped).unwrap();
     let parsed = read_click_project(&project.directory.join("bad.click"), swapped).unwrap();
     let error = verify_program_prepared_project(&parsed, &import)
@@ -19197,7 +19190,7 @@ fn diagnostics_print_record_types_by_their_cpp_paths() {
         ),
         "{shown}"
     );
-    let unknown_field = "verifying \"instances.cpp\"; int32 both(const Box<SizeTag, true>& left, const Box<WeightTag, true>& right) { views left.value; ensures result == left.nope; } by { execute(); solve(); }";
+    let unknown_field = "verifying \"instances.cpp\"; int32 both(const Box<SizeTag, true>& left, const Box<WeightTag, true>& right) { views left.value; ensures result == left.nope; }";
     fs::write(project.directory.join("bad.click"), unknown_field).unwrap();
     let parsed = read_click_project(&project.directory.join("bad.click"), unknown_field).unwrap();
     let error =

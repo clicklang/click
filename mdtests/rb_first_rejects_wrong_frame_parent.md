@@ -426,7 +426,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
                 rewrite(sub.model == RbTree::Empty);
                 solve();
             }
-            execute();
+            step_until(function.exit);
             solve();
         },
         RbTree::Node(entry_identity, entry_parent, entry_color,

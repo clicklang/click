@@ -13749,7 +13749,7 @@ fn c0_unused_builtin_va_list_prototypes_do_not_block_ordinary_bodies() {
     assert_eq!(unit.functions.len(), 1);
     assert_eq!(unit.functions[0].name(), "identity");
     crate::surface::verify_c0_sources(
-        "verifying \"opaque-header.c\"; int identity(int x) { ensures result == x; } by { execute(); solve(); }",
+        "verifying \"opaque-header.c\"; int identity(int x) { ensures result == x; }",
         &[("opaque-header.c", source)],
     )
     .unwrap();

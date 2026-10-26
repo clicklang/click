@@ -193,7 +193,7 @@ fn proof_condition_runtime_error(
                 );
             (
                 format!("the read requires `{required}`, which is not available"),
-                " The condition's Boolean value does not need to be known in advance: `branch` can split on either value once the field can be read. Unfold the resource that exposes this field before `execute()`. If a read is valid only under a separate condition, establish that guard before executing the read.",
+                " The condition's Boolean value does not need to be known in advance: `branch` can split on either value once the field can be read. Unfold the resource that exposes this field before the step that reads it. If a read is valid only under a separate condition, establish that guard before executing the read.",
             )
         }
         _ => (

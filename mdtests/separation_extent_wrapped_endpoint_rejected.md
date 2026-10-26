@@ -10,7 +10,7 @@ int32 identity(int32 n) { return n; }
 verifying "separation_extent_wrapped_endpoint_rejected.c";
 int32 identity(int32 n) {
     ensures separate(memory(a[n..n + 2]), memory(b[0..1]));
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

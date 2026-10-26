@@ -22,9 +22,9 @@ int32 zeroed() {
 
 ```click
 verifying "heap.c";
-int32 accept(struct node* p) { ensures result == 7; } by { execute(); solve(); }
-int32 allocated() { ensures result == 7; } by { execute(); solve(); }
-int32 zeroed() { ensures result == 7; } by { execute(); solve(); }
+int32 accept(struct node* p) { ensures result == 7; }
+int32 allocated() { ensures result == 7; }
+int32 zeroed() { ensures result == 7; }
 ```
 
 ```expect

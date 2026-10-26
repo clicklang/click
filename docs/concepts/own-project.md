@@ -474,7 +474,7 @@ uint64 label_copy(char* dst, const char* src) {
                 (0u64..n).all(|k| { ((uint8*)dst)[0u64 + k] == ((uint8*)src)[0u64 + k] })
             );
         }
-        execute();
+        step_until(function.exit);
     }
 }
 ```
@@ -503,10 +503,9 @@ proof marks that point `copied`, steps over the terminator store, and
 `transport`s the unfolded fact to the current memory as a `have` over `n`.
 The frame check assumes the fact's guard `k < n` for each read: `dst[k]` is
 below the store at `dst[n]`, and `src[k]` is kept apart from `dst` by the
-`separate` requirement. The final `execute();` runs the return while the
-string is still open, so the scope's closing fold uses the returned state;
-`execute()` is being removed as a written tactic, and
-`step_until(function.exit);` does the same here. The implicit tail then closes
+`separate` requirement. The final `step_until(function.exit);` runs the
+return while the string is still open, so the scope's closing fold uses the
+returned state. The implicit tail then closes
 the postconditions, where `result` is `n`. The casts to `uint8*` read the bytes as `bytes::equal` does.
 Verify this complete sidecar with `click verify label.click`.
 
@@ -517,7 +516,7 @@ Three kinds of report look different:
   C source`, or `failed to process C source includes`. A compiler import that
   hits it fails at `click import lock` or when the locked source is loaded.
 - **Click can't apply its model to an operation.** The proof's execution,
-  named `execute()` in the report, says it `could not verify C operation` and
+  named `step()` in the report, says it `could not verify C operation` and
   names the C statement. No contract change
   helps when the operation itself is outside the modeled subset.
 - **A proof failure.** An `unclosed goal`, or the execution reporting a

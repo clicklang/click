@@ -19,14 +19,13 @@ resource control(obj: struct object*) {
 verifying "reopen.c";
 void inspect(struct object* obj) {
     owns control(obj);
-} by { execute(); solve(); }
+}
 void broken(struct object* obj) {
     owns control(obj);
 } by {
     open(control(obj)) {
         step();
         step();
-        execute();
     }
     solve();
 }

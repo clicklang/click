@@ -60,8 +60,6 @@ void sweep(int32 visited[], int32 n) {
             close_invariants();
         }
     }
-    execute();
-    solve();
 }
 ```
 

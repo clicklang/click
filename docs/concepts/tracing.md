@@ -109,8 +109,8 @@ explanation.
    **Accepts** list), stop at `failing-tactic`.
 
    To split a link that a smart tactic proved part of, read its trace: a step
-   marked ``(from `execute`)``, ``(from `implicit tail`)``, ``(from `solve`)``
-   or ``(from `implicit closer`)`` is one that smart work took, and a `chosen:`
+   marked ``(from `implicit tail`)``, ``(from `solve`)`` or
+   ``(from `implicit closer`)`` is one that smart work took, and a `chosen:`
    line is the written form of an argument its search chose ([Reading trace
    output](#reading-trace-output)). Writing those out leaves only the
    unproved part of the link.
@@ -206,14 +206,13 @@ int32 frame(int32 w, int32 h) {
 With `area`'s contract stating `to_integer(result) == to_integer(w * h)`
 under the same bounds, the omitted proof is refused: its implicit tail steps to
 the `return`, where the closer of the statement's requirements cannot prove
-that the addition does not overflow. The report still names the tail's
-execution `execute()`. It ends with the goal and how to prove it
+that the addition does not overflow. It ends with the goal and how to prove it
 (abbreviated):
 
 ```text
 proof error:
   `frame.ensures_0` tactic 0
-  `execute()` produced undefined behavior
+  `step()` produced undefined behavior
   signed overflow
   ...
   `return inner + 1;`
@@ -307,8 +306,8 @@ Only the new facts at each checked step are printed, not the accumulated set.
 
 A step that a search produced says which one. A step that smart work checked
 ends its header with ``(from `implicit tail`)`` or the like, naming its
-origin: `execute` for the steps the implicit tail's execution took,
-`implicit tail` for the tail's closer, `solve` for a written `solve()`, and
+origin: `implicit tail` for the steps the implicit tail took and for its
+closer, `solve` for a written `solve()`, and
 `implicit closer` for an obligation a `step()` or `fold` left open. A step whose `using` list a search chose, under a smart tactic or in an
 elided form such as `apply(t(x))` or a bare `transport(P, Q)`, has a `chosen:`
 line with the step written out in full, as `click expand` writes it:

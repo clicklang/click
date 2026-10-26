@@ -13,13 +13,13 @@ uint32 shr_u32(uint32 a, uint32 n) {
     requires n < 32u32;
     ensures result == a >> n;
     ensures (a == 2147483648u32 and n == 1u32) implies result == 1073741824u32;
-} by { execute(); solve(); }
+}
 
 int32 shr_i32(int32 a, uint32 n) {
     requires n < 32u32;
     ensures result == a >> n;
     ensures (a == -8 and n == 1u32) implies result == -4;
-} by { execute(); solve(); }
+}
 
 int8 narrow_i8(int32 x) {
     ensures (-128 <= x and x <= 127) implies to_integer(result) == to_integer(x);
@@ -27,7 +27,7 @@ int8 narrow_i8(int32 x) {
     ensures x == -129 implies to_integer(result) == 127;
 } by {
     if -128 <= x and x <= 127 {
-        execute();
+        step_until(function.exit);
         have -128 <= to_integer(x);
         have to_integer(x) <= 127;
         have to_integer(result) == to_integer(x) by {
@@ -40,7 +40,7 @@ int8 narrow_i8(int32 x) {
         };
         solve();
     } else {
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

@@ -42,7 +42,7 @@ void relink(struct root* r, struct node* n) {
     ensures after.model == Ctx::Top;
 } by {
     unfold(before);
-    execute();
+    step_until(function.exit);
     let after = fold(at(n, r), { model: Ctx::Top });
     solve();
 }
@@ -53,7 +53,7 @@ int32 pick(struct root* r, struct node* n) {
     ensures o.model == 0;
 } by {
     let { after: c } = step(relink, { before: c });
-    execute();
+    step_until(function.exit);
     unfold(c);
     let o = fold(out(r), { model: 0 });
     solve();

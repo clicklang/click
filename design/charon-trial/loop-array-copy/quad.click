@@ -5,7 +5,7 @@ fn quad::load(bytes: &[u8]) -> quad::Quad {
  ensures result.lanes[1] == bytes[1];
  ensures result.lanes[2] == bytes[2];
  ensures result.lanes[3] == bytes[3];
-} by { execute(); solve(); }
+}
 fn quad::walk(bytes: &[u8]) -> u32 {
     requires bytes.len() == 16u64;
     views bytes[0..16];
@@ -82,5 +82,4 @@ fn quad::walk(bytes: &[u8]) -> u32 {
             close_invariants();
         }
     }
-    execute(); solve();
 }

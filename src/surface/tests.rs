@@ -9,16 +9,46 @@ fn expand_checked_grouped_claim(
     verified: &[VerifiedCTheorem],
     function: &str,
 ) -> Result<String, ClickError> {
-    expand_verified_function_claim_source_by_label(
+    // An omitted proof of one claim is that claim's own proof.
+    let grouped = expand_verified_function_claim_source_by_label(
         source,
         verified,
         &format!("{function}.contract"),
-    )?
+    )?;
+    let single = || {
+        expand_verified_function_claim_source_by_label(
+            source,
+            verified,
+            &format!("{function}.ensures_0"),
+        )
+    };
+    match grouped {
+        Some(expanded) => Some(expanded),
+        None => single()?,
+    }
     .ok_or_else(|| {
         ClickError::new(format!(
             "checked claim for `{function}` is not declared in this source"
         ))
     })
+}
+
+/// Expands a function's whole proof: its grouped proof, or, when its one
+/// claim's proof is omitted, that claim's implicit tail.
+fn expand_function_proof_source(
+    click_source: &str,
+    c_sources: &[(&str, &str)],
+    function: &str,
+) -> Result<String, ClickError> {
+    expand_c0_claim_source(click_source, c_sources, function, CProofClaim::Grouped).or_else(
+        |error| {
+            if error.message().contains("has no source `by` clause") {
+                expand_c0_claim_source(click_source, c_sources, function, CProofClaim::Ensure(0))
+            } else {
+                Err(error)
+            }
+        },
+    )
 }
 
 // Format every claim while its original verification tables are still live.
@@ -143,8 +173,8 @@ fn recursive_child_resources_round_trip_and_expand() {
         "int32 read(int32* p, int32* next, int32 value) { return *p; }",
     )];
     for body in [
-        "let { tail: t } = unfold(root); unfold(t); execute(); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
-        "let { tail: t } = unfold(root); have t.model == Chain::End by { solve(); } unfold(t); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); let { tail: t } = unfold(root); execute(); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
+        "let { tail: t } = unfold(root); unfold(t); step_until(function.exit); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
+        "let { tail: t } = unfold(root); have t.model == Chain::End by { solve(); } unfold(t); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
     ] {
         let source = RECURSIVE_CHILD_SOURCE.replace("BODY", body);
         let verified = verify_c0_sources(&source, &c).unwrap();
@@ -181,7 +211,7 @@ fn recursive_child_resources_independent_layers_own_memory_and_recheck() {
             ensures root.model == old(root.model);
         } by { BODY }
     "#;
-    let body = "let { tail: t } = unfold(root); let { tail: u } = unfold(t); have u.model == Nonempty::Last(9) by { solve(); } unfold(u); execute(); let u = fold(chain(r), { model: Nonempty::Last(9) }); let t = fold(chain(q), { model: Nonempty::More(8, r, Nonempty::Last(9)) }, { tail: u }); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();";
+    let body = "let { tail: t } = unfold(root); let { tail: u } = unfold(t); have u.model == Nonempty::Last(9) by { solve(); } unfold(u); step_until(function.exit); let u = fold(chain(r), { model: Nonempty::Last(9) }); let t = fold(chain(q), { model: Nonempty::More(8, r, Nonempty::Last(9)) }, { tail: u }); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();";
     let c = [(
         "middle.c",
         "int32 middle(int32* p, int32* q, int32* r) { return *q; }",
@@ -198,7 +228,7 @@ fn recursive_child_resources_independent_layers_own_memory_and_recheck() {
     .unwrap();
     assert!(
         verify_c0_sources(
-            &source.replace(body, "let { tail: t } = unfold(root); execute(); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();"),
+            &source.replace(body, "let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();"),
             &c
         )
         .is_err()
@@ -211,7 +241,7 @@ fn recursive_child_resources_do_not_capture_earlier_function_names() {
     let source = RECURSIVE_CHILD_SOURCE
         .replace(
             "BODY",
-            "let { root: t } = unfold(root); unfold(t); execute(); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model) }, { root: t }); solve();",
+            "let { root: t } = unfold(root); unfold(t); step_until(function.exit); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model) }, { root: t }); solve();",
         )
         .replace("owns tail: chain(next);", "owns root: chain(next);")
         .replace("fact tail.model", "fact root.model");
@@ -241,23 +271,23 @@ fn recursive_child_resources_reject_bad_lifetimes_and_folds() {
         "int32 read(int32* p, int32* next, int32 value) { return *p; }",
     )];
     for body in [
-        "unfold(root.tail); execute(); solve();",
-        "unfold(root); unfold(root.tail); execute(); fold(root); solve();",
-        "unfold(root); unfold(root.tail); unfold(root.tail); execute(); fold(root.tail); fold(root); solve();",
-        "unfold(root); execute(); fold(root.tail); fold(root); solve();",
-        "unfold(root); execute(); fold(root); unfold(root.tail); solve();",
-        "unfold(root); unfold(root.missing); execute(); fold(root); solve();",
-        "unfold(root); unfold(root.tail.tail); execute(); fold(root); solve();",
-        "let { tail: t } = unfold(root); unfold(root.tail); execute(); solve();",
-        "let { tail: t } = unfold(root); unfold(root); execute(); solve();",
-        "let { tail: t } = unfold(root); unfold(t); unfold(t); execute(); solve();",
-        "let { tail: t } = unfold(root); unfold(t); execute(); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
-        "let { tail: t } = unfold(root); have root.model == old(root.model) by { solve(); } execute(); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
+        "unfold(root.tail); step_until(function.exit); solve();",
+        "unfold(root); unfold(root.tail); step_until(function.exit); fold(root); solve();",
+        "unfold(root); unfold(root.tail); unfold(root.tail); step_until(function.exit); fold(root.tail); fold(root); solve();",
+        "unfold(root); step_until(function.exit); fold(root.tail); fold(root); solve();",
+        "unfold(root); step_until(function.exit); fold(root); unfold(root.tail); solve();",
+        "unfold(root); unfold(root.missing); step_until(function.exit); fold(root); solve();",
+        "unfold(root); unfold(root.tail.tail); step_until(function.exit); fold(root); solve();",
+        "let { tail: t } = unfold(root); unfold(root.tail); step_until(function.exit); solve();",
+        "let { tail: t } = unfold(root); unfold(root); step_until(function.exit); solve();",
+        "let { tail: t } = unfold(root); unfold(t); unfold(t); step_until(function.exit); solve();",
+        "let { tail: t } = unfold(root); unfold(t); step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
+        "let { tail: t } = unfold(root); have root.model == old(root.model) by { solve(); } step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
     ] {
         let source = RECURSIVE_CHILD_SOURCE.replace("BODY", body);
         assert!(verify_c0_sources(&source, &c).is_err(), "accepted {body}");
     }
-    let source = RECURSIVE_CHILD_SOURCE.replace("BODY", "let { tail: t } = unfold(root); execute(); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();");
+    let source = RECURSIVE_CHILD_SOURCE.replace("BODY", "let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();");
     verify_c0_sources(&source, &c)
         .expect("the ownership proof must work before testing the changed store");
     let changed = [(
@@ -316,7 +346,7 @@ int32 read(int32* p, int32 expected) {
     requires c.model == Maybe<int32>::Some(expected);
     ensures result == expected;
     ensures c.model == old(c.model);
-} by { unfold(c); execute(); fold(c); solve(); }
+} by { unfold(c); step_until(function.exit); fold(c); solve(); }
 "#;
 
 fn tree_node_init_fixture() -> (&'static str, Vec<(&'static str, &'static str)>) {
@@ -550,7 +580,7 @@ fn conditional_explicit_folds_update_models_and_expand() {
             ensures old(c.model) == Model::Zero;
         } by {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell(p), { model: Model::Value(value) });
             solve();
         }
@@ -601,7 +631,7 @@ fn conditional_empty_fold_requires_arm_facts_and_no_live_result() {
             ensures c.model == Maybe<int32>::None;
         } by {
             let c = fold(cell(p), { model: Maybe<int32>::None });
-            execute(); solve();
+            step_until(function.exit); solve();
         }
     "#;
     let sources = [("empty.c", "void empty(int32* p) { }")];
@@ -612,8 +642,8 @@ fn conditional_empty_fold_requires_arm_facts_and_no_live_result() {
         ("requires p == 0;", ""),
         ("model: Maybe<int32>::None", "model: Maybe<int32>::Some(0)"),
         (
-            "execute();",
-            "let c = fold(cell(p), { model: Maybe<int32>::None }); execute();",
+            "step_until(function.exit);",
+            "let c = fold(cell(p), { model: Maybe<int32>::None }); step_until(function.exit);",
         ),
     ] {
         assert!(
@@ -635,10 +665,10 @@ fn guarded_explicit_folds_check_each_return_path() {
             ensures c.value == value;
         } by {
             if p == 0 {
-                unfold(c); execute();
+                unfold(c); step_until(function.exit);
                 let c = fold(cell(p), { value: value }); solve();
             } else {
-                unfold(c); execute();
+                unfold(c); step_until(function.exit);
                 let c = fold(cell(p), { value: value }); solve();
             }
         }
@@ -653,7 +683,10 @@ fn guarded_explicit_folds_check_each_return_path() {
     assert!(verify_c0_sources(&source.replace("value: value", "value: 0"), &sources).is_err());
     assert!(
         verify_c0_sources(
-            &source.replace("unfold(c); execute();", "unfold(c); unfold(c); execute();"),
+            &source.replace(
+                "unfold(c); step_until(function.exit);",
+                "unfold(c); unfold(c); step_until(function.exit);"
+            ),
             &sources
         )
         .is_err()
@@ -669,7 +702,7 @@ fn resource_match_expands_and_rechecks() {
     let verified = verify_c0_sources(MATCH_CELL_SOURCE, &c).unwrap();
     verify_c0_sources(
         &MATCH_CELL_SOURCE.replace(
-            "by { unfold(c); execute(); fold(c); solve(); }",
+            "by { unfold(c); step_until(function.exit); fold(c); solve(); }",
             &verified[0].expanded_proof_source().unwrap(),
         ),
         &c,
@@ -748,7 +781,7 @@ fn resource_match_binds_pointer_and_nested_algebraic_payloads() {
             owns c: cell(p);
             requires c.model == Boxed<int32*>::Box(p);
             ensures c.model == old(c.model);
-        } by { unfold(c); execute(); fold(c); solve(); }
+        } by { unfold(c); step_until(function.exit); fold(c); solve(); }
     "#;
     let c = [(
         "read.c",
@@ -771,7 +804,7 @@ fn resource_match_binds_pointer_and_nested_algebraic_payloads() {
     let verified = verify_c0_sources(&nested, &c).unwrap();
     verify_c0_sources(
         &nested.replace(
-            "by { unfold(c); execute(); fold(c); solve(); }",
+            "by { unfold(c); step_until(function.exit); fold(c); solve(); }",
             &verified[0].expanded_proof_source().unwrap(),
         ),
         &c,
@@ -791,7 +824,7 @@ fn instance_return_folds_follow_distinct_c_results_without_proof_branching() {
             owns c: cell(p);
             ensures (use_value == 0 and result == fallback) or (use_value != 0 and result == c.value);
             ensures c.value == old(c.value);
-        } by { unfold(c); execute(); fold(c); solve(); }
+        } by { unfold(c); step_until(function.exit); fold(c); solve(); }
     "#;
     let c = [(
         "read.c",
@@ -800,7 +833,10 @@ fn instance_return_folds_follow_distinct_c_results_without_proof_branching() {
     let verified = verify_c0_sources(source, &c).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
     verify_c0_sources(
-        &source.replace("by { unfold(c); execute(); fold(c); solve(); }", &expanded),
+        &source.replace(
+            "by { unfold(c); step_until(function.exit); fold(c); solve(); }",
+            &expanded,
+        ),
         &c,
     )
     .unwrap();
@@ -811,8 +847,11 @@ fn instance_return_folds_follow_distinct_c_results_without_proof_branching() {
         )
         .is_err()
     );
-    let body = "by { unfold(c); execute(); if use_value == 0 { fold(c); solve(); } else { fold(c); solve(); } }";
-    let branched = source.replace("by { unfold(c); execute(); fold(c); solve(); }", body);
+    let body = "by { unfold(c); step_until(function.exit); if use_value == 0 { fold(c); solve(); } else { fold(c); solve(); } }";
+    let branched = source.replace(
+        "by { unfold(c); step_until(function.exit); fold(c); solve(); }",
+        body,
+    );
     let verified = verify_c0_sources(&branched, &c).unwrap();
     verify_c0_sources(
         &branched.replace(body, &verified[0].expanded_proof_source().unwrap()),
@@ -823,7 +862,7 @@ fn instance_return_folds_follow_distinct_c_results_without_proof_branching() {
 
 #[test]
 fn guarded_instance_return_paths_expand_and_recheck() {
-    let body = "if p == 0 { unfold(c); execute(); fold(c); solve(); } else { unfold(c); execute(); fold(c); solve(); }";
+    let body = "if p == 0 { unfold(c); step_until(function.exit); fold(c); solve(); } else { unfold(c); step_until(function.exit); fold(c); solve(); }";
     let source = GUARDED_CELL_SOURCE.replace("BODY", body);
     let c = [("read.c", GUARDED_CELL_C)];
     let verified = verify_c0_sources(&source, &c).unwrap();
@@ -834,10 +873,10 @@ fn guarded_instance_return_paths_expand_and_recheck() {
 #[test]
 fn guarded_instance_return_paths_reject_invalid_folds() {
     for body in [
-        "unfold(c); execute(); fold(c); solve();",
-        "if p == 0 { unfold(c); execute(); solve(); } else { unfold(c); execute(); fold(c); solve(); }",
-        "if p == 0 { unfold(c); execute(); fold(c); solve(); } else { unfold(c); execute(); solve(); }",
-        "if p == 0 { unfold(c); execute(); fold(c); fold(c); solve(); } else { unfold(c); execute(); fold(c); solve(); }",
+        "unfold(c); step_until(function.exit); fold(c); solve();",
+        "if p == 0 { unfold(c); step_until(function.exit); solve(); } else { unfold(c); step_until(function.exit); fold(c); solve(); }",
+        "if p == 0 { unfold(c); step_until(function.exit); fold(c); solve(); } else { unfold(c); step_until(function.exit); solve(); }",
+        "if p == 0 { unfold(c); step_until(function.exit); fold(c); fold(c); solve(); } else { unfold(c); step_until(function.exit); fold(c); solve(); }",
     ] {
         assert!(
             verify_c0_sources(
@@ -849,7 +888,7 @@ fn guarded_instance_return_paths_reject_invalid_folds() {
         );
     }
     // A body fact exposed only on the nonnull arm cannot justify the null result.
-    let body = "if p == 0 { unfold(c); execute(); fold(c); solve(); } else { unfold(c); execute(); fold(c); solve(); }";
+    let body = "if p == 0 { unfold(c); step_until(function.exit); fold(c); solve(); } else { unfold(c); step_until(function.exit); fold(c); solve(); }";
     let source = GUARDED_CELL_SOURCE.replace("BODY", body);
     assert!(
         verify_c0_sources(
@@ -879,13 +918,16 @@ fn named_instance_memory_body_round_trip_preserves_fields() {
             ensures result == c.value;
             ensures c.value == old(c.value);
             ensures c.mark == old(c.mark);
-        } by { unfold(c); execute(); fold(c); solve(); }
+        } by { unfold(c); step_until(function.exit); fold(c); solve(); }
     "#;
     let c = [("read.c", "int32 read(int32* p) { return *p; }")];
     let verified = verify_c0_sources(source, &c).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
     verify_c0_sources(
-        &source.replace("by { unfold(c); execute(); fold(c); solve(); }", &expanded),
+        &source.replace(
+            "by { unfold(c); step_until(function.exit); fold(c); solve(); }",
+            &expanded,
+        ),
         &c,
     )
     .unwrap();
@@ -907,7 +949,7 @@ fn single_cell_adt_initializers_verify_and_expand() {
             produces c: cell(p);
             ensures c.model == INITIALIZER;
         } by {
-            execute();
+            step_until(function.exit);
             let c = fold(cell(p), { model: INITIALIZER });
             solve();
         }
@@ -942,7 +984,7 @@ fn single_cell_adt_initializers_reject_invalid_models() {
             consumes p[0..1];
             produces c: cell(p);
         } by {
-            execute();
+            step_until(function.exit);
             let c = fold(cell(p), { model: INITIALIZER });
             solve();
         }
@@ -970,7 +1012,10 @@ fn single_cell_adt_initializers_reject_invalid_models() {
             "consumes p[0..1];\n            produces c: cell(p);",
             "owns c: cell(p);",
         )
-        .replace("execute();", "unfold(c); execute();");
+        .replace(
+            "step_until(function.exit);",
+            "unfold(c); step_until(function.exit);",
+        );
     for initializer in ["c.model", "old(c.model)"] {
         assert!(
             verify_c0_sources(&update.replace("INITIALIZER", initializer), &sources).is_err(),
@@ -1007,7 +1052,7 @@ fn single_cell_adt_initializers_preserve_arbitrary_entry_models() {
         } by {
             unfold(c);
             let c = fold(cell(p), { model: VALUE });
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -1064,7 +1109,7 @@ fn single_cell_explicit_fold_constructs_updates_and_expands() {
             produces c: cell(p);
             ensures c.value == value;
         } by {
-            execute();
+            step_until(function.exit);
             let c = fold(cell(p), { value: value });
             solve();
         }
@@ -1077,7 +1122,10 @@ fn single_cell_explicit_fold_constructs_updates_and_expands() {
                 "consumes p[0..1];\n            produces c: cell(p);",
                 "owns c: cell(p);",
             )
-            .replace("execute();", "unfold(c); execute();"),
+            .replace(
+                "step_until(function.exit);",
+                "unfold(c); step_until(function.exit);",
+            ),
     ] {
         let verified_for_expansion = verify_c0_sources(&source, &sources).unwrap();
         let expanded =
@@ -1099,7 +1147,7 @@ fn single_cell_explicit_fold_rejects_missing_wrong_and_duplicate_ownership() {
             consumes p[0..1];
             produces c: cell(p);
             ensures c.value == value;
-        } by { execute(); FOLD solve(); }
+        } by { step_until(function.exit); FOLD solve(); }
     "#;
     let sources = [("cell.c", "void init(int32* p, int32 value) { *p = value; }")];
     for fold in [
@@ -1119,7 +1167,7 @@ fn single_cell_explicit_fold_rejects_missing_wrong_and_duplicate_ownership() {
     }
     let no_ownership = source
         .replace("consumes p[0..1];", "")
-        .replace("execute();", "")
+        .replace("step_until(function.exit);", "")
         .replace("FOLD", "let c = fold(cell(p), { value: value });");
     assert!(verify_c0_sources(&no_ownership, &sources).is_err());
 }
@@ -1147,7 +1195,7 @@ fn single_cell_explicit_fold_preserves_entry_fields_and_consumes_names() {
             let c = fold(cell(p), { revision: 2, value: value });
             unfold(c);
             let c = fold(cell(p), { value: value, revision: 2 });
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -1190,24 +1238,27 @@ fn named_instance_memory_body_rejects_invalid_folds() {
     "#;
     for (body, c) in [
         (
-            "fold(c); execute(); solve();",
+            "fold(c); step_until(function.exit); solve();",
             "int32 read(int32* p) { return *p; }",
         ),
         (
-            "unfold(c); unfold(c); execute(); fold(c); solve();",
+            "unfold(c); unfold(c); step_until(function.exit); fold(c); solve();",
             "int32 read(int32* p) { return *p; }",
         ),
         (
-            "unfold(c); execute(); fold(c); fold(c); solve();",
-            "int32 read(int32* p) { return *p; }",
-        ),
-        ("execute(); solve();", "int32 read(int32* p) { return *p; }"),
-        (
-            "unfold(c); execute(); solve();",
+            "unfold(c); step_until(function.exit); fold(c); fold(c); solve();",
             "int32 read(int32* p) { return *p; }",
         ),
         (
-            "unfold(c); execute(); fold(c); solve();",
+            "step_until(function.exit); solve();",
+            "int32 read(int32* p) { return *p; }",
+        ),
+        (
+            "unfold(c); step_until(function.exit); solve();",
+            "int32 read(int32* p) { return *p; }",
+        ),
+        (
+            "unfold(c); step_until(function.exit); fold(c); solve();",
             "int32 read(int32* p) { *p = 0; return *p; }",
         ),
     ] {
@@ -1232,7 +1283,7 @@ fn checked_original_claim_can_close_after_rewrite_but_unrelated_have_cannot() {
             requires x == 1;
             ensures result == 1;
         } by {
-            execute(); rewrite(x == 1);
+            step_until(function.exit); rewrite(x == 1);
             have result == 1 by { rewrite(x == 1); normalize(); }
             assumption();
         }
@@ -1274,7 +1325,7 @@ fn opaque_resource_call_transports_only_the_selected_instance() {
             ensures second.model == old(second.model);
             ensures second.revision == old(second.revision);
             ensures result == 0;
-        } by { step(Touch, { cell: first }); execute(); solve(); }
+        } by { step(Touch, { cell: first }); step_until(function.exit); solve(); }
     "#;
     let c = [(
         "invoke.c",
@@ -1285,7 +1336,7 @@ fn opaque_resource_call_transports_only_the_selected_instance() {
     assert!(expanded.contains("step(Touch, { cell: first });"));
     verify_c0_sources(
         &source.replace(
-            "by { step(Touch, { cell: first }); execute(); solve(); }",
+            "by { step(Touch, { cell: first }); step_until(function.exit); solve(); }",
             &expanded,
         ),
         &c,
@@ -1417,14 +1468,14 @@ fn call_binder_transport_prints_and_expands_its_map_unchanged() {
             ensures first.revision == 1;
         } by {
             unfold(first);
-            execute();
+            step_until(function.exit);
             let first = fold(Counter(), { revision: 1 });
             solve();
         }
         void caller(int32* state) {
             owns c: Counter();
             ensures c.revision == 1;
-        } by { step(increment, { first: c }); execute(); solve(); }
+        } by { step(increment, { first: c }); step_until(function.exit); solve(); }
     "#;
     let c = [(
         "increment.c",
@@ -1442,7 +1493,7 @@ fn call_binder_transport_prints_and_expands_its_map_unchanged() {
     );
     verify_c0_sources(
         &source.replace(
-            "by { step(increment, { first: c }); execute(); solve(); }",
+            "by { step(increment, { first: c }); step_until(function.exit); solve(); }",
             &expanded,
         ),
         &c,
@@ -1513,7 +1564,7 @@ fn call_binder_transport_rejects_a_frontier_call_to_another_function() {
             ensures first.revision == 1;
         } by {
             unfold(first);
-            execute();
+            step_until(function.exit);
             let first = fold(Counter(), { revision: 1 });
             solve();
         }
@@ -1521,7 +1572,7 @@ fn call_binder_transport_rejects_a_frontier_call_to_another_function() {
         void caller(int32* state) {
             owns c: Counter();
             ensures c.revision == 1;
-        } by { step(increment, { first: c }); execute(); solve(); }
+        } by { step(increment, { first: c }); step_until(function.exit); solve(); }
     "#;
     let c = [(
         "increment.c",
@@ -1591,7 +1642,7 @@ fn explicit_contract_empty_application_verifies_and_expands() {
         int32 invoke(int32 (*callback)(int32), int32 x) {
             requires Identity(callback);
             ensures result == x;
-        } by { step(Identity); execute(); solve(); }
+        } by { step(Identity); step_until(function.exit); solve(); }
     "#;
     let c = [(
         "invoke.c",
@@ -1601,7 +1652,10 @@ fn explicit_contract_empty_application_verifies_and_expands() {
     let expanded = verified[0].expanded_proof_source().unwrap();
     assert!(expanded.contains("step(Identity);"), "{expanded}");
     verify_c0_sources(
-        &source.replace("by { step(Identity); execute(); solve(); }", &expanded),
+        &source.replace(
+            "by { step(Identity); step_until(function.exit); solve(); }",
+            &expanded,
+        ),
         &c,
     )
     .unwrap();
@@ -1624,7 +1678,7 @@ fn contract_application_binds_each_handle_by_name() {
             requires Touch(callback);
             owns first: marker(); owns second: other();
             ensures result == 0;
-        } by { step(Touch, { cell: first }); execute(); solve(); }
+        } by { step(Touch, { cell: first }); step_until(function.exit); solve(); }
     "#;
     // C0 spells the empty function-pointer parameter list `()`.
     let c = [(
@@ -1695,7 +1749,7 @@ fn opaque_resource_call_checks_actual_c_arguments_and_call_entry_snapshots() {
             ensures first.revision == 1;
             ensures second.revision == old(second.revision);
             ensures result == 1;
-        } by { step(Touch, { cell: first }); step(Touch, { cell: first }); execute();
+        } by { step(Touch, { cell: first }); step(Touch, { cell: first }); step_until(function.exit);
             rewrite(result == at(region(0).exit, first.revision));
             rewrite(at(region(0).exit, first.revision) == 1); solve(); }
     "#;
@@ -1707,7 +1761,7 @@ fn opaque_resource_call_checks_actual_c_arguments_and_call_entry_snapshots() {
     let expanded = verified[0].expanded_proof_source().unwrap();
     verify_c0_sources(
         &source.replace(
-            "by { step(Touch, { cell: first }); step(Touch, { cell: first }); execute();\n            rewrite(result == at(region(0).exit, first.revision));\n            rewrite(at(region(0).exit, first.revision) == 1); solve(); }",
+            "by { step(Touch, { cell: first }); step(Touch, { cell: first }); step_until(function.exit);\n            rewrite(result == at(region(0).exit, first.revision));\n            rewrite(at(region(0).exit, first.revision) == 1); solve(); }",
             &expanded,
         ),
         &c,
@@ -1751,7 +1805,7 @@ fn named_resource_bindings_preserve_symbolic_fields_and_recheck_expansion() {
             ensures cell.revision == old(cell.revision);
             ensures cell.contents == old(cell.contents);
             ensures list::length(cell.contents) == old(list::length(cell.contents));
-        } by { execute(); solve(); }
+        }
     "#;
     let sources = [(
         "identity.c",
@@ -1759,7 +1813,8 @@ fn named_resource_bindings_preserve_symbolic_fields_and_recheck_expansion() {
     )];
     let verified = verify_c0_sources(source, &sources).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
-    let expanded_source = source.replacen("by { execute(); solve(); }", &expanded, 1);
+    let expanded_source =
+        source.replacen("by { step_until(function.exit); solve(); }", &expanded, 1);
     verify_c0_sources(&expanded_source, &sources)
         .expect("expanded resource-field proof must recheck");
     for false_claim in [
@@ -1793,14 +1848,14 @@ fn named_resource_bindings_are_scoped_and_have_distinct_state() {
     let out_of_scope = format!(
         r#"verifying "g.c"; {header}
         extern int32 f() {{ owns cell: marked_cell(); }}
-        int32 g() {{ ensures cell.model == Mark::Clear; }} by {{ execute(); solve(); }}"#
+        int32 g() {{ ensures cell.model == Mark::Clear; }}"#
     );
     assert!(verify_c0_sources(&out_of_scope, &[("g.c", "int32 g(void) { return 0; }")]).is_err());
     let source = format!(
         r#"verifying "f.c"; {header}
         int32 f() {{ owns first: marked_cell(); owns second: marked_cell();
             ensures first.model == second.model;
-        }} by {{ execute(); solve(); }}"#
+        }}"#
     );
     assert!(verify_c0_sources(&source, &[("f.c", "int32 f(void) { return 0; }")]).is_err());
     let file = parser::parse(&source).unwrap();
@@ -1884,7 +1939,7 @@ fn named_resource_binding_grants_reads_of_its_memory_body_and_no_writes() {
         int32 touch(int32* p) {
             owns cell: cell(p);
             ensures cell.model == old(cell.model);
-        } by { execute(); solve(); }
+        }
     "#;
     verify_c0_sources(
         contract,
@@ -1915,7 +1970,7 @@ fn a_call_binds_the_one_possible_instance_and_refuses_to_choose() {
         int32 caller() {
             owns cell: marker();
             ensures cell.revision == old(cell.revision);
-        } by { execute(); solve(); }
+        }
     "#;
     verify_c0_sources(unique, &[("calls.c", c_source)])
         .expect("the caller owns exactly one instance the callee's binder can be");
@@ -1926,7 +1981,7 @@ fn a_call_binds_the_one_possible_instance_and_refuses_to_choose() {
             owns cell: marker();
             owns other: marker();
             ensures cell.revision == old(cell.revision);
-        } by { execute(); solve(); }
+        }
     "#;
     let error = verify_c0_sources(ambiguous, &[("calls.c", c_source)]).unwrap_err();
     assert!(
@@ -2299,7 +2354,7 @@ verifying "integer_affine_fixed_execution.c";
 int32 keep(int32 x, int32 y) {
     requires 0 <= to_integer(x) + to_integer(y);
     ensures weakened: -1 <= to_integer(x) + to_integer(y) by {
-        execute();
+        step_until(function.exit);
         have -1 <= to_integer(x) + to_integer(y) by {
             solve() using {
                 0 <= to_integer(x) + to_integer(y);
@@ -2364,7 +2419,7 @@ int32 fixed_c_params(int32 i, int32 total, int32 value) {
     requires -1000 * to_integer(i) - 1000 <= to_integer(total) + to_integer(value);
     requires to_integer(i) <= 1000;
     ensures bounded: -2147483648 <= to_integer(total) + to_integer(value) by {
-        execute();
+        step_until(function.exit);
         have -2147483648 <= to_integer(total) + to_integer(value) by {
             solve() using {
                 -1000 * to_integer(i) - 1000 <= to_integer(total) + to_integer(value);
@@ -2512,7 +2567,7 @@ fn integer_resource_fields_enforce_types_facts_and_snapshots() {
             ensures old(model.total) == 18446744073709551616;
         } by {
             unfold(model);
-            execute();
+            step_until(function.exit);
             let model = fold(account(), { total: 18446744073709551617 });
             solve();
         }
@@ -2673,7 +2728,7 @@ fn integer_resource_field_observes_unchanged_c_memory_read() {
             ensures model.value == old(model.value);
         } by {
             unfold(model);
-            execute();
+            step_until(function.exit);
             fold(model);
             solve();
         }
@@ -2684,7 +2739,7 @@ fn integer_resource_field_observes_unchanged_c_memory_read() {
 #[test]
 fn automatic_scope_exit_preserves_expanded_execution() {
     let c = "int32 f(int32 n) { if (n == 0) { int32 a[2]; a[0] = 5; return a[0]; } else { int32 b[2]; b[0] = 5; return b[0]; } }";
-    let source = r#"verifying "scope.c"; int32 f(int32 n) { ensures result == 5; } by { execute(); solve(); }"#;
+    let source = r#"verifying "scope.c"; int32 f(int32 n) { ensures result == 5; } by { if n == 0 { step_until(function.exit); } else { step_until(function.exit); } }"#;
     let inputs = [("scope.c", c)];
     let verified_for_expansion = verify_c0_sources(source, &inputs).unwrap();
     let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "f").unwrap();

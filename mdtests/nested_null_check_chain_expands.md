@@ -1,8 +1,8 @@
 # A six-allocation null-check chain expands
 
 `f` allocates six cells. Each failed allocation frees the earlier ones and
-returns `-1`; otherwise all six are freed and `f` returns `18`. `execute()`
-splits at every null check, so `click expand` writes one proof `if` per check,
+returns `-1`; otherwise all six are freed and `f` returns `18`. The implicit
+tail splits at every null check, so `click expand` writes one proof `if` per check,
 each nested in the previous one's `else` arm: six nested regions, well inside
 the checked drivers' bound of eleven.
 
@@ -72,9 +72,6 @@ verifying "nested_null_check_chain.c";
 
 int f() {
     ensures result == 18 or result == -1;
-} by {
-    execute();
-    solve();
 }
 ```
 

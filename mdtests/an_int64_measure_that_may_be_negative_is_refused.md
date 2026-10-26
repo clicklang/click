@@ -33,7 +33,6 @@ int64 count(int64 length) {
         invariant 0i64 <= i;
         invariant i <= 2147483647i64;
     }
-    execute(); solve();
 }
 ```
 

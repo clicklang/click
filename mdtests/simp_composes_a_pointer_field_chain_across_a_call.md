@@ -43,9 +43,6 @@ void touch(struct region* region) {
     requires separate(memory(*region), memory(region->arena->data));
     ensures region->arena == old(region->arena);
     ensures region->arena->data == old(region->arena->data);
-} by {
-    execute();
-    solve();
 }
 
 int32 caller(struct arena* arena, struct region* first, struct region* second) {
@@ -78,8 +75,6 @@ int32 caller(struct arena* arena, struct region* first, struct region* second) {
     have first->arena->data == at(m, first->arena->data) by {
         solve();
     }
-    execute();
-    solve();
 }
 ```
 

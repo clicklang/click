@@ -80,7 +80,7 @@ int32 peek(struct node* p) {
             contradiction(is_present(Cell::Missing) == 0);
         },
         Cell::Present(identity) => {
-            execute();
+            step_until(function.exit);
             solve();
         },
     }

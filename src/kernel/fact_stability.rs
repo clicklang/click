@@ -141,7 +141,7 @@ int32 id(int32 x) {
     ensures result == x;
 } by {
     have x <= 10;
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;

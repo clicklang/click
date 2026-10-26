@@ -13,7 +13,7 @@ resource holder() {
     owns child: cell(model());
     fact child.value == value;
 }
-void empty() { ensures 1 == 1; } by { execute(); solve(); }
+void empty() { ensures 1 == 1; }
 ```
 ```expect
 fail: function `model` does not return a C value

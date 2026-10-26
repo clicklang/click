@@ -91,7 +91,7 @@ bool pop(struct stack* s, int32* out) {
     match before.items {
         List::Nil => {
             unfold(before);
-            execute();
+            step_until(function.exit);
             let after = fold(nodes(s->head), { items: List<int32>::Nil });
             unfold(length(List<int32>::Nil));
         },
@@ -99,7 +99,7 @@ bool pop(struct stack* s, int32* out) {
             let { tail: tail } = unfold(before);
             unfold(length(List::Cons(value, tail_items)));
             apply(length_nonnegative(tail_items));
-            execute();
+            step_until(function.exit);
             unfold(first(List::Cons(value, tail_items)));
             unfold(rest(List::Cons(value, tail_items)));
             match tail_items {

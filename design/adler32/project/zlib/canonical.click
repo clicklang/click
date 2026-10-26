@@ -82,7 +82,7 @@ apply(zlib_seed_bounds(adler));
   solve() using { to_integer(sum2) == at(raw_b, to_integer(sum2 % 65521u64)); to_integer(at(raw_b, sum2) % 65521u64) == truncating_remainder(to_integer(at(raw_b, sum2)), 65521); }; }
  apply(zlib_one_seeded_components(buf, to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler))), adler, sum2));
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by { rewrite(old((int32)(uint32)len) == 1); solve(); }
- execute(); solve();
+ step_until(function.exit); solve();
 
  } else {
   have sum2 < 65521u64 by { solve(); }
@@ -94,7 +94,7 @@ apply(zlib_seed_bounds(adler));
   solve() using { to_integer(sum2) == at(raw_b, to_integer(sum2 % 65521u64)); to_integer(at(raw_b, sum2) % 65521u64) == truncating_remainder(to_integer(at(raw_b, sum2)), 65521); }; }
  apply(zlib_one_seeded_components(buf, to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler))), adler, sum2));
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by { rewrite(old((int32)(uint32)len) == 1); solve(); }
- execute(); solve();
+ step_until(function.exit); solve();
 
  }
 
@@ -134,7 +134,7 @@ apply(zlib_seed_bounds(adler));
   solve() using { to_integer(sum2) == at(raw_b, to_integer(sum2 % 65521u64)); to_integer(at(raw_b, sum2) % 65521u64) == truncating_remainder(to_integer(at(raw_b, sum2)), 65521); }; }
  apply(zlib_one_seeded_components(buf, to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler))), adler, sum2));
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by { rewrite(old((int32)(uint32)len) == 1); solve(); }
- execute(); solve();
+ step_until(function.exit); solve();
 
  } else {
   have sum2 < 65521u64 by { solve(); }
@@ -146,7 +146,7 @@ apply(zlib_seed_bounds(adler));
   solve() using { to_integer(sum2) == at(raw_b, to_integer(sum2 % 65521u64)); to_integer(at(raw_b, sum2) % 65521u64) == truncating_remainder(to_integer(at(raw_b, sum2)), 65521); }; }
  apply(zlib_one_seeded_components(buf, to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler))), adler, sum2));
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by { rewrite(old((int32)(uint32)len) == 1); solve(); }
- execute(); solve();
+ step_until(function.exit); solve();
 
  }
 
@@ -358,7 +358,7 @@ have viewable(buf[0u64..len]) by solve();
  have sum2 == at(short_raw, sum2 % 65521u64) by solve();
  have adler == at(short_raw, adler % 65521u64);
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by solve() using { adler == at(short_raw, adler % 65521u64); sum2 == at(short_raw, sum2 % 65521u64); at(short_raw, to_integer((adler % 65521u64) | ((sum2 % 65521u64) << 16))) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))); };
- execute(); solve();
+ step_until(function.exit); solve();
 
  } else {
   have adler < 65521u64 by { solve(); }
@@ -370,7 +370,7 @@ have viewable(buf[0u64..len]) by solve();
  have sum2 == at(short_raw, sum2 % 65521u64) by solve();
  have adler == at(short_raw, adler % 65521u64);
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by solve() using { adler == at(short_raw, adler % 65521u64); sum2 == at(short_raw, sum2 % 65521u64); at(short_raw, to_integer((adler % 65521u64) | ((sum2 % 65521u64) << 16))) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))); };
- execute(); solve();
+ step_until(function.exit); solve();
 
  }
   } else {
@@ -1381,7 +1381,7 @@ apply(zlib_seed_bounds(adler));
    unfold(adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))));
    solve() using { to_integer(adler | (sum2 << 16)) == to_integer(adler) + 65536 * to_integer(sum2); to_integer(adler) == adler_spec_a_u64(old(buf), old(len), to_integer(zlib_seed_a(old(adler)))); to_integer(sum2) == adler_spec_b_u64(old(buf), old(len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))); };
   }
-  execute(); solve();
+  step_until(function.exit); solve();
  } else {
   have len <= 5551u64 by solve() using { len < 5552u64; };
   have len <= 9223372036854775807u64 by solve() using { len <= 5551u64; };
@@ -2268,7 +2268,7 @@ apply(zlib_seed_bounds(adler));
    }
   }
   step_until(assignment(adler, 39));
-  execute(); solve();
+  step_until(function.exit); solve();
  }
   }
  }

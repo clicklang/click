@@ -70,7 +70,7 @@ void walk(struct Node* p, int32* marker) {
         Path::Top => { contradiction(c.model == Path::Top); },
         Path::Step(identity, before) => {
             let { up: previous } = unfold(c);
-            execute(); solve();
+            step_until(function.exit); solve();
         },
     }
 }

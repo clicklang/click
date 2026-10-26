@@ -26,15 +26,15 @@ int read(int* p) {
 } by {
     if (p[0] > 0) {
         match c.model {
-            Tri::Zero => { execute(); solve(); },
-            Tri::One => { execute(); solve(); },
-            Tri::Other(v) => { execute(); solve(); },
+            Tri::Zero => { step_until(function.exit); solve(); },
+            Tri::One => { step_until(function.exit); solve(); },
+            Tri::Other(v) => { step_until(function.exit); solve(); },
         }
     } else {
         match c.model {
-            Tri::Zero => { execute(); solve(); },
-            Tri::One => { execute(); solve(); },
-            Tri::Other(v) => { execute(); solve(); },
+            Tri::Zero => { step_until(function.exit); solve(); },
+            Tri::One => { step_until(function.exit); solve(); },
+            Tri::Other(v) => { step_until(function.exit); solve(); },
         }
     }
 }

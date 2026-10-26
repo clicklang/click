@@ -42,8 +42,6 @@ void write_other(int32 p[], int32 n, int32 i, int32 j, int32 k) {
     have p[j] == at(entry, p[i]) by {
         normalize() using { };
     }
-    execute();
-    solve();
 }
 ```
 

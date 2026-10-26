@@ -91,7 +91,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
         (
             None,
             &[(
-                "impl trait_methods::Shape for trait_methods::Circle {\n    fn area(&self, scale: i32) -> i32 {\n        ensures result == scale + scale + 1;\n    } by { execute(); solve(); }\n    fn twice(&self, scale: i32) -> i32 {\n        ensures result == scale + 3;\n    } by { execute(); solve(); }\n}\n",
+                "impl trait_methods::Shape for trait_methods::Circle {\n    fn area(&self, scale: i32) -> i32 {\n        ensures result == scale + scale + 1;\n    }\n    fn twice(&self, scale: i32) -> i32 {\n        ensures result == scale + 3;\n    }\n}\n",
                 "",
             )][..],
             "`<trait_methods::Circle as trait_methods::Shape>::area` implements the trait method interface `trait_methods::Shape::area` but has no contract",
@@ -111,8 +111,8 @@ fn charon_trait_method_implementations_refine_their_interface() {
         (
             None,
             &[(
-                "        ensures result <= 6002;\n    } by { execute(); solve(); }\n}",
-                "        ensures result <= 5000;\n    } by { execute(); solve(); }\n}",
+                "        ensures result <= 6002;\n    }\n}",
+                "        ensures result <= 5000;\n    }\n}",
             )][..],
             "trait_methods::Shape::twice.ensures_0",
         ),

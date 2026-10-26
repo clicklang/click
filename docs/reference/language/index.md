@@ -84,7 +84,7 @@ int apply(int (*f)(int), int x) {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 ```
 
 In Rust, it is a Rust item, with module paths and `impl` blocks. A
@@ -103,13 +103,13 @@ contract fn Doubling(x: i32) -> i32 {
 fn function_pointers::twice(x: i32) -> i32 {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 
 fn function_pointers::apply(f: fn(i32) -> i32, x: i32) -> i32 {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 
 theorem twice_is_doubling() {
     ensures Doubling(function_pointers::twice) by {
@@ -121,7 +121,7 @@ theorem twice_is_doubling() {
 fn function_pointers::caller(x: i32) -> i32 {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { apply(twice_is_doubling()); execute(); solve(); }
+} by { apply(twice_is_doubling()); }
 ```
 
 An `extern` head is written the same way in each language:
@@ -1939,8 +1939,6 @@ struct object* object_retain(struct object* obj) {
         step();
         fold(object_ref(obj));
     }
-    execute();
-    solve();
 }
 ```
 
@@ -2275,7 +2273,7 @@ names, then pass their owned instances explicitly when constructing a parent:
 ```click
 let { left: l, right: r } = unfold(root);
 unfold(l);
-execute();
+step_until(function.exit);
 let l = fold(tree(left), { model: Tree::Leaf(2) });
 let root = fold(tree(p), { model: old(root.model) }, { left: l, right: r });
 ```
@@ -2887,9 +2885,6 @@ requirement, arguments included.
 int32 twice(struct pair* p) {
     owns pair(p);
     ensures result >= 0;
-} by {
-    execute();
-    solve();
 }
 ```
 
@@ -3404,7 +3399,7 @@ unsigned long left() {
     ensures left_file::state.value == integer::uint64_wrapping_add(old(left_file::state.value), 1u64);
     ensures result == left_file::state.value;
     ensures result == integer::uint64_wrapping_add(old(left_file::state.value), 1u64);
-} by { execute(); solve(); }
+}
 ```
 
 Here `left_file` aliases the C file containing `state`; its unchanged C wrapper

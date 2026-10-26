@@ -19,7 +19,7 @@ int32 record_alpha() {
     ensures batches[0][1] == old(batches[0][1]);
     ensures result == old(calls) + old(batches[0][0]) + 2;
 } by {
-    execute();
+    step_until(function.exit);
     have to_integer(calls + batches[0][0]) == to_integer(calls) + to_integer(batches[0][0]);
     solve();
 }
@@ -39,7 +39,7 @@ int32 record_beta() {
     ensures batches[0].value == old(batches[0].value) + 1;
     ensures result == old(calls) + old(batches[0].value) + 2;
 } by {
-    execute();
+    step_until(function.exit);
     have to_integer(calls + batches[0].value) == to_integer(calls) + to_integer(batches[0].value);
     solve();
 }
@@ -123,6 +123,4 @@ int32 registry_run() {
     step();
     step();
     have beta_total == 101;
-    execute();
-    solve();
 }

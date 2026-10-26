@@ -52,7 +52,7 @@ void consume_population(struct owner* owner, int32 amount) {
         unfold(valid_capacity);
         step();
     }
-    execute();
+    step_until(function.exit);
     unfold(valid_capacity);
     solve();
 }

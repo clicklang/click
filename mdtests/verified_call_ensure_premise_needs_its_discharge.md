@@ -29,11 +29,7 @@ int32 set_when_positive(int32 flag, int32* cell) {
     ensures flag > 0 implies cell[0] == 1;
 } by {
     if flag > 0 {
-        execute();
-        solve();
     } else {
-        execute();
-        solve();
     }
 }
 
@@ -41,9 +37,6 @@ int32 undischarged_caller(int32 count, int32* cell) {
     requires 1 <= count;
     owns cell[0..1];
     ensures cell[0] == 1;
-} by {
-    execute();
-    solve();
 }
 ```
 

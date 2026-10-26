@@ -29,7 +29,7 @@ From the repository root, replace `increment_first`'s proof in
 
 ```click
 } by {
-    execute();
+    step_until(function.exit);
     have to_integer(bytes[0]) == to_integer(old(bytes[0]) + 1u8) by solve();
     solve();
 }

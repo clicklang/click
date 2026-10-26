@@ -13,7 +13,6 @@ fn scan(n: i32) -> i32 {
         decreases i;
         invariant 0i32 <= i and i <= n;
     }
-    execute(); solve();
 }
 
 fn first_stop(n: i32, limit: i32) -> i32 {
@@ -25,7 +24,6 @@ fn first_stop(n: i32, limit: i32) -> i32 {
         decreases limit - i;
         invariant 0i32 <= i and i <= limit and i <= n;
     }
-    execute(); solve();
 }
 
 fn count_evens(n: i32) -> i32 {
@@ -37,7 +35,6 @@ fn count_evens(n: i32) -> i32 {
         decreases n - i;
         invariant 0i32 <= i and i <= n and 0i32 <= evens and evens <= i;
     }
-    execute(); solve();
 }
 
 fn countdown(n: i16) -> i16 {
@@ -49,7 +46,6 @@ fn countdown(n: i16) -> i16 {
         decreases i;
         invariant 0i16 <= i and i <= n;
     }
-    execute(); solve();
 }
 
 fn count_to(n: u32) -> u32 {
@@ -60,7 +56,6 @@ fn count_to(n: u32) -> u32 {
         decreases n - i;
         invariant i <= n;
     }
-    execute(); solve();
 }
 
 fn countdown_wide(n: i64) -> i64 {
@@ -72,7 +67,6 @@ fn countdown_wide(n: i64) -> i64 {
         decreases i;
         invariant 0i64 <= i and i <= n;
     }
-    execute(); solve();
 }
 
 fn countdown_unsigned(n: u64) -> u64 {
@@ -83,5 +77,4 @@ fn countdown_unsigned(n: u64) -> u64 {
         decreases i;
         invariant i <= n;
     }
-    execute(); solve();
 }

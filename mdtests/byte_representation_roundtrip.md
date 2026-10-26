@@ -76,9 +76,6 @@ verifying "rep_copy.c";
 
 int f() {
     ensures result == 18 or result == -1;
-} by {
-    execute();
-    solve();
 }
 ```
 

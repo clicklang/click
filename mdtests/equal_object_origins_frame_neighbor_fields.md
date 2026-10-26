@@ -186,7 +186,7 @@ void inner(struct rb_node* node) {
                     step();
                 }
             }
-            execute(); solve();
+            step_until(function.exit); solve();
         },
     }
 }

@@ -834,7 +834,7 @@ mod tests {
         let c_source = "int32 identity(int32 x) { return x; }";
         let click_source = r#"verifying "identity.c";
 int32 identity(int32 x) {
-    ensures result == x by { execute(); solve(); }
+    ensures result == x;
 }
 "#;
         let click_path = directory.join("project.click");
@@ -996,7 +996,7 @@ int32 identity(int32 x) {
         let click_source = r#"verifying "good.c";
 verifying "bad.c";
 int32 good(int32 x) {
-    ensures result == x by { execute(); solve(); }
+    ensures result == x;
 }
 int32 bad(int32 x) {
     ensures result == x + 1 by solve();
@@ -1223,7 +1223,7 @@ int32 bad(int32 x) {
             .expect("the threw arm is kept")
             .1;
         assert!(
-            tail.starts_with("            step();\n            execute();\n            solve();\n"),
+            tail.starts_with("            step();\n            step_until(function.exit);\n            solve();\n"),
             "{expanded}"
         );
     }
@@ -1254,7 +1254,7 @@ int32 bad(int32 x) {
             \x20       solve();\n\
             \x20   }\n\
             \x20   have x >= x by { have x == x by solve(); solve(); }\n\
-            \x20   execute();\n\
+            \x20   step_until(function.exit);\n\
             \x20   solve();\n\
             }\n";
         fs::write(&click_path, click_source).unwrap();
@@ -1268,11 +1268,11 @@ int32 bad(int32 x) {
         let path = click_path.display();
         assert!(
             ambiguous.contains(&format!(
-                "{path}:9: 2 smart tactics start on this line; add the column of one of them:\n  {path}:9:22 `have` in `identity.contract`\n  {path}:9:45 `simp` in `identity.contract`"
+                "{path}:9: 2 smart tactics start on this line; add the column of one of them:\n  {path}:9:22 `have` in `identity.contract`\n  {path}:9:46 `solve` in `identity.contract`"
             )),
             "{ambiguous}"
         );
-        let expanded = run_location(&click_path, "9:45").unwrap();
+        let expanded = run_location(&click_path, "9:46").unwrap();
         assert!(
             expanded.contains("    have x >= x by { have x == x by solve(); normalize(); }\n"),
             "{expanded}"
@@ -1300,9 +1300,6 @@ int32 bad(int32 x) {
         let click_source = r#"verifying "identity.c";
 int32 identity(int32 x) {
     ensures result == x;
-} by {
-    execute();
-    solve();
 }
 "#;
         let click_path = directory.join("project.click");
@@ -1310,7 +1307,7 @@ int32 identity(int32 x) {
         fs::write(&click_path, click_source).unwrap();
         let arguments = Arguments {
             click_path,
-            selection: Selection::Claim("identity.contract".to_string()),
+            selection: Selection::Claim("identity.ensures_0".to_string()),
             limits: RunLimits::expand(),
             output: None,
             in_place: false,
@@ -1319,7 +1316,7 @@ int32 identity(int32 x) {
         let expanded = run(&arguments).expect("the whole claim should expand and check");
 
         assert_ne!(expanded, click_source);
-        assert!(!expanded.contains("execute();"));
+        assert!(!expanded.contains("step_until(function.exit);"));
         assert!(!expanded.contains("solve();"));
         fs::remove_dir_all(directory).unwrap();
     }
@@ -1501,7 +1498,7 @@ int32 identity(int32 x) {
         let c_source = "int32 identity(int32 x) { return x; }";
         let click_source = r#"verifying "identity.c";
 int32 identity(int32 x) {
-    ensures result == x by { execute(); solve(); }
+    ensures result == x;
 }
 "#;
         let click_path = directory.join("project.click");
@@ -1566,7 +1563,7 @@ mod output_context_tests {
         let c_source = "int32 identity(int32 x) { return x; }";
         let click_source = r#"verifying "identity.c";
 int32 identity(int32 x) {
-    ensures result == x by { execute(); solve(); }
+    ensures result == x;
 }
 "#;
         fs::write(directory.join("source/identity.c"), c_source).unwrap();

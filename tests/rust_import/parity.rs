@@ -62,9 +62,12 @@ pub(super) fn frozen_proof_input(source: &str) -> String {
 
 /// `source` with the tactic spellings the pinned proofs use and the parser
 /// no longer reads spelled as today's: `simp()` is `solve()`, `arithmetic()`
-/// is `solve() using`, and `execute_until` is `step_until`.
+/// is `solve() using`, `execute_until` is `step_until`, and the pinned
+/// proofs' `execute()`, written where one path runs on to function exit, is
+/// `step_until(function.exit)`.
 fn frozen_tactic_spelling(source: String) -> String {
     source
+        .replace("execute();", "step_until(function.exit);")
         .replace("simp()", "solve()")
         .replace("arithmetic() using", "solve() using")
         .replace("arithmetic()", "solve() using {}")

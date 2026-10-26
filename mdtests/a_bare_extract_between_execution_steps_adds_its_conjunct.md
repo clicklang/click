@@ -1,9 +1,9 @@
 # A bare `extract` between execution steps adds its conjunct
 
 `extract(P)` written between execution steps adds `P` exactly as
-`have P by { extract(P); }` does, as it already did after execution. The
+`have P by { extract(P); }` does, as it already did at function exit. The
 execution frontier used to decline a bare `extract`, so the same tactic was
-accepted after `execute()` and refused before it.
+accepted at function exit and refused before it.
 
 ```c filename=a_bare_extract_between_execution_steps_adds_its_conjunct.c
 void mark_one(int32 a[], int32 n, int32 i, int32 m) {

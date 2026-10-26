@@ -20,7 +20,7 @@ void fill_short(uint8* dst) {
     owns dst[0..5];
     ensures (0u64..5u64).all(|k| { dst[k] == 7u8 });
 } by {
-    execute();
+    step_until(function.exit);
     assumption();
     solve();
 }

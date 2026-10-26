@@ -10,7 +10,7 @@ verifying "integer.c";
 int32 run(int32 x) {
     views ((struct item*)(void*)x)->value;
     ensures result == x;
-} by { execute(); normalize(); }
+} by { step_until(function.exit); normalize(); }
 ```
 
 ```expect

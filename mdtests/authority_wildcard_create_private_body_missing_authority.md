@@ -13,11 +13,11 @@ void issue(int32* pool, int32* p) {
     consumes p[0..1];
     requires defined(count(slot(pool, _)) + 1);
     produces slot(pool, p);
-} by { step(); fold(slot(pool, p)); execute(); solve(); }
+} by { step(); fold(slot(pool, p)); }
 void caller(int32* pool, int32* p) {
     consumes p[0..1];
     produces slot(pool, p);
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

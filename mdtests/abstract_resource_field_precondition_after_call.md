@@ -2,7 +2,7 @@
 
 The second `grow` requires `0 <= o.size and o.size <= 1000`, which holds
 only through the first call's `ensures o.size == old(o.size) + delta`.
-`execute()` records the precondition, spells it at the call's pre-state as
+The implicit tail of `bump`'s omitted proof records the precondition, spells it at the call's pre-state as
 `0 <= o.size and o.size <= 1000`, naming the instance `bump` holds, and
 proves it by the implicit closer.
 

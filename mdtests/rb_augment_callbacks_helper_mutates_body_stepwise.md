@@ -1,8 +1,8 @@
-# A viewed suite opened around single steps closes like one opened around `execute()`
+# A viewed suite opened around single steps closes like one opened around `step_until(function.exit)`
 
 The same helper as `rb_augment_callbacks_helper_mutates_body.md`, with the
 three callback calls taken one `step()` at a time inside the open instead of
-one `execute()`. The body then stops short of the function exit, so the close
+one `step_until(function.exit)`. The body then stops short of the function exit, so the close
 is checked at once rather than deferred to the outcome, and it must record
 the viewed suite as the state holds it: a viewed head closes through the same
 evidence an owned one does.
@@ -85,8 +85,6 @@ void erase_mutating(struct node* node, struct node* parent,
         step();
         step();
     }
-    execute();
-    solve();
 }
 ```
 

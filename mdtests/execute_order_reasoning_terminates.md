@@ -40,8 +40,6 @@ int32 increment(struct counter* owner) {
     have owner->value < owner->cap;
     have 0 <= owner->value;
     have owner->value < 1;
-    execute();
-    solve();
 }
 ```
 

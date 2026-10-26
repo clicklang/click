@@ -25,7 +25,7 @@ void helper(struct Node* p, struct Node* q, struct Root* root) {
     produces after: link(q, root);
     ensures p->tag == old(p->tag);
 } by {
-    unfold(before); execute();
+    unfold(before); step_until(function.exit);
     let after = fold(link(q, root), { model: Tag::Here }); solve();
 }
 void caller(struct Node* p, struct Node* q, struct Root* root) {
@@ -44,7 +44,6 @@ void caller(struct Node* p, struct Node* q, struct Root* root) {
     step();
     have q->tag == at(call_entry, q->tag) by normalize();
     have (q->tag & 1) == 1;
-    execute(); solve();
 }
 ```
 

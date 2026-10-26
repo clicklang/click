@@ -23,7 +23,7 @@ int32 f(int32 n) {
             decreases 0;
             invariant n <= 0;
         }
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         have n > 0 by solve();
@@ -31,7 +31,7 @@ int32 f(int32 n) {
         loop {
             invariant n >= 0;
         }
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

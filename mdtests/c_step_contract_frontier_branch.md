@@ -17,8 +17,6 @@ void invoke(void (*callback)(int32*), int32* cell, int32 active) {
     owns Cell(cell);
 } by {
     branch { step(Buffered); } else { step(Buffered); }
-    execute();
-    solve();
 }
 ```
 

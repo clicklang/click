@@ -209,7 +209,7 @@ fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
             Some(imports[0].identity())
         );
     }
-    let offset = proof.rfind("execute();").unwrap();
+    let offset = proof.rfind("step_until(function.exit);").unwrap();
     let line = proof[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -517,7 +517,7 @@ int answer(void) { return ANSWER; }
 "#,
     )
     .unwrap();
-    let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); solve(); }";
+    let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; }";
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
     let verified = verify_c0_prepared_sources(proof, &imports).unwrap();
@@ -525,7 +525,7 @@ int answer(void) { return ANSWER; }
         theorem.target() == click::languages::c::target::CTarget::X86_64LinuxUserspace
             && theorem.import_identity.as_deref() == Some(imports[0].identity())
     }));
-    let column = proof.find("execute();").unwrap() + 1;
+    let column = proof.find("step_until(function.exit);").unwrap() + 1;
     let expanded = expand_c0_prepared_tactic_source_at(proof, &imports, 1, column).unwrap();
     verify_c0_prepared_sources(&expanded, &imports).unwrap();
     // Both whole-file and selected-site checking must reject a target mismatch.
@@ -535,7 +535,7 @@ int answer(void) { return ANSWER; }
         error.message().contains("but the sidecar selects"),
         "{error:?}"
     );
-    let column = wrong.find("execute();").unwrap() + 1;
+    let column = wrong.find("step_until(function.exit);").unwrap() + 1;
     assert!(verify_sources_at(&wrong, &ProgramInputs::Prepared(&imports), 1, column).is_err());
     assert!(expand_c0_prepared_tactic_source_at(&wrong, &imports, 1, column).is_err());
     // Opened headers remain lock dependencies even when their bytes do not
@@ -565,7 +565,7 @@ fn userspace_and_kernel_imports_have_distinct_identity_for_identical_c() {
         fs::read(project.0.join(".click/main/main.c.i")).unwrap()
     );
     assert_ne!(kernel[0].identity(), userspace[0].identity());
-    let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); solve(); }";
+    let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; }";
     assert!(verify_c0_prepared_sources(proof, &kernel).is_err());
     verify_c0_prepared_sources(proof, &userspace).unwrap();
 }
@@ -731,7 +731,7 @@ fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
         verified[0].import_identity.as_deref(),
         Some(imports[0].identity())
     );
-    let offset = proof.find("execute();").unwrap();
+    let offset = proof.find("step_until(function.exit);").unwrap();
     let line = proof[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -781,7 +781,7 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
         implementation.import_identity.as_deref(),
         Some(imports[0].identity())
     );
-    let offset = proof.rfind("execute();").unwrap();
+    let offset = proof.rfind("step_until(function.exit);").unwrap();
     let line = proof[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -1435,9 +1435,6 @@ int32 label_fits(const char* label) {
     let n: uint64;
     views click::cstr::cstr_at(label, n);
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    solve();
 }
 "#;
 

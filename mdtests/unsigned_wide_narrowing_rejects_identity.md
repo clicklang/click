@@ -8,7 +8,7 @@ unsigned int narrow(unsigned long x) { return x; }
 verifying "narrow.c";
 unsigned int narrow(unsigned long x) {
     ensures result == x;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

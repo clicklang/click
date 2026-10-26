@@ -10,7 +10,4 @@ void FeeFrac::operator+=(const FeeFrac& other) {
     requires this->size <= 1073741823;
     ensures this->fee == old(this->fee) + old(this->fee);
     ensures this->size == old(this->size) + old(this->size);
-} by {
-    execute();
-    solve();
 }

@@ -15,8 +15,6 @@ int32 execute_until_backward(int32 x) {
     ensures result == x by {
         step();
         step_until(region(0));
-        execute();
-        solve();
     }
 }
 ```

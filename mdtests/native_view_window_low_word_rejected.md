@@ -12,7 +12,7 @@ void window(const uint8* p, uint64 held, uint64 start, uint64 requested) {
     requires (uint32)requested <= (uint32)(held - start);
     views p[0u64..held];
     ensures viewable((p + start)[0u64..requested]);
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

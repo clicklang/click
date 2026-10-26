@@ -13,7 +13,7 @@ verifying "an_operation_identity_bound_outside_its_type_is_refused.c";
 uint32 decrement(uint32 x) {
     ensures to_integer(result) == to_integer(x) - 1;
 } by {
-    execute();
+    step_until(function.exit);
     have -1 <= to_integer(old(x)) - 1;
     have to_integer(old(x)) - 1 <= 4294967295;
     arithmetic_certificate rules {

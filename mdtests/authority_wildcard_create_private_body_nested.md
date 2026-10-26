@@ -43,7 +43,7 @@ void relay(int32* pool, int32* p) {
 }
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { execute(); solve(); } else {}
+    branch { step_until(function.exit); solve(); } else {}
     step(); step();
     fold(authority(slot(&pool, _)));
     fold(slot(&pool, p + 1));

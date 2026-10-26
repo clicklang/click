@@ -1015,7 +1015,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    unfold(adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0));
    solve() using { to_integer(adler | (sum2 << 16)) == to_integer(adler) + 65536 * to_integer(sum2); to_integer(adler) == adler_spec_a(old(buf), old((int32)(uint32)len), 1); to_integer(sum2) == adler_spec_b(old(buf), old((int32)(uint32)len), 1, 0); };
   }
-  execute(); solve();
+  step_until(function.exit); solve();
  } else {
   have len <= 5551u64 by solve() using { len < 5552u64; };
   have len <= 9223372036854775807u64 by solve() using { len <= 5551u64; };
@@ -1901,6 +1901,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    }
   }
   step_until(assignment(adler, 39));
-  execute(); solve();
+  step_until(function.exit); solve();
  }
 }

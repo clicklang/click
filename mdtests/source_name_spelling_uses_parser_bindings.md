@@ -33,7 +33,7 @@ void keep(int32* p) {
     owns cell: cell(p);
 } by {
     unfold(cell);
-    execute();
+    step_until(function.exit);
     let cell = fold(cell(p), { marker: 0 });
     solve();
 }

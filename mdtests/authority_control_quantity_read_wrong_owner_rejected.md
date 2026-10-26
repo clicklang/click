@@ -17,8 +17,6 @@ void inspect(struct pool* pool, struct pool* other) {
     owns control(other);
     requires pool != other;
     owns pool->capacity of slot(pool);
-} by {
-    execute(); solve();
 }
 ```
 

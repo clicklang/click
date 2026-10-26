@@ -26,7 +26,7 @@ resource frame(p: struct node*) {
         },
     }
 }
-void helper(struct node *q) { owns q->tag; } by { execute(); solve(); }
+void helper(struct node *q) { owns q->tag; }
 void probe(struct node *p, struct node *q) {
     owns q->tag; owns q->next; owns q->other;
     consumes a: frame(p);
@@ -47,7 +47,6 @@ void probe(struct node *p, struct node *q) {
                     p == id;
                 };
             }
-            execute(); solve();
         },
     }
 }

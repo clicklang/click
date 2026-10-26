@@ -64,7 +64,7 @@ void run_frame(struct link* x, struct link* y, struct link* z, int32* out) {
     ensures out[0] == 1;
 } by {
     unfold(f);
-    execute();
+    step_until(function.exit);
     let g = fold(frame_at(z), { model: old(f.model) }, {});
     solve();
 }

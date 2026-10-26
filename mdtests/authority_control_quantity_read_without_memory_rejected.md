@@ -16,8 +16,6 @@ verifying "quantity.c";
 void inspect(struct pool* pool) {
     owns authority(slot(pool));
     owns pool->capacity of slot(pool);
-} by {
-    execute(); solve();
 }
 ```
 

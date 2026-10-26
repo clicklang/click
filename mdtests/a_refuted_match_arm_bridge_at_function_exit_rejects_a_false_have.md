@@ -21,7 +21,7 @@ int id(int x) {
     ensures result == x;
     ensures r.model == old(r.model);
 } by {
-    execute();
+    step_until(function.exit);
     match r.model ensuring { fact result == x; } {
         Tag::A => { have x == x + 1 by solve(); contradiction(r.model == Tag::A); },
         Tag::B => { },

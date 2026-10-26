@@ -1,9 +1,10 @@
-# `execute()` in a proof `if` arm names the failing alias case
+# The implicit tail in a proof `if` arm names the failing alias case
 
 The negative of
-`mdtests/execute_in_a_proof_if_arm_splits_a_loads_alias_cases.md`. In the case
-`v == 0` the read is the `9` stored through `buf[v]`, so the claim fails there
-as an ordinary unclosed goal naming that case.
+`mdtests/execute_in_a_proof_if_arm_splits_a_loads_alias_cases.md`. The tail
+that ends the proof `if` arm splits the read `buf[0]` into its alias cases. In
+the case `v == 0` the read is the `9` stored through `buf[v]`, so the claim
+fails there as an ordinary unclosed goal naming that case.
 
 ```c filename=execute_in_a_proof_if_arm_names_the_failing_alias_case.c
 int32 f(int32 u, int32 v) {
@@ -36,15 +37,12 @@ int32 f(int32 u, int32 v) {
     step();
     step();
     if buf == 0 {
-        execute();
-        solve();
+        step_until(function.exit);
     } else {
         step();
         step();
         step();
         step();
-        execute();
-        solve();
     }
 }
 ```

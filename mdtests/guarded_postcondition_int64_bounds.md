@@ -64,8 +64,6 @@ int64 bump(struct box* b) {
 } by {
     let { total: n } = unfold(st);
     let st = fold(counted(b), { total: n + 1 });
-    execute();
-    solve();
 }
 
 int64 caller(struct box* b) {
@@ -75,8 +73,6 @@ int64 caller(struct box* b) {
 } by {
     step();
     step(bump, { st: st });
-    execute();
-    solve();
 }
 ```
 

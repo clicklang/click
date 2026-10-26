@@ -38,7 +38,7 @@ void arm(int32* cell) {
     owns cell[0..1];
     produces Hooked(cell);
 } by {
-    execute();
+    step_until(function.exit);
     fold(Hooked(cell));
     solve();
 }

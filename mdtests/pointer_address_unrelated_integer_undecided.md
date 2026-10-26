@@ -21,7 +21,7 @@ verifying "pointer_address_unrelated_integer_undecided.c";
 int32 compare_with_integer(struct node* node, unsigned long word) {
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 ```

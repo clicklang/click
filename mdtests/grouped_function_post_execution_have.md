@@ -1,9 +1,10 @@
 # Grouped proof facts after execution
 
-`have` can establish a pure fact after execution reaches function exit. Its
-scoped pure proof may open an existential assumption and provide existential
-witnesses without applying those goal-specific steps to the other contract
-claims.
+`have` can establish a pure fact after `step_until(function.exit)` reaches
+function exit, on the one path of `identity` and in each arm of a `branch` at
+the C `if` of `branch_value`. Its scoped pure proof may open an existential
+assumption and provide existential witnesses without applying those
+goal-specific steps to the other contract claims.
 
 ```c filename=grouped_post_have.c
 int32 identity(int32 x) {
@@ -38,7 +39,7 @@ int32 identity(int32 x) {
     ensures result_witness: exists (j: int32) { j == result };
     ensures chosen_witness: exists (j: int32) { j == x };
 } by {
-    execute();
+    step_until(function.exit);
     have exists (j: int32) { j == result } by {
         witness { j: result };
         solve();
@@ -48,15 +49,18 @@ int32 identity(int32 x) {
         witness { j: k };
         solve();
     }
-    solve();
 }
 
 int32 branch_value(int32 flag) {
     ensures result >= 0;
 } by {
-    execute();
-    have result >= 0;
-    solve();
+    branch {
+        step_until(function.exit);
+        have result >= 0;
+    } else {
+        step_until(function.exit);
+        have result >= 0;
+    }
 }
 
 int32 current_have(int32 x) {

@@ -38,8 +38,6 @@ void box_destroy(struct box* box) {
     produces *box;
 } by {
     unfold(boxed(box));
-    execute();
-    solve();
 }
 
 void box_release(struct box* box, struct box* other, int32* q, int32 n) {
@@ -49,9 +47,6 @@ void box_release(struct box* box, struct box* other, int32* q, int32 n) {
     views q[0..1];
     requires n == 1;
     requires separate(memory(q[0..1]), memory(box->data[0..n]));
-} by {
-    execute();
-    solve();
 }
 ```
 

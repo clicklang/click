@@ -2,7 +2,7 @@
 
 The negative of
 [`a_condition_reaching_one_value_along_two_paths_splits_into_them.md`](a_condition_reaching_one_value_along_two_paths_splits_into_them.md).
-`execute()` splits `x > 0 && y > 0` into its three paths and continues each.
+The implicit tail splits `x > 0 && y > 0` into its three paths and continues each.
 The claim that the function returns `2` unless `y < 0` fails on the path where
 both comparisons hold, which returns `1` with `y > 0`, and that path is an
 ordinary unclosed goal.

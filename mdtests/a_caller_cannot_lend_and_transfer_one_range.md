@@ -37,15 +37,15 @@ void f(int32 a[], int32 n) {
     owns g[0..1];
     ensures a[0] == 5;
     ensures g[0] == 1;
-} by { execute(); solve(); }
+}
 
 void caller() {
     requires g[0] == 5;
     owns g[0..4];
     ensures g[0] == 5;
-} by { execute(); have g[0] == 1; solve(); }
+} by { step_until(function.exit); have g[0] == 1; solve(); }
 ```
 
 ```expect
-fail: `caller.contract` tactic 0: `execute()` could not verify C operation: stable-view a required resource overlaps a live borrowed footprint refused during planning; selected resource `owns g[0..4]`
+fail: `caller.contract` tactic 0: `step()` could not verify C operation: stable-view a required resource overlaps a live borrowed footprint refused during planning; selected resource `owns g[0..4]`
 ```

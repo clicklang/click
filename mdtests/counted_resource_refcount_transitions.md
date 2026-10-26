@@ -51,8 +51,6 @@ struct object* object_retain(struct object* obj) {
         step();
         fold(object_ref(obj));
     }
-    execute();
-    solve();
 }
 
 void object_release_nonfinal(struct object* obj) {
@@ -67,8 +65,6 @@ void object_release_nonfinal(struct object* obj) {
         have to_integer(obj->refs - 1) >= 1;
         step();
     }
-    execute();
-    solve();
 }
 ```
 

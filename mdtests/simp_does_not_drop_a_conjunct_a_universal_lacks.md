@@ -17,7 +17,7 @@ void keep(uint8* dst) {
     requires (0u64..4u64).all(|k| { defined(dst[k]) });
     ensures (0u64..4u64).all(|k| { dst[k] == 7u8 });
 } by {
-    execute();
+    step_until(function.exit);
     assumption();
     solve();
 }

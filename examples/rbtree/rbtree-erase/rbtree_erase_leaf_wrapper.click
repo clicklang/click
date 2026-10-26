@@ -98,7 +98,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                             rewrite(remaining.model == Context::Top); unfold(plug(Context::Top, RbTree::Empty));
                             unfold(is_rb_root(RbTree::Empty)); unfold(is_rb(RbTree::Empty)); unfold(rb_root_black(RbTree::Empty)); normalize();
                         }
-                        open(erase_callbacks(augment)) { execute(); }
+                        open(erase_callbacks(augment)) { step_until(function.exit); }
                         let hole = fold(rb_at(0), { model: RbTree::Empty });
                         have ctx_consistent(remaining.model, hole.model, 0) == 1;
                         solve();
@@ -116,7 +116,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         have parent_model != 0;
                         let remaining = fold(ctx_at(0, root), { model: Context::Left(pid, gp, pc_model, sibling_model, above_model) }, { up: above });
                         have remaining.model == old(up.model) by { rewrite(remaining.model == Context::Left(pid, gp, pc_model, sibling_model, above_model)); assumption(); }
-                        open(erase_callbacks(augment)) { execute(); }
+                        open(erase_callbacks(augment)) { step_until(function.exit); }
                         let hole = fold(rb_at(0), { model: RbTree::Empty });
                         have ctx_rb(remaining.model, Nat::Succ(Nat::Zero), Color::Black) == 1 by {
                             rewrite(remaining.model == old(up.model)); assumption();
@@ -138,7 +138,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         let { sibling: sibling, up: above } = unfold(remaining);
                         let remaining = fold(ctx_at(0, root), { model: Context::Right(pid, gp, pc_model, sibling_model, above_model) }, { up: above });
                         have remaining.model == old(up.model) by { rewrite(remaining.model == Context::Right(pid, gp, pc_model, sibling_model, above_model)); assumption(); }
-                        open(erase_callbacks(augment)) { execute(); }
+                        open(erase_callbacks(augment)) { step_until(function.exit); }
                         let hole = fold(rb_at(0), { model: RbTree::Empty });
                         have ctx_rb(remaining.model, Nat::Succ(Nat::Zero), Color::Black) == 1 by {
                             rewrite(remaining.model == old(up.model)); assumption();
@@ -176,7 +176,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                 apply(plug_rb_from_ctx_rb(old(up.model), RbTree::Empty));
                 have is_rb_root(plug(remaining.model, RbTree::Empty)) == 1 by { rewrite(remaining.model == old(up.model)); assumption(); }
                 have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == plug(remaining.model, RbTree::Empty) by { rewrite(remaining.model == old(up.model)); assumption(); }
-                open(erase_callbacks(augment)) { execute(); }
+                open(erase_callbacks(augment)) { step_until(function.exit); }
                 let hole = fold(rb_at(0), { model: RbTree::Empty });
                 have ctx_consistent(remaining.model, hole.model, 0) == 1 by {
                     rewrite(remaining.model == old(up.model)); rewrite(hole.model == RbTree::Empty); assumption();
@@ -229,7 +229,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
         step(); // Select the nonnull rebalance branch.
         mark repair;
         let { whole: whole } = step(____rb_erase_color, { c: deficit });
-        execute(); solve();
+        step_until(function.exit);
     } else {
         have is_rb_root(plug(deficit.model, RbTree::Empty)) == 1;
         have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == plug(deficit.model, RbTree::Empty);
@@ -243,6 +243,6 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
         }
         have is_rb_root(whole.model) == 1;
         have rb_tree_parent_consistent(whole.model) == 1;
-        execute(); solve();
+        step_until(function.exit);
     }
 }

@@ -24,7 +24,7 @@ void update(struct node* p, const struct callbacks* cb) {
     unfold(node_cell(p));
     open(callback_table(cb)) {
         have separate(memory(p->value), memory(cb->invoke));
-        execute();
+        step_until(function.exit);
     }
     fold(node_cell(p));
     solve();

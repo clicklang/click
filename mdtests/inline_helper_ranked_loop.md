@@ -59,9 +59,6 @@ int32 drain_to_zero(int32 value) {
 int32 run(int32 n) {
     requires n >= 0;
     ensures result == 0;
-} by {
-    execute();
-    solve();
 }
 ```
 

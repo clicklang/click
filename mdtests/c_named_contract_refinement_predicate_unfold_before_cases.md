@@ -36,7 +36,7 @@ void clear_if_active(int32 active, int32* cell) {
 } by {
     if active != 0 {
         unfold(optional_cell(active, cell));
-        execute();
+        step_until(function.exit);
         fold(optional_cell(active, cell));
         solve();
     } else {

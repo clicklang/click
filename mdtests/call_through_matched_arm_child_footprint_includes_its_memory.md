@@ -62,13 +62,13 @@ void overwrite(struct node* p) {
     match s.model {
         Slot::Empty => {
             unfold(s);
-            execute();
+            step_until(function.exit);
             let s = fold(slot_at(p), { model: Slot::Empty });
             solve();
         },
         Slot::Full(v) => {
             let { rest: r } = unfold(s);
-            execute();
+            step_until(function.exit);
             let s = fold(slot_at(p), { model: Slot::Full(v) }, { rest: r });
             solve();
         },

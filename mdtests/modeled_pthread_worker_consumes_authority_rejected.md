@@ -24,7 +24,7 @@ authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     consumes authority(ticket(argument));
     requires count(ticket(argument)) == 0;
-} by { unfold(authority(ticket(argument))); execute(); solve(); }
+} by { unfold(authority(ticket(argument))); }
 int32 run(void* p) {
     consumes authority(ticket(p));
     requires count(ticket(p)) == 0;

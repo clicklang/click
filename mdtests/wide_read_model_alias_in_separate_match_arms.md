@@ -53,7 +53,7 @@ void copy_tag(struct node* parent, struct node* sibling) {
     owns sibling->tag;
     ensures sibling->tag == old(parent->tag);
     ensures parent->tag == 1;
-} by { execute(); solve(); }
+}
 void inspect(struct node* parent, int32 side) {
     consumes tree_context: parent_at(parent);
     requires parent == parent_identity(tree_context.model);
@@ -125,7 +125,6 @@ void inspect(struct node* parent, int32 side) {
             }
         }
     }
-    execute(); solve();
 }
 ```
 

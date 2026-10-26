@@ -21,11 +21,11 @@ verifying "c_pointer_distance_rejects_distinct_objects.c";
 int32 distance(int32* left, int32* right) {
     requires defined(right - left);
     ensures result == (right - left);
-} by { execute(); solve(); }
+}
 
 int32 distance_locals() {
     ensures result == result;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

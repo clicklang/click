@@ -26,10 +26,10 @@ void bump(int32* pool, int32* p) {
     owns member: ticket(pool, p);
     ensures member.model == old(member.model);
     ensures p[0] == 7;
-} by { unfold(member); step(); fold(member); execute(); solve(); }
+} by { unfold(member); step(); fold(member); step_until(function.exit); solve(); }
 int32 run() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { execute(); solve(); } else {}
+    branch { step_until(function.exit); solve(); } else {}
     step(); step();
     fold(authority(ticket(&pool, _)));
     let first = fold(ticket(&pool, p), { model: List<int32>::Cons(1, List<int32>::Nil) });
@@ -41,7 +41,7 @@ int32 run() { ensures result == 0 or result == 9; } by {
     have count(ticket(&pool, _)) == 2 by solve();
     unfold(first); unfold(second);
     unfold(authority(ticket(&pool, _)));
-    execute(); solve();
+    step_until(function.exit); solve();
 }
 ```
 

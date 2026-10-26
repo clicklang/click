@@ -112,9 +112,6 @@ void clobber(struct node* old, struct node* new) {
     owns new->augmented;
     ensures 0 <= new->augmented;
     ensures new->augmented <= 1000;
-} by {
-    execute();
-    solve();
 }
 
 struct node* rotate_left(
@@ -206,8 +203,6 @@ struct node* rotate_clobber(struct node* node) {
     ensures result->augmented <= 1000;
 } by {
     let { rotated: rotated } = step(rotate_left, { l: a, r: b });
-    execute();
-    solve();
 }
 
 struct node* rotate_reset(struct node* node) {
@@ -233,8 +228,6 @@ struct node* rotate_reset(struct node* node) {
     ensures result->augmented <= 1000;
 } by {
     let { rotated: rotated } = step(rotate_left, { l: a, r: b });
-    execute();
-    solve();
 }
 ```
 

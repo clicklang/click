@@ -71,7 +71,9 @@ fn charon_loop_phase_expands_by_label_over_the_prepared_program() {
         // Both phases now retain arithmetic certificates without adding an
         // import. Keep checking that only the selected phase changes.
         let body = expanded.as_str();
-        let insertion = sidecar.find("}\n    execute(); solve();").unwrap();
+        let insertion = sidecar
+            .find("}\n    step_until(function.exit); solve();")
+            .unwrap();
         assert!(body.starts_with(&sidecar[..insertion]), "{expanded}");
         assert!(body.ends_with(&sidecar[insertion..]), "{expanded}");
         assert!(

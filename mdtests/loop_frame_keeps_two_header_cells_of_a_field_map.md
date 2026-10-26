@@ -55,8 +55,6 @@ void mark_tail(struct arena* arena, int32 end) {
             close_invariants();
         }
     }
-    execute();
-    solve();
 }
 ```
 

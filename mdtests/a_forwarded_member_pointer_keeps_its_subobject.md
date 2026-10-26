@@ -17,18 +17,18 @@ int32 reach(struct Pair* p, int32* q) {
     views p->first;
     views p->second;
     ensures result == p->second;
-} by { execute(); solve(); }
+}
 int32 forward(struct Pair* p, int32* q) {
     views q[0..1];
     views p->first;
     views p->second;
     ensures result == p->second;
-} by { execute(); solve(); }
+}
 int32 top(struct Pair* p) {
     views p->first;
     views p->second;
     ensures result == p->second;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

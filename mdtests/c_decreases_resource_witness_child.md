@@ -40,7 +40,7 @@ uint32 count_nodes(struct node* node) {
     owns marked_list(node);
 } by {
     if node == 0 {
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         unfold(marked_list(node));

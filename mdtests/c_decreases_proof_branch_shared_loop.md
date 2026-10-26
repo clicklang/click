@@ -29,7 +29,7 @@ int32 count_to_bound(int32 n) {
             invariant i == 0;
             invariant n < 0;
         }
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         have n >= 0;
@@ -39,7 +39,7 @@ int32 count_to_bound(int32 n) {
             initialize by solve();
             preserve by { step(); close_invariants(); }
         }
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

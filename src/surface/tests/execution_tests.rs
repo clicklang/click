@@ -16,7 +16,7 @@ fn generic_result_type_fixture() -> (&'static str, &'static str) {
             ensures select(p, result) == p;
             ensures result == p;
         } by {
-            execute();
+            step_until(function.exit);
             unfold(select(p, result));
             normalize();
             solve();
@@ -87,7 +87,7 @@ fn authority_establishes_and_retires_empty_stack_population() {
             step();
             fold(authority(reference(&x)));
             unfold(authority(reference(&x)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -123,7 +123,7 @@ fn authority_conserves_one_local_member() {
             unfold(reference(&x));
             have count(reference(&x)) == 0 by { solve(); }
             unfold(authority(reference(&x)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -153,7 +153,7 @@ fn authority_cannot_reestablish_after_retirement() {
             fold(authority(reference(&x)));
             unfold(authority(reference(&x)));
             fold(authority(reference(&x)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -185,7 +185,7 @@ fn authority_rejects_automatic_storage_end_with_live_authority() {
         } by {
             step();
             fold(authority(reference(&x)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -213,7 +213,7 @@ fn authority_imported_pointer_without_live_storage_cannot_establish_population()
             ensures result == 7;
         } by {
             fold(authority(reference(p)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -246,7 +246,7 @@ fn authority_cannot_create_untracked_member_before_establishment() {
             step();
             fold(reference(&x));
             fold(authority(reference(&x)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -279,7 +279,7 @@ fn authority_rejects_double_member_consumption() {
             unfold(reference(&x));
             unfold(reference(&x));
             unfold(authority(reference(&x)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -308,7 +308,7 @@ fn authority_cannot_retire_with_live_member() {
             fold(authority(reference(&x)));
             fold(reference(&x));
             unfold(authority(reference(&x)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -337,7 +337,7 @@ fn authority_count_requires_owned_authority() {
             ensures result == 7;
         } by {
             have count(reference(p)) == 0 by { solve(); }
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -358,9 +358,6 @@ fn authority_count_of_a_population_without_authority_is_refused() {
 
         int32 value(int32* p) {
             ensures count(reference(p)) == 0;
-        } by {
-            execute();
-            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -385,9 +382,6 @@ fn authority_plain_c_helper_call_follows_the_ordinary_call_rules() {
 
         int32 value() {
             ensures result == 7;
-        } by {
-            execute();
-            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -416,16 +410,10 @@ fn authority_calls_a_verified_helper_without_population_effects() {
 
         int32 helper() {
             ensures result == 7;
-        } by {
-            execute();
-            solve();
         }
 
         int32 value() {
             ensures result == 7;
-        } by {
-            execute();
-            solve();
         }
     "#;
     verify_c0_project(
@@ -453,9 +441,6 @@ fn authority_helper_returns_the_same_authority_and_member() {
             owns authority(reference(p));
             owns reference(p);
             ensures result == 7;
-        } by {
-            execute();
-            solve();
         }
 
         int32 value() {
@@ -469,7 +454,7 @@ fn authority_helper_returns_the_same_authority_and_member() {
             step();
             unfold(reference(&x));
             unfold(authority(reference(&x)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -500,7 +485,7 @@ fn authority_helper_consumes_one_member_and_returns_authority() {
             ensures result == 7;
         } by {
             unfold(reference(p));
-            execute();
+            step_until(function.exit);
             solve();
         }
 
@@ -515,7 +500,7 @@ fn authority_helper_consumes_one_member_and_returns_authority() {
             step();
             have count(reference(&x)) == 0 by { solve(); }
             unfold(authority(reference(&x)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -546,7 +531,7 @@ fn authority_helper_produces_one_member_and_returns_authority() {
             ensures result == 7;
         } by {
             fold(reference(p));
-            execute();
+            step_until(function.exit);
             solve();
         }
 
@@ -561,7 +546,7 @@ fn authority_helper_produces_one_member_and_returns_authority() {
             have count(reference(&x)) == 1 by { solve(); }
             unfold(reference(&x));
             unfold(authority(reference(&x)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -582,9 +567,6 @@ fn authority_helper_cannot_claim_creation_without_folding_member() {
             owns authority(reference(p));
             produces reference(p);
             ensures result == 7;
-        } by {
-            execute();
-            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -611,7 +593,7 @@ fn authority_helper_cannot_birth_imported_member_twice() {
         } by {
             fold(reference(p));
             fold(reference(p));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -641,14 +623,11 @@ fn authority_creating_helper_requires_caller_authority() {
             ensures result == 7;
         } by {
             fold(reference(p));
-            execute();
+            step_until(function.exit);
             solve();
         }
         int32 value() {
             ensures result == 7;
-        } by {
-            execute();
-            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -671,7 +650,7 @@ fn authority_helper_cannot_create_private_memory_from_opaque_authority() {
             ensures result == 7;
         } by {
             fold(reference(p));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -696,9 +675,6 @@ fn authority_helper_cannot_claim_consumption_without_spending_member() {
             owns authority(reference(p));
             consumes reference(p);
             ensures result == 7;
-        } by {
-            execute();
-            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -722,7 +698,7 @@ fn authority_helper_cannot_spend_imported_member_twice() {
         } by {
             unfold(reference(p));
             unfold(reference(p));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -752,7 +728,7 @@ fn authority_consuming_helper_requires_caller_member() {
             ensures result == 7;
         } by {
             unfold(reference(p));
-            execute();
+            step_until(function.exit);
             solve();
         }
         int32 value() {
@@ -760,7 +736,7 @@ fn authority_consuming_helper_requires_caller_member() {
         } by {
             step();
             fold(authority(reference(&x)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -813,9 +789,6 @@ fn bounded_assignment_preserves_successor_definedness() {
                 requires x >= 0;
                 requires x <= 2147483645;
                 ensures to_integer(result) == to_integer((x + 1) + 1);
-            } by {
-                execute();
-                solve();
             }
         "#;
 
@@ -953,9 +926,6 @@ fn early_return_completes_without_a_body_rerun() {
 
             int32 clamp(int32 x) {
                 ensures result >= 0;
-            } by {
-                execute();
-                solve();
             }
         "#;
 
@@ -1031,9 +1001,6 @@ fn malloc_null_check_completes_without_a_body_rerun() {
 
             int32 alloc_then_free() {
                 ensures result == -1 or result == 0;
-            } by {
-                execute();
-                solve();
             }
         "#;
 
@@ -1063,10 +1030,11 @@ fn post_execution_case_split_completes_without_a_body_rerun() {
             int32 clamp_positive(int32 a) {
                 ensures result >= 0;
             } by {
-                execute();
-                if a == 5 {
+                if a > 0 {
+                    step_until(function.exit);
                     solve();
                 } else {
+                    step_until(function.exit);
                     solve();
                 }
             }
@@ -1222,8 +1190,8 @@ fn linear_execute_checks_the_branch_arm_refusal_program() {
     let mdtest = crate::cli::parse_mdtest(std::path::Path::new("branch-arm.md"), markdown).unwrap();
     let source = mdtest.click_source.as_deref().unwrap();
     let linear = source.replace(
-        "    branch {\n        execute();\n    } else {\n        execute();\n    }",
-        "    execute();",
+        "    branch {\n        step();\n        step();\n    } else {}\n",
+        "",
     );
     assert_ne!(
         linear, source,
@@ -1235,7 +1203,7 @@ fn linear_execute_checks_the_branch_arm_refusal_program() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c0_sources(&linear, &sources)
-        .expect("linear execution may follow the same C arms into their continuation");
+        .expect("the implicit tail may follow the same C arms into their continuation");
 }
 
 #[test]
@@ -1251,9 +1219,9 @@ fn execute_in_loop_preservation_keeps_the_function_exit_miss() {
                 decreases more;
                 invariant 0 <= more;
                 initialize by solve();
-                preserve by { execute(); }
+                preserve by { step_until(function.exit); }
             }
-            execute();
+            step_until(function.exit);
         }
     "#;
     let error = verify_c0_sources(source, &[("countdown.c", c)])
@@ -1261,7 +1229,7 @@ fn execute_in_loop_preservation_keeps_the_function_exit_miss() {
     assert!(
         error
             .message()
-            .contains("`execute()` found no checked path from this frontier to function exit"),
+            .contains("`step_until` found no checked step from this frontier"),
         "{}",
         error.message()
     );
@@ -1289,9 +1257,6 @@ fn bounded_execute_resumes_and_explores_symbolic_branches() {
                 ensures result == 1 or result == 2 by {
                     step();
                     step();
-                    execute();
-                    solve();
-                    solve();
                 }
             }
         "#;
@@ -1673,7 +1638,7 @@ fn observed_cursor_facts_produce_checkable_surface_certificates() {
         } by {
             observe(input_cursor(owner));
             observe(readable_input(owner->data, owner->len));
-            execute();
+            step_until(function.exit);
             solve();
         }
 
@@ -1687,7 +1652,7 @@ fn observed_cursor_facts_produce_checkable_surface_certificates() {
         } by {
             unfold(input_cursor(owner));
             observe(readable_input(owner->data, owner->len));
-            execute();
+            step_until(function.exit);
             have 0 <= owner->pos by solve();
             have owner->pos <= owner->len by solve();
             have separate(
@@ -1865,7 +1830,7 @@ fn expanded_read_step_uses_contextual_range_separation() {
             unfold(owned_string(owner));
             have 0 <= owner->len - 1 by solve();
             have owner->len - 1 < owner->len by solve();
-            execute();
+            step_until(function.exit);
             have terminated_at(owner->data, owner->len) by {
                 unfold(terminated_at);
                 solve();
@@ -1883,7 +1848,7 @@ fn expanded_read_step_uses_contextual_range_separation() {
         }
     "#;
     let execute_offset = click_source
-        .find("execute()")
+        .find("step_until(function.exit)")
         .expect("proof should contain execute_rest");
     let line = click_source[..execute_offset]
         .bytes()
@@ -1909,7 +1874,7 @@ fn expanded_read_step_uses_contextual_range_separation() {
     // Whether the certificate defers a smart tactic is read from the checked
     // runs' events, not inferred from a tight smart-tactic clock: the
     // expanded proof runs exactly the original's smart tactics less the
-    // expanded `execute()`.
+    // expanded `step_until(function.exit)`.
     let smart_tactics = |source: &str| {
         let (verified, events) = crate::instrumentation::collect(|| {
             verify_c0_sources(source, &[("owned_string_pop.c", c_source)])
@@ -1929,10 +1894,10 @@ fn expanded_read_step_uses_contextual_range_separation() {
     };
     let mut remaining = smart_tactics(click_source);
     assert!(
-        remaining.iter().any(|name| name == "execute"),
-        "the original proof runs its smart `execute()`: {remaining:?}"
+        remaining.iter().any(|name| name == "step_until"),
+        "the original proof runs its smart `step_until`: {remaining:?}"
     );
-    remaining.retain(|name| name != "execute");
+    remaining.retain(|name| name != "step_until");
     assert_eq!(
         smart_tactics(&expanded),
         remaining,
@@ -1958,7 +1923,7 @@ fn decrement_contract_checks_nonnegative_and_equality_certificates() {
             have 0 <= to_integer(value - 1) by solve();
             have to_integer(value - 1) < to_integer(value) by solve();
             have to_integer(value - 1) == to_integer(count - 1) by solve();
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -1994,14 +1959,14 @@ fn branch_continuation_tactics_are_timed_as_source_operations() {
         } by {
             step();
             branch {
-                execute();
+                step_until(function.exit);
                 solve();
             } else {}
             step();
             have x == a by {
                 solve();
             }
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -2031,7 +1996,7 @@ fn implicit_contract_closer_is_not_a_profile_source_site() {
     let c_source = "int32 value(void) { return 7; }";
     let click_source = r#"
         verifying "value.c";
-        int32 value() { ensures result == 7; } by { execute(); }
+        int32 value() { ensures result == 7; } by { step_until(function.exit); }
     "#;
     let (verified, events) = crate::instrumentation::collect(|| {
         verify_c0_sources(click_source, &[("value.c", c_source)])
@@ -2046,14 +2011,18 @@ fn implicit_contract_closer_is_not_a_profile_source_site() {
             _ => None,
         })
         .collect::<Vec<_>>();
-    assert!(timed.iter().any(|tactic| tactic.tactic_name == "execute"));
+    assert!(
+        timed
+            .iter()
+            .any(|tactic| tactic.tactic_name == "step_until")
+    );
     assert!(
         timed.iter().all(|tactic| tactic.source_index != usize::MAX),
         "generated closers cannot be selected in the written source: {timed:?}"
     );
 }
 
-/// `execute()` runs a symbolic `switch` on the checked `Proof` itself: the
+/// The implicit tail runs a symbolic `switch` on the checked `Proof` itself: the
 /// statement's arms are path cases, split on the condition that tells them
 /// apart.
 #[test]
@@ -2080,9 +2049,6 @@ fn execute_splits_a_symbolic_switch_on_the_proof() {
 
         int32 switch_break(int32 kind) {
             ensures result == 10 or result == 20 or result == 30;
-        } by {
-            execute();
-            solve();
         }
     "#;
     // The whole verification runs on one thread, so the counter it reads is
@@ -2099,7 +2065,7 @@ fn execute_splits_a_symbolic_switch_on_the_proof() {
 }
 
 /// A short-circuit condition is false along two checked paths, so a C
-/// `branch` cannot split it directly. `execute()` first splits the checked
+/// `branch` cannot split it directly. The implicit tail first splits the checked
 /// `Proof` on the condition that tells those paths apart.
 #[test]
 fn execute_splits_a_short_circuit_condition_on_the_proof() {
@@ -2116,9 +2082,6 @@ fn execute_splits_a_short_circuit_condition_on_the_proof() {
 
         int32 both_positive(int32 a, int32 b) {
             ensures result == 0 or result == 1;
-        } by {
-            execute();
-            solve();
         }
     "#;
     std::thread::Builder::new()
@@ -2134,7 +2097,7 @@ fn execute_splits_a_short_circuit_condition_on_the_proof() {
 
 /// A null check on a fresh `malloc` result is an ordinary C branch: the
 /// condition's two paths decide the pending allocation, one per arm, and
-/// `execute()` splits it on the checked `Proof`.
+/// the implicit tail splits it on the checked `Proof`.
 #[test]
 fn execute_branches_on_a_pending_allocation_on_the_proof() {
     let c_source = r#"
@@ -2156,9 +2119,6 @@ fn execute_branches_on_a_pending_allocation_on_the_proof() {
 
         int f() {
             ensures result == 0;
-        } by {
-            execute();
-            solve();
         }
     "#;
     std::thread::Builder::new()
@@ -2193,9 +2153,6 @@ fn execute_walks_a_decided_loop_on_the_proof() {
         int32 count_to(int32 n) {
             requires n == 3;
             ensures result == 3;
-        } by {
-            execute();
-            solve();
         }
     "#;
     std::thread::Builder::new()
@@ -2209,7 +2166,7 @@ fn execute_walks_a_decided_loop_on_the_proof() {
         .unwrap();
 }
 
-/// `execute()` walks a decided loop one checked step at a time on the
+/// The implicit tail walks a decided loop one checked step at a time on the
 /// `Proof`, so a loop that never exits must exhaust a fixed step budget and
 /// name the statement it stands at, rather than run until the work limit.
 #[test]
@@ -2229,9 +2186,6 @@ fn execute_stops_a_loop_that_never_exits_at_its_step_budget() {
 
         int32 spin() {
             ensures result == 0;
-        } by {
-            execute();
-            solve();
         }
     "#;
     std::thread::Builder::new()
@@ -2242,7 +2196,7 @@ fn execute_stops_a_loop_that_never_exits_at_its_step_budget() {
             assert!(
                 error
                     .message()
-                    .contains("`execute` exhausted its 10000-step budget at region("),
+                    .contains("execution exhausted its 10000-step budget at region("),
                 "expected the step budget refusal, got: {}",
                 error.message()
             );
@@ -2252,7 +2206,7 @@ fn execute_stops_a_loop_that_never_exits_at_its_step_budget() {
         .unwrap();
 }
 
-/// `execute_until` shares `execute()`'s search and its step budget, so a
+/// `step_until` shares the implicit tail's search and its step budget, so a
 /// loop that never exits before the target is refused at that budget.
 #[test]
 #[ignore = "nightly: 3s in the parallel gate"]
@@ -2274,7 +2228,7 @@ fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
             ensures result == 1;
         } by {
             step_until(region(3));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -2286,7 +2240,7 @@ fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
             assert!(
                 error
                     .message()
-                    .contains("`execute` exhausted its 10000-step budget at region("),
+                    .contains("execution exhausted its 10000-step budget at region("),
                 "expected the step budget refusal, got: {}",
                 error.message()
             );
@@ -2305,12 +2259,12 @@ fn execute_short_circuit_complements_expand_with_exact_operand_selectors() {
         let click_source = r#"verifying "choose.c";
 int32 choose(int32 a, int32 b) {
     ensures result == 1 or result == 2;
-} by { execute(); solve(); }
+}
 "#;
         let sources = [("choose.c", c_source.as_str())];
         verify_c0_sources(click_source, &sources).unwrap();
         let position =
-            expansion::position_at_offset(click_source, click_source.find("execute()").unwrap());
+            expansion::position_at_offset(click_source, click_source.find("ensures").unwrap());
         let expanded =
             expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
                 .unwrap();
@@ -2336,7 +2290,7 @@ fn struct_pointer_field_constructor_fixture() -> (&'static str, &'static str) {
             requires p->kid == kid;
             ensures Link::Linked(old(p->kid)) == Link::Linked(p->kid)
                 and Link::Linked(p->kid) == Link::Linked(kid);
-        } by { execute(); }
+        }
     "#;
     (source, c_source)
 }
@@ -2380,7 +2334,7 @@ fn simp_keeps_valid_integer_offset_function_goals() {
         void good(uint32 input) {
             ensures plus(to_integer(input)) == to_integer(input) + 1;
             ensures to_integer(input) == to_integer(input) + 0;
-        } by { execute(); solve(); }
+        }
     "#;
     verify_c0_sources(source, &[("offset.c", "void good(uint32 input) {}")])
         .expect("valid function equations and zero offsets remain provable");

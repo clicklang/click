@@ -15,7 +15,7 @@ resource holder(p: int8*) {
 void empty(int8* p) {
     owns root: holder(p);
     ensures root.value == old(root.value);
-} by { let { child: c } = unfold(root); execute(); }
+} by { let { child: c } = unfold(root); }
 ```
 ```expect
 fail: recursive child argument type mismatch

@@ -21,10 +21,10 @@ int32 f(int32 x) {
     ensures result <= 3;
 } by {
     cases {
-        x == 0 => { execute(); solve(); }
-        x == 1 => { execute(); solve(); }
-        x == 2 => { execute(); solve(); }
-        x == 3 => { execute(); solve(); }
+        x == 0 => { }
+        x == 1 => { }
+        x == 2 => { }
+        x == 3 => { }
     }
 }
 ```

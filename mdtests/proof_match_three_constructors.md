@@ -42,7 +42,7 @@ int read(int* p) {
     match c.model {
         Tri::Zero => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell(p), { model: Tri::Zero }, {});
             have tri_code(old(c.model)) == 0 by {
                 rewrite(old(c.model) == Tri::Zero);
@@ -53,7 +53,7 @@ int read(int* p) {
         },
         Tri::One => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell(p), { model: Tri::One }, {});
             have tri_code(old(c.model)) == 1 by {
                 rewrite(old(c.model) == Tri::One);
@@ -64,7 +64,7 @@ int read(int* p) {
         },
         Tri::Other(value) => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell(p), { model: Tri::Other(value) }, {});
             have tri_code(old(c.model)) == value by {
                 rewrite(old(c.model) == Tri::Other(value));

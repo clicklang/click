@@ -245,16 +245,16 @@ verifying "borrow.rs";
 fn add_byte(sum: u32, byte: u8) -> u32 {
     requires sum <= 4294967040u32;
     ensures result == sum + byte as u32;
-} by { execute(); solve(); }
+}
 
 fn times_three(value: u32) -> u32 {
     requires value <= 1431655765u32;
     ensures result == value * 3u32;
-} by { execute(); solve(); }
+}
 
 fn reduce(value: u32) -> u32 {
     ensures result == value % 65521u32;
-} by { execute(); solve(); }
+}
 ```
 
 A Rust source's function contracts require this form. A C-shaped signature
@@ -287,17 +287,11 @@ verifying "borrow.rs";
 fn choose(x: i32) -> i32 {
     requires 0 <= x;
     ensures result == (if x < 7 { x + 1 } else { 7 });
-} by {
-    execute();
-    solve();
 }
 
 fn set_seven(value: &mut i32) {
     owns *value;
     ensures *value == 8;
-} by {
-    execute();
-    solve();
 }
 
 fn update(parent: &mut Pair) -> i32 {
@@ -306,9 +300,6 @@ fn update(parent: &mut Pair) -> i32 {
     ensures parent.left == 8;
     ensures parent.right == old(parent.right);
     ensures result == 8;
-} by {
-    execute();
-    solve();
 }
 
 fn shared_field(parent: &mut Pair) -> i32 {
@@ -316,9 +307,6 @@ fn shared_field(parent: &mut Pair) -> i32 {
     views parent.right;
     ensures parent.left == 7;
     ensures result == old(parent.right);
-} by {
-    execute();
-    solve();
 }
 ```
 
@@ -334,38 +322,38 @@ verifying "borrow.rs";
 
 fn length(bytes: &[u8]) -> usize {
     ensures result == bytes.len();
-} by { execute(); solve(); }
+}
 
 fn read(bytes: &[u8], index: usize) -> u8 {
     requires index < bytes.len();
     views *bytes;
     ensures result == bytes[index];
-} by { execute(); solve(); }
+}
 
 fn write(bytes: &mut [u8], index: usize, value: u8) {
     requires index < bytes.len();
     owns *bytes;
     ensures bytes[index] == value;
-} by { execute(); solve(); }
+}
 
 fn first(bytes: &[u8]) -> u8 {
     requires bytes.len() == 4;
     views bytes[0..4];
     ensures result == bytes[0];
-} by { execute(); solve(); }
+}
 
 fn increment_first(bytes: &mut [u8]) {
     requires bytes.len() == 4;
     requires bytes[0] < 255;
     owns bytes[0..4];
     ensures bytes[0] == old(bytes[0]) + 1;
-} by { execute(); solve(); }
+}
 
 fn empty(bytes: &[u8]) -> bool {
     ensures result == (bytes.len() == 0);
 } by {
-    if bytes.len() == 0 { execute(); solve(); }
-    else { execute(); solve(); }
+    if bytes.len() == 0 { step_until(function.exit); solve(); }
+    else { step_until(function.exit); solve(); }
 }
 ```
 
@@ -475,18 +463,12 @@ impl Drop for Guard {
         ensures self.slot == old(self.slot);
         ensures self.saved == old(self.saved);
         ensures *self.slot == old(self.saved);
-    } by {
-        execute();
-        solve();
     }
 }
 
 fn cleanup(value: &mut i32) {
     owns *value;
     ensures *value == 42;
-} by {
-    execute();
-    solve();
 }
 ```
 
@@ -1512,7 +1494,7 @@ fn grow(s: Shape) -> Shape {
         Shape::Rect(w, h) => Shape::Rect(w, h),
         Shape::Empty => Shape::Empty,
     };
-} by { execute(); solve(); }
+}
 ```
 
 Enum values pass by value as parameters, returns and locals, and are built

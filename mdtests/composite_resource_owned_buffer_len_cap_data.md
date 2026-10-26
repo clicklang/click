@@ -53,13 +53,8 @@ int32 push_one(struct owner* owner, int32 value) {
 
     produces owned_buffer(owner) by {
         unfold(owned_buffer_with_room(owner));
-        execute();
-        have 0 <= owner->len by {
-            solve() using {
-                at(region(6).entry, 0) <= at(region(6).entry, index);
-                at(region(6).entry, index) < at(region(6).entry, owner->cap);
-            };
-        }
+        step_until(function.exit);
+        have 0 <= owner->len;
         have owner->len <= owner->cap;
         have separate(memory(*owner), memory(owner->data[0..owner->cap]));
         fold(owned_buffer(owner));
@@ -67,17 +62,11 @@ int32 push_one(struct owner* owner, int32 value) {
 
     ensures result <= owner->cap by {
         unfold(owned_buffer_with_room(owner));
-        execute();
-        have 0 <= owner->len by {
-            solve() using {
-                at(region(6).entry, 0) <= at(region(6).entry, index);
-                at(region(6).entry, index) < at(region(6).entry, owner->cap);
-            };
-        }
+        step_until(function.exit);
+        have 0 <= owner->len;
         have owner->len <= owner->cap;
         have separate(memory(*owner), memory(owner->data[0..owner->cap]));
         fold(owned_buffer(owner));
-        solve();
     }
 }
 ```

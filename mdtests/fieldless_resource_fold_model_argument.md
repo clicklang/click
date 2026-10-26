@@ -23,7 +23,7 @@ void pack(struct node* p, struct node* id) {
         unfold(tag_at(model_id));
         step();
         fold(tag_at(model_id));
-        execute(); solve();
+        step_until(function.exit); solve();
     }, }
 }
 ```

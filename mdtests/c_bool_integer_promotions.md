@@ -28,22 +28,22 @@ int shift_bool(void) { _Bool b = 1; return b << 1; }
 ```click
 verifying "boolean.c";
 
-int32 add_bool_left() { ensures result == 2; } by { execute(); solve(); }
-int32 add_bool_right() { ensures result == 2; } by { execute(); solve(); }
-int32 subtract_bool_left() { ensures result == 0; } by { execute(); solve(); }
-int32 subtract_bool_right() { ensures result == 2; } by { execute(); solve(); }
-int32 multiply_bool() { ensures result == 3; } by { execute(); solve(); }
-int32 divide_bool() { ensures result == 4; } by { execute(); solve(); }
-int32 remainder_bool() { ensures result == 0; } by { execute(); solve(); }
-int32 compare_bool_left() { ensures result == 1; } by { execute(); solve(); }
-int32 compare_bool_right() { ensures result == 1; } by { execute(); solve(); }
-int32 equal_bool() { ensures result == 1; } by { execute(); solve(); }
-int32 not_equal_bool() { ensures result == 1; } by { execute(); solve(); }
-int32 bitwise_bool() { ensures result == 3; } by { execute(); solve(); }
-int32 bitwise_not_bool() { ensures result == -2; } by { execute(); solve(); }
-uint32 unsigned_bool() { ensures result == 3; } by { execute(); solve(); }
-int64 wide_bool() { ensures result == 3; } by { execute(); solve(); }
-int32 shift_bool() { ensures result == 2; } by { execute(); solve(); }
+int32 add_bool_left() { ensures result == 2; }
+int32 add_bool_right() { ensures result == 2; }
+int32 subtract_bool_left() { ensures result == 0; }
+int32 subtract_bool_right() { ensures result == 2; }
+int32 multiply_bool() { ensures result == 3; }
+int32 divide_bool() { ensures result == 4; }
+int32 remainder_bool() { ensures result == 0; }
+int32 compare_bool_left() { ensures result == 1; }
+int32 compare_bool_right() { ensures result == 1; }
+int32 equal_bool() { ensures result == 1; }
+int32 not_equal_bool() { ensures result == 1; }
+int32 bitwise_bool() { ensures result == 3; }
+int32 bitwise_not_bool() { ensures result == -2; }
+uint32 unsigned_bool() { ensures result == 3; }
+int64 wide_bool() { ensures result == 3; }
+int32 shift_bool() { ensures result == 2; }
 ```
 
 ```expect

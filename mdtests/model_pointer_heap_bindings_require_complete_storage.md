@@ -17,9 +17,9 @@ verifying "heap.c";
 spec enum NodeRef { At(struct node*), }
 resource token() { field model: NodeRef; }
 int32 accept(struct node* p) { produces held: token(); ensures result == 7; ensures held.model == NodeRef::At(p); } by {
-    execute(); let held = fold(token(), { model: NodeRef::At(p) }); solve();
+    step_until(function.exit); let held = fold(token(), { model: NodeRef::At(p) }); solve();
 }
-int32 allocated() { ensures result == 7; } by { execute(); solve(); }
+int32 allocated() { ensures result == 7; }
 ```
 
 ```expect

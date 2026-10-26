@@ -51,19 +51,19 @@ void Boxed::write(int v) {
     ensures after.value == v;
 } by {
     unfold(before);
-    execute();
+    step_until(function.exit);
     let after = fold(cell(this->slot), { value: v });
 }
 void Boxed::set(int v) {
-} by { execute(); solve(); }
+}
 void put(Store& store, int x) {
     ensures held(store) == x;
-} by { execute(); solve(); }
+}
 void through(Boxed& boxed, int x) {
     owns boxed;
     owns state: cell(boxed.slot);
     ensures state.value == x;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

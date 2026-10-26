@@ -16,11 +16,11 @@ unsigned char read_through(unsigned char* p) noexcept { return *pick(p); }
 verifying "observed.cpp";
 uint8* pick(uint8* p) {
     ensures result == p;
-} by { execute(); solve(); }
+}
 uint8 read_through(uint8* p) {
     views p[0..1];
     ensures result == p[0];
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

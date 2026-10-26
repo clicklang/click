@@ -23,11 +23,11 @@ int32* read_unchecked(int32* (*acquire)(), int32* value) {
     if c(cell) != 0 {
         unfold(MaybeCell(c(cell)));
         unfold(Cell(c(cell)));
-        execute();
+        step_until(function.exit);
         fold(Cell(result)); fold(MaybeCell(result)); solve();
     } else {
         unfold(MaybeCell(c(cell)));
-        execute();
+        step_until(function.exit);
         fold(MaybeCell(result)); solve();
     }
 }

@@ -31,7 +31,6 @@ void link(struct node* p, struct node* q) {
     have sibling == q;
     have sibling->left == p;
     have q->left == p by { normalize() using { sibling == q; sibling->left == p; }; }
-    execute(); solve();
 }
 ```
 

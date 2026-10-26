@@ -15,7 +15,7 @@ resource cell(p: int32*) { owns p[0]; }
 int32 probe(int32* p, int32 input) {
     owns cell(p);
     ensures result == input;
-} by { unfold(cell(p)); execute(); fold(cell(p)); solve(); }
+} by { unfold(cell(p)); step_until(function.exit); fold(cell(p)); solve(); }
 ```
 ```expect
 pass

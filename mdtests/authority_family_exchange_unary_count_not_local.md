@@ -12,7 +12,6 @@ void inspect(int32* pool) {
     owns capacity(pool);
 } by {
     have count(capacity(pool)) == 1 by solve();
-    execute(); solve();
 }
 ```
 

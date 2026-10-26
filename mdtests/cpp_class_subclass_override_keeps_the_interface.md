@@ -42,23 +42,23 @@ class Square : Shape {
     function size(this) -> int32 { this->side }
 }
 int Square::area(int scale) const {
-} by { execute(); solve(); }
+}
 class BigSquare : Square {
     function size(this) -> int32 { this->base.side + this->extra }
 }
 int BigSquare::area(int scale) const {
-} by { execute(); solve(); }
+}
 int through_square(const Square& square, int scale) {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(square) and size(square) <= 100;
     ensures to_integer(result) == to_integer(size(square) + scale);
-} by { execute(); solve(); }
+}
 int caller(BigSquare& big, int scale) {
     owns big;
     requires 0 <= scale and scale <= 100;
     requires 0 <= to_integer(big.base.side + big.extra) and to_integer(big.base.side + big.extra) <= 100;
     ensures to_integer(result) == to_integer(big.base.side + big.extra + scale);
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

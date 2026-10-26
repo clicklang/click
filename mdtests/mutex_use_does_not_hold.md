@@ -22,10 +22,10 @@ verifying "mutex_use_does_not_hold.c";
 
 void need_guard(struct holder *holder) {
     owns mutex_guard(&holder->mu);
-} by { execute(); solve(); }
+}
 void inner(struct holder *holder) {
     owns mutex_use(&holder->mu);
-} by { step(need_guard, {}); execute(); solve(); }
+} by { step(need_guard, {}); }
 void keep(struct holder *holder) {
     owns mutex_use(&holder->mu);
 } by {

@@ -1,7 +1,9 @@
 # conditional goto does not discard the jumping path
 
 The cleanup label is reached with `value == 1` on the jump path, so the
-fallthrough path's `value == 2` fact cannot become a fact of their join.
+fallthrough path's `value == 2` fact cannot become a fact of their join. The
+omitted proof's implicit tail splits at the `if`, and the claim fails on the
+jump path.
 
 ```c filename=forward_goto_conditional_wrong_join.c
 int32 conditional_cleanup_wrong_join(int32 failed) {
@@ -20,12 +22,9 @@ verifying "forward_goto_conditional_wrong_join.c";
 
 int32 conditional_cleanup_wrong_join(int32 failed) {
     ensures result == 2;
-} by {
-    execute();
-    normalize();
 }
 ```
 
 ```expect
-fail: `conditional_cleanup_wrong_join.contract` path 0, tactic 1: `normalize` did not prove the current goal `result == 2`
+fail: `ensures result == 2` failed for `conditional_cleanup_wrong_join.ensures_0` path 0: unclosed goal: result == 2; left side evaluated to 1
 ```

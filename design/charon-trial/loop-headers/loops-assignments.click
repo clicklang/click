@@ -11,7 +11,6 @@ fn count(n: i32) -> i32 {
         decreases n - i;
         invariant 0 <= i and i <= n;
     }
-    execute(); solve();
 }
 
 fn accumulate(n: i32, value: i32) -> i32 {
@@ -27,7 +26,6 @@ fn accumulate(n: i32, value: i32) -> i32 {
         invariant 0 <= i and i <= n;
         invariant sum == i;
     }
-    execute(); solve();
 }
 
 fn walk(bytes: &[u8]) -> usize {
@@ -41,5 +39,4 @@ fn walk(bytes: &[u8]) -> usize {
         decreases bytes.len() - i;
         invariant i <= bytes.len();
     }
-    execute(); solve();
 }

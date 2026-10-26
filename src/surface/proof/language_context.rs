@@ -250,8 +250,8 @@ pub(in crate::surface::proof) struct ExecutionProofContext<'a> {
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'a>,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
     /// The source tactic a statement step runs on behalf of, as diagnostics
-    /// name it: `step()` for an explicit step, `execute()` while a smart
-    /// `execute()` advances statement by statement.
+    /// name it: `step()`, for an explicit step and for each step the
+    /// implicit tail takes.
     pub(in crate::surface::proof) step_tactic_name: &'static str,
     /// Shared by every context derived from this proof (tactic-index
     /// re-attribution, loop-bound executions), so deriving one is cheap.

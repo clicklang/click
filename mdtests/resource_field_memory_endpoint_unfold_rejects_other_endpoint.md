@@ -30,7 +30,7 @@ void poke(int32* data, int32 capacity) {
     requires 1 < capacity;
 } by {
     unfold(suffix);
-    execute();
+    step_until(function.exit);
     let suffix = fold(zero_suffix(data, capacity), { start: old(suffix.start) });
     solve();
 }

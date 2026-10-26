@@ -28,7 +28,7 @@ int32 make(int32* p, int32 i) {
     produces bound(p, i);
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     fold(bound(p, i));
     solve();
 }

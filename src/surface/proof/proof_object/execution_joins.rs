@@ -303,7 +303,7 @@ impl<'a> Proof<'a> {
                 None => "its short-circuit paths need an explicit operand selector".to_string(),
             };
             let error = self.step_error(format!(
-                "`branch` cannot split the C `if` at region({statement_index}): {reason}{cases}\nSplit the proof on the facts that tell these paths apart with a proof `if` first; `execute()` makes this split itself.",
+                "`branch` cannot split the C `if` at region({statement_index}): {reason}{cases}\nSplit the proof on the facts that tell these paths apart with a proof `if` first; the implicit tail makes this split itself where the script ends.",
             ));
             return Err(match split_condition {
                 Some(condition) => error.with_path_case_condition(condition),
@@ -3098,11 +3098,11 @@ impl<'a> Proof<'a> {
         )
     }
 
-    /// Charges one statement step of a smart `execute()` against its fixed
+    /// Charges one statement step of the implicit tail against its fixed
     /// step budget. A loop the context decides is walked one iteration at a
     /// time, so a loop that never exits must stop here, naming the statement
     /// it stands at, rather than run until the work limit. `splits` is how
-    /// many C branches this `execute` has split at; each arm runs to function
+    /// many C branches this implicit tail has split at; each arm runs to function
     /// exit, so sequential branches multiply its paths, and the refusal names
     /// the explicit join that keeps them linear.
     pub(in crate::surface::proof) fn charge_execute_step(
@@ -3117,7 +3117,7 @@ impl<'a> Proof<'a> {
                 .current_statement_index()?
                 .map_or_else(String::new, |index| format!(" at region({index})"));
             return Err(self.step_error(format!(
-                "`execute` split at more than {split_limit} C branches{statement}; `execute` runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
+                "the implicit tail split at more than {split_limit} C branches{statement}; it runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
             )));
         }
         if *steps == limit {
@@ -3128,11 +3128,11 @@ impl<'a> Proof<'a> {
                 String::new()
             } else {
                 format!(
-                    " after splitting at {splits} C branches; `execute` runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
+                    " after splitting at {splits} C branches; it runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
                 )
             };
             return Err(self.step_error(format!(
-                "`execute` exhausted its {limit}-step budget{statement}{branches}"
+                "execution exhausted its {limit}-step budget{statement}{branches}"
             )));
         }
         *steps += 1;
@@ -3384,7 +3384,7 @@ impl<'a> Proof<'a> {
 
     /// Splits the proof on `split`, the variants of the enum a Rust `match`
     /// selects among, and runs each arm to function exit: the proof `match`
-    /// a sidecar would write, with `execute()` in every arm. Arms the facts
+    /// a sidecar would write, each arm running to function exit. Arms the facts
     /// rule out are not run. Expansion prints the `match`.
     fn execute_enum_match_to_exit(
         &self,
@@ -3530,7 +3530,7 @@ impl<'a> Proof<'a> {
         )?;
         if proof.facts().contains(&original) || proof.facts().contains(&opposite) {
             return Err(proof.step_error(
-                "`execute` cannot advance after selecting this path condition; use explicit cases and `step()` to expose the remaining obligation",
+                "the implicit tail cannot advance after selecting this path condition; use explicit cases and `step()` to expose the remaining obligation",
             ));
         }
         if original != frozen {

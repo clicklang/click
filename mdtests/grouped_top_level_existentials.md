@@ -18,7 +18,7 @@ int32 identity(int32 x) {
     ensures exists (j: int32) { j == x };
 } by {
     obtain (k: int32) { k == x }
-    execute();
+    step_until(function.exit);
     witness { j: k };
     solve();
 }

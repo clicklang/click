@@ -18,7 +18,7 @@ runtime "modeled-pthread";
 verifying "mutex_init_missing_owner.c";
 int32 run(struct holder *holder) {
     ensures result == 0;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

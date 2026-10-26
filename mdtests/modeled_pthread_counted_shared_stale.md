@@ -25,7 +25,7 @@ verifying "modeled_pthread_counted_shared_stale.c";
 authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns ticket(argument);
-} by { execute(); solve(); }
+}
 int32 run(void* p, void* q) {
     owns authority(ticket(p));
     owns authority(ticket(q));

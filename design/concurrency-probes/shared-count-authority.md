@@ -426,8 +426,8 @@ open(remaining(p)) {
 
 Before this change, closure required `p->value == 3 - count(remaining(p))`, but the
 increment established `p->value == 3 - (entry_count - 1)` and current Count
-still denoted `entry_count`. The sequential control succeeds because its
-`execute()` reaches the return inside the open scope. Unlock must happen before
+still denoted `entry_count`. The sequential control succeeded because its
+`execute()` reached the return inside the open scope. Unlock must happen before
 return, so return-time accounting cannot establish the mutex invariant.
 
 The approved rule uses existing syntax. First try to close `open` by restoring

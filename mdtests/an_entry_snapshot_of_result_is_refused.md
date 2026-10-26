@@ -13,7 +13,7 @@ verifying "entry_result.c";
 int h(int x) {
     ensures result == 5;
 } by {
-    execute();
+    step_until(function.exit);
     have at(function.entry, result == 5) by { solve(); }
     assumption();
 }

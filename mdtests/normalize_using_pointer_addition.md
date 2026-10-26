@@ -11,7 +11,7 @@ void keep(int32* a, int32* b) {
     requires a == b;
     ensures a + 1 == b + 1;
 } by {
-    execute();
+    step_until(function.exit);
     normalize() using { };
 }
 ```

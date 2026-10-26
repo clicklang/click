@@ -6,14 +6,14 @@ int mixed_fields(struct mixed *p) { set_c(p); return p->a; }
 ```
 ```click
 verifying "mixed.c";
-int32 set_c(struct mixed* p) { owns *p; ensures result == 0; } by { execute(); solve(); }
+int32 set_c(struct mixed* p) { owns *p; ensures result == 0; }
 int32 mixed_fields(struct mixed* p) {
     requires aligned(p, 4);
     owns p->a;
     owns p->c;
     owns p->d;
     owns p->e;
-} by { execute(); solve(); }
+}
 ```
 ```expect
 fail: missing resource fact `owns *p`

@@ -56,7 +56,7 @@ void f(int32* q) {
         Sel::A => {
             let { k: kk } = unfold(r);
             have kk.v == 4 by { solve(); }
-            execute();
+            step_until(function.exit);
             let r = fold(root(q), { sel: Sel::A, v: 3, u: 4 }, { k: kk });
             solve();
         },

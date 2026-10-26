@@ -30,7 +30,7 @@ int32 object_refcount(struct object* obj) {
     ensures result == count(object_ref(obj));
 } by {
     open(control(obj)) {
-        execute();
+        step_until(function.exit);
     }
     solve();
 }

@@ -14,7 +14,6 @@ void value(int32 x) {
     unfold(seven(x));
     step();
     fold(seven(x));
-    execute(); solve();
 }
 ```
 

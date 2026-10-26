@@ -52,7 +52,7 @@ class Boxed : Store {
 int Boxed::get() const {
 } by {
     unfold(state);
-    execute();
+    step_until(function.exit);
     let state = fold(cell(this->slot), { value: old(state.value) });
 }
 int read(const Store& store) {

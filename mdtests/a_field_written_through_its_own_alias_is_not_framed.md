@@ -20,7 +20,7 @@ void f(struct holder *h, int32 n) {
     owns *h;
     requires h->data == (int32 *)h;
     ensures h->data == old(h->data);
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

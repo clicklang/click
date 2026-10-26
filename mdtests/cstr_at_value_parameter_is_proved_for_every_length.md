@@ -28,17 +28,11 @@ uint64 known_length(const uint8* s, uint64 n) {
     views cstr_at(s, k);
     requires n == k;
     ensures result == k;
-} by {
-    execute();
-    solve();
 }
 
 uint64 measure(const uint8* src, uint64 m) {
     views cstr_at(src, m);
     ensures result == m;
-} by {
-    execute();
-    solve();
 }
 ```
 

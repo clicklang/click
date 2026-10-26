@@ -29,7 +29,7 @@ int32 f(struct cell* root) {
     ensures result == old(child.number);
     ensures child.number == old(child.number);
     ensures root->value == old(child.number);
-} by { unfold(child); execute(); fold(child); solve(); }
+} by { unfold(child); step_until(function.exit); fold(child); solve(); }
 ```
 ```expect
 fail: body fact

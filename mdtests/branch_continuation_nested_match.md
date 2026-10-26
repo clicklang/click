@@ -2,7 +2,9 @@
 
 The outer `match` arm runs a `branch` whose `then` arm returns and whose
 `else` arm continues into the rest of the arm: a nested proof `match` that
-runs to function exit inside the `else` arm. A proof `match` attributes its
+runs to function exit inside the `else` arm, splitting at the C's second `if`
+with a proof `if` whose cases each step to exit with
+`step_until(function.exit)`. A proof `match` attributes its
 diagnostics to its own tactic while it runs. It used to leave the shared arm
 proof attributed to itself afterwards, so the branch's certificate
 checkpoint no longer matched the joined proof's context and a valid proof
@@ -51,8 +53,11 @@ int32 f(int32* p, int32 x) {
             } else {}
             match c.m {
                 T::A(w) => {
-                    execute();
-                    solve();
+                    if x < 5 {
+                        step_until(function.exit);
+                    } else {
+                        step_until(function.exit);
+                    }
                 },
             }
         },

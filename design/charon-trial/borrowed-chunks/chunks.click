@@ -121,7 +121,7 @@ fn cover(bytes: &[u8]) -> usize {
     have chunks_remaining % 4 == chunks_remaining by { normalize() using { 0 <= chunks_remaining; chunks_remaining < 4; }; }
     have chunks_remaining == 0;
     have chunks_cursor == chunks_tail;
-    execute();
+    step_until(function.exit);
     have forall (k: int32) {
         0 <= k and k < (int32)(uint32)bytes.len() implies bytes[k] == old(bytes[k])
     } by { intro(); intro(); solve(); }

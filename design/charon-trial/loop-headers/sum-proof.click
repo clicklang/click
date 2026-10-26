@@ -50,5 +50,4 @@ fn sum(bytes: &[u8]) -> i32 {
         rewrite(i == bytes.len());
         solve();
     }
-    execute();
 }

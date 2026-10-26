@@ -58,7 +58,7 @@ void fill(struct buffer* b, int32 from, int32 to) {
         invariant from <= i and i <= to;
         owns b->p[from..to];
     }
-    execute();
+    step_until(function.exit);
     let r = fold(filled_prefix(b), { prefix: q });
     solve();
 }

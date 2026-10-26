@@ -3,7 +3,7 @@ verifying "boxed.rs";
 fn boxed::boxed(x: u32) -> u32 {
     requires x < 100;
     ensures result == x + 1;
-} by { execute(); solve(); }
+}
 
 // A box moves out of `make` and into `read` with its allocation and cell:
 // `read` frees them when its box is dropped, and `through` holds them only
@@ -13,17 +13,17 @@ fn boxed::make(x: u32) -> Box<boxed::Cell> {
     produces *result;
     ensures aligned(result, 4);
     ensures result.value == x;
-} by { execute(); solve(); }
+}
 
 fn boxed::read(b: Box<boxed::Cell>) -> u32 {
     consumes allocation(b, sizeof(boxed::Cell));
     consumes *b;
     ensures result == old(b.value);
-} by { execute(); solve(); }
+}
 
 fn boxed::through(x: u32) -> u32 {
     ensures result == x;
-} by { execute(); solve(); }
+}
 
 // A `Some` box owns its cell, holding `Some` of its value; `None` is null.
 resource cell_box(p: *mut boxed::Cell) {
@@ -47,12 +47,12 @@ fn boxed::maybe(x: u32, make: bool) -> Option<Box<boxed::Cell>> {
 } by {
     cases {
         make => {
-            execute();
+            step_until(function.exit);
             let cell = fold(cell_box(result), { value: Option<u32>::Some(x) });
             solve();
         }
         not make => {
-            execute();
+            step_until(function.exit);
             let cell = fold(cell_box(result), { value: Option<u32>::None });
             solve();
         }
@@ -64,8 +64,8 @@ fn boxed::value_or(o: Option<Box<boxed::Cell>>, d: u32) -> u32 {
     ensures result == (match old(cell.value) { Option::Some(v) => v, Option::None => d });
 } by {
     match cell.value {
-        Option::Some(v) => { unfold(cell); execute(); solve(); },
-        Option::None => { unfold(cell); execute(); solve(); },
+        Option::Some(v) => { unfold(cell); step_until(function.exit); solve(); },
+        Option::None => { unfold(cell); step_until(function.exit); solve(); },
     }
 }
 
@@ -74,7 +74,7 @@ fn boxed::maybe_through(x: u32, make: bool) -> u32 {
     ensures make == false implies result == 0;
 } by {
     cases {
-        make => { execute(); solve(); }
-        not make => { execute(); solve(); }
+        make => { step_until(function.exit); solve(); }
+        not make => { step_until(function.exit); solve(); }
     }
 }

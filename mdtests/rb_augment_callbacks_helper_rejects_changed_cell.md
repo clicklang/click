@@ -73,9 +73,6 @@ void replace_copy(struct rb_augment_callbacks* augment,
                   void (*replacement)(struct node* old, struct node* new)) {
     owns augment->copy;
     ensures augment->copy == replacement;
-} by {
-    execute();
-    solve();
 }
 
 void erase_changed(struct node* node, struct node* parent,

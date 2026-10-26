@@ -54,7 +54,7 @@ void touch(struct node *p) {
         Tree::Empty => { contradiction(t.model == Tree::Empty); },
         Tree::Node(color, rest) => {
             have color == Color::Black;
-            execute();
+            step_until(function.exit);
         }
     }
 }

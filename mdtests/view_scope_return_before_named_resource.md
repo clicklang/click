@@ -13,7 +13,7 @@ void inspect(int32* p) {
     produces tag: marker();
     ensures tag.value == 1;
 } by {
-    open(cell(p)) { execute(); }
+    open(cell(p)) { step_until(function.exit); }
     let tag = fold(marker(), { value: 1 });
     solve();
 }

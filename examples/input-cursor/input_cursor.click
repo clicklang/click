@@ -57,7 +57,7 @@ int32 input_cursor_init(
     ensures owner->len == length;
     ensures owner->data == data;
 } by {
-    execute();
+    step_until(function.exit);
     fold(input_cursor(owner));
     solve();
 }
@@ -76,8 +76,6 @@ int32 input_cursor_peek(struct input_cursor* owner) {
 } by {
     observe(input_cursor(owner));
     observe(readable_input(owner->data, owner->len));
-    execute();
-    solve();
 }
 
 int32 input_cursor_take(struct input_cursor* owner) {

@@ -75,7 +75,7 @@ int32 allocate() {
 }
 
 int32 identities() {
-    ensures result == 1 by { execute(); normalize(); }
+    ensures result == 1 by { step_until(function.exit); normalize(); }
 }
 ```
 

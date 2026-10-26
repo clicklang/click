@@ -6,7 +6,7 @@ long overflow(void) { long x = 9223372036854775807LL; x += 1; return x; }
 
 ```click
 verifying "overflow.c";
-long overflow() { ensures result == result; } by { execute(); solve(); }
+long overflow() { ensures result == result; }
 ```
 
 ```expect

@@ -62,16 +62,11 @@ void box_renew(struct box* box) {
     ensures box->tag == old(box->tag);
 } by {
     unfold(boxed(box));
-    execute();
-    solve();
 }
 
 int32 box_cycle(struct box* box) {
     owns boxed(box);
     ensures result == old(box->data[0]);
-} by {
-    execute();
-    solve();
 }
 ```
 

@@ -42,7 +42,7 @@ int32 update(int32* p) {
                     step();
                 }
             }
-            unfold(state); execute();
+            unfold(state); step_until(function.exit);
             let state = fold(first(p), {model: View::At(alias)});
             solve();
         },

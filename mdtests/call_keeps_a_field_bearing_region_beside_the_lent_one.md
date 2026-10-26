@@ -46,7 +46,7 @@ void put(struct pool* pool, struct slot* s, int32 value) {
     ensures pool->data[s->at] == value;
 } by {
     let { at: a, end: e } = unfold(r);
-    execute();
+    step_until(function.exit);
     let r = fold(pool_slot(s, pool), { at: a, end: e });
     solve();
 }
@@ -60,8 +60,6 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
 } by {
     step(put, { r: a });
     step(put, { r: b });
-    execute();
-    solve();
 }
 ```
 

@@ -9,5 +9,4 @@ fn packet_walk(n: i32) -> i32 {
         invariant 0 <= i and i <= n;
         invariant sum == i;
     }
-    execute(); solve();
 }

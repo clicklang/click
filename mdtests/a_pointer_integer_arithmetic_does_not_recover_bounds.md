@@ -12,7 +12,7 @@ int32 probe(struct Pair* pair) {
 verifying "probe.c";
 int32 probe(struct Pair* pair) {
     views pair->first;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

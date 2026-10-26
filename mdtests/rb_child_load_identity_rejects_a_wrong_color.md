@@ -102,7 +102,7 @@ void reparent_left_child(struct rb_node* victim, struct rb_node* new_node,
                 RbTree::Empty => { contradiction(l.model == RbTree::Empty); },
                 RbTree::Node(lid, lc, ll, lr) => {
                     let { left: lleft, right: lright } = unfold(l);
-                    execute();
+                    step_until(function.exit);
                     let l2 = fold(rb_at(new_node->rb_left, new_node), {
                         model: RbTree::Node(lid, Color::Black, ll, lr)
                     }, { left: lleft, right: lright });
@@ -115,5 +115,5 @@ void reparent_left_child(struct rb_node* victim, struct rb_node* new_node,
 ```
 
 ```expect
-fail: `reparent_left_child.contract` proof step tactic 7: fold requires the instance body facts for the proposed fields
+fail: fold requires the instance body facts for the proposed fields: fact 6 of 6 of arm `Node` is not established
 ```

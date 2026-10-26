@@ -14,13 +14,13 @@ void issue(int32* pool) {
     produces member: ticket(pool);
     ensures member.serial == 7;
     ensures count(ticket(pool)) == old(count(ticket(pool))) + 1;
-} by { let member = fold(ticket(pool), { serial: 7 }); execute(); solve(); }
+} by { let member = fold(ticket(pool), { serial: 7 }); }
 void nested(int32* pool) {
     owns authority(ticket(pool));
     produces member: ticket(pool);
     ensures member.serial == 7;
     ensures count(ticket(pool)) == old(count(ticket(pool))) + 1;
-} by { let { member: member } = step(issue, {}); execute(); solve(); }
+} by { let { member: member } = step(issue, {}); }
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool)));
@@ -30,7 +30,6 @@ int32 run() { ensures result == 0; } by {
     have member.serial == 7 by solve();
     have retained.serial == 3 by solve();
     unfold(member); unfold(retained); unfold(authority(ticket(&pool)));
-    execute(); solve();
 }
 ```
 

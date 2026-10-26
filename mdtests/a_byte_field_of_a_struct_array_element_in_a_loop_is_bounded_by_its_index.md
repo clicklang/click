@@ -27,7 +27,6 @@ int32 fill_items() {
 } by {
     step(); step(); step();
     loop { decreases 2 - i; invariant i >= 0; invariant i <= 2; }
-    execute(); solve();
 }
 ```
 

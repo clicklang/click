@@ -27,7 +27,6 @@ void shrink(int32* counter) {
     step();
     fold(2 of member(counter));
     fold(control(counter));
-    execute(); solve();
 }
 void lifecycle() { ensures 1 == 1; } by {
     step(); step();
@@ -39,7 +38,6 @@ void lifecycle() { ensures 1 == 1; } by {
     unfold(control(&counter));
     unfold(2 of member(&counter));
     unfold(authority(member(&counter)));
-    execute(); solve();
 }
 ```
 

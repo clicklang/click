@@ -34,10 +34,10 @@ int32 s(int32 j) {
         step();
         have t[3u64] == 0u8 by { normalize() using { j == 2; }; }
         have defined(t[3u64]) by { normalize() using { j == 2; }; }
-        execute();
+        step_until(function.exit);
         solve();
     } else {
-        if j == 1 { execute(); solve(); } else { execute(); solve(); }
+        if j == 1 { step_until(function.exit); solve(); } else { step_until(function.exit); solve(); }
     }
 }
 ```

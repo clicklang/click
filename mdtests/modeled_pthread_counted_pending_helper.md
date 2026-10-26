@@ -22,12 +22,12 @@ authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns authority(ticket(argument));
     consumes ticket(argument);
-} by { unfold(ticket(argument)); execute(); solve(); }
+} by { unfold(ticket(argument)); }
 void observe(void* p) {
     owns authority(ticket(p));
     ensures 1 == 1;
     requires count(ticket(p)) == 1;
-} by { execute(); solve(); }
+}
 int32 run(void* p) {
     owns authority(ticket(p));
     consumes ticket(p);

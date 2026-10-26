@@ -863,7 +863,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                 rewrite(erase_splice(old(tree.model)) == erase_deep_model(old(tree.model))); assumption();
                                                             }
                                                             unfold(hole);
-                                                            open(erase_callbacks(augment)) { execute(); }
+                                                            open(erase_callbacks(augment)) { step_until(function.exit); }
                                                             have erase_deep_context(old(tree.model), old(up.model)) != Context::Top by {
                                                                 rewrite(erase_deep_context(old(tree.model), old(up.model)) == deficit.model); assumption();
                                                             }
@@ -1311,7 +1311,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                         RbTree::Node(rid, mid, rc, rb_remove_min_blackened(rl), rr)))); assumption();
                                                             }
                                                             observe(erase_callbacks(augment));
-                                                            execute();
+                                                            step_until(function.exit);
                                                             apply(erase_deep_no_fixup(old(tree.model), old(up.model), mid, mc, mr));
                                                             apply(erase_outcome_deep(identity, parent_model, color, lid, lp, lc, ll, lr, rid, rp, rc, iid, ip, ic, il, ir, rr, old(up.model)));
                                                             have old(tree.model) == RbTree::Node(identity, parent_model, color, RbTree::Node(lid, lp, lc, ll, lr), RbTree::Node(rid, rp, rc, RbTree::Node(iid, ip, ic, il, ir), rr)) by {
@@ -1449,7 +1449,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                 unfold(erase_leaf_outcome(Color::Black, Context::Top)); normalize();
                                             }
                                             unfold(remaining);
-                                            open(erase_callbacks(augment)) { execute(); }
+                                            open(erase_callbacks(augment)) { step_until(function.exit); }
                                             let hole = fold(rb_at(0), { model: RbTree::Empty });
                                             let whole = fold(rb_root_at(root), { model: RbTree::Empty }, { tree: hole });
                                             have result == 0;
@@ -1500,7 +1500,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             let remaining = fold(ctx_at(0, root), { model: Context::Left(pid, gp, pc_model, sibling_model, above_model) }, { up: above });
                                             have remaining.model == old(up.model) by { rewrite(remaining.model == Context::Left(pid, gp, pc_model, sibling_model, above_model)); assumption(); }
                                             have remaining.model != Context::Top by { rewrite(remaining.model == Context::Left(pid, gp, pc_model, sibling_model, above_model)); normalize(); }
-                                            open(erase_callbacks(augment)) { execute(); }
+                                            open(erase_callbacks(augment)) { step_until(function.exit); }
                                             have result != 0;
                                             have ctx_node_is(old(up.model), result) == 1 by { rewrite(result == erased_parent); assumption(); }
                                             have old(up.model) != Context::Top by { rewrite(old(up.model) == remaining.model); assumption(); }
@@ -1549,7 +1549,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             let remaining = fold(ctx_at(0, root), { model: Context::Right(pid, gp, pc_model, sibling_model, above_model) }, { up: above });
                                             have remaining.model == old(up.model) by { rewrite(remaining.model == Context::Right(pid, gp, pc_model, sibling_model, above_model)); assumption(); }
                                             have remaining.model != Context::Top by { rewrite(remaining.model == Context::Right(pid, gp, pc_model, sibling_model, above_model)); normalize(); }
-                                            open(erase_callbacks(augment)) { execute(); }
+                                            open(erase_callbacks(augment)) { step_until(function.exit); }
                                             have ctx_node_is(old(up.model), result) == 1 by { rewrite(result == erased_parent); assumption(); }
                                             have old(up.model) != Context::Top by { rewrite(old(up.model) == remaining.model); assumption(); }
                                             let out = fold(erase_out(root, result), { model: EraseOutcome::Deficit(old(up.model)) }, { deficit: remaining });
@@ -1622,7 +1622,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                         rewrite(whole.model == plug(at(balanced, remaining.model), RbTree::Empty));
                                         rewrite(at(balanced, remaining.model) == old(up.model)); normalize();
                                     }
-                                    open(erase_callbacks(augment)) { execute(); }
+                                    open(erase_callbacks(augment)) { step_until(function.exit); }
                                     let out = fold(erase_out(root, result), { model: EraseOutcome::Balanced(plug(old(up.model), RbTree::Empty)) }, { whole: whole });
                                     have erase_out_rb(out.model) == 1 by {
                                         rewrite(out.model == EraseOutcome::Balanced(plug(old(up.model), RbTree::Empty)));
@@ -1728,7 +1728,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                 rewrite(rb_reparent(rb_recolor(erased_right, Color::Black), erased_parent) == RbTree::Node(er_id, erased_parent, Color::Black, er_left, er_right));
                                 normalize();
                             }
-                            open(erase_callbacks(augment)) { execute(); }
+                            open(erase_callbacks(augment)) { step_until(function.exit); }
                             let out = fold(erase_out(root, result), { model: EraseOutcome::Balanced(plug(old(up.model), rb_erase_one_child_model(old(tree.model)))) }, { whole: whole });
                             have erase_out_rb(out.model) == 1 by {
                                 rewrite(out.model == EraseOutcome::Balanced(plug(old(up.model), rb_erase_one_child_model(old(tree.model)))));
@@ -1839,7 +1839,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                 rewrite(rb_reparent(rb_recolor(erased_left, Color::Black), erased_parent) == RbTree::Node(el_id, erased_parent, Color::Black, el_left, el_right));
                                 normalize();
                             }
-                            open(erase_callbacks(augment)) { execute(); }
+                            open(erase_callbacks(augment)) { step_until(function.exit); }
                             let out = fold(erase_out(root, result), { model: EraseOutcome::Balanced(plug(old(up.model), rb_erase_one_child_model(old(tree.model)))) }, { whole: whole });
                             have erase_out_rb(out.model) == 1 by {
                                 rewrite(out.model == EraseOutcome::Balanced(plug(old(up.model), rb_erase_one_child_model(old(tree.model)))));
@@ -1975,7 +1975,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             == RbTree::Node(er_id, erased_parent, erased_color, RbTree::Node(el_id, er_id, el_color, el_left, el_right), RbTree::Empty));
                                                         normalize();
                                                     }
-                                                    open(erase_callbacks(augment)) { execute(); }
+                                                    open(erase_callbacks(augment)) { step_until(function.exit); }
                                                     let out = fold(erase_out(root, result), { model: EraseOutcome::Balanced(plug(old(up.model), rb_erase_immediate_leaf_model(old(tree.model)))) }, { whole: whole });
                                                     have erase_out_rb(out.model) == 1 by {
                                                         rewrite(out.model == EraseOutcome::Balanced(plug(old(up.model), rb_erase_immediate_leaf_model(old(tree.model)))));
@@ -2122,7 +2122,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                         normalize();
                                                     }
                                                     unfold(empty_right);
-                                                    open(erase_callbacks(augment)) { execute(); }
+                                                    open(erase_callbacks(augment)) { step_until(function.exit); }
                                                     have result == er_id;
                                                     have deficit.model != Context::Top by {
                                                         rewrite(deficit.model == Context::Right(er_id, erased_parent, erased_color, RbTree::Node(el_id, er_id, el_color, el_left, el_right), old(up.model))); normalize();
@@ -2310,7 +2310,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     == RbTree::Node(er_id, erased_parent, erased_color, RbTree::Node(el_id, er_id, el_color, el_left, el_right), RbTree::Node(ec_id, er_id, Color::Black, ec_left, ec_right)));
                                                 normalize();
                                             }
-                                            open(erase_callbacks(augment)) { execute(); }
+                                            open(erase_callbacks(augment)) { step_until(function.exit); }
                                             let out = fold(erase_out(root, result), { model: EraseOutcome::Balanced(plug(old(up.model), rb_erase_immediate_child_model(old(tree.model)))) }, { whole: whole });
                                             have erase_out_rb(out.model) == 1 by {
                                                 rewrite(out.model == EraseOutcome::Balanced(plug(old(up.model), rb_erase_immediate_child_model(old(tree.model)))));

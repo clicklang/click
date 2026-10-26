@@ -15,7 +15,7 @@ verifying "wildcard_consume_use_after_call.c";
 void release(int32* pool, int32* member) {
     owns authority(slot(pool, _));
     consumes slot(pool, member);
-} by { unfold(slot(pool, member)); execute(); solve(); }
+} by { unfold(slot(pool, member)); }
 void lifecycle() { ensures 1 == 1; } by {
     step(); step(); step(); step();
     fold(authority(slot(&pool, _)));
@@ -24,7 +24,6 @@ void lifecycle() { ensures 1 == 1; } by {
     have count(slot(&pool, _)) == 0 by solve();
     unfold(slot(&pool, &member));
     unfold(authority(slot(&pool, _)));
-    execute(); solve();
 }
 ```
 

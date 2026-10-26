@@ -22,7 +22,7 @@ resource cell(p: struct node*) {
 void copy_tag(struct node *p, struct node *q) {
  owns p->tag; owns q->tag;
  ensures q->tag == old(p->tag); ensures p->tag == 0;
-} by { execute(); solve(); }
+}
 spec enum Tree { At(struct node*, Pair) }
 function tree_identity(t: Tree) -> struct node* { match t { Tree::At(id, c) => id, } }
 resource parent(p: struct node*) {
@@ -64,7 +64,6 @@ void inspect(struct node *p) {
  }
  }, }
  } }
- execute(); solve();
 }
 ```
 

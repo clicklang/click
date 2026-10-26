@@ -1,7 +1,7 @@
 # A guard decided across a sibling write inside one inlined statement
 
-An inlined helper is one statement at the proof frontier: `execute()` runs its
-whole body, and every `if` inside it has to be decided from the facts the proof
+An inlined helper is one statement at the proof frontier: the implicit tail runs
+its whole body, and every `if` inside it has to be decided from the facts the proof
 holds *before* the statement. This fixture is the positive case. `probe` writes
 one owned cell and then reads a different owned cell in its guard; both cells
 are members of the same validated composition, so the write cannot have changed

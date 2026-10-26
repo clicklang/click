@@ -17,7 +17,7 @@ verifying "pointers.c";
 int32 ptrs(int32 **a) {
     views a[0..1];
     ensures true;
-} by { execute(); }
+}
 ```
 
 ```expect

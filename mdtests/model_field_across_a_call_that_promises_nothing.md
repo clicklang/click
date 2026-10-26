@@ -31,7 +31,7 @@ void bump(int32* p) {
     owns c: cell(p);
 } by {
     unfold(c);
-    execute();
+    step_until(function.exit);
     let c = fold(cell(p), { rank: 0 });
     solve();
 }

@@ -2185,7 +2185,7 @@ mod tests {
         fs::write(upstream.join("local.h"), header).unwrap();
         fs::write(proofs.join(".click/up/main.c.i"), artifact).unwrap();
         let sidecar = proofs.join("checks/main.click");
-        let proof = "target \"x86_64-unknown-linux-gnu\"; mode \"kernel\"; verifying \"../../upstream/main.c\"; int answer() { ensures result == 42; } by { execute(); solve(); }";
+        let proof = "target \"x86_64-unknown-linux-gnu\"; mode \"kernel\"; verifying \"../../upstream/main.c\"; int answer() { ensures result == 42; }";
         fs::write(&sidecar, proof).unwrap();
         let describe = |args: &[&str]| {
             serde_json::json!({
@@ -2435,7 +2435,7 @@ mod tests {
             verified[0].import_identity.as_deref(),
             Some(imports[0].identity())
         );
-        let offset = proof.find("execute();").unwrap();
+        let offset = proof.find("ensures").unwrap();
         let line = proof[..offset]
             .bytes()
             .filter(|byte| *byte == b'\n')

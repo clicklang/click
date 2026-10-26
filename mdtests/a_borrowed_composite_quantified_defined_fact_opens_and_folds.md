@@ -26,7 +26,6 @@ int32 first(int32 p[], int32 n) {
     ensures true;
 } by {
     open(valid(p, n)) {
-        execute();
     }
 }
 

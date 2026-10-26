@@ -28,8 +28,6 @@ extern void copy_string(uint8* dst, const uint8* src) {
 void use(uint8* dst, const uint8* src, uint64 n) {
     views cstr_at(src, n);
     owns dst[0..n + 1u64];
-} by {
-    execute();
 }
 ```
 

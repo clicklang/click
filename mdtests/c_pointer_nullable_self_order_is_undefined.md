@@ -15,7 +15,7 @@ verifying "c_pointer_nullable_self_order_is_undefined.c";
 
 int32 self_order(int32* pointer) {
     ensures result == 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

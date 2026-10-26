@@ -177,7 +177,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
             solve() using { 0 < to_integer(mod); };
         }
         if round_down == 0 {
-            execute();
+            step_until(function.exit);
             have -9223372036854775808 <= to_integer(result) by solve();
             have to_integer(result) <= 9223372036854775807 by solve();
             have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by solve();
@@ -224,7 +224,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
             }
             solve();
         } else {
-            execute();
+            step_until(function.exit);
             have -9223372036854775808 <= to_integer(result) by solve();
             have to_integer(result) <= 9223372036854775807 by solve();
             have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by solve();
@@ -307,7 +307,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 solve() using { to_integer(mod) < 0; };
             }
             if round_down == 0 {
-                execute();
+                step_until(function.exit);
                 have -9223372036854775808 <= to_integer(result) by solve();
                 have to_integer(result) <= 9223372036854775807 by solve();
                 have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by solve();
@@ -354,7 +354,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 }
                 solve();
             } else {
-                execute();
+                step_until(function.exit);
                 have -9223372036854775808 <= to_integer(result) by solve();
                 have to_integer(result) <= 9223372036854775807 by solve();
                 have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by solve();
@@ -419,7 +419,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 solve() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
             }
             if round_down == 0 {
-                execute();
+                step_until(function.exit);
                 have -9223372036854775808 <= to_integer(result) by solve();
                 have to_integer(result) <= 9223372036854775807 by solve();
                 have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by solve();
@@ -466,7 +466,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 }
                 solve();
             } else {
-                execute();
+                step_until(function.exit);
                 have -9223372036854775808 <= to_integer(result) by solve();
                 have to_integer(result) <= 9223372036854775807 by solve();
                 have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by solve();

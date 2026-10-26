@@ -54,11 +54,11 @@ void cycle(int32* (*acquire)(int32*), void (*release)(int32*, int32*), int32* po
         step();
         step();
         step(Release);
-        execute(); solve();
+        step_until(function.exit); solve();
     } else {
         unfold(Acquisition(pool, c(cell)));
         unfold(Unavailable(pool, c(cell)));
-        execute(); solve();
+        step_until(function.exit); solve();
     }
 }
 ```

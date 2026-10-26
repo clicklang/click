@@ -22,8 +22,6 @@ int32 stable_view_fact_reader(int32 p[]) {
     ensures result == 0;
 } by {
     open(stable_cell(p)) {
-        execute();
-        solve();
     }
 }
 ```

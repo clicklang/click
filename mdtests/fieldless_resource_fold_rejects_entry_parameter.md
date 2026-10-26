@@ -14,7 +14,6 @@ void adopt(struct node* p, struct node* q) {
 } by {
     step();
     fold(tag_at(p));
-    execute(); solve();
 }
 ```
 

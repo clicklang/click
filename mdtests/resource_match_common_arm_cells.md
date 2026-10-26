@@ -56,13 +56,13 @@ int32 read_value(struct cell* p) {
         Shape::Top => { contradiction(c.model == Shape::Top); },
         Shape::Left(value) => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell_at(p), { model: Shape::Left(value) });
             solve();
         },
         Shape::Right(value) => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell_at(p), { model: Shape::Right(value) });
             solve();
         },

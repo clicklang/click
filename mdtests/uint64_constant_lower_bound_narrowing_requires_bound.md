@@ -12,7 +12,6 @@ uint64 identity(uint64 mid) {
     ensures result == mid;
 } by {
     have 0 < (int32)(uint32)mid by { solve() using { 0u64 < mid; }; }
-    execute(); solve();
 }
 ```
 

@@ -29,17 +29,17 @@ verifying "a_bounded_argument_to_a_narrow_parameter_is_in_its_range.c";
 int32 widen(uint8 x) {
     ensures result >= 0;
     ensures result <= 255;
-} by { execute(); solve(); }
+}
 
 int32 pass_narrow(uint8 y) {
     ensures result >= 0;
     ensures result <= 255;
-} by { execute(); solve(); }
+}
 
 int32 pass_checked(int32 y) {
     ensures result >= 0;
     ensures result <= 255;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

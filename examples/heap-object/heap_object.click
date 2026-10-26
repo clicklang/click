@@ -29,11 +29,11 @@ int32 item_destroy(struct item* item) {
 } by {
     if item != 0 {
         unfold(owned_item(item));
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         unfold(owned_item(item));
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

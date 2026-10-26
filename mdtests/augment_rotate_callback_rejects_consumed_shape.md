@@ -70,9 +70,6 @@ void steal(struct node* old, struct node* new) {
     owns new->augmented;
     ensures 0 <= new->augmented;
     ensures new->augmented <= 1000;
-} by {
-    execute();
-    solve();
 }
 
 struct node* rotate_left(
@@ -128,9 +125,6 @@ struct node* rotate_steal(struct node* node) {
     ensures result == old(node->right);
     ensures 0 <= result->augmented;
     ensures result->augmented <= 1000;
-} by {
-    execute();
-    solve();
 }
 ```
 

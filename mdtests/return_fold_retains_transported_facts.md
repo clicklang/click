@@ -120,7 +120,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have to_integer(region->start + index) < to_integer(region->arena->capacity);
     have separate(memory(*region), memory(region->arena->data[s..e]));
     mark w;
-    execute();
+    step_until(function.exit);
     transport(
         old(region->arena) == old(region->arena),
         region->arena == old(region->arena)

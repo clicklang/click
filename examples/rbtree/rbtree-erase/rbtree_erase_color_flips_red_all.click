@@ -658,7 +658,7 @@ struct rb_root* root, int32 color) {
             }
             mark words;
             let { after: after } = step(__rb_change_child, { before: d });
-            execute(); solve();
+            step_until(function.exit);
         },
         Context::Left(id, above, pc, sibling, up) => {
             unfold(ctx_identity(Context::Left(id, above, pc, sibling, up)));
@@ -704,7 +704,7 @@ struct rb_root* root, int32 color) {
             }
             mark words;
             let { after: after } = step(__rb_change_child, { before: d });
-            execute(); solve();
+            step_until(function.exit);
         },
         Context::Right(id, above, pc, sibling, up) => {
             unfold(ctx_identity(Context::Right(id, above, pc, sibling, up)));
@@ -750,7 +750,7 @@ struct rb_root* root, int32 color) {
             }
             mark words;
             let { after: after } = step(__rb_change_child, { before: d });
-            execute(); solve();
+            step_until(function.exit);
         },
     }
 }
@@ -819,8 +819,8 @@ void rb_set_parent(struct rb_node* rb, struct rb_node* p) {
     ensures rb->__rb_parent_color == ((old(rb->__rb_parent_color) & 1) | address(p));
     ensures aligned(p, 8) implies ((struct rb_node*)(rb->__rb_parent_color & ~3)) == p;
 } by {
-    if aligned(p, 8) { execute(); solve(); }
-    else { execute(); solve(); }
+    if aligned(p, 8) { step_until(function.exit); }
+    else { step_until(function.exit); }
 }
 
 theorem erase_color_not_black(c: Color) {
@@ -4250,5 +4250,4 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
     have is_rb_root(whole.model) == 1 by { rewrite(whole.model == at(refold, plug(c.model, t.model))); assumption(); }
     have rb_tree_parent_consistent(whole.model) == 1 by { rewrite(whole.model == at(refold, plug(c.model, t.model))); assumption(); }
     have rb_inorder(whole.model) == rb_inorder(plug(old(c.model), RbTree::Empty)) by { rewrite(whole.model == at(refold, plug(c.model, t.model))); assumption(); }
-    execute(); solve();
 }

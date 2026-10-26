@@ -7,9 +7,6 @@ Restore::Restore(int32* slot) {
     ensures this->p == slot;
     ensures this->saved == old(slot[0]);
     ensures slot[0] == 7;
-} by {
-    execute();
-    solve();
 }
 
 Restore::~Restore() {
@@ -20,9 +17,6 @@ Restore::~Restore() {
     ensures this->p == old(this->p);
     ensures this->saved == old(this->saved);
     ensures this->p[0] == old(this->saved);
-} by {
-    execute();
-    solve();
 }
 
 int32 sibling_restore(bool first_early, bool second_early, int32& value) {
@@ -31,7 +25,4 @@ int32 sibling_restore(bool first_early, bool second_early, int32& value) {
     ensures first_early == 0 implies (second_early != 0 implies result == 7);
     ensures first_early == 0 implies (second_early == 0 implies result == old(value));
     ensures value == old(value);
-} by {
-    execute();
-    solve();
 }

@@ -34,19 +34,19 @@ int32 cstr_stdlib(uint8 p[], uint64 len, uint64 max) {
     requires cstr::bounded(p, max);
 
     ensures exact_prefix_has_no_null: cstr::prefix(p, len) by {
-        execute();
+        step_until(function.exit);
         apply(cstr::len_has_prefix(p, len));
         solve();
     }
 
     ensures exact_has_terminator: p[len] == '\0' by {
-        execute();
+        step_until(function.exit);
         apply(cstr::len_has_terminator(p, len));
         solve();
     }
 
     ensures bounded_has_terminator: exists (k: uint64) { k < max and p[k] == '\0' } by {
-        execute();
+        step_until(function.exit);
         unfold(cstr::bounded);
         solve();
     }
@@ -58,7 +58,7 @@ int32 plain_cstr(uint8 p[]) {
     ensures exposes_ghost_length: exists (len: uint64) {
         cstr::len(p, len)
     } by {
-        execute();
+        step_until(function.exit);
         unfold(cstr::cstr);
         obtain (found_len: uint64) {
             at(function.entry, cstr::len(p, found_len))

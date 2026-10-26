@@ -45,4 +45,4 @@ int64 FeeFrac::EvaluateFee@MODE@(int32 at_size) const {
     ensures to_integer(result) <= 9223372036854775807;
     ensures @CALLER_BOUND_1@;
     ensures @CALLER_BOUND_2@;
-} by { execute(); solve(); }
+}

@@ -29,7 +29,7 @@ void split(int32* b) {
     views b[0..1];
     owns g[0..1];
     ensures g[0] == 1;
-} by { execute(); solve(); }
+}
 
 void caller(int32 a[], int32 n) {
     requires 0 < n;
@@ -37,9 +37,9 @@ void caller(int32 a[], int32 n) {
     views a[0..1];
     owns g[0..4];
     ensures a[0] == 5;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect
-fail: `caller.contract` tactic 0: `execute()` could not verify C operation: stable-view a required resource overlaps a live borrowed footprint refused during planning; selected resource `owns g[0..1]`
+fail: `caller.contract` tactic 0: `step()` could not verify C operation: stable-view a required resource overlaps a live borrowed footprint refused during planning; selected resource `owns g[0..1]`
 ```

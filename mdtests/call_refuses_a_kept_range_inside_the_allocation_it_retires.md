@@ -39,17 +39,12 @@ int32* box_take(struct box* box) {
     produces result[0..1];
 } by {
     unfold(half_boxed(box));
-    execute();
-    solve();
 }
 
 void box_release(struct box* box) {
     consumes half_boxed(box);
     produces *box;
     owns box->data[1..2];
-} by {
-    execute();
-    solve();
 }
 ```
 

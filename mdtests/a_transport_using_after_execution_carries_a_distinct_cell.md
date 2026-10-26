@@ -1,8 +1,8 @@
 # A `transport using` after execution carries a distinct cell
 
 The companion of `a_distinct_symbolic_cell_survives_a_store.md`, which writes
-the same `transport using` between execution steps. Written after
-`execute()`, it carries the entry read of `a[m]` past the store to `a[i]` from
+the same `transport using` between execution steps. Written at
+function exit, after `step_until(function.exit)`, it carries the entry read of `a[m]` past the store to `a[i]` from
 the same listed premises, so the tactic means the same thing in both places.
 
 ```c filename=a_transport_using_after_execution_carries_a_distinct_cell.c

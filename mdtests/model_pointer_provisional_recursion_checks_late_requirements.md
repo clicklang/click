@@ -20,9 +20,8 @@ void recursive(struct model_node* p, void* q, int32 n) {
     if n > 0 {
         step();
         let { held: held } = step(recursive, {});
-        execute();
     } else {
-        execute();
+        step_until(function.exit);
         let held = fold(token(), { model: NodeRef::At(p) });
     }
 }

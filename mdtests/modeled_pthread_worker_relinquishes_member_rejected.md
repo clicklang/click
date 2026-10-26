@@ -23,7 +23,7 @@ verifying "modeled_pthread_worker_relinquishes_member_rejected.c";
 authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     consumes ticket(argument);
-} by { execute(); solve(); }
+}
 int32 run(void* p) {
     owns authority(ticket(p));
     consumes ticket(p);

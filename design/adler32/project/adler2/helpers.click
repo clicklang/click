@@ -44,7 +44,7 @@ impl adler2::algo::U32X4 {
         apply(adler_helper_byte_observation(bytes[1]));
         apply(adler_helper_byte_observation(bytes[2]));
         apply(adler_helper_byte_observation(bytes[3]));
-        execute();
+        step_until(function.exit);
         have result.0[0] == old((bytes[0] as u32));
         have to_integer(result.0[0]) == old(to_integer((bytes[0] as i32))) by { rewrite(result.0[0] == old((bytes[0] as u32))); assumption(); }
         have result.0[1] == old((bytes[1] as u32));
@@ -116,8 +116,6 @@ impl AddAssign<adler2::algo::U32X4> for adler2::algo::U32X4 {
         have self.0[1] <= 4294967295u32 - other.0[1];
         have self.0[2] <= 4294967295u32 - other.0[2];
         have self.0[3] <= 4294967295u32 - other.0[3];
-        execute();
-        solve();
     }
 }
 
@@ -154,7 +152,7 @@ impl RemAssign<u32> for adler2::algo::U32X4 {
         apply(integer::uint32_remainder_to_integer(self.0[1], quotient));
         apply(integer::uint32_remainder_to_integer(self.0[2], quotient));
         apply(integer::uint32_remainder_to_integer(self.0[3], quotient));
-        execute();
+        step_until(function.exit);
         have self.0[0] == old(self.0[0]) % quotient;
         have to_integer(self.0[0]) == truncating_remainder(to_integer(old(self.0[0])), to_integer(quotient)) by {
             rewrite(self.0[0] == old(self.0[0]) % quotient);
@@ -235,7 +233,7 @@ impl MulAssign<u32> for adler2::algo::U32X4 {
         ensures 0 <= to_integer(self.0[3]);
         ensures to_integer(self.0[3]) <= 4294967295;
     } by {
-        execute();
+        step_until(function.exit);
         apply(integer::uint32_multiply_to_integer(old(self.0[0]), rhs));
         apply(integer::uint32_multiply_to_integer(old(self.0[1]), rhs));
         apply(integer::uint32_multiply_to_integer(old(self.0[2]), rhs));
@@ -461,7 +459,7 @@ impl adler2::Adler32 {
      }
      mark reduced_b;
      have at(reduced_b, __rust_mir_151) == 0u32;
-     execute();
+     step_until(function.exit);
      have self.a == 1 by solve() using { at(reduced_a, __rust_mir_149) == 1u32; };
      have self.b == 0 by solve() using { at(reduced_b, __rust_mir_151) == 0u32; };
      solve() using { self.a == 1; self.b == 0; };
@@ -470,8 +468,8 @@ impl adler2::Adler32 {
 
 // Imported scalar constants
 impl adler2::Adler32 {
-    fn compute::MOD() -> u32 { ensures result == 65521u32; } by { execute(); solve(); }
+    fn compute::MOD() -> u32 { ensures result == 65521u32; }
 }
 impl adler2::Adler32 {
-    fn compute::CHUNK_SIZE() -> usize { ensures result == 22208u64; } by { execute(); solve(); }
+    fn compute::CHUNK_SIZE() -> usize { ensures result == 22208u64; }
 }

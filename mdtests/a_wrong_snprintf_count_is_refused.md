@@ -21,7 +21,7 @@ verifying "wrong_count.c";
 int32 caller(char buffer[]) {
     owns buffer[0..8];
     ensures result == 3 by {
-        execute();
+        step_until(function.exit);
         have format::decimal_length(42u64) == 2u64 by {
             apply(format::decimal_length_2(42u64));
         }

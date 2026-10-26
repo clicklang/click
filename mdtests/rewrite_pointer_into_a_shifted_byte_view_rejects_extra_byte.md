@@ -47,8 +47,6 @@ void keep(const uint8* p, int32 n, int32 i) {
                 solve() using { viewable(p[i..i + 4]); };
             }
             let h = fold(Cell(p, n, i), { model: Link::Node(q) });
-            execute();
-            solve();
         },
     }
 }

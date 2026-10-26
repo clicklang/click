@@ -152,9 +152,6 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
     views std_span_data(s)[1];
     requires 2u64 <= std_span_size(s);
     ensures result == std_span_data(s)[1];
-}} by {{
-    execute();
-    solve();
 }}"
     );
     check(

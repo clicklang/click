@@ -529,7 +529,7 @@ value at rest: a local, a stored cell, a returned value, or an argument.
 Printed facts and steps show it as `((uint32)x)` or `((int32)x)` there and
 nowhere else. A comparison reads its operands' words, so an `int32` order
 of a `uint32` value's word is spelled with the operand converted: the case
-condition `execute` synthesizes for `bool set = (int)u < 0;` is
+condition the implicit tail synthesizes for `bool set = (int)u < 0;` is
 `(int32)u < 0`, which lowers back to that order, where the bare `u < 0` would
 be the `uint32` order (`surface_synthesis::bitvector_spells_uint32`,
 `mdtests/execute_splits_a_sign_cast_order_as_a_signed_comparison.md`,

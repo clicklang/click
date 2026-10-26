@@ -41,7 +41,7 @@ int32* pick() {
     ensures viewable(result[0..1]);
     ensures result[0] == 5;
     ensures result == &g[0];
-} by { execute(); solve(); }
+}
 
 void f() {
     owns g[0..4];
@@ -52,8 +52,6 @@ void f() {
     step();
     step();
     have a[0] == 5;
-    execute();
-    solve();
 }
 ```
 

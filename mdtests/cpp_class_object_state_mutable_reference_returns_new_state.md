@@ -34,16 +34,16 @@ class Square : Shape {
     function size(this) -> int32 { this->side }
 }
 void Square::set(int half) {
-} by { execute(); solve(); }
+}
 void reset(Shape& shape, int half) {
     requires 0 <= half and half <= 50;
     ensures size(shape) == half + half;
-} by { execute(); solve(); }
+}
 int caller(Square& square, int half) {
     owns square;
     requires 0 <= half and half <= 50;
     ensures result == old(square.side);
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

@@ -45,9 +45,6 @@ Restore::Restore(int32* slot) {
     ensures this->saved == old(slot[0]);
     ensures slot[0] == 9;
     ensures separate(memory(*this), memory(this->pointer[0..1]));
-} by {
-    execute();
-    solve();
 }
 
 Restore::~Restore() {
@@ -58,9 +55,6 @@ Restore::~Restore() {
     ensures this->pointer == old(this->pointer);
     ensures this->saved == old(this->saved);
     ensures this->pointer[0] == old(this->saved);
-} by {
-    execute();
-    solve();
 }
 
 int32 helper(bool should_throw) throws int32 {
@@ -72,9 +66,6 @@ int32 guarded(int32& value, bool should_throw) {
     owns value;
     ensures result == old(value);
     ensures value == old(value);
-} by {
-    execute();
-    solve();
 }
 ```
 

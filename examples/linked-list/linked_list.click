@@ -16,7 +16,7 @@ struct node* list_empty() {
 
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     fold(list(result));
     solve();
 }
@@ -28,8 +28,6 @@ int32 list_head(struct node* node) {
     ensures result == node->value;
 } by {
     observe(list(node));
-    execute();
-    solve();
 }
 
 int32 list_push_front(
@@ -46,7 +44,7 @@ int32 list_push_front(
     ensures node->value == value;
     ensures node->next == tail;
 } by {
-    execute();
+    step_until(function.exit);
     fold(list(node));
     solve();
 }
@@ -64,8 +62,6 @@ int32 list_pop_front(
     ensures node->value == old(node->value);
 } by {
     unfold(list(node));
-    execute();
-    solve();
 }
 
 int32 list_roundtrip(
@@ -79,7 +75,4 @@ int32 list_roundtrip(
 
     ensures result == value;
     ensures node->next == tail;
-} by {
-    execute();
-    solve();
 }

@@ -28,12 +28,12 @@ int32 read_nullable(int32* p) {
 } by {
     if p == 0 {
         unfold(c);
-        execute();
+        step_until(function.exit);
         fold(c);
         solve();
     } else {
         unfold(c);
-        execute();
+        step_until(function.exit);
         fold(c);
         solve();
     }

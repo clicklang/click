@@ -21,7 +21,7 @@ int32 service_init(struct service* owner, int32 cell[]) {
     ensures owner->cell == cell;
     ensures owner->cell[0] == 0;
 } by {
-    execute();
+    step_until(function.exit);
     fold(service(owner));
     solve();
 }

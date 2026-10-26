@@ -5,8 +5,8 @@ two checked successors: `r == 7` when `u == 0`, and `r == old(g[0])`
 otherwise. The load is not the last statement, so each case has to continue with
 the rest of the block under its own assumption.
 
-`execute()` splits the proof on the case condition before the load and
-runs the remaining statements once per case. The explicit form is the same
+The implicit tail of `planned`'s omitted proof splits on the case condition
+before the load and runs the remaining statements once per case. The explicit form is the same
 split written as a proof `if`, with plain `step()`s in each case: inside a
 case the load has one successor.
 

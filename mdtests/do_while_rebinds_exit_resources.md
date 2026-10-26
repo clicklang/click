@@ -65,7 +65,7 @@ void walk(struct Node* p) {
     have c.model != Path::Top by normalize();
     match c.model {
         Path::Top => { contradiction(c.model == Path::Top); },
-        Path::Step(identity, before) => { execute(); solve(); },
+        Path::Step(identity, before) => { step_until(function.exit); solve(); },
     }
 }
 ```

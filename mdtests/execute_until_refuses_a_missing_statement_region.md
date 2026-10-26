@@ -17,8 +17,6 @@ int32 probe(int32 x) {
     ensures result == x;
 } by {
     step_until(statement(0).region(3));
-    execute();
-    solve();
 }
 ```
 

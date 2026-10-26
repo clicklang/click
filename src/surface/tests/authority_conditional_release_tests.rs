@@ -41,7 +41,7 @@ void child_release(struct child* obj) {
     if obj->refs == 1 {
         unfold(child_ref(obj));
         unfold(authority(child_ref(obj)));
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         unfold(child_ref(obj));
@@ -52,7 +52,7 @@ void child_release(struct child* obj) {
         step();
         step();
         fold(child_control(obj));
-        execute();
+        step_until(function.exit);
         solve();
     }
 }
@@ -249,8 +249,8 @@ void release_one(struct child* obj) {{
     if old(count(child_ref(obj))) > 1 {{ produces child_control(obj); }}
     ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1;
 }} by {{
-    if obj->refs > 1 {{ execute(); solve(); }}
-    else {{ execute(); solve(); }}
+    if obj->refs > 1 {{ step_until(function.exit); solve(); }}
+    else {{ step_until(function.exit); solve(); }}
 }}
 "#
     );
@@ -328,7 +328,7 @@ void bound(int32 value) {
     requires 2 <= value;
     ensures old(value) > 1;
 } by {
-    execute();
+    step_until(function.exit);
     have old(value) > 1 by {
         solve() using { 2 <= old(value); }
     }

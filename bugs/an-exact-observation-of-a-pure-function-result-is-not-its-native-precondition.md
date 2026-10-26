@@ -7,7 +7,7 @@ Soundness: incomplete. A provable call is refused; nothing false verifies.
 A comparison of exact observations is the native comparison it observes
 (`docs/reference/language/index.md`, Integer specification arithmetic):
 `to_integer(f(a)) <= 2147483647` and `f(a) <= 2147483647u64` are one fact. The
-precondition discharge in `execute()` proves the native spelling of an
+precondition discharge in the implicit tail proves the native spelling of an
 `extern` requirement over a library pure function's `uint64` result, but not
 the exact-observation spelling, with or without Integer-default arithmetic.
 
@@ -27,10 +27,10 @@ extern int32 take(uint32 a) {
 }
 int32 native_call() {
     ensures result == 0;
-} by { execute(); solve(); }
+}
 ```
 
-`execute()` refuses: "condition-certificate premise search did not derive
+The implicit tail refuses: "condition-certificate premise search did not derive
 `click::format::decimal_length(123u64) <= 2147483647u64` from 1 ambient
 condition facts". The same file with
 `requires click::format::decimal_length((uint64) a) <= 2147483647u64;`

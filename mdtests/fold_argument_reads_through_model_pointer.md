@@ -27,7 +27,7 @@ void put(struct Node* p) {
   unfold(n); step();
   have id->left == 0;
   let e = fold(empty(id->left), { model: 0 });
-  execute(); solve();
+  step_until(function.exit); solve();
  }, }
 }
 ```

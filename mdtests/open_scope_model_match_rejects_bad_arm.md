@@ -27,13 +27,13 @@ int32 read(int32* p) {
         match c.model {
             Pair::First(value) => {
                 unfold(c);
-                execute();
+                step_until(function.exit);
                 let c = fold(cell(p), { model: Pair::First(value) });
                 solve();
             },
             Pair::Second(value) => {
                 unfold(c);
-                execute();
+                step_until(function.exit);
                 let c = fold(cell(p), { model: Pair::Second(0) });
                 solve();
             },

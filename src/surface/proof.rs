@@ -2943,7 +2943,7 @@ pub(super) fn prove_claim_by_auto(
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    // `auto` is exactly the script `execute(); solve();`.
+    // `auto` is exactly the script `step_until(function.exit); solve();`.
     let tactics = [ProofTactic::SmartExecute, ProofTactic::AutoClose];
     let mut theorems = prove_claim_by_tactics(
         expansion_capture,

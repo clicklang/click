@@ -185,7 +185,7 @@ fn changed_selection_maps_leaf_proof_and_contract_changes_to_callers() {
 verifying "leaf.c";
 verifying "caller.c";
 verifying "unrelated.c";
-int32 leaf(int32 x) { ensures result == x; } by solve();
+int32 leaf(int32 x) { ensures result == x; } by { step_until(function.exit); solve(); }
 int32 caller(int32 x) { ensures result == x; }
 int32 unrelated(int32 x) { ensures result == x; }
 "#;
@@ -211,7 +211,7 @@ int32 unrelated(int32 x) { ensures result == x; }
     ];
 
     for changed in [
-        baseline.replacen("by solve()", "by solve()", 1),
+        baseline.replacen("step_until(function.exit); solve();", "step(); solve();", 1),
         baseline.replacen("result == x", "result >= x", 1),
     ] {
         let selection =
@@ -543,7 +543,7 @@ verifying "example.c";
 int32 example() {
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -559,7 +559,7 @@ int32 example() {
             ))
             .collect::<Vec<_>>(),
         vec![
-            ("example.contract", 0, "execute"),
+            ("example.contract", 0, "step_until"),
             ("example.contract", 1, "solve"),
         ]
     );
@@ -581,7 +581,7 @@ fn rewritten_claim_position_survives_an_expansion_that_removes_a_tactic() {
 int32 example() {
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -753,13 +753,13 @@ int32 write_selected(int32 p[2], int32 flag) {
     consumes p[0..2];
     ensures result == 0 or result == 1;
 } by {
-    execute();
-    if result == 0 {
+    if flag != 0 {
+        step_until(function.exit);
         have result + 1 == 1 by solve();
     } else {
+        step_until(function.exit);
         have result - 1 == 0 by solve();
     }
-    solve();
 }
 "#;
     let click_path = directory.join("branched.click");
@@ -855,7 +855,11 @@ fn prepared_audit_reuses_validated_inputs_across_sites() {
         "int identity(int x) { return x; }\n",
     )
     .unwrap();
-    fs::write(&path, "verifying \"unit.c\";\nint32 identity(int32 x) { ensures result == x; } by { execute(); solve(); }\n").unwrap();
+    fs::write(
+        &path,
+        "verifying \"unit.c\";\nint32 identity(int32 x) { ensures result == x; }\n",
+    )
+    .unwrap();
     fs::write(
         &project_file,
         serde_json::to_vec(&serde_json::json!({"units": {"unit": {
@@ -935,7 +939,7 @@ void object_retain_many(struct object* obj, int32 amount) {
         step();
         fold(amount of reference(obj));
     }
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -1080,7 +1084,7 @@ struct node* unpack(struct node* node) {
     ensures address(result) == (node->word & ~1);
 } by {
     unfold(packed(node));
-    execute();
+    step_until(function.exit);
     fold(packed(node));
     assumption();
     solve() using {
@@ -1118,7 +1122,7 @@ fn audits_an_undecided_wide_guard_after_a_recursive_call() {
     // `list_count_live` in `examples/marked-linked-list` reduced: a recursive
     // call whose result lands in a local, then a C `if` whose condition loads
     // an `unsigned long` cell of the node the call did not touch, all inside
-    // the `else` arm of a surface `if`. `execute()` renders the guard it
+    // the `else` arm of a surface `if`. The arm's implicit tail renders the guard it
     // cannot decide as a proof `if` anchored at the statement's entry, and the
     // recheck applies each arm's `step()`, which must prove the guard: the arm
     // assumes the surface lowering of the guard while the C guard evaluates
@@ -1166,13 +1170,10 @@ uint32 count_live(struct cell* node) {
     owns tagged(node);
 } by {
     if node == 0 {
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         unfold(tagged(node));
-        execute();
-        fold(tagged(node));
-        solve();
     }
 }
 "#;
@@ -1182,21 +1183,11 @@ uint32 count_live(struct cell* node) {
     verify_c0_sources(click_source, &[("count_live.c", c_source)])
         .expect("the recursive count proof should verify");
 
-    let arm_execute = click_source
-        .rfind("execute();")
-        .expect("proof should contain the `else` arm's execute");
-    let line = click_source[..arm_execute]
-        .bytes()
-        .filter(|byte| *byte == b'\n')
-        .count()
-        + 1;
-    let sites = inventory_sites(std::slice::from_ref(&click_path)).unwrap();
-    let site = sites
-        .iter()
-        .find(|site| site.position.line == line)
-        .expect("the arm's execute should be an auditable site");
-    let expanded = expand_location(&format_location(&site_location(site)))
-        .expect("the arm's execute should expand");
+    // The arm's implicit tail is not a located site; the claim's expansion
+    // renders it.
+    let original = load_audit_source(&click_path).unwrap();
+    let expanded = expand_claim_with_source(&click_path, &original, "count_live.contract")
+        .expect("the arm's implicit tail should expand");
     assert!(
         expanded.contains("if at(region(5).entry, (node->word & 1))"),
         "the undecided C guard should expand to an anchored proof `if`: {expanded}"
@@ -1206,7 +1197,7 @@ uint32 count_live(struct cell* node) {
     verify_c0_sources(&source.click_source, &refs)
         .unwrap_or_else(|error| panic!("the rewritten arm should reverify: {}", error.message()));
     assert_eq!(
-        reexpand_source(&click_path, &site.claim, &expanded).unwrap(),
+        reexpand_source(&click_path, "count_live.contract", &expanded).unwrap(),
         expanded
     );
     fs::remove_dir_all(directory).unwrap();
@@ -1418,7 +1409,7 @@ int32 double_it(int32 x) {
     requires x < 1000;
     ensures result == x + x;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#,

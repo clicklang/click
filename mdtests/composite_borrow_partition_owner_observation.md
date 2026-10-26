@@ -13,7 +13,7 @@ void update(int* p, int* q) {
     ensures *p == 5;
 } by {
     unfold(cell(p));
-    open(cell(q)) { execute(); }
+    open(cell(q)) { step_until(function.exit); }
     fold(cell(p));
     solve();
 }

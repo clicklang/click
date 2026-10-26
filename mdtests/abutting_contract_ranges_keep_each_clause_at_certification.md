@@ -38,9 +38,6 @@ void release(int32 *x, int32 i, int32 j) {
     requires j < 1000;
     consumes x[0..(i + 1)];
     consumes x[j..(j + 1)];
-} by {
-    execute();
-    solve();
 }
 
 void release_to(int32 *x, int32 i, int32 j) {
@@ -49,9 +46,6 @@ void release_to(int32 *x, int32 i, int32 j) {
     requires j < 1000;
     consumes x[0..j];
     consumes x[j..(j + 1)];
-} by {
-    execute();
-    solve();
 }
 
 void inspect(int32 *x, int32 i, int32 j) {
@@ -60,9 +54,6 @@ void inspect(int32 *x, int32 i, int32 j) {
     requires j < 1000;
     views x[0..(i + 1)];
     views x[j..(j + 1)];
-} by {
-    execute();
-    solve();
 }
 
 int32 read_second(int32 *x, int32 i, int32 j) {

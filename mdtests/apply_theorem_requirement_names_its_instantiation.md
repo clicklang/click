@@ -32,7 +32,7 @@ int32 raise_head(int32 box[1]) {
     requires box[0] == 7;
     owns box[0..1];
     ensures unreported_requirement: old(box[0]) < 2 by {
-        execute();
+        step_until(function.exit);
         apply(head_below_one_is_below_two(old(box), 7)) using {
             old(box[0]) == 7;
         };

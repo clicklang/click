@@ -41,11 +41,11 @@ void drop_next(struct node* self) {
 } by {
     if self->next == 0 {
         unfold(nodes(self->next));
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         unfold(nodes(self->next));
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

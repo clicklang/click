@@ -15,12 +15,12 @@ verifying "refr.cpp";
 int32& first(struct Pair& pair) {
     views pair.first;
     ensures &result == &pair.first;
-} by { execute(); solve(); }
+}
 int32 caller(struct Pair& pair) {
     views pair.first;
     views pair.second;
     ensures result == pair.second;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

@@ -13,8 +13,8 @@ int32 second(int64* a, int64 n) {
 
 ```click
 verifying "single_wide_element_int64_views.c";
-int32 f(int64* a, int64 n) { views a[0]; } by { execute(); solve(); }
-int32 second(int64* a, int64 n) { views a[1]; } by { execute(); solve(); }
+int32 f(int64* a, int64 n) { views a[0]; }
+int32 second(int64* a, int64 n) { views a[1]; }
 ```
 
 ```expect

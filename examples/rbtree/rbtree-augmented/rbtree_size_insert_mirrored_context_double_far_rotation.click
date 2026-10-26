@@ -501,7 +501,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 }
             }
             have node == old(node) by { assumption(); }
-            execute(); solve();
+            step_until(function.exit);
         },
     }
 }
@@ -518,7 +518,6 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_mirrored_context_double_far_expected(old(state.phase), node);
 } by {
     step(insert::__rb_insert, { state: state });
-    execute(); solve();
 }
 
 void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -534,5 +533,4 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_mirrored_context_double_far_expected(old(state.phase), node);
 } by {
     step(insert::__rb_insert_augmented, { state: state });
-    execute(); solve();
 }

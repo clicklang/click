@@ -21,7 +21,7 @@ verifying "returns.c";
 long *as_long(void *v) {
     ensures address(result) == address(v);
 } by {
-    execute();
+    step_until(function.exit);
     normalize();
 }
 

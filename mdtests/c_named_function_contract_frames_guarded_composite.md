@@ -46,9 +46,6 @@ contract int32 PreserveGuardedPair(
 int32 keep_first_guarded(int32 active, int32* first, int32* spare) {
     owns maybe_cell(active, first);
     ensures result == active;
-} by {
-    execute();
-    solve();
 }
 
 int32 apply_guarded_pair(
@@ -63,11 +60,7 @@ int32 apply_guarded_pair(
     ensures result == active;
 } by {
     if active != 0 {
-        execute();
-        solve();
     } else {
-        execute();
-        solve();
     }
 }
 
@@ -75,9 +68,6 @@ int32 guarded_pair_caller(int32* first, int32* spare) {
     owns maybe_cell(1, first);
     owns maybe_cell(1, spare);
     ensures result == 1;
-} by {
-    execute();
-    solve();
 }
 ```
 

@@ -15,7 +15,7 @@ int32 keep(int32 x) {
     requires 0 <= x;
     ensures forall (k: int32) { k < result implies k < x };
 } by {
-    execute();
+    step_until(function.exit);
     intro() as below;
     solve();
 }

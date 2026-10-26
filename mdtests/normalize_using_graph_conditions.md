@@ -11,7 +11,7 @@ void keep(int32* a, int32* b) {
     requires a == b;
     ensures (if a + 1 == b + 1 { 7 } else { 0 }) == 7;
 } by {
-    execute();
+    step_until(function.exit);
     normalize() using { };
 }
 

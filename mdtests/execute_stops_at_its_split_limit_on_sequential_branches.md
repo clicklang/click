@@ -1,7 +1,7 @@
-# `execute` stops at its split limit on sequential branches
+# The implicit tail stops at its split limit on sequential branches
 
-`execute()` runs each arm of a C `if` to function exit, so a function of `n`
-sequential branches gives it `2^n` paths. Past 1,024 splits it stops and
+The implicit tail runs each arm of a C `if` to function exit, so a function of
+`n` sequential branches gives it `2^n` paths. Past 1,024 splits it stops and
 names the explicit join, instead of running until its step budget: eleven
 branches split 2,047 times. `sequential_branches_join_with_branch_ensuring.md`
 proves the same shape with one `branch ensuring` per branch, in work linear
@@ -34,5 +34,5 @@ int32 f(int32 x, int32 a0, int32 b0, int32 a1, int32 b1, int32 a2, int32 b2, int
 ```
 
 ```expect
-fail: `execute` split at more than 1024 C branches
+fail: the implicit tail split at more than 1024 C branches
 ```

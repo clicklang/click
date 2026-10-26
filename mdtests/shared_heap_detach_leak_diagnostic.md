@@ -71,8 +71,6 @@ void child_release_nonfinal(struct child* obj) {
     have to_integer(obj->refs - 1) >= 1;
     step();
     fold(child_control(obj));
-    execute();
-    solve();
 }
 
 void parent_detach(struct parent* p) {
@@ -89,7 +87,7 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(entry_child) => {
             unfold(link);
-            execute();
+            step_until(function.exit);
             let out = fold(parent(p), { link: ParentLink::Empty });
             solve();
         },

@@ -10,7 +10,7 @@ int64 at(struct pt* p, int32 n, int32 i) {
  requires i <= n;
  views p[0..n];
  ensures result == p[i].y;
-} by { execute(); solve(); }
+}
 ```
 ```expect
 fail: pointer arithmetic left the pointed-to object

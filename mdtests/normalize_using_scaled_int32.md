@@ -12,7 +12,7 @@ void keep(int32* p, int32 i, int32 j, int32 k) {
     requires j == k;
     ensures p + i == p + k;
 } by {
-    execute();
+    step_until(function.exit);
     normalize() using { };
 }
 

@@ -13,12 +13,12 @@ verifying "second.c" as second;
 verifying "first.c" as again;
 int32 first::helper() {
     ensures result == 1;
-} by { execute(); solve(); }
+}
 int32 again::helper() {
     ensures result == 2;
-} by { execute(); solve(); }
-int32 first_use() { ensures result == 1; } by { execute(); solve(); }
-int32 second_use() { ensures result == 2; } by { execute(); solve(); }
+}
+int32 first_use() { ensures result == 1; }
+int32 second_use() { ensures result == 2; }
 ```
 ```expect
 fail: select the same C definition

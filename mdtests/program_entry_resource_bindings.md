@@ -12,7 +12,7 @@ verifying "main.c";
 int read_cell(int *p) {
     owns cell(p);
     ensures result == old(p[0]);
-} by { unfold(cell(p)); execute(); fold(cell(p)); solve(); }
+} by { unfold(cell(p)); step_until(function.exit); fold(cell(p)); solve(); }
 int main() { ensures result == 7; }
 by { fold(cell(&state)); }
 ```

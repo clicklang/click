@@ -34,7 +34,7 @@ int32 keep(int32* p) {
     match b.tag {
         Tag::T(x) => {
             unfold(b);
-            execute();
+            step_until(function.exit);
             let b = fold(box(p), { tag: Tag::T(x) });
             solve();
         },

@@ -40,8 +40,6 @@ void free_second_then_first(struct two_buffers* buffers) {
     consumes two_buffers_owned(buffers);
 } by {
     unfold(two_buffers_owned(buffers));
-    execute();
-    solve();
 }
 ```
 

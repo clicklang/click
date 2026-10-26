@@ -24,7 +24,6 @@ int h() {
 } by {
     step(); step(); step();
     have g < 1000;
-    execute(); solve();
 }
 ```
 

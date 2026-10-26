@@ -15,7 +15,7 @@ verifying "a_false_bounded_universal_over_uint64_is_refused.c";
 
 void nop(uint64 length) {
     ensures forall (k: uint64) { k < 3u64 implies k <= 1u64 };
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

@@ -27,12 +27,12 @@ struct node* list_prepend(int32 value, struct node* tail) {
     ensures result != tail implies result->value == value;
     ensures result != tail implies result->next == tail;
 } by {
-    execute();
-    if result == tail {
-        solve();
+    step_until(statement(1));
+    if node == 0 {
+        step_until(function.exit);
     } else {
+        step_until(function.exit);
         fold(allocated_list(result));
-        solve();
     }
 }
 
@@ -61,12 +61,10 @@ void list_destroy(struct node* node) {
 } by {
     if node == 0 {
         unfold(allocated_list(node));
-        execute();
-        solve();
+        step_until(function.exit);
     } else {
         unfold(allocated_list(node));
-        execute();
-        solve();
+        step_until(function.exit);
     }
 }
 

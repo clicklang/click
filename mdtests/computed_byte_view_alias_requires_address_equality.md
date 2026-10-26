@@ -10,13 +10,13 @@ verifying "alias.c";
 uint8 first(const uint8* p) {
  views p[0..4];
  ensures result == old(p[0]);
-} by { execute(); solve(); }
+}
 uint8 read(const uint8* bytes, const uint8* base, uint64 length, uint64 index, int32 pos) {
  views bytes[0..length];
  requires index <= length;
  requires 4u64 <= length - index;
  ensures result == old((base + pos)[0]);
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

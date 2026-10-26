@@ -38,9 +38,6 @@ int32 leaf_flag(struct pair* p) {
     ensures p->left != 0 implies result == 0;
     ensures p->left == 0 implies (p->right == 0 implies result == 1);
     ensures result == 0 or result == 1;
-} by {
-    execute();
-    solve();
 }
 ```
 

@@ -30,7 +30,7 @@ struct node* unpack(struct node* node) {
     ensures address(result) == (node->word & ~1);
 } by {
     unfold(packed(node));
-    execute();
+    step_until(function.exit);
     have address(result) == (node->word & ~1) by {
         solve() using {
             aligned(result, 8);

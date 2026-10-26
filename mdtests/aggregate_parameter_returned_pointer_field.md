@@ -15,7 +15,7 @@ struct output leak(struct packet input) {
 verifying "aggregate_parameter_returned_pointer_field.c";
 struct output leak(struct packet input) {
     ensures result.pointer[0] == 7;
-} by { execute(); solve(); }
+} by { step_until(function.exit); solve(); }
 ```
 
 ```expect

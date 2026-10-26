@@ -16,7 +16,7 @@ verifying "mutex_use_balanced_storage_view.c";
 void helper(struct holder *holder) {
     owns mutex_use(&holder->mu);
     views holder->mu;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

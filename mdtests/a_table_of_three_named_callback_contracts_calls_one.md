@@ -59,8 +59,6 @@ int32 compute_difference(struct callback_table* table, int32 left, int32 right) 
     ensures to_integer(result) == to_integer(left - right);
 } by {
     open(callback_suite(table)) {
-        execute();
-        solve();
     }
 }
 
@@ -68,9 +66,6 @@ int32 run(struct callback_table* table, int32 left, int32 right) {
     views callback_suite(table);
     requires defined(left - right);
     ensures to_integer(result) == to_integer(left - right);
-} by {
-    execute();
-    solve();
 }
 ```
 

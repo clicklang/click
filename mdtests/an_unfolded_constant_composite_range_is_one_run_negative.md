@@ -23,7 +23,7 @@ int32 put_then_read(int32 *a, int32 k) {
     ensures result == old(a[k]);
 } by {
     unfold(block(a));
-    execute();
+    step_until(function.exit);
     fold(block(a));
     solve();
 }

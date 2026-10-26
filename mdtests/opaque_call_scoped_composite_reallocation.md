@@ -56,9 +56,6 @@ int32 replace_allocated_cell(struct cell_owner* owner) {
     ensures result == 0 implies owner->data == old(owner->data);
 } by {
     unfold(allocated_cell(owner));
-    execute();
-    fold(allocated_cell(owner));
-    solve();
 }
 
 int32 replace_after_scoped_open(struct cell_owner* owner) {
@@ -68,8 +65,6 @@ int32 replace_after_scoped_open(struct cell_owner* owner) {
 } by {
     open(allocated_cell(owner)) {
     }
-    execute();
-    solve();
 }
 ```
 

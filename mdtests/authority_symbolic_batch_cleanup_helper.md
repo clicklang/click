@@ -32,7 +32,6 @@ void cleanup(struct pool* pool) {
     have to_integer(count(slot(pool))) == 0;
     step();
     unfold(authority(slot(pool)));
-    execute(); solve();
 }
 void forward(struct pool* pool) {
     consumes control(pool);
@@ -40,8 +39,6 @@ void forward(struct pool* pool) {
     produces *pool;
     ensures pool->capacity == 0;
     ensures to_integer(count(slot(pool))) == 0;
-} by {
-    execute(); solve();
 }
 void nested(struct pool* pool) {
     consumes control(pool);
@@ -49,8 +46,6 @@ void nested(struct pool* pool) {
     produces *pool;
     ensures pool->capacity == 0;
     ensures to_integer(count(slot(pool))) == 0;
-} by {
-    execute(); solve();
 }
 void empty(struct pool* pool) {
     consumes control(pool);
@@ -59,7 +54,7 @@ void empty(struct pool* pool) {
     produces *pool;
     ensures pool->capacity == 0;
     ensures to_integer(count(slot(pool))) == 0;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

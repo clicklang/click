@@ -15,7 +15,7 @@ int32 get_last(int32* p, int32 n) {
     requires 1 <= n;
     owns uninitialized(p[0..n]);
     ensures true;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

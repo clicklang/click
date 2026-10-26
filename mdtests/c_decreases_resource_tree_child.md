@@ -42,11 +42,7 @@ int32 leftmost_zero(struct node* node) {
 } by {
     observe(zero_tree(node));
     if node->left == 0 {
-        execute();
-        solve();
     } else {
-        execute();
-        solve();
     }
 }
 ```

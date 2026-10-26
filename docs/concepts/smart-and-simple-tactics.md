@@ -44,10 +44,8 @@ work expands into simple tactics:
 it crosses is proved as a bare `step()`'s is. It walks a loop the facts decide
 and never splits: at a C branch the facts do not decide it is refused, naming
 the proof `if` or `branch` to write there. The tactic reference classifies it
-as smart. `execute()`
-names the tail's execution; it is still accepted as a written tactic but is
-being removed, so write `step_until(function.exit)` or leave the C to the
-tail.
+as smart. The parser refuses the removed `execute()`; write
+`step_until(function.exit)` or leave the C to the implicit tail.
 
 ## Elided arguments
 
@@ -79,9 +77,8 @@ unrelated facts.
 
 The [tactic reference](../reference/tactics/index.md) gives every form's
 class, and `click docs NAME` prints it. A [proof trace](tracing.md#reading-trace-output)
-marks each step smart work produced with its origin: ``(from `execute`)``
-for the implicit tail's execution, ``(from `implicit tail`)`` for its closer,
-``(from `solve`)`` for a written `solve`, and ``(from `implicit closer`)`` for
+marks each step smart work produced with its origin: ``(from `implicit tail`)``
+for the implicit tail's execution and its closer, ``(from `solve`)`` for a written `solve`, and ``(from `implicit closer`)`` for
 the closer of a step's requirement. It prints a `chosen:` line with the written
 form of an argument a search chose. [`click profile`](../reference/cli/profile.md) reports a smart
 site, elided forms included, as `SMART`, and a written simple tactic as

@@ -14,7 +14,7 @@ void preserve(int32* pool) {
     owns member: ticket(pool, 7);
     ensures member.serial == old(member.serial);
     ensures count(ticket(pool, _)) == old(count(ticket(pool, _)));
-} by { execute(); solve(); }
+}
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool, _)));
@@ -25,7 +25,6 @@ int32 run() { ensures result == 0; } by {
     have count(ticket(&pool, _)) == 1 by solve();
     unfold(first);
     unfold(authority(ticket(&pool, _)));
-    execute(); solve();
 }
 ```
 

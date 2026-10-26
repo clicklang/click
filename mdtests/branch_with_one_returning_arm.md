@@ -4,7 +4,7 @@ The C `if` returns early on one side and falls through on the other. The
 proof's `branch` spells only the returning arm; the else arm is empty and
 the proof continues after the `branch`. The checked route runs that
 continuation inside the continuing arm to function exit and joins the two
-arms terminally, as `execute()` already does for such a C `if`.
+arms terminally, as the implicit tail already does for such a C `if`.
 
 ```c filename=early_exit.c
 int32 early_exit(int32 c) {

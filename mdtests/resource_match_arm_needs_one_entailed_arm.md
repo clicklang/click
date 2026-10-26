@@ -42,10 +42,10 @@ int32 read_cell(struct cell* node) {
 } by {
     match c.model {
         Slot::Empty => { contradiction(c.model == Slot::Empty); },
-        Slot::Reserved => { execute(); },
+        Slot::Reserved => { step_until(function.exit); },
         Slot::Filled(value) => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell(node), { model: Slot::Filled(value) });
             solve();
         },

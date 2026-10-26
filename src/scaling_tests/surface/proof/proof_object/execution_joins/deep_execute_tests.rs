@@ -34,7 +34,7 @@ fn focused_execute_handles_deep_branches_on_a_two_megabyte_stack() {
             .name(format!("focused-execute-{depth}"))
             .stack_size(2 * 1024 * 1024)
             .spawn_scoped(scope, || {
-                let source = format!("int32 caller({parameters}) {{ ensures result >= 0; }} by {{ execute(); solve(); }}");
+                let source = format!("int32 caller({parameters}) {{ ensures result >= 0; }}");
                 let click_file = crate::surface::parse(&source).unwrap();
                 let function_block = &click_file.function_blocks()[0];
                 let predicates = PredicateEnvironment::new(&[]);

@@ -42,11 +42,11 @@ impl Destruct for recursive_drop::Node {
         match rest.values {
             List::Nil => {
                 let {} = unfold(rest);
-                execute();
+                step_until(function.exit);
             }
             List::Cons(v, tail_values) => {
                 let { tail: tail } = unfold(rest);
-                execute();
+                step_until(function.exit);
             }
         }
     }
@@ -58,7 +58,7 @@ impl recursive_drop::Stack {
         produces after: nodes(result.head);
         ensures after.values == List<u32>::Nil;
     } by {
-        execute();
+        step_until(function.exit);
         let after = fold(nodes(result.head), { values: List<u32>::Nil }, {});
     }
 
@@ -68,7 +68,7 @@ impl recursive_drop::Stack {
         produces after: nodes(self.head);
         ensures after.values == List::Cons(value, old(before.values));
     } by {
-        execute();
+        step_until(function.exit);
         let after = fold(nodes(self.head), { values: List::Cons(value, old(before.values)) }, { tail: before });
     }
 
@@ -84,14 +84,14 @@ impl recursive_drop::Stack {
         match before.values {
             List::Nil => {
                 let {} = unfold(before);
-                execute();
+                step_until(function.exit);
                 let after = fold(nodes(self.head), { values: List<u32>::Nil }, {});
                 unfold(first(List<u32>::Nil));
                 unfold(rest(List<u32>::Nil));
             }
             List::Cons(v, tail_values) => {
                 let { tail: tail } = unfold(before);
-                execute();
+                step_until(function.exit);
                 unfold(first(List::Cons(v, tail_values)));
                 unfold(rest(List::Cons(v, tail_values)));
                 match tail_values {
@@ -117,11 +117,11 @@ impl recursive_drop::Stack {
         match before.values {
             List::Nil => {
                 let {} = unfold(before);
-                execute();
+                step_until(function.exit);
             }
             List::Cons(v, rest) => {
                 let { tail: tail } = unfold(before);
-                execute();
+                step_until(function.exit);
             }
         }
     }
@@ -136,11 +136,11 @@ impl Destruct for recursive_drop::Stack {
         match rest.values {
             List::Nil => {
                 let {} = unfold(rest);
-                execute();
+                step_until(function.exit);
             }
             List::Cons(v, tail_values) => {
                 let { tail: tail } = unfold(rest);
-                execute();
+                step_until(function.exit);
             }
         }
     }
@@ -150,8 +150,6 @@ impl Destruct for recursive_drop::Stack {
 // produced to its drop glue.
 fn recursive_drop::pushed(x: u32) -> u32 {
     ensures result == x;
-} by {
-    execute();
 }
 
 // A value pushed onto a new stack is the one popped, and the stack's drop
@@ -159,6 +157,6 @@ fn recursive_drop::pushed(x: u32) -> u32 {
 fn recursive_drop::round_trip(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
 } by {
-    execute();
+    step_until(function.exit);
     unfold(first(List::Cons(x, List<u32>::Nil)));
 }

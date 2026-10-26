@@ -15,7 +15,7 @@ verifying "library.c" as library;
 
 void reset() {
     ensures library::state.value == 0u64;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

@@ -11,7 +11,7 @@ int32 count(int32 n) {
   invariant 0 <= i and i <= n;
   preserve by { step_until(back_edge()); close_invariants(); }
  }
- execute(); solve();
+ step_until(function.exit); solve();
 }"#;
 fn source(body: &str) -> String {
     format!("int32 count(int32 n) {{ int32 i; i=0; while(i<n) {{ {body} }} return i; }}")

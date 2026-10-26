@@ -14,7 +14,7 @@ void set_slot(int32* p) {
     requires unit::set_slot::slot == &anchor;
     requires p != &anchor;
     ensures unit::set_slot::slot == &anchor;
-} by { execute(); solve(); }
+}
 ```
 ```expect
 fail: ensures unit::set_slot::slot == &anchor

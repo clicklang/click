@@ -13,7 +13,7 @@ int32 read_static() {
     views slot;
     views value.first;
     views value.second;
-} by { execute(); }
+}
 ```
 
 ```expect

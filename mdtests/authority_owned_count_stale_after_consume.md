@@ -11,7 +11,7 @@ void consume(int32* p) {
 } by {
     have 0 < count(token(p)) by { solve() using { 1 <= count(token(p)); }; }
     have 0 <= count(token(p)) - 1;
-    unfold(token(p)); execute(); solve();
+    unfold(token(p));
 }
 ```
 ```expect

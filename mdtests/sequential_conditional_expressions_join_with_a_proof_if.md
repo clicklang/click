@@ -1,6 +1,6 @@
 # Sequential conditional expressions join with a proof `if`
 
-A `?:` splits `execute()`'s paths inside one statement, so a function of
+A `?:` splits the implicit tail's paths inside one statement, so a function of
 sequential conditional expressions gives it `2^n` paths, as sequential C
 `if`s do (`sequential_branches_join_with_branch_ensuring.md`). `branch` needs
 a C `if`; here a proof `if` on each condition, with an `ensuring` interface,

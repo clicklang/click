@@ -1,7 +1,7 @@
 # A heap load after a store that may write its cell splits after the null check
 
-`malloc` may fail, so `execute()` first splits on `buf == 0`. On the
-allocated path, `buf[u] = 7` may or may not write `buf[0]`, so the load
+`malloc` may fail, so the implicit tail of `read_back`'s omitted proof first
+splits on `buf == 0`. On the allocated path, `buf[u] = 7` may or may not write `buf[0]`, so the load
 `r = buf[0]` has two cases, and the `free` and `return` after it run once in
 each. In the case `u == 0` the load reads the stored `7`; otherwise it reads
 the `3` stored first. The stepped proof writes both splits as proof `if`s.
@@ -74,8 +74,6 @@ int32 read_back_stepped(int32 u) {
     step();
     step();
     if buf == 0 {
-        execute();
-        solve();
     } else {
         step();
         step();

@@ -71,8 +71,6 @@ void init_cells(int32* data, int32* occupied, int32 capacity) {
     scatter(arena_cells(data, occupied, capacity));
     gather(arena_cells(data, occupied, capacity));
     fold(arena_cells(data, occupied, capacity));
-    execute();
-    solve();
 }
 
 void init_full(int32* data, int32* occupied, int32 capacity) {
@@ -99,8 +97,6 @@ void init_full(int32* data, int32* occupied, int32 capacity) {
     }
     gather(arena_cells(data, occupied, capacity));
     fold(arena_cells(data, occupied, capacity));
-    execute();
-    solve();
 }
 ```
 

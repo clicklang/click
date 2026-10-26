@@ -67,7 +67,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
         }
     }
     have node == old(node) by { assumption(); }
-    execute(); solve();
 }
 
 theorem sized_insert_root()
@@ -91,7 +90,6 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures tree.model == sized_recolor(old(tree.model), Color::Black);
 } by {
     step(__rb_insert, { tree: tree });
-    execute(); solve();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -105,5 +103,4 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures tree.model == sized_recolor(old(tree.model), Color::Black);
 } by {
     step(__rb_insert_augmented, { tree: tree });
-    execute(); solve();
 }

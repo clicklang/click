@@ -32,9 +32,9 @@ int32 f(struct cell* root) {
     ensures root->base.left != 0 implies root->value == old(child.number);
 } by {
     if root->base.left != 0 {
-        unfold(child); execute(); fold(child); solve();
+        unfold(child); step_until(function.exit); fold(child); solve();
     } else {
-        unfold(child); execute(); fold(child); solve();
+        unfold(child); step_until(function.exit); fold(child); solve();
     }
 }
 ```

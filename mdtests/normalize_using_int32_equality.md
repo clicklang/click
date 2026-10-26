@@ -12,7 +12,7 @@ void keep(int32 a, int32 b, int32 c) {
     requires b == c;
     ensures a == c;
 } by {
-    execute();
+    step_until(function.exit);
     normalize() using { };
 }
 

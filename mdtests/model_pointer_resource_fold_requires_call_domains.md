@@ -20,7 +20,7 @@ void keep(struct node* p) {
     produces held: token(p);
     ensures true;
 } by {
-    execute();
+    step_until(function.exit);
     let held = fold(token(p), { model: 0 });
 }
 ```

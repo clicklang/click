@@ -19,9 +19,6 @@ extern int32 need_cells(uint8 bytes[], int32 len) {
 int32 range_probe(uint8 bytes[], int32 len) {
     requires viewable(bytes[0..len + 1]);
     ensures result == 0;
-} by {
-    execute();
-    solve();
 }
 ```
 

@@ -72,6 +72,4 @@ fn sum(bytes: &[u8]) -> i32 {
     }
     have iter_remaining == 0u64;
     have (bytes.len() - iter_remaining) == bytes.len();
-    execute();
-    solve();
 }

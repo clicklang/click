@@ -31,7 +31,7 @@ int32 setup(struct s* p, int32 d[], int32 n) {
     ensures p->b == n;
     ensures p->d == d;
 } by {
-    execute();
+    step_until(function.exit);
     fold(box(p));
     solve();
 }
@@ -43,7 +43,7 @@ int32 bump(struct s* p) {
     ensures p->d == old(p->d);
 } by {
     unfold(box(p));
-    execute();
+    step_until(function.exit);
     fold(box(p));
     solve();
 }
