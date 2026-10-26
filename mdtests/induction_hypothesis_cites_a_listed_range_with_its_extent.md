@@ -31,9 +31,9 @@ theorem hypothesis_cites_the_range_extent(v: int32[], lo: int32, n: int32, hi: i
             assumption();
         } else {
             have 0 < hi;
-            have 0 <= to_integer(hi - 1) by { arithmetic() using { 0 < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 < hi; }; }
-            have to_integer(hi - 1) <= to_integer(n) by { arithmetic() using { 0 < hi; hi <= n; }; }
+            have 0 <= to_integer(hi - 1) by { solve() using { 0 < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 < hi; }; }
+            have to_integer(hi - 1) <= to_integer(n) by { solve() using { 0 < hi; hi <= n; }; }
             apply(ih(hi - 1)) using {
                 0 <= to_integer(hi - 1);
                 to_integer(hi - 1) < to_integer(hi);

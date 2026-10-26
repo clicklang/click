@@ -60,7 +60,7 @@ uint32 narrow_by_arithmetic(uint64 x) {
     have 0 <= to_integer(x) by { auto(); }
     have to_integer(x) <= 4294967295 by { auto(); }
     have to_integer((uint32) x) == to_integer(x) by {
-        arithmetic() using { 0 <= to_integer(x); to_integer(x) <= 4294967295; }
+        solve() using { 0 <= to_integer(x); to_integer(x) <= 4294967295; }
     }
     have 1u32 <= y by { auto(); }
 }

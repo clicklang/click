@@ -40,21 +40,21 @@ theorem kilo_quotient(n: Integer, d: Integer) {
     requires d <= 1024;
     ensures truncating_quotient(n, d) * 1000 <= n
         and n < truncating_quotient(n, d) * 1024 + 1024 by {
-    have 1 <= d by { arithmetic() using { 1000 <= d; }; }
-    have 0 < d by { arithmetic() using { 1000 <= d; }; }
-    have 0 * d <= n by { arithmetic() using { 0 <= n; }; }
+    have 1 <= d by { solve() using { 1000 <= d; }; }
+    have 0 < d by { solve() using { 1000 <= d; }; }
+    have 0 * d <= n by { solve() using { 0 <= n; }; }
     apply(integer::positive_divisor_quotient_lower(n, d, 0));
     apply(integer::truncation_identity(n, d));
     apply(integer::nonnegative_dividend_remainder(n, d));
     apply(integer::positive_divisor_remainder_upper(n, d));
     apply(left_multiply_order(truncating_quotient(n, d), 1000, d));
     apply(left_multiply_order(truncating_quotient(n, d), d, 1024));
-    have truncating_quotient(n, d) * 1000 <= n by { arithmetic() using {
+    have truncating_quotient(n, d) * 1000 <= n by { solve() using {
         truncating_quotient(n, d) * 1000 <= truncating_quotient(n, d) * d;
         n == truncating_quotient(n, d) * d + truncating_remainder(n, d);
         0 <= truncating_remainder(n, d);
     }; }
-    have n < truncating_quotient(n, d) * 1024 + 1024 by { arithmetic() using {
+    have n < truncating_quotient(n, d) * 1024 + 1024 by { solve() using {
         truncating_quotient(n, d) * d <= truncating_quotient(n, d) * 1024;
         n == truncating_quotient(n, d) * d + truncating_remainder(n, d);
         truncating_remainder(n, d) <= d - 1;
@@ -97,7 +97,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
         have forall (k: uint64) { 0u64 <= k and k < 0u64 implies tmp[k] != 0u8 } by {
             intro();
             intro();
-            have false by { arithmetic() using { k < 0u64; }; }
+            have false by { solve() using { k < 0u64; }; }
             contradiction(false);
         }
         have forall (k: uint64) { 0u64 <= k and k < 0u64 + 1u64 implies defined(tmp[k]) } by { enumerate(); }
@@ -159,7 +159,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             have forall (k: uint64) { 0u64 <= k and k < 0u64 implies tmp[k] != 0u8 } by {
                 intro();
                 intro();
-                have false by { arithmetic() using { k < 0u64; }; }
+                have false by { solve() using { k < 0u64; }; }
                 contradiction(false);
             }
             have forall (k: uint64) { 0u64 <= k and k < 0u64 + 1u64 implies defined(tmp[k]) } by { enumerate(); }
@@ -251,7 +251,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         } else {
                             have at(head, i) == 4 by { auto(); }
                             have to_integer(at(head, blk_size)) * 1000000000000 <= 18446744073709551615 by { solve(); }
-                            have false by { arithmetic() using {
+                            have false by { solve() using {
                                 to_integer(at(head, blk_size)) * 1000000000000 <= 18446744073709551615;
                                 4294967296 <= to_integer(at(head, blk_size));
                             }; }
@@ -263,7 +263,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         intro();
                         have at(head, i) == 1 by { auto(); }
                         have to_integer(at(head, blk_size)) * 1000 <= 18446744073709551615 by { solve(); }
-                        have to_integer(blk_size) * 1000000 <= 18446744073709551615 by { arithmetic() using {
+                        have to_integer(blk_size) * 1000000 <= 18446744073709551615 by { solve() using {
                             to_integer(at(head, blk_size) / (uint64)at(div, __base)) * 1000 <= to_integer(at(head, blk_size));
                             to_integer(at(head, blk_size)) * 1000 <= 18446744073709551615;
                         }; }
@@ -273,7 +273,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         intro();
                         have at(head, i) == 2 by { auto(); }
                         have to_integer(at(head, blk_size)) * 1000000 <= 18446744073709551615 by { solve(); }
-                        have to_integer(blk_size) * 1000000000 <= 18446744073709551615 by { arithmetic() using {
+                        have to_integer(blk_size) * 1000000000 <= 18446744073709551615 by { solve() using {
                             to_integer(at(head, blk_size) / (uint64)at(div, __base)) * 1000 <= to_integer(at(head, blk_size));
                             to_integer(at(head, blk_size)) * 1000000 <= 18446744073709551615;
                         }; }
@@ -283,7 +283,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         intro();
                         have at(head, i) == 3 by { auto(); }
                         have to_integer(at(head, blk_size)) * 1000000000 <= 18446744073709551615 by { solve(); }
-                        have to_integer(blk_size) * 1000000000000 <= 18446744073709551615 by { arithmetic() using {
+                        have to_integer(blk_size) * 1000000000000 <= 18446744073709551615 by { solve() using {
                             to_integer(at(head, blk_size) / (uint64)at(div, __base)) * 1000 <= to_integer(at(head, blk_size));
                             to_integer(at(head, blk_size)) * 1000000000 <= 18446744073709551615;
                         }; }
@@ -331,7 +331,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         } else {
                             have at(head, i) == at(loop(1).entry, i) + 4 by { auto(); }
                             have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { solve(); }
-                            have false by { arithmetic() using {
+                            have false by { solve() using {
                                 to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615;
                                 4294967296 <= to_integer(at(head, size));
                             }; }
@@ -343,7 +343,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         intro();
                         have at(head, i) == at(loop(1).entry, i) + 1 by { auto(); }
                         have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { solve(); }
-                        have to_integer(size) * 1000000 <= 18446744073709551615 by { arithmetic() using {
+                        have to_integer(size) * 1000000 <= 18446744073709551615 by { solve() using {
                             to_integer(at(head, size) / (uint64)at(div, __base)) * 1000 <= to_integer(at(head, size));
                             to_integer(at(head, size)) * 1000 <= 18446744073709551615;
                         }; }
@@ -353,7 +353,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         intro();
                         have at(head, i) == at(loop(1).entry, i) + 2 by { auto(); }
                         have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { solve(); }
-                        have to_integer(size) * 1000000000 <= 18446744073709551615 by { arithmetic() using {
+                        have to_integer(size) * 1000000000 <= 18446744073709551615 by { solve() using {
                             to_integer(at(head, size) / (uint64)at(div, __base)) * 1000 <= to_integer(at(head, size));
                             to_integer(at(head, size)) * 1000000 <= 18446744073709551615;
                         }; }
@@ -363,7 +363,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         intro();
                         have at(head, i) == at(loop(1).entry, i) + 3 by { auto(); }
                         have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { solve(); }
-                        have to_integer(size) * 1000000000000 <= 18446744073709551615 by { arithmetic() using {
+                        have to_integer(size) * 1000000000000 <= 18446744073709551615 by { solve() using {
                             to_integer(at(head, size) / (uint64)at(div, __base)) * 1000 <= to_integer(at(head, size));
                             to_integer(at(head, size)) * 1000000000 <= 18446744073709551615;
                         }; }
@@ -421,7 +421,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 } else {
                                     have at(head, i) == at(loop(2).entry, i) + 6 by { auto(); }
                                     have to_integer(at(head, size)) * 1000000000000000000 <= 18446744073709551615 by { solve(); }
-                                    have false by { arithmetic() using {
+                                    have false by { solve() using {
                                         to_integer(at(head, size)) * 1000000000000000000 <= 18446744073709551615;
                                         1024 <= to_integer(at(head, size));
                                     }; }
@@ -433,7 +433,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 1 by { auto(); }
                                 have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { solve(); }
-                                have to_integer(size) * 1000000 <= 18446744073709551615 by { arithmetic() using {
+                                have to_integer(size) * 1000000 <= 18446744073709551615 by { solve() using {
                                     to_integer(at(head, size) / (uint64)1024u32) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000 <= 18446744073709551615;
                                 }; }
@@ -443,7 +443,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 2 by { auto(); }
                                 have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { solve(); }
-                                have to_integer(size) * 1000000000 <= 18446744073709551615 by { arithmetic() using {
+                                have to_integer(size) * 1000000000 <= 18446744073709551615 by { solve() using {
                                     to_integer(at(head, size) / (uint64)1024u32) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000 <= 18446744073709551615;
                                 }; }
@@ -453,7 +453,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 3 by { auto(); }
                                 have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { solve(); }
-                                have to_integer(size) * 1000000000000 <= 18446744073709551615 by { arithmetic() using {
+                                have to_integer(size) * 1000000000000 <= 18446744073709551615 by { solve() using {
                                     to_integer(at(head, size) / (uint64)1024u32) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000000 <= 18446744073709551615;
                                 }; }
@@ -463,7 +463,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 4 by { auto(); }
                                 have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { solve(); }
-                                have to_integer(size) * 1000000000000000 <= 18446744073709551615 by { arithmetic() using {
+                                have to_integer(size) * 1000000000000000 <= 18446744073709551615 by { solve() using {
                                     to_integer(at(head, size) / (uint64)1024u32) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615;
                                 }; }
@@ -473,7 +473,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 5 by { auto(); }
                                 have to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615 by { solve(); }
-                                have to_integer(size) * 1000000000000000000 <= 18446744073709551615 by { arithmetic() using {
+                                have to_integer(size) * 1000000000000000000 <= 18446744073709551615 by { solve() using {
                                     to_integer(at(head, size) / (uint64)1024u32) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615;
                                 }; }
@@ -501,7 +501,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 } else {
                                     have at(head, i) == at(loop(2).entry, i) + 6 by { auto(); }
                                     have to_integer(at(head, size)) * 1000000000000000000 <= 18446744073709551615 by { solve(); }
-                                    have false by { arithmetic() using {
+                                    have false by { solve() using {
                                         to_integer(at(head, size)) * 1000000000000000000 <= 18446744073709551615;
                                         1000 <= to_integer(at(head, size));
                                     }; }
@@ -513,7 +513,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 1 by { auto(); }
                                 have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { solve(); }
-                                have to_integer(size) * 1000000 <= 18446744073709551615 by { arithmetic() using {
+                                have to_integer(size) * 1000000 <= 18446744073709551615 by { solve() using {
                                     to_integer(at(head, size) / (uint64)1000u32) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000 <= 18446744073709551615;
                                 }; }
@@ -523,7 +523,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 2 by { auto(); }
                                 have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { solve(); }
-                                have to_integer(size) * 1000000000 <= 18446744073709551615 by { arithmetic() using {
+                                have to_integer(size) * 1000000000 <= 18446744073709551615 by { solve() using {
                                     to_integer(at(head, size) / (uint64)1000u32) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000 <= 18446744073709551615;
                                 }; }
@@ -533,7 +533,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 3 by { auto(); }
                                 have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { solve(); }
-                                have to_integer(size) * 1000000000000 <= 18446744073709551615 by { arithmetic() using {
+                                have to_integer(size) * 1000000000000 <= 18446744073709551615 by { solve() using {
                                     to_integer(at(head, size) / (uint64)1000u32) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000000 <= 18446744073709551615;
                                 }; }
@@ -543,7 +543,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 4 by { auto(); }
                                 have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { solve(); }
-                                have to_integer(size) * 1000000000000000 <= 18446744073709551615 by { arithmetic() using {
+                                have to_integer(size) * 1000000000000000 <= 18446744073709551615 by { solve() using {
                                     to_integer(at(head, size) / (uint64)1000u32) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615;
                                 }; }
@@ -553,7 +553,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 5 by { auto(); }
                                 have to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615 by { solve(); }
-                                have to_integer(size) * 1000000000000000000 <= 18446744073709551615 by { arithmetic() using {
+                                have to_integer(size) * 1000000000000000000 <= 18446744073709551615 by { solve() using {
                                     to_integer(at(head, size) / (uint64)1000u32) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615;
                                 }; }
@@ -640,9 +640,9 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have remainder <= 1499u32 by { auto(); }
                 } else {
                     have 0 <= j and j <= 2 by { auto(); }
-                    have 1 <= j by { arithmetic() using { 0 <= j; j != 0; }; }
-                    have 2 <= j by { arithmetic() using { 1 <= j; j != 1; }; }
-                    have j == 2 by { arithmetic() using { 2 <= j; j <= 2; }; }
+                    have 1 <= j by { solve() using { 0 <= j; j != 0; }; }
+                    have 2 <= j by { solve() using { 1 <= j; j != 1; }; }
+                    have j == 2 by { solve() using { 2 <= j; j <= 2; }; }
                     step();
                     step();
                     have remainder <= 1499u32 by { auto(); }
@@ -679,9 +679,9 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have tmp_len(j) == 2u64 by { unfold(tmp_len(j)); solve(); }
                     have tmp_len(j) <= 3u64 by { auto(); }
                 } else {
-                    have 1 <= j by { arithmetic() using { 0 <= j; j != 0; }; }
-                    have 2 <= j by { arithmetic() using { 1 <= j; j != 1; }; }
-                    have j == 2 by { arithmetic() using { 2 <= j; j <= 2; }; }
+                    have 1 <= j by { solve() using { 0 <= j; j != 0; }; }
+                    have 2 <= j by { solve() using { 1 <= j; j != 1; }; }
+                    have j == 2 by { solve() using { 2 <= j; j <= 2; }; }
                     have tmp_len(j) == 3u64 by { unfold(tmp_len(j)); solve(); }
                     have tmp_len(j) <= 3u64 by { auto(); }
                 }
@@ -752,22 +752,22 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
                         intro();
                         intro();
-                        have k < 2u64 by { arithmetic() using { k < tmp_len(j); tmp_len(j) == 2u64; }; }
+                        have k < 2u64 by { solve() using { k < tmp_len(j); tmp_len(j) == 2u64; }; }
                         instantiate(forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 }, k);
                         assumption();
                     }
                     have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
                         intro();
                         intro();
-                        have k < 3u64 by { arithmetic() using { k < tmp_len(j) + 1u64; tmp_len(j) == 2u64; }; }
+                        have k < 3u64 by { solve() using { k < tmp_len(j) + 1u64; tmp_len(j) == 2u64; }; }
                         instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) }, k);
                         assumption();
                     }
                 } else {
                     have 0 <= j and j <= 2 by { auto(); }
-                    have 1 <= j by { arithmetic() using { 0 <= j; j != 0; }; }
-                    have 2 <= j by { arithmetic() using { 1 <= j; j != 1; }; }
-                    have j == 2 by { arithmetic() using { 2 <= j; j <= 2; }; }
+                    have 1 <= j by { solve() using { 0 <= j; j != 0; }; }
+                    have 2 <= j by { solve() using { 1 <= j; j != 1; }; }
+                    have j == 2 by { solve() using { 2 <= j; j <= 2; }; }
                     mark fmt;
                     step();
                     transport(at(fmt, tmp[0u64]) != 0u8, tmp[0u64] != 0u8);
@@ -785,14 +785,14 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
                         intro();
                         intro();
-                        have k < 3u64 by { arithmetic() using { k < tmp_len(j); tmp_len(j) == 3u64; }; }
+                        have k < 3u64 by { solve() using { k < tmp_len(j); tmp_len(j) == 3u64; }; }
                         instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies tmp[k] != 0u8 }, k);
                         assumption();
                     }
                     have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
                         intro();
                         intro();
-                        have k < 4u64 by { arithmetic() using { k < tmp_len(j) + 1u64; tmp_len(j) == 3u64; }; }
+                        have k < 4u64 by { solve() using { k < tmp_len(j) + 1u64; tmp_len(j) == 3u64; }; }
                         instantiate(forall (k: uint64) { 0u64 <= k and k < 4u64 implies defined(tmp[k]) }, k);
                         assumption();
                     }
@@ -804,14 +804,14 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
                     intro();
                     intro();
-                    have false by { arithmetic() using { k < tmp_len(j); tmp_len(j) == 0u64; }; }
+                    have false by { solve() using { k < tmp_len(j); tmp_len(j) == 0u64; }; }
                     contradiction(false);
                 }
                 have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
                     intro();
                     intro();
-                    have k < 1u64 by { arithmetic() using { k < tmp_len(j) + 1u64; tmp_len(j) == 0u64; }; }
-                    have k == 0u64 by { arithmetic() using { k < 1u64; }; }
+                    have k < 1u64 by { solve() using { k < tmp_len(j) + 1u64; tmp_len(j) == 0u64; }; }
+                    have k == 0u64 by { solve() using { k < 1u64; }; }
                     rewrite(k == 0u64);
                     solve();
                 }
@@ -853,7 +853,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             } else {
                 step();
                 have 0 <= i by { auto(); }
-                have i <= 8 by { arithmetic() using { not (9 <= i); }; }
+                have i <= 8 by { solve() using { not (9 <= i); }; }
                 if (units & 1u32) == 1u32 {
                     if i == 0 {
                         step();
@@ -881,7 +881,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             }
                         }
                     } else {
-                        have 1 <= i by { arithmetic() using { 0 <= i; i != 0; }; }
+                        have 1 <= i by { solve() using { 0 <= i; i != 0; }; }
                         if i == 1 {
                             step();
                             step();
@@ -908,7 +908,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 }
                             }
                         } else {
-                            have 2 <= i by { arithmetic() using { 1 <= i; i != 1; }; }
+                            have 2 <= i by { solve() using { 1 <= i; i != 1; }; }
                             if i == 2 {
                                 step();
                                 step();
@@ -935,7 +935,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                     }
                                 }
                             } else {
-                                have 3 <= i by { arithmetic() using { 2 <= i; i != 2; }; }
+                                have 3 <= i by { solve() using { 2 <= i; i != 2; }; }
                                 if i == 3 {
                                     step();
                                     step();
@@ -962,7 +962,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                         }
                                     }
                                 } else {
-                                    have 4 <= i by { arithmetic() using { 3 <= i; i != 3; }; }
+                                    have 4 <= i by { solve() using { 3 <= i; i != 3; }; }
                                     if i == 4 {
                                         step();
                                         step();
@@ -989,7 +989,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                             }
                                         }
                                     } else {
-                                        have 5 <= i by { arithmetic() using { 4 <= i; i != 4; }; }
+                                        have 5 <= i by { solve() using { 4 <= i; i != 4; }; }
                                         if i == 5 {
                                             step();
                                             step();
@@ -1016,7 +1016,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                 }
                                             }
                                         } else {
-                                            have 6 <= i by { arithmetic() using { 5 <= i; i != 5; }; }
+                                            have 6 <= i by { solve() using { 5 <= i; i != 5; }; }
                                             if i == 6 {
                                                 step();
                                                 step();
@@ -1043,7 +1043,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                     }
                                                 }
                                             } else {
-                                                have 7 <= i by { arithmetic() using { 6 <= i; i != 6; }; }
+                                                have 7 <= i by { solve() using { 6 <= i; i != 6; }; }
                                                 if i == 7 {
                                                     step();
                                                     step();
@@ -1070,8 +1070,8 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                         }
                                                     }
                                                 } else {
-                                                    have 8 <= i by { arithmetic() using { 7 <= i; i != 7; }; }
-                                                    have i == 8 by { arithmetic() using { 8 <= i; i <= 8; }; }
+                                                    have 8 <= i by { solve() using { 7 <= i; i != 7; }; }
+                                                    have i == 8 by { solve() using { 8 <= i; i <= 8; }; }
                                                     step();
                                                     step();
                                                     transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
@@ -1131,7 +1131,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             }
                         }
                     } else {
-                        have 1 <= i by { arithmetic() using { 0 <= i; i != 0; }; }
+                        have 1 <= i by { solve() using { 0 <= i; i != 0; }; }
                         if i == 1 {
                             step();
                             step();
@@ -1158,7 +1158,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 }
                             }
                         } else {
-                            have 2 <= i by { arithmetic() using { 1 <= i; i != 1; }; }
+                            have 2 <= i by { solve() using { 1 <= i; i != 1; }; }
                             if i == 2 {
                                 step();
                                 step();
@@ -1185,7 +1185,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                     }
                                 }
                             } else {
-                                have 3 <= i by { arithmetic() using { 2 <= i; i != 2; }; }
+                                have 3 <= i by { solve() using { 2 <= i; i != 2; }; }
                                 if i == 3 {
                                     step();
                                     step();
@@ -1212,7 +1212,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                         }
                                     }
                                 } else {
-                                    have 4 <= i by { arithmetic() using { 3 <= i; i != 3; }; }
+                                    have 4 <= i by { solve() using { 3 <= i; i != 3; }; }
                                     if i == 4 {
                                         step();
                                         step();
@@ -1239,7 +1239,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                             }
                                         }
                                     } else {
-                                        have 5 <= i by { arithmetic() using { 4 <= i; i != 4; }; }
+                                        have 5 <= i by { solve() using { 4 <= i; i != 4; }; }
                                         if i == 5 {
                                             step();
                                             step();
@@ -1266,7 +1266,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                 }
                                             }
                                         } else {
-                                            have 6 <= i by { arithmetic() using { 5 <= i; i != 5; }; }
+                                            have 6 <= i by { solve() using { 5 <= i; i != 5; }; }
                                             if i == 6 {
                                                 step();
                                                 step();
@@ -1293,7 +1293,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                     }
                                                 }
                                             } else {
-                                                have 7 <= i by { arithmetic() using { 6 <= i; i != 6; }; }
+                                                have 7 <= i by { solve() using { 6 <= i; i != 6; }; }
                                                 if i == 7 {
                                                     step();
                                                     step();
@@ -1320,8 +1320,8 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                         }
                                                     }
                                                 } else {
-                                                    have 8 <= i by { arithmetic() using { 7 <= i; i != 7; }; }
-                                                    have i == 8 by { arithmetic() using { 8 <= i; i <= 8; }; }
+                                                    have 8 <= i by { solve() using { 7 <= i; i != 7; }; }
+                                                    have i == 8 by { solve() using { 8 <= i; i <= 8; }; }
                                                     step();
                                                     step();
                                                     transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });

@@ -168,13 +168,13 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(sized_value(SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))));
                     unfold(sized_value(SizedTree::Empty));
                     have to_integer(pv) == 2 + to_integer(sized_value(far)) by {
-                        arithmetic() using {
+                        solve() using {
                             to_integer(pv) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)));
                             to_integer(sized_value(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))) == 1;
                         };
                     }
                     have to_integer(gv) == 1 + to_integer(pv) by {
-                        arithmetic() using {
+                        solve() using {
                             to_integer(gv) == 1 + to_integer(sized_value(SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)))) + to_integer(sized_value(SizedTree::Empty));
                             to_integer(sized_value(SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)))) == to_integer(pv);
                             to_integer(sized_value(SizedTree::Empty)) == 0;
@@ -182,19 +182,19 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     have -2147483648 <= to_integer(pv) by auto();
                     have to_integer(pv) <= 2147483647 by auto();
-                    have to_integer(pv) - to_integer(1) >= -2147483648 by { arithmetic() using {
+                    have to_integer(pv) - to_integer(1) >= -2147483648 by { solve() using {
                         to_integer(pv) == 2 + to_integer(sized_value(far));
                         0 <= to_integer(sized_value(far));
                     }; }
-                    have to_integer(pv) - to_integer(1) <= 2147483647 by { arithmetic() using { to_integer(pv) <= 2147483647; }; }
+                    have to_integer(pv) - to_integer(1) <= 2147483647 by { solve() using { to_integer(pv) <= 2147483647; }; }
                     have defined(pv - 1) by auto();
                     have to_integer(pv - 1) == to_integer(pv) - to_integer(1) by auto();
-                    have to_integer(pv - 1) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(SizedTree::Empty)) by { arithmetic() using {
+                    have to_integer(pv - 1) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(SizedTree::Empty)) by { solve() using {
                         to_integer(pv - 1) == to_integer(pv) - to_integer(1);
                         to_integer(pv) == 2 + to_integer(sized_value(far));
                         to_integer(sized_value(SizedTree::Empty)) == 0;
                     }; }
-                    have 1 + to_integer(sized_value(far)) + to_integer(0) <= 2147483647 by { arithmetic() using {
+                    have 1 + to_integer(sized_value(far)) + to_integer(0) <= 2147483647 by { solve() using {
                         to_integer(pv) == 2 + to_integer(sized_value(far));
                         to_integer(pv) <= 2147483647;
                     }; }
@@ -255,7 +255,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->__rb_parent_color == address(node) by { normalize() using { parent == p; at(before_inner_rotation, g->rb_left) == parent; }; }
                     have (address(node) & 7) == 0 by { assumption(); }
                     have (p->__rb_parent_color & 1) == 0 by {
-                        rewrite(p->__rb_parent_color == address(node)); arithmetic() using { aligned(node, 8); };
+                        rewrite(p->__rb_parent_color == address(node)); solve() using { aligned(node, 8); };
                     }
                     have p->__rb_parent_color == address(node) + (p->__rb_parent_color & 1) by {
                         rewrite((p->__rb_parent_color & 1) == 0);
@@ -289,7 +289,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have to_integer(pv) == 1 + to_integer(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1, far, SizedTree::Empty))) + to_integer(sized_value(SizedTree::Empty)) by {
                         rewrite(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1, far, SizedTree::Empty)) == pv - 1);
                         rewrite(sized_value(SizedTree::Empty) == 0);
-                        arithmetic() using { to_integer(pv - 1) == to_integer(pv) - to_integer(1); };
+                        solve() using { to_integer(pv - 1) == to_integer(pv) - to_integer(1); };
                     }
                     apply(sized_valid_node(node, p, Color::Red, pv, SizedTree::Node(p, node, Color::Red, pv - 1, far, SizedTree::Empty), SizedTree::Empty));
                     have sized_shape(first.model) == sized_shape(SizedTree::Node(node, p, Color::Red, pv, SizedTree::Node(p, node, Color::Red, pv - 1, far, SizedTree::Empty), SizedTree::Empty)) by {
@@ -401,7 +401,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(sized_right(SizedTree::Node(g, node, Color::Red, gv, SizedTree::Empty, SizedTree::Empty)) == SizedTree::Empty);
                         rewrite(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1, far, SizedTree::Empty)) == pv - 1);
                         rewrite(sized_value(SizedTree::Empty) == 0);
-                        arithmetic() using {
+                        solve() using {
                             to_integer(gv) == 1 + to_integer(pv);
                             to_integer(pv - 1) == to_integer(pv) - to_integer(1);
                         };
@@ -449,7 +449,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(rb_subtree_size(RbTree::Node(p, node, Color::Red, sized_shape(far), RbTree::Empty))); unfold(rb_subtree_size(RbTree::Node(g, node, Color::Red, RbTree::Empty, RbTree::Empty)));
                         unfold(rb_subtree_size(RbTree::Empty));
                         apply(sized_valid_value_matches_size(far));
-                        arithmetic() using {
+                        solve() using {
                             to_integer(gv) == 1 + to_integer(pv);
                             to_integer(pv) == 2 + to_integer(sized_value(far));
                             to_integer(sized_value(far)) == rb_subtree_size(sized_shape(far));

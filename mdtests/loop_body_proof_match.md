@@ -66,14 +66,14 @@ int32 spin(struct cell* node, int32 n) {
                     let c = fold(cell(node), { model: Maybe::Some(value) });
                     close_invariants() by {
                         both {
-                            arithmetic() using {
+                            solve() using {
                                 at(region(3).entry, i) >= at(region(3).entry, 0);
                                 at(region(3).entry, i) < at(region(3).entry, n);
                             };
                         } and {
                             both {
                                 intro();
-                                arithmetic() using {
+                                solve() using {
                                     at(region(3).entry, i) < at(region(3).entry, n);
                                 };
                             } and {

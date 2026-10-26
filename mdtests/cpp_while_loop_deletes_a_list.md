@@ -60,7 +60,7 @@ theorem length_nonnegative(xs: List<int32>) {
             List::Cons(value, rest) => {
                 apply(ih(rest));
                 unfold(length(List<int32>::Cons(value, rest)));
-                arithmetic() using { length(rest) >= 0; };
+                solve() using { length(rest) >= 0; };
             }
         }
     }
@@ -82,7 +82,7 @@ void destroy(Node* p) {
                     unfold(length(List::Cons(value, rest)));
                     apply(length_nonnegative(rest));
                     have 0 <= length(tail.items) by simp();
-                    have length(tail.items) < length(List::Cons(value, rest)) by arithmetic() using {
+                    have length(tail.items) < length(List::Cons(value, rest)) by solve() using {
                         length(List::Cons(value, rest)) == length(rest) + 1;
                         tail.items == rest;
                     };

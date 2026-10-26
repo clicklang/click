@@ -174,14 +174,14 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         unfold(sized_path_context(SizedPath::Path(root, up_model)));
                         rewrite(context == SizedContext::Left(node, parent, color, value, sibling_model, up_model));
                         unfold(sized_context_depth(SizedContext::Left(node, parent, color, value, sibling_model, up_model)));
-                        arithmetic();
+                        solve() using {};
                     }
                     have sized_walk_pending(next.model) == 1 by {
                         rewrite(next.model == SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model))); unfold(sized_walk_pending(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model)))); normalize();
                     }
                     apply(sized_context_depth_nonnegative(up_model));
                     have 0 <= sized_walk_rank(next.model) by {
-                        rewrite(next.model == SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model))); unfold(sized_walk_rank(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model)))); unfold(sized_path_context(SizedPath::Path(root, up_model))); arithmetic() using { 0 <= sized_context_depth(up_model); };
+                        rewrite(next.model == SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model))); unfold(sized_walk_rank(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model)))); unfold(sized_path_context(SizedPath::Path(root, up_model))); solve() using { 0 <= sized_context_depth(up_model); };
                     }
                 },
                 SizedContext::Right(node, parent, color, value, sibling_model, up_model) => {
@@ -226,14 +226,14 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         unfold(sized_path_context(SizedPath::Path(root, up_model)));
                         rewrite(context == SizedContext::Right(node, parent, color, value, sibling_model, up_model));
                         unfold(sized_context_depth(SizedContext::Right(node, parent, color, value, sibling_model, up_model)));
-                        arithmetic();
+                        solve() using {};
                     }
                     have sized_walk_pending(next.model) == 1 by {
                         rewrite(next.model == SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model))); unfold(sized_walk_pending(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model)))); normalize();
                     }
                     apply(sized_context_depth_nonnegative(up_model));
                     have 0 <= sized_walk_rank(next.model) by {
-                        rewrite(next.model == SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model))); unfold(sized_walk_rank(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model)))); unfold(sized_path_context(SizedPath::Path(root, up_model))); arithmetic() using { 0 <= sized_context_depth(up_model); };
+                        rewrite(next.model == SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model))); unfold(sized_walk_rank(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model)))); unfold(sized_path_context(SizedPath::Path(root, up_model))); solve() using { 0 <= sized_context_depth(up_model); };
                     }
                 },
             }
@@ -268,13 +268,13 @@ tactic prepare_sized_focus(p: struct rb_node*) {
             apply(rb_subtree_size_nonnegative(sized_shape(left_model)));
             apply(rb_subtree_size_nonnegative(sized_shape(right_model)));
             have 0 <= to_integer(sized_value(left_model)) by {
-                arithmetic() using {
+                solve() using {
                     to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                     rb_subtree_size(sized_shape(left_model)) >= 0;
                 };
             }
             have 0 <= to_integer(sized_value(right_model)) by {
-                arithmetic() using {
+                solve() using {
                     to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
                     rb_subtree_size(sized_shape(right_model)) >= 0;
                 };
@@ -282,7 +282,7 @@ tactic prepare_sized_focus(p: struct rb_node*) {
             have rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, left_model, right_model))) == 1 + rb_subtree_size(sized_shape(left_model)) + rb_subtree_size(sized_shape(right_model)) by {
                 unfold(sized_shape(SizedTree::Node(node, parent, color, value, left_model, right_model)));
                 unfold(rb_subtree_size(RbTree::Node(node, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                arithmetic();
+                solve() using {};
             }
             have 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) <= 2147483647 by {
                 rewrite(to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model)));

@@ -1224,6 +1224,12 @@ mdtests and examples.
     A `solve() using` miss now adds arithmetic's own reason, without its
     location and except where the goal is outside arithmetic's fragment
     (`mdtests/a_solve_using_miss_reports_arithmetic_s_reason.md`).
+    Written `arithmetic()` is now `solve() using {}`, and
+    `arithmetic() using { … }` is `solve() using { … }`: 547 uses in 174
+    mdtests and examples, kept wherever they still verify. Left as they
+    were: refusal mdtests that name arithmetic's message, files Rust tests
+    name, Rust and C++ imports, the standard library, and the mdtests the
+    documentation and the tactic inventory quote.
 
     Measured 2026-10-25, with every `arithmetic()` read as `solve() using {}`
     and every `arithmetic() using { … }` as `solve() using { … }`. At first

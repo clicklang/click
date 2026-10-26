@@ -26,10 +26,10 @@ int32 last_of_range(int32 *p, int32 lo, int32 hi) {
     requires to_integer(hi - lo) <= 1073741823;
     requires hi >= 0 and viewable(p[lo..hi]);
     ensures result == hi by {
-        have 0 < hi by { arithmetic() using { 0 <= lo; lo < hi; }; }
-        have to_integer(lo) <= to_integer(hi - 1) by { arithmetic() using { lo < hi; 0 < hi; }; }
-        have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 < hi; }; }
-        have 0 <= to_integer(hi - lo) by { arithmetic() using { 0 <= lo; lo < hi; }; }
+        have 0 < hi by { solve() using { 0 <= lo; lo < hi; }; }
+        have to_integer(lo) <= to_integer(hi - 1) by { solve() using { lo < hi; 0 < hi; }; }
+        have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 < hi; }; }
+        have 0 <= to_integer(hi - lo) by { solve() using { 0 <= lo; lo < hi; }; }
         have viewable(p[hi - 1..hi - 1 + 1]);
         step();
         solve();

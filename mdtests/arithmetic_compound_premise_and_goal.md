@@ -19,7 +19,7 @@ int32 bounds(int32 left, int32 right) {
     ensures result == 0;
 } by {
     have 1 + left <= 2147483647 - right by {
-        arithmetic() using {
+        solve() using {
             0 <= left;
             left <= 2147483646;
             0 <= right;

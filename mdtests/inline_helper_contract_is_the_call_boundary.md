@@ -55,10 +55,10 @@ int32 drain_to_zero(int32 value) {
             have 0 <= to_integer(value - 1) by auto();
             step();
             close_invariants() by {
-                both { arithmetic() using { 0 <= value; }; }
+                both { solve() using { 0 <= value; }; }
                 and {
-                    both { arithmetic() using { 0 <= value; }; }
-                    and { arithmetic() using { 0 <= value; }; }
+                    both { solve() using { 0 <= value; }; }
+                    and { solve() using { 0 <= value; }; }
                 }
             }
         }

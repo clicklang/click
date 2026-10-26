@@ -14,7 +14,7 @@ theorem predecessor_nonnegative(i: int64) {
     requires i > 0;
 
     ensures 0 <= i - 1 by {
-        arithmetic() using {
+        solve() using {
             i > 0;
         };
     }
@@ -25,7 +25,7 @@ theorem predecessor_below(i: int64, n: int64) {
     requires i > 0;
 
     ensures n >= i - 1 by {
-        arithmetic() using {
+        solve() using {
             i <= n;
             i > 0;
         };
@@ -37,7 +37,7 @@ theorem unsigned_predecessor_below(i: uint64, n: uint64) {
     requires i > 0;
 
     ensures i - 1 <= n by {
-        arithmetic() using {
+        solve() using {
             n >= i;
             i > 0;
         };

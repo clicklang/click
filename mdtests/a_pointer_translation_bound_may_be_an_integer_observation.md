@@ -25,7 +25,7 @@ int32 at_offset(int32* a, uint64 n, uint64 k) {
     step();
     have to_integer(n - k) < 18446744073709551615 by auto();
     have p + 1 == a + ((n - k) + 1u64) by {
-        arithmetic() using {
+        solve() using {
             p == a + (n - k);
             to_integer(n - k) < 18446744073709551615;
         };

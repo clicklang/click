@@ -20,24 +20,24 @@ theorem sized_double_middle_bounds(pv: int32, nv: int32, far: SizedTree, middle:
         have -2147483648 <= to_integer(pv) by auto();
         have to_integer(pv) <= 2147483647 by auto();
         have to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) by {
-            arithmetic() using {
+            solve() using {
                 to_integer(pv) == 1 + to_integer(sized_value(far)) + to_integer(nv);
                 to_integer(nv) == 1 + to_integer(sized_value(middle));
             };
         }
         have to_integer(pv) - to_integer(1) >= -2147483648 by {
-            arithmetic() using {
+            solve() using {
                 to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle));
                 0 <= to_integer(sized_value(far));
                 0 <= to_integer(sized_value(middle));
             };
         }
         have to_integer(pv) - to_integer(1) <= 2147483647 by {
-            arithmetic() using { to_integer(pv) <= 2147483647; };
+            solve() using { to_integer(pv) <= 2147483647; };
         }
         have defined(pv - 1) by auto();
         have 1 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) <= 2147483647 by {
-            arithmetic() using {
+            solve() using {
                 to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle));
                 to_integer(pv) <= 2147483647;
             };
@@ -65,7 +65,7 @@ theorem sized_double_middle_valid(p: struct rb_node*, node: struct rb_node*, pv:
                 + to_integer(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black))) by {
             rewrite(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)) == sized_value(sized_reparent(middle, p)));
             rewrite(sized_value(sized_reparent(middle, p)) == sized_value(middle));
-            arithmetic() using {
+            solve() using {
                 to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle));
                 to_integer(pv - 1) == to_integer(pv) - to_integer(1);
             };
@@ -81,7 +81,7 @@ theorem sized_double_middle_valid(p: struct rb_node*, node: struct rb_node*, pv:
             rewrite(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1, far,
                 sized_recolor(sized_reparent(middle, p), Color::Black))) == pv - 1);
             rewrite(sized_value(SizedTree::Empty) == 0);
-            arithmetic() using { to_integer(pv - 1) == to_integer(pv) - to_integer(1); };
+            solve() using { to_integer(pv - 1) == to_integer(pv) - to_integer(1); };
         }
         apply(sized_valid_node(node, p, Color::Red, pv,
             SizedTree::Node(p, node, Color::Red, pv - 1, far,
@@ -108,7 +108,7 @@ theorem sized_mirrored_double_middle_valid(p: struct rb_node*, node: struct rb_n
                 + to_integer(sized_value(far)) by {
             rewrite(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)) == sized_value(sized_reparent(middle, p)));
             rewrite(sized_value(sized_reparent(middle, p)) == sized_value(middle));
-            arithmetic() using {
+            solve() using {
                 to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle));
                 to_integer(pv - 1) == to_integer(pv) - to_integer(1);
             };
@@ -125,7 +125,7 @@ theorem sized_mirrored_double_middle_valid(p: struct rb_node*, node: struct rb_n
             rewrite(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1,
                 sized_recolor(sized_reparent(middle, p), Color::Black), far)) == pv - 1);
             rewrite(sized_value(SizedTree::Empty) == 0);
-            arithmetic() using { to_integer(pv - 1) == to_integer(pv) - to_integer(1); };
+            solve() using { to_integer(pv - 1) == to_integer(pv) - to_integer(1); };
         }
         apply(sized_valid_node(node, p, Color::Red, pv, SizedTree::Empty,
             SizedTree::Node(p, node, Color::Red, pv - 1,

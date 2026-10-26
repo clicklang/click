@@ -7,7 +7,7 @@ theorem size_sum_defined(left: int32, right: int32) {
     requires left <= 2147483646 - right;
     ensures defined(1 + left + right) by {
         have left <= 2147483646 by {
-            arithmetic() using {
+            solve() using {
                 0 <= right;
                 right <= 2147483646;
                 left <= 2147483646 - right;
@@ -19,7 +19,7 @@ theorem size_sum_defined(left: int32, right: int32) {
         have to_integer(0) <= to_integer(left) by auto();
         have to_integer(0) <= to_integer(right) by auto();
         have to_integer(1 + left) + to_integer(right) <= 2147483647 by {
-            arithmetic() using {
+            solve() using {
                 to_integer(2147483647 - right) == 2147483647 - to_integer(right);
                 to_integer(1 + left) <= to_integer(2147483647 - right);
             };
@@ -34,7 +34,7 @@ theorem size_sum_as_integer(left: int32, right: int32) {
     ensures to_integer(1 + left + right) == 1 + to_integer(left) + to_integer(right) by {
         have to_integer(1 + left) == to_integer(1) + to_integer(left) by auto();
         have to_integer((1 + left) + right) == to_integer((1 + left)) + to_integer(right) by auto();
-        arithmetic() using {
+        solve() using {
             to_integer(1 + left) == 1 + to_integer(left);
             to_integer(1 + left + right) == to_integer(1 + left) + to_integer(right);
         };

@@ -52,7 +52,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
     have forall (j: int32) { 0 <= j and j <= k implies viewable(a[0..j]) } by {
         intro();
         intro();
-        have j <= n by { arithmetic() using { j <= k; k <= n; }; }
+        have j <= n by { solve() using { j <= k; k <= n; }; }
         have viewable(a[0..j]) by {
             transport(viewable(a[0..n]), viewable(a[0..j])) using {
                 viewable(a[0..n]);

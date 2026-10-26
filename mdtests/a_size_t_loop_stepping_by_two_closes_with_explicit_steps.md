@@ -34,25 +34,25 @@ theorem step_two(i: uint64, length: uint64) {
         have to_integer(length) <= to_integer(2147483647u64) by auto();
         have to_integer(i) <= to_integer(length) by auto();
         have to_integer(i) + to_integer(1u64) <= 18446744073709551615 by {
-            arithmetic() using { to_integer(i) <= to_integer(length); to_integer(length) <= to_integer(2147483647u64); };
+            solve() using { to_integer(i) <= to_integer(length); to_integer(length) <= to_integer(2147483647u64); };
         }
         have to_integer(i + 1u64) == to_integer(i) + to_integer(1u64) by auto();
         have to_integer(i + 1u64) < to_integer(length) by auto();
         have to_integer(i) + to_integer(2u64) <= 18446744073709551615 by {
-            arithmetic() using { to_integer(i) <= to_integer(length); to_integer(length) <= to_integer(2147483647u64); };
+            solve() using { to_integer(i) <= to_integer(length); to_integer(length) <= to_integer(2147483647u64); };
         }
         have to_integer(i + 2u64) == to_integer(i) + to_integer(2u64) by auto();
         have to_integer(i + 2u64) == to_integer(i + 1u64) + 1 by {
-            arithmetic() using {
+            solve() using {
                 to_integer(i + 2u64) == to_integer(i) + to_integer(2u64);
                 to_integer(i + 1u64) == to_integer(i) + to_integer(1u64);
             };
         }
         have to_integer(i + 1u64) + 1 <= to_integer(length) by {
-            arithmetic() using { to_integer(i + 1u64) < to_integer(length); };
+            solve() using { to_integer(i + 1u64) < to_integer(length); };
         }
         have to_integer(i + 2u64) <= to_integer(length) by {
-            arithmetic() using {
+            solve() using {
                 to_integer(i + 2u64) == to_integer(i + 1u64) + 1;
                 to_integer(i + 1u64) + 1 <= to_integer(length);
             };
@@ -70,13 +70,13 @@ theorem step_two_decreases(i: uint64, length: uint64) {
         have to_integer(i) <= to_integer(length) by auto();
         have to_integer(i + 2u64) <= to_integer(length) by auto();
         have to_integer(i) + to_integer(2u64) <= 18446744073709551615 by {
-            arithmetic() using { to_integer(i) <= to_integer(length); to_integer(length) <= to_integer(2147483647u64); };
+            solve() using { to_integer(i) <= to_integer(length); to_integer(length) <= to_integer(2147483647u64); };
         }
         have to_integer(i + 2u64) == to_integer(i) + to_integer(2u64) by auto();
         have to_integer(length - i) == to_integer(length) - to_integer(i) by auto();
         have to_integer(length - (i + 2u64)) == to_integer(length) - to_integer(i + 2u64) by auto();
         have to_integer(length - (i + 2u64)) < to_integer(length - i) by {
-            arithmetic() using {
+            solve() using {
                 to_integer(length - (i + 2u64)) == to_integer(length) - to_integer(i + 2u64);
                 to_integer(length - i) == to_integer(length) - to_integer(i);
                 to_integer(i + 2u64) == to_integer(i) + to_integer(2u64);

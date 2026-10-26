@@ -214,12 +214,12 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 both { normalize(); } and {
                     both { solve(); } and {
                         both { solve(); } and {
-                            both { arithmetic() using {
+                            both { solve() using {
                                 at(opened, i) < end;
                                 0 <= at(opened, i);
                                 end <= arena->capacity;
                                 arena->capacity <= 536870911;
-                            }; } and { arithmetic() using {
+                            }; } and { solve() using {
                                 at(opened, i) < end;
                                 0 <= at(opened, i);
                                 end <= arena->capacity;

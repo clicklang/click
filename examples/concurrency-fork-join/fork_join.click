@@ -70,7 +70,7 @@ void *fill_range(void *argument) {
             have 0 <= job->end by auto();
             have 0 - at(iteration, index) + job->end - 1
                 < 0 - at(iteration, index) + job->end by {
-                arithmetic() using {
+                solve() using {
                     0 <= at(iteration, index);
                     0 <= job->end;
                     at(iteration, index) < at(iteration, job->end);

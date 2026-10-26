@@ -60,7 +60,7 @@ int32 stop_at(int32 n) {
                     close_invariants() by {
                         both { solve(); }
                         and {
-                            arithmetic() using {
+                            solve() using {
                                 at(region(3).entry, i) >= 0;
                                 at(region(6).entry, i) != 0;
                             };

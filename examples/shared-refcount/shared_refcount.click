@@ -24,14 +24,14 @@ void object_retain(struct object *obj) {
     have count(permit(obj)) >= 1;
     have slack == count(permit(obj));
     have to_integer(1) <= to_integer(slack) by auto();
-    have to_integer(refs) <= to_integer(2) by arithmetic() using {
+    have to_integer(refs) <= to_integer(2) by solve() using {
         to_integer(refs) + to_integer(slack) == 3;
         to_integer(1) <= to_integer(slack);
     };
     have refs <= 2 by auto();
     have to_integer(refs + 1) == to_integer(refs) + to_integer(1) by auto();
     have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by auto();
-    have to_integer(refs + 1) + to_integer(slack - 1) == 3 by arithmetic() using {
+    have to_integer(refs + 1) + to_integer(slack - 1) == 3 by solve() using {
         to_integer(refs + 1) == to_integer(refs) + to_integer(1);
         to_integer(slack - 1) == to_integer(slack) - to_integer(1);
         to_integer(refs) + to_integer(slack) == 3;
@@ -54,14 +54,14 @@ void object_release(struct object *obj) {
     have count(reference(obj)) >= 1;
     have refs == count(reference(obj));
     have to_integer(1) <= to_integer(refs) by auto();
-    have to_integer(slack) <= to_integer(2) by arithmetic() using {
+    have to_integer(slack) <= to_integer(2) by solve() using {
         to_integer(refs) + to_integer(slack) == 3;
         to_integer(1) <= to_integer(refs);
     };
     have slack <= 2 by auto();
     have to_integer(refs - 1) == to_integer(refs) - to_integer(1) by auto();
     have to_integer(slack + 1) == to_integer(slack) + to_integer(1) by auto();
-    have to_integer(refs - 1) + to_integer(slack + 1) == 3 by arithmetic() using {
+    have to_integer(refs - 1) + to_integer(slack + 1) == 3 by solve() using {
         to_integer(refs - 1) == to_integer(refs) - to_integer(1);
         to_integer(slack + 1) == to_integer(slack) + to_integer(1);
         to_integer(refs) + to_integer(slack) == 3;

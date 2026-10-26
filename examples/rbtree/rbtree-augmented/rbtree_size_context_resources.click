@@ -150,7 +150,7 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
             }
             have sized_context_depth(up.model) < sized_context_depth(old(path.model)) by {
                 rewrite(up.model == up_model);
-                arithmetic() using { sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1; };
+                solve() using { sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1; };
             }
             have sized_plug(SizedContext::Left(node, parent, color, value, sibling_model, up_model), old(sub.model)) == sized_plug(up_model, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model)) by {
                 unfold(sized_plug(SizedContext::Left(node, parent, color, value, sibling_model, up_model), old(sub.model))); normalize();
@@ -197,7 +197,7 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
             }
             have sized_context_depth(up.model) < sized_context_depth(old(path.model)) by {
                 rewrite(up.model == up_model);
-                arithmetic() using { sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1; };
+                solve() using { sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1; };
             }
             have sized_plug(SizedContext::Right(node, parent, color, value, sibling_model, up_model), old(sub.model)) == sized_plug(up_model, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model))) by {
                 unfold(sized_plug(SizedContext::Right(node, parent, color, value, sibling_model, up_model), old(sub.model))); normalize();
@@ -340,7 +340,7 @@ tactic certify_sized_context(child: struct rb_node*, root: struct rb_node*,
             }
             have sized_context_depth(up.model) < sized_context_depth(old(path.model)) by {
                 rewrite(up.model == up_model);
-                arithmetic() using { sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1; };
+                solve() using { sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1; };
             }
             let { checked: sibling } = certify_size(node->rb_right, { tree: sibling });
             let { checked: up } = certify_sized_context(node, root, stop, value, { path: up });
@@ -367,7 +367,7 @@ tactic certify_sized_context(child: struct rb_node*, root: struct rb_node*,
             }
             have sized_context_depth(up.model) < sized_context_depth(old(path.model)) by {
                 rewrite(up.model == up_model);
-                arithmetic() using { sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1; };
+                solve() using { sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1; };
             }
             let { checked: sibling } = certify_size(node->rb_left, { tree: sibling });
             let { checked: up } = certify_sized_context(node, root, stop, value, { path: up });

@@ -46,7 +46,7 @@ int32 ensure_premise_caller(int32 count, int32* cell) {
     step();
     have cell[0] == 1 by {
         have count > 0 by {
-            arithmetic() using {
+            solve() using {
                 1 <= count;
             };
         }

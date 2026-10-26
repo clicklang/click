@@ -57,7 +57,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                         rewrite(sized_plug(sized_path_context(path_model), sub_model) == sized_walk_tree(walk.model)); assumption();
                     }
                     have rb_subtree_size(sized_shape(sub_model)) <= 2147483647 by {
-                        arithmetic() using {
+                        solve() using {
                             rb_subtree_size(sized_shape(sub_model)) <= rb_subtree_size(sized_shape(sized_plug(sized_path_context(path_model), sub_model)));
                             rb_subtree_size(sized_shape(sized_plug(sized_path_context(path_model), sub_model))) <= 2147483647;
                         };

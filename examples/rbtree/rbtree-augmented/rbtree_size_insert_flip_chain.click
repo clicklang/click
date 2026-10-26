@@ -215,7 +215,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have sized_flip_depth(state.chain) < sized_flip_depth(at(iteration,state.chain)) by {
                                                         rewrite(state.chain == up);
                                                         rewrite(at(iteration,state.chain) == SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
-                                                        unfold(sized_flip_depth(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); arithmetic();
+                                                        unfold(sized_flip_depth(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); solve() using {};
                                                     }
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
                                                     unfold(sized_flip_color(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
@@ -359,7 +359,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have sized_flip_depth(state.chain) < sized_flip_depth(at(iteration,state.chain)) by {
                                                         rewrite(state.chain == up);
                                                         rewrite(at(iteration,state.chain) == SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
-                                                        unfold(sized_flip_depth(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); arithmetic();
+                                                        unfold(sized_flip_depth(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); solve() using {};
                                                     }
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
                                                     unfold(sized_flip_color(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
@@ -504,7 +504,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have sized_flip_depth(state.chain) < sized_flip_depth(at(iteration,state.chain)) by {
                                                         rewrite(state.chain == up);
                                                         rewrite(at(iteration,state.chain) == SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
-                                                        unfold(sized_flip_depth(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); arithmetic();
+                                                        unfold(sized_flip_depth(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); solve() using {};
                                                     }
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other))));
                                                     unfold(sized_flip_color(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other))));
@@ -649,7 +649,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have sized_flip_depth(state.chain) < sized_flip_depth(at(iteration,state.chain)) by {
                                                         rewrite(state.chain == up);
                                                         rewrite(at(iteration,state.chain) == SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
-                                                        unfold(sized_flip_depth(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); arithmetic();
+                                                        unfold(sized_flip_depth(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); solve() using {};
                                                     }
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)))));
                                                     unfold(sized_flip_color(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)))));
