@@ -34,7 +34,7 @@ theorem sized_valid_value_matches_size(tree: SizedTree) {
                 unfold(sized_value(SizedTree::Node(identity, parent, color, value, left, right)));
                 unfold(sized_shape(SizedTree::Node(identity, parent, color, value, left, right)));
                 unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left), sized_shape(right))));
-                arithmetic() using {
+                solve() using {
                     to_integer(value) == 1 + to_integer(sized_value(left)) + to_integer(sized_value(right));
                     to_integer(sized_value(left)) == rb_subtree_size(sized_shape(left));
                     to_integer(sized_value(right)) == rb_subtree_size(sized_shape(right));
@@ -49,7 +49,7 @@ theorem sized_valid_value_nonnegative(tree: SizedTree) {
     ensures 0 <= to_integer(sized_value(tree)) by {
         apply(sized_valid_value_matches_size(tree));
         apply(rb_subtree_size_nonnegative(sized_shape(tree)));
-        arithmetic() using {
+        solve() using {
             to_integer(sized_value(tree)) == rb_subtree_size(sized_shape(tree));
             rb_subtree_size(sized_shape(tree)) >= 0;
         };

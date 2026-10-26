@@ -36,18 +36,18 @@ void clear(int32* values) {
             step();
             close_invariants() by {
                 both {
-                    arithmetic() using {
+                    solve() using {
                         0 <= at(region(3).entry, x);
                         at(region(3).entry, x) < 4;
                     };
                 } and {
                     both {
-                        arithmetic() using {
+                        solve() using {
                             0 <= at(region(3).entry, x);
                             at(region(3).entry, x) < 4;
                         };
                     } and {
-                        arithmetic() using {
+                        solve() using {
                             0 <= at(region(3).entry, x);
                             at(region(3).entry, x) < 4;
                         };

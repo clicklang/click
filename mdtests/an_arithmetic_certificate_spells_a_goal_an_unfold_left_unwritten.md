@@ -49,7 +49,7 @@ void f(int32* q) {
             have weight(wrap(at, v, rest)) == chain_size(rest) + 2 by {
                 unfold(wrap(at, v, rest));
                 unfold(weight(Chain::Link(at, v, rest)));
-                arithmetic() using {
+                solve() using {
                     chain_size(Chain::Link(at, v, rest)) == 1 + chain_size(rest);
                 };
             }

@@ -18,7 +18,7 @@ theorem below_by_arithmetic(x: uint32, n: uint32) {
     requires x < n;
     requires n <= 4u32;
     ensures x < 4u32 by {
-        arithmetic() using {
+        solve() using {
             x < n;
             n <= 4u32;
         };
@@ -29,7 +29,7 @@ theorem at_most_by_arithmetic(x: uint32, n: uint32) {
     requires x <= n;
     requires n <= 4u32;
     ensures x <= 4u32 by {
-        arithmetic() using {
+        solve() using {
             x <= n;
             n <= 4u32;
         };

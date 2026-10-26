@@ -66,7 +66,7 @@ theorem last_cell(a: int32[], n: int32) {
 theorem listed_arithmetic(n: int32) {
     requires 0 <= n;
     ensures 0 <= n by {
-        arithmetic() using { 0 <= n; n <= n; 0 <= 0; };
+        solve() using { 0 <= n; n <= n; 0 <= 0; };
     }
 }
 

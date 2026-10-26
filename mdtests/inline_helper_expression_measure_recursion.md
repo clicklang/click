@@ -48,7 +48,7 @@ int32 drain(int32 n) {
     branch {
         have 0 <= to_integer(n - 1) by auto();
         have 1 <= n by {
-            arithmetic() using {
+            solve() using {
                 n > 0;
             };
         }

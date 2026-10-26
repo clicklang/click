@@ -16,7 +16,7 @@ theorem chained_integer_equalities(t: Integer, a: Integer, b: Integer, x: Intege
     requires a == b;
     requires x == y;
     ensures t == b + y by {
-        arithmetic() using {
+        solve() using {
             t == a + x;
             a == b;
             x == y;
@@ -29,7 +29,7 @@ theorem bounded_integer_sum(t: Integer, a: Integer, b: Integer, x: Integer, y: I
     requires a <= b;
     requires x <= y;
     ensures t <= b + y by {
-        arithmetic() using {
+        solve() using {
             t == a + x;
             a <= b;
             x <= y;

@@ -13,19 +13,19 @@ function tmp_len(j: int32) -> uint64 {
 theorem below_zero_is_false(k: uint64, x: uint64) {
     requires k < x;
     requires x == 0u64;
-    ensures false by { arithmetic() using { k < x; x == 0u64; }; }
+    ensures false by { solve() using { k < x; x == 0u64; }; }
 }
 
 theorem below_an_empty_call_is_false(k: uint64, j: int32) {
     requires k < tmp_len(j);
     requires tmp_len(j) == 0u64;
-    ensures false by { arithmetic() using { k < tmp_len(j); tmp_len(j) == 0u64; }; }
+    ensures false by { solve() using { k < tmp_len(j); tmp_len(j) == 0u64; }; }
 }
 
 theorem below_an_empty_call_proves_any_order(k: uint64, j: int32) {
     requires k < tmp_len(j);
     requires tmp_len(j) == 0u64;
-    ensures k < 0u64 by { arithmetic() using { k < tmp_len(j); tmp_len(j) == 0u64; }; }
+    ensures k < 0u64 by { solve() using { k < tmp_len(j); tmp_len(j) == 0u64; }; }
 }
 ```
 

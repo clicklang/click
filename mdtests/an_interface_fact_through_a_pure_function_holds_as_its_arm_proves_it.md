@@ -39,7 +39,7 @@ int32 n(int32 j) {
         have tl(j) == 2u64 by { unfold(tl(j)); solve(); }
         have tmp[tl(j)] == 0u8 by { normalize(); }
     } else {
-        have j == 2 by { arithmetic() using { 1 <= j; j <= 2; j != 1; }; }
+        have j == 2 by { solve() using { 1 <= j; j <= 2; j != 1; }; }
         have tl(j) == 3u64 by { unfold(tl(j)); solve(); }
         have tmp[tl(j)] == 0u8 by { normalize(); }
     }

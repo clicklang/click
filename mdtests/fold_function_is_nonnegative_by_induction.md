@@ -31,21 +31,21 @@ theorem marks_nonnegative(lo: int32, hi: int32) {
             solve();
         } else {
             have lo < hi;
-            have 0 <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 <= lo; lo < hi; }; }
+            have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
             apply(ih(hi - 1)) using {
                 0 <= to_integer(hi - 1);
                 to_integer(hi - 1) < to_integer(hi);
                 0 <= lo;
             };
-            have to_integer(lo) <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < 2147483647 by { arithmetic() using { 0 <= lo; lo < hi; }; }
+            have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < 2147483647 by { solve() using { 0 <= lo; lo < hi; }; }
             peel(marks(lo, hi)) using {
                 to_integer(lo) <= to_integer(hi - 1);
                 to_integer(hi - 1) < 2147483647;
             };
             have 0 <= to_integer(if to_integer(hi - 1) == 0 { 1 } else { 0 }) by auto();
-            arithmetic() using {
+            solve() using {
                 0 <= marks(lo, hi - 1);
                 0 <= to_integer(if to_integer(hi - 1) == 0 { 1 } else { 0 });
             };

@@ -141,7 +141,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
     }
     have 0 <= to_integer(region->start + index) by {
         rewrite(region->start == s);
-        arithmetic() using {
+        solve() using {
             0 <= s;
             to_integer(s) <= to_integer(s + index);
         };

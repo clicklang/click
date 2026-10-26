@@ -11,7 +11,7 @@ theorem reflexive(x: int32) {
 theorem empty_using_lists(x: int32, k: int32) {
     requires forall (j: int32) { j + 0 == j };
     ensures x == x by { solve() using { }; }
-    ensures (x & 255) <= 255 by { arithmetic() using { }; }
+    ensures (x & 255) <= 255 by { solve() using { }; }
     ensures x + 0 == x + 0 by { normalize() using { }; }
     ensures x == x by { apply(reflexive(x)) using { }; }
     ensures k + 0 == k by {

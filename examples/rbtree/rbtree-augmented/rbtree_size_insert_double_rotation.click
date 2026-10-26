@@ -191,7 +191,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->__rb_parent_color == address(node) by { normalize() using { parent == p; at(before_inner_rotation, old(root->rb_node)->rb_left) == parent; }; }
                     have (address(node) & 7) == 0 by { assumption(); }
                     have (p->__rb_parent_color & 1) == 0 by {
-                        rewrite(p->__rb_parent_color == address(node)); arithmetic() using { aligned(node, 8); };
+                        rewrite(p->__rb_parent_color == address(node)); solve() using { aligned(node, 8); };
                     }
                     have p->__rb_parent_color == address(node) + (p->__rb_parent_color & 1) by {
                         rewrite((p->__rb_parent_color & 1) == 0);

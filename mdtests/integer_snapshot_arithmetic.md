@@ -20,7 +20,7 @@ void transfer(int32 progress, int32 total, int32 end) {
     step();
     have to_integer(end) == at(region(0).entry, to_integer(progress));
     have to_integer(total) <= 255 * to_integer(end) by {
-        arithmetic() using {
+        solve() using {
             at(region(0).entry, to_integer(total) <= 255 * to_integer(progress));
             to_integer(end) == at(region(0).entry, to_integer(progress));
         };

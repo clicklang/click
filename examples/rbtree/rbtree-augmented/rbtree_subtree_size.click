@@ -18,7 +18,7 @@ theorem rb_subtree_size_nonnegative(tree: RbTree) {
             RbTree::Node(node, parent, color, left, right) => {
                 apply(ih(left)); apply(ih(right));
                 unfold(rb_subtree_size(RbTree::Node(node, parent, color, left, right)));
-                arithmetic() using { rb_subtree_size(left) >= 0; rb_subtree_size(right) >= 0; };
+                solve() using { rb_subtree_size(left) >= 0; rb_subtree_size(right) >= 0; };
             },
         }
     }
@@ -50,7 +50,7 @@ theorem rb_subtree_size_rotate_left(node: struct rb_node*, parent: struct rb_nod
         unfold(rb_subtree_size(RbTree::Node(pivot, node, pivot_color, b, c)));
         apply(rb_subtree_size_reparent(b, node));
         rewrite(rb_subtree_size(rb_reparent(b, node)) == rb_subtree_size(b));
-        arithmetic();
+        solve() using {};
     }
     ensures rb_subtree_size(rb_left(rb_rotate_left(RbTree::Node(node, parent, color, a, RbTree::Node(pivot, node, pivot_color, b, c))))) == rb_subtree_size(a) + rb_subtree_size(b) + 1 by {
         unfold(rb_rotate_left(RbTree::Node(node, parent, color, a, RbTree::Node(pivot, node, pivot_color, b, c))));
@@ -74,7 +74,7 @@ theorem rb_subtree_size_rotate_right(node: struct rb_node*, parent: struct rb_no
         unfold(rb_subtree_size(RbTree::Node(pivot, node, pivot_color, a, b)));
         apply(rb_subtree_size_reparent(b, node));
         rewrite(rb_subtree_size(rb_reparent(b, node)) == rb_subtree_size(b));
-        arithmetic();
+        solve() using {};
     }
     ensures rb_subtree_size(rb_right(rb_rotate_right(RbTree::Node(node, parent, color, RbTree::Node(pivot, node, pivot_color, a, b), c)))) == rb_subtree_size(b) + rb_subtree_size(c) + 1 by {
         unfold(rb_rotate_right(RbTree::Node(node, parent, color, RbTree::Node(pivot, node, pivot_color, a, b), c)));

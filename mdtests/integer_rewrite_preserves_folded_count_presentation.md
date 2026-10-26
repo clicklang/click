@@ -13,7 +13,7 @@ theorem rewritten_bound(a: uint64, remaining: uint64) {
  requires to_integer(a) <= 1 + 255 * to_integer(16);
  ensures to_integer(a) <= 1 + 255 * to_integer(observed_batch_prefix(16u64, remaining)) by {
   rewrite(observed_batch_prefix(16u64, remaining) == 16);
-  arithmetic() using { to_integer(a) <= 1 + 255 * to_integer(16); };
+  solve() using { to_integer(a) <= 1 + 255 * to_integer(16); };
  }
 }
 ```

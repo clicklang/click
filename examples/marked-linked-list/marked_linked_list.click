@@ -69,7 +69,7 @@ struct node* list_next(struct node* node) {
     observe(marked_list(node));
     execute();
     have address(result) == (node->word & ~1) by {
-        arithmetic() using {
+        solve() using {
             aligned(result, 8);
             node->word == address(result) + (node->word & 1);
         }

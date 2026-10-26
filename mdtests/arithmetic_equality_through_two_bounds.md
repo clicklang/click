@@ -9,7 +9,7 @@ theorem equality_through_two_bounds(a: Integer, d: Integer) {
     requires a == d;
     requires d <= 2;
     requires 2 <= d;
-    ensures a == 2 by arithmetic() using { a == d; d <= 2; 2 <= d; };
+    ensures a == 2 by solve() using { a == d; d <= 2; 2 <= d; };
 }
 ```
 

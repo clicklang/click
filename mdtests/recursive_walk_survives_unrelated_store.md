@@ -129,7 +129,7 @@ void mark(int32 *next, int32 *visited) {
     } by {
         intro();
         intro();
-        have k == 0 by { arithmetic() using { 0 <= k; k < 1; }; }
+        have k == 0 by { solve() using { 0 <= k; k < 1; }; }
         solve() using { k == 0; at(entry, next[0]) == next[0]; };
     }
     have forall (k: int32) {
@@ -138,16 +138,16 @@ void mark(int32 *next, int32 *visited) {
     } by {
         intro();
         intro();
-        have k == 0 by { arithmetic() using { 0 <= k; k < 1; }; }
+        have k == 0 by { solve() using { 0 <= k; k < 1; }; }
         have at(entry, next[k]) == 0 by {
             rewrite(k == 0);
             assumption();
         }
         have 0 <= at(entry, next[k]) by {
-            arithmetic() using { at(entry, next[k]) == 0; };
+            solve() using { at(entry, next[k]) == 0; };
         }
         have at(entry, next[k]) < 1 by {
-            arithmetic() using { at(entry, next[k]) == 0; };
+            solve() using { at(entry, next[k]) == 0; };
         }
         assumption();
     }

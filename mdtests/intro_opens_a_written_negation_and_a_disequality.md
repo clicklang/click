@@ -15,7 +15,7 @@ theorem written_negation(n: int32) {
     requires n == 0;
     ensures not (n == 1) by {
         intro();
-        arithmetic() using { n == 0; n == 1; };
+        solve() using { n == 0; n == 1; };
     }
 }
 
@@ -23,7 +23,7 @@ theorem disequality(a: Integer, b: Integer) {
     requires a < b;
     ensures a != b by {
         intro();
-        arithmetic() using { a < b; a == b; };
+        solve() using { a < b; a == b; };
     }
 }
 

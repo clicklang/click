@@ -150,7 +150,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Empty)));
                     unfold(sized_value(SizedTree::Empty));
                     have to_integer(gv) == 2 + to_integer(nv) by {
-                        arithmetic() using {
+                        solve() using {
                             to_integer(gv) == 1 + to_integer(pv) + to_integer(sized_value(SizedTree::Empty));
                             to_integer(pv) == 1 + to_integer(nv) + to_integer(sized_value(SizedTree::Empty));
                             to_integer(sized_value(SizedTree::Empty)) == 0;
@@ -296,7 +296,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(rb_subtree_size(RbTree::Node(g, p, Color::Red, RbTree::Empty, RbTree::Empty)));
                         unfold(rb_subtree_size(RbTree::Empty));
                         unfold(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right)));
-                        arithmetic() using {
+                        solve() using {
                             to_integer(gv) == 2 + to_integer(nv);
                             rb_subtree_size(sized_shape(left)) + rb_subtree_size(sized_shape(right)) + 1 == to_integer(nv);
                         };

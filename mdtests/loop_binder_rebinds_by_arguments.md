@@ -56,14 +56,14 @@ void bump_n(struct cell* p, int32 n) {
             let d = fold(counter(p), { count: old(c.count) + i });
             close_invariants() by {
                 both {
-                    arithmetic() using {
+                    solve() using {
                         at(region(3).entry, i) >= at(region(3).entry, 0);
                         at(region(3).entry, i) < at(region(3).entry, n);
                     };
                 } and {
                     both {
                         intro();
-                        arithmetic() using {
+                        solve() using {
                             at(region(3).entry, i) < at(region(3).entry, n);
                         };
                     } and {

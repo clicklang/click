@@ -41,14 +41,14 @@ uint32 sum(const uint8* bytes, uint64 length, uint64 start) {
         invariant done <= 16u64;
         preserve by {
             have done <= 12u64;
-            have done + 4 <= 16 by { arithmetic() using { done <= 12u64; }; }
+            have done + 4 <= 16 by { solve() using { done <= 12u64; }; }
             mark head;
             execute_until(back_edge());
             have done == at(head, done) + 4 by { auto(); }
             have at(head, done) <= 12u64;
-            have done <= 16u64 by { arithmetic() using { done == at(head, done) + 4; at(head, done) <= 12u64; }; }
-            have 0 <= 16 - done by { arithmetic() using { done == at(head, done) + 4; at(head, done) <= 12u64; }; }
-            have 16 - done < 16 - at(head, done) by { arithmetic() using { done == at(head, done) + 4; at(head, done) <= 12u64; }; }
+            have done <= 16u64 by { solve() using { done == at(head, done) + 4; at(head, done) <= 12u64; }; }
+            have 0 <= 16 - done by { solve() using { done == at(head, done) + 4; at(head, done) <= 12u64; }; }
+            have 16 - done < 16 - at(head, done) by { solve() using { done == at(head, done) + 4; at(head, done) <= 12u64; }; }
             close_invariants();
         }
     }

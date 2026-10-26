@@ -16,11 +16,11 @@ theorem t(n: int32, c: Choice) {
     requires n >= 1;
     ensures n >= 0 by {
         if n <= 5 {
-            arithmetic() using { n >= 1; };
+            solve() using { n >= 1; };
         } else {
             match c {
-                Choice::A => { arithmetic() using { n >= 1; }; },
-                Choice::B => { arithmetic() using { n >= 1; }; },
+                Choice::A => { solve() using { n >= 1; }; },
+                Choice::B => { solve() using { n >= 1; }; },
             }
         }
     }

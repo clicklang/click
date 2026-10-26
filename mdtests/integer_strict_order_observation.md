@@ -9,7 +9,7 @@ theorem derived_strict_observer(left: int32, right: int32) {
         if to_integer(right) <= to_integer(left) {
             contradiction(left < right);
         } else {
-            arithmetic() using { not (to_integer(right) <= to_integer(left)); };
+            solve() using { not (to_integer(right) <= to_integer(left)); };
         }
     }
 }

@@ -368,7 +368,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(at(iteration,state.context) == SizedContext::Right(y, x, Color::Red, old(state.parent_value), old(state.other), SizedContext::Right(x, sized_context_parent(at(iteration,state.outer),0), Color::Black, old(state.grand_value), old(state.uncle), at(iteration,state.outer))));
                                 unfold(sized_context_depth(SizedContext::Right(y, x, Color::Red, old(state.parent_value), old(state.other), SizedContext::Right(x, sized_context_parent(at(iteration,state.outer),0), Color::Black, old(state.grand_value), old(state.uncle), at(iteration,state.outer)))));
                                 unfold(sized_context_depth(SizedContext::Right(x, sized_context_parent(at(iteration,state.outer),0), Color::Black, old(state.grand_value), old(state.uncle), at(iteration,state.outer))));
-                                arithmetic();
+                                solve() using {};
                             }
                             unfold(sized_mirrored_context_flip_focus(SizedMirroredContextFlipPhase::After(x, y, z),old(node)));
                             unfold(sized_mirrored_context_flip_parent(SizedMirroredContextFlipPhase::After(x, y, z),state.outer));

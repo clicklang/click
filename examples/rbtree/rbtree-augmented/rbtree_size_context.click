@@ -102,12 +102,12 @@ theorem sized_context_depth_nonnegative(ctx: SizedContext) {
             SizedContext::Left(node, parent, color, value, sibling, up) => {
                 apply(ih(up));
                 unfold(sized_context_depth(SizedContext::Left(node, parent, color, value, sibling, up)));
-                arithmetic() using { 0 <= sized_context_depth(up); };
+                solve() using { 0 <= sized_context_depth(up); };
             },
             SizedContext::Right(node, parent, color, value, sibling, up) => {
                 apply(ih(up));
                 unfold(sized_context_depth(SizedContext::Right(node, parent, color, value, sibling, up)));
-                arithmetic() using { 0 <= sized_context_depth(up); };
+                solve() using { 0 <= sized_context_depth(up); };
             },
         }
     }
@@ -177,11 +177,11 @@ theorem sized_plug_contains_focus(ctx: SizedContext, sub: SizedTree) {
                 have rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling))) by {
                     unfold(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling)));
                     unfold(rb_subtree_size(RbTree::Node(node, parent, color, sized_shape(sub), sized_shape(sibling))));
-                    arithmetic() using { rb_subtree_size(sized_shape(sibling)) >= 0; };
+                    solve() using { rb_subtree_size(sized_shape(sibling)) >= 0; };
                 }
                 apply(ih(up, SizedTree::Node(node, parent, color, value, sub, sibling)));
                 have rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(sized_plug(up, SizedTree::Node(node, parent, color, value, sub, sibling)))) by {
-                    arithmetic() using {
+                    solve() using {
                         rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling)));
                         rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling))) <= rb_subtree_size(sized_shape(sized_plug(up, SizedTree::Node(node, parent, color, value, sub, sibling))));
                     };
@@ -194,11 +194,11 @@ theorem sized_plug_contains_focus(ctx: SizedContext, sub: SizedTree) {
                 have rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub))) by {
                     unfold(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub)));
                     unfold(rb_subtree_size(RbTree::Node(node, parent, color, sized_shape(sibling), sized_shape(sub))));
-                    arithmetic() using { rb_subtree_size(sized_shape(sibling)) >= 0; };
+                    solve() using { rb_subtree_size(sized_shape(sibling)) >= 0; };
                 }
                 apply(ih(up, SizedTree::Node(node, parent, color, value, sibling, sub)));
                 have rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(sized_plug(up, SizedTree::Node(node, parent, color, value, sibling, sub)))) by {
-                    arithmetic() using {
+                    solve() using {
                         rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub)));
                         rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub))) <= rb_subtree_size(sized_shape(sized_plug(up, SizedTree::Node(node, parent, color, value, sibling, sub))));
                     };

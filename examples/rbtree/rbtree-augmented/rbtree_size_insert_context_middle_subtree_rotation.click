@@ -153,7 +153,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)) == mv); normalize();
                     }
                     have to_integer(gv) == 2 + to_integer(nv) + to_integer(mv) by {
-                        arithmetic() using {
+                        solve() using {
                             to_integer(gv) == 1 + to_integer(pv) + to_integer(sized_value(SizedTree::Empty));
                             to_integer(pv) == 1 + to_integer(nv) + to_integer(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)));
                             to_integer(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) == to_integer(mv);
@@ -175,17 +175,17 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     apply(rb_subtree_size_nonnegative(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right))));
                     apply(rb_subtree_size_nonnegative(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))));
-                    have 0 <= to_integer(nv) by { arithmetic() using {
+                    have 0 <= to_integer(nv) by { solve() using {
                         rb_subtree_size(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right))) == to_integer(nv);
                         rb_subtree_size(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right))) >= 0;
                     }; }
-                    have 0 <= to_integer(mv) by { arithmetic() using {
+                    have 0 <= to_integer(mv) by { solve() using {
                         rb_subtree_size(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) == to_integer(mv);
                         rb_subtree_size(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) >= 0;
                     }; }
                     have -2147483648 <= to_integer(gv) by auto();
                     have to_integer(gv) <= 2147483647 by auto();
-                    have 1 + to_integer(mv) + to_integer(0) <= 2147483647 by { arithmetic() using {
+                    have 1 + to_integer(mv) + to_integer(0) <= 2147483647 by { solve() using {
                         to_integer(gv) == 2 + to_integer(nv) + to_integer(mv);
                         to_integer(nv) >= 0;
                         to_integer(gv) <= 2147483647;
@@ -285,7 +285,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(sized_value(SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right)));
                         unfold(sized_value(SizedTree::Empty));
                         unfold(sized_value(SizedTree::Node(node, p, Color::Red, nv, left, right)));
-                        arithmetic() using { to_integer(gv) == 2 + to_integer(nv) + to_integer(mv); };
+                        solve() using { to_integer(gv) == 2 + to_integer(nv) + to_integer(mv); };
                     }
                     let rotated = fold(sized_rotation_right_at(g, p), {
                         model: SizedTree::Node(p, above, Color::Black, pv,
@@ -336,7 +336,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(rb_subtree_size(RbTree::Node(m, g, Color::Black, sized_shape(middle_left), sized_shape(middle_right))));
                         unfold(rb_subtree_size(RbTree::Empty));
                         unfold(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right)));
-                        arithmetic() using {
+                        solve() using {
                             to_integer(gv) == 2 + to_integer(nv) + to_integer(mv);
                             rb_subtree_size(sized_shape(left)) + rb_subtree_size(sized_shape(right)) + 1 == to_integer(nv);
                             rb_subtree_size(sized_shape(middle_left)) + rb_subtree_size(sized_shape(middle_right)) + 1 == to_integer(mv);

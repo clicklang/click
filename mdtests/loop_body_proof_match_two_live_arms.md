@@ -66,14 +66,14 @@ void spin(struct cell* node, int32 n) {
                     let c = fold(cell(node), { model: Sign::Neg(value) });
                     close_invariants() by {
                         both {
-                            arithmetic() using {
+                            solve() using {
                                 at(region(3).entry, i) >= at(region(3).entry, 0);
                                 at(region(3).entry, i) < at(region(3).entry, n);
                             };
                         } and {
                             both {
                                 intro();
-                                arithmetic() using {
+                                solve() using {
                                     at(region(3).entry, i) < at(region(3).entry, n);
                                 };
                             } and {
@@ -123,14 +123,14 @@ void spin(struct cell* node, int32 n) {
                     let c = fold(cell(node), { model: Sign::Pos(value) });
                     close_invariants() by {
                         both {
-                            arithmetic() using {
+                            solve() using {
                                 at(region(3).entry, i) >= at(region(3).entry, 0);
                                 at(region(3).entry, i) < at(region(3).entry, n);
                             };
                         } and {
                             both {
                                 intro();
-                                arithmetic() using {
+                                solve() using {
                                     at(region(3).entry, i) < at(region(3).entry, n);
                                 };
                             } and {

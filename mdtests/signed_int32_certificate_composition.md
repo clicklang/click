@@ -27,7 +27,7 @@ theorem signed_pair_compound(n: int32) {
     requires 0 <= n;
     requires n <= 100;
     ensures to_integer(n + 1) <= to_integer(n + 2) by {
-        arithmetic() using {
+        solve() using {
             0 <= n;
             n <= 100;
         };

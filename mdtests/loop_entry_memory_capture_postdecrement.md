@@ -41,16 +41,16 @@ uint64 post(const uint8* p, uint64 n) {
    have 0 <= to_integer(n) by auto();
    have to_integer(n) <= 18446744073709551615 by auto();
    have to_integer(0u64) < to_integer(n) by auto();
-   have to_integer(1u64) <= to_integer(n) by arithmetic() using { to_integer(0u64) < to_integer(n); };
+   have to_integer(1u64) <= to_integer(n) by solve() using { to_integer(0u64) < to_integer(n); };
    have 1u64 <= n by auto();
    have to_integer(n - 1u64) == to_integer(n) - to_integer(1u64) by auto();
    step(); step();
    mark before_decrement;
    step(); step(); step();
    have to_integer(n) == at(before_decrement, to_integer(n)) - 1 by assumption();
-   have to_integer(n) <= 15 by arithmetic() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; at(before_decrement, to_integer(n)) <= 15; };
-   have 0 <= to_integer(n) by arithmetic() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; to_integer(1u64) <= at(before_decrement, to_integer(n)); };
-   have to_integer(n) < at(before_decrement, to_integer(n)) by arithmetic() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; };
+   have to_integer(n) <= 15 by solve() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; at(before_decrement, to_integer(n)) <= 15; };
+   have 0 <= to_integer(n) by solve() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; to_integer(1u64) <= at(before_decrement, to_integer(n)); };
+   have to_integer(n) < at(before_decrement, to_integer(n)) by solve() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; };
    execute_until(back_edge());
    close_invariants() by { solve(); }
    }

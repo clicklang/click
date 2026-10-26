@@ -55,7 +55,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                 } else {
                     have k < at(before, i) + 1 by { auto(); }
                     have k <= at(before, i) by {
-                        arithmetic() using { k < at(before, i) + 1; };
+                        solve() using { k < at(before, i) + 1; };
                     }
                     have k == at(before, i) by auto();
                     rewrite(k == at(before, i));
