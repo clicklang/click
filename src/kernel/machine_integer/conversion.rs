@@ -10,9 +10,168 @@
 //! own range, which the type-range rule states with no premise. Which nodes spell a conversion is the term
 //! representation's business (`representation::low_word`,
 //! `representation::has_legacy_conversions`).
+//!
+//! It is also the one conversion table of the languages
+//! (`design/machine-integers.md`, "Conversions in the languages"): [`lower`]
+//! says, for a source and destination format and a policy, which node a
+//! conversion builds and whether it owes its range, and [`convert_term`]
+//! builds that node. C's conversions (`narrow_integer`), C++20 integral
+//! conversions and Rust `as` (`MachineIntegerType::convert_modulo_value`)
+//! build their terms here, so one conversion has one term in every
+//! language. The policy changes only what the conversion owes, never its
+//! term.
 
 use super::representation;
-use crate::kernel::{Bitvector32Term, IntegerTerm, MachineIntegerType, Proposition};
+use crate::kernel::{Bitvector32Term, CValue, IntegerTerm, MachineIntegerType, Proposition};
+
+/// What a language conversion asks of its operand.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ConversionPolicy {
+    /// The value modulo 2^w of the destination width, owing nothing: C's
+    /// conversion as GCC and Clang compile it (signed narrowing included,
+    /// `design/machine-integers.md`, Decisions 2026-10-21), C++20 integral
+    /// conversions and Rust `as`.
+    Modular,
+    /// A specification's conversion between machine types: the same term,
+    /// owing the destination's range where [`Conversion::owes_range`] says.
+    Checked,
+}
+
+/// The node a conversion builds, by source and destination format.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ConversionLowering {
+    /// The same format: the operand itself.
+    Identity,
+    /// An 8- or 16-bit value into a 32-bit format: its own word, which is
+    /// its canonical carrier (Stage 4 of `design/machine-integers.md` makes
+    /// this a `Cast` under rule K8).
+    Word,
+    /// `int32` to `uint32` or back: the sign cast σ (rules K1 to K4).
+    SignCast,
+    /// `MachineIntegerCast`: every conversion into an 8- or 16-bit format
+    /// (its word is rule K7's), and every conversion involving 128 bits.
+    Cast,
+    /// A 64-bit value into a 32-bit format: its low word, `UInt32From64`.
+    LowWord,
+    /// A value of at most 32 bits into a 64-bit format: the legacy
+    /// extension node of the source's and destination's signedness.
+    Extend64,
+    /// `int64` to `uint64` or back: the same 64 bits.
+    Reinterpret64,
+}
+
+/// One entry of the conversion table.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Conversion {
+    pub(crate) lowering: ConversionLowering,
+    /// Whether the conversion owes its operand's destination range: only a
+    /// [`ConversionPolicy::Checked`] conversion that can change the value,
+    /// into a signed destination other than by σ, or into an 8- or 16-bit
+    /// unsigned one from at most 64 bits. Every other conversion is modular.
+    pub(crate) owes_range: bool,
+}
+
+/// The conversion table: the node a conversion from `source` to
+/// `destination` builds, and what it owes under `policy`. Width and
+/// signedness checks only; no term is inspected.
+pub(crate) fn lower(
+    source: MachineIntegerType,
+    destination: MachineIntegerType,
+    policy: ConversionPolicy,
+) -> Conversion {
+    use ConversionLowering as L;
+    let (from, to) = (source.format(), destination.format());
+    let lowering = if source == destination {
+        L::Identity
+    } else if from.bits() == 128 || to.bits() == 128 || to.bits() < 32 {
+        L::Cast
+    } else if to.bits() == 32 {
+        match from.bits() {
+            64 => L::LowWord,
+            32 => L::SignCast,
+            _ => L::Word,
+        }
+    } else if from.bits() == 64 {
+        L::Reinterpret64
+    } else {
+        L::Extend64
+    };
+    let owes_range = policy == ConversionPolicy::Checked
+        && !to.contains(from)
+        && lowering != L::SignCast
+        && (to.is_signed() || (to.bits() < 32 && from.bits() <= 64));
+    Conversion {
+        lowering,
+        owes_range,
+    }
+}
+
+/// The term of the conversion of `value`, a term of `source`, to
+/// `destination`, as [`lower`] says. A constant operand folds (the
+/// constructors fold a root constant); nothing else is inspected, so the
+/// work is constant whatever the operand's size, charged by the node's
+/// constructor.
+pub(crate) fn convert_term(
+    source: MachineIntegerType,
+    destination: MachineIntegerType,
+    value: Bitvector32Term,
+) -> Bitvector32Term {
+    use ConversionLowering as L;
+    let (from, to) = (source.format(), destination.format());
+    match lower(source, destination, ConversionPolicy::Modular).lowering {
+        L::Identity | L::Word => value,
+        L::SignCast => Bitvector32Term::sign_cast32(source, destination, value),
+        L::Cast => Bitvector32Term::machine_integer_cast(source, destination, value),
+        L::LowWord => Bitvector32Term::uint32_from_64(value),
+        L::Reinterpret64 if to.is_signed() => Bitvector32Term::int64_from_uint64_bits(value),
+        L::Reinterpret64 => Bitvector32Term::uint64_from_int64(value),
+        L::Extend64 => match (to.is_signed(), from.is_signed()) {
+            (true, true) => Bitvector32Term::int64_from_32(value),
+            (true, false) => Bitvector32Term::int64_from_uint32(value),
+            (false, true) => Bitvector32Term::uint64_from_int32(value),
+            (false, false) => Bitvector32Term::uint64_from_32(value),
+        },
+    }
+}
+
+/// The modular conversion of an evaluated, typed machine value to
+/// `destination`: the one entry point of C++20 integral conversions and
+/// Rust `as` (`MachineIntegerType::convert_modulo_value`), and of C's
+/// conversions involving 128 bits. A Boolean source observes its 0-or-1
+/// value. A root constant folds exactly; a 128-bit conversion first checks
+/// its operand's root (`accepts_cast_operand`). `None` for a value that is
+/// not an integer.
+pub(crate) fn convert_value(value: CValue, destination: MachineIntegerType) -> Option<CValue> {
+    crate::instrumentation::record_deterministic_work(1);
+    let value = value.numeric_value().clone();
+    // Boolean values are normalized 0/1 and have their own storage type.
+    // Integer conversion observes that numeric value without retagging
+    // arbitrary bytes as a Boolean.
+    let value = match value {
+        CValue::Bool(term) => CValue::UInt8(term),
+        value => value,
+    };
+    let source = MachineIntegerType::from_c_type(value.c_type())?;
+    let wide = source.format().bits() == 128 || destination.format().bits() == 128;
+    if !wide {
+        if let Some(constant) = source.constant_from_value(&value) {
+            return destination.constant_value(constant.convert_modulo(destination.format()));
+        }
+        if source == destination {
+            return Some(value);
+        }
+    }
+    let term = match value {
+        crate::kernel::integer_c_value!(term) => term,
+        _ => return None,
+    };
+    // Root validation stays local even when an operand contains a large
+    // legacy expression. Wide operands cannot reinterpret word nodes.
+    if wide && !source.accepts_cast_operand(&term) {
+        return None;
+    }
+    Some(destination.value_from_term(convert_term(source, destination, term)))
+}
 
 /// The candidate operands a cast identity for `observed` may name: each
 /// observation `to_integer(x)` with `observed` the modulo conversion of `x`

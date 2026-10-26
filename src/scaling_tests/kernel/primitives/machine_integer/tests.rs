@@ -64,7 +64,9 @@ fn symbolic_modulo_conversion_work_is_independent_of_operand_depth() {
                 converted.unwrap().c_type(),
                 super::super::super::CType::Int16
             );
-            assert_eq!(work, 1, "size {size}, right nested {right_nested}");
+            // One unit for the conversion and one for the cast node it
+            // builds (the conversion table's `Cast`), whatever the depth.
+            assert_eq!(work, 2, "size {size}, right nested {right_nested}");
         }
     }
 }

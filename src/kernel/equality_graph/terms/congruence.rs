@@ -4,6 +4,7 @@
 use super::*;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
+use crate::kernel::machine_integer::representation;
 use crate::kernel::{
     Bitvector32Term as T, BitvectorUnaryOp as U, CType, CValue, CarrierWidth as W,
     ConditionTerm as C, PureFunctionArgument as A, SharedPureApplication,
@@ -150,6 +151,14 @@ impl TermClasses {
             Call(u64, usize),
             Binary(Binary),
             Unary(Int32Unary, bool),
+            /// A conversion into an 8- or 16-bit format, whose operand's
+            /// class is on the value stack: the cast node, joined with its
+            /// rule-K7 word.
+            NarrowCast {
+                source: MachineIntegerType,
+                destination: MachineIntegerType,
+                inverse: bool,
+            },
         }
         let mut pending = if let Some(value) = value {
             vec![Work::Value(value)]
@@ -386,6 +395,25 @@ impl TermClasses {
                     } else {
                         None
                     };
+                    // A conversion into a narrow format: its node, and its
+                    // word under rule K7 in the same class.
+                    if width == W::Bits32
+                        && let T::MachineIntegerCast {
+                            value,
+                            source,
+                            destination,
+                        } = term
+                        && representation::narrow_carrier_mask(*destination).is_some()
+                        && source.format().bits() <= 64
+                    {
+                        pending.push(Work::NarrowCast {
+                            source: *source,
+                            destination: *destination,
+                            inverse: constants::signed_byte_load_operand(term).is_some(),
+                        });
+                        pending.push(Work::Machine(value, W::of_machine_type(*source)));
+                        continue;
+                    }
                     if width == W::Bits32 {
                         let unary = if let T::BitwiseNot(value) = term {
                             Some((Int32Unary::Not, value.as_ref(), false))
@@ -634,6 +662,16 @@ impl TermClasses {
                     values.push(node);
                     continue;
                 }
+                Work::NarrowCast {
+                    source,
+                    destination,
+                    inverse,
+                } => {
+                    let value = values.pop().expect("cast operand");
+                    let node = self.narrow_cast_node(source, destination, value, inverse);
+                    values.push(node);
+                    continue;
+                }
                 Work::Binary(op) => {
                     let b = values.pop().expect("right operand");
                     let a = values.pop().expect("left operand");
@@ -651,6 +689,73 @@ impl TermClasses {
             values.push(id);
         }
         values.pop().expect("machine term")
+    }
+
+    /// The class of `Cast(source -> destination, v)` into an 8- or 16-bit
+    /// format, given the class `value` of its operand `v`: the cast node,
+    /// as every other conversion is interned (`Int32Unary::Cast` over a
+    /// source of at most 32 bits, the applied `MachineUnary` over a 64-bit
+    /// one), joined with the class of its word under rule K7
+    /// (`representation::narrow_cast_word`): `w & m`, or `((w & m) ^ s) - s`
+    /// for a signed destination, with `w` the operand's word or low word.
+    ///
+    /// The word is built from the operand's class, not from its term, so
+    /// this adds at most five nodes and one merge whatever the operand's
+    /// size, and a nested narrow cast is interned once. Its nodes are the
+    /// ones the constructors' spelling of the word interns
+    /// (`Bitvector32Term::bitwise_and`, `bitwise_xor`, `subtract`), so the
+    /// written `x & 255u32` meets the cast's class.
+    fn narrow_cast_node(
+        &mut self,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+        value: u64,
+        inverse: bool,
+    ) -> u64 {
+        use crate::kernel::BitvectorBinaryOp as B;
+        crate::instrumentation::record_deterministic_work(1);
+        let (mask, sign) = representation::narrow_carrier_mask(destination)
+            .expect("a narrow destination has a carrier mask");
+        let (node, word) = if source.format().bits() <= 32 {
+            let node = self.intern_node(Node::Int32Unary(
+                Int32Unary::Cast(source, destination),
+                value,
+            ));
+            if inverse {
+                self.register_byte_inverse(node, value);
+            }
+            (node, value)
+        } else {
+            let head = self.intern_node(Node::MachineUnary(
+                U::MachineIntegerCast {
+                    source,
+                    destination,
+                },
+                W::Bits32,
+            ));
+            let node = self.intern_node(Node::Apply(head, value));
+            let low = self.intern_node(Node::MachineUnary(U::UInt32From64, W::Bits32));
+            (node, self.intern_node(Node::Apply(low, value)))
+        };
+        let mask = self.intern_typed_machine(&T::Constant(mask), W::Bits32);
+        let mut carrier = self.intern_node(Node::Int32Binary(
+            Int32Binary::Other(B::BitwiseAnd),
+            word,
+            mask,
+        ));
+        if let Some(sign) = sign {
+            // `bitwise_xor` orders a constant before the masked word.
+            let sign = self.intern_typed_machine(&T::Constant(sign), W::Bits32);
+            let flipped =
+                self.intern_node(Node::Int32Binary(Int32Binary::BitwiseXor, sign, carrier));
+            carrier = self.intern_node(Node::Int32Binary(
+                Int32Binary::Other(B::Subtract),
+                flipped,
+                sign,
+            ));
+        }
+        self.close(vec![(node, carrier)]);
+        node
     }
 
     fn algebraic_type_token(&mut self, ty: &crate::kernel::AlgebraicType) -> SharedPureApplication {
