@@ -31,36 +31,57 @@ fn focused_execute_handles_deep_branches_on_a_two_megabyte_stack() {
             .unwrap();
         std::thread::scope(|scope| {
             std::thread::Builder::new()
-            .name(format!("focused-execute-{depth}"))
-            .stack_size(2 * 1024 * 1024)
-            .spawn_scoped(scope, || {
-                let source = format!("int32 caller({parameters}) {{ ensures result >= 0; }}");
-                let click_file = crate::surface::parse(&source).unwrap();
-                let function_block = &click_file.function_blocks()[0];
-                let predicates = PredicateEnvironment::new(&[]);
-                let functions = ClickFunctionEnvironment::new(&[]);
-                let theorems = TheoremEnvironment::new(&[]);
-                let resources = ResourceEnvironment::new(&[]);
-                let environment = CExecutionEnvironment::new();
-                let arguments = (0..depth).map(|i| CExpression::Value(CValue::Int32(
-                    Bitvector32Term::Variable(Variable(771_000 + i as u64))
-                ))).collect::<Vec<_>>();
-                let root = Proof::for_execution_frontier(
-                    "deep focused execution", 0,
-                    ExecutionProofState::at_entry(CState::new(), ExecutionFrontier::default(),
-                        RecordedSnapshots::new(), SurfacePropositionMap::default(), PersistentSequence::default()),
-                    vec![],
-                    ExecutionProofConstants {
-                        source_layout: layout.clone(),
-                        ..ExecutionProofConstants::default()
-                    },
-                    function_block, &function, &parsed_function, &arguments, &environment, &resources,
-                    SpecDefinitions::new(&predicates, &functions), &theorems,
-                );
-                let executed = root.try_focused_execute_to_exit().unwrap()
-                    .expect("every original nested-if path reaches function exit");
-                assert!(executed.is_at_function_exit(), "depth {depth}");
-            }).unwrap().join().unwrap();
+                .name(format!("focused-execute-{depth}"))
+                .stack_size(2 * 1024 * 1024)
+                .spawn_scoped(scope, || {
+                    let source = format!("int32 caller({parameters}) {{ ensures result >= 0; }}");
+                    let click_file = crate::surface::parse(&source).unwrap();
+                    let function_block = &click_file.function_blocks()[0];
+                    let predicates = PredicateEnvironment::new(&[]);
+                    let functions = ClickFunctionEnvironment::new(&[]);
+                    let theorems = TheoremEnvironment::new(&[]);
+                    let resources = ResourceEnvironment::new(&[]);
+                    let environment = CExecutionEnvironment::new();
+                    let arguments = (0..depth)
+                        .map(|i| {
+                            CExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(
+                                771_000 + i as u64,
+                            ))))
+                        })
+                        .collect::<Vec<_>>();
+                    let root = Proof::for_execution_frontier(
+                        "deep focused execution",
+                        0,
+                        ExecutionProofState::at_entry(
+                            CState::new(),
+                            ExecutionFrontier::default(),
+                            RecordedSnapshots::new(),
+                            SurfacePropositionMap::default(),
+                            PersistentSequence::default(),
+                        ),
+                        vec![],
+                        ExecutionProofConstants {
+                            source_layout: layout.clone(),
+                            ..ExecutionProofConstants::default()
+                        },
+                        function_block,
+                        &function,
+                        &parsed_function,
+                        &arguments,
+                        &environment,
+                        &resources,
+                        SpecDefinitions::new(&predicates, &functions),
+                        &theorems,
+                    );
+                    let executed = root
+                        .try_focused_execute_to_exit()
+                        .unwrap()
+                        .expect("every original nested-if path reaches function exit");
+                    assert!(executed.is_at_function_exit(), "depth {depth}");
+                })
+                .unwrap()
+                .join()
+                .unwrap();
         });
     }
 }

@@ -208,7 +208,8 @@ fn charon_nonuniform_sparse_snapshots_have_bounded_work_at_large_extents() {
         }
         let shape = nodes(functions[0].to_kernel_function().body());
         let prepared = super::super::super::import::prepared_for_test(export).unwrap();
-        let claim = "verifying \"snapshots.rs\"; fn sparse(a: u32, b: u32) -> u32 { ensures result == b; }";
+        let claim =
+            "verifying \"snapshots.rs\"; fn sparse(a: u32, b: u32) -> u32 { ensures result == b; }";
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             C0VerificationSession::new_program_prepared(claim, &prepared)
         });
