@@ -88,7 +88,7 @@ int32 global_planned(int32 u) {
     ensures u == 0 or result == 3;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 global_stepped(int32 u) {
@@ -105,12 +105,12 @@ int32 global_stepped(int32 u) {
         step();
         have r == 7;
         step();
-        simp();
+        solve();
     } else {
         step();
         have r == 3;
         step();
-        simp();
+        solve();
     }
 }
 
@@ -121,7 +121,7 @@ int32 heap_planned(int32 u) {
     ensures result == 0 or u == 0 or result == 3;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 heap_stepped(int32 u) {
@@ -134,7 +134,7 @@ int32 heap_stepped(int32 u) {
     step();
     if buf == 0 {
         execute();
-        simp();
+        solve();
     } else {
         step();
         step();
@@ -145,13 +145,13 @@ int32 heap_stepped(int32 u) {
             have r == 7;
             step();
             step();
-            simp();
+            solve();
         } else {
             step();
             have r == 3;
             step();
             step();
-            simp();
+            solve();
         }
     }
 }
@@ -162,7 +162,7 @@ int32 zeroed_heap_planned(int32 u) {
     ensures result == 0 or u == 0 or result == 3;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

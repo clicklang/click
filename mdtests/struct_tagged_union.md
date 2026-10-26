@@ -40,8 +40,6 @@ int32 read_number(struct packet* packet) {
     owns packet->payload.number;
 
     ensures result == packet->payload.number;
-} by {
-    auto();
 }
 ```
 

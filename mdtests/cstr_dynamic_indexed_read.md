@@ -20,7 +20,7 @@ int32 read_terminator(uint8 bytes[], uint64 known_len) {
     views click::cstr::cstr_at(bytes, known_len);
     ensures result == '\0' by {
         execute();
-        simp();
+        solve();
     }
 }
 ```

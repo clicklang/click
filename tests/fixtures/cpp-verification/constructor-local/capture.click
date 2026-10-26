@@ -9,7 +9,7 @@ RestoreState::RestoreState(int32* slot) {
     ensures slot[0] == 7;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 capture(int32& value) {
@@ -18,5 +18,5 @@ int32 capture(int32& value) {
     ensures result == old(value);
 } by {
     execute();
-    simp();
+    solve();
 }

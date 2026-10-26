@@ -30,8 +30,6 @@ int32 read_number_through_address(struct packet* packet) {
     owns packet->payload.number;
 
     ensures result == packet->payload.number;
-} by {
-    auto();
 }
 ```
 

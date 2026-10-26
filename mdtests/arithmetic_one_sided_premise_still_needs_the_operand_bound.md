@@ -24,10 +24,10 @@ int32 next_index(int32 i, int32 n) {
     ensures to_integer(result) == to_integer(i + 1);
 } by {
     have 0 <= to_integer(i + 1) by {
-        arithmetic() using { 0 <= i; i < n; n <= 1073741824; };
+        solve() using { 0 <= i; i < n; n <= 1073741824; };
     }
     have ((uint32)(i + 1)) <= 1073741823u32 by {
-        arithmetic() using {
+        solve() using {
             0 <= to_integer(i + 1);
             0 <= i;
             i < n;

@@ -84,7 +84,7 @@ int apply(int (*f)(int), int x) {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 ```
 
 In Rust, it is a Rust item, with module paths and `impl` blocks. A
@@ -103,25 +103,25 @@ contract fn Doubling(x: i32) -> i32 {
 fn function_pointers::twice(x: i32) -> i32 {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn function_pointers::apply(f: fn(i32) -> i32, x: i32) -> i32 {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 theorem twice_is_doubling() {
     ensures Doubling(function_pointers::twice) by {
         unfold(Doubling);
-        simp();
+        solve();
     }
 }
 
 fn function_pointers::caller(x: i32) -> i32 {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { apply(twice_is_doubling()); execute(); auto(); }
+} by { apply(twice_is_doubling()); execute(); solve(); }
 ```
 
 An `extern` head is written the same way in each language:
@@ -1288,9 +1288,9 @@ checks the same current claim under the proposition and its negation:
 theorem int32_sign_split(x: int32) {
     ensures x <= 0 or x > 0 by {
         if x <= 0 {
-            simp();
+            solve();
         } else {
-            simp();
+            solve();
         }
     }
 }
@@ -1508,7 +1508,7 @@ theorem lift(callback: int32 (*)()) executes callback() {
     ensures Progress(callback) as { cell: k } by {
         step(Exact, { cell: k });
         have k.revision == old(k.revision) + 1 by assumption();
-        auto();
+        solve();
     }
 }
 ```
@@ -1940,7 +1940,7 @@ struct object* object_retain(struct object* obj) {
         fold(object_ref(obj));
     }
     execute();
-    simp();
+    solve();
 }
 ```
 
@@ -3404,7 +3404,7 @@ unsigned long left() {
     ensures left_file::state.value == integer::uint64_wrapping_add(old(left_file::state.value), 1u64);
     ensures result == left_file::state.value;
     ensures result == integer::uint64_wrapping_add(old(left_file::state.value), 1u64);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 Here `left_file` aliases the C file containing `state`; its unchanged C wrapper

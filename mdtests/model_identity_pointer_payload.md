@@ -89,7 +89,7 @@ int cell_same(struct cell* p, struct cell* q) {
                     unfold(cell_member(CellModel::Present(identity, value), q));
                     normalize() using { address(identity) == address(q); };
                 }
-                simp();
+                solve();
             } else {}
             step();
             let c = fold(cell_at(p), { model: old(c.model) });
@@ -99,7 +99,7 @@ int cell_same(struct cell* p, struct cell* q) {
                 unfold(cell_member(CellModel::Present(identity, value), q));
                 normalize() using { not(address(identity) == address(q)); };
             }
-            simp();
+            solve();
         },
     }
 }

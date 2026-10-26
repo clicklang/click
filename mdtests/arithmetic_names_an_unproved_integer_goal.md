@@ -12,7 +12,7 @@ theorem unentailed_integer_successor(x: Integer, y: Integer, z: Integer) {
     requires x == y + 1;
     requires y != z;
     ensures x == z + 1 by {
-        arithmetic() using {
+        solve() using {
             x == y + 1;
             y != z;
         };

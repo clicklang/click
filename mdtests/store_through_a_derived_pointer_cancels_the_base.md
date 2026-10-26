@@ -28,7 +28,7 @@ void put(int32* a, int32 k) {
     ensures a[k] == old(a[k]);
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

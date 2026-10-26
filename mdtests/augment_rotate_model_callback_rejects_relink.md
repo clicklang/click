@@ -114,7 +114,7 @@ void clobber(struct node* old, struct node* new) {
     ensures new->augmented <= 1000;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 struct node* rotate_left(
@@ -175,10 +175,10 @@ struct node* rotate_left(
                 shape_right(old(r.model))) by {
                 rewrite(shape_left(old(r.model)) == middle_model);
                 rewrite(shape_right(old(r.model)) == far_model);
-                simp();
+                solve();
             }
             step();
-            simp();
+            solve();
         },
     }
 }
@@ -207,7 +207,7 @@ struct node* rotate_clobber(struct node* node) {
 } by {
     let { rotated: rotated } = step(rotate_left, { l: a, r: b });
     execute();
-    simp();
+    solve();
 }
 
 struct node* rotate_reset(struct node* node) {
@@ -234,7 +234,7 @@ struct node* rotate_reset(struct node* node) {
 } by {
     let { rotated: rotated } = step(rotate_left, { l: a, r: b });
     execute();
-    simp();
+    solve();
 }
 ```
 

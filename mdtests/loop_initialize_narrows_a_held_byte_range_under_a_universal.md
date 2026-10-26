@@ -5,7 +5,7 @@ A range of one-byte elements lowers its extent unscaled: `a[0..n]` is `n`
 bytes, not `n * 1`. Range narrowing and the Surface spelling of a held range
 both read an extent's element width off its scale factor, so a byte range
 had no width, the held `views a[0..n]` had no written spelling to cite, and
-`simp()` refused to narrow it to `viewable(a[0..k])`. An unscaled extent is
+`solve()` refused to narrow it to `viewable(a[0..k])`. An unscaled extent is
 now read at byte granularity in both places, and the proof is the same as
 over `int32`.
 

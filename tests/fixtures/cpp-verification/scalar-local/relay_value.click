@@ -6,7 +6,7 @@ int32 read_value(int32& value) {
     ensures result == value;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 relay_value(int32& value) {
@@ -15,5 +15,5 @@ int32 relay_value(int32& value) {
     ensures result == value + 1;
 } by {
     execute();
-    simp();
+    solve();
 }

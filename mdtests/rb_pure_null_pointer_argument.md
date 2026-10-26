@@ -153,7 +153,7 @@ struct rb_node* rb_left_of(struct rb_node* node) {
                 unfold(ctx_holds(Context::Top, sub.model));
                 assumption();
             }
-            simp();
+            solve();
         },
     }
 }

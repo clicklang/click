@@ -1,6 +1,6 @@
 # Smart arithmetic names an `int32` atom, not its `uint32` cast
 
-`arithmetic()` bounds `m` below `2147483647` from `m < n` through `n`'s own
+`solve() using` bounds `m` below `2147483647` from `m < n` through `n`'s own
 `int32` range, a certificate node `int32_range => n <= 2147483647`. The
 surface certificate spells each atom with a source expression that lowers to
 the same term, and `((uint32)n)` in the other listed premise lowers to the

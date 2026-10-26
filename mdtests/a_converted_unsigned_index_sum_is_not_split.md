@@ -53,7 +53,7 @@ int32 store_through_converted_sum(int32* a, uint32 u) {
     ensures result == 5;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

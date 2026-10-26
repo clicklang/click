@@ -44,7 +44,7 @@ int32 ring_buffer_init_linear(
     execute();
     fold(ring_frame(owner));
     fold(linear_ring(owner));
-    simp();
+    solve();
 }
 
 int32 ring_buffer_push_wrap(
@@ -66,7 +66,7 @@ int32 ring_buffer_push_wrap(
     ensures owner->tail == 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 ring_buffer_wrapped_tail(
@@ -79,7 +79,7 @@ int32 ring_buffer_wrapped_tail(
     observe(wrapped_ring(owner));
     observe(ring_frame(owner));
     execute();
-    simp();
+    solve();
 }
 
 int32 ring_buffer_pop_to_linear(
@@ -98,7 +98,7 @@ int32 ring_buffer_pop_to_linear(
     ensures owner->tail == 4;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 ring_buffer_pipeline(

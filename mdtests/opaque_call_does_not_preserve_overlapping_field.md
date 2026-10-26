@@ -36,7 +36,7 @@ int32 overwrite_stable(struct owner* owner) {
     ensures result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 opaque_call_does_not_preserve_overlapping_field(struct owner* owner) {
@@ -44,7 +44,7 @@ int32 opaque_call_does_not_preserve_overlapping_field(struct owner* owner) {
     ensures result == old(owner->stable);
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

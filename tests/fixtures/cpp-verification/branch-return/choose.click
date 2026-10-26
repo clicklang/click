@@ -6,5 +6,5 @@ int32 choose(bool early, int32& value) {
     ensures value == result;
 } by {
     execute();
-    simp();
+    solve();
 }

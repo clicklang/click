@@ -50,7 +50,7 @@ void child_retain(struct child* obj) {
     fold(child_ref(obj));
     fold(child_control(obj));
     execute();
-    simp();
+    solve();
 }
 
 void retain_many(struct child* obj) {
@@ -63,14 +63,14 @@ void retain_many(struct child* obj) {
     produces child_ref(obj);
 } by {
     step(child_retain, {});
-    have count(child_ref(obj)) < 2147483647 by auto();
+    have count(child_ref(obj)) < 2147483647;
     step(child_retain, {});
-    have count(child_ref(obj)) < 2147483647 by auto();
+    have count(child_ref(obj)) < 2147483647;
     step(child_retain, {});
-    have count(child_ref(obj)) < 2147483647 by auto();
+    have count(child_ref(obj)) < 2147483647;
     step(child_retain, {});
     step();
-    simp();
+    solve();
 }
 ```
 

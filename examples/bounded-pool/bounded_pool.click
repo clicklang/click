@@ -60,7 +60,7 @@ void pool_destroy(struct pool* pool) {
 } by {
     unfold(pool_control(pool));
     unfold(pool->capacity of pool_slot(pool));
-    have count(pool_slot(pool)) == 0 by auto();
+    have count(pool_slot(pool)) == 0;
     step();
     unfold(authority(pool_slot(pool)));
     unfold(authority(pool_object(pool, _)));
@@ -97,12 +97,12 @@ void pool_checkout(struct pool* pool, struct object* object) {
     ensures object->value == old(object->value);
 } by {
     open(pool_control(pool)) {
-        have defined(count(pool_object(pool, _)) + 1) by auto();
-        have defined(pool->checked_out + 1) by auto();
+        have defined(count(pool_object(pool, _)) + 1);
+        have defined(pool->checked_out + 1);
         unfold(pool_slot(pool));
         step();
         fold(pool_object(pool, object));
-        have pool->capacity == pool->checked_out + count(pool_slot(pool)) by auto();
+        have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
     execute(); unfold(valid_pool);
 }
@@ -123,11 +123,11 @@ void pool_return(struct pool* pool, struct object* object) {
     ensures object->value == old(object->value);
 } by {
     open(pool_control(pool)) {
-        have defined(count(pool_slot(pool)) + 1) by auto();
+        have defined(count(pool_slot(pool)) + 1);
         unfold(pool_object(pool, object));
         step();
         fold(pool_slot(pool));
-        have pool->capacity == pool->checked_out + count(pool_slot(pool)) by auto();
+        have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
     execute(); unfold(valid_pool);
 }
@@ -177,7 +177,7 @@ void pool_shrink(struct pool* pool, int32 amount) {
     open(pool_control(pool)) {
         unfold(amount of pool_slot(pool));
         step();
-        have pool->capacity == pool->checked_out + count(pool_slot(pool)) by auto();
+        have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
     execute(); unfold(valid_pool);
 }
@@ -213,11 +213,11 @@ void pool_grow(struct pool* pool, int32 amount) {
     ensures valid_pool(pool);
 } by {
     open(pool_control(pool)) {
-        have defined(count(pool_slot(pool)) + amount) by auto();
-        have defined(pool->capacity + amount) by auto();
+        have defined(count(pool_slot(pool)) + amount);
+        have defined(pool->capacity + amount);
         step();
         fold(amount of pool_slot(pool));
-        have pool->capacity == pool->checked_out + count(pool_slot(pool)) by auto();
+        have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
     execute(); unfold(valid_pool);
 }
@@ -246,9 +246,9 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
 } by {
     open(pool_control(source)) {
         open(pool_control(destination)) {
-            have defined(count(pool_slot(source)) + 1) by auto();
-            have defined(count(pool_object(destination, _)) + 1) by auto();
-            have defined(destination->checked_out + 1) by auto();
+            have defined(count(pool_slot(source)) + 1);
+            have defined(count(pool_object(destination, _)) + 1);
+            have defined(destination->checked_out + 1);
             unfold(pool_object(source, object));
             unfold(pool_slot(destination));
             step();
@@ -256,9 +256,9 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             fold(pool_object(destination, object));
             fold(pool_slot(source));
             have destination->capacity
-                == destination->checked_out + count(pool_slot(destination)) by auto();
+                == destination->checked_out + count(pool_slot(destination));
         }
-        have source->capacity == source->checked_out + count(pool_slot(source)) by auto();
+        have source->capacity == source->checked_out + count(pool_slot(source));
     }
     execute(); unfold(valid_pool);
 }

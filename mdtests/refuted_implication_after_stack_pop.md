@@ -54,12 +54,12 @@ theorem length_nonnegative(xs: List<int32>) {
         induct(xs) as ih {
             List::Nil => {
                 unfold(length(List<int32>::Nil));
-                simp();
+                solve();
             }
             List::Cons(value, rest) => {
                 apply(ih(rest));
                 unfold(length(List<int32>::Cons(value, rest)));
-                arithmetic() using { length(rest) >= 0; };
+                solve() using { length(rest) >= 0; };
             }
         }
     }
@@ -107,27 +107,27 @@ bool pop(struct stack* s, int32* out) {
                     unfold(tail);
                     let after = fold(nodes(s->head), { items: List<int32>::Nil });
                     unfold(length(List<int32>::Nil));
-                    have length(tail_items) == 0 by simp();
-                    have to_integer(old(s->count)) == 1 by arithmetic() using {
+                    have length(tail_items) == 0 by solve();
+                    have to_integer(old(s->count)) == 1 by solve() using {
                         to_integer(old(s->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;
                         length(tail_items) == 0;
                     };
-                    simp();
+                    solve();
                 },
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
                     let after = fold(nodes(s->head), { items: List::Cons(next_value, next_items) }, { tail: next });
-                    have to_integer(old(s->count)) == length(tail_items) + 1 by arithmetic() using {
+                    have to_integer(old(s->count)) == length(tail_items) + 1 by solve() using {
                         to_integer(old(s->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;
                     };
-                    have to_integer(old(s->count) - 1u64) == to_integer(old(s->count)) - to_integer(1u64) by auto();
-                    have to_integer(old(s->count) - 1u64) == length(tail_items) by arithmetic() using {
+                    have to_integer(old(s->count) - 1u64) == to_integer(old(s->count)) - to_integer(1u64);
+                    have to_integer(old(s->count) - 1u64) == length(tail_items) by solve() using {
                         to_integer(old(s->count) - 1u64) == to_integer(old(s->count)) - to_integer(1u64);
                         to_integer(old(s->count)) == length(tail_items) + 1;
                     };
-                    simp();
+                    solve();
                 },
             }
         },

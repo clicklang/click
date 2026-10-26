@@ -9,14 +9,14 @@ uint64 label_fit(uint64 length) {
     ensures result <= length;
     ensures length < 32u64 implies result == length;
     ensures 32u64 <= length implies result == 31u64;
-} by auto();
+}
 
 uint64 label_measure(const char* src) {
     let n: uint64;
     views cstr_at(src, n);
     ensures n < 32u64 implies result == n;
     ensures 32u64 <= n implies result == 31u64;
-} by auto();
+}
 
 uint64 label_copy(char* dst, const char* src) {
     let len: uint64;

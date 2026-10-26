@@ -67,8 +67,8 @@ verifying "runner.c";
 int32 bump_shared() {
     requires shared.value < 1000;
     owns shared.value;
-    ensures to_integer(result) == to_integer(old(shared.value) + 1) by auto();
-    ensures to_integer(shared.value) == to_integer(old(shared.value) + 1) by auto();
+    ensures to_integer(result) == to_integer(old(shared.value) + 1);
+    ensures to_integer(shared.value) == to_integer(old(shared.value) + 1);
 }
 
 int32 increment_local() {
@@ -76,15 +76,15 @@ int32 increment_local() {
     requires local.value < 1000;
     requires local.ready == 0;
     owns local.value;
-    ensures to_integer(result) == to_integer(old(local.value) + 1) by auto();
-    ensures to_integer(local.value) == to_integer(old(local.value) + 1) by auto();
-    ensures local.ready == 0 by auto();
+    ensures to_integer(result) == to_integer(old(local.value) + 1);
+    ensures to_integer(local.value) == to_integer(old(local.value) + 1);
+    ensures local.ready == 0;
 }
 
 int32 increment_file_private() {
     requires file_private.value < 1000;
     owns file_private.value;
-    ensures to_integer(result) == to_integer(old(file_private.value) + 1) by auto();
+    ensures to_integer(result) == to_integer(old(file_private.value) + 1);
 }
 
 int32 run() {
@@ -101,25 +101,25 @@ int32 run() {
     requires private_file::file_private.value == 4;
     ensures result == 5;
 } by {
-    have shared.value == 2 by simp();
-    have shared.value < 1000 by simp();
+    have shared.value == 2 by solve();
+    have shared.value < 1000 by solve();
     step();
-    have shared.value == 3 by simp();
-    have shared.value < 1000 by simp();
+    have shared.value == 3 by solve();
+    have shared.value < 1000 by solve();
     step();
-    have private_file::increment_local::local.value == 3 by simp();
-    have private_file::increment_local::local.value > -1000 by simp();
-    have private_file::increment_local::local.value < 1000 by simp();
-    have private_file::increment_local::local.ready == 0 by simp();
+    have private_file::increment_local::local.value == 3 by solve();
+    have private_file::increment_local::local.value > -1000 by solve();
+    have private_file::increment_local::local.value < 1000 by solve();
+    have private_file::increment_local::local.ready == 0 by solve();
     step();
-    have private_file::increment_local::local.value == 4 by simp();
-    have private_file::increment_local::local.value > -1000 by simp();
-    have private_file::increment_local::local.value < 1000 by simp();
-    have private_file::increment_local::local.ready == 0 by simp();
+    have private_file::increment_local::local.value == 4 by solve();
+    have private_file::increment_local::local.value > -1000 by solve();
+    have private_file::increment_local::local.value < 1000 by solve();
+    have private_file::increment_local::local.ready == 0 by solve();
     step();
-    have private_file::file_private.value < 1000 by simp();
+    have private_file::file_private.value < 1000 by solve();
     execute();
-    simp();
+    solve();
 }
 ```
 

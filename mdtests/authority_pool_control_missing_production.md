@@ -33,10 +33,10 @@ void checkout(struct pool* pool, struct payload* p) {
 } by {
     open(control(pool)) {
         have 1 <= count(slot(pool)) by solve();
-        have defined(pool->checked_out + 1) by auto();
+        have defined(pool->checked_out + 1);
         unfold(slot(pool));
         step();
-        have pool->capacity == pool->checked_out + count(slot(pool)) by auto();
+        have pool->capacity == pool->checked_out + count(slot(pool));
     }
     execute(); solve();
 }

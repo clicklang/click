@@ -5584,7 +5584,7 @@ mod tests {
             ));
             steps(&mut proof, indent + 4, index + 2);
             proof.push_str(&format!(
-                "{:w$}simp();\n{:indent$}}} else {{\n",
+                "{:w$}solve();\n{:indent$}}} else {{\n",
                 "",
                 "",
                 w = indent + 4
@@ -5593,7 +5593,7 @@ mod tests {
                 steps(&mut proof, indent + 4, 4);
             } else {
                 steps(&mut proof, indent + 4, count + 3);
-                proof.push_str(&format!("{:w$}simp();\n", "", w = indent + 4));
+                proof.push_str(&format!("{:w$}solve();\n", "", w = indent + 4));
             }
             statement += index + 5;
         }

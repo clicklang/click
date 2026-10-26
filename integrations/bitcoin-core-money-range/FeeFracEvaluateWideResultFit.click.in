@@ -17,8 +17,8 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
     ensures @CALLER_BOUND_1@;
     ensures @CALLER_BOUND_2@;
 } by {
-    have 1 <= this->size by { arithmetic() using { this->size > 0; } }
-    have -2147483648 <= to_integer(at_size) by { arithmetic() using { 0 <= to_integer(at_size); } }
+    have 1 <= this->size by { solve() using { this->size > 0; } }
+    have -2147483648 <= to_integer(at_size) by { solve() using { 0 <= to_integer(at_size); } }
     step(); step(); step(); step();
     let { result: denominator } = step();
     step();
@@ -51,7 +51,7 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
         rewrite(to_integer(this->fee) * to_integer(at_size) == to_integer(product));
         assumption();
     }
-    simp();
+    solve();
 }
 int64 FeeFrac::EvaluateFee@MODE@(int32 at_size) const {
     views this->fee;
@@ -71,7 +71,7 @@ int64 FeeFrac::EvaluateFee@MODE@(int32 at_size) const {
     ensures to_integer(result) <= 9223372036854775807;
     ensures @CALLER_BOUND_1@;
     ensures @CALLER_BOUND_2@;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 contract int64 OversizeFee(const struct FeeFrac* this, int32 at_size) {
     requires this->fee == @FEE_WITNESS@i64;
@@ -97,5 +97,5 @@ contract int64 OversizeFee(const struct FeeFrac* this, int32 at_size) {
 }
 
 theorem oversize_fee_evaluation() executes FeeFrac::EvaluateFee@MODE@(const struct FeeFrac* this, int32 at_size) {
-    ensures OversizeFee(&FeeFrac::EvaluateFee@MODE@) by { execute(); simp(); }
+    ensures OversizeFee(&FeeFrac::EvaluateFee@MODE@) by { execute(); solve(); }
 }

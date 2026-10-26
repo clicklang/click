@@ -45,20 +45,20 @@ class Square : Shape {
     function tint(this) -> int32 { this->color }
 }
 int Square::shade() const {
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 class BigSquare : Square {
     function tint(this) -> int32 { this->extra }
 }
 int through_shape(const Shape& shape) {
     ensures result == tint(shape);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int through_square(const Square& square) {
     ensures result == tint(square);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int caller(BigSquare& big) {
     owns big;
     ensures result == big.base.color;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

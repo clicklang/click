@@ -995,8 +995,7 @@ A tactic that searches by trying checked simple or structural operations on
 persistent proof states. The written smart tactics are `solve` (with
 `solve() using`) and `step_until`; the [implicit tail](#implicit-tail), a
 simple tactic written with an elided argument that a search fills, and bare
-`close_invariants()` are smart sites too. `simp`, `auto`, `arithmetic`,
-`execute`, and `execute_until` are older spellings that are still accepted.
+`close_invariants()` are smart sites too.
 Search is untrusted and can succeed only with a completed checked state. See [Smart and simple
 tactics](../concepts/smart-and-simple-tactics.md).
 

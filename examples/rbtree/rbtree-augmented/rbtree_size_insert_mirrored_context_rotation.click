@@ -129,7 +129,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.phase == SizedInsertMirroredContextThreePhase::Before(g, p, above);
                 invariant old(state.phase) == SizedInsertMirroredContextThreePhase::Before(g, p, above);
                 invariant state.model == sized_mirrored_context_three_before(g, p, node, above);
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     let { tree: loop_tree, link: link } = unfold(state);
                     unfold(sized_mirrored_context_three_before(g, p, node, above));
@@ -168,7 +168,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have at(after_right_write, g->rb_right == 0) by { assumption(); }
                     have separate(memory(g->rb_right), memory(parent->rb_left)) by { assumption(); }
                     step(); step(); step();
-                    have gparent->__rb_parent_color == address(above) + 1 by { simp(); }
+                    have gparent->__rb_parent_color == address(above) + 1 by { solve(); }
                     unfold(g_size);
                     have sized_context_parent_word(link.model, g->__rb_parent_color) == 1 by {
                         apply(sized_context_parent_word_black(link.model, above, g->__rb_parent_color));
@@ -181,7 +181,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         };
                     }
                     transport(at(before_link_writes, parent->rb_right == node), parent->rb_right == node);
-                    have parent->rb_left == gparent by { simp(); }
+                    have parent->rb_left == gparent by { solve(); }
                     mark before_parent_update;
                     have at(before_parent_update, g->rb_right == 0) by { assumption(); }
                     have at(before_parent_update, parent->rb_right == node) by { assumption(); }
@@ -190,7 +190,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     let g_size = fold(size_metadata(g), { value: 3 });
                     transport(at(before_parent_update, g->rb_right == 0), g->rb_right == 0);
                     let p_left = fold(sized_at(g->rb_right), { model: SizedTree::Empty });
-                    have g->rb_left == 0 by { simp(); }
+                    have g->rb_left == 0 by { solve(); }
                     let g_left = fold(sized_at(g->rb_left), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)
@@ -211,7 +211,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         assumption();
                     }
                     have parent == p by { assumption(); }
-                    have p->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { simp(); }
+                    have p->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { solve(); }
                     have p->__rb_parent_color == address(above) + (p->__rb_parent_color & 1) by {
                         rewrite(p->__rb_parent_color == at(before_parent_update, g->__rb_parent_color));
                         assumption();
@@ -309,17 +309,17 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have state.context == old(state.context) by { assumption(); }
                     have state.whole_model == sized_plug(old(state.context), state.model) by { assumption(); }
                     have state.phase == sized_mirrored_context_three_finish(old(state.phase)) by {
-                        unfold(sized_mirrored_context_three_finish(SizedInsertMirroredContextThreePhase::Before(g, p, above))); simp();
+                        unfold(sized_mirrored_context_three_finish(SizedInsertMirroredContextThreePhase::Before(g, p, above))); solve();
                     }
                     have sized_shape(state.model) == sized_mirrored_context_three_expected(old(state.phase), node) by {
                         rewrite(old(state.phase) == SizedInsertMirroredContextThreePhase::Before(g, p, above));
-                        unfold(sized_mirrored_context_three_expected(SizedInsertMirroredContextThreePhase::Before(g, p, above), node)); simp();
+                        unfold(sized_mirrored_context_three_expected(SizedInsertMirroredContextThreePhase::Before(g, p, above), node)); solve();
                     }
                     step();
                 }
             }
             have node == old(node) by { assumption(); }
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -335,7 +335,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_mirrored_context_three_expected(old(state.phase), node);
 } by {
     step(insert::__rb_insert, { state: state });
-    execute(); simp();
+    execute(); solve();
 }
 
 void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -350,5 +350,5 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_mirrored_context_three_expected(old(state.phase), node);
 } by {
     step(insert::__rb_insert_augmented, { state: state });
-    execute(); simp();
+    execute(); solve();
 }

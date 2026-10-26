@@ -6,9 +6,9 @@ bool money_nonnegative(const int64& nValue) {
 } by {
     if nValue >= 0i64 {
         execute();
-        simp();
+        solve();
     } else {
         execute();
-        simp();
+        solve();
     }
 }

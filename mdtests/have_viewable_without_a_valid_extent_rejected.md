@@ -19,9 +19,9 @@ theorem range_without_a_valid_extent(v: int32[], lo: int32, hi: int32) {
     requires lo < hi;
     requires hi >= 0 and viewable(v[lo..hi]);
     ensures viewable(v[lo..hi - 1]) by {
-        have 0 < hi by { arithmetic() using { 0 <= lo; lo < hi; }; }
-        have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; }; }
-        have hi - 1 < hi by { arithmetic() using { 0 < hi; }; }
+        have 0 < hi by { solve() using { 0 <= lo; lo < hi; }; }
+        have lo <= hi - 1 by { solve() using { lo < hi; 0 < hi; }; }
+        have hi - 1 < hi by { solve() using { 0 < hi; }; }
         transport(viewable(v[lo..hi]), viewable(v[lo..hi - 1])) using {
             viewable(v[lo..hi]);
             lo <= hi - 1;

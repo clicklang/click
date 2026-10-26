@@ -8,5 +8,5 @@ theorem reversed_is_not_equal() {
 ```
 
 ```expect
-fail: `simp` failed
+fail: `solve` failed
 ```

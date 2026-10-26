@@ -4,8 +4,8 @@ import click::integer;
 // Widen the Rust result into the LP64 C return type without losing bits.
 theorem adler_result_widen(word: uint32) {
  ensures to_integer((uint64)word) == to_integer(word) by {
-  have 0 <= to_integer(word) by auto();
-  have to_integer(word) <= 4294967295 by auto();
+  have 0 <= to_integer(word);
+  have to_integer(word) <= 4294967295;
   arithmetic_certificate rules {
    premise 0: 0 <= to_integer(word) => 0 <= to_integer(word);
    premise 1: to_integer(word) <= 4294967295 => to_integer(word) <= 4294967295;
@@ -35,7 +35,7 @@ theorem adler_c_rust_results(c_bytes: uint8[], rust_bytes: uint8[], length: uint
    normalize();
   }
   apply(adler_result_widen(rust_result));
-  have to_integer(c_result) == to_integer((uint64)rust_result) by arithmetic() using {
+  have to_integer(c_result) == to_integer((uint64)rust_result) by solve() using {
    to_integer(c_result) == adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b);
    to_integer(rust_result) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b);
    adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b);

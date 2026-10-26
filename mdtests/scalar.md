@@ -1,7 +1,7 @@
 # scalar expression verification
 
-This checks that `auto` can prove a simple scalar result using Click's C integer
-arithmetic and comparison semantics.
+This checks that the omitted proof can prove a simple scalar result using
+Click's C integer arithmetic and comparison semantics.
 
 ```c filename=scalar.c
 int32 scalar() {
@@ -13,7 +13,7 @@ int32 scalar() {
 verifying "scalar.c";
 
 int32 scalar() {
-    ensures arithmetic_result: result == 1 by auto();
+    ensures arithmetic_result: result == 1;
 }
 ```
 

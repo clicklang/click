@@ -31,8 +31,8 @@ int32 probe(struct owner* owner, int32 index, int32 value) {
     unfold(buffer(owner));
     step();
     step();
-    have separate(memory(*owner), memory(owner->data[0..owner->cap])) by { simp(); }
-    have owner->data[0] == value by { simp(); }
+    have separate(memory(*owner), memory(owner->data[0..owner->cap])) by { solve(); }
+    have owner->data[0] == value by { solve(); }
     fold(buffer(owner));
     step();
     assumption();

@@ -8,11 +8,11 @@ import click::integer;
 
 theorem exact64_sum(left: int64, right: int64) {
     requires defined(left + right);
-    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by auto();
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
 }
 theorem exact64_difference(left: int64, right: int64) {
     requires defined(left - right);
-    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by auto();
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
 }
 ```
 

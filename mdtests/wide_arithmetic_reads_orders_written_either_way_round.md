@@ -1,6 +1,6 @@
-# 64-bit `arithmetic` reads orders written either way round
+# 64-bit `solve() using` reads orders written either way round
 
-`arithmetic() using` proves a `uint64` or `int64` goal through its Integer
+`solve() using` proves a `uint64` or `int64` goal through its Integer
 observations, carrying each listed order to Integer by a bridge theorem that
 states it as `left < right` or `left <= right`. A premise written the other
 way round, `i > 0`, is restated that way round by `assumption` first, and a

@@ -18,15 +18,15 @@ verifying "compare.c";
 int32 same(int32* q, int32* p) {
     ensures result == 1 implies address(q) == address(p);
     ensures address(q) == address(p) implies result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 twice(int32* q, int32* p) {
     ensures result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 through_carrier(int32* q, int32* p) {
     views p[0..1];
     requires q == p;
     ensures result == p[0];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

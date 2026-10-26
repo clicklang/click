@@ -1,6 +1,6 @@
-# arithmetic using reads unsigned type ranges
+# `solve() using` reads unsigned type ranges
 
-An unsigned value is at least zero. `arithmetic() using` cites that range for
+An unsigned value is at least zero. `solve() using` cites that range for
 each unsigned value the goal or a listed premise names, so a listed premise
 `k < x` with `x == 0u64` is a contradiction: it proves `false`, and any goal.
 The range is spelled from the written operand, whether a variable or a call.

@@ -18,13 +18,13 @@ void clear() {
     owns storage::clear::value.second;
     ensures storage::clear::cells[1][2] == 0;
     ensures storage::clear::value.second == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int main() {
     ensures storage::clear::cells[0][2] == 3;
     ensures storage::clear::cells[1][1] == 5;
     ensures storage::clear::value.first == 7;
     ensures storage::clear::value.second == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

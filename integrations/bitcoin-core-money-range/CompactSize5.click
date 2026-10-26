@@ -6,5 +6,5 @@ uint32 GetSizeOfCompactSize(uint64 nSize) {
     ensures result == 5u32;
 } by {
     execute();
-    simp();
+    solve();
 }

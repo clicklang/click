@@ -4,7 +4,7 @@
 words from their checked signed intervals: a non-negative interval reads the
 same as unsigned, and a negative one `2^32` higher. Here `length` is in
 `[0, 536870911]`, so `(uint32)length` is at most `1073741823u32`. This is
-the certificate `arithmetic() using` writes for
+the certificate `solve() using` writes for
 [`arithmetic_unsigned_range_bound.md`](arithmetic_unsigned_range_bound.md);
 an interval of both signs has no unsigned reading, and the step refuses it.
 

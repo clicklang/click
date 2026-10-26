@@ -50,7 +50,7 @@ void fill(struct buffer* b, int32 from, int32 to) {
     ensures r.prefix == old(r.prefix);
 } by {
     let { prefix: q } = unfold(r);
-    have to <= b->n by auto();
+    have to <= b->n;
     step();
     step();
     loop {
@@ -60,7 +60,7 @@ void fill(struct buffer* b, int32 from, int32 to) {
     }
     execute();
     let r = fold(filled_prefix(b), { prefix: q });
-    simp();
+    solve();
 }
 ```
 

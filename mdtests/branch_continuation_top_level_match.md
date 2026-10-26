@@ -39,12 +39,12 @@ int32 f(int32* p, int32 x) {
 } by {
     branch {
         step();
-        simp();
+        solve();
     } else {}
     match c.m {
         T::A(w) => {
             execute();
-            simp();
+            solve();
         },
     }
 }

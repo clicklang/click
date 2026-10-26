@@ -7,7 +7,7 @@ follow without a nonnegative lower bound.
 theorem missing_lower_bound(length: int32) {
     requires length <= 536870911;
     ensures ((uint32)length) <= 1073741823u32 by {
-        arithmetic() using {
+        solve() using {
             length <= 536870911;
         };
     }

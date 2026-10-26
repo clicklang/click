@@ -41,7 +41,7 @@ void free_second_then_first(struct two_buffers* buffers) {
 } by {
     unfold(two_buffers_owned(buffers));
     execute();
-    simp();
+    solve();
 }
 ```
 

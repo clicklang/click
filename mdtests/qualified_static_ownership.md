@@ -24,16 +24,16 @@ verifying "main.c";
 void reset() {
     owns counter::count;
     ensures counter::count == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int read_cache() {
     owns cache::count[0..2];
     ensures result == old(cache::count[1]);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int main() {
     ensures result == 12;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

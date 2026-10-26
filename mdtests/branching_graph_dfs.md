@@ -103,16 +103,16 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         }
 
         step();
-        simp();
+        solve();
     } else {}
     branch {
         have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
             witness { path: Path::Here };
             unfold(walk(old(left), old(right), cur, Path::Here));
-            simp();
+            solve();
         }
         step();
-        simp();
+        solve();
     } else {}
     mark before_mark;
     step();
@@ -124,7 +124,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         intro();
         if k == cur {
             rewrite(k == cur);
-            simp();
+            solve();
         } else {
             transport(old(visited[k]) != 0, visited[k] != 0) using { old(visited[k]) != 0; };
             assumption();
@@ -143,7 +143,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     apply(unmarked_point_update(at(before_mark, visited), visited, 0, n, n, cur));
     apply(unmarked_nonnegative(visited, 0, n, n));
     have unmarked(visited, 0, n) < unmarked(at(before_mark, visited), 0, n) by {
-        arithmetic() using {
+        solve() using {
             to_integer(unmarked(visited, 0, n)) == to_integer(unmarked(at(before_mark, visited), 0, n) - 1);
         };
     }
@@ -186,7 +186,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     apply(marked_transitive(old(visited), at(after_mark, visited), visited, n));
 
     have unmarked(visited, 0, n) <= old(unmarked(visited, 0, n)) by {
-        arithmetic() using {
+        solve() using {
             unmarked(visited, 0, n) <= unmarked(at(after_mark, visited), 0, n);
             to_integer(unmarked(at(after_mark, visited), 0, n))
                 == to_integer(unmarked(at(before_mark, visited), 0, n) - 1);
@@ -197,7 +197,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     branch {
         have exists (path: Path) {
             walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), path) == to
-        } by { simp(); }
+        } by { solve(); }
         obtain (rest: Path) {
             walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), rest) == to
         }
@@ -208,20 +208,20 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         apply(walk_frame(old(left), old(right), at(after_mark, left), at(after_mark, right), n, cur, Path::Left(rest)));
         have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
             witness { path: Path::Left(rest) };
-            simp() using {
+            solve() using {
                 walk(old(left), old(right), cur, Path::Left(rest)) == walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest));
                 walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to;
             };
         }
         have 0 <= to and to < n and at(after_mark, visited[to]) == 0;
         step();
-        simp();
+        solve();
     } else {}
     observe(bounded_successors(left, right, n));
     have viewable(visited[0..n]);
     apply(unmarked_nonnegative(visited, 0, n, n));
     have unmarked(visited, 0, n) < old(unmarked(visited, 0, n)) by {
-        arithmetic() using {
+        solve() using {
             unmarked(visited, 0, n) <= unmarked(at(after_mark, visited), 0, n);
             to_integer(unmarked(at(after_mark, visited), 0, n))
                 == to_integer(unmarked(at(before_mark, visited), 0, n) - 1);
@@ -239,7 +239,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     have forall (k: int32) {
         0 <= k and k < n and at(after_mark, visited[k]) == 0 and at(before_right, visited[k]) != 0 implies
             at(before_right, visited[at(after_mark, left[k])]) != 0 and at(before_right, visited[at(after_mark, right[k])]) != 0
-    } by { simp(); }
+    } by { solve(); }
     have at(after_mark, left[cur]) == old(left[cur]);
     have at(before_right, visited[at(after_mark, left[cur])]) != 0;
 
@@ -266,7 +266,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         intro();
         extract(visited[to] == at(before_right, visited[to]));
         extract(at(before_right, visited[to]) == old(visited[to]));
-        simp();
+        solve();
     }
     have visited[cur] != 0 by {
         instantiate(forall (k: int32) {
@@ -281,7 +281,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     apply(marked_transitive(old(visited), at(before_right, visited), visited, n));
 
     have unmarked(visited, 0, n) <= old(unmarked(visited, 0, n)) by {
-        arithmetic() using {
+        solve() using {
             unmarked(visited, 0, n)
                 <= unmarked(at(before_right, visited), 0, n);
             unmarked(at(before_right, visited), 0, n)
@@ -291,7 +291,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     if right_result != 0 {
         have exists (path: Path) {
             walk(at(before_right, left), at(before_right, right), at(before_right, right[cur]), path) == to
-        } by { simp(); }
+        } by { solve(); }
         obtain (right_rest: Path) {
             walk(at(before_right, left), at(before_right, right), at(before_right, right[cur]), right_rest) == to
         }
@@ -302,7 +302,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         apply(walk_frame(old(left), old(right), at(before_right, left), at(before_right, right), n, cur, Path::Right(right_rest)));
         have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
             witness { path: Path::Right(right_rest) };
-            simp() using {
+            solve() using {
                 walk(old(left), old(right), cur, Path::Right(right_rest)) == walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest));
                 walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest)) == to;
             };
@@ -314,16 +314,16 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                     0 <= k and k < n and old(visited[k]) != 0 implies at(before_right, visited[k]) != 0
                 }, to);
                 contradiction(at(before_right, visited[to]) == 0);
-            } else { simp(); }
+            } else { solve(); }
         }
 
         step();
-        simp();
+        solve();
     } else {
         have forall (k: int32) {
             0 <= k and k < n and at(before_right, visited[k]) == 0 and visited[k] != 0 implies
                 visited[at(before_right, left[k])] != 0 and visited[at(before_right, right[k])] != 0
-        } by { simp(); }
+        } by { solve(); }
         have visited[at(before_right, right[cur])] != 0;
         transport(
             forall (k: int32) {
@@ -426,7 +426,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
             assumption();
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

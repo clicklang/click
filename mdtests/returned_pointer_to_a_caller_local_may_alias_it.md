@@ -38,7 +38,7 @@ int32* echo(int32* p) {
     ensures viewable(result[0..1]);
     ensures result[0] == 5;
     ensures result == p;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 void v4() {
     ensures 1 == 1;
@@ -50,7 +50,7 @@ void v4() {
     step();
     have q[0] == 5;
     execute();
-    simp();
+    solve();
 }
 ```
 

@@ -56,13 +56,13 @@ void contribute(struct counter* p) {
     unfold(state);
     unfold(remaining(p));
     step();
-    have p->value == 3 - count(remaining(p)) by auto();
+    have p->value == 3 - count(remaining(p));
     let state = fold(control(p), { value: p->value });
     step();
     step(pthread_mutex_destroy, { lifetime: lifetime });
     unfold(state);
     step();
-    simp();
+    solve();
 }
 uint32 twice(struct counter* p) {
     owns authority(remaining(p));
@@ -74,12 +74,12 @@ uint32 twice(struct counter* p) {
 } by {
     step();
     fold(3 of remaining(p));
-    have p->value == 3 - count(remaining(p)) by auto();
+    have p->value == 3 - count(remaining(p));
     step();
     step();
     unfold(remaining(p));
     step();
-    simp();
+    solve();
 }
 ```
 

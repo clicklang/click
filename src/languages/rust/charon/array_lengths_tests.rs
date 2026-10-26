@@ -116,7 +116,7 @@ fn charon_scalar_array_length_metadata_has_bounded_shape_and_proof_work() {
             .unwrap()
             .to_kernel_function();
         let claim = format!(
-            "verifying \"bounds.rs\"; fn {name}(values: &[{ty}; {length}]) -> usize {{ ensures result == {length}u64; }} by {{ execute(); simp(); }}"
+            "verifying \"bounds.rs\"; fn {name}(values: &[{ty}; {length}]) -> usize {{ ensures result == {length}u64; }} by {{ execute(); solve(); }}"
         );
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
             C0VerificationSession::new_program_prepared(&claim, &prepared)

@@ -42,35 +42,35 @@ int32 uint32_high_bit_is_not_less_than_one() {
 verifying "uint32_arithmetic.c";
 
 uint32 uint32_add(uint32 a, uint32 b) {
-    ensures sum: to_integer(result) == to_integer(a + b) by auto();
+    ensures sum: to_integer(result) == to_integer(a + b);
 }
 
 uint32 uint32_wrap_from_local(uint32 value) {
-    ensures sum: to_integer(result) == to_integer(value + 4294967295u32 + 1u32) by auto();
+    ensures sum: to_integer(result) == to_integer(value + 4294967295u32 + 1u32);
 }
 
 uint32 uint32_wrap_constant() {
-    ensures wrapped: result == 0u32 by auto();
+    ensures wrapped: result == 0u32;
 }
 
 uint32 uint32_unsigned_int(uint32 value) {
-    ensures increment: to_integer(result) == to_integer(value + 1u32) by auto();
+    ensures increment: to_integer(result) == to_integer(value + 1u32);
 }
 
 uint32 uint32_stdint(uint32 value) {
-    ensures increment: to_integer(result) == to_integer(value + 1u32) by auto();
+    ensures increment: to_integer(result) == to_integer(value + 1u32);
 }
 
 int32 uint32_is_less(uint32 a, uint32 b) {
-    ensures comparison: result == 0 or result == 1 by auto();
+    ensures comparison: result == 0 or result == 1;
 }
 
 int32 uint32_high_bit_is_not_less_than_one() {
-    ensures comparison: result == 0 by auto();
+    ensures comparison: result == 0;
 }
 
 theorem uint32_unsigned_order() {
-    ensures 2147483648u32 > 1u32 by auto();
+    ensures 2147483648u32 > 1u32;
 }
 ```
 

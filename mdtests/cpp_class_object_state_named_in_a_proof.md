@@ -133,12 +133,12 @@ template<class T> bool Stack<T>::pop(T& out) {
                 List::Nil => {
                     unfold(tail);
                     let state = fold(nodes<T>(this->head), { items: List<T>::Nil });
-                    simp();
+                    solve();
                 },
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
                     let state = fold(nodes<T>(this->head), { items: List::Cons(next_value, next_items) }, { tail: next });
-                    simp();
+                    solve();
                 },
             }
         },
@@ -147,13 +147,13 @@ template<class T> bool Stack<T>::pop(T& out) {
 theorem first_or_cons<T>(v: T, xs: List<T>, fallback: T) {
     ensures first_or(List::Cons(v, xs), fallback) == v by {
         unfold(first_or(List::Cons(v, xs), fallback));
-        simp();
+        solve();
     }
 }
 theorem rest_cons<T>(v: T, xs: List<T>) {
     ensures rest(List::Cons(v, xs)) == xs by {
         unfold(rest(List::Cons(v, xs)));
-        simp();
+        solve();
     }
 }
 int round_trip(Container<int>& container, int x) {
@@ -163,14 +163,14 @@ int round_trip(Container<int>& container, int x) {
     execute();
     apply(first_or_cons(x, old(items(container)), 0));
     apply(rest_cons(x, old(items(container))));
-    simp();
+    solve();
 }
 int caller(Stack<int>& stack, int x) {
     owns stack;
     owns state: nodes<int>(stack.head);
     ensures result == x;
     ensures state.items == old(state.items);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

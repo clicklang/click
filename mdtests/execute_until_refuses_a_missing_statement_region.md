@@ -1,4 +1,4 @@
-# `execute_until` refuses a missing statement region
+# `step_until` refuses a missing statement region
 
 A statement region the function does not have is refused with what it does
 have, as `at(...)` refuses it.
@@ -16,7 +16,7 @@ verifying "execute_until_missing.c";
 int32 probe(int32 x) {
     ensures result == x;
 } by {
-    execute_until(statement(0).region(3));
+    step_until(statement(0).region(3));
     execute();
     solve();
 }

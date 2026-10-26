@@ -7,7 +7,7 @@ and the goal stays open.
 theorem wrong_premise(x: uint32, y: uint32) {
     requires x > 0u32;
     requires y > 0u32;
-    ensures to_integer(x - 1u32) < to_integer(x) by { arithmetic() using { y > 0u32; }; }
+    ensures to_integer(x - 1u32) < to_integer(x) by { solve() using { y > 0u32; }; }
 }
 ```
 

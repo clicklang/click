@@ -6,9 +6,9 @@ bool at_most_max_money(const int64& value) {
 } by {
     if value <= 2100000000000000i64 {
         execute();
-        simp();
+        solve();
     } else {
         execute();
-        simp();
+        solve();
     }
 }

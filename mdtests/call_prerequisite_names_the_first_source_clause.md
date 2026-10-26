@@ -14,7 +14,7 @@ verifying "pair.c";
 int32 first(int32 x, int32 y) {
     requires x > 0;
     requires y > 0;
-    ensures 1 == 1 by auto();
+    ensures 1 == 1;
 }
 int32 caller(int32 a, int32 b) {
     requires a <= 0;

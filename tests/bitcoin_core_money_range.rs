@@ -359,7 +359,7 @@ fn check_upstream_cpp_rounding_phase(
             ),
         ] {
             let proof = format!(
-                "verifying \"bitcoin-src/src/util/feefrac.h\"; static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {{ {premises} ensures 0 == 0; }} by {{ execute(); simp(); }}"
+                "verifying \"bitcoin-src/src/util/feefrac.h\"; static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {{ {premises} ensures 0 == 0; }} by {{ execute(); solve(); }}"
             );
             let parsed = read_click_project(&sidecar, &proof).unwrap();
             let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
@@ -378,7 +378,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     requires d > 0;
     ensures 0 == 0;
 } by {
-    have 1 <= d by { arithmetic() using { d > 0; } }
+    have 1 <= d by { solve() using { d > 0; } }
     have to_integer(d) != 0 by { arithmetic_certificate rules {
         premise 0: 1 <= to_integer(d) => 1 <= to_integer(d);
         integer_bound_exclusion bounds [0] => to_integer(d) != 0;
@@ -389,7 +389,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         integer_bound_exclusion bounds [0] => to_integer(d) != -1;
         conclusion 0;
     } }
-    execute(); simp();
+    execute(); solve();
 }"#;
         let parsed = read_click_project(&sidecar, guard_proof).unwrap();
         let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
@@ -722,8 +722,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 ];
                 if !down {
                     cases.extend([
-                        source.replace("have to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(((uint64)this->fee * (uint64)at_size)) + to_integer((uint64)this->size) by auto();", ""),
-                        source.replace("have to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) - to_integer(1u64) by auto();", ""),
+                        source.replace("have to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(((uint64)this->fee * (uint64)at_size)) + to_integer((uint64)this->size);", ""),
+                        source.replace("have to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) - to_integer(1u64);", ""),
                         source.replace("== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1", "== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 2"),
                     ]);
                 }
@@ -782,8 +782,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     vec![source.replace(lower, ""), source.replace(upper, ""), source.replace(strict, &strict.replace(" < ", " <= "))]
                 }
                 RoundingPhase::TransportRejections => vec![
-                    source.replace("have 0 <= to_integer(this->fee) by { arithmetic() using { this->fee >= 0i64; } }", "have to_integer(this->fee) < 0 by auto();"),
-                    source.replace("have to_integer(this->fee) <= 8589934591 by { arithmetic() using { this->fee < 8589934592i64; } }", "have to_integer(this->fee) >= 8589934592 by auto();"),
+                    source.replace("have 0 <= to_integer(this->fee) by { solve() using { this->fee >= 0i64; } }", "have to_integer(this->fee) < 0;"),
+                    source.replace("have to_integer(this->fee) <= 8589934591 by { solve() using { this->fee < 8589934592i64; } }", "have to_integer(this->fee) >= 8589934592;"),
                 ],
                 RoundingPhase::RoundingRejections => vec![
                     source.replace(if down { "(to_integer(result) + 1) * to_integer(this->size)" } else { "(to_integer(result) + -1) * to_integer(this->size)" }, "to_integer(result) * to_integer(this->size)"),
@@ -798,8 +798,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 RoundingPhase::AdjustedNumeratorRejections => {
                     assert!(!down);
                     vec![
-                        source.replace("have to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(((uint64)this->fee * (uint64)at_size)) + to_integer((uint64)this->size) by auto();", ""),
-                        source.replace("have to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) - to_integer(1u64) by auto();", ""),
+                        source.replace("have to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(((uint64)this->fee * (uint64)at_size)) + to_integer((uint64)this->size);", ""),
+                        source.replace("have to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) - to_integer(1u64);", ""),
                         source.replace("== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1", "== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 2"),
                     ]
                 }
@@ -855,8 +855,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                         "to_integer(result) * to_integer(this->size)",
                     ),
                     source.replace(
-                        "have to_integer(this->fee) <= 8589934591 by { arithmetic() using { this->fee < 8589934592i64; } }",
-                        "have to_integer(this->fee) >= 8589934592 by auto();",
+                        "have to_integer(this->fee) <= 8589934591 by { solve() using { this->fee < 8589934592i64; } }",
+                        "have to_integer(this->fee) >= 8589934592;",
                     ),
                 ]
             }
@@ -865,11 +865,11 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 assert!(selected.ends_with("Up"));
                 vec![
                     source.replace(
-                        "have to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(((uint64)this->fee * (uint64)at_size)) + to_integer((uint64)this->size) by auto();",
+                        "have to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(((uint64)this->fee * (uint64)at_size)) + to_integer((uint64)this->size);",
                         "",
                     ),
                     source.replace(
-                        "have to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) - to_integer(1u64) by auto();",
+                        "have to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) - to_integer(1u64);",
                         "",
                     ),
                     source.replace(
@@ -1341,7 +1341,7 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
     assert_eq!(name, "std::byte");
     assert!(*is_scoped && *is_fixed);
     assert_eq!(span.file, header);
-    let source = "verifying \"span-probe.cpp\"; uint8 probe(uint8 value) { ensures result == value; } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; uint8 probe(uint8 value) { ensures result == value; } by { execute(); solve(); }";
     let path = root.join("byte.click");
     fs::write(&path, source).unwrap();
     let project = read_click_project(&path, source).unwrap();
@@ -1387,7 +1387,7 @@ fn pinned_std_byte_template_record_keeps_nominal_argument() {
         .unwrap();
     assert_eq!(record.byte_template_arguments.len(), 1);
     assert_eq!(record.byte_template_arguments[0].index, 0);
-    let source = "verifying \"span-probe.cpp\"; int32 probe(const struct Holder__std_byte& h) { views h.value; ensures result == h.value; } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; int32 probe(const struct Holder__std_byte& h) { views h.value; ensures result == h.value; } by { execute(); solve(); }";
     check_pinned_byte_proof(&root, &import, source);
 }
 
@@ -1405,7 +1405,7 @@ fn pinned_writable_byte_span_reference_preserves_view_offline() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); solve(); }";
     check_pinned_byte_proof(&root, &import, source);
 }
 
@@ -1423,7 +1423,7 @@ fn pinned_writable_byte_span_by_value_preserves_pointer_snapshot() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_data(result) == old((uint8*)std_span_data(span)); ensures std_span_size(result) == old(std_span_size(span)) * 4u64; } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_data(result) == old((uint8*)std_span_data(span)); ensures std_span_size(result) == old(std_span_size(span)) * 4u64; } by { execute(); solve(); }";
     check_pinned_byte_proof(&root, &import, source);
     fs::remove_dir_all(root).unwrap();
 }
@@ -1504,7 +1504,7 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let base = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_size(result) == std_span_size(span) * 4u64; } by { execute(); simp(); }";
+    let base = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_size(result) == std_span_size(span) * 4u64; } by { execute(); solve(); }";
     for bad in [
         base.replace(" * 4u64", " * 3u64"),
         base.replace("ensures std_span_size(result)", "ensures std_span_data(result) == (uint8*)std_span_data(span) + 1; ensures std_span_size(result)"),
@@ -1527,7 +1527,7 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); solve(); }";
     check_pinned_byte_proof(&root, &import, source);
     for field in ["std_span_data", "std_span_size"] {
         let bad = source.replace(&format!("views {field}(span);"), "");
@@ -2041,8 +2041,8 @@ fn check_upstream_fee_evaluation_fast(mode: &str, expected: i64, phase: Rounding
         r#"{imports}
 {}
 {div}
-int64 FeeFrac::EvaluateFee<{instance}>(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }}
-int64 FeeFrac::EvaluateFee{mode}(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }}
+int64 FeeFrac::EvaluateFee<{instance}>(int32 at_size) const {{ {contract} }} by {{ execute(); solve(); }}
+int64 FeeFrac::EvaluateFee{mode}(int32 at_size) const {{ {contract} }} by {{ execute(); solve(); }}
 "#,
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     );
@@ -2508,7 +2508,7 @@ fn unified_fee_evaluation_source_with_profile(mode: &str, result_fit: bool) -> S
         .split_once("\n}\n\nint64")
         .unwrap()
         .0;
-    let fast_body = fast_body.strip_suffix("    simp();").unwrap();
+    let fast_body = fast_body.strip_suffix("    solve();").unwrap();
     let contract = callers.split_once("} by {").unwrap().0;
     let bounds = contract
         .lines()
@@ -2925,9 +2925,9 @@ fn upstream_getfee_modular_callers_cover_empty_negative_and_oversize_inputs() {
         ),
     ] {
         let proof = if conclusion.is_empty() {
-            "execute(); simp();"
+            "execute(); solve();"
         } else {
-            "have this->m_feerate.base.size != 0 by { simp(); } execute(); extract(result != 0i64); simp();"
+            "have this->m_feerate.base.size != 0 by { solve(); } execute(); extract(result != 0i64); solve();"
         };
         let contract = root_contract.replacen(
             "views this->m_feerate.base.fee;",
@@ -2947,13 +2947,13 @@ contract int64 EmptyRate(const struct CFeeRate* this, int32 virtual_bytes) {
 }
 theorem empty_rate_application() executes CFeeRate::GetFee(const struct CFeeRate* this, int32 virtual_bytes) {
     ensures EmptyRate(&CFeeRate::GetFee) by {
-        have this->m_feerate.base.size >= 0 by { arithmetic() using { this->m_feerate.base.size == 0; } }
-        have this->m_feerate.base.size <= 2147483647 by { arithmetic() using { this->m_feerate.base.size == 0; } }
-        have this->m_feerate.base.size != 0 implies -9223372036854775808 <= to_integer(this->m_feerate.base.fee) by { simp(); }
-        have this->m_feerate.base.size != 0 implies to_integer(this->m_feerate.base.fee) <= 9223372036854775807 by { simp(); }
-        have this->m_feerate.base.size != 0 implies -9223372036854775809 * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) by { simp(); }
-        have this->m_feerate.base.size != 0 implies to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(this->m_feerate.base.size) by { simp(); }
-        execute(); simp();
+        have this->m_feerate.base.size >= 0 by { solve() using { this->m_feerate.base.size == 0; } }
+        have this->m_feerate.base.size <= 2147483647 by { solve() using { this->m_feerate.base.size == 0; } }
+        have this->m_feerate.base.size != 0 implies -9223372036854775808 <= to_integer(this->m_feerate.base.fee) by { solve(); }
+        have this->m_feerate.base.size != 0 implies to_integer(this->m_feerate.base.fee) <= 9223372036854775807 by { solve(); }
+        have this->m_feerate.base.size != 0 implies -9223372036854775809 * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) by { solve(); }
+        have this->m_feerate.base.size != 0 implies to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(this->m_feerate.base.size) by { solve(); }
+        execute(); solve();
     }
 }
 "#);
@@ -3175,7 +3175,7 @@ fn upstream_getfee_per_k_modular_callers_cover_signed_and_oversize_rates() {
         ("WidePerK", 8589934592, 1000),
     ] {
         let contract = root_contract.replacen("views this->m_feerate.base.fee;", &format!("requires this->m_feerate.base.fee == {fee}i64; requires this->m_feerate.base.size == {size}; views this->m_feerate.base.fee;"), 1);
-        callers.push_str(&format!("\ncontract int64 {name}({contract} }}\ntheorem {name}_application() executes CFeeRate::GetFeePerK(const struct CFeeRate* this) {{ ensures {name}(&CFeeRate::GetFeePerK) by {{ execute(); simp(); }} }}\n"));
+        callers.push_str(&format!("\ncontract int64 {name}({contract} }}\ntheorem {name}_application() executes CFeeRate::GetFeePerK(const struct CFeeRate* this) {{ ensures {name}(&CFeeRate::GetFeePerK) by {{ execute(); solve(); }} }}\n"));
     }
     check_upstream_cpp_rounding_phase(
         "CFeeRate::GetFeePerK",
@@ -3208,7 +3208,7 @@ std::span<int> probe(std::span<int>& s) {
     views std_span_data(s);
     views std_span_size(s);
     ensures std_span_data(result) == std_span_data(s);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 "#;
     let sidecar = root.join("span.click");
     fs::write(&sidecar, source).unwrap();
@@ -3248,7 +3248,7 @@ std::span<std::byte> probe(std::span<std::byte>& s) {
     requires 1u64 <= std_span_size(s);
     ensures std_span_data(result) == std_span_data(s) + 1u64;
     ensures std_span_size(result) == std_span_size(s) - 1u64;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 "#;
     let sidecar = root.join("span.click");
     fs::write(&sidecar, source).unwrap();
@@ -3318,7 +3318,7 @@ fn axiomatic_span_pop_back_verifies_against_catalog_contracts() {
 verifying "span-probe.cpp";
 theorem uint64_predecessor_below(n: uint64) {{
     requires 1u64 <= n;
-    ensures n - 1u64 <= n by auto();
+    ensures n - 1u64 <= n;
 }}
 int32& {pop_back}(std::span<int>& span) {{
     owns std_span_data(span);
@@ -3329,13 +3329,13 @@ int32& {pop_back}(std::span<int>& span) {{
     ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
 }} by {{
     apply(uint64_predecessor_below(std_span_size(span)));
-    execute_until(region(2));
+    step_until(region(2));
     have size - 1u64 <= std_span_size(span) by {{
-        simp() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
+        solve() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
     }}
-    have to_integer(size - 1u64) == to_integer(size) - 1 by auto();
+    have to_integer(size - 1u64) == to_integer(size) - 1;
     execute();
-    simp();
+    solve();
 }}
 int32& probe(std::span<int>& span) {{
     owns std_span_data(span);
@@ -3345,7 +3345,7 @@ int32& probe(std::span<int>& span) {{
     ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
 }} by {{
     execute();
-    simp();
+    solve();
 }}
 "#
     );
@@ -3425,7 +3425,7 @@ bool probe(std::span<int>& span) {
     ensures result == result;
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
     let sidecar = root.join("span.click");
@@ -3523,7 +3523,7 @@ fn axiomatic_span_subviews_and_byte_size_verify_for_other_elements() {
         r#"import click::integer;
 theorem uint64_window_bounds(n: uint64) {{
     requires 3u64 <= n;
-    ensures 2u64 <= n - 1u64 by auto();
+    ensures 2u64 <= n - 1u64;
 }}
 {UCHAR_SPAN} probe({UCHAR_SPAN}& s) {{
     views std_span_data(s);
@@ -3534,7 +3534,7 @@ theorem uint64_window_bounds(n: uint64) {{
 }} by {{
     apply(uint64_window_bounds(std_span_size(s)));
     execute();
-    simp();
+    solve();
 }}"#
     );
     let last = format!(
@@ -3546,7 +3546,7 @@ theorem uint64_window_bounds(n: uint64) {{
     ensures std_span_size(result) == 1u64;
 }} by {{
     execute();
-    simp();
+    solve();
 }}"#
     );
     let size_bytes = r#"uint64 probe(std::span<unsigned int>& s) {
@@ -3554,7 +3554,7 @@ theorem uint64_window_bounds(n: uint64) {{
     ensures result == std_span_size(s) * 4u64;
 } by {
     execute();
-    simp();
+    solve();
 }"#
     .to_string();
     check_generic_span_cases(vec![
@@ -3615,7 +3615,7 @@ fn axiomatic_span_byte_element_entries_verify() {
             dependencies: SPAN_DEPENDENCIES,
             harness: "unsigned char* probe(std::span<unsigned char>& s) noexcept { return s.data(); }",
             sidecar: format!(
-                "uint8* probe({UCHAR_SPAN}& s) {{ views std_span_data(s); ensures result == std_span_data(s); }} by {{ execute(); simp(); }}"
+                "uint8* probe({UCHAR_SPAN}& s) {{ views std_span_data(s); ensures result == std_span_data(s); }} by {{ execute(); solve(); }}"
             ),
             refusals: vec![],
         },
@@ -3624,7 +3624,7 @@ fn axiomatic_span_byte_element_entries_verify() {
             dependencies: SPAN_DEPENDENCIES,
             harness: "std::span<unsigned char> probe(std::span<unsigned char>& s) noexcept { return s.first(1); }",
             sidecar: format!(
-                "{UCHAR_SPAN} probe({UCHAR_SPAN}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 1u64; }} by {{ execute(); simp(); }}"
+                "{UCHAR_SPAN} probe({UCHAR_SPAN}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 1u64; }} by {{ execute(); solve(); }}"
             ),
             refusals: vec![],
         },
@@ -3639,7 +3639,7 @@ fn axiomatic_span_byte_element_entries_verify() {
     requires 1u64 <= std_span_size(s);
     ensures std_span_data(result) == std_span_data(s) + 1u64;
     ensures std_span_size(result) == std_span_size(s) - 1u64;
-}} by {{ execute(); simp(); }}"#
+}} by {{ execute(); solve(); }}"#
             ),
             refusals: vec![],
         },
@@ -3664,7 +3664,7 @@ fn axiomatic_span_element_references_read_and_write() {
     ensures result == std_span_data(s)[0];
 }} by {{
     execute();
-    simp();
+    solve();
 }}"#
     );
     let write = format!(
@@ -3679,7 +3679,7 @@ fn axiomatic_span_element_references_read_and_write() {
     ensures result == v;
 }} by {{
     execute();
-    simp();
+    solve();
 }}"#
     )
     .replace("void probe", "uint8 probe");
@@ -3692,7 +3692,7 @@ fn axiomatic_span_element_references_read_and_write() {
     ensures result == std_span_data(s)[std_span_size(s) - 1u64];
 }} by {{
     execute();
-    simp();
+    solve();
 }}"#
     );
     check_generic_span_cases(vec![
@@ -3753,7 +3753,7 @@ fn axiomatic_span_element_reference_returns_and_int_access() {
             dependencies: SPAN_DEPENDENCIES,
             harness: "unsigned char& probe(std::span<unsigned char>& s) noexcept { return s[1]; }",
             sidecar: format!(
-                "uint8& probe({UCHAR_SPAN}& s) {{ views std_span_data(s); views std_span_size(s); requires 2u64 <= std_span_size(s); ensures &result == std_span_data(s) + 1u64; }} by {{ execute(); simp(); }}"
+                "uint8& probe({UCHAR_SPAN}& s) {{ views std_span_data(s); views std_span_size(s); requires 2u64 <= std_span_size(s); ensures &result == std_span_data(s) + 1u64; }} by {{ execute(); solve(); }}"
             ),
             refusals: vec![],
         },
@@ -3762,7 +3762,7 @@ fn axiomatic_span_element_reference_returns_and_int_access() {
             dependencies: SPAN_DEPENDENCIES,
             harness: "int probe(std::span<int>& s) noexcept { return s[0]; }",
             sidecar: format!(
-                "int32 probe({int_span}& s) {{ views std_span_data(s); views std_span_size(s); views std_span_data(s)[0]; requires 1u64 <= std_span_size(s); ensures result == std_span_data(s)[0]; }} by {{ execute(); simp(); }}"
+                "int32 probe({int_span}& s) {{ views std_span_data(s); views std_span_size(s); views std_span_data(s)[0]; requires 1u64 <= std_span_size(s); ensures result == std_span_data(s)[0]; }} by {{ execute(); solve(); }}"
             ),
             refusals: vec![],
         },
@@ -3771,7 +3771,7 @@ fn axiomatic_span_element_reference_returns_and_int_access() {
             dependencies: SPAN_DEPENDENCIES,
             harness: "void probe(std::span<int>& s, int v) noexcept { s[0] = v; }",
             sidecar: format!(
-                "void probe({int_span}& s, int32 v) {{ views std_span_data(s); views std_span_size(s); owns std_span_data(s)[0]; requires 1u64 <= std_span_size(s); requires separate(memory(std_span_data(s)[0]), memory(std_span_data(s))); requires separate(memory(std_span_data(s)[0]), memory(std_span_size(s))); ensures std_span_data(s)[0] == v; }} by {{ execute(); simp(); }}"
+                "void probe({int_span}& s, int32 v) {{ views std_span_data(s); views std_span_size(s); owns std_span_data(s)[0]; requires 1u64 <= std_span_size(s); requires separate(memory(std_span_data(s)[0]), memory(std_span_data(s))); requires separate(memory(std_span_data(s)[0]), memory(std_span_size(s))); ensures std_span_data(s)[0] == v; }} by {{ execute(); solve(); }}"
             ),
             refusals: vec![],
         },
@@ -3823,7 +3823,7 @@ fn axiomatic_const_element_spans_verify() {
     ensures result == std_span_data(s)[0];
 } by {
     execute();
-    simp();
+    solve();
 }"#
     .to_string();
     check_generic_span_cases(vec![
@@ -3842,7 +3842,7 @@ fn axiomatic_const_element_spans_verify() {
             dependencies: SPAN_DEPENDENCIES,
             harness: "const int* probe(std::span<const int>& s) noexcept { return s.data(); }",
             sidecar: format!(
-                "const int32* probe({CONST_INT_SPAN}& s) {{ views std_span_data(s); ensures result == std_span_data(s); }} by {{ execute(); simp(); }}"
+                "const int32* probe({CONST_INT_SPAN}& s) {{ views std_span_data(s); ensures result == std_span_data(s); }} by {{ execute(); solve(); }}"
             ),
             refusals: vec![],
         },
@@ -3858,7 +3858,7 @@ fn axiomatic_const_element_span_subviews_verify() {
             dependencies: SPAN_DEPENDENCIES,
             harness: "unsigned long probe(std::span<const int>& s) noexcept { return s.size_bytes(); }",
             sidecar: format!(
-                "uint64 probe({CONST_INT_SPAN}& s) {{ views std_span_size(s); ensures result == std_span_size(s) * 4u64; }} by {{ execute(); simp(); }}"
+                "uint64 probe({CONST_INT_SPAN}& s) {{ views std_span_size(s); ensures result == std_span_size(s) * 4u64; }} by {{ execute(); solve(); }}"
             ),
             refusals: vec![],
         },
@@ -3867,7 +3867,7 @@ fn axiomatic_const_element_span_subviews_verify() {
             dependencies: SPAN_DEPENDENCIES,
             harness: "std::span<const int> probe(std::span<const int>& s) noexcept { return s.first(1); }",
             sidecar: format!(
-                "{CONST_INT_SPAN} probe({CONST_INT_SPAN}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 1u64; }} by {{ execute(); simp(); }}"
+                "{CONST_INT_SPAN} probe({CONST_INT_SPAN}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 1u64; }} by {{ execute(); solve(); }}"
             ),
             refusals: vec![],
         },
@@ -3876,7 +3876,7 @@ fn axiomatic_const_element_span_subviews_verify() {
             dependencies: SPAN_DEPENDENCIES,
             harness: "const int& probe(std::span<const int>& s) noexcept { return s.back(); }",
             sidecar: format!(
-                "const int32& probe({CONST_INT_SPAN}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures &result == std_span_data(s) + (std_span_size(s) - 1u64); }} by {{ execute(); simp(); }}"
+                "const int32& probe({CONST_INT_SPAN}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures &result == std_span_data(s) + (std_span_size(s) - 1u64); }} by {{ execute(); solve(); }}"
             ),
             refusals: vec![],
         },
@@ -3895,7 +3895,7 @@ fn axiomatic_static_extent_spans_verify() {
             dependencies: SPAN_DEPENDENCIES,
             harness: "int probe(std::span<int, 4>& s) noexcept { return s[3]; }",
             sidecar: format!(
-                "int32 probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); views std_span_data(s)[3]; ensures result == std_span_data(s)[3]; }} by {{ execute(); simp(); }}"
+                "int32 probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); views std_span_data(s)[3]; ensures result == std_span_data(s)[3]; }} by {{ execute(); solve(); }}"
             ),
             refusals: vec![],
         },
@@ -3903,9 +3903,9 @@ fn axiomatic_static_extent_spans_verify() {
             name: "static-extent-size-bytes",
             dependencies: &["sysroot/usr/include/c++/12/span"],
             harness: "unsigned long probe(std::span<const unsigned char, 32>& s) noexcept { return s.size_bytes(); }",
-            sidecar: "uint64 probe(std::span<const unsigned char, 32>& s) { ensures result == 32u64; } by { execute(); simp(); }".into(),
+            sidecar: "uint64 probe(std::span<const unsigned char, 32>& s) { ensures result == 32u64; } by { execute(); solve(); }".into(),
             refusals: vec![(
-                "uint64 probe(std::span<const unsigned char, 32>& s) { ensures result == 33u64; } by { execute(); simp(); }".into(),
+                "uint64 probe(std::span<const unsigned char, 32>& s) { ensures result == 33u64; } by { execute(); solve(); }".into(),
                 "ensures",
             )],
         },
@@ -3916,7 +3916,7 @@ fn axiomatic_static_extent_spans_verify() {
         SPAN_DEPENDENCIES,
         "#include <span>\nint probe(std::span<int, 4>& s) noexcept { return s[4]; }\n",
         &format!(
-            "int32 probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); views std_span_data(s)[4]; ensures result == std_span_data(s)[4]; }} by {{ execute(); simp(); }}"
+            "int32 probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); views std_span_data(s)[4]; ensures result == std_span_data(s)[4]; }} by {{ execute(); solve(); }}"
         ),
         "::operator[]",
     );
@@ -3930,7 +3930,7 @@ fn axiomatic_static_extent_span_subviews_verify() {
         dependencies: SPAN_DEPENDENCIES,
         harness: "std::span<int> probe(std::span<int, 4>& s) noexcept { return s.first(2); }",
         sidecar: format!(
-            "{} probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 2u64; }} by {{ execute(); simp(); }}",
+            "{} probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 2u64; }} by {{ execute(); solve(); }}",
             "std::span<int>"
         ),
         refusals: vec![],
@@ -3958,7 +3958,7 @@ fn defaulted_span_arguments_import_as_compiler_constants() {
     // The defaulted count runs to the end of the view.
     let span = "std::span<int>";
     let source = format!(
-        "verifying \"span-probe.cpp\";\n{span} probe({span}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s) + 1u64; ensures std_span_size(result) == std_span_size(s) - 1u64; }} by {{ execute(); simp(); }}\n"
+        "verifying \"span-probe.cpp\";\n{span} probe({span}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s) + 1u64; ensures std_span_size(result) == std_span_size(s) - 1u64; }} by {{ execute(); solve(); }}\n"
     );
     let path = root.join("span.click");
     fs::write(&path, &source).unwrap();
@@ -3982,7 +3982,7 @@ fn axiomatic_std_array_element_access_verifies() {
     ensures result == v;
 }} by {{
     execute();
-    simp();
+    solve();
 }}"#
     );
     check_generic_span_cases(vec![
@@ -3991,11 +3991,11 @@ fn axiomatic_std_array_element_access_verifies() {
             dependencies: ARRAY_DEPENDENCIES,
             harness: "#include <array>\nint probe(std::array<int, 4>& a) noexcept { return a[1]; }",
             sidecar: format!(
-                "int32 probe({INT_ARRAY}& a) {{ views a; ensures result == std_array_data(a)[1]; }} by {{ execute(); simp(); }}"
+                "int32 probe({INT_ARRAY}& a) {{ views a; ensures result == std_array_data(a)[1]; }} by {{ execute(); solve(); }}"
             ),
             refusals: vec![(
                 format!(
-                    "int32 probe({INT_ARRAY}& a) {{ views a; ensures result == std_array_data(a)[2]; }} by {{ execute(); simp(); }}"
+                    "int32 probe({INT_ARRAY}& a) {{ views a; ensures result == std_array_data(a)[2]; }} by {{ execute(); solve(); }}"
                 ),
                 "ensures",
             )],
@@ -4016,7 +4016,7 @@ fn axiomatic_std_array_element_access_verifies() {
         ARRAY_DEPENDENCIES,
         "#include <array>\nint probe(std::array<int, 4>& a) noexcept { return a[4]; }\n",
         &format!(
-            "int32 probe({INT_ARRAY}& a) {{ views a; ensures result == 0; }} by {{ execute(); simp(); }}"
+            "int32 probe({INT_ARRAY}& a) {{ views a; ensures result == 0; }} by {{ execute(); solve(); }}"
         ),
         "::operator[]",
     );
@@ -4057,7 +4057,7 @@ fn axiomatic_std_array_reference_element_resources_verify() {
         let path = root.join("span.click");
         let source_for = |clause: &str| {
             format!(
-                "verifying \"span-probe.cpp\"; {return_type} probe({parameters}) {{ {clause} ensures {postcondition}; }} by {{ execute(); simp(); }}"
+                "verifying \"span-probe.cpp\"; {return_type} probe({parameters}) {{ {clause} ensures {postcondition}; }} by {{ execute(); solve(); }}"
             )
         };
         for clause in clauses {
@@ -4109,7 +4109,7 @@ fn axiomatic_std_array_size_and_data_verify() {
             name: "array-size",
             dependencies: &["sysroot/usr/include/c++/12/array"],
             harness: "#include <array>\nunsigned long probe(std::array<unsigned char, 32>& a) noexcept { return a.size(); }",
-            sidecar: "uint64 probe(std::array<unsigned char, 32>& a) { ensures result == 32u64; } by { execute(); simp(); }".into(),
+            sidecar: "uint64 probe(std::array<unsigned char, 32>& a) { ensures result == 32u64; } by { execute(); solve(); }".into(),
             refusals: vec![],
         },
         GenericSpanCase {
@@ -4117,7 +4117,7 @@ fn axiomatic_std_array_size_and_data_verify() {
             dependencies: &["sysroot/usr/include/c++/12/array"],
             harness: "#include <array>\nint* probe(std::array<int, 4>& a) noexcept { return a.data(); }",
             sidecar: format!(
-                "int32* probe({INT_ARRAY}& a) {{ ensures result == &std_array_data(a)[0]; }} by {{ execute(); simp(); }}"
+                "int32* probe({INT_ARRAY}& a) {{ ensures result == &std_array_data(a)[0]; }} by {{ execute(); solve(); }}"
             ),
             refusals: vec![],
         },
@@ -4152,7 +4152,7 @@ fn axiomatic_span_pop_back_write_needs_backing_ownership() {
 verifying "span-probe.cpp";
 theorem uint64_predecessor_below(n: uint64) {{
     requires 1u64 <= n;
-    ensures n - 1u64 <= n by auto();
+    ensures n - 1u64 <= n;
 }}
 int32& {pop_back}(std::span<int>& span) {{
     owns std_span_data(span);
@@ -4163,13 +4163,13 @@ int32& {pop_back}(std::span<int>& span) {{
     ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
 }} by {{
     apply(uint64_predecessor_below(std_span_size(span)));
-    execute_until(region(2));
+    step_until(region(2));
     have size - 1u64 <= std_span_size(span) by {{
-        simp() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
+        solve() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
     }}
-    have to_integer(size - 1u64) == to_integer(size) - 1 by auto();
+    have to_integer(size - 1u64) == to_integer(size) - 1;
     execute();
-    simp();
+    solve();
 }}
 int32 probe(std::span<int>& span, int32 input) {{
     owns std_span_data(span);
@@ -4181,7 +4181,7 @@ int32 probe(std::span<int>& span, int32 input) {{
     ensures result == input;
 }} by {{
     execute();
-    simp();
+    solve();
 }}
 "#
     );
@@ -4210,7 +4210,7 @@ fn pinned_std_byte_pointer_stores_verify_offline() {
         "#include <span.h>\nstd::byte probe(std::byte* p, std::byte value) noexcept { *(p + 1) = value; return *(p + 1); }\n",
         &["sysroot/usr/include/c++/12/cstddef"],
     );
-    let source = "verifying \"span-probe.cpp\"; uint8 probe(uint8* p, uint8 value) { owns p[0..2]; ensures p[1] == value; ensures p[0] == old(p[0]); ensures result == value; } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; uint8 probe(uint8* p, uint8 value) { owns p[0..2]; ensures p[1] == value; ensures p[0] == old(p[0]); ensures result == value; } by { execute(); solve(); }";
     check_pinned_byte_proof(&root, &import, source);
     let bad = source.replace("owns p[0..2]", "views p[0..2]");
     fs::write(root.join("bad.click"), &bad).unwrap();
@@ -4235,7 +4235,7 @@ fn pinned_std_byte_automatic_pointer_store_initializes_offline() {
     check_pinned_byte_proof(
         &root,
         &import,
-        "verifying \"span-probe.cpp\"; uint8 probe(uint8 value) { ensures result == value; } by { execute(); simp(); }",
+        "verifying \"span-probe.cpp\"; uint8 probe(uint8 value) { ensures result == value; } by { execute(); solve(); }",
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -4379,7 +4379,7 @@ fn pinned_std_byte_modular_pointer_call_verifies_offline() {
     check_pinned_byte_proof(
         &root,
         &import,
-        "verifying \"span-probe.cpp\"; void fill(uint8* p, uint8 value) { owns p[0..1]; ensures p[0] == value; } by { execute(); simp(); } uint8 probe(uint8 value) { ensures result == value; } by { execute(); simp(); }",
+        "verifying \"span-probe.cpp\"; void fill(uint8* p, uint8 value) { owns p[0..1]; ensures p[0] == value; } by { execute(); solve(); } uint8 probe(uint8 value) { ensures result == value; } by { execute(); solve(); }",
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -4397,7 +4397,7 @@ fn pinned_std_byte_reinterpretation_initializes_uint32_offline() {
     check_pinned_byte_proof(
         &root,
         &import,
-        "verifying \"span-probe.cpp\"; uint32 probe() { ensures result == 305419896u32; } by { execute(); simp(); }",
+        "verifying \"span-probe.cpp\"; uint32 probe() { ensures result == 305419896u32; } by { execute(); solve(); }",
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -4413,7 +4413,7 @@ fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline(
     check_pinned_byte_proof(
         &root,
         &import,
-        "verifying \"span-probe.cpp\"; uint32* echo(uint32* p) { ensures result == p; } by { execute(); simp(); } uint8* probe(uint32* p) { ensures result == (uint8*)p; } by { execute(); simp(); }",
+        "verifying \"span-probe.cpp\"; uint32* echo(uint32* p) { ensures result == p; } by { execute(); solve(); } uint8* probe(uint32* p) { ensures result == (uint8*)p; } by { execute(); solve(); }",
     );
     let artifact_path = cpp_description::artifact(&root.join("span.import-description.json"));
     let lock_path = root.join(click::project::LOCK_NAME);
@@ -4455,7 +4455,7 @@ fn pinned_std_byte_reinterpretation_does_not_initialize_partial_storage() {
         "#include <span.h>\nunsigned int probe() noexcept { unsigned int obj; std::byte* p = reinterpret_cast<std::byte*>(&obj); *p = static_cast<std::byte>(120); return obj; }\n",
         &["sysroot/usr/include/c++/12/cstddef"],
     );
-    let source = "verifying \"span-probe.cpp\"; uint32 probe() { ensures result == 120u32; } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; uint32 probe() { ensures result == 120u32; } by { execute(); solve(); }";
     fs::write(root.join("bad.click"), source).unwrap();
     let error = verify_program_prepared_project(
         &read_click_project(&root.join("bad.click"), source).unwrap(),
@@ -4479,7 +4479,7 @@ fn pinned_std_byte_reinterpretation_requires_original_storage_ownership() {
         "#include <span.h>\nunsigned char probe(unsigned int* p) noexcept { std::byte* bytes = reinterpret_cast<std::byte*>(p); *bytes = static_cast<std::byte>(7); return static_cast<unsigned char>(*bytes); }\n",
         &["sysroot/usr/include/c++/12/cstddef"],
     );
-    let source = "verifying \"span-probe.cpp\"; uint8 probe(uint32* p) { owns p[0..1]; ensures result == 7u8; } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; uint8 probe(uint32* p) { owns p[0..1]; ensures result == 7u8; } by { execute(); solve(); }";
     check_pinned_byte_proof(&root, &import, source);
     for bad in [
         source.replace("owns p[0..1];", "views p[0..1];"),

@@ -46,14 +46,14 @@ int32 drain(int32 n) {
 } by {
     step();
     branch {
-        have 0 <= to_integer(n - 1) by auto();
+        have 0 <= to_integer(n - 1);
         have 1 <= n by {
             solve() using {
                 n > 0;
             };
         }
         have defined(n - 1) by {
-            have defined(n - 1) by auto();
+            have defined(n - 1);
             solve();
         }
         have 0 <= level(n - 1) by {
@@ -62,7 +62,7 @@ int32 drain(int32 n) {
         have level(n - 1) < level(n) by {
             unfold(level(n - 1));
             unfold(level(n));
-            have to_integer(n - 1) == to_integer(n) - to_integer(1) by auto();
+            have to_integer(n - 1) == to_integer(n) - to_integer(1);
             solve() using {
                 to_integer(n - 1) == to_integer(n) - to_integer(1);
             };

@@ -1122,10 +1122,10 @@ fn tactic_form_inventory_is_bidirectional() {
             "apply-induction-using" => surface == "`apply(ih(m)) using { P; ... }`",
             "apply-theorem" => surface == "`apply(theorem(args))`",
             "apply-theorem-using" => surface == "`apply(theorem(args)) using { P; ... }`",
-            "arithmetic" => surface == "`arithmetic()`",
+            "arithmetic" => surface == "`solve() using {}`",
             "normalize" => surface == "`normalize()`",
             "normalize-using" => surface == "`normalize() using { P; ... }`",
-            "arithmetic-using" => surface == "`arithmetic() using { P; ... }`",
+            "arithmetic-using" => surface == "`solve() using { P; ... }`",
             "transport" => surface == "`transport(P, Q)`",
             "transport-using" => surface == "`transport(P, Q) using { R; ... }`",
             "instantiate" => surface == "`instantiate(F, value)`",
@@ -1280,8 +1280,10 @@ fn every_tactic_form_has_a_checked_positive_fixture() {
     }
 }
 
-/// Proof-object operations with a canonical name but no surface spelling.
-const INTERNAL_TACTICS: &[&str] = &["auto", "choose"];
+/// Proof-object operations with a canonical name but no surface spelling:
+/// the implicit tail's closer, `choose`, and the arithmetic engine that
+/// `solve() using` runs last.
+const INTERNAL_TACTICS: &[&str] = &["arithmetic", "choose", "implicit tail"];
 
 #[test]
 fn cli_inventory_matches_argument_parsers() {

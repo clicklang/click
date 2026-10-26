@@ -10,14 +10,14 @@ bool MoneyRange(const int64& nValue) {
     if nValue >= 0i64 {
         if nValue <= 2100000000000000i64 {
             execute();
-            simp();
+            solve();
         } else {
             execute();
-            simp();
+            solve();
         }
     } else {
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -31,7 +31,7 @@ contract bool BelowRange(const int64& nValue) {
 theorem below_range_is_false() executes MoneyRange(const int64& nValue) {
     ensures BelowRange(&MoneyRange) by {
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -45,7 +45,7 @@ contract bool AtZero(const int64& nValue) {
 theorem zero_is_in_range() executes MoneyRange(const int64& nValue) {
     ensures AtZero(&MoneyRange) by {
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -59,7 +59,7 @@ contract bool AtMaxMoney(const int64& nValue) {
 theorem max_money_is_in_range() executes MoneyRange(const int64& nValue) {
     ensures AtMaxMoney(&MoneyRange) by {
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -73,6 +73,6 @@ contract bool AboveRange(const int64& nValue) {
 theorem above_range_is_false() executes MoneyRange(const int64& nValue) {
     ensures AboveRange(&MoneyRange) by {
         execute();
-        simp();
+        solve();
     }
 }

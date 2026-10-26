@@ -44,7 +44,7 @@ void relink(struct root* r, struct node* n) {
     unfold(before);
     execute();
     let after = fold(at(n, r), { model: Ctx::Top });
-    simp();
+    solve();
 }
 int32 pick(struct root* r, struct node* n) {
     consumes c: at(0, r);
@@ -56,7 +56,7 @@ int32 pick(struct root* r, struct node* n) {
     execute();
     unfold(c);
     let o = fold(out(r), { model: 0 });
-    simp();
+    solve();
 }
 ```
 ```expect

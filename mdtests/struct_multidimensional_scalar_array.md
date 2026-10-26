@@ -75,7 +75,7 @@ int32 update_values(struct value_packet* packet) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 
 uint8 update_bytes(struct byte_packet* packet) {
@@ -85,20 +85,18 @@ uint8 update_bytes(struct byte_packet* packet) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 
 struct copy_packet finish(struct copy_packet value) {
     ensures result.values[1][2] == 7;
-} by {
-    auto();
 }
 
 int32 run_struct_multidimensional_scalar_array() {
     ensures result == 75;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

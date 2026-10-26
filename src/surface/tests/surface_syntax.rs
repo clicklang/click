@@ -61,12 +61,12 @@ fn integer_constant_aliases_are_bounded_before_a_tactic_starts() {
 #[test]
 fn integer_simp_expansion_rechecks_without_smart_search() {
     for (parameters, requires, claim, proof) in [
-        ("x: Integer", "", "2 * x + 1 > x + x", "simp();"),
+        ("x: Integer", "", "2 * x + 1 > x + x", "solve();"),
         (
             "x: Integer, y: Integer",
             "requires x <= y; requires y <= x;",
             "x == y",
-            "simp() using { x <= y; y <= x; }",
+            "solve() using { x <= y; y <= x; }",
         ),
     ] {
         let source = format!(
@@ -142,7 +142,7 @@ fn integer_alias_certificates_preserve_types_and_linear_source_on_expansion() {
             ));
         }
         source.push_str(&format!(
-            "ensures a{depth} + 1 > a{depth} by {{ arithmetic(); }} }}"
+            "ensures a{depth} + 1 > a{depth} by {{ solve() using {{}}; }} }}"
         ));
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
@@ -151,7 +151,7 @@ fn integer_alias_certificates_preserve_types_and_linear_source_on_expansion() {
             expanded.len() < 400 * (depth + 1),
             "expansion must retain aliases"
         );
-        let rewritten = source.replace("by { simp(); }", &expanded);
+        let rewritten = source.replace("by { solve(); }", &expanded);
         verify_click_theorems(&rewritten)
             .unwrap_or_else(|error| panic!("depth {depth}: {}", error.message()));
     }
@@ -320,7 +320,7 @@ fn false_library_list_equality_has_a_bounded_diagnostic() {
         r#"
         theorem false_order() {
             ensures List<int32>::Cons(1, List<int32>::Nil)
-                == List<int32>::Cons(2, List<int32>::Nil) by { simp(); }
+                == List<int32>::Cons(2, List<int32>::Nil) by { solve(); }
         }
     "#,
     )
@@ -731,7 +731,7 @@ fn parses_expanded_typed_loads_and_old_loadability() {
         int32 example(int32 owner[], int32 data[]) {
             ensures result == 0;
         } by {
-            simp() using {
+            solve() using {
                 viewable(old(owner[0..6]));
                 load_int32_pointer((owner + 2)) == data;
                 separate(
@@ -749,7 +749,7 @@ fn parses_expanded_typed_loads_and_old_loadability() {
         panic!("expected a proof script");
     };
     let ProofTactic::SimpUsing(simp_using) = &tactics[0] else {
-        panic!("expected a simp() using tactic");
+        panic!("expected a solve() using tactic");
     };
     let premises = &simp_using.premises;
     assert!(matches!(
@@ -941,7 +941,7 @@ fn parses_void_c_function_contracts_without_a_result_binding() {
             consumes value[0..1];
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let file = parse(source).expect("void C contracts should parse");
@@ -972,7 +972,7 @@ fn parses_pure_theorem_definition() {
     let source = r#"
             theorem preserves_nonnegative(x: int32) {
                 requires x >= 0;
-                ensures output_nonnegative: x >= 0 by auto();
+                ensures output_nonnegative: x >= 0;
             }
         "#;
 
@@ -1029,7 +1029,7 @@ fn parses_c_function_pointer_type_in_pure_theorem_parameter() {
             theorem callback_identity(
                 callback: int32 (*)(int32, struct item*)
             ) {
-                ensures callback == callback by simp();
+                ensures callback == callback by solve();
             }
         "#;
 
@@ -1054,7 +1054,7 @@ fn parses_and_prints_pure_induction_tactics() {
             ensures n == n by {
                 induct(n) as ih;
                 apply(ih(n - 1));
-                simp();
+                solve();
             }
         }
     "#;
@@ -1231,7 +1231,7 @@ fn parses_and_prints_pure_function_unfold_with_guards() {
                 peel(nonnegative) using {
                     nonnegative(x);
                 }
-                simp();
+                solve();
             }
         }
     "#;
@@ -1260,8 +1260,8 @@ fn parses_and_prints_arithmetic_certificates() {
         theorem arithmetic_forms(n: int32) {
             requires 1 < n;
             ensures 0 <= n - 2 by {
-                have n == n by { arithmetic(); }
-                arithmetic() using {
+                have n == n by { solve() using {}; }
+                solve() using {
                     1 < n;
                 }
             }
@@ -1279,16 +1279,16 @@ fn parses_and_prints_arithmetic_certificates() {
     };
     assert!(matches!(
         have_tactics.as_slice(),
-        [ProofTactic::ArithmeticUsing(premises)] if premises.is_empty()
+        [ProofTactic::SimpUsing(solve)] if solve.premises.is_empty()
     ));
     assert!(matches!(
         &tactics[1],
-        ProofTactic::ArithmeticUsing(premises) if premises.len() == 1
+        ProofTactic::SimpUsing(solve) if solve.premises.len() == 1
     ));
 
     let printed = super::printing::format_partial_tactic_sequence(tactics);
-    assert!(printed.contains("arithmetic();"), "{printed}");
-    assert!(printed.contains("arithmetic() using {"), "{printed}");
+    assert!(printed.contains("solve() using {};"), "{printed}");
+    assert!(printed.contains("solve() using {"), "{printed}");
     let reparsed = parse(&format!(
         "theorem arithmetic_forms(n: int32) {{ requires 1 < n; ensures 0 <= n - 2 by {{ {printed} }} }}"
     ))
@@ -1492,7 +1492,7 @@ fn signed_int32_compound_certificate_public_nodes_recheck_and_tamper() {
             requires 0 <= n;
             requires n <= 100;
             ensures to_integer(n + 1) <= to_integer(n + 2) by {
-                arithmetic() using {
+                solve() using {
                     0 <= n;
                     n <= 100;
                 }
@@ -1506,7 +1506,7 @@ fn signed_int32_compound_certificate_public_nodes_recheck_and_tamper() {
     assert!(expanded.contains("affine_conclusion_pair"), "{expanded}");
 
     let rechecked_source = source.replace(
-        "by {\n                arithmetic() using {\n                    0 <= n;\n                    n <= 100;\n                }\n            }",
+        "by {\n                solve() using {\n                    0 <= n;\n                    n <= 100;\n                }\n            }",
         &expanded,
     );
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
@@ -1943,7 +1943,7 @@ fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
     let source = r#"
         theorem finite_float_reflexive(value: float) {
             requires isfinite(value);
-            ensures value == value by { simp(); }
+            ensures value == value by { solve(); }
         }
     "#;
     let verified = verify_click_theorems(source).expect("finite float reflexivity should verify");
@@ -1955,7 +1955,7 @@ fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
         "{expanded}"
     );
     assert_eq!(expanded.matches("premise ").count(), 1, "{expanded}");
-    let rechecked = source.replace("by { simp(); }", &expanded);
+    let rechecked = source.replace("by { solve(); }", &expanded);
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_click_theorems(&rechecked)
     });
@@ -1969,7 +1969,7 @@ fn signed_arithmetic_smart_planner_expands_to_structural_certificate() {
         theorem signed_smart_double(n: int32) {
             requires 0 <= n;
             requires n <= 100;
-            ensures to_integer(n + n) <= 200 by { arithmetic() using { 0 <= n; n <= 100; } }
+            ensures to_integer(n + n) <= 200 by { solve() using { 0 <= n; n <= 100; } }
         }
     "#;
     let verified = verify_click_theorems(source).expect("smart signed arithmetic should verify");
@@ -1984,9 +1984,9 @@ fn signed_arithmetic_smart_planner_expands_to_structural_certificate() {
         expanded.contains("scale"),
         "coefficient-2 expansion expected: {expanded}"
     );
-    let rechecked = source.replace("by { arithmetic() using { 0 <= n; n <= 100; } }", &expanded);
+    let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
     assert!(
-        !expanded.contains("arithmetic() using"),
+        !expanded.contains("solve() using"),
         "expanded proof must retain a checked certificate rather than ArithmeticUsing: {expanded}"
     );
     let (rechecked_result, planning) =
@@ -2001,8 +2001,7 @@ fn signed_arithmetic_smart_planner_expands_to_structural_certificate() {
     });
     assert_eq!(planning, 0, "explicit signed recheck must not plan");
     let tampered = expanded.replace("scale 1 by 2", "scale 1 by 3");
-    let tampered_source =
-        source.replace("by { arithmetic() using { 0 <= n; n <= 100; } }", &tampered);
+    let tampered_source = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &tampered);
     verify_click_theorems(&tampered_source)
         .expect_err("a tampered scale coefficient must be rejected");
 }
@@ -2013,7 +2012,7 @@ fn signed_arithmetic_using_requires_every_needed_exact_premise() {
         theorem signed_missing_explicit_premise(n: int32) {
             requires 0 <= n;
             requires n <= 100;
-            ensures to_integer(n + n) <= 200 by { arithmetic() using { 0 <= n; } }
+            ensures to_integer(n + n) <= 200 by { solve() using { 0 <= n; } }
         }
     "#;
     let error = verify_click_theorems(source)
@@ -2030,7 +2029,7 @@ fn integer_arithmetic_uses_checked_unified_certificate_without_replanning() {
     let source = r#"
         theorem integer_smart_bound(x: Integer) {
             requires x == 1;
-            ensures x <= 2 by { arithmetic() using { x == 1; } }
+            ensures x <= 2 by { solve() using { x == 1; } }
         }
     "#;
     let verified = verify_click_theorems(source).expect("Integer arithmetic should verify");
@@ -2038,8 +2037,8 @@ fn integer_arithmetic_uses_checked_unified_certificate_without_replanning() {
         .expanded_proof_source()
         .expect("Integer arithmetic should expand");
     assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
-    assert!(!expanded.contains("arithmetic()"), "{expanded}");
-    let rechecked = source.replace("by { arithmetic() using { x == 1; } }", &expanded);
+    assert!(!expanded.contains("solve() using"), "{expanded}");
+    let rechecked = source.replace("by { solve() using { x == 1; } }", &expanded);
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_click_theorems(&rechecked)
     });
@@ -2058,7 +2057,7 @@ fn integer_arithmetic_using_proves_a_chain_longer_than_three_premises() {
             requires c <= d;
             requires d <= e;
             ensures a < e by {
-                arithmetic() using { a <= b; b < c; c <= d; d <= e; }
+                solve() using { a <= b; b < c; c <= d; d <= e; }
             }
         }
     "#;
@@ -2068,7 +2067,7 @@ fn integer_arithmetic_using_proves_a_chain_longer_than_three_premises() {
         .expect("the chain proof should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     let rechecked = source.replace(
-        "by {\n                arithmetic() using { a <= b; b < c; c <= d; d <= e; }\n            }",
+        "by {\n                solve() using { a <= b; b < c; c <= d; d <= e; }\n            }",
         &expanded,
     );
     assert_ne!(rechecked, source);
@@ -2082,7 +2081,7 @@ fn integer_arithmetic_using_rejects_an_unavailable_irrelevant_extra() {
     let source = r#"
         theorem integer_missing_extra(x: Integer) {
             requires x == 1;
-            ensures x <= 2 by { arithmetic() using { x == 1; x == 9; } }
+            ensures x <= 2 by { solve() using { x == 1; x == 9; } }
         }
     "#;
     let error = verify_click_theorems(source)
@@ -2090,7 +2089,7 @@ fn integer_arithmetic_using_rejects_an_unavailable_irrelevant_extra() {
     assert!(
         error
             .message()
-            .contains("arithmetic using` premise 1 is not exactly available"),
+            .contains("using` premise 1 is not exactly available"),
         "{error:?}"
     );
 }
@@ -2103,7 +2102,7 @@ fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
             requires 0 <= b;
             requires defined(a + b);
             ensures 0 <= to_integer(a + b) by {
-                arithmetic() using {
+                solve() using {
                     0 <= a;
                     0 <= b;
                     defined(a + b);
@@ -2122,7 +2121,7 @@ fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
     );
     assert!(expanded.contains("defined"), "{expanded}");
     let rechecked = source.replace(
-        "by {\n                arithmetic() using {\n                    0 <= a;\n                    0 <= b;\n                    defined(a + b);\n                }\n            }",
+        "by {\n                solve() using {\n                    0 <= a;\n                    0 <= b;\n                    defined(a + b);\n                }\n            }",
         &expanded,
     );
     verify_click_theorems(&rechecked).expect("expanded definedness proof should recheck");
@@ -2149,7 +2148,7 @@ fn signed_arithmetic_smart_planner_handles_deep_supported_terms_iteratively() {
             requires 0 <= n;\n\
             requires n <= 100;\n\
             {bindings}\
-            ensures 0 <= a{depth} by {{ arithmetic() using {{ 0 <= n; n <= 100; }} }}\n\
+            ensures 0 <= a{depth} by {{ solve() using {{ 0 <= n; n <= 100; }} }}\n\
         }}"
     );
     let verified = verify_click_theorems(&source).expect("deep supported arithmetic should verify");
@@ -2160,13 +2159,13 @@ fn signed_arithmetic_smart_planner_handles_deep_supported_terms_iteratively() {
         expanded.contains("arithmetic_certificate signed_int32"),
         "{expanded}"
     );
-    let rechecked = source.replace("by { arithmetic() using { 0 <= n; n <= 100; } }", &expanded);
+    let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
     verify_click_theorems(&rechecked).expect("deep expanded certificate should recheck");
 
     let overflowing = "theorem overflowing_intermediate(n: int32) {
         requires n == 1;
         ensures 0 <= (n + 2147483647) % 2 by {
-            arithmetic() using { n == 1; }
+            solve() using { n == 1; }
         }
     }";
     verify_click_theorems(overflowing)
@@ -2178,7 +2177,7 @@ fn verifies_pure_theorem_definition() {
     let source = r#"
             theorem preserves_nonnegative(x: int32) {
                 requires x >= 0;
-                ensures x >= 0 by auto();
+                ensures x >= 0;
             }
         "#;
 
@@ -2199,7 +2198,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
     let source = r#"
         theorem equality_symmetric(first: int32, second: int32) {
             requires first == second;
-            ensures second == first by simp();
+            ensures second == first by solve();
         }
 
         theorem use_equality_symmetric(first: int32, second: int32) {
@@ -2254,7 +2253,7 @@ fn pure_simp_exposes_an_explicit_arithmetic_certificate() {
     let source = r#"
         theorem positive_is_nonnegative(x: int32) {
             requires 0 < x;
-            ensures 0 <= x by simp();
+            ensures 0 <= x by solve();
         }
     "#;
 
@@ -2276,7 +2275,7 @@ fn pure_simp_after_unfold_exposes_an_explicit_certificate() {
             requires equality_chain(x, y, z);
             ensures x == z by {
                 unfold(equality_chain);
-                simp();
+                solve();
             }
         }
     "#;
@@ -2301,9 +2300,9 @@ fn branching_pure_simp_exposes_explicit_branch_certificates() {
         theorem equality_is_decidable(x: int32) {
             ensures x == 0 or not (x == 0) by {
                 if x == 0 {
-                    simp();
+                    solve();
                 } else {
-                    simp();
+                    solve();
                 }
             }
         }
@@ -2418,7 +2417,7 @@ fn verifies_atomic_derivation_from_explicit_premises() {
         theorem derives_nonnegative(x: int32) {
             requires 1 <= x;
             ensures 0 <= x by {
-                simp() using {
+                solve() using {
                     1 <= x;
                 }
             }
@@ -2427,7 +2426,7 @@ fn verifies_atomic_derivation_from_explicit_premises() {
         theorem calculates_nonnegative(x: int32) {
             requires 1 <= x;
             ensures 0 <= x by {
-                simp() using {
+                solve() using {
                     1 <= x;
                 }
             }
@@ -2775,7 +2774,7 @@ fn proof_source_printing_preserves_long_sum_association_without_nested_prefixes(
             .collect::<Vec<_>>()
             .join(" + ");
         let source = format!(
-            "theorem sum(a: Integer) {{ ensures a == a by {{ have {sum} == {size} * a by {{ arithmetic(); }} assumption(); }} }}"
+            "theorem sum(a: Integer) {{ ensures a == a by {{ have {sum} == {size} * a by {{ solve() using {{}}; }} assumption(); }} }}"
         );
         let file = parse(&source).unwrap();
         let proof = file.theorem_definitions()[0].ensures()[0].proof();
@@ -2927,11 +2926,11 @@ theorem cited_choice(x: int32) {
 fn smart_context_free_disjunction_retains_explicit_choice() {
     let source = r#"
 theorem choose_left() {
-    ensures 1 == 1 or 2 == 3 by { simp(); }
+    ensures 1 == 1 or 2 == 3 by { solve(); }
 }
 
 theorem choose_right() {
-    ensures 2 == 3 or 1 == 1 by { simp(); }
+    ensures 2 == 3 or 1 == 1 by { solve(); }
 }
 "#;
     let verified =
@@ -2996,23 +2995,23 @@ theorem cited_implication(x: int32) {
 fn smart_context_free_implication_retains_explicit_introduction() {
     let source = r#"
 theorem reflexive_implication(x: int32) {
-    ensures x == 0 implies x == 0 by { simp(); }
+    ensures x == 0 implies x == 0 by { solve(); }
 }
 
 theorem true_consequent(x: int32) {
-    ensures x == 0 implies 1 == 1 by { simp(); }
+    ensures x == 0 implies 1 == 1 by { solve(); }
 }
 
 theorem nested_choice(x: int32) {
-    ensures x == 0 implies (x == 0 or 1 == 2) by { simp(); }
+    ensures x == 0 implies (x == 0 or 1 == 2) by { solve(); }
 }
 
 theorem conjunctive_guard(x: int32, y: int32) {
-    ensures (x == 0 and y == 1) implies x == 0 by { simp(); }
+    ensures (x == 0 and y == 1) implies x == 0 by { solve(); }
 }
 
 theorem false_guard(x: int32) {
-    ensures 1 == 2 implies x == 0 by { simp(); }
+    ensures 1 == 2 implies x == 0 by { solve(); }
 }
 "#;
     let verified =
@@ -3167,7 +3166,7 @@ fn rejects_byte_counting_loadable_syntax() {
 
             int32 fill(int32* p, int32 n) {
                 requires viewable(p, n * 4);
-                ensures result == n by auto();
+                ensures result == n;
             }
         "#;
     let error = parse(source).expect_err("byte-counting viewable syntax should be retired");
@@ -3181,7 +3180,7 @@ fn parses_loadable_segment_syntax() {
 
             int32 fill(int32* p, int32 n) {
                 requires viewable(p[0..n]);
-                ensures result == n by auto();
+                ensures result == n;
             }
         "#;
     let file = parse(source).expect("segment viewable should parse");
@@ -3213,7 +3212,7 @@ fn parses_parenthesized_loaded_pointer_segment_base() {
 
             int32 read(int32* owner) {
                 requires at(function.entry, viewable((load_int32_pointer((owner + 2)) + 0)[0..1]));
-                ensures result == 0 by auto();
+                ensures result == 0;
             }
         "#;
 
@@ -3232,7 +3231,7 @@ fn parses_loadable_segment_proposition() {
             int32 read(int32* p, int32 n) {
                 requires viewable((p + 1)[0..n]);
                 requires shifted_loadable(p, n);
-                ensures result == 0 by auto();
+                ensures result == 0;
             }
         "#;
     let file = parse(source).expect("viewable proposition should parse");
@@ -3292,7 +3291,7 @@ fn parses_resource_relation_propositions() {
             int32 read(int32* p, int32* q, int32 n) {
                 requires contains(backing(p, n), memory(p[0..n]));
                 requires separated_backing(p, q, n);
-                ensures result == 0 by auto();
+                ensures result == 0;
             }
         "#;
     let file = parse(source).expect("resource relation propositions should parse");
@@ -3328,7 +3327,7 @@ fn parses_memory_separate_requirement() {
 
             int32 copy(int32* dst, int32* src, int32 n) {
                 requires separate(memory(dst[0..n]), memory(src[0..n]));
-                ensures result == n by auto();
+                ensures result == n;
             }
         "#;
     let file = parse(source).expect("memory separation requirement should parse");
@@ -3349,7 +3348,7 @@ fn restricted_simp_premises_retain_declared_resource_argument_types() {
             ensures result == 0;
         } by {
             have separate(wrapper(owner), memory(owner[0..1])) by {
-                simp() using {
+                solve() using {
                     separate(wrapper(owner), memory(owner[0..1]));
                 }
             }
@@ -3439,7 +3438,7 @@ fn rejects_reversed_constant_loadable_segment() {
 
             int32 read_second(int32* p) {
                 requires viewable(p[3..1]);
-                ensures reads: result == p[1] by auto();
+                ensures reads: result == p[1];
             }
         "#;
 
@@ -3482,7 +3481,7 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
 
             int32 json_object_get_ref_count(struct json_object* obj) {
                 requires viewable(obj->ref_count);
-                ensures returns_ref_count: result == obj->ref_count by auto();
+                ensures returns_ref_count: result == obj->ref_count;
             }
         "#;
     let file = parse(source).expect("pilot struct pointer signature should parse");
@@ -3538,7 +3537,7 @@ fn parses_struct_pointer_callback_signature() {
             verifying "struct_callback.c";
 
             int32 apply(struct node* (*callback)(struct node*), struct node* node) {
-                ensures result == result by auto();
+                ensures result == result;
             }
         "#;
     let file = parse(source).expect("struct-pointer callback signature should parse");
@@ -3621,7 +3620,7 @@ fn nested_field_segments_keep_the_terminal_field_offset() {
             ensures result == 7;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let file = parse_c0_click_file(click_source, &[("write_nested.c", c_source)])
@@ -3723,7 +3722,7 @@ fn an_embedded_struct_is_viewed_as_a_place() {
         }
     "#;
     // An embedded struct is viewed like any other place.
-    let viewed = format!("{click_source} by {{ execute(); simp(); }}");
+    let viewed = format!("{click_source} by {{ execute(); solve(); }}");
     verify_c0_sources(&viewed, &[("aggregate_resource_places.c", c_source)]).unwrap();
 }
 
@@ -3735,7 +3734,7 @@ fn parses_pilot_struct_field_owned_segment() {
             int32 json_object_set_ref_count(struct json_object* obj, int32 count) {
                 requires viewable(obj->ref_count);
                 owns obj->ref_count;
-                ensures returns_count: result == count by auto();
+                ensures returns_count: result == count;
             }
         "#;
     let file = parse(source).expect("pilot struct field ownership should parse");
@@ -3772,7 +3771,7 @@ fn rejects_legacy_mutable_field_effect_spelling() {
 
             int32 json_object_set_ref_count(struct json_object* obj, int32 count) {
                 mutable_field(obj->ref_count);
-                ensures returns_count: result == count by auto();
+                ensures returns_count: result == count;
             }
         "#;
     let error = parse(source).expect_err("legacy mutable-field syntax should be retired");
@@ -3806,11 +3805,14 @@ fn rejects_legacy_read_write_resource_spelling() {
 
 #[test]
 fn parses_block_by_clause() {
-    let source = FILL3_CLICK.replace("by auto();", "by { auto(); }");
+    let source = FILL3_CLICK.replace("== 2;", "== 2 by { solve(); }");
     let file = parse(&source).expect("sidecar should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
-    assert!(ensure.proof().is_auto_tactic());
+    assert_eq!(
+        ensure.proof().tactics(),
+        Some([ProofTactic::Simp].as_slice())
+    );
 }
 
 #[test]
@@ -4040,7 +4042,7 @@ fn diverges_stays_an_ordinary_identifier_elsewhere() {
             verifying "diverges.c";
 
             int32 diverges(int32 diverges) {
-                ensures result == diverges by auto();
+                ensures result == diverges;
             }
         "#;
     verify_c0_sources(click_source, &[("diverges.c", c_source)])
@@ -4056,7 +4058,7 @@ fn diverges_must_follow_throws_in_a_signature() {
             verifying "f.c";
 
             int32 f(int32 x) diverges throws int32 {
-                ensures result == x by auto();
+                ensures result == x;
             }
         "#;
     let error = verify_c0_sources(click_source, &[("f.c", c_source)])
@@ -4100,7 +4102,7 @@ fn external_contracts_accept_diverges_and_still_reject_decreases() {
             }
 
             int32 caller(int32 fd) diverges {
-                ensures result == 0 by auto();
+                ensures result == 0;
             }
         "#;
     verify_c0_sources(marked, &[("wait.c", c_source)])
@@ -4132,7 +4134,7 @@ fn loop_diverges_round_trips_through_expansion() {
                 return 0;
             }
         "#;
-    let body = "loop diverges { invariant 0 == 0; initialize by simp(); preserve by { step(); close_invariants(); } } simp();";
+    let body = "loop diverges { invariant 0 == 0; initialize by solve(); preserve by { step(); close_invariants(); } } solve();";
     let click_source = format!(
         r#"verifying "spin.c";
 
@@ -4159,7 +4161,7 @@ fn loop_diverges_round_trips_through_expansion() {
     // Locating the proof body in the source skips the signature markers, so
     // in-place expansion must see past `diverges` as it does past `throws`.
     let closer = click_source
-        .rfind("simp();")
+        .rfind("solve();")
         .expect("proof should contain its direct closer");
     let line = click_source[..closer]
         .bytes()
@@ -4203,31 +4205,31 @@ fn a_diverges_function_never_yields_termination_evidence() {
                 loop {
                     decreases n;
                     invariant n >= 0;
-                    initialize by simp();
+                    initialize by solve();
                     preserve by {
                         have 0 <= to_integer(n - 1) by {
-                            arithmetic() using { n > 0; }
+                            solve() using { n > 0; }
                         }
                         step();
                         close_invariants() by {
-                            both { arithmetic() using { 0 <= n; } }
+                            both { solve() using { 0 <= n; } }
                             and {
-                                both { arithmetic() using { 0 <= n; } }
-                                and { arithmetic() using { 0 <= n; } }
+                                both { solve() using { 0 <= n; } }
+                                and { solve() using { 0 <= n; } }
                             }
                         }
                     }
                 }
                 loop diverges {
                     invariant n == 0;
-                    initialize by simp();
+                    initialize by solve();
                     preserve by {
                         step();
-                        close_invariants() by { simp(); }
+                        close_invariants() by { solve(); }
                     }
                 }
                 step();
-                simp();
+                solve();
             }
         "#;
     let (session, _) = C0VerificationSession::new(click_source, &[("drain_then_wait.c", c_source)])
@@ -4311,7 +4313,7 @@ fn a_child_resource_is_owned_like_any_other() {
     let c_source = "struct cell { int32 value; int32 other; }; \
         int32 get(struct cell* p) { return p->value; }";
     let proof = "int32 get(struct cell* p) { owns outer(p); ensures result == result; } by { \
-        unfold(outer(p)); unfold(inner(p)); execute(); fold(inner(p)); fold(outer(p)); simp(); }";
+        unfold(outer(p)); unfold(inner(p)); execute(); fold(inner(p)); fold(outer(p)); solve(); }";
     let inner = "resource inner(p: struct cell*) { owns p->value; }";
     let source = format!(
         "{inner} resource outer(p: struct cell*) {{ owns inner(p); owns p->other; }} \
@@ -4346,8 +4348,8 @@ fn an_invariant_label_names_it_in_a_failure() {
     let sidecar = |invariant: &str| {
         format!(
             "verifying \"count.c\"; int32 count(int32 n) {{ requires 0 <= n; ensures result == result; }} by {{ \
-             execute_until(loop(0)); loop {{ decreases n - i; invariant {invariant} i <= n - 1; \
-             preserve by {{ execute(); simp(); }} }} execute(); simp(); }}"
+             step_until(loop(0)); loop {{ decreases n - i; invariant {invariant} i <= n - 1; \
+             preserve by {{ execute(); solve(); }} }} execute(); solve(); }}"
         )
     };
     let labelled = verify_c0_sources(&sidecar("upper:"), &[("count.c", c_source)])
@@ -4399,7 +4401,7 @@ fn pointer_storage_views_name_the_field_alone() {
             views p->data;
             views p->data[0..1];
             ensures result == p->data[0];
-        } by { execute(); simp(); }
+        } by { execute(); solve(); }
     "#;
     verify_c0_sources(click_source, &[("pointer.c", c_source)]).unwrap();
     let file = parse_c0_click_file(click_source, &[("pointer.c", c_source)]).unwrap();
@@ -4422,7 +4424,7 @@ fn a_contract_cannot_return_one_place_twice() {
         int32 get(struct cell* p) { return p->value; }";
     for (contract, expected) in [
         (
-            "int32 get(struct cell* p) { owns p->value; produces p->value; ensures result == result; } by { execute(); simp(); }",
+            "int32 get(struct cell* p) { owns p->value; produces p->value; ensures result == result; } by { execute(); solve(); }",
             "`get` both owns and produces `p->value`; `owns` already returns it",
         ),
         (
@@ -4434,11 +4436,11 @@ fn a_contract_cannot_return_one_place_twice() {
             "`Twice` both owns and produces `p->value`; `owns` already returns it",
         ),
         (
-            "int32 get(struct cell* p) { views p->value; produces p->other; produces p->other; ensures result == result; } by { execute(); simp(); }",
+            "int32 get(struct cell* p) { views p->value; produces p->other; produces p->other; ensures result == result; } by { execute(); solve(); }",
             "`get` produces `p->other` twice",
         ),
         (
-            "int32 get(struct cell* p) { owns *p; produces *p; ensures result == result; } by { execute(); simp(); }",
+            "int32 get(struct cell* p) { owns *p; produces *p; ensures result == result; } by { execute(); solve(); }",
             "`get` both owns and produces `*p`",
         ),
     ] {
@@ -4454,7 +4456,7 @@ fn a_contract_cannot_return_one_place_twice() {
     // Giving a place up and returning it is not twice, and a place reached
     // through a pointer the function may replace is left to the proof.
     for contract in [
-        "int32 get(struct cell* p) { consumes p->value; produces p->value; ensures result == result; } by { execute(); simp(); }",
+        "int32 get(struct cell* p) { consumes p->value; produces p->value; ensures result == result; } by { execute(); solve(); }",
         "contract int32 Swap(struct cell* p) { owns p->data; owns p->data[0..1]; produces p->data[0..1]; }",
         "contract int32 Fields(struct cell* p) { consumes p->value; consumes p->data; produces p->value; produces p->data; }",
     ] {
@@ -4486,7 +4488,7 @@ fn a_contract_cannot_return_one_place_twice() {
 fn a_reference_parameter_does_not_match_a_c_pointer() {
     let c_source = "int32 read(int32* p) { return p[0]; }";
     let source = "verifying \"read.c\"; int32 read(int32& p) { views p; ensures result == p; } \
-        by { execute(); simp(); }";
+        by { execute(); solve(); }";
     let error = verify_c0_sources(source, &[("read.c", c_source)])
         .expect_err("a C parameter is not a reference");
     assert!(
@@ -4504,9 +4506,9 @@ fn a_contract_cannot_return_overlapping_places() {
     let c_source = "struct cell { int32 value; int32 other; }; \
         int32 get(struct cell* p) { return p->value; }";
     for contract in [
-        "int32 get(struct cell* p) { owns *p; produces p->value; ensures result == result; } by { execute(); simp(); }",
+        "int32 get(struct cell* p) { owns *p; produces p->value; ensures result == result; } by { execute(); solve(); }",
         "contract int32 Whole(struct cell* p) { owns *p; produces p->value; } \
-         int32 get(struct cell* p) { views p->value; ensures result == result; } by { execute(); simp(); }",
+         int32 get(struct cell* p) { views p->value; ensures result == result; } by { execute(); solve(); }",
     ] {
         let source = format!("verifying \"cell.c\"; {contract}");
         let error = verify_c0_sources(&source, &[("cell.c", c_source)])
@@ -4522,9 +4524,9 @@ fn a_contract_cannot_return_overlapping_places() {
     // same way; one they leave open is not.
     let range_source = "int32 keep(int32* q, int32 n) { return 0; }";
     for contract in [
-        "int32 keep(int32* q, int32 n) { requires n >= 2; owns q[0..n]; produces q[1]; } by { execute(); simp(); }",
+        "int32 keep(int32* q, int32 n) { requires n >= 2; owns q[0..n]; produces q[1]; } by { execute(); solve(); }",
         "contract int32 Range(int32* q, int32 n) { requires n >= 2; owns q[0..n]; produces q[1]; } \
-         int32 keep(int32* q, int32 n) { ensures result == 0; } by { execute(); simp(); }",
+         int32 keep(int32* q, int32 n) { ensures result == 0; } by { execute(); solve(); }",
     ] {
         let source = format!("verifying \"range.c\"; {contract}");
         let error = verify_c0_sources(&source, &[("range.c", range_source)])
@@ -4537,7 +4539,7 @@ fn a_contract_cannot_return_overlapping_places() {
         );
     }
     let open = "verifying \"range.c\"; int32 keep(int32* q, int32 n) { requires n >= 0; \
-        owns q[0..n]; produces q[1]; } by { execute(); simp(); }";
+        owns q[0..n]; produces q[1]; } by { execute(); solve(); }";
     let error = verify_c0_sources(open, &[("range.c", range_source)])
         .expect_err("the exit state still refuses what the entry could not decide");
     assert!(
@@ -4546,7 +4548,7 @@ fn a_contract_cannot_return_overlapping_places() {
     );
     // Two fields of one struct do not overlap.
     let disjoint = "verifying \"cell.c\"; int32 get(struct cell* p) { owns p->value; \
-        owns p->other; ensures result == result; } by { execute(); simp(); }";
+        owns p->other; ensures result == result; } by { execute(); solve(); }";
     verify_c0_sources(disjoint, &[("cell.c", c_source)]).unwrap();
 }
 
@@ -4558,7 +4560,7 @@ fn a_hidden_record_needs_its_child_declared_first() {
     let source = "resource pair(p: struct pair*) { owns p->a; owns first: counted(p->a); } \
         resource counted(c: struct cell*) { field v: int32; owns c->value; } \
         verifying \"pair.c\"; \
-        int32 get(struct pair* p) { owns x: pair(p); } by { execute(); simp(); }";
+        int32 get(struct pair* p) { owns x: pair(p); } by { execute(); solve(); }";
     let c_source = "struct cell { int32 value; }; struct pair { struct cell* a; }; \
         int32 get(struct pair* p) { return 0; }";
     let error = verify_c0_sources(source, &[("pair.c", c_source)])
@@ -4578,8 +4580,8 @@ fn a_hidden_record_needs_its_child_declared_first() {
 #[test]
 fn a_rust_sidecar_compares_a_bitwise_operand_without_parentheses() {
     let bare =
-        "verifying \"flip.rs\"; fn flip(b: u32) -> u32 { ensures result == b ^ 1u32; } by simp();";
-    let parenthesized = "verifying \"flip.rs\"; fn flip(b: u32) -> u32 { ensures result == (b ^ 1u32); } by simp();";
+        "verifying \"flip.rs\"; fn flip(b: u32) -> u32 { ensures result == b ^ 1u32; } by solve();";
+    let parenthesized = "verifying \"flip.rs\"; fn flip(b: u32) -> u32 { ensures result == (b ^ 1u32); } by solve();";
     assert_eq!(
         parser::parse(bare)
             .expect("a Rust sidecar groups `b ^ 1u32` as Rust does")
@@ -4589,7 +4591,7 @@ fn a_rust_sidecar_compares_a_bitwise_operand_without_parentheses() {
             .function_blocks(),
     );
     let c =
-        "verifying \"flip.c\"; uint32 flip(uint32 b) { ensures result == b ^ 1u32; } by simp();";
+        "verifying \"flip.c\"; uint32 flip(uint32 b) { ensures result == b ^ 1u32; } by solve();";
     let error = parser::parse(c).expect_err("a C sidecar must parenthesize the operand");
     assert!(
         error.message().contains("parenthesize a `^` operand"),
@@ -4603,12 +4605,12 @@ fn a_rust_sidecar_compares_a_bitwise_operand_without_parentheses() {
 fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     let c_shaped = "verifying \"arithmetic.c\"; \
         uint32 add_byte(uint32 sum, uint8 byte) { requires sum <= 4294967040u32; \
-        ensures result == sum + (uint32)byte; } by { execute(); simp(); } \
-        bool touch(uint64 count, bool flag) { ensures result == flag; } by { execute(); simp(); }";
+        ensures result == sum + (uint32)byte; } by { execute(); solve(); } \
+        bool touch(uint64 count, bool flag) { ensures result == flag; } by { execute(); solve(); }";
     let rust = "verifying \"arithmetic.rs\"; \
         fn add_byte(sum: u32, byte: u8) -> u32 { requires sum <= 4294967040u32; \
-        ensures result == sum + byte as u32; } by { execute(); simp(); } \
-        fn touch(count: usize, flag: bool) -> bool { ensures result == flag; } by { execute(); simp(); }";
+        ensures result == sum + byte as u32; } by { execute(); solve(); } \
+        fn touch(count: usize, flag: bool) -> bool { ensures result == flag; } by { execute(); solve(); }";
     assert_eq!(
         parser::parse(rust)
             .expect("the Rust spelling parses")
@@ -4619,31 +4621,31 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     );
     for (source, expected) in [
         (
-            "verifying \"bytes.rs\"; uint32 f(const uint8* bytes, uint64 bytes_len) { ensures result == 0u32; } by simp();",
+            "verifying \"bytes.rs\"; uint32 f(const uint8* bytes, uint64 bytes_len) { ensures result == 0u32; } by solve();",
             "write `fn f(bytes: &[u8]) -> u32`",
         ),
         (
-            "uint32 f(const uint8* bytes, uint64 bytes_len) { ensures result == 0u32; } by simp(); verifying \"bytes.rs\";",
+            "uint32 f(const uint8* bytes, uint64 bytes_len) { ensures result == 0u32; } by solve(); verifying \"bytes.rs\";",
             "write `fn f(bytes: &[u8]) -> u32`",
         ),
         (
-            "verifying \"borrow.rs\"; fn f(p: &u32) -> u32 { ensures result == p->f; } by simp();",
+            "verifying \"borrow.rs\"; fn f(p: &u32) -> u32 { ensures result == p->f; } by solve();",
             "replace `p->f` with `p.f`",
         ),
         (
-            "verifying \"add.c\"; fn add(a: i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
+            "verifying \"add.c\"; fn add(a: i32) -> i32 { ensures result == result; } by { execute(); solve(); }",
             "a `fn` signature is the Rust spelling",
         ),
         (
-            "verifying \"add.rs\"; fn read(value: &&i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
+            "verifying \"add.rs\"; fn read(value: &&i32) -> i32 { ensures result == result; } by { execute(); solve(); }",
             "a reference to a reference or to `()` in a `fn` signature is not supported",
         ),
         (
-            "verifying \"add.rs\"; fn read(bytes: [u8; 4]) -> u8 { ensures result == result; } by { execute(); simp(); }",
+            "verifying \"add.rs\"; fn read(bytes: [u8; 4]) -> u8 { ensures result == result; } by { execute(); solve(); }",
             "an array or slice passed by value in a `fn` signature is not supported",
         ),
         (
-            "verifying \"add.rs\"; fn pick<i32>(a: i32) -> i32 { ensures result == a; } by { execute(); simp(); }",
+            "verifying \"add.rs\"; fn pick<i32>(a: i32) -> i32 { ensures result == a; } by { execute(); solve(); }",
             "write the contract once, on the generic function",
         ),
         (
@@ -4660,14 +4662,14 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         parser::parse(
             "verifying \"borrow.rs\"; \
              fn set(value: &mut i32, seen: &i32) { owns *value; views *seen; \
-             ensures *value == *seen; } by { execute(); simp(); }"
+             ensures *value == *seen; } by { execute(); solve(); }"
         )
         .expect("the Rust spelling parses")
         .function_blocks(),
         parser::parse(
             "verifying \"borrow.c\"; \
              void set(int32* value, const int32* seen) { owns *value; views *seen; \
-             ensures *value == *seen; } by { execute(); simp(); }"
+             ensures *value == *seen; } by { execute(); solve(); }"
         )
         .expect("the C-shaped spelling parses")
         .function_blocks(),
@@ -4678,33 +4680,33 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         parser::parse(
             "verifying \"borrow.rs\"; \
              fn set<'a, 'b: 'a>(value: &'a mut i32, seen: &'b i32, bytes: &'a [u8]) \
-             { owns *value; views *seen; ensures *value == *seen; } by { execute(); simp(); }"
+             { owns *value; views *seen; ensures *value == *seen; } by { execute(); solve(); }"
         )
         .expect("the spelling with lifetimes parses"),
         parser::parse(
             "verifying \"borrow.rs\"; \
              fn set(value: &mut i32, seen: &i32, bytes: &[u8]) \
-             { owns *value; views *seen; ensures *value == *seen; } by { execute(); simp(); }"
+             { owns *value; views *seen; ensures *value == *seen; } by { execute(); solve(); }"
         )
         .expect("the spelling without lifetimes parses"),
     );
     // A character literal is still one byte between quotes.
     let byte = parser::parse(
-        "verifying \"c.rs\"; fn f(x: u8) -> u8 { ensures result == 'a'; } by { execute(); simp(); }",
+        "verifying \"c.rs\"; fn f(x: u8) -> u8 { ensures result == 'a'; } by { execute(); solve(); }",
     );
     assert!(byte.is_ok(), "{byte:?}");
     // A slice is one name over the pointer and length Rust passes.
     assert_eq!(
         parser::parse(
             "verifying \"bytes.rs\"; fn length(bytes: &[u8], out: &mut [u32]) -> usize { \
-             ensures result == bytes.len() + out.len(); } by { execute(); simp(); }"
+             ensures result == bytes.len() + out.len(); } by { execute(); solve(); }"
         )
         .expect("the Rust spelling parses")
         .function_blocks(),
         parser::parse(
             "verifying \"bytes.c\"; uint64 length(const uint8* bytes, uint64 bytes_len, \
              uint32* out, uint64 out_len) { ensures result == bytes_len + out_len; } \
-             by { execute(); simp(); }"
+             by { execute(); solve(); }"
         )
         .expect("the C-shaped spelling parses")
         .function_blocks(),
@@ -4714,7 +4716,7 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     // verifies what these mean; here they parse.
     parser::parse(
         "verifying \"bytes.rs\"; fn read(bytes: &[u8], index: usize) -> u8 { \
-         views *bytes; ensures result == bytes[index]; } by { execute(); simp(); }",
+         views *bytes; ensures result == bytes[index]; } by { execute(); solve(); }",
     )
     .expect("the Rust spelling parses");
     // A trait's type argument names the method as the importer does:
@@ -4745,12 +4747,12 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         assert_eq!(
             parser::parse(&format!(
                 "verifying \"l.rs\"; impl {header} for Lanes {{ fn {method}(&mut self, {parameter}) {{ \
-                 ensures 0 == 0; }} by {{ execute(); simp(); }} }}"
+                 ensures 0 == 0; }} by {{ execute(); solve(); }} }}"
             ))
             .unwrap_or_else(|error| panic!("{header}: {error:?}")).function_blocks(),
             parser::parse(&format!(
                 "verifying \"l.c\"; void {name}(struct Lanes* self, {c_parameter}) {{ \
-                 ensures 0 == 0; }} by {{ execute(); simp(); }}"
+                 ensures 0 == 0; }} by {{ execute(); solve(); }}"
             ))
             .expect("the C-shaped spelling parses").function_blocks(),
             "{header}"
@@ -4793,13 +4795,13 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
              const struct __rust_q_I1_a_I1_b_I5_Lanes* other) { ensures 0 == 0; }",
         ),
     ] {
-        let rust = rust.replace('@', "by { execute(); simp(); }");
+        let rust = rust.replace('@', "by { execute(); solve(); }");
         assert_eq!(
             parser::parse(&format!("verifying \"lib.rs\"; {rust}"))
                 .unwrap_or_else(|error| panic!("{rust}: {error:?}"))
                 .function_blocks(),
             parser::parse(&format!(
-                "verifying \"lib.c\"; {c_shaped} by {{ execute(); simp(); }}"
+                "verifying \"lib.c\"; {c_shaped} by {{ execute(); solve(); }}"
             ))
             .unwrap_or_else(|error| panic!("{c_shaped}: {error:?}"))
             .function_blocks(),
@@ -4811,7 +4813,7 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     // functions at hand the method is found by its type and name; without
     // them the block is taken to be in its type's module.
     let method = "impl adler2::Adler32 { fn compute(&mut self, seed: u32) { ensures 0 == 0; } \
-                  by { execute(); simp(); } }";
+                  by { execute(); solve(); } }";
     let source = format!("verifying \"lib.rs\"; {method}");
     let elsewhere = "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
     let beside = "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
@@ -4856,11 +4858,11 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             "an `impl` block holds `fn` contracts",
         ),
         (
-            "verifying \"g.rs\"; impl MulAssign<u32> { fn mul_assign(&mut self, rhs: u32) { ensures 0 == 0; } by { execute(); simp(); } }",
+            "verifying \"g.rs\"; impl MulAssign<u32> { fn mul_assign(&mut self, rhs: u32) { ensures 0 == 0; } by { execute(); solve(); } }",
             "a trait with a type argument is implemented `for` a type",
         ),
         (
-            "verifying \"g.c\"; impl Guard { fn drop(&mut self) { ensures 0 == 0; } by { execute(); simp(); } }",
+            "verifying \"g.c\"; impl Guard { fn drop(&mut self) { ensures 0 == 0; } by { execute(); solve(); } }",
             "unknown C type `impl`",
         ),
     ] {
@@ -4871,20 +4873,20 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     assert_eq!(
         parser::parse(
             "verifying \"arrays.rs\"; fn first(bytes: &[u8; 4], words: &mut [u32; 1 + 2]) -> u8 { \
-             views bytes[0..4]; ensures result == bytes[0]; } by { execute(); simp(); }"
+             views bytes[0..4]; ensures result == bytes[0]; } by { execute(); solve(); }"
         )
         .expect("the Rust spelling parses")
         .function_blocks(),
         parser::parse(
             "verifying \"arrays.c\"; uint8 first(const uint8* bytes, uint32* words) { \
-             views bytes[0..4]; ensures result == bytes[0]; } by { execute(); simp(); }"
+             views bytes[0..4]; ensures result == bytes[0]; } by { execute(); solve(); }"
         )
         .expect("the C-shaped spelling parses")
         .function_blocks(),
     );
     // `as` before anything but a scalar type is not a cast.
     parser::parse(
-        "verifying \"add.c\"; int32 add(int32 a) { ensures result == a; } by { execute(); simp(); }",
+        "verifying \"add.c\"; int32 add(int32 a) { ensures result == a; } by { execute(); solve(); }",
     )
     .expect("a C sidecar is unchanged");
 }
@@ -4926,7 +4928,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
             "held `views q[0]` does not cover `q[1]`",
         ),
     ] {
-        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); simp(); }}");
+        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); solve(); }}");
         let error = verify_c0_sources(&source, &[("place.c", c_source)])
             .expect_err("the access is not authorized");
         assert!(error.message.contains(expected), "{contract}: {error:?}");
@@ -5015,7 +5017,7 @@ void relink(struct node* node) { requires node != 0; owns links: pair(node); own
 #[test]
 fn a_production_obligation_names_the_same_struct_place_as_its_missing_fact() {
     let c_source = "struct cell { int32 a; int32 b; }; int32 release(struct cell* p) { return 0; }";
-    let source = r#"verifying "cell.c"; int32 release(struct cell* p) { produces p[0..1]; ensures result == 0; } by { execute(); simp(); }"#;
+    let source = r#"verifying "cell.c"; int32 release(struct cell* p) { produces p[0..1]; ensures result == 0; } by { execute(); solve(); }"#;
     let error = verify_c0_sources(source, &[("cell.c", c_source)]).unwrap_err();
     assert!(
         error.message.contains("missing resource fact `owns *p`"),
@@ -5036,7 +5038,7 @@ fn a_struct_pointer_range_counts_structs() {
         struct cell* first(struct cell** link) { return *link; }";
     let contract = |clause: &str| {
         format!(
-            "verifying \"cells.c\"; int32 second(struct cell* p) {{ {clause} }} by {{ execute(); simp(); }}"
+            "verifying \"cells.c\"; int32 second(struct cell* p) {{ {clause} }} by {{ execute(); solve(); }}"
         )
     };
     verify_c0_sources(&contract("views p[0..2];"), &[("cells.c", c_source)]).unwrap();
@@ -5084,7 +5086,7 @@ fn a_resource_clause_names_a_place() {
         "int32 read_first(int32* q) { views *q; ensures result == q[0]; }",
         "int32 read_next(struct node* n) { views n->next; owns *n->next; }",
     ] {
-        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); simp(); }}");
+        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); solve(); }}");
         verify_c0_sources(&source, &[("place.c", c_source)])
             .unwrap_or_else(|error| panic!("{contract}: {error:?}"));
     }
@@ -5119,7 +5121,7 @@ fn a_resource_clause_names_a_place() {
             "`object(p)` is now written `*p`",
         ),
     ] {
-        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); simp(); }}");
+        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); solve(); }}");
         let error = verify_c0_sources(&source, &[("place.c", c_source)])
             .expect_err("the clause names no ownable place");
         assert!(error.message.contains(expected), "{contract}: {error:?}");
@@ -5134,10 +5136,10 @@ fn a_whole_struct_view_reads_and_does_not_write() {
         int32 read(struct packet* p) { return p->other; } \
         int32 write(struct packet* p) { p->other = 1; return 0; }";
     let read = "verifying \"pointer.c\"; int32 read(struct packet* p) { views *p; \
-        ensures result == p->other; } by { execute(); simp(); }";
+        ensures result == p->other; } by { execute(); solve(); }";
     verify_c0_sources(read, &[("pointer.c", c_source)]).unwrap();
     let write = "verifying \"pointer.c\"; int32 write(struct packet* p) { views *p; } \
-        by { execute(); simp(); }";
+        by { execute(); solve(); }";
     let error = verify_c0_sources(write, &[("pointer.c", c_source)])
         .expect_err("a view does not authorize a write");
     assert!(error.message.contains("missing resource fact"), "{error:?}");
@@ -5201,7 +5203,7 @@ fn inline_callback_identity_rejects_ambiguous_translation_units() {
         contract int32 One() { ensures result == 1; }
         int32 callback() { ensures result == 1; } by { execute(); normalize(); }
         theorem callback_contract() {
-            ensures One(&callback) by { unfold(One); simp(); }
+            ensures One(&callback) by { unfold(One); solve(); }
         }
     "#;
     let inputs = [
@@ -5245,10 +5247,10 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
         }
         theorem a_comparison_is_a_bool_value(b: bool) {
             requires b == (5u32 > 3u32);
-            ensures b by simp();
+            ensures b by solve();
         }
         theorem an_index_is_a_usize(n: usize) {
-            ensures forall (k: usize) { k < n implies k < n } by auto();
+            ensures forall (k: usize) { k < n implies k < n };
         }";
     verify_c0_sources(accepted, &rust_source).expect("the Rust spellings verify");
     let error = verify_c0_sources(
@@ -5267,7 +5269,7 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
     let error = verify_c0_sources(
         "verifying \"bytes.rs\"; theorem wrong(b: bool) {
              requires b == (3u32 > 5u32);
-             ensures b by simp();
+             ensures b by solve();
          }",
         &rust_source,
     )
@@ -5322,7 +5324,7 @@ fn rust_integer_casts_read_historical_operands() {
             "verifying \"bytes.rs\";
              fn bytes::bump(x: u32) -> u32 {{
                  ensures ({cast}) == ({cast});
-             }} by {{ mark before; execute(); simp(); }}"
+             }} by {{ mark before; execute(); solve(); }}"
         )
     };
     for cast in [
@@ -5356,7 +5358,7 @@ fn a_rust_trait_implementation_inherits_its_interface() {
         requires 0 <= scale and scale <= 1000; ensures scale < result; } }";
     let implementation = "impl shapes::Shape for shapes::Circle { \
         fn area(&self, scale: i32) -> i32 { ensures result == scale + scale + 1; } \
-        by { execute(); simp(); } }";
+        by { execute(); solve(); } }";
     for source in [
         format!("verifying \"shapes.rs\"; {interface} {implementation}"),
         format!("verifying \"shapes.rs\"; {implementation} {interface}"),
@@ -5541,7 +5543,7 @@ fn a_rust_trait_function_is_its_object_field() {
         trait shapes::Shape { function size(self) -> i32; \
             fn area(&self, scale: i32) -> i32 { ensures result == size(self) + scale; } } \
         impl shapes::Shape for shapes::Square { function size(self) -> i32 { self.side } \
-            fn area(&self, s: i32) -> i32 { } by { execute(); simp(); } }";
+            fn area(&self, s: i32) -> i32 { } by { execute(); solve(); } }";
     // The importer supplies `Square`'s layout, which `owns *self` reads.
     let parse = |source: &str| {
         parser::parse_with_layouts_and_aggregate_objects(
@@ -5635,7 +5637,7 @@ fn a_cpp_class_function_is_its_object_field() {
         class Shape { function size(this) -> int32; } \
         extern int Shape::area(int scale) const { ensures result == size(this) + scale; } \
         int total(const Shape& shape, int scale) { ensures result == size(shape) + scale; } \
-            by { execute(); simp(); } \
+            by { execute(); solve(); } \
         class Square : Shape { function size(this) -> int32 { this->side } }";
     use crate::languages::c::syntax::{C0StructLayout, C0Type};
     let layout = |fields, size| C0StructLayout::from_explicit_fields(fields, size, 8).unwrap();

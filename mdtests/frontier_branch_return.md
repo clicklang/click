@@ -21,12 +21,12 @@ int32 returning_branch(int32 x) {
             fact x >= 0;
         } then {
             step();
-            simp();
+            solve();
         } else {
-            have x >= 0 by auto();
+            have x >= 0;
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

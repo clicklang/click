@@ -33,14 +33,14 @@ uint32 contribute_early(struct counter* p) {
     open(control(p)) { have count(remaining(p)) <= 3; }
     open(control(p)) {
         have count(remaining(p)) - 1 >= 1 by {
-            arithmetic() using {
+            solve() using {
                 count(remaining(p)) > 1;
                 count(remaining(p)) <= 3;
             };
         }
-        have to_integer(p->value + 1u32) == 3 - to_integer(count(remaining(p)) - 1) by auto();
+        have to_integer(p->value + 1u32) == 3 - to_integer(count(remaining(p)) - 1);
         have count(remaining(p)) - 1 <= 3 by {
-            arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
+            solve() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
         }
         unfold(remaining(p));
         step();
@@ -54,20 +54,20 @@ uint32 overconsume(struct counter* p) {
     consumes remaining(p);
     requires count(remaining(p)) > 2;
 } by {
-    have count(remaining(p)) > 1 by { arithmetic() using { count(remaining(p)) > 2; }; }
+    have count(remaining(p)) > 1 by { solve() using { count(remaining(p)) > 2; }; }
     open(control(p)) { have count(remaining(p)) <= 3; }
     open(control(p)) {
         have count(remaining(p)) - 1 >= 1 by {
-            arithmetic() using {
+            solve() using {
                 count(remaining(p)) > 1;
                 count(remaining(p)) <= 3;
             };
         }
-        have to_integer(p->value + 1u32) == 3 - to_integer(count(remaining(p)) - 1) by auto();
+        have to_integer(p->value + 1u32) == 3 - to_integer(count(remaining(p)) - 1);
         have count(remaining(p)) - 1 <= 3 by {
-            arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
+            solve() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
         }
-        have count(remaining(p)) - 1 > 1 by { arithmetic() using { count(remaining(p)) > 2; count(remaining(p)) <= 3; }; }
+        have count(remaining(p)) - 1 > 1 by { solve() using { count(remaining(p)) > 2; count(remaining(p)) <= 3; }; }
         unfold(remaining(p));
         step();
     }

@@ -5,7 +5,7 @@ that selection at the common frontier.
 
 The selected pointer has no local name once the function has returned.
 Certificate generation recovers a snapshot-qualified spelling from the
-retained recorded snapshot so the final `simp` can check without a hand-written
+retained recorded snapshot so the final `solve` can check without a hand-written
 bridge.
 
 ```c filename=advance_selected_pointer.c
@@ -46,7 +46,7 @@ int32 advance_selected_pointer(int32* left, int32* right, int32 choose_left) {
             }
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

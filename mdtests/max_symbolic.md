@@ -1,6 +1,6 @@
 # symbolic max verifies on both branches
 
-This checks that `auto` verifies an `ensures` clause across every symbolic
+This checks that the omitted proof verifies an `ensures` clause across every symbolic
 branch, using execution-derived pure facts from the `if`.
 
 ```c filename=max.c
@@ -17,8 +17,8 @@ int32 max(int32 a, int32 b) {
 verifying "max.c";
 
 int32 max(int32 a, int32 b) {
-    ensures result >= a by auto();
-    ensures result >= b by auto();
+    ensures result >= a;
+    ensures result >= b;
 }
 ```
 

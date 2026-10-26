@@ -21,7 +21,7 @@ theorem product_bound_guard(left: uint32, right: uint32) {
 }
 
 theorem zero_product_guard(left: uint32) {
-    ensures 0u32 == 0u32 or left <= 4294967295u32 / 0u32 by auto();
+    ensures 0u32 == 0u32 or left <= 4294967295u32 / 0u32;
 }
 ```
 

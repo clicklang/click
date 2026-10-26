@@ -14,7 +14,7 @@ void f(const uint8* p, int32 index) {
  views p[0u64..1u64];
  ensures index == 0;
 } by {
- have p[0] == old(p)[index] by simp();
+ have p[0] == old(p)[index] by solve();
  apply(same_byte(p[0], old(p)[index]));
  execute(); assumption();
 }

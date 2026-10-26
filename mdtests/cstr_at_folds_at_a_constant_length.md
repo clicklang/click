@@ -1,7 +1,7 @@
 # A C string folds at a constant length
 
 A `fold` whose body fact is not available exactly leaves it to the fold's
-implicit `auto`, spelled over the fold's arguments as written. A constant
+implicit closer, spelled over the fold's arguments as written. A constant
 argument is spelled as its literal, so `fold(cstr_at(p, 1u64))` proves its
 quantified body facts from the caller's `requires` as `fold(cstr_at(p, n))`
 does. Before, a constant argument had no spelling and the fold was refused at

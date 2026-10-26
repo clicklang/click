@@ -36,8 +36,8 @@ fn rust_import_pure_theorem_claim_labels_expand_and_reverify() {
     let prepared = p.prepared().unwrap();
     let source = format!(
         "{SIDECAR}\ntheorem mixed(n: int32) {{\n\
-         ensures n == n by {{ simp(); }}\n\
-         ensures ordered: n <= n by {{ simp(); }}\n\
+         ensures n == n by {{ solve(); }}\n\
+         ensures ordered: n <= n by {{ solve(); }}\n\
          }}\n"
     );
     C0VerificationSession::new_program_prepared(&source, &prepared).unwrap();

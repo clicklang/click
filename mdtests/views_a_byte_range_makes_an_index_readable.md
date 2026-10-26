@@ -44,7 +44,7 @@ uint8 read_byte(uint8 s[], int32 i, int32 n) {
     views s[0..n];
 } by {
     execute();
-    simp();
+    solve();
 }
 
 uint8 read_byte_from(uint8 s[], int32 a, int32 b, int32 i) {
@@ -54,7 +54,7 @@ uint8 read_byte_from(uint8 s[], int32 a, int32 b, int32 i) {
     views s[a..b];
 } by {
     execute();
-    simp();
+    solve();
 }
 
 uint16 read_half(uint16 s[], int32 i, int32 n) {
@@ -63,7 +63,7 @@ uint16 read_half(uint16 s[], int32 i, int32 n) {
     views s[0..n];
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

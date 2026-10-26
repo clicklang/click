@@ -17,23 +17,23 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
 } by {
     match before.model {
         Context::Top => {
-            have parent == 0 by auto();
+            have parent == 0;
             unfold(before);
             execute();
             let after = fold(ctx_at(new, root), { model: Context::Top });
-            simp();
+            solve();
         },
         Context::Left(identity, grandparent, color, sibling_model, outer_model) => {
-            have parent == identity by auto();
+            have parent == identity;
             let { sibling: sibling, up: outer } = unfold(before);
             execute();
             let after = fold(ctx_at(new, root), {
                 model: Context::Left(identity, grandparent, color, sibling_model, outer_model)
             }, { up: outer });
-            simp();
+            solve();
         },
         Context::Right(identity, grandparent, color, sibling_model, outer_model) => {
-            have parent == identity by auto();
+            have parent == identity;
             let { sibling: sibling, up: outer } = unfold(before);
             match sibling.model {
                 RbTree::Empty => {
@@ -43,7 +43,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     let after = fold(ctx_at(new, root), {
                         model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
                     }, { up: outer });
-                    simp();
+                    solve();
                 },
                 RbTree::Node(sid, sp, sc, sl, sr) => {
                     let { left: left, right: right } = unfold(sibling);
@@ -54,7 +54,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     let after = fold(ctx_at(new, root), {
                         model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
                     }, { up: outer });
-                    simp();
+                    solve();
                 },
             }
         },

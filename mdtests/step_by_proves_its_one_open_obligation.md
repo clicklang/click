@@ -17,9 +17,9 @@ verifying "step_by_proves_its_one_open_obligation.c";
 int32 compare_self(uint8 bytes[]) {
     views bytes[0..2];
     ensures 1 == 1 by {
-        step() by { simp(); }
+        step() by { solve(); }
         step();
-        simp();
+        solve();
     }
 }
 ```

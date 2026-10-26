@@ -4517,8 +4517,8 @@ impl<'a> Proof<'a> {
         // A Special fact such as `aligned(p + i, 8)` is not generally a
         // simp-derivation: the kernel's pointer rule consumes a matching
         // alignment/relation fact directly. Use the selected pairs when
-        // `simp() using` supplied them; otherwise recover only typed Special
-        // candidates from the recorded Surface map for generic `simp()`.
+        // `solve() using` supplied them; otherwise recover only typed Special
+        // candidates from the recorded Surface map for generic `solve()`.
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()
         {
@@ -8422,7 +8422,7 @@ impl<'a> Proof<'a> {
             .iter()
             .filter_map(|surface| {
                 let kernel = self
-                    .lower_cited_surface_proposition(surface, "`arithmetic using` premise")
+                    .lower_cited_surface_proposition(surface, "`solve() using` premise")
                     .ok()?;
                 self.facts()
                     .listed_premise_available(&kernel, &[], false)
@@ -9603,7 +9603,7 @@ impl<'a> Proof<'a> {
         Ok(extracted.then_some(proof))
     }
 
-    /// Searches from exactly the Surface premises named by `simp() using`.
+    /// Searches from exactly the Surface premises named by `solve() using`.
     /// This query cannot add facts or close the goal: it returns only the
     /// descendant obtained by checking the typed atomic decision through the
     /// ordinary Proof transitions.
@@ -10264,7 +10264,7 @@ impl<'a> Proof<'a> {
         // them a byte extent over an internal pointer name instead.
         if let Some(reason) = self.unproved_loadable_range_goal_reason() {
             return self.step_error(format!(
-                "`simp` failed for `{}`: {reason}",
+                "`solve` failed for `{}`: {reason}",
                 self.claim_label()
             ));
         }
@@ -10301,7 +10301,7 @@ impl<'a> Proof<'a> {
             })
             .unwrap_or_else(|| "a goal that is not a proposition".into());
         self.step_error(format!(
-            "`simp` failed for `{}`: could not establish {goal}{}",
+            "`solve` failed for `{}`: could not establish {goal}{}",
             self.claim_label(),
             self.describe_goal_version_mismatch()
                 .or_else(|| self.describe_goal_decided_false())
@@ -10677,7 +10677,7 @@ impl<'a> Proof<'a> {
                 // conclusion, an `unfold` whose refreshed goal was already
                 // an available fact) asserts a closed judgment: a harmless
                 // no-op that emits no redundant certificate step. That is
-                // `assumption`, `simp`, and the context-free `normalize`,
+                // `assumption`, a bare `solve`, and the context-free `normalize`,
                 // in any position, so `unfold(f(x)); normalize();` means the
                 // same whether or not the unfold alone closed the goal. Any
                 // other suffix after closure is a declined shape, named with
@@ -10702,9 +10702,14 @@ impl<'a> Proof<'a> {
                     .map_or("an earlier tactic".to_string(), |closer| {
                         format!("`{}`", tactic_name(closer))
                     });
+                // `solve() using` is refused here where a bare `solve()`
+                // is not, so it is named by its whole spelling.
+                let name = match tactic {
+                    ProofTactic::SimpUsing(_) => "solve() using",
+                    tactic => tactic_name(tactic),
+                };
                 return Err(proof.step_error(format!(
-                    "`{}` follows a goal-closing tactic: {closer} already closed this goal, so only `assumption`, `simp`, or `normalize` may follow it",
-                    tactic_name(tactic)
+                    "`{name}` follows a goal-closing tactic: {closer} already closed this goal, so only `assumption()`, a bare `solve()`, or `normalize()` may follow it",
                 )));
             }
             // A step that adds a fact can close the goal before a written
@@ -10761,7 +10766,7 @@ impl<'a> Proof<'a> {
                             matches!(previous, ProofTactic::Witness(_) | ProofTactic::Choose(_))
                         }) {
                             return Err(proof.step_error(
-                                "checked `simp` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
+                                "checked `solve` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
                             ).with_search_failures(search.finish()));
                         }
                         return Err(proof
@@ -10783,7 +10788,7 @@ impl<'a> Proof<'a> {
                             matches!(previous, ProofTactic::Witness(_) | ProofTactic::Choose(_))
                         }) {
                             return Err(proof.step_error(
-                                "checked `simp` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
+                                "checked `solve` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
                             ));
                         }
                         // Arithmetic is the last closer `solve() using`
@@ -10803,10 +10808,10 @@ impl<'a> Proof<'a> {
                                     .map_or(summary, |start| &summary[start..]);
                                 // A goal outside arithmetic's fragment has
                                 // nothing to add about the premises.
-                                if reason.starts_with("`arithmetic` requires a supported") {
+                                if reason.starts_with("arithmetic requires a supported") {
                                     String::new()
                                 } else {
-                                    format!("; arithmetic: {reason}")
+                                    format!("; {reason}")
                                 }
                             }
                             Ok(_) => String::new(),

@@ -15,7 +15,7 @@ verifying "insufficient_bound.c";
 int32 difference(int32 a, int32 b) {
     requires to_integer(a) - to_integer(b) <= 2147483647;
     ensures to_integer(result) == to_integer(a) - to_integer(b);
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

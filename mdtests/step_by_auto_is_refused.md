@@ -1,7 +1,8 @@
-# `step() by auto()` is refused because it means `step()`
+# `step() by auto()` is refused as a removed spelling
 
-A step's open obligations already go to `auto`, so writing `by auto()` on a step
-adds nothing and is refused.
+`auto` is removed. A step's open obligations already go to the implicit
+closer, so `by auto()` on a step meant `step()`; it is now refused with the
+removal's refusal, which says to delete it.
 
 ```c filename=step_by_auto_is_refused.c
 int32 compare_self(uint8 bytes[]) {
@@ -23,5 +24,5 @@ int32 compare_self(uint8 bytes[]) {
 ```
 
 ```expect
-fail: `step() by auto()` is `step()`
+fail: `auto()` is removed: a `by auto();` proof is the omitted proof, so delete it
 ```

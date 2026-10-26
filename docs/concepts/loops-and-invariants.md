@@ -240,7 +240,7 @@ loop {
     invariant i >= 0;
     invariant i <= n;
 
-    initialize by auto();
+    initialize by solve();
     preserve by {
         step();
         solve();
@@ -376,10 +376,10 @@ that disjunction reads the same way on all of them:
 have 0 < to_integer(a + b) by {
     cases {
         a > 0 => {
-            arithmetic() using { a > 0; b >= 0; a <= 1; b <= 1; };
+            solve() using { a > 0; b >= 0; a <= 1; b <= 1; };
         }
         b > 0 => {
-            arithmetic() using { b > 0; a >= 0; a <= 1; b <= 1; };
+            solve() using { b > 0; a >= 0; a <= 1; b <= 1; };
         }
     }
 }

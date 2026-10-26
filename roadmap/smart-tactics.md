@@ -1237,6 +1237,40 @@ mdtests and examples.
     the files Rust tests name and the mdtests named for `execute_until` keep
     the older spelling.
 
+    `simp`, `auto`, `arithmetic` and `execute_until` are removed. Every
+    remaining use was rewritten, the files Rust tests read and the Rust tests'
+    own sources included, and the parser now refuses each spelling, naming its
+    replacement (`removed_tactic_spellings_name_their_replacement`). A
+    `by auto();` and the block `by { auto(); }` were the omitted proof, so they
+    are deleted. The one exception is `initialize by auto()`, which becomes
+    `initialize by solve()`. The special refusals of
+    `step() by auto()`, `fold(…) by auto()`, `open(…) { … } by auto()` and
+    `close_invariants() by auto()` give way to the removal's refusal. The
+    hash-pinned historical Rust sidecars stay unchanged, and their fixture
+    adapter spells them as today's. Printing and expansion write
+    `solve() using { … }` where they wrote `arithmetic() using { … }`, and an
+    empty list as `solve() using {};`. Diagnostics, trace origins and profile
+    rows spell a written closer `solve`, the implicit tail's closer
+    `implicit tail` and the closer behind a simple tactic's requirement
+    `implicit closer`. A `solve() using` miss appends arithmetic's reason
+    after `; `, with arithmetic, the engine, out of backticks.
+
+    Three behaviours change with the spellings:
+    - A claim's `by auto();` gave that claim a proof of its own. Omitted, two
+      or more claims share the function's grouped proof, so expanding or
+      locating one of them selects that proof.
+    - `solve() using` on a conjunction of loop-bundle members proves them
+      all, where `arithmetic() using` proved one member.
+    - The closers `solve() using` tries before arithmetic cost an unsigned
+      order chain more than a signed one. The chain test no longer compares
+      the two types' peaks.
+
+    A failed `have P;` is located at its function, not at the `have`, as the
+    removed `have P by auto();` was; this is
+    `bugs/a-failed-default-have-points-at-the-function.md`. Left for the
+    `execute()` removal: written `execute()`, the trace and profile rows that
+    name it, and the prose of mdtests about `execute()` itself.
+
     Measured 2026-10-25, with every `arithmetic()` read as `solve() using {}`
     and every `arithmetic() using { … }` as `solve() using { … }`. At first
     `solve() using` lost 42 proofs and `examples/rust-chunks-exact`: it never

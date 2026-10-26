@@ -6,12 +6,12 @@ language. A tactic is either **smart**, **simple**, or **control**:
 - Smart tactics search. The written one is `solve()`, with its `using` form
   and `step_until`, which steps to a target and proves what each step needs;
   the rest are the implicit closer that ends every proof and finishes a
-  `step()` or `fold` (diagnostics name it `auto`), `close_invariants()`, and
+  `step()` or `fold`, `close_invariants()`, and
   the elided forms whose search fills one argument a simple form writes:
   `apply(theorem(args))`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
-  are the tactics that `click profile` may recommend expanding. `solve()`,
-  `auto()`, `arithmetic()`, `execute()` and `execute_until` are older
-  spellings, still accepted.
+  are the tactics that `click profile` may recommend expanding. `execute()`
+  is still accepted. The parser refuses the removed spellings `simp()`,
+  `auto()`, `arithmetic()` and `execute_until` and names each replacement.
 - Simple tactics request one deterministic checked operation without heuristic
   planning or search. They may use indexed ambient context when that context is
   an input to the operation, as it is for `step()`. They are the leaves emitted
@@ -134,12 +134,10 @@ Every proof script ends with an implicit tail, and an omitted proof clause is
 that tail alone. The tail runs the C the script leaves, splitting at each C
 branch the facts do not decide into paths that each run to function exit,
 and then closes every open claim on every path with the implicit closer, per
-claim or once for a grouped proof. `by auto();` is the older spelling of the
-omitted proof. A written `solve()` closes the first open goal and runs no C, so
+claim or once for a grouped proof. A written `solve()` closes the first open goal and runs no C, so
 `by solve();` restates the omitted proof only where no C is left to run, as
 for a pure theorem or a `have`; with C left it is refused, since its goals
-exist only at function exit. The implicit closer, which
-diagnostics name `auto`, tries direct logical closure on each open claim,
+exist only at function exit. The implicit closer tries direct logical closure on each open claim,
 then `solve`'s search. On a
 returned path that holds the body of a resource the contract produces but
 not the resource, it first folds it, as a written `fold(R(...))` after the C
@@ -153,7 +151,7 @@ a body that must reach the function's return steps there itself with
 `have P by solve();`, there is no C to execute.
 
 On an arithmetic goal that its indexed derivations miss, `solve` runs
-`arithmetic` from premises it selects itself: the facts connected to the goal,
+arithmetic from premises it selects itself: the facts connected to the goal,
 and the type ranges of the machine values they observe. It also carries
 connected machine orders to `Integer`, proves a machine order through its
 `Integer` reading, an equality from its two bounds, and `defined(a + b)` from
@@ -173,8 +171,8 @@ equate to one value, and reads the fields' equalities, or the constructors'
 mismatch, from it
 (`mdtests/simp_reads_definitions_and_constructor_equations.md`).
 Written
-as a step of a script, `auto();` is the older spelling of `solve();`: it
-closes the first open goal (`mdtests/a_written_auto_closes_one_goal.md`). A
+as a step of a script, `solve();` closes the first open goal
+(`mdtests/a_written_auto_closes_one_goal.md`). A
 script that stops with C left ends with the implicit tail, which executes
 whatever remains and closes every open goal
 (`mdtests/a_script_that_stops_after_explicit_steps_executes_the_rest.md`). In
@@ -198,7 +196,7 @@ at function exit. A written `step()` never opens a resource. See
 and
 [`a_written_step_does_not_open_a_folded_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/a_written_step_does_not_open_a_folded_resource.md).
 
-A failed `have P` that the implicit closer proves names `auto` and the written `P`,
+A failed `have P` that the implicit closer proves names the written `P`,
 rather than an internal search step or subgoal. Exhausted verification
 budgets keep their budget diagnostic. See
 [`auto_failure_names_the_written_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_failure_names_the_written_goal.md).
@@ -479,7 +477,7 @@ a refusal there is not a bug.
 
 A prerequisite the context cannot prove, or an unsupported transition, fails at
 that statement with that diagnostic. A refusal printed as `refused
-by: the implicit auto that proves this statement's requirements` is a smart
+by: the implicit closer that proves this statement's requirements` is a smart
 miss. Prove
 the printed `goal:` with `have` before the step, or prove it with
 `step() by { ... }`. When the implicit closer cannot spell or prove an obligation, the
@@ -494,7 +492,7 @@ Click carries no fact by list. Expansion leaves a step unchanged unless the
 implicit closer proved an obligation. Then it prints `step() by { ... }` for
 one obligation or `step() { requires P by ...; }` for several. Profiling
 charges the step its one transition, and the implicit closer's work is a
-separate smart `implicit auto` row at the step.
+separate smart `implicit closer` row at the step.
 
 **Checked examples:** [`simple_statement_step.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step.md), [`simple_statement_step_branch_requires_exact_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_branch_requires_exact_fact.md), [`simple_statement_step_requires_exact_prerequisite.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_requires_exact_prerequisite.md), [`step_refuses_an_undecided_c_if.md`](https://github.com/clicklang/click/blob/master/mdtests/step_refuses_an_undecided_c_if.md), [`step_names_the_alias_cases_it_does_not_split.md`](https://github.com/clicklang/click/blob/master/mdtests/step_names_the_alias_cases_it_does_not_split.md), [`step_refuses_a_maybe_throwing_call.md`](https://github.com/clicklang/click/blob/master/mdtests/step_refuses_a_maybe_throwing_call.md), [`step_by_proves_its_one_open_obligation.md`](https://github.com/clicklang/click/blob/master/mdtests/step_by_proves_its_one_open_obligation.md), [`a_written_step_does_not_open_a_folded_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/a_written_step_does_not_open_a_folded_resource.md), [`smart_step_carries_prior_call_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/smart_step_carries_prior_call_facts.md)
 
@@ -584,7 +582,7 @@ When execution reaches function exit, each path's open goals are the
 contract's claims in the order the contract writes them: every `ensures`, and
 every `owns` and `produces` clause, whose goal is that the path still holds the
 instance. `views` and `consumes` clauses make no claim. A closer (`assumption`,
-`normalize`, `arithmetic`, `both`, `solve`, `solve() using`) acts on the first
+`normalize`, `both`, `solve`, `solve() using`) acts on the first
 open goal, and a refusal names that goal; it does not look further down the
 list for a claim it could close
 (`mdtests/a_closer_after_execution_acts_on_the_first_open_claim.md`,
@@ -616,11 +614,12 @@ leaves an open claim to the report that names it
 
 ### Execution to a program point
 
-**Form:** `step_until(statement(i))`, also spelled `execute_until(statement(i))`
+**Form:** `step_until(statement(i))`
 
 `step_until` repeats `step()` up to the target, walking any loop the facts
 decide, and never splits: an undecided branch before the target refuses it, as
-it refuses `step()`. `execute_until` is its older spelling, still accepted.
+it refuses `step()`. The parser refuses the removed spelling `execute_until`
+and names `step_until`.
 
 **Specialized.** Write it to stop execution at a chosen statement, loop, or read
 and do proof work there, instead of a run of `step();` lines. From a live
@@ -925,14 +924,14 @@ state it exactly and local kernel decisions, with no search.
 
 The body proves that obligation at the step's pre-state, as a `have` would, and
 the step then runs with it stated. The body is one tactic call, such as
-`simp();`, or a block.
+`solve();`, or a block.
 
 **Failure, checking, and tools:**
 
 Refused when the fast path leaves no obligation open (superfluous) or more than
 one; the second refusal spells every open obligation as a `requires` entry to
 copy. The default `step()` already invokes the implicit closer for open obligations, so
-`step() by auto()` is rejected; write `step()` instead. Expansion keeps the
+write `step()` rather than a `by` that only repeats it. Expansion keeps the
 `by` and prints the body's checked steps. The form is checked in a claim's
 linear script and in a `branch` arm
 ([`step_by_and_requires_in_a_branch_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/step_by_and_requires_in_a_branch_arm.md)).
@@ -1007,8 +1006,6 @@ step is still checked.
 | `extract(P)` | simple | Expansion output | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
-| `arithmetic()` | smart | Specialized | Older spelling of `solve() using {}`: arithmetic over no premises. | [Reference](#arithmetic-search) |
-| `arithmetic() using { P; ... }` | smart | Specialized | Older spelling of `solve() using { P; ... }`: arithmetic over the written premises. | [Reference](#arithmetic-with-selected-premises) |
 | `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }` | simple | Expansion output | Check explicit arithmetic evidence. | [Reference](#arithmetic-certificates) |
 | `rewrite(P)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
@@ -1198,10 +1195,11 @@ state. Expansion preserves both certificates.
 
 ### Simplification
 
-**Form:** `solve()`, also spelled `simp()`
+**Form:** `solve()`
 
-`solve()` closes one goal and runs no C. `simp()` is an older spelling of the
-same tactic, still accepted. `by solve();` restates what an omitted proof of a
+`solve()` closes one goal and runs no C. The parser refuses the removed
+spelling `simp()` and names `solve()`, and refuses a written `auto();`, naming
+`solve();` for it and the omitted proof for `by auto();`. `by solve();` restates what an omitted proof of a
 `have` or a pure theorem's `ensures` does, but it is accepted: it marks a place
 to write a different tactic later.
 
@@ -1326,7 +1324,7 @@ search plus leaves.
 
 ### Simplification with selected premises
 
-**Form:** `solve() using { P; ... }`, also spelled `simp() using { P; ... }`
+**Form:** `solve() using { P; ... }`
 
 **Specialized.** Write it when `solve` picks the wrong premises or searches too
 long, to restrict it to the named facts. On a proposition goal, including a
@@ -1660,8 +1658,8 @@ follows the selected expression and premises.
 
 ### Arithmetic search
 
-**Form:** `solve() using {}`; `arithmetic()` is the older spelling, which runs
-this engine alone.
+**Form:** `solve() using {}`. The parser refuses the removed spelling
+`arithmetic()` and names `solve() using {}`.
 
 **Specialized.** Write it only for a bound that follows from the goal's own
 terms, such as `(x & 255) <= 255`; it reads no fact. `solve() using {}` tries
@@ -1699,8 +1697,8 @@ certificate.
 
 ### Arithmetic with selected premises
 
-**Form:** `solve() using { P; ... }`; `arithmetic() using { P; ... }` is the
-older spelling, which runs this engine alone.
+**Form:** `solve() using { P; ... }`. The parser refuses the removed spelling
+`arithmetic() using { P; ... }` and names `solve() using { P; ... }`.
 
 **Specialized.** Write it when `solve` misses an integer bound or equality,
 listing the premises the bound follows from. `solve() using` tries the
@@ -1740,7 +1738,7 @@ range when no premise bounds `n`, which the certificate records as
 `Integer` linear family, any number of listed equalities participate: they are
 eliminated, in the order written, each solved for the smallest atom it still
 mentions, with exact integer cross multiplication and no division. When those
-bounded combinations miss an `Integer` bound, `arithmetic` refutes the goal's
+bounded combinations miss an `Integer` bound, arithmetic refutes the goal's
 negation from all the listed premises by simplex, so a chain of any length
 closes; the certificate adds up the cited premises and the negated goal to a
 constant contradiction.
@@ -1787,7 +1785,7 @@ arithmetic certificates; none cites a standard-library theorem.
 
 A disequality goal `a != b` (or `not (a == b)`) over machine or `Integer`
 operands, which no certificate family reads directly, is proved by refuting
-`a == b`: `intro()` adds the equality and leaves `false`, which `arithmetic`
+`a == b`: `intro()` adds the equality and leaves `false`, which arithmetic
 proves from the listed premises and the equality. `k < j` gives `k != j`
 ([`arithmetic_proves_a_disequality_by_refuting_its_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_proves_a_disequality_by_refuting_its_equality.md));
 `k <= j` does not, and the refusal is the one for the `false` goal
@@ -2105,7 +2103,7 @@ introduction:
 - A conjunction: `both`. A disjunction: prove one disjunct with `have` and
   close with `assumption()`.
 - An existential, including `(lo..hi).any(...)`: `witness`.
-- A comparison or other leaf: `normalize`, `arithmetic`, `assumption`, or
+- A comparison or other leaf: `normalize`, `solve() using`, `assumption`, or
   another closer.
 
 **Failure, checking, and tools:**
@@ -2983,9 +2981,8 @@ this `by`. The body is one tactic call, such as `solve();`, or a block.
 **Failure, checking, and tools:**
 
 Refused when the close leaves no body fact open (superfluous) or more than one;
-prove the others with `have` in the block. `open(...) { ... } by auto()` is a
-syntax error: it means the bare `open`. Expansion keeps the `by` and prints the
-body's checked steps; a smart tactic written in the `by` expands with its claim
+prove the others with `have` in the block. Expansion keeps the `by` and
+prints the body's checked steps; a smart tactic written in the `by` expands with its claim
 (`click expand --claim`), not as a site of its own.
 
 **Checked examples:** [`open_by_proves_the_closing_fold_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/open_by_proves_the_closing_fold_body_fact.md), [`open_by_is_refused_when_the_close_leaves_nothing_open.md`](https://github.com/clicklang/click/blob/master/mdtests/open_by_is_refused_when_the_close_leaves_nothing_open.md)
@@ -3391,8 +3388,8 @@ described below, which is smart: its miss is not a `fold` bug.
 **Failure, checking, and tools:**
 
 A body fact no fact states exactly is left open and proved by the implicit
-`auto` as the fold's `by`, which expansion prints; one `auto` cannot prove
-fails, naming it. Before that, the kernel's condition decision settles a body
+closer as the fold's `by`, which expansion prints; one the implicit closer
+cannot prove fails, naming it. Before that, the kernel's condition decision settles a body
 fact that is a condition, as a step's fast path does.
 
 A body fact over a witness the proof cannot name has no requirement spelling, so
@@ -3755,7 +3752,8 @@ the back edge is stated once more at the iteration entry and closed by
 A `preserve` path whose tactics stop inside the body first runs the rest of it
 as an omitted `preserve` would
 ([`preserve_runs_the_rest_of_the_body.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_runs_the_rest_of_the_body.md)).
-`close_invariants() by auto()` is refused, naming these forms
+The bare `close_invariants()` is already a smart closer, so it needs no
+`by`
 ([`close_invariants_by_auto_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/close_invariants_by_auto_is_refused.md)).
 
 **Failure, checking, and tools:**

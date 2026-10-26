@@ -15,5 +15,5 @@ theorem unrelated_values(x: Box, y: Box, a: int32, b: int32) {
 ```
 
 ```expect
-fail: `simp` failed
+fail: `solve` failed
 ```

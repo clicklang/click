@@ -10,15 +10,15 @@ uint64 click_zlib_incremental(uint64 seed, const uint8* buf, uint64 len, uint64 
  ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed))));
  ensures forall (k: uint64) { k < old(len) implies old(buf)[k] == old(buf[k]) };
 } by {
- have viewable(buf[0u64..len]) by simp();
+ have viewable(buf[0u64..len]) by solve();
  apply(zlib_seed_bounds(seed));
- have viewable(buf[0u64..split]) by simp();
- execute_until(assignment(prefix, 0)); step();
+ have viewable(buf[0u64..split]) by solve();
+ step_until(assignment(prefix, 0)); step();
  apply(zlib_checksum_seed_u64(buf, split, prefix, to_integer(zlib_seed_a(seed)), to_integer(zlib_seed_b(seed))));
  have buf + split != 0 by assumption();
- have viewable((buf + split)[0u64..len - split]) by simp();
- have to_integer(len - split) == to_integer(len) - to_integer(split) by auto();
- have to_integer(split) + to_integer(len - split) <= 18446744073709551615 by arithmetic() using {
+ have viewable((buf + split)[0u64..len - split]) by solve();
+ have to_integer(len - split) == to_integer(len) - to_integer(split);
+ have to_integer(split) + to_integer(len - split) <= 18446744073709551615 by solve() using {
   to_integer(len - split) == to_integer(len) - to_integer(split);
   to_integer(len) <= 18446744073709551615;
  };
@@ -34,7 +34,7 @@ uint64 click_zlib_incremental(uint64 seed, const uint8* buf, uint64 len, uint64 
  mark before_suffix;
  execute();
  have to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed)))) by {
-  arithmetic() using { to_integer(result) == adler_spec_checksum_u64(old(buf) + split, len - split, to_integer(zlib_seed_a(at(before_suffix, prefix))), to_integer(zlib_seed_b(at(before_suffix, prefix)))); adler_spec_checksum_u64(old(buf) + split, len - split, to_integer(zlib_seed_a(at(before_suffix, prefix))), to_integer(zlib_seed_b(at(before_suffix, prefix)))) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed)))); };
+  solve() using { to_integer(result) == adler_spec_checksum_u64(old(buf) + split, len - split, to_integer(zlib_seed_a(at(before_suffix, prefix))), to_integer(zlib_seed_b(at(before_suffix, prefix)))); adler_spec_checksum_u64(old(buf) + split, len - split, to_integer(zlib_seed_a(at(before_suffix, prefix))), to_integer(zlib_seed_b(at(before_suffix, prefix)))) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed)))); };
  }
- simp();
+ solve();
 }

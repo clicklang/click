@@ -49,15 +49,15 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         } by { assumption(); }
         have exists (path: Path) {
             pick(at(before_call, a[i]), path) == r
-        } by { simp(); }
+        } by { solve(); }
         obtain (rest: Path) {
             pick(at(before_call, a[i]), rest) == r
         }
         execute();
-        simp();
+        solve();
     } else {}
     step();
-    simp();
+    solve();
 }
 ```
 

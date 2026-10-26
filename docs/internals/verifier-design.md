@@ -16,7 +16,8 @@ step, and nothing can remove that cost later.
 
 The **slow part** searches. It is the smart tactics, whose kinds in
 `SmartTacticKind` are `Solve` (written `solve()` and `solve() using`),
-`Arithmetic` (the older `arithmetic() using`), and `Execute` (`step_until`, and
+`Arithmetic` (the arithmetic engine alone, whose written spelling
+`arithmetic() using` the parser now refuses), and `Execute` (`step_until`, and
 the stepping and splitting of the implicit tail that ends every proof script);
 the implicit closer, `SmartSite::Implicit`; and the search helpers that fill an
 argument a tactic leaves out. Its cost is optional:
@@ -159,7 +160,7 @@ common mechanism names belong to.
 | proof object, proof step | The persistent proof state and one checked change to it | Simple tactics (fast) |
 | certificate | An explicit derivation the kernel checks without search | Certificates (fast) |
 | planner (signed, `Integer` affine, special, simplex refutation) | Chooses an arithmetic certificate | Smart tactics (slow) |
-| selected-premise arithmetic | `solve`'s choice of the facts and type ranges `arithmetic` refutes an arithmetic goal from | Smart tactics (slow) |
+| selected-premise arithmetic | `solve`'s choice of the facts and type ranges arithmetic refutes an arithmetic goal from | Smart tactics (slow) |
 | rewrite search, equality chain | `solve`'s search for rewrites that close a goal | Smart tactics (slow) |
 | premise selection, connected premises | Choosing which facts a tactic uses | Search helpers (slow) |
 | transport planner | Choosing the facts a bare `transport` carries | Search helpers (slow) |

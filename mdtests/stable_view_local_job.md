@@ -35,7 +35,7 @@ int read_local_job(struct local_job *job) {
     ensures result == job->first;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int relay_local_job(struct local_job *job) {
@@ -44,14 +44,14 @@ int relay_local_job(struct local_job *job) {
     ensures result == job->first;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int use_local_job() {
     ensures result == 7;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

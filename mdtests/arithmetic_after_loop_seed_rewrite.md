@@ -24,7 +24,7 @@ uint64 seed(uint64 word, uint64 len) {
   invariant to_integer(len) <= 15;
   invariant word == decode(old(word));
   initialize by {
-   have to_integer(len) <= to_integer(15u64) by auto();
+   have to_integer(len) <= to_integer(15u64);
    have count(old(len), len) == 0 by { unfold(count(old(len), len)); solve(); }
    have word == decode(old(word)) by solve();
    have to_integer(word) == observe(count(old(len), len), to_integer(decode(old(word)))) by {
@@ -39,18 +39,18 @@ uint64 seed(uint64 word, uint64 len) {
    have 0u64 < len by {
     if 0u64 < len { assumption(); } else {
      have 0u64 <= len by normalize();
-     have 0u64 == len by auto();
+     have 0u64 == len;
      have len == 0u64 by { rewrite(0u64 == len); normalize(); }
      have not (len > 0u64) by { rewrite(len == 0u64); normalize(); }
      contradiction(len > 0u64);
     }
    }
-   have 0 <= to_integer(len) by auto();
-   have to_integer(len) <= 18446744073709551615 by auto();
-   have to_integer(0u64) < to_integer(len) by auto();
+   have 0 <= to_integer(len);
+   have to_integer(len) <= 18446744073709551615;
+   have to_integer(0u64) < to_integer(len);
    have to_integer(1u64) <= to_integer(len) by solve() using { to_integer(0u64) < to_integer(len); };
-   have 1u64 <= len by auto();
-   have to_integer(len - 1u64) == to_integer(len) - to_integer(1u64) by auto();
+   have 1u64 <= len;
+   have to_integer(len - 1u64) == to_integer(len) - to_integer(1u64);
    mark before_decrement;
    step();
    have to_integer(len) == at(before_decrement, to_integer(len)) - 1 by assumption();

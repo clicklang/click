@@ -1,6 +1,6 @@
 # A nonlinear bound is the refused goal
 
-`frame` adds one to a product its callee returns. The implicit `auto` cannot
+`frame` adds one to a product its callee returns. The implicit tail cannot
 show that the addition does not overflow: it needs `w * h <= 1000000`, a
 nonlinear consequence of the bounds, which it does not derive. The refusal's
 goal is the addition's definedness condition at the `return` statement,

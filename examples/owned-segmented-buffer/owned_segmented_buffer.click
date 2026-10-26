@@ -3,7 +3,7 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires second == third;
 
     ensures first == third by {
-        simp();
+        solve();
     }
 }
 
@@ -57,8 +57,8 @@ int32 owned_segmented_buffer_init(
     step();
     step();
     fold(owned_segmented_buffer(owner));
-    have 0 < owner->first_len by auto();
-    have 0 < owner->second_len by auto();
+    have 0 < owner->first_len;
+    have 0 < owner->second_len;
     assumption();
     assumption();
     assumption();
@@ -106,7 +106,7 @@ int32 owned_segmented_buffer_set_first(
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 
 int32 owned_segmented_buffer_set_second(
@@ -131,7 +131,7 @@ int32 owned_segmented_buffer_set_second(
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 
 int32 owned_segmented_buffer_swap(struct owned_segmented_buffer* owner) {
@@ -162,11 +162,11 @@ int32 owned_segmented_buffer_swap(struct owned_segmented_buffer* owner) {
     }
     fold(owned_segmented_buffer(owner));
     have 0 < owner->first_len by {
-        have 0 < owner->first_len by auto();
+        have 0 < owner->first_len;
         assumption();
     }
     have 0 < owner->second_len by {
-        have 0 < owner->second_len by auto();
+        have 0 < owner->second_len;
         assumption();
     }
     assumption();
@@ -268,7 +268,7 @@ int32 owned_segmented_buffer_pipeline(
         *first_data == first_value;
     };
     step();
-    have owner->first_data == first_data by auto();
+    have owner->first_data == first_data;
     assumption();
     assumption();
     assumption();

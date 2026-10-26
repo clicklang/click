@@ -29,7 +29,7 @@ int32 frame(int32 w, int32 h) {
     requires h >= 0 and h <= 1000;
     ensures to_integer(result) == to_integer(w * h + 1) by {
         step(); step();
-        have to_integer(w * h) <= 1000000 by auto();
+        have to_integer(w * h) <= 1000000;
     }
 }
 ```

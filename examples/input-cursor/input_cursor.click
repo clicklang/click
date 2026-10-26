@@ -5,7 +5,7 @@ theorem incremented_zero_is_one(before: int32, after: int32) {
     ensures after == 1 by {
         rewrite(after == before + 1);
         rewrite(before == 0);
-        simp();
+        solve();
     }
 }
 
@@ -14,7 +14,7 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires second == third;
 
     ensures first == third by {
-        simp();
+        solve();
     }
 }
 
@@ -59,13 +59,13 @@ int32 input_cursor_init(
 } by {
     execute();
     fold(input_cursor(owner));
-    simp();
+    solve();
 }
 
 int32 input_cursor_remaining(struct input_cursor* owner) {
     views input_cursor(owner);
 
-    ensures result == owner->len - owner->pos by auto();
+    ensures result == owner->len - owner->pos;
 }
 
 int32 input_cursor_peek(struct input_cursor* owner) {
@@ -77,7 +77,7 @@ int32 input_cursor_peek(struct input_cursor* owner) {
     observe(input_cursor(owner));
     observe(readable_input(owner->data, owner->len));
     execute();
-    simp();
+    solve();
 }
 
 int32 input_cursor_take(struct input_cursor* owner) {
@@ -96,7 +96,7 @@ int32 input_cursor_take(struct input_cursor* owner) {
     step();
     step();
     fold(input_cursor(owner));
-    simp();
+    solve();
 }
 
 int32 input_cursor_clone(
@@ -123,7 +123,7 @@ int32 input_cursor_clone(
     step();
     step();
     fold(input_cursor(target));
-    simp();
+    solve();
 }
 
 int32 input_cursor_shared_pipeline(
@@ -144,9 +144,9 @@ int32 input_cursor_shared_pipeline(
     ensures right->pos == 0;
     ensures result == data[0];
 } by {
-    execute_until(region(4));
+    step_until(region(4));
     have separate(memory(*right), memory(left->data[0..left->len])) by {
-        simp() using {
+        solve() using {
             left->len == length;
             left->data == data;
             separate(memory(*right), memory(data[0..length]));
@@ -154,7 +154,7 @@ int32 input_cursor_shared_pipeline(
     }
     have left->pos == 0;
     have left->pos < left->len by {
-        simp() using {
+        solve() using {
             1 <= length;
             left->len == length;
             left->pos == 0;
@@ -166,7 +166,7 @@ int32 input_cursor_shared_pipeline(
         at(region(4).entry, left->pos) < at(region(4).entry, left->len);
     };
     have right->pos < right->len by {
-        simp() using {
+        solve() using {
             1 <= length;
             right->len == length;
             right->pos == 0;
@@ -197,7 +197,7 @@ int32 input_cursor_shared_pipeline(
         assumption();
     }
     have 0 < right->len by {
-        simp() using {
+        solve() using {
             right->len == length;
             1 <= length;
         };
@@ -214,7 +214,7 @@ int32 input_cursor_shared_pipeline(
     have right->data == data;
     have right_value == right->data[right->pos];
     have right->data[right->pos] == data[0] by {
-        simp() using {
+        solve() using {
             right->pos == 0;
             right->data == data;
         };
@@ -225,5 +225,5 @@ int32 input_cursor_shared_pipeline(
     };
     step();
     fold(input_cursor(left));
-    simp();
+    solve();
 }

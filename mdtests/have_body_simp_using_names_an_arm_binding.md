@@ -1,4 +1,4 @@
-# A `simp() using` premise inside a `have` body names an arm binding
+# A `solve() using` premise inside a `have` body names an arm binding
 
 The uniform-scoping slices resolve a proof `match` arm's bindings the way a
 `have` goal resolves them: in theorem arguments and `apply ... using` premises,
@@ -9,7 +9,7 @@ in `instantiate`, in `extract`
 and in the `initialize` and `preserve` bodies of that loop
 ([`loop_phase_body_reads_arm_bindings.md`](loop_phase_body_reads_arm_bindings.md)).
 
-One site was missed: the premises of a `simp() using { ... }` or a
+One site was missed: the premises of a `solve() using { ... }` or a
 `normalize() using { ... }` written inside a `have` body that the smart planner
 discharges. The goal of that `have` was materialized against the enclosing
 proof's lexical bindings before planning, but the body's premises were lowered
@@ -21,7 +21,7 @@ certificate records and expansion prints, and `click audit` agrees with
 `click verify` at every site here.
 
 `peek` proves two `have`s in the arm, each citing the unfolded body fact that
-names the arm's colour: one closed by `simp() using`, one by `normalize()
+names the arm's colour: one closed by `solve() using`, one by `normalize()
 using`. `spin` puts the same `have` inside the `preserve` body of a loop
 written in the arm, where the phase planner lowers it from a fresh root
 carrying the arm's scope.
@@ -90,7 +90,7 @@ unsigned long peek(struct node* p) {
         Tree::Node(id, color, left_model) => {
             let { left: l } = unfold(t);
             have color_bit(color) == (p->word & 1) by {
-                simp() using { (p->word & 1) == color_bit(color); };
+                solve() using { (p->word & 1) == color_bit(color); };
             }
             have (p->word & 1) == color_bit(color) by {
                 normalize() using { (p->word & 1) == color_bit(color); };
@@ -98,7 +98,7 @@ unsigned long peek(struct node* p) {
             step();
             let t = fold(tree_at(p), { model: Tree::Node(id, color, left_model) },
                 { left: l });
-            simp();
+            solve();
         },
     }
 }
@@ -120,29 +120,29 @@ unsigned long spin(struct node* p, int n) {
                 invariant i >= 0;
                 invariant i <= n;
                 invariant t.model == Tree::Node(id, color, left_model);
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     have color_bit(color) == color_bit(color) by {
-                        simp() using { t.model == Tree::Node(id, color, left_model); };
+                        solve() using { t.model == Tree::Node(id, color, left_model); };
                     }
                     step();
                     close_invariants() by {
                         both {
-                            arithmetic() using {
+                            solve() using {
                                 at(region(3).entry, i) >= at(region(3).entry, 0);
                                 at(region(3).entry, i) < at(region(3).entry, n);
                             };
                         } and {
                             both {
                                 intro();
-                                arithmetic() using {
+                                solve() using {
                                     at(region(3).entry, i) < at(region(3).entry, n);
                                 };
                             } and {
                                 both {
                                     intro();
                                     intro();
-                                    simp();
+                                    solve();
                                 } and {
                                     both {
                                         arithmetic_certificate signed_int32 {
@@ -178,7 +178,7 @@ unsigned long spin(struct node* p, int n) {
                 }
             }
             step();
-            simp();
+            solve();
         },
     }
 }

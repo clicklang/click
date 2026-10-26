@@ -124,7 +124,7 @@ int relink(Node* first, Node* second) {
     let empty = fold(list_at(first->next), { items: List<int32>::Nil });
     execute();
     unfold(head_or(List<int32>::Nil, second->value));
-    simp();
+    solve();
 }
 ```
 

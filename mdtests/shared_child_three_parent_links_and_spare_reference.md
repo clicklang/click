@@ -51,7 +51,7 @@ void child_retain(struct child* obj) {
     fold(child_ref(obj));
     fold(child_control(obj));
     execute();
-    simp();
+    solve();
 }
 void share(struct child* obj) {
     requires to_integer(count(child_ref(obj))) < 2147483646;
@@ -60,7 +60,7 @@ void share(struct child* obj) {
 } by {
     step(child_retain, {});
     step();
-    simp();
+    solve();
 }
 struct child* last_kid(struct parent* a, struct parent* b, struct parent* c) {
     consumes c_link: parent(c);
@@ -87,7 +87,7 @@ struct child* last_kid(struct parent* a, struct parent* b, struct parent* c) {
                         ParentLink::Linked(ak) => {
                             unfold(a_link);
                             execute();
-                            simp();
+                            solve();
                         },
                     }
                 },

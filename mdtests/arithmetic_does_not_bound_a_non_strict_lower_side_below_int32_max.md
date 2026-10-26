@@ -1,4 +1,4 @@
-# `arithmetic()` does not bound the lower side of a non-strict premise below `INT32_MAX`
+# `solve() using` does not bound the lower side of a non-strict premise below `INT32_MAX`
 
 `i <= n` allows `i == n == 2147483647`, where `i + 1` overflows, so
 `0 <= i; i <= n` does not show that the `int32` sum `i + 1` is nonnegative.
@@ -21,12 +21,12 @@ theorem successor_nonnegative(i: int32, n: int32) {
     requires 0 <= i;
     requires i <= n;
     ensures 0 <= to_integer(i + 1) by {
-        arithmetic() using { 0 <= i; i <= n; };
+        solve() using { 0 <= i; i <= n; };
     }
 }
 
 int32 next_index(int32 i, int32 n) {
-    ensures result == 0 by auto();
+    ensures result == 0;
 }
 ```
 

@@ -31,5 +31,5 @@ int id(int x) {
 ```
 
 ```expect
-fail: `simp` failed
+fail: `solve` failed
 ```

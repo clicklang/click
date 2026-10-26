@@ -18,11 +18,11 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
 } by {
     if this->fee >= 0i64 {
         if this->fee < 8589934592i64 {
-            have 0 <= to_integer(this->fee) by { arithmetic() using { this->fee >= 0i64; } }
-            have to_integer(this->fee) <= 8589934591 by { arithmetic() using { this->fee < 8589934592i64; } }
+            have 0 <= to_integer(this->fee) by { solve() using { this->fee >= 0i64; } }
+            have to_integer(this->fee) <= 8589934591 by { solve() using { this->fee < 8589934592i64; } }
 @FAST_PROOF@
-            have -9223372036854775808 <= to_integer(result) by { arithmetic() using { 0 <= to_integer(result); } }
-            simp();
+            have -9223372036854775808 <= to_integer(result) by { solve() using { 0 <= to_integer(result); } }
+            solve();
         } else {
 @WIDE_POSITIVE_PROOF@
         }
@@ -48,7 +48,7 @@ int64 FeeFrac::EvaluateFee@MODE@(int32 at_size) const {
     ensures to_integer(result) <= 9223372036854775807;
     ensures @CALLER_BOUND_1@;
     ensures @CALLER_BOUND_2@;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 contract int64 FastOversizeFee(const struct FeeFrac* this, int32 at_size) {
     requires this->fee == 7i64;
@@ -73,7 +73,7 @@ contract int64 FastOversizeFee(const struct FeeFrac* this, int32 at_size) {
 }
 
 theorem fastoversizefee_evaluation() executes FeeFrac::EvaluateFee@MODE@(const struct FeeFrac* this, int32 at_size) {
-    ensures FastOversizeFee(&FeeFrac::EvaluateFee@MODE@) by { execute(); simp(); }
+    ensures FastOversizeFee(&FeeFrac::EvaluateFee@MODE@) by { execute(); solve(); }
 }
 
 contract int64 FastLargeFee(const struct FeeFrac* this, int32 at_size) {
@@ -99,7 +99,7 @@ contract int64 FastLargeFee(const struct FeeFrac* this, int32 at_size) {
 }
 
 theorem fastlargefee_evaluation() executes FeeFrac::EvaluateFee@MODE@(const struct FeeFrac* this, int32 at_size) {
-    ensures FastLargeFee(&FeeFrac::EvaluateFee@MODE@) by { execute(); simp(); }
+    ensures FastLargeFee(&FeeFrac::EvaluateFee@MODE@) by { execute(); solve(); }
 }
 
 contract int64 PositiveWideOversizeFee(const struct FeeFrac* this, int32 at_size) {
@@ -125,7 +125,7 @@ contract int64 PositiveWideOversizeFee(const struct FeeFrac* this, int32 at_size
 }
 
 theorem positivewideoversizefee_evaluation() executes FeeFrac::EvaluateFee@MODE@(const struct FeeFrac* this, int32 at_size) {
-    ensures PositiveWideOversizeFee(&FeeFrac::EvaluateFee@MODE@) by { execute(); simp(); }
+    ensures PositiveWideOversizeFee(&FeeFrac::EvaluateFee@MODE@) by { execute(); solve(); }
 }
 
 contract int64 NegativeOversizeFee(const struct FeeFrac* this, int32 at_size) {
@@ -151,5 +151,5 @@ contract int64 NegativeOversizeFee(const struct FeeFrac* this, int32 at_size) {
 }
 
 theorem negativeoversizefee_evaluation() executes FeeFrac::EvaluateFee@MODE@(const struct FeeFrac* this, int32 at_size) {
-    ensures NegativeOversizeFee(&FeeFrac::EvaluateFee@MODE@) by { execute(); simp(); }
+    ensures NegativeOversizeFee(&FeeFrac::EvaluateFee@MODE@) by { execute(); solve(); }
 }

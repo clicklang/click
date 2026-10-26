@@ -6,5 +6,5 @@ int alias_write(int *p, const int *q) {
     ensures result == 7;
 } by {
     execute();
-    simp();
+    solve();
 }

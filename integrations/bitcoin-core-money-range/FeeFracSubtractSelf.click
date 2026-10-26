@@ -8,5 +8,5 @@ void FeeFrac::operator-=(const FeeFrac& other) {
     ensures this->size == 0;
 } by {
     execute();
-    simp();
+    solve();
 }

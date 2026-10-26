@@ -33,7 +33,7 @@ void mint_n(int32* o, int32 n) {
 } by {
     fold(n of tok(o));
     execute();
-    simp();
+    solve();
 }
 
 void wraps_its_population(int32* o, int32 k) {
@@ -46,7 +46,7 @@ void wraps_its_population(int32* o, int32 k) {
     ensures to_integer(count(tok(o))) == 2000000000;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void counts_a_total_it_can_state(int32* o) {
@@ -58,7 +58,7 @@ void counts_a_total_it_can_state(int32* o) {
     ensures to_integer(count(tok(o))) == 7;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

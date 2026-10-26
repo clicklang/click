@@ -10,8 +10,8 @@ int32 f(int32 x) { return 0; }
 ```click
 verifying "child-sum.c";
 int32 f(int32 x) { requires 4 <= x; requires x <= 8; ensures result == 0; } by {
- have (8 - x) <= (8 - x) + 4 by { arithmetic() using { 4 <= x; x <= 8; }; }
- execute(); simp();
+ have (8 - x) <= (8 - x) + 4 by { solve() using { 4 <= x; x <= 8; }; }
+ execute(); solve();
 }
 ```
 

@@ -1,7 +1,7 @@
 # A machine difference that can wrap is not its Integer difference
 
 Without a lower bound on `x`, the unsigned `x - 1u` wraps to `4294967295`
-when `x` is `0`, so it is not the Integer `x - 1`, and `auto` does not prove
+when `x` is `0`, so it is not the Integer `x - 1`, and the omitted proof does not prove
 that it is (`mdtests/auto_proves_an_in_range_machine_sum_is_its_integer_sum.md`
 adds the bound).
 

@@ -41,8 +41,6 @@ verifying "struct_by_value_run.c";
 struct pair bump(struct pair value) {
     ensures result.first == 5;
     ensures result.tag == 9;
-} by {
-    auto();
 }
 
 int32 run_struct_by_value() {

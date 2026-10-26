@@ -69,7 +69,7 @@ uint64 measure(const char* src, uint64 n) {
     ensures result == n;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 uint64 measure_signed(const signed char* src, uint64 n) {
@@ -77,7 +77,7 @@ uint64 measure_signed(const signed char* src, uint64 n) {
     ensures result == n;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 uint64 measure_unsigned(const unsigned char* src, uint64 n) {
@@ -85,7 +85,7 @@ uint64 measure_unsigned(const unsigned char* src, uint64 n) {
     ensures result == n;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 uint64 copy_prefix(char* dst, const char* src, uint64 n, uint64 k) {
@@ -97,7 +97,7 @@ uint64 copy_prefix(char* dst, const char* src, uint64 n, uint64 k) {
 } by {
     open(cstr_at(src, n)) {
         execute();
-        simp();
+        solve();
     }
 }
 ```

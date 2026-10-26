@@ -82,7 +82,7 @@ void child_retain(struct child* obj) {
     fold(child_ref(obj));
     fold(child_control(obj));
     execute();
-    simp();
+    solve();
 }
 
 void child_release(struct child* obj) {
@@ -97,18 +97,18 @@ void child_release(struct child* obj) {
         unfold(child_ref(obj));
         unfold(authority(child_ref(obj)));
         execute();
-        simp();
+        solve();
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
-            arithmetic() using { 1 <= obj->refs; obj->refs != 1; };
+            solve() using { 1 <= obj->refs; obj->refs != 1; };
         }
         have to_integer(obj->refs - 1) >= 1;
         step();
         step();
         fold(child_control(obj));
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -126,7 +126,7 @@ void parent_attach(struct parent* p, struct child* kid) {
     step();
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
     execute();
-    simp();
+    solve();
 }
 
 void parent_detach(struct parent* p) {
@@ -143,13 +143,13 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(entry_child) => {
             unfold(link);
-            have old(p->kid) == entry_child by simp();
+            have old(p->kid) == entry_child by solve();
             if p->kid->refs > 1 {
                 execute();
-                simp();
+                solve();
             } else {
                 execute();
-                simp();
+                solve();
             }
         },
     }
@@ -167,7 +167,7 @@ int32 caller(struct child* kid) {
     branch {
         step(child_release, {});
         step();
-        simp();
+        solve();
     } else {}
     let { link: link } = step(parent_attach, {});
     have count(child_ref(kid)) == 2;
@@ -178,7 +178,7 @@ int32 caller(struct child* kid) {
     step(child_release, {});
     step(parent_detach, { link: link });
     step();
-    simp();
+    solve();
 }
 
 ```

@@ -16,9 +16,9 @@ theorem integer_sum(a: int32, b: int32) {
     let k = 5 + 3;
     requires 0 <= a;
     requires 0 <= b;
-    ensures s >= a by auto();
-    ensures t == a by auto();
-    ensures k == 8 by auto();
+    ensures s >= a;
+    ensures t == a;
+    ensures k == 8;
 }
 ```
 

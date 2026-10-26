@@ -87,7 +87,7 @@ theorem prefix_bound(n: uint64) {
   rewrite(to_integer(n - n % 4u64) == to_integer(n) - truncating_remainder(to_integer(n), 4));
   unfold(prefix(to_integer(n)));
   both {
-   arithmetic() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
+   solve() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
   } and {
    assumption();
   }
@@ -119,7 +119,7 @@ fn check_rewritten_integer_division_goal(quotient: bool) {
         "{prefix} {}\n}}",
         verified[0].expanded_proof_source().unwrap()
     );
-    assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_click_theorems(&expanded).expect("the explicit proof verifies independently");
     let false_bound = source.replacen("ensures 0 <=", "ensures 1 <=", 1);
     assert_ne!(source, false_bound);
@@ -142,7 +142,7 @@ verifying "identity.c";
 int32 identity(int32 x, int32 d) {
     requires d > 0;
     ensures x < 0 implies truncating_quotient(to_integer(result), to_integer(d)) == truncating_quotient(to_integer(x), to_integer(d));
-} by { execute(); intro(); simp(); }
+} by { execute(); intro(); solve(); }
 "#;
 
 #[test]
@@ -162,7 +162,7 @@ fn conditional_quotient_claim_keeps_its_domain_in_expansion() {
     let sources = [("identity.c", CONDITIONAL_QUOTIENT_C)];
     let position = expansion::position_at_offset(
         CONDITIONAL_QUOTIENT_CLAIM,
-        CONDITIONAL_QUOTIENT_CLAIM.find("simp()").unwrap(),
+        CONDITIONAL_QUOTIENT_CLAIM.find("solve()").unwrap(),
     );
     let expanded = expand_c0_tactic_source_at(
         CONDITIONAL_QUOTIENT_CLAIM,
@@ -171,7 +171,7 @@ fn conditional_quotient_claim_keeps_its_domain_in_expansion() {
         position.column,
     )
     .expect("the completed quotient claim expands");
-    assert!(!expanded.contains("simp()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c0_sources(&expanded, &sources).expect("the explicit claim verifies independently");
     let missing_domain = CONDITIONAL_QUOTIENT_CLAIM.replace("requires d > 0;", "");
     assert!(verify_c0_sources(&missing_domain, &sources).is_err());
@@ -183,9 +183,9 @@ fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
  requires -9223372036854775808 <= to_integer(q);
  requires to_integer(q) <= 9223372036854775807;
  ensures -9223372036854775808 <= to_integer(q + 0i64) by {
-  have defined(q + 0i64) by simp();
-  have to_integer(q + 0i64) == to_integer(q) + 0 by auto();
-  arithmetic() using {
+  have defined(q + 0i64) by solve();
+  have to_integer(q + 0i64) == to_integer(q) + 0;
+  solve() using {
    to_integer(q + 0i64) == to_integer(q) + 0;
    -9223372036854775808 <= to_integer(q);
    to_integer(q) <= 9223372036854775807;
@@ -195,10 +195,10 @@ fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
 "#;
     verify_c0_sources(source, &[])
         .expect("the native zero-add equality transports the lower bound");
-    let position = expansion::position_at_offset(source, source.find("arithmetic()").unwrap());
+    let position = expansion::position_at_offset(source, source.find("solve() using").unwrap());
     let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
         .expect("the arithmetic proof expands");
-    assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_c0_sources(&expanded, &[])
         .expect("the explicit certificate preserves the negative bound");
     let false_claim = source.replace(
@@ -271,7 +271,7 @@ fn both_and_outcome_expands_and_rechecks() {
     let c = "int32 identity(int32 x) { return x; }";
     let source = r#"verifying "identity.c";
         int32 identity(int32 x) { ensures result == x and result <= x; } by {
-            step(); both { simp(); } and { simp(); }
+            step(); both { solve(); } and { solve(); }
         }
     "#;
     let sources = [("identity.c", c)];
@@ -289,8 +289,8 @@ fn both_and_outcome_expands_and_rechecks() {
 #[test]
 fn parses_frontier_branch_tactic() {
     let source = FILL3_CLICK.replace(
-        "by auto();",
-        "by { branch { step(); } else { execute(); } }",
+        "== 2;",
+        "== 2 by { branch { step(); } else { execute(); } }",
     );
     let file = parse(&source).expect("frontier branch tactic should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -311,9 +311,7 @@ fn parses_frontier_branch_tactic() {
 
 #[test]
 fn parses_frontier_branch_ensuring_interface() {
-    let source = FILL3_CLICK.replace(
-        "by auto();",
-        "by { branch ensuring { fact i >= 0; owns p[0..3]; } then { step(); } else { execute(); } }",
+    let source = FILL3_CLICK.replace("== 2;", "== 2 by { branch ensuring { fact i >= 0; owns p[0..3]; } then { step(); } else { execute(); } }",
     );
     let file = parse(&source).expect("frontier branch ensuring interface should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -364,7 +362,7 @@ fn linear_frontier_branch_uses_the_checked_structural_join() {
                 step();
             }
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -416,7 +414,7 @@ fn terminal_frontier_branch_seals_without_a_body_rerun() {
             ensures result == 1 or result == 2;
         } by {
             branch { step(); } else { step(); }
-            simp();
+            solve();
         }
     "#;
 
@@ -456,7 +454,7 @@ fn successive_shared_continuation_branches_seal_without_path_multiplication() {
             branch {} else {}
             branch {} else {}
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -494,7 +492,7 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
             ensures returns_one: result == 1 by {
                 branch { step(); } else { step(); }
                 step();
-                simp();
+                solve();
             }
         }
     "#;
@@ -550,8 +548,8 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
 #[test]
 fn rejects_removed_reach_tactic() {
     let source = FILL3_CLICK.replace(
-        "by auto();",
-        "by { reach(region(1).exit) ensuring { fact i >= 0; } by { step(); } }",
+        "== 2;",
+        "== 2 by { reach(region(1).exit) ensuring { fact i >= 0; } by { step(); } }",
     );
     let error = parse(&source).expect_err("removed reach tactic should not parse");
 
@@ -581,7 +579,7 @@ fn empty_proof_if_branches_contribute_only_their_case_split() {
                 if x < 0 {
                 } else {
                 }
-                simp();
+                solve();
             }
         "#;
     verify_c0_sources(click_source, &[("sign.c", c_source)]).unwrap_or_else(|error| {
@@ -595,8 +593,8 @@ fn empty_proof_if_branches_contribute_only_their_case_split() {
 #[test]
 fn parses_execute_until_proof_tactic() {
     let source = FILL3_CLICK.replace(
-        "by auto();",
-        "by { execute_until(region(1)); execute(); simp(); }",
+        "== 2;",
+        "== 2 by { step_until(region(1)); execute(); solve(); }",
     );
     let file = parse(&source).expect("execute_until explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
@@ -616,7 +614,7 @@ fn parses_execute_until_proof_tactic() {
 
 #[test]
 fn parses_unfold_proof_tactic() {
-    let source = FILL3_CLICK.replace("by auto();", "by { execute(); unfold(sorted); simp(); }");
+    let source = FILL3_CLICK.replace("== 2;", "== 2 by { execute(); unfold(sorted); solve(); }");
     let file = parse(&source).expect("unfold explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
@@ -636,8 +634,8 @@ fn parses_unfold_proof_tactic() {
 #[test]
 fn parses_apply_theorem_proof_tactic() {
     let source = FILL3_CLICK.replace(
-        "by auto();",
-        "by { execute(); apply(nonnegative(result)); simp(); }",
+        "== 2;",
+        "== 2 by { execute(); apply(nonnegative(result)); solve(); }",
     );
     let file = parse(&source).expect("apply explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
@@ -661,13 +659,13 @@ fn parses_apply_theorem_proof_tactic() {
 #[test]
 fn parses_apply_theorem_with_explicit_premises() {
     let source = FILL3_CLICK.replace(
-        "by auto();",
-        "by {
+        "== 2;",
+        "== 2 by {
             execute();
             apply(nonnegative(result)) using {
                 result >= 0;
             }
-            simp();
+            solve();
         }",
     );
     let file = parse(&source).expect("explicit-premise theorem application should parse");
@@ -682,14 +680,14 @@ fn parses_apply_theorem_with_explicit_premises() {
 #[test]
 fn parses_transport_with_explicit_premises() {
     let source = FILL3_CLICK.replace(
-        "by auto();",
-        "by {
+        "== 2;",
+        "== 2 by {
             step();
             transport(old(p[0]) == 0, p[0] == 0) using {
                 old(p[0]) == 0;
             }
             execute();
-            simp();
+            solve();
         }",
     );
     let file = parse(&source).expect("explicit-premise transport should parse");
@@ -1134,7 +1132,7 @@ fn step_certificate_rejects_a_loop_step_with_an_unplanned_phase() {
         .expect_err("an unplanned preservation phase is not a certificate");
     let message = error.message().to_string();
     assert!(message.contains("loop `preserve`"), "{message}");
-    assert!(message.contains("smart tactic `auto`"), "{message}");
+    assert!(message.contains("the implicit closer"), "{message}");
 }
 
 const ORDERED_PAIR_C: &str = r#"
@@ -1165,9 +1163,9 @@ const ORDERED_PAIR_CLICK: &str = r#"
         execute();
         have ordered_pair(pair) by {
             unfold(ordered_pair);
-            simp();
+            solve();
         }
-        simp();
+        solve();
     }
 "#;
 
@@ -1226,7 +1224,7 @@ fn fixed_state_have_certifies_a_post_call_fact_across_a_later_store() {
             ensures pair->low == 0;
         } by {
             execute();
-            simp();
+            solve();
         }
 
         void touch(struct pair* pair) {
@@ -1236,9 +1234,9 @@ fn fixed_state_have_certifies_a_post_call_fact_across_a_later_store() {
         } by {
             step();
             step();
-            have pair->low == 0 by simp();
+            have pair->low == 0 by solve();
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -1286,7 +1284,7 @@ fn grouped_outcome_simp_splits_an_unfold_active_conjunction_ensure() {
         } by {
             unfold(ordered_pair);
             execute();
-            simp();
+            solve();
         }
     "#;
 
@@ -1311,8 +1309,8 @@ fn parses_execute_until_assignment_and_preserves_same_spelled_labels() {
         ("assignment", CodeRegionRef::Label("assignment".into())),
     ] {
         let source = FILL3_CLICK.replace(
-            "by auto();",
-            &format!("by {{ execute_until({spelling}); execute(); simp(); }}"),
+            "== 2;",
+            &format!("== 2 by {{ step_until({spelling}); execute(); solve(); }}"),
         );
         let file = parse(&source).unwrap();
         assert_eq!(
@@ -1324,10 +1322,8 @@ fn parses_execute_until_assignment_and_preserves_same_spelled_labels() {
         );
     }
     for spelling in ["assignment(i, -1)", "assignment(i)", "assignment(, 0)"] {
-        let source = FILL3_CLICK.replace(
-            "by auto();",
-            &format!("by {{ execute_until({spelling}); }}"),
-        );
+        let source =
+            FILL3_CLICK.replace("== 2;", &format!("== 2 by {{ step_until({spelling}); }}"));
         assert!(parse(&source).is_err());
     }
 }
@@ -1339,8 +1335,8 @@ fn parses_execute_until_read_and_preserves_read_labels() {
         ("read", CodeRegionRef::Label("read".into())),
     ] {
         let source = FILL3_CLICK.replace(
-            "by auto();",
-            &format!("by {{execute_until({spelling}); execute(); simp();}}"),
+            "== 2;",
+            &format!("== 2 by {{step_until({spelling}); execute(); solve();}}"),
         );
         let file = parse(&source).unwrap();
         assert_eq!(

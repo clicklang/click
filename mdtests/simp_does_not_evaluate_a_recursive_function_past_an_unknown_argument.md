@@ -1,8 +1,8 @@
-# simp does not evaluate a recursive function past an unknown argument
+# solve does not evaluate a recursive function past an unknown argument
 
 Evaluation unfolds only applications whose argument selects one arm of the
 definition. With nothing known about `l`, `count(Tree::Node(v, l, r))` reduces
-to `1 + count(l)` and stops there, so `simp` cannot show that it is `1`
+to `1 + count(l)` and stops there, so `solve` cannot show that it is `1`
 (`mdtests/simp_evaluates_a_recursive_function_over_known_constructors.md`).
 
 ```click

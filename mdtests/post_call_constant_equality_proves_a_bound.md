@@ -14,8 +14,8 @@ verifying "global.c";
 int bumpg() {
     requires g < 1000;
     owns g;
-    ensures result == 0 by auto();
-    ensures to_integer(g) == to_integer(old(g) + 1) by auto();
+    ensures result == 0;
+    ensures to_integer(g) == to_integer(old(g) + 1);
 }
 int h() {
     requires g == 10;

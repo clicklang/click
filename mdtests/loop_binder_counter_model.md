@@ -52,7 +52,7 @@ void bump_n(struct cell* p, int32 n) {
 
         initialize by solve();
         preserve by {
-            have c.count == i by auto();
+            have c.count == i;
             unfold(c);
             step();
             step();

@@ -1,8 +1,8 @@
-# auto reads a call postcondition for a machine bound
+# The implicit closer reads a call postcondition for a machine bound
 
 Under Integer specification arithmetic the callee's `ensures result == x + 1;` is an
 Integer fact at the call site, while the caller's `ensures result <= 50;`
-compares a machine value with a constant. `auto` proves the machine bound
+compares a machine value with a constant. The implicit closer proves the machine bound
 through its Integer reading, `to_integer(result) <= 50`, citing the callee's
 postcondition and the caller's requirements; the Integer fact then supplies
 the native bound.

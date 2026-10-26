@@ -86,7 +86,7 @@ void bump(struct node* old, struct node* new) {
     ensures new->augmented <= 1000;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void reset(struct node* old, struct node* new) {
@@ -100,7 +100,7 @@ void reset(struct node* old, struct node* new) {
     ensures new->augmented <= 1000;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 struct node* rotate_left(
@@ -134,7 +134,7 @@ struct node* rotate_left(
     fold(shape(pivot));
     step();
     step();
-    simp();
+    solve();
 }
 
 struct node* rotate_bump(struct node* node) {
@@ -153,7 +153,7 @@ struct node* rotate_bump(struct node* node) {
     ensures result->augmented <= 1000;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 struct node* rotate_reset(struct node* node) {
@@ -172,7 +172,7 @@ struct node* rotate_reset(struct node* node) {
     ensures result->augmented <= 1000;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

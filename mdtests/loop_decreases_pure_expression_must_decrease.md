@@ -36,7 +36,7 @@ int32 drain(int32 box[4]) {
         invariant head(box) == box[0];
         initialize by { unfold(head(box)); solve(); }
         preserve by {
-            have 0 <= to_integer(box[1] - 1) by auto();
+            have 0 <= to_integer(box[1] - 1);
             step();
             close_invariants() by { unfold(head(box)); solve(); }
         }

@@ -2418,9 +2418,9 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Rewrite(_) => "rewrite",
         ProofTactic::Transport { .. } | ProofTactic::TransportUsing { .. } => "transport",
         ProofTactic::InstantiateUsing { .. } => "instantiate",
-        ProofTactic::Simp => "simp",
-        ProofTactic::AutoClose => "auto",
-        ProofTactic::SimpUsing(_) => "simp",
+        ProofTactic::Simp => "solve",
+        ProofTactic::AutoClose => "implicit tail",
+        ProofTactic::SimpUsing(_) => "solve",
         ProofTactic::ArithmeticCertificate(_) => "arithmetic_certificate",
     }
 }

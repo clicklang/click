@@ -20,8 +20,8 @@ int32 record_alpha() {
     ensures result == old(calls) + old(batches[0][0]) + 2;
 } by {
     execute();
-    have to_integer(calls + batches[0][0]) == to_integer(calls) + to_integer(batches[0][0]) by auto();
-    auto();
+    have to_integer(calls + batches[0][0]) == to_integer(calls) + to_integer(batches[0][0]);
+    solve();
 }
 
 int32 record_beta() {
@@ -40,16 +40,16 @@ int32 record_beta() {
     ensures result == old(calls) + old(batches[0].value) + 2;
 } by {
     execute();
-    have to_integer(calls + batches[0].value) == to_integer(calls) + to_integer(batches[0].value) by auto();
-    auto();
+    have to_integer(calls + batches[0].value) == to_integer(calls) + to_integer(batches[0].value);
+    solve();
 }
 
 int32 alpha_calls() {
-    ensures result == old(calls) by auto();
+    ensures result == old(calls);
 }
 
 int32 beta_calls() {
-    ensures result == old(calls) by auto();
+    ensures result == old(calls);
 }
 
 int32 registry_run() {
@@ -98,7 +98,7 @@ int32 registry_run() {
     step();
     step();
     have first == 2;
-    have counters[0].value == 11 by auto();
+    have counters[0].value == 11;
     have counters[0].value > -1000;
     have counters[0].value < 1000;
     have alpha::calls > -1000;
@@ -124,5 +124,5 @@ int32 registry_run() {
     step();
     have beta_total == 101;
     execute();
-    auto();
+    solve();
 }

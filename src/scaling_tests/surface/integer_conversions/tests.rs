@@ -79,7 +79,7 @@ fn deferred_integer_function_high_arity_scales_with_arguments() {
         let source = format!(
             "function mix({parameters}) -> Integer {{ to_integer(x0) }}\n\
              theorem call({parameters}) {{\n\
-             ensures mix({arguments}) == mix({arguments}) by {{ simp(); }} }}"
+             ensures mix({arguments}) == mix({arguments}) by {{ solve(); }} }}"
         );
         let (result, work) =
             crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
@@ -173,7 +173,7 @@ fn opaque_product_arithmetic_scales_with_steps_and_unused_bounds() {
         source.push_str(&format!("ensures {goal} by {{ "));
         for _ in 0..size {
             source.push_str(&format!(
-                "have {goal} by {{ arithmetic() using {{ n == q * d + r; 0 <= r; }} }} "
+                "have {goal} by {{ solve() using {{ n == q * d + r; 0 <= r; }} }} "
             ));
         }
         source.push_str("assumption(); } }");
@@ -336,7 +336,7 @@ fn normalized_opposite_bound_certificates_scale_with_steps_and_unused_facts() {
         }
         source.push_str("ensures x == b by { ");
         for _ in 0..size {
-            source.push_str("have x == b by { arithmetic() using { b <= x; not (b + 1 <= x); } } ");
+            source.push_str("have x == b by { solve() using { b <= x; not (b + 1 <= x); } } ");
         }
         source.push_str("assumption(); } }");
         let (checked, work) =

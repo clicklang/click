@@ -68,13 +68,13 @@ int32 write_zero(struct buffer* buffer) {
                 intro();
                 intro();
                 have k < 1 by {
-                    simp() using {
+                    solve() using {
                         k < end;
                         end == 1;
                     };
                 }
                 have k == 0 by {
-                    arithmetic() using {
+                    solve() using {
                         0 <= k;
                         k < 1;
                     };
@@ -86,7 +86,7 @@ int32 write_zero(struct buffer* buffer) {
                 tag: PrefixTag::End(end)
             });
             step();
-            simp();
+            solve();
         },
     }
 }

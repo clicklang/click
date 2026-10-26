@@ -15,7 +15,7 @@ theorem derived_strict_observer(left: int32, right: int32) {
 }
 theorem strict_observer(left: int32, right: int32) {
     requires left < right;
-    ensures to_integer(left) < to_integer(right) by auto();
+    ensures to_integer(left) < to_integer(right);
 }
 ```
 

@@ -175,7 +175,7 @@ with each read of a stored cell replaced by the value stored there.
   exact lookup also looks up the comparison form of what it looks up.
 - A kernel rule that compares a stated term with one it derives compares
   their comparison forms (identity, cast identity, affine conclusions).
-- `simp` tries a goal that reads stored cells over its stored values first
+- `solve` tries a goal that reads stored cells over its stored values first
   (`try_stored_value_goal`), the search the goal had before reads kept their
   names, and searches over the reads only when that misses.
 

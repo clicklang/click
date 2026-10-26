@@ -26,11 +26,11 @@ int64 CFeeRate::GetFee(int32 virtual_bytes) const {
     let { result: empty } = step(FeeFrac::IsEmpty, { });
     branch {
         have this->m_feerate.base.size == 0;
-        execute(); simp();
+        execute(); solve();
     } else {
     }
     have not (this->m_feerate.base.size == 0);
-    have this->m_feerate.base.size > 0 by { arithmetic() using { this->m_feerate.base.size >= 0; not (this->m_feerate.base.size == 0); } }
+    have this->m_feerate.base.size > 0 by { solve() using { this->m_feerate.base.size >= 0; not (this->m_feerate.base.size == 0); } }
     have -9223372036854775808 <= to_integer(this->m_feerate.base.fee);
     have to_integer(this->m_feerate.base.fee) <= 9223372036854775807;
     have -9223372036854775809 * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes);
@@ -40,17 +40,17 @@ int64 CFeeRate::GetFee(int32 virtual_bytes) const {
     if rounded == 0i64 {
         have to_integer(rounded) == 0 by { rewrite(rounded == 0i64); normalize(); }
         have to_integer(rounded) * to_integer(this->m_feerate.base.size) == 0 by { rewrite(to_integer(rounded) == 0); normalize(); }
-        have (to_integer(rounded) + -1) * to_integer(this->m_feerate.base.size) == -to_integer(this->m_feerate.base.size) by { rewrite(to_integer(rounded) == 0); arithmetic(); }
-        have to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 0 by { arithmetic() using {
+        have (to_integer(rounded) + -1) * to_integer(this->m_feerate.base.size) == -to_integer(this->m_feerate.base.size) by { rewrite(to_integer(rounded) == 0); solve() using {}; }
+        have to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 0 by { solve() using {
             to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= to_integer(rounded) * to_integer(this->m_feerate.base.size);
             to_integer(rounded) * to_integer(this->m_feerate.base.size) == 0;
         } }
-        have -to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) by { arithmetic() using {
+        have -to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) by { solve() using {
             (to_integer(rounded) + -1) * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes);
             (to_integer(rounded) + -1) * to_integer(this->m_feerate.base.size) == -to_integer(this->m_feerate.base.size);
         } }
-        execute(); simp();
+        execute(); solve();
     } else {
-        execute(); simp();
+        execute(); solve();
     }
 }

@@ -1,6 +1,6 @@
-# `execute_until` runs to a statement region
+# `step_until` runs to a statement region
 
-`execute_until` stops before its target, so a statement region stops it at
+`step_until` stops before its target, so a statement region stops it at
 the statement's entry, its first atomic region. A call inside a statement
 stops it just before that call: here `statement(1).call(f, 1)` is the outer
 call of `y = f(f(y));`, after the inner one has returned and before `y` is
@@ -27,9 +27,9 @@ int32 probe(int32 x) {
     requires x < 10;
     ensures result == x + 3;
 } by {
-    execute_until(statement(1));
+    step_until(statement(1));
     have y == x + 1 by solve();
-    execute_until(statement(1).call(f, 1));
+    step_until(statement(1).call(f, 1));
     have y == x + 1 by solve();
     execute();
     solve();

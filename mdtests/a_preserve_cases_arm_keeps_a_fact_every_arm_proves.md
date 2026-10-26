@@ -31,16 +31,16 @@ uint64 f(uint64 b) {
         decreases b;
         invariant 1u64 <= b;
         invariant (i == 0 and b <= 18446744073709u64) or (i == 1 and b <= 18446744073u64) or (i == 2 and b <= 18446744u64);
-        initialize by { auto(); }
+        initialize by solve();
         preserve by {
             have (b >> 32) != 0u64;
-            have 4294967296u64 <= b by { auto(); }
+            have 4294967296u64 <= b;
             have (i == 0 and b <= 18446744073709u64) or (i == 1 and b <= 18446744073u64) by {
                 cases {
                     i == 0 and b <= 18446744073709u64 => { solve(); }
                     i == 1 and b <= 18446744073u64 => { solve(); }
                     i == 2 and b <= 18446744u64 => {
-                        have b < 4294967296u64 by { auto(); }
+                        have b < 4294967296u64;
                         contradiction(4294967296u64 <= b);
                     }
                 }
@@ -49,11 +49,11 @@ uint64 f(uint64 b) {
                 i == 0 and b <= 18446744073709u64 => {
                     mark head;
                     step_until(back_edge());
-                    have 4294967296u64 <= at(head, b) by { auto(); }
+                    have 4294967296u64 <= at(head, b);
                     have at(head, b) <= 18446744073709u64 by { solve(); }
-                    have 1u64 <= at(head, b) / 1000u64 by { auto(); }
-                    have at(head, b) / 1000u64 < at(head, b) by { auto(); }
-                    have at(head, b) / 1000u64 <= 18446744073u64 by { auto(); }
+                    have 1u64 <= at(head, b) / 1000u64;
+                    have at(head, b) / 1000u64 < at(head, b);
+                    have at(head, b) / 1000u64 <= 18446744073u64;
                     have at(head, i) + 1 == 1 and at(head, b) / 1000u64 <= 18446744073u64 by { solve(); }
                     have (at(head, i) + 1 == 0 and at(head, b) / 1000u64 <= 18446744073709u64) or (at(head, i) + 1 == 1 and at(head, b) / 1000u64 <= 18446744073u64) or (at(head, i) + 1 == 2 and at(head, b) / 1000u64 <= 18446744u64) by { solve(); }
                     close_invariants() by { solve(); }
@@ -61,11 +61,11 @@ uint64 f(uint64 b) {
                 i == 1 and b <= 18446744073u64 => {
                     mark head;
                     step_until(back_edge());
-                    have 4294967296u64 <= at(head, b) by { auto(); }
+                    have 4294967296u64 <= at(head, b);
                     have at(head, b) <= 18446744073u64 by { solve(); }
-                    have 1u64 <= at(head, b) / 1000u64 by { auto(); }
-                    have at(head, b) / 1000u64 < at(head, b) by { auto(); }
-                    have at(head, b) / 1000u64 <= 18446744u64 by { auto(); }
+                    have 1u64 <= at(head, b) / 1000u64;
+                    have at(head, b) / 1000u64 < at(head, b);
+                    have at(head, b) / 1000u64 <= 18446744u64;
                     have at(head, i) + 1 == 2 and at(head, b) / 1000u64 <= 18446744u64 by { solve(); }
                     have (at(head, i) + 1 == 0 and at(head, b) / 1000u64 <= 18446744073709u64) or (at(head, i) + 1 == 1 and at(head, b) / 1000u64 <= 18446744073u64) or (at(head, i) + 1 == 2 and at(head, b) / 1000u64 <= 18446744u64) by { solve(); }
                     close_invariants() by { solve(); }

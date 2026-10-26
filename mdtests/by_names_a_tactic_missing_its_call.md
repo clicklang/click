@@ -1,6 +1,6 @@
 # by names a tactic missing its call
 
-Only `simp` and `auto` are written without parentheses after `by`. Another
+Every tactic after `by` is written with its parentheses. A
 tactic name without its call is refused with the spelling to write.
 
 ```click

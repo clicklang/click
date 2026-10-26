@@ -13,4 +13,4 @@ uint8 narrow_u8(uint32 x) {
     ensures (uint32) result == (x & 255u32);
     ensures x == 4000000000u32 implies result == 0u8;
     ensures x == 300u32 implies result == 44u8;
-} by { execute(); auto(); }
+} by { execute(); solve(); }

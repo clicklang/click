@@ -15,5 +15,5 @@ theorem unjustified_congruence(left: int32, right: int32) {
 ```
 
 ```expect
-fail: `simp` failed
+fail: `solve` failed
 ```

@@ -47,16 +47,16 @@ verifying "string_units.c";
 
 int32 binary_units(uint32 units) {
     requires units == 2147483649u32;
-    ensures result == 1 by auto();
+    ensures result == 1;
 }
 
 uint32 no_bytes_flag() {
-    ensures result == 2147483648u32 by auto();
+    ensures result == 2147483648u32;
 }
 
 uint32 base_of(uint32 units) {
     requires units == 1073741824u32;
-    ensures result == 0 by auto();
+    ensures result == 0;
 }
 ```
 

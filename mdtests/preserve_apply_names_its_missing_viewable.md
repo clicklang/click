@@ -267,7 +267,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             apply(unmarked_point_update(at(iter, visited), visited, 0, n, n, cur));
             apply(unmarked_nonnegative(visited, 0, n, n));
             have unmarked(visited, 0, n) < unmarked(at(iter, visited), 0, n) by {
-                arithmetic() using {
+                solve() using {
                     unmarked(visited, 0, n) == unmarked(at(iter, visited), 0, n) - 1;
                 };
             }

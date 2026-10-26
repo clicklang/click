@@ -43,7 +43,7 @@ int32 f() {
         fact 1 == 1;
     } then {
         step();
-        simp();
+        solve();
     } else {
     }
     step();
@@ -53,7 +53,7 @@ int32 f() {
         invariant i <= 2;
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

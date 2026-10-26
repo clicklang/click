@@ -1,4 +1,4 @@
-# `arithmetic()` sharpens a bound with a disequality
+# `solve() using` sharpens a bound with a disequality
 
 `n >= 0` and `n != 0` say `0 < n`. The certificate had no step that combined
 a bound with a disequality, so the strict bound was out of reach even though

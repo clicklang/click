@@ -32,7 +32,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
             unfold(before);
             execute();
             let after = fold(ctx_at(new, root), { model: Context::Top });
-            simp();
+            solve();
         },
         Context::Left(identity, grandparent, color, sibling_model, outer_model) => {
             have parent == identity by {
@@ -51,7 +51,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
             let after = fold(ctx_at(new, root), {
                 model: Context::Left(identity, grandparent, color, sibling_model, outer_model)
             }, { up: outer });
-            simp();
+            solve();
         },
         Context::Right(identity, grandparent, color, sibling_model, outer_model) => {
             have parent == identity by {
@@ -83,7 +83,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     let after = fold(ctx_at(new, root), {
                         model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
                     }, { up: outer });
-                    simp();
+                    solve();
                 },
                 RbTree::Node(sid, sp, sc, sl, sr) => {
                     let { left: left, right: right } = unfold(sibling);
@@ -94,7 +94,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     let after = fold(ctx_at(new, root), {
                         model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
                     }, { up: outer });
-                    simp();
+                    solve();
                 },
             }
         },
@@ -158,9 +158,9 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color == (address(new) | color));
                 if color == 0 { rewrite(color == 0); normalize(); } else {
-                    have color == 1 by { arithmetic() using { 0 <= color; color <= 1; not(color == 0); }; }
+                    have color == 1 by { solve() using { 0 <= color; color <= 1; not(color == 0); }; }
                     rewrite(color == 1);
-                    arithmetic() using { aligned(new, 8); };
+                    solve() using { aligned(new, 8); };
                 }
             }
             mark words;
@@ -170,7 +170,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
             }
-            execute(); simp();
+            execute(); solve();
         },
         Context::Left(id, above, pc, sibling, up) => {
             unfold(ctx_identity(Context::Left(id, above, pc, sibling, up)));
@@ -179,7 +179,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have ctx_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model == Context::Left(id, above, pc, sibling, up)); rewrite(Context::Left(id, above, pc, sibling, up) == old(c.model)); assumption(); }
             have (old->__rb_parent_color & ~3) == address(id) by {
                 if old->__rb_parent_color == address(id) {
-                    arithmetic() using { old->__rb_parent_color == address(id); aligned(id, 8); };
+                    solve() using { old->__rb_parent_color == address(id); aligned(id, 8); };
                 } else {
                     have old->__rb_parent_color == address(id) + 1 by {
                         if old->__rb_parent_color == address(id) + 1 { assumption(); } else {
@@ -191,7 +191,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                             contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
                         }
                     }
-                    arithmetic() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
+                    solve() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
                 }
             }
             step(); step();
@@ -202,9 +202,9 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color == (address(new) | color));
                 if color == 0 { rewrite(color == 0); normalize(); } else {
-                    have color == 1 by { arithmetic() using { 0 <= color; color <= 1; not(color == 0); }; }
+                    have color == 1 by { solve() using { 0 <= color; color <= 1; not(color == 0); }; }
                     rewrite(color == 1);
-                    arithmetic() using { aligned(new, 8); };
+                    solve() using { aligned(new, 8); };
                 }
             }
             mark words;
@@ -214,7 +214,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
             }
-            execute(); simp();
+            execute(); solve();
         },
         Context::Right(id, above, pc, sibling, up) => {
             unfold(ctx_identity(Context::Right(id, above, pc, sibling, up)));
@@ -223,7 +223,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have ctx_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model == Context::Right(id, above, pc, sibling, up)); rewrite(Context::Right(id, above, pc, sibling, up) == old(c.model)); assumption(); }
             have (old->__rb_parent_color & ~3) == address(id) by {
                 if old->__rb_parent_color == address(id) {
-                    arithmetic() using { old->__rb_parent_color == address(id); aligned(id, 8); };
+                    solve() using { old->__rb_parent_color == address(id); aligned(id, 8); };
                 } else {
                     have old->__rb_parent_color == address(id) + 1 by {
                         if old->__rb_parent_color == address(id) + 1 { assumption(); } else {
@@ -235,7 +235,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                             contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
                         }
                     }
-                    arithmetic() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
+                    solve() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
                 }
             }
             step(); step();
@@ -246,9 +246,9 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color == (address(new) | color));
                 if color == 0 { rewrite(color == 0); normalize(); } else {
-                    have color == 1 by { arithmetic() using { 0 <= color; color <= 1; not(color == 0); }; }
+                    have color == 1 by { solve() using { 0 <= color; color <= 1; not(color == 0); }; }
                     rewrite(color == 1);
-                    arithmetic() using { aligned(new, 8); };
+                    solve() using { aligned(new, 8); };
                 }
             }
             mark words;
@@ -258,7 +258,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
             }
-            execute(); simp();
+            execute(); solve();
         },
     }
 }

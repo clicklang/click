@@ -36,14 +36,14 @@ void pool_checkout(struct pool* pool, struct object* object) {
     produces pool_object(pool, object);
 } by {
     open(pool_control(pool)) {
-        have 1 <= count(pool_slot(pool)) by simp();
-        have defined(pool->checked_out + 1) by auto();
+        have 1 <= count(pool_slot(pool)) by solve();
+        have defined(pool->checked_out + 1);
         unfold(pool_slot(pool));
         step();
         fold(pool_object(pool, object));
-        have pool->capacity == pool->checked_out + count(pool_slot(pool)) by auto();
+        have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
-    execute(); simp();
+    execute(); solve();
 }
 void forward(struct pool* pool, struct object* object) {
     owns pool_control(pool);

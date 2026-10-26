@@ -2185,7 +2185,7 @@ mod tests {
         fs::write(upstream.join("local.h"), header).unwrap();
         fs::write(proofs.join(".click/up/main.c.i"), artifact).unwrap();
         let sidecar = proofs.join("checks/main.click");
-        let proof = "target \"x86_64-unknown-linux-gnu\"; mode \"kernel\"; verifying \"../../upstream/main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
+        let proof = "target \"x86_64-unknown-linux-gnu\"; mode \"kernel\"; verifying \"../../upstream/main.c\"; int answer() { ensures result == 42; } by { execute(); solve(); }";
         fs::write(&sidecar, proof).unwrap();
         let describe = |args: &[&str]| {
             serde_json::json!({

@@ -1,4 +1,4 @@
-# `arithmetic()` bounds the lower side of a strict premise below `INT32_MAX`
+# `solve() using` bounds the lower side of a strict premise below `INT32_MAX`
 
 `i < n` with `n` an `int32` means `n <= 2147483647`, so `i <= 2147483646`
 and `i + 1` cannot overflow. With `0 <= i` beside it, `0 <= i + 1` follows.

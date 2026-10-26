@@ -21,7 +21,7 @@ verifying "sign_bit.c";
 bool sign_bit_set(uint32 u) {
     ensures result implies u > 2147483647u32;
     ensures u > 2147483647u32 implies result;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

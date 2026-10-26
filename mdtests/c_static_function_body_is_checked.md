@@ -18,7 +18,7 @@ verifying "c_static_function_body_is_checked.c";
 
 int32 run(int32 value) {
     requires value < 100;
-    ensures to_integer(result) == to_integer(value + 1) by auto();
+    ensures to_integer(result) == to_integer(value + 1);
 }
 ```
 

@@ -1,7 +1,7 @@
 # A bounded universal over uint64 is enumerated
 
 A universal whose binder is bounded by comparisons with constants has a
-finite domain, and `simp` closes it by checking each member. The domain
+finite domain, and `solve` closes it by checking each member. The domain
 was read from signed 32-bit bounds only, so at a function's exit the same
 claim over a `uint64` binder was left open, although a pure theorem proved
 it.

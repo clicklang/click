@@ -2771,7 +2771,7 @@ fn verify_c0_sources_in_context(
                 })?,
                 SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
                     return Err(ClickError::new(format!(
-                        "grouped proof for `{}` must use `by auto();` or an explicit `by {{ ... }}` proof script",
+                        "grouped proof for `{}` must be an explicit `by {{ ... }}` proof script; omit it to prove the claims with the implicit tail",
                         function_block.signature().name()
                     )));
                 }
@@ -8030,7 +8030,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
-        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch { step(); simp(); } else {} step(); step(); simp(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); solve(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch { step(); solve(); } else {} step(); step(); solve(); }\n";
         verify_c0_sources(click, &[("fork_join.c", c)])
             .expect("a saved status should choose the checked create outcome");
         let expanded =
@@ -8043,7 +8043,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn source_cannot_read_transferred_memory_before_status_and_join() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int early = p->value; if (rc != 0) return 0; pthread_join(h, NULL); return early; }\n";
-        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; } by { step(); step(); step(); step(); step(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); solve(); }\nint32 run(struct cell *p) { owns p->value; } by { step(); step(); step(); step(); step(); }\n";
         let error = verify_c0_sources(click, &[("fork_join.c", c)])
             .expect_err("the task memory cannot be read while creation is pending");
         assert!(
@@ -8058,7 +8058,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn a_session_cannot_drop_the_modeled_runtime() {
         let c = "#include <pthread.h>\nint answer(void) { return 1; }\n";
-        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nint32 answer() { ensures result == 1; } by { execute(); simp(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nint32 answer() { ensures result == 1; } by { execute(); solve(); }\n";
         let (session, _) = C0VerificationSession::new(click, &[("fork_join.c", c)])
             .expect("baseline modeled proof");
         let changed = click.replace("runtime \"modeled-pthread\";\n", "");
@@ -8180,7 +8180,7 @@ int32 answer() {
     ensures result == 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 
@@ -8241,7 +8241,7 @@ int32 answer() {
     #[test]
     fn the_address_taken_pass_reads_the_bodies_verification_parses() {
         const C: &str = "int32* echo(int32* p) { return p; }\nvoid v4(void) { int32 x; int32* q; x = 5; q = echo(&x); x = 1; }\n";
-        const SIDECAR: &str = "verifying \"a2.c\";\nint32* echo(int32* p) { ensures result == p; } by { execute(); simp(); }\nvoid v4() { ensures 1 == 1; } by { execute(); simp(); }\n";
+        const SIDECAR: &str = "verifying \"a2.c\";\nint32* echo(int32* p) { ensures result == p; } by { execute(); solve(); }\nvoid v4() { ensures 1 == 1; } by { execute(); solve(); }\n";
         let sources = [("a2.c", C)];
         let context = CSourceContext::bundle(&sources);
         let file = super::selected_c_target(SIDECAR)
@@ -8281,7 +8281,7 @@ int32 answer() {
         let sources = [("answer.c", C_SOURCE)];
         let (session, baseline) =
             C0VerificationSession::new(CLICK, &sources).expect("baseline verification");
-        let rewritten = CLICK.replace("simp();", "simp();\n    ");
+        let rewritten = CLICK.replace("solve();", "solve();\n    ");
         let (line, column) = position(&rewritten, "execute();");
         let verified = session
             .verify_at(&rewritten, line, column)
@@ -8334,7 +8334,7 @@ int32 answer() {
     ensures result == 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
         let sources = [("answer.c", C_SOURCE)];
@@ -8366,7 +8366,7 @@ int32 reader(int32 p[], int32 q[]) {
     ensures q[0] == 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
         let source = "int reader(int *p, int *q) { q[0] = 1; return p[0]; }";
@@ -8388,7 +8388,7 @@ int32 reader(int32 p[]) {
     ensures result == p[0];
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
         let source = "int reader(int *p) { p[0] = 1; return p[0]; }";
@@ -8416,7 +8416,7 @@ int32 reader(int32 p[], int32 q[]) {
     ensures result == p[0];
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
         let source = "int reader(int *p, int *q) { q[0] = 1; return p[0]; }";
@@ -8458,7 +8458,7 @@ int32 reader(int32 p[], int32 q[]) {{
     views p[0..3];
     consumes q[0..3];
     ensures result == 3;
-}} by {{ execute(); simp(); }}
+}} by {{ execute(); solve(); }}
 "#
             );
             let error = verify_sources(
@@ -8485,7 +8485,7 @@ int32 reader(int32 p[], int32 q[]) {
     views p[0..3];
     consumes q[0..1];
     ensures result == 3;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 "#;
         verify_sources(
             click,
@@ -8514,7 +8514,7 @@ int32 read_entry(struct buffer* owner, int32* other) {
     ensures result == owner->data[0];
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
         verify_sources(click, RETARGET_SOURCE)
@@ -8538,7 +8538,7 @@ int32 read_retargeted(struct buffer* owner, int32* other) {
     ensures result == owner->data[0];
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
         let error = verify_sources(click, RETARGET_SOURCE)
@@ -8574,7 +8574,7 @@ int32 peek(const int32 values[], int32 q[]) {
     ensures result == q[0];
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 run(int32 q[]) {
@@ -8583,7 +8583,7 @@ int32 run(int32 q[]) {
     ensures result == table[1];
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
         let source = "static const int32 table[2] = {5, 7};\n\
@@ -8619,7 +8619,7 @@ int32 run(int32 p[]) {
     ensures result == p[0];
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
         let source = "#include \"include/h.h\"\nint run(int *p) { return get0(p); }";
@@ -8640,7 +8640,7 @@ int32 run(int32 p[]) {
     ensures result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
         let source = "#include \"include/h.h\"\nint run(int *p) { return set0(p); }";
@@ -8663,8 +8663,8 @@ verifying "reader.c";
 
 int32 reader(int32 p[]) {
     views p[0..1];
-    ensures exact_value: result == p[0] by auto();
-    ensures lower_bound: result >= p[0] by auto();
+    ensures exact_value: result == p[0];
+    ensures lower_bound: result >= p[0];
 }
 "#;
         let source = "int reader(int *p) { return p[0]; }";
@@ -8688,7 +8688,7 @@ int32 copy_pair(struct pair* s, struct pair* t) {
     ensures result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
         let source = "struct pair { int a; int b; };\nint copy_pair(struct pair *s, struct pair *t) { *s = *t; return 0; }";
@@ -8707,9 +8707,9 @@ int32 copy_pair(struct pair* s, struct pair* t) {
     fn private_aggregate_parameters_can_lend_ownership_to_helpers() {
         let source = "struct packet { uint32 n; }; void change(uint32* n) { *n = 9; } uint32 consume(struct packet p) { uint32 before = p.n; change(&p.n); return before; } uint32 entry(uint32 x) { struct packet p = {x}; uint32 ignored = consume(p); return p.n; }";
         let proof = r#"verifying "reader.c";
-            void change(uint32* n) { owns n[0..1]; ensures *n == 9u32; } by { execute(); simp(); }
-            uint32 consume(struct packet p) { ensures result == old(p.n); } by { execute(); simp(); }
-            uint32 entry(uint32 x) { ensures result == x; } by { execute(); simp(); }
+            void change(uint32* n) { owns n[0..1]; ensures *n == 9u32; } by { execute(); solve(); }
+            uint32 consume(struct packet p) { ensures result == old(p.n); } by { execute(); solve(); }
+            uint32 entry(uint32 x) { ensures result == x; } by { execute(); solve(); }
         "#;
         verify_sources(proof, source).unwrap();
         assert!(verify_sources(&proof.replace("result == x", "result != x"), source).is_err());
@@ -8732,8 +8732,8 @@ int32 copy_pair(struct pair* s, struct pair* t) {
     fn unsigned_array_field_returns_preserve_values_in_c_callers() {
         let source = "struct packet { uint32 words[4]; }; struct packet make(uint32 x) { struct packet p = {{x, x, x, x}}; return p; } uint32 read(uint32 x) { struct packet p = make(x); return p.words[3]; }";
         let proof = r#"verifying "reader.c";
-            struct packet make(uint32 x) { ensures result.words[3] == x; } by { execute(); simp(); }
-            uint32 read(uint32 x) { ensures result == x; } by { execute(); simp(); }
+            struct packet make(uint32 x) { ensures result.words[3] == x; } by { execute(); solve(); }
+            uint32 read(uint32 x) { ensures result == x; } by { execute(); solve(); }
         "#;
         verify_sources(proof, source).unwrap();
         assert!(verify_sources(&proof.replace("result == x", "result != x"), source).is_err());
@@ -8835,7 +8835,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
     step();
     step();
     step();
-    simp();
+    solve();
 }}
 "
         );
@@ -8864,7 +8864,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
     step();
     step();
     step();
-    simp();
+    solve();
 }}
 "
         );
@@ -8967,7 +8967,7 @@ int32 reader(int32 p[]) {
     ensures result == p[0];
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
         let source = "int reader(int *p) { return p[0]; }";
@@ -9000,14 +9000,14 @@ contract const int *{goal}(const int *p) {{
 }}
 theorem lift(callback: const int* (*)(const int*)) executes callback(const int* p) {{
     requires Exact(callback);
-    ensures {goal}(callback) by {{ step(Exact); simp(); }}
+    ensures {goal}(callback) by {{ step(Exact); solve(); }}
 }}
 verifying "main.c";
 int read_view(const int *(*f)(const int *), const int *p) {{
     requires Exact(f);
     views p[0..1];
     ensures result == p[0];
-}} by {{ apply(lift(f)); step({goal}); execute(); simp(); }}
+}} by {{ apply(lift(f)); step({goal}); execute(); solve(); }}
 "#
         )
     }
@@ -9055,7 +9055,7 @@ mod retained_caller_tests {
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
         let (session, _) = C0VerificationSession::new(&click, &sources).unwrap();
-        let position = expansion::position_at_offset(&click, click.rfind("auto();").unwrap());
+        let position = expansion::position_at_offset(&click, click.rfind("solve();").unwrap());
         for _ in 0..2 {
             session
                 .verify_at(&click, position.line, position.column)
@@ -9083,7 +9083,7 @@ mod retained_caller_tests {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let position = expansion::position_at_offset(&click, click.rfind("auto();").unwrap());
+        let position = expansion::position_at_offset(&click, click.rfind("solve();").unwrap());
         verify_c0_sources(&click, &sources).unwrap();
         let _tables = crate::kernel::VerificationSession::resume();
         for _ in 0..2 {

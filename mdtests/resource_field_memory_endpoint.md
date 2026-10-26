@@ -62,7 +62,7 @@ void keep(struct buffer* buffer) {
     unfold(suffix);
     execute();
     let suffix = fold(suffix_after_prefix(buffer), { start: old(suffix.start) });
-    simp();
+    solve();
 }
 
 void claim(int32* data, int32 capacity, int32 start) {
@@ -83,9 +83,9 @@ void claim(int32* data, int32 capacity, int32 start) {
         intro();
         intro();
         extract(to_integer(old(before.start) + 1) <= to_integer(k));
-        have old(before.start) < old(before.start) + 1 by auto();
-        have old(before.start) < k by auto();
-        have old(before.start) <= k by auto();
+        have old(before.start) < old(before.start) + 1;
+        have old(before.start) < k;
+        have old(before.start) <= k;
         instantiate(forall (k: int32) {
             old(before.start) <= k and k < capacity implies data[k] == 0
         }, k) using {
@@ -96,7 +96,7 @@ void claim(int32* data, int32 capacity, int32 start) {
     }
     let after = fold(zero_suffix(data, capacity), { start: old(before.start) + 1 });
     execute();
-    simp();
+    solve();
 }
 ```
 

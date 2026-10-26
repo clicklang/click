@@ -1,8 +1,8 @@
-# A written simp that closes nothing is refused
+# A written `solve() using` that closes nothing is refused
 
-After execution a written `simp() using` acts on the first open goal. Here
+After execution a written `solve() using` acts on the first open goal. Here
 it cites a premise that does not hold, so it closes nothing and is refused
-with that goal. It used to be skipped, leaving the implicit `auto` to close
+with that goal. It used to be skipped, leaving the implicit closer to close
 the claim and `click expand` to drop the written tactic.
 
 ```c filename=a_written_simp_that_closes_nothing_is_refused.c

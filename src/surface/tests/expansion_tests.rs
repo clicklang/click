@@ -68,7 +68,7 @@ fn outcome_arithmetic_is_independent_of_postcondition_count() {
             .collect::<Vec<_>>()
             .join("\n");
         format!(
-            "verifying \"many.c\";\nint32 caller(int32 x) {{\nrequires 0 <= x;\nrequires x <= 1000;\n{clauses}\n}} by {{ step(); simp(); }}"
+            "verifying \"many.c\";\nint32 caller(int32 x) {{\nrequires 0 <= x;\nrequires x <= 1000;\n{clauses}\n}} by {{ step(); solve(); }}"
         )
     };
     for count in [4, 64, 256] {
@@ -133,7 +133,7 @@ fn scalar_induction_keeps_integer_parameters_and_their_guards() {
 #[test]
 fn arithmetic_after_fold_rewrites_expands_and_rechecks() {
     let (source, _) = mdtest_sources("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
-    let position = expansion::position_at_offset(&source, source.rfind("arithmetic()").unwrap());
+    let position = expansion::position_at_offset(&source, source.rfind("solve() using").unwrap());
     let expanded =
         expand_c0_tactic_source_at(&source, &[], position.line, position.column).unwrap();
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
@@ -172,7 +172,7 @@ fn pointer_word_certificates_keep_address_arithmetic_when_printed() {
 #[test]
 fn numeric_cast_certificates_keep_integer_default_arithmetic_when_printed() {
     let source = r#"theorem numeric_cast(word: uint64) {
-    ensures ((uint64)word) + 1 > ((uint64)word) by { arithmetic(); }
+    ensures ((uint64)word) + 1 > ((uint64)word) by { solve() using {}; }
 }"#;
     let expanded = expand_c0_claim_source_by_label(source, &[], "numeric_cast.ensures_0").unwrap();
     without_implicit_auto(|| verify_click_theorems(&expanded))
@@ -270,7 +270,7 @@ theorem mixed_observations(adler: uint64, seed: int64, value: uint64, specificat
     requires to_integer(adler) == to_integer(value);
     requires specification == to_integer(seed);
     ensures to_integer(value) == specification by {
-        arithmetic() using {
+        solve() using {
             to_integer(adler) == to_integer((uint64)seed);
             to_integer(adler) == to_integer(value);
             specification == to_integer(seed);
@@ -388,7 +388,7 @@ fn shifted_pointer_equality_rewrites_expand_and_recheck() {
             ensures result == 0;
         } by {
             have cursor == base;
-            execute(); simp();
+            execute(); solve();
         }
     "#;
     let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
@@ -503,7 +503,7 @@ fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
         )
     };
     verify_c0_project(&project(source), &c_sources).expect("ordinary caller verification");
-    let position = expansion::position_at_offset(source, source.rfind("simp();").unwrap());
+    let position = expansion::position_at_offset(source, source.rfind("solve();").unwrap());
     let expanded = expand_project_tactic_source_at(
         &project(source),
         &ProgramInputs::Bundle(c_sources.clone()),
@@ -511,13 +511,13 @@ fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
         position.column,
     )
     .expect("theorem-only expansion retains imported tactic interfaces");
-    assert!(!expanded[expanded.find("theorem zero_contract").unwrap()..].contains("simp();"));
+    assert!(!expanded[expanded.find("theorem zero_contract").unwrap()..].contains("solve();"));
     verify_c0_project(&project(&expanded), &c_sources).expect("the expansion checks directly");
     let local = source.replace(
         "import \"execution_theorem_imported_tactic_helpers.click\";",
         helper,
     );
-    let position = expansion::position_at_offset(&local, local.rfind("simp();").unwrap());
+    let position = expansion::position_at_offset(&local, local.rfind("solve();").unwrap());
     let expanded = expand_c0_tactic_source_at(&local, &c_sources, position.line, position.column)
         .expect("the non-project theorem route retains local unselected tactic interfaces");
     verify_c0_sources(&expanded, &c_sources).expect("local procedure expansion checks");
@@ -527,13 +527,13 @@ fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
 fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
     let sum = std::iter::repeat_n("a", 24).collect::<Vec<_>>().join(" + ");
     let source = format!(
-        "theorem sum(a: Integer) {{ ensures {sum} == 24 * a by {{ have {sum} == 24 * a by {{ arithmetic(); }} assumption(); }} }}"
+        "theorem sum(a: Integer) {{ ensures {sum} == 24 * a by {{ have {sum} == 24 * a by {{ solve() using {{}}; }} assumption(); }} }}"
     );
     verify_click_theorems(&source).unwrap();
-    let position = expansion::position_at_offset(&source, source.find("arithmetic()").unwrap());
+    let position = expansion::position_at_offset(&source, source.find("solve() using").unwrap());
     let expanded =
         expand_c0_tactic_source_at(&source, &[], position.line, position.column).unwrap();
-    assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     let certificate = expanded.split("arithmetic_certificate {").nth(1).unwrap();
     let body = certificate.split('}').next().unwrap();
     assert!(body.lines().all(|line| line.len() <= 100), "{expanded}");
@@ -620,12 +620,12 @@ fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
         void put(struct parent* p, struct child* kid) {
             owns p->kid;
             ensures p->kid == kid;
-        } by { execute(); simp(); }
+        } by { execute(); solve(); }
         int32 read(struct parent* p) {
             views p->kid;
             views p->kid->payload;
             ensures result == p->kid->payload;
-        } by { execute(); simp(); }
+        } by { execute(); solve(); }
         int32 caller(struct parent* p, struct child* kid) {
             owns p->kid;
             views kid->payload;
@@ -637,7 +637,7 @@ fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
             have p->kid == kid;
             have observed == kid->payload;
             execute();
-            simp();
+            solve();
         }
     "#;
     let sources = [("read.c", c)];
@@ -685,7 +685,7 @@ fn expansion_shows_a_folds_hidden_record_as_a_comment() {
                   resource pair(p: struct pair*) { owns p->a; owns p->n; owns first: counted(p->a); \
                   fact p->n == first.v; fact first.v >= 0; } \
                   verifying \"f.c\"; int32 get(struct pair* p) { owns pair(p); ensures result >= 0; } by { \
-                  let { first: c } = unfold(pair(p)); execute(); fold(pair(p), { first: c }); simp(); }";
+                  let { first: c } = unfold(pair(p)); execute(); fold(pair(p), { first: c }); solve(); }";
     let sources = [("f.c", c)];
     let expanded = expand_c0_claim_source(source, &sources, "get", CProofClaim::Grouped)
         .expect("the hidden-record proof expands");
@@ -727,7 +727,7 @@ fn byte_initialized_uint32_expands_and_retains() {
 #[test]
 fn selected_tactic_batch_uses_the_project_entry_scope() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
-    let source = "verifying \"identity.c\"; int32 identity(int32 x) { ensures result == x; } by { execute(); have x == x by simp(); have x + 0 == x by simp(); simp(); }";
+    let source = "verifying \"identity.c\"; int32 identity(int32 x) { ensures result == x; } by { execute(); have x == x by solve(); have x + 0 == x by solve(); solve(); }";
     let project = ClickProject::new(
         "unit.click",
         [ClickModuleSource::new("unit.click", source, [])],
@@ -751,7 +751,7 @@ fn selected_tactic_batch_removes_all_sites_in_a_dropped_arm() {
         "flag.c",
         "int32 flag(int32 x) { if (x > 0) { return 1; } return 0; }",
     )];
-    let source = "verifying \"flag.c\"; int32 flag(int32 x) { requires x <= 0; ensures result == 0; } by { branch { step(); simp(); simp(); } else {} step(); simp(); }";
+    let source = "verifying \"flag.c\"; int32 flag(int32 x) { requires x <= 0; ensures result == 0; } by { branch { step(); solve(); solve(); } else {} step(); solve(); }";
     verify_c0_sources(source, &c).unwrap();
     let sites = c0_smart_tactic_source_sites(source, &c).unwrap();
     let positions = sites[..2]
@@ -759,15 +759,15 @@ fn selected_tactic_batch_removes_all_sites_in_a_dropped_arm() {
         .map(|site| site.position.clone())
         .collect::<Vec<_>>();
     let expanded = expand_c0_tactics_source_at(source, &c, &positions).unwrap();
-    assert!(!expanded.source.contains("step(); simp(); simp();"));
-    assert!(expanded.source.ends_with("step(); simp(); }"));
+    assert!(!expanded.source.contains("step(); solve(); solve();"));
+    assert!(expanded.source.ends_with("step(); solve(); }"));
     verify_c0_sources(&expanded.source, &c).unwrap();
 }
 
 #[test]
 fn selected_tactic_batch_captures_multiple_sites_inside_one_have() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
-    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nexecute();\nhave x == x by { have x == x by { simp(); } simp(); }\nsimp();\n}\n";
+    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nexecute();\nhave x == x by { have x == x by { solve(); } solve(); }\nsolve();\n}\n";
     verify_c0_sources(source, &c).unwrap();
     let sites = c0_smart_tactic_source_sites(source, &c).unwrap();
     let positions = sites[1..3]
@@ -777,7 +777,7 @@ fn selected_tactic_batch_captures_multiple_sites_inside_one_have() {
     assert_eq!(sites[1].source_index, sites[2].source_index);
     let expanded = expand_c0_tactics_source_at(source, &c, &positions).unwrap();
     assert!(expanded.source.contains("execute();"));
-    assert!(expanded.source.ends_with("simp();\n}\n"));
+    assert!(expanded.source.ends_with("solve();\n}\n"));
     verify_c0_sources(&expanded.source, &c).unwrap();
 }
 
@@ -822,7 +822,7 @@ fn selected_tactic_batch_preserves_checked_loop_and_branch_routing() {
 #[test]
 fn selected_tactic_batch_retains_the_unselected_prefix_and_suffix() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
-    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nexecute();\nhave x == x by simp();\nhave x + 0 == x by simp();\nhave x - 0 == x by simp();\nsimp();\n}\n";
+    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nexecute();\nhave x == x by solve();\nhave x + 0 == x by solve();\nhave x - 0 == x by solve();\nsolve();\n}\n";
     verify_c0_sources(source, &c).unwrap();
     let sites = c0_smart_tactic_source_sites(source, &c).unwrap();
     let selected = sites[1..3]
@@ -831,14 +831,14 @@ fn selected_tactic_batch_retains_the_unselected_prefix_and_suffix() {
         .collect::<Vec<_>>();
     let expanded = expand_c0_tactics_source_at(source, &c, &selected).unwrap();
     assert!(expanded.source.contains("execute();"));
-    assert!(expanded.source.contains("have x - 0 == x by simp();"));
+    assert!(expanded.source.contains("have x - 0 == x by solve();"));
     assert!(
-        !expanded.source.contains("have x == x by simp();"),
+        !expanded.source.contains("have x == x by solve();"),
         "{}",
         expanded.source
     );
     assert!(
-        !expanded.source.contains("have x + 0 == x by simp();"),
+        !expanded.source.contains("have x + 0 == x by solve();"),
         "{}",
         expanded.source
     );
@@ -860,8 +860,8 @@ fn post_execution_have_expansion_preserves_later_smart_proofs() {
         .collect::<Vec<_>>();
     verify_c0_sources(source, &sources).unwrap();
     for needle in [
-        "have p[0] <= p[1] by simp();",
-        "have p[1] <= p[2] by simp();",
+        "have p[0] <= p[1] by solve();",
+        "have p[1] <= p[2] by solve();",
     ] {
         let offset = source.find(needle).unwrap();
         let position = expansion::position_at_offset(source, offset);
@@ -925,9 +925,9 @@ fn an_arms_invariant_closer_expands_with_that_arms_checked_body() {
         "{expanded}"
     );
     assert_eq!(expanded.matches("if n > 0").count(), 1, "{expanded}");
-    assert!(expanded.contains("initialize by simp();"), "{expanded}");
+    assert!(expanded.contains("initialize by solve();"), "{expanded}");
     assert!(
-        expanded.contains("    step();\n    simp();\n}"),
+        expanded.contains("    step();\n    solve();\n}"),
         "the phase's unselected successor stays written: {expanded}"
     );
     verify_c0_sources(&expanded, &sources).unwrap();
@@ -952,8 +952,8 @@ fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
     let markdown = std::fs::read_to_string(&path).unwrap();
     let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
     let source_with_suffix = fixture.click_source.as_deref().unwrap().replace(
-        "        simp();",
-        "        simp();\n        have 0 == 0 by { normalize(); }",
+        "        solve();",
+        "        solve();\n        have 0 == 0 by { normalize(); }",
     );
     let source = source_with_suffix.as_str();
     let sources = fixture
@@ -962,10 +962,10 @@ fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c0_sources(source, &sources).unwrap();
-    let position = expansion::position_at_offset(source, source.rfind("simp();").unwrap());
+    let position = expansion::position_at_offset(source, source.rfind("solve();").unwrap());
     let expanded =
         expand_c0_tactic_source_at(source, &sources, position.line, position.column).unwrap();
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(
         expanded.contains("have 0 == 0 by { normalize(); }"),
         "the unselected suffix stays written"
@@ -1099,7 +1099,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
             ensures result < 18446744073709551615u64;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let sources = [("source_identity.c", c_source)];
@@ -1134,7 +1134,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
         "the expansion should keep the reordered string clause: {expanded_source}"
     );
     assert!(!expanded_source.contains("execute();"));
-    assert!(!expanded_source.contains("simp();"));
+    assert!(!expanded_source.contains("solve();"));
     verify_c0_sources(&expanded_source, &sources)
         .expect("the ordinary expanded source-identity proof should independently reverify");
 }
@@ -1292,7 +1292,7 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
     );
     let caller = &expanded[expanded.find("int use_pick").expect("caller proof")..];
     assert!(!caller.contains("execute()"), "{expanded}");
-    assert!(!caller.contains("simp()"), "{expanded}");
+    assert!(!caller.contains("solve()"), "{expanded}");
     if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
         panic!(
             "the expanded caller proof should re-verify: {}\n{expanded}",
@@ -1302,7 +1302,7 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
 }
 
 /// A postcondition `result == 1 implies forall (k: int32) { ... }` closed by
-/// `simp()` after execution expands to a `have` of the claim and
+/// `solve()` after execution expands to a `have` of the claim and
 /// `assumption()`. The `have` and the claim lower the guarded quantifier with
 /// independent fresh binders; the rewrite re-verifies only because
 /// `assumption` matches that guarded quantifier up to its binders.
@@ -1335,7 +1335,7 @@ fn guarded_quantified_postcondition_expands_and_reverifies() {
         let claim = &claim[claim.find("} by {").expect("claim proof body")..];
         let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
         assert!(!claim.contains("execute()"), "{expanded}");
-        assert!(!claim.contains("simp()"), "{expanded}");
+        assert!(!claim.contains("solve()"), "{expanded}");
         assert!(
             claim.contains("have result == 1 implies forall (k: int32)"),
             "{expanded}"
@@ -1372,7 +1372,7 @@ fn guarded_postcondition_consequent_expands_and_reverifies() {
         let claim = &claim[claim.find("} by {").expect("claim proof body")..];
         let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
         assert!(!claim.contains("execute()"), "{expanded}");
-        assert!(!claim.contains("simp()"), "{expanded}");
+        assert!(!claim.contains("solve()"), "{expanded}");
         assert!(claim.contains("have defined((1 + "), "{expanded}");
         assert!(
             claim.contains("extract(to_integer(st.live) == "),
@@ -1423,7 +1423,7 @@ fn scope_equality_chain_and_loaded_pointer_rewrite_expand_and_reverify() {
             .expect("claim proof")..];
         let claim = &claim[claim.find("} by {").expect("claim proof body")..];
         let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
-        assert!(!claim.contains("simp()"), "{expanded}");
+        assert!(!claim.contains("solve()"), "{expanded}");
         assert!(
             claim.contains(expected) || claim.contains("assumption();"),
             "{expanded}"
@@ -1455,7 +1455,7 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
     let claim = &claim[claim.find("} by {").expect("claim proof body")..];
     let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
     assert!(!claim.contains("execute()"), "{expanded}");
-    assert!(!claim.contains("simp()"), "{expanded}");
+    assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
         claim.contains("have defined((old(st.total) + "),
         "{expanded}"
@@ -1504,7 +1504,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
     let claim = &claim[claim.find("} by {").expect("claim proof body")..];
     let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
     assert!(!claim.contains("execute()"), "{expanded}");
-    assert!(!claim.contains("simp()"), "{expanded}");
+    assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
         claim.contains("have defined((old(st.total) + "),
         "{expanded}"
@@ -1548,7 +1548,7 @@ fn branch_continuation_match_expands_and_reverifies() {
             .unwrap_or_else(|error| panic!("`{relative}` should expand: {}", error.message()));
         let claim = &expanded[expanded.find("int32 f(").expect("claim proof")..];
         assert!(!claim.contains("execute()"), "{expanded}");
-        assert!(!claim.contains("simp()"), "{expanded}");
+        assert!(!claim.contains("solve()"), "{expanded}");
         if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
             panic!(
                 "the expanded `{relative}` should re-verify: {}\n{expanded}",
@@ -1599,10 +1599,10 @@ fn simp_in_a_refuted_match_arm_bridge_expands_and_reverifies() {
     ] {
         let expanded = expand_mdtest_site_and_reverify(
             relative,
-            "Tag::A => { have x == x by simp();",
+            "Tag::A => { have x == x by solve();",
             "Tag::A => { have x == x by ".len(),
         );
-        assert!(!expanded.contains("have x == x by simp();"), "{expanded}");
+        assert!(!expanded.contains("have x == x by solve();"), "{expanded}");
     }
 }
 
@@ -1614,10 +1614,10 @@ fn simp_in_a_refuted_match_arm_bridge_expands_and_reverifies() {
 fn loop_initialize_after_proof_branch_expands_and_reverifies() {
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/loop_after_proof_branch_expands.md",
-        "initialize by simp();",
+        "initialize by solve();",
         "initialize by ".len(),
     );
-    assert!(!expanded.contains("initialize by simp();"), "{expanded}");
+    assert!(!expanded.contains("initialize by solve();"), "{expanded}");
     assert_eq!(expanded.matches("branch ").count(), 1, "{expanded}");
 }
 
@@ -1628,11 +1628,11 @@ fn loop_initialize_after_proof_branch_expands_and_reverifies() {
 fn simp_in_a_nested_post_execution_match_arm_expands_and_reverifies() {
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/a_match_in_a_post_execution_if_arm_takes_each_paths_arm.md",
-        "Tri::One => { simp(); }",
+        "Tri::One => { solve(); }",
         "Tri::One => { ".len(),
     );
-    assert!(!expanded.contains("Tri::One => { simp(); }"), "{expanded}");
-    assert!(expanded.contains("Tri::Zero => { simp(); }"), "{expanded}");
+    assert!(!expanded.contains("Tri::One => { solve(); }"), "{expanded}");
+    assert!(expanded.contains("Tri::Zero => { solve(); }"), "{expanded}");
 }
 
 /// A ranked loop with no invariant has nothing to initialize. Its expansion
@@ -1702,6 +1702,13 @@ fn multidimensional_local_array_field_expands_with_every_subscript() {
 #[test]
 fn flattened_aggregate_claims_resolve_to_their_written_clause() {
     let (click_source, c_sources) = mdtest_sources("mdtests/struct_aggregate_resources.md");
+    // The aggregate clause's flattened claims share the written clause's
+    // one proof.
+    let click_source = click_source.replacen(
+        "    owns packet->inner;\n    ensures result == 7;",
+        "    owns packet->inner by { step_until(function.exit); }\n    ensures result == 7;",
+        1,
+    );
     let c_sources = c_sources
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
@@ -1719,7 +1726,7 @@ fn flattened_aggregate_claims_resolve_to_their_written_clause() {
     assert_eq!(write_inner.ensure_claim_label(0), "write_inner.owns_0");
     let sites = expansion::c0_smart_tactic_source_sites(&click_source, &c_sources).unwrap();
     let written = click_source
-        .find("owns packet->inner by auto();")
+        .find("owns packet->inner by")
         .expect("the fixture states the aggregate clause");
     let written = expansion::position_at_offset(&click_source, written);
     let produced_sites = sites
@@ -1757,13 +1764,16 @@ fn a_conditional_produces_clause_is_located_in_its_place() {
     let start = click.find("    if old(obj->refs) > 1 {").unwrap();
     let end = click.find("int32 cleanup(int32 payload) {").unwrap();
     let inputs = ProgramInputs::Bundle(sources.clone());
-    for produces_proof in ["", " by auto()"] {
+    // The locator reads the parse, so each claim's own proof only has to
+    // parse: with the `ensures` proved on their own, an omitted `produces`
+    // proof is that claim's own default proof, not a grouped one.
+    for produces_proof in ["", " by { step(); }"] {
         let click = format!(
             "{}    if old(obj->refs) > 1 {{
         produces child_control(obj){produces_proof};
     }}
-    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1 by auto();
-    ensures obj->refs >= 0 by auto();
+    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1 by {{ step(); }}
+    ensures obj->refs >= 0 by {{ step(); }}
 }}
 
 {}",
@@ -1791,7 +1801,7 @@ fn a_conditional_produces_clause_is_located_in_its_place() {
     }
 }
 
-/// A `simp()` closing an `initialize` script that several invariants share
+/// A `solve()` closing an `initialize` script that several invariants share
 /// expands to one step per invariant, each holding the whole script. Those
 /// steps stand for the tactics written before the closer too, so the rewrite
 /// replaces from the first of them: left in place, the leading `unfold` ran
@@ -1829,7 +1839,7 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn initialize_closer_expansion_names_an_invariant_once_per_owed_goal() {
-    let anchor = "            }\n            simp();\n        }\n        preserve";
+    let anchor = "            }\n            solve();\n        }\n        preserve";
     let quantified = "have forall (k: int32) { 0 <= k and k <= n implies viewable(a[0..k]) } by {\n                have";
     for fixture in [
         "mdtests/loop_initialize_narrows_a_held_range_under_a_universal.md",
@@ -1847,12 +1857,17 @@ fn initialize_closer_expansion_names_an_invariant_once_per_owed_goal() {
 /// different term than the fact it was meant to rewrite with.
 #[test]
 fn struct_array_element_expands_with_its_subscript() {
-    let anchor = "ensures result == 19 by ";
-    let expanded = expand_mdtest_site_and_reverify(
-        "mdtests/data_only_translation_unit.md",
-        anchor,
-        anchor.len(),
-    );
+    // The function's claims omit their proofs, so their grouped proof is
+    // the one expanded.
+    let (click_source, c_sources) = mdtest_sources("mdtests/data_only_translation_unit.md");
+    let c_sources = c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&click_source, &c_sources, "read.contract")
+        .unwrap_or_else(|error| panic!("the grouped proof should expand: {}", error.message()));
+    verify_c0_sources(&expanded, &c_sources)
+        .unwrap_or_else(|error| panic!("the expansion should re-verify: {}", error.message()));
     assert!(expanded.contains("entries[0]"), "{expanded}");
     assert!(!expanded.contains("(entries + "), "{expanded}");
 }
@@ -1897,14 +1912,14 @@ fn targeted_termination_assumes_unselected_callees() {
     }
 }
 
-/// A `simp()` after `execute(); intro(); intro();` closes a claim proof the
+/// A `solve()` after `execute(); intro(); intro();` closes a claim proof the
 /// `intro`s opened, and expands to only the steps it adds there. It used to
 /// expand to the whole claim's certificate, `have <claim> by { ... };
 /// assumption();`, and a deferred `normalize()` or `assumption()` ignored
 /// the opened proof, so neither form re-verified.
 #[test]
 fn post_execution_closer_continues_the_proof_intros_opened() {
-    let anchor = "intro();\n        simp();";
+    let anchor = "intro();\n        solve();";
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/post_execution_intro_quantified_ensure.md",
         anchor,
@@ -1917,13 +1932,13 @@ fn post_execution_closer_continues_the_proof_intros_opened() {
     assert!(!expanded.contains("have forall"), "{expanded}");
 }
 
-/// The same for a proof a `witness` opened: the `simp()` expands to the steps
+/// The same for a proof a `witness` opened: the `solve()` expands to the steps
 /// it adds after the witness, checked inside that proof, so a changed
 /// witness cannot be closed from the claims instead
 /// (`post_execution_choose_and_witness_share_the_retained_outcome_proof`).
 #[test]
 fn post_execution_closer_continues_the_proof_a_witness_opened() {
-    let anchor = "witness { len: found_len };\n        simp();";
+    let anchor = "witness { len: found_len };\n        solve();";
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/cstr_stdlib.md",
         anchor,
@@ -1932,7 +1947,7 @@ fn post_execution_closer_continues_the_proof_a_witness_opened() {
     assert!(!expanded.contains("have exists (len: int32)"), "{expanded}");
 }
 
-/// The `simp()` closing the loop's `preserve` proof in `arena_init` expands
+/// The `solve()` closing the loop's `preserve` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the
 /// loop's store from the earlier cells by their indices alone, and
@@ -1942,7 +1957,7 @@ fn post_execution_closer_continues_the_proof_a_witness_opened() {
 fn entry_alignment_premise_expands_in_source_spelling() {
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/entry_alignment_premise_expands.md",
-        "simp();\n        }\n    }\n    have i == capacity",
+        "solve();\n        }\n    }\n    have i == capacity",
         0,
     );
     assert!(!expanded.contains("(uint64)arena"), "{expanded}");
@@ -2048,16 +2063,16 @@ fn integer_sum_range_fold_expands_and_reverifies() {
 fn integer_quantifier_smart_proofs_expand_and_recheck() {
     let source = r#"
 theorem integer_forall_simp() {
-    ensures ordered: forall (z: Integer) { 2 * z + 1 > z + z } by { simp(); }
+    ensures ordered: forall (z: Integer) { 2 * z + 1 > z + z } by { solve(); }
 }
 theorem integer_exists_simp(x: Integer) {
     ensures witnessed: exists (z: Integer) { z == x } by {
         witness { z: x };
-        simp();
+        solve();
     }
 }
 theorem integer_forall_logical_simp() {
-    ensures logical: forall (z: Integer) { z == z and z == z } by { simp(); }
+    ensures logical: forall (z: Integer) { z == z and z == z } by { solve(); }
 }
 theorem integer_exists_choose() {
     requires exists (z: Integer) { z == z };
@@ -2166,7 +2181,7 @@ theorem missing_integer_definedness(value: int32) {
         z == 0 and to_integer(value + 1) == to_integer(value + 1)
     } by {
         witness { z: 0 };
-        simp();
+        solve();
     }
 }
 "#;
@@ -2175,7 +2190,7 @@ theorem missing_integer_definedness(value: int32) {
     assert!(
         missing_error
             .message()
-            .contains("checked `simp` after witness/choose"),
+            .contains("checked `solve` after witness/choose"),
         "the checked post-witness failure should identify the remaining proof step: {}",
         missing_error.message()
     );
@@ -2200,15 +2215,15 @@ int32 array_fold_append_at_zero(int32 a[]) {
     ensures (0..1).fold(0, |acc, k| { acc + to_integer(a[k]) }) ==
         (0..0).fold(0, |acc, k| { acc + to_integer(a[k]) }) + to_integer(a[0]) by {
         execute();
-        have 0 <= 0 by { simp(); }
-        have 0 < 2147483647 by { simp(); }
+        have 0 <= 0 by { solve(); }
+        have 0 < 2147483647 by { solve(); }
         apply(integer_range_fold_append(
             (0..0).fold(0, |acc, k| { acc + to_integer(a[k]) })
         )) using {
             0 <= 0;
             0 < 2147483647;
         }
-        simp();
+        solve();
     }
 }"#;
 
@@ -2258,13 +2273,13 @@ theorem indexed_integer_exists(values: int32[]) {
     } by {
         witness { z: 0 };
         both {
-            both { simp(); } and { simp(); }
+            both { solve(); } and { solve(); }
         } and {
             both {
-                both { simp(); } and { simp(); }
+                both { solve(); } and { solve(); }
             } and {
                 rewrite(values[0] == 0);
-                simp();
+                solve();
             }
         }
     }
@@ -2297,7 +2312,7 @@ int32 g(uint8 p[], uint8 x) {
     ensures result == my_count(p, 0u64, 2u64, x) by {
         execute();
         unfold(my_count(p, 0u64, 2u64, x));
-        simp();
+        solve();
     }
 }
 "#;
@@ -2356,7 +2371,7 @@ function wrapped(lo: uint64, hi: uint64) -> Integer {
     to_integer((lo..hi).fold(0, |acc, k| { acc + 1 }))
 }
 theorem check_wrapped(lo: uint64, hi: uint64) {
-    ensures wrapped(lo, hi) == 0 by { unfold(wrapped(lo, hi)); simp(); }
+    ensures wrapped(lo, hi) == 0 by { unfold(wrapped(lo, hi)); solve(); }
 }
 "#;
     let error = verify_c0_sources(wrapped, &[]).expect_err("unsupported subfold must be refused");
@@ -2732,7 +2747,7 @@ fn integer_range_fold_law_applies_after_execution() {
                             end < 2147483647;
                         }
                     }
-                    simp();
+                    solve();
                 }
             }
         "#;
@@ -2745,16 +2760,16 @@ fn integer_range_fold_law_applies_after_execution() {
 fn context_free_implication_simp_expands_intro_and_rechecks() {
     let source = r#"
 theorem reflexive_implication(x: int32) {
-    ensures x == 0 implies x == 0 by { simp(); }
+    ensures x == 0 implies x == 0 by { solve(); }
 }
 "#;
     verify_c0_sources(source, &[]).expect("smart implication proof should verify");
-    let offset = source.find("simp();").expect("expected smart tactic");
+    let offset = source.find("solve();").expect("expected smart tactic");
     let position = expansion::position_at_offset(source, offset);
     let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column).unwrap();
     assert!(expanded.contains("intro();"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c0_sources(&expanded, &[])
         .expect("expanded implication introduction should independently recheck");
     let missing_intro = expanded.replacen("intro();", "", 1);
@@ -2762,7 +2777,7 @@ theorem reflexive_implication(x: int32) {
         .expect_err("removing the retained introduction must invalidate the proof");
 }
 
-/// A `have` with no written proof is `have P by simp();`. Expansion addresses
+/// A `have` with no written proof is `have P by solve();`. Expansion addresses
 /// a proof's tactics through source positions, so a default proof must not
 /// leave it without a block to rewrite: the `have` gains one, and a smart
 /// tactic beside it still expands and rechecks.
@@ -2773,12 +2788,12 @@ theorem default_have(x: int32) {
     requires 0 <= x;
     ensures 0 <= x and x == x by {
         have x == x;
-        simp();
+        solve();
     }
 }
 "#;
     verify_c0_sources(source, &[]).expect("the default `have` proof should verify");
-    for needle in ["have x == x;", "simp();"] {
+    for needle in ["have x == x;", "solve();"] {
         let offset = source.find(needle).expect("expected tactic");
         let position = expansion::position_at_offset(source, offset);
         let expanded =
@@ -2803,16 +2818,16 @@ int32 nested(int32 x) {
     ensures result == x;
 } by {
     execute();
-    have 0 <= to_integer(x) + 1 by arithmetic() using { 0 <= to_integer(x); };
-    have 0 <= to_integer(x) + 2 by arithmetic() using { 0 <= to_integer(x); };
+    have 0 <= to_integer(x) + 1 by solve() using { 0 <= to_integer(x); };
+    have 0 <= to_integer(x) + 2 by solve() using { 0 <= to_integer(x); };
     have x == x by normalize();
-    simp();
+    solve();
 }
 "#;
     let sources = [("short.c", c)];
     verify_c0_sources(source, &sources).expect("the short arithmetic proofs verify");
     let positions = source
-        .match_indices("arithmetic()")
+        .match_indices("solve() using")
         .map(|(offset, _)| expansion::position_at_offset(source, offset))
         .collect::<Vec<_>>();
     let expanded = expansion::expand_tactics_source_at(
@@ -2841,23 +2856,23 @@ theorem helper(x: int32) {
 
 theorem one_tactic_proofs(x: int32) {
     requires 0 <= x;
-    ensures 0 <= x and x == x by simp();
+    ensures 0 <= x and x == x by solve();
     ensures 0 <= x by apply(helper(x));
     ensures 0 <= x and x == x by {
         have x == x by normalize();
         have 0 <= x by apply(helper(x));
-        have 0 <= x and x == x by simp();
-        simp();
+        have 0 <= x and x == x by solve();
+        solve();
     }
 }
 "#;
     verify_c0_sources(source, &[]).expect("the one-tactic proofs should verify");
     let smart = [
-        "simp();\n    ensures 0 <= x by apply",
+        "solve();\n    ensures 0 <= x by apply",
         "apply(helper(x));\n    ensures 0 <= x and x == x by {",
         "apply(helper(x));\n        have 0 <= x and x == x",
-        "simp();\n        simp();",
-        "simp();\n    }",
+        "solve();\n        solve();",
+        "solve();\n    }",
     ];
     for needle in smart {
         let offset = source
@@ -2902,17 +2917,17 @@ theorem helper(x: int32) {
 
 theorem one_tactic_proofs(x: int32) {
     requires 0 <= x;
-    ensures 0 <= x and x == x by simp();
+    ensures 0 <= x and x == x by solve();
     ensures 0 <= x by apply(helper(x));
     ensures 0 <= x and x == x by {
-        have 0 <= x and x == x by simp();
-        simp();
+        have 0 <= x and x == x by solve();
+        solve();
     }
 }
 "#;
     let with = without
         .replace("by assumption();", "by { assumption(); }")
-        .replace("by simp();", "by { simp(); }")
+        .replace("by solve();", "by { solve(); }")
         .replace("by apply(helper(x));", "by { apply(helper(x)); }");
     assert_ne!(with, without);
     let inventory = |source: &str| {
@@ -2946,8 +2961,8 @@ theorem nested_sites(x: int32) {
         assumption();
     }
     ensures 0 <= x and x == x by {
-        have 0 <= x and x == x by { simp(); }
-        simp();
+        have 0 <= x and x == x by { solve(); }
+        solve();
     }
 }
 "#;
@@ -2963,7 +2978,7 @@ theorem nested_sites(x: int32) {
             ("nested_sites.ensures_1", "apply"),
             ("nested_sites.ensures_1", "apply"),
             ("nested_sites.ensures_2", "have"),
-            ("nested_sites.ensures_2", "simp"),
+            ("nested_sites.ensures_2", "solve"),
         ]
     );
     // Both nested applications belong to the same claim-level `have`, but
@@ -3162,7 +3177,7 @@ fn a_tactic_in_a_generic_theorem_expands() {
     let sources = crate::cli::read_verifying_sources(&path, &source).unwrap();
     let c_sources = crate::cli::source_refs(&sources);
     let theorem = source.find("theorem tree_mirror_twice<T>(").unwrap();
-    for needle in ["simp();", "apply(ih(left));"] {
+    for needle in ["solve();", "apply(ih(left));"] {
         let offset = theorem + source[theorem..].find(needle).unwrap();
         let position = expansion::position_at_offset(&source, offset);
         let expanded =
@@ -3190,7 +3205,7 @@ fn whole_claim_expansion_keeps_a_proof_if_after_execution() {
         .unwrap()..];
     let proof = &function[..function.find("\n}\n").unwrap()];
     assert!(proof.contains("if result <= 0 {"), "{proof}");
-    assert!(!proof.contains("simp();"), "{proof}");
+    assert!(!proof.contains("solve();"), "{proof}");
     verify_c0_sources(&expanded, &sources)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
@@ -3260,14 +3275,14 @@ int32 early(int32 x) {
 } by {
     branch {
         step();
-        simp();
+        solve();
     } else {}
     branch {
         step();
-        simp();
+        solve();
     } else {}
     step();
-    simp();
+    solve();
 }
 "#;
     let sources = [("early.c", c_source)];
@@ -3323,18 +3338,18 @@ fn context_free_disjunction_simp_expands_choice_and_rechecks() {
         let source = format!(
             r#"
 theorem choose_reflexive_arm() {{
-    ensures {goal} by {{ simp(); }}
+    ensures {goal} by {{ solve(); }}
 }}
 "#
         );
         verify_c0_sources(&source, &[]).expect("smart disjunction proof should verify");
-        let offset = source.find("simp();").expect("expected smart tactic");
+        let offset = source.find("solve();").expect("expected smart tactic");
         let position = expansion::position_at_offset(&source, offset);
         let expanded =
             expand_c0_tactic_source_at(&source, &[], position.line, position.column).unwrap();
         assert!(expanded.contains("have 1 == 1 by"), "{expanded}");
         assert!(expanded.contains(choice), "{expanded}");
-        assert!(!expanded.contains("simp();"), "{expanded}");
+        assert!(!expanded.contains("solve();"), "{expanded}");
         verify_c0_sources(&expanded, &[])
             .expect("expanded disjunction choice should independently recheck");
     }
@@ -3351,7 +3366,7 @@ fn deferred_preservation_simp_expands_at_its_original_source_site() {
     verify_c0_sources_functions(&source, &c_sources, vec!["vector_copy".into()]).unwrap();
     let function = source.find("int32 vector_copy(").unwrap();
     let preserve = function + source[function..].find("preserve by {").unwrap();
-    let offset = preserve + source[preserve..].find("simp();").unwrap();
+    let offset = preserve + source[preserve..].find("solve();").unwrap();
     let position = expansion::position_at_offset(&source, offset);
     let expanded =
         expand_c0_tactic_source_at(&source, &c_sources, position.line, position.column).unwrap();
@@ -3395,7 +3410,7 @@ theorem unsigned_compound(n: int32) {
     requires 0 <= to_integer(n + 1);
     requires to_integer(n + 1) <= 536870911;
     ensures ((uint32)(n + 1)) <= 1073741823u32 by {
-        arithmetic() using {
+        solve() using {
             0 <= to_integer(n + 1);
             to_integer(n + 1) <= 536870911;
         }
@@ -3413,12 +3428,12 @@ theorem unsigned_compound(n: int32) {
     }
     let expanded = expand_c0_claim_source_by_label(source, &[], "unsigned_compound.ensures_0")
         .expect("compound unsigned arithmetic should expand to a source certificate");
+    // `solve() using` tries arithmetic last, so a closer before it may
+    // prove the goal; either way the expansion is an explicit proof.
     assert!(
-        expanded.contains("arithmetic_certificate signed_int32"),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("interval_from_affine_direct"),
+        expanded.contains("normalize() using")
+            || (expanded.contains("arithmetic_certificate signed_int32")
+                && expanded.contains("interval_from_affine_direct")),
         "{expanded}"
     );
 
@@ -3431,9 +3446,11 @@ theorem unsigned_compound(n: int32) {
         "explicit certificate recheck must not plan: {expanded}"
     );
 
-    let tampered = expanded.replacen("interval_from_affine_direct", "interval_from_affine", 1);
-    verify_c0_sources(&tampered, &[])
-        .expect_err("removing the direct compound-evidence rule must invalidate the proof");
+    if expanded.contains("interval_from_affine_direct") {
+        let tampered = expanded.replacen("interval_from_affine_direct", "interval_from_affine", 1);
+        verify_c0_sources(&tampered, &[])
+            .expect_err("removing the direct compound-evidence rule must invalidate the proof");
+    }
 }
 
 #[test]
@@ -3442,7 +3459,7 @@ fn arithmetic_producers_retain_only_structural_certificates() {
     let pure = r#"
 theorem pure_arithmetic_producer(n: int32) {
     requires n <= 10;
-    ensures n <= 10 by { arithmetic() using { n <= 10; } }
+    ensures n <= 10 by { solve() using { n <= 10; } }
 }
 "#;
     let verified = verify_click_theorems(pure).expect("pure arithmetic should verify");
@@ -3463,8 +3480,8 @@ theorem pure_arithmetic_producer(n: int32) {
             "mdtests/aligned_symbolic_displacement.md",
             "element_is_aligned",
             Some((
-                "    simp();\n}",
-                "    have aligned(p + i, 8) by { simp(); }\n    simp();\n}",
+                "    solve();\n}",
+                "    have aligned(p + i, 8) by { solve(); }\n    solve();\n}",
             )),
         ),
     ] {
@@ -3487,7 +3504,7 @@ theorem pure_arithmetic_producer(n: int32) {
         let expanded = expand_c0_claim_source(&click_source, &sources, claim, CProofClaim::Grouped)
             .unwrap_or_else(|error| panic!("{fixture_name}: {}", error.message()));
         assert!(
-            !expanded.contains("arithmetic()"),
+            !expanded.contains("solve() using"),
             "{fixture_name}: {expanded}"
         );
         verify_c0_sources(&expanded, &sources)
@@ -3533,7 +3550,7 @@ fn branch_interface_fixture_proofs_verify_expand_and_recheck() {
             .unwrap_or_else(|error| panic!("{name}: {}", error.message()));
         // The nested-branch fixture is already fully expanded. For the others,
         // expand their closing tactic and reparse/recheck the full proof.
-        if let Some(offset) = source.rfind("simp();") {
+        if let Some(offset) = source.rfind("solve();") {
             let position = expansion::position_at_offset(source, offset);
             let expanded =
                 expand_c0_tactic_source_at(source, &sources, position.line, position.column)
@@ -3564,7 +3581,7 @@ fn branch_interface_service_simp_expands_and_rechecks() {
     ];
     verify_c0_sources(source, &sources).unwrap();
     let start = source.find("int32 service_step").unwrap();
-    let offset = start + source[start..].find("simp();").unwrap();
+    let offset = start + source[start..].find("solve();").unwrap();
     let position = expansion::position_at_offset(source, offset);
     let expanded =
         expand_c0_tactic_source_at(source, &sources, position.line, position.column).unwrap();
@@ -3735,10 +3752,10 @@ fn return_population_count_is_not_an_assumed_invariant() {
     let c_source =
         "struct object { int32 refs; }; struct object* retain(struct object* obj) { return obj; }";
     for proof in [
-        "execute(); simp();",
-        "unfold(reference(obj)); execute(); simp();",
-        "unfold(reference(obj)); execute(); fold(reference(obj)); simp();",
-        "open(reference(obj)) { execute(); } simp();",
+        "execute(); solve();",
+        "unfold(reference(obj)); execute(); solve();",
+        "unfold(reference(obj)); execute(); fold(reference(obj)); solve();",
+        "open(reference(obj)) { execute(); } solve();",
     ] {
         let source = format!(
             r#"
@@ -3765,9 +3782,9 @@ struct object* retain(struct object* obj) {{
 
 #[test]
 fn signed_antisymmetry_simp_expands_to_checked_arithmetic() {
-    let source = "theorem bounded_equal(i: int32) { requires 0 <= i; requires i <= 0; ensures i == 0 by { simp(); } }";
+    let source = "theorem bounded_equal(i: int32) { requires 0 <= i; requires i <= 0; ensures i == 0 by { solve(); } }";
     verify_c0_sources(source, &[]).unwrap();
-    let position = expansion::position_at_offset(source, source.find("simp();").unwrap());
+    let position = expansion::position_at_offset(source, source.find("solve();").unwrap());
     let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column).unwrap();
     assert!(
         expanded.contains("equal_from_bounds 0, 1 => i == 0;"),
@@ -3784,8 +3801,8 @@ fn program_entry_signed_resource_shadowing_expands() {
         "main.c",
         "int p = 7; int read_cell(int *p) { return *p; } int main(void) { return read_cell(&p); }",
     )];
-    let helper = "by { unfold(cell(p)); execute(); fold(cell(p)); simp(); }";
-    let main = "by { fold(cell(&p)); execute(); simp(); }";
+    let helper = "by { unfold(cell(p)); execute(); fold(cell(p)); solve(); }";
+    let main = "by { fold(cell(&p)); execute(); solve(); }";
     let source = format!(
         r#"resource cell(p: int32*) {{ owns p[0..1]; }}
 verifying "main.c";
@@ -3811,8 +3828,8 @@ fn program_entry_resource_bindings_expand_and_reverify() {
         let c_source = format!(
             "{c_type} state[2] = {{7,9}}; {c_type} read_pair({c_type} *p) {{ return p[0] + p[1]; }} int main(void) {{ return read_pair(state); }}"
         );
-        let helper_proof = "by { unfold(pair(p)); execute(); fold(pair(p)); simp(); }";
-        let main_proof = "by { fold(pair(state)); execute(); simp(); }";
+        let helper_proof = "by { unfold(pair(p)); execute(); fold(pair(p)); solve(); }";
+        let main_proof = "by { fold(pair(state)); execute(); solve(); }";
         let click_source = format!(
             r#"
 resource pair(p: {click_type}*) {{ owns p[0..2]; }}
@@ -3854,11 +3871,11 @@ verifying "main.c";
 unsigned long read_pair(unsigned long *p) {
     requires viewable(p[0..2]); owns pair(p);
     ensures to_integer(result) == to_integer(old(p[0]) + old(p[1]));
-} by { unfold(pair(p)); execute(); fold(pair(p)); simp(); }"#;
+} by { unfold(pair(p)); execute(); fold(pair(p)); solve(); }"#;
     let sources = [("main.c", c_source)];
     let verified = verify_c0_sources(click_source, &sources).unwrap();
     let expanded = click_source.replacen(
-        "by { unfold(pair(p)); execute(); fold(pair(p)); simp(); }",
+        "by { unfold(pair(p)); execute(); fold(pair(p)); solve(); }",
         &verified[0].expanded_proof_source().unwrap(),
         1,
     );
@@ -3878,12 +3895,12 @@ fn program_entry_typed_dereference_snapshots_expand_and_reverify() {
     ensures to_integer(*p) == to_integer(old(*p) + 1{suffix});
     ensures *p == p[0];
     ensures old(*p) == old(p[0]);
-}} by {{ execute(); simp(); }}"#
+}} by {{ execute(); solve(); }}"#
         );
         let sources = [("main.c", c_source.as_str())];
         let verified = verify_c0_sources(&click_source, &sources).unwrap();
         let rewritten = click_source.replacen(
-            "by { execute(); simp(); }",
+            "by { execute(); solve(); }",
             &verified[0].expanded_proof_source().unwrap(),
             1,
         );
@@ -3898,11 +3915,11 @@ fn program_entry_typed_dereference_snapshots_expand_and_reverify() {
 fn program_entry_expansion_reverifies() {
     let c_source = "int state = 7; int main(void) { state += 1; return state; }";
     let click_source =
-        "verifying \"main.c\"; int main() { ensures result == 8; } by { execute(); simp(); }";
+        "verifying \"main.c\"; int main() { ensures result == 8; } by { execute(); solve(); }";
     let sources = [("main.c", c_source)];
     let verified = verify_c0_sources(click_source, &sources).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
-    let rewritten = click_source.replacen("by { execute(); simp(); }", &expanded, 1);
+    let rewritten = click_source.replacen("by { execute(); solve(); }", &expanded, 1);
     verify_c0_sources(&rewritten, &sources).unwrap();
 }
 
@@ -3915,7 +3932,7 @@ fn program_entry_collects_data_only_private_and_uncalled_local_storage() {
             "extern int zero; int unused(void) { static int local = 5; return local; } int main(void) { return zero; }",
         ),
     ];
-    let click_source = "verifying \"data.c\"; verifying \"main.c\"; int main() { ensures result == 0; } by { execute(); simp(); }";
+    let click_source = "verifying \"data.c\"; verifying \"main.c\"; int main() { ensures result == 0; } by { execute(); solve(); }";
     let file = crate::surface::verification::parse_c0_click_file(click_source, &sources).unwrap();
     let parsed =
         crate::surface::verification::parse_verified_sources(&file, &sources.into_iter().collect())
@@ -3934,11 +3951,11 @@ const char *version() {
     ensures viewable(result[0..5]);
     ensures result[0] == '0';
     ensures result[4] == '\0';
-} by { execute(); simp(); }"#;
+} by { execute(); solve(); }"#;
     let sources = [("version.c", c_source)];
     let verified = verify_c0_sources(click_source, &sources).unwrap();
     let proof = verified[0].expanded_proof_source().unwrap();
-    let expanded = click_source.replacen("by { execute(); simp(); }", &proof, 1);
+    let expanded = click_source.replacen("by { execute(); solve(); }", &proof, 1);
     let checked = verify_c0_sources(&expanded, &sources).unwrap();
     assert!(
         checked
@@ -3966,12 +3983,12 @@ int32 identity(int32 x) {
     ensures result == x;
 } by {
     execute(); // unmatched ' } "
-    simp();
+    solve();
 }
 // trailing comment without newline: '"#;
     let sources = [("identity.c", c_source)];
     verify_c0_sources(click_source, &sources).expect("commented proof should verify");
-    let offset = click_source.find("simp();").unwrap();
+    let offset = click_source.find("solve();").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
@@ -3986,7 +4003,7 @@ fn contract_refinement_expands_ordinary_helper_proofs() {
     let source = r#"
         theorem nonnegative_equal(x: int32, y: int32) {
             requires x >= 0;
-            ensures y == x implies y >= 0 by { simp(); }
+            ensures y == x implies y >= 0 by { solve(); }
         }
         contract int32 Source(int32 x) {
             requires x >= 0;
@@ -4005,19 +4022,19 @@ fn contract_refinement_expands_ordinary_helper_proofs() {
                 have result == x implies result >= 0 by {
                     apply(nonnegative_equal(x, result));
                 }
-                simp();
+                solve();
             }
         }
     "#;
     verify_c0_sources(source, &[]).expect("ordinary refinement proof should verify");
-    let position = expansion::position_at_offset(source, source.rfind("simp();").unwrap());
+    let position = expansion::position_at_offset(source, source.rfind("solve();").unwrap());
     let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
         .expect("refinement simp should emit its ordinary proof certificate");
     assert!(
         expanded.contains("apply(nonnegative_equal(x, result)) using"),
         "{expanded}"
     );
-    assert_eq!(expanded.matches("simp();").count(), 1, "{expanded}");
+    assert_eq!(expanded.matches("solve();").count(), 1, "{expanded}");
     verify_c0_sources(&expanded, &[]).expect("expanded refinement proof should verify");
 }
 
@@ -4031,14 +4048,14 @@ fn unsigned_narrowing_snapshot_expansion_reverifies() {
             owns p->value;
             ensures result == old((uint32)p->value);
             ensures to_integer(p->value) == to_integer(old(p->value) + 1u64);
-        } by { execute(); simp(); }
+        } by { execute(); solve(); }
     "#;
     let verified =
         verify_c0_sources(click_source, &[("take.c", c_source)]).expect("narrowing proof verifies");
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("narrowing proof has a printable certificate");
-    let rewritten = click_source.replacen("by { execute(); simp(); }", &expanded, 1);
+    let rewritten = click_source.replacen("by { execute(); solve(); }", &expanded, 1);
     verify_c0_sources(&rewritten, &[("take.c", c_source)])
         .unwrap_or_else(|error| panic!("{error:?}\n{rewritten}"));
 }
@@ -4057,11 +4074,11 @@ fn selected_post_execution_simp_waits_for_its_surface_closer() {
                 ensures result == x;
             } by {
                 execute();
-                simp();
+                solve();
             }
         "#;
     let simp_offset = click_source
-        .find("simp();")
+        .find("solve();")
         .expect("proof should contain the selected simp");
     let line = click_source[..simp_offset]
         .bytes()
@@ -4078,7 +4095,7 @@ fn selected_post_execution_simp_waits_for_its_surface_closer() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("selected post-execution simp should expand after finalization");
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(
         expanded.contains("assumption();") || expanded.contains("normalize();"),
         "{expanded}"
@@ -4125,15 +4142,15 @@ fn selected_post_execution_simp_keeps_the_surviving_execution_branch() {
             } by {
                 execute();
                 if result == tail {
-                    simp();
+                    solve();
                 } else {
                     fold(allocated_list(result));
-                    simp();
+                    solve();
                 }
             }
         "#;
     let selected_simp = click_source
-        .rfind("simp();")
+        .rfind("solve();")
         .expect("success branch should contain a simp");
     let position = expansion::position_at_offset(click_source, selected_simp);
     let expanded = expand_c0_tactic_source_at(
@@ -4177,7 +4194,7 @@ fn returning_malloc_result_expands_to_checkable_statement_steps() {
             } by {
                 execute();
                 fold(maybe_allocated_int32s(result, count));
-                simp();
+                solve();
             }
         "#;
     let execute = click_source
@@ -4251,7 +4268,7 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
                 unfold(allocated_cell(owner));
                 execute();
                 fold(allocated_cell(owner));
-                simp();
+                solve();
             }
 
             int32 replace_after_scoped_open(struct cell_owner* owner) {
@@ -4262,7 +4279,7 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
                 open(allocated_cell(owner)) {
                 }
                 execute();
-                simp();
+                solve();
             }
         "#;
     let sources = [
@@ -4309,8 +4326,8 @@ fn selected_post_execution_smart_have_uses_its_path_certificate() {
                 ensures result == x;
             } by {
                 execute();
-                have result == x by simp();
-                simp();
+                have result == x by solve();
+                solve();
             }
         "#;
     let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
@@ -4335,7 +4352,7 @@ fn selected_post_execution_smart_have_uses_its_path_certificate() {
         expand_c0_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("selected post-execution smart have should expand after finalization");
     assert!(
-        !expanded.contains("have result == x by simp()"),
+        !expanded.contains("have result == x by solve()"),
         "{expanded}"
     );
     assert!(expanded.contains("have result == x by {"), "{expanded}");
@@ -4365,9 +4382,9 @@ fn post_execution_smart_have_applies_a_theorem_to_result_through_proof() {
                 execute();
                 have result == result by {
                     apply(int32_reflexive(result));
-                    simp();
+                    solve();
                 }
-                simp();
+                solve();
             }
         "#;
     let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
@@ -4388,7 +4405,7 @@ fn post_execution_smart_have_applies_a_theorem_to_result_through_proof() {
         .find("have result == result")
         .expect("expanded proof should retain the selected have");
     let expanded_have_end = expanded[expanded_have_start..]
-        .find("\n                simp();")
+        .find("\n                solve();")
         .map(|offset| expanded_have_start + offset)
         .expect("expanded proof should retain its outer closer");
     let expanded_have = &expanded[expanded_have_start..expanded_have_end];
@@ -4396,7 +4413,7 @@ fn post_execution_smart_have_applies_a_theorem_to_result_through_proof() {
         expanded_have.contains("apply(int32_reflexive(result)) using"),
         "{expanded_have}"
     );
-    assert!(!expanded_have.contains("simp();"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the expanded result-aware theorem application should independently verify");
 }
@@ -4420,8 +4437,8 @@ fn selected_post_execution_capture_ignores_nested_certificate_indices() {
                 execute();
                 have value == value by { normalize(); }
                 have result == value by { normalize(); }
-                have data[0] == value by simp();
-                simp();
+                have data[0] == value by solve();
+                solve();
             }
         "#;
     let have_offset = click_source
@@ -4607,8 +4624,8 @@ fn grouped_post_execution_simp_publishes_checked_obligations_through_proof() {
             ensures second: result == result;
         } by {
             execute();
-            simp();
-            simp();
+            solve();
+            solve();
         }
     "#;
 
@@ -4616,7 +4633,7 @@ fn grouped_post_execution_simp_publishes_checked_obligations_through_proof() {
     verified.expect("grouped simp should retain its checked obligation scopes");
 
     let simp_offset = click_source
-        .find("simp();")
+        .find("solve();")
         .expect("proof should contain the selected grouped simp");
     let position = expansion::position_at_offset(click_source, simp_offset);
     let expanded = expand_c0_tactic_source_at(
@@ -4648,7 +4665,7 @@ fn grouped_post_execution_arithmetic_rejects_unavailable_irrelevant_extra() {
             ensures result <= 101;
         } by {
             execute();
-            arithmetic() using { 0 <= n; n <= 100; n <= 99; }
+            solve() using { 0 <= n; n <= 100; n <= 99; }
         }
     "#;
     let error = verify_c0_sources(click_source, &[("bump.c", c_source)])
@@ -4656,7 +4673,7 @@ fn grouped_post_execution_arithmetic_rejects_unavailable_irrelevant_extra() {
     assert!(
         error
             .message()
-            .contains("post-execution `arithmetic using` premise 2 is not exactly available"),
+            .contains("could not be proved from only the listed premises"),
         "{error:?}"
     );
 }
@@ -4676,7 +4693,7 @@ fn grouped_post_execution_simp_applies_planned_steps_once_through_proof() {
             ensures successor: x + 1 == 1;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
 
@@ -4684,7 +4701,7 @@ fn grouped_post_execution_simp_applies_planned_steps_once_through_proof() {
     verified.expect("grouped simp should apply its planned rewrite through Proof");
 
     let simp_offset = click_source
-        .find("simp();")
+        .find("solve();")
         .expect("proof should contain the selected grouped simp");
     let position = expansion::position_at_offset(click_source, simp_offset);
     let expanded = expand_c0_tactic_source_at(
@@ -4714,7 +4731,7 @@ fn post_execution_simp_builds_disjunction_cases_on_proof() {
             ensures 0 <= result;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
 
@@ -4722,7 +4739,7 @@ fn post_execution_simp_builds_disjunction_cases_on_proof() {
     verified.expect("the two-value result should prove nonnegative by cases");
 
     let simp_offset = click_source
-        .find("simp();")
+        .find("solve();")
         .expect("proof should contain the selected grouped simp");
     let position = expansion::position_at_offset(click_source, simp_offset);
     let expanded = expand_c0_tactic_source_at(
@@ -4732,7 +4749,7 @@ fn post_execution_simp_builds_disjunction_cases_on_proof() {
         position.column,
     )
     .expect("the checked case split should expand");
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(
         expanded.contains("at(function.entry, x == 0) => {")
             && expanded.contains("at(function.entry, x == 1) => {"),
@@ -4860,7 +4877,7 @@ fn post_execution_simp_builds_recursive_conjunction_on_proof() {
             ensures 0 <= x and 0 <= y;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
 
@@ -4868,7 +4885,7 @@ fn post_execution_simp_builds_recursive_conjunction_on_proof() {
     verified.expect("the conjunction should retain both recursively checked child proofs");
 
     let simp_offset = click_source
-        .find("simp();")
+        .find("solve();")
         .expect("proof should contain the selected grouped simp");
     let position = expansion::position_at_offset(click_source, simp_offset);
     let expanded = expand_c0_tactic_source_at(
@@ -4878,7 +4895,7 @@ fn post_execution_simp_builds_recursive_conjunction_on_proof() {
         position.column,
     )
     .expect("the retained conjunction should expand");
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert_eq!(
         expanded.matches("arithmetic_certificate").count(),
         2,
@@ -4906,7 +4923,7 @@ fn post_execution_simp_uses_the_introduced_antecedent_for_contradiction() {
             ensures x == 0 implies result == 1;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let sources = [("branch.c", c_source)];
@@ -4939,7 +4956,7 @@ fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
             ensures 0 <= x and 0 <= y;
         } by {
             execute();
-            have 0 <= x and 0 <= y by simp();
+            have 0 <= x and 0 <= y by solve();
             assumption();
         }
     "#;
@@ -4958,7 +4975,7 @@ fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
         position.column,
     )
     .expect("the retained smart have should expand");
-    assert!(!expanded.contains("by simp()"), "{expanded}");
+    assert!(!expanded.contains("by solve()"), "{expanded}");
     assert_eq!(
         expanded.matches("arithmetic_certificate").count(),
         2,
@@ -4983,7 +5000,7 @@ fn post_execution_existential_simp_retains_its_checked_scope() {
             ensures exists (j: int32) { j == result } by {
                 execute();
                 witness { j: result };
-                simp();
+                solve();
             }
         }
     "#;
@@ -4995,7 +5012,7 @@ fn post_execution_existential_simp_retains_its_checked_scope() {
     assert_eq!(flat_units, 1, "the function proof should retain Proof");
 
     let simp_offset = click_source
-        .find("simp();")
+        .find("solve();")
         .expect("proof should contain the selected existential simp");
     let position = expansion::position_at_offset(click_source, simp_offset);
     let expanded = expand_c0_tactic_source_at(
@@ -5023,7 +5040,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
                 execute();
                 obtain (k: int32) { k == x };
                 witness { j: k };
-                simp();
+                solve();
             }
         }
     "#;
@@ -5034,7 +5051,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
     verified.expect("choose and witness should advance one retained outcome Proof");
     assert_eq!(flat_units, 1, "the function proof should retain Proof");
 
-    let simp_offset = click_source.rfind("simp();").unwrap();
+    let simp_offset = click_source.rfind("solve();").unwrap();
     let position = expansion::position_at_offset(click_source, simp_offset);
     let expanded = expand_c0_tactic_source_at(
         click_source,
@@ -5082,7 +5099,7 @@ fn bounded_range_witness_closes_on_the_checked_outcome_scope() {
             ensures found_zero: (0..n).any(|k| { k == result }) by {
                 execute();
                 witness { k: 0 };
-                simp();
+                solve();
             }
         }
     "#;
@@ -5114,7 +5131,7 @@ fn selected_post_execution_smart_apply_uses_exact_path_premises() {
             theorem int32_equality_symmetric(first: int32, second: int32) {
                 requires first == second;
                 ensures second == first by {
-                    simp();
+                    solve();
                 }
             }
 
@@ -5125,7 +5142,7 @@ fn selected_post_execution_smart_apply_uses_exact_path_premises() {
             } by {
                 execute();
                 apply(int32_equality_symmetric(result, x));
-                simp();
+                solve();
             }
         "#;
     let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
@@ -5177,7 +5194,7 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
                 requires first == second;
                 requires second == third;
                 ensures first == third by {
-                    simp();
+                    solve();
                 }
             }
 
@@ -5191,7 +5208,7 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
 
             int32 peek(int32* data) {
                 views data[0..1];
-                ensures result == data[0] by auto();
+                ensures result == data[0];
             }
 
             int32 pipeline(int32* data, int32 expected) {
@@ -5199,10 +5216,10 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
                 ensures result == expected;
             } by {
                 observe(equal_cell(data, expected));
-                execute_until(region(2));
+                step_until(region(2));
                 apply(int32_equality_transitive(observed, data[0], expected));
                 execute();
-                simp();
+                solve();
             }
         "#;
 
@@ -5244,14 +5261,14 @@ fn smart_apply_preserves_statement_snapshots_in_explicit_premises() {
             } by {
                 unfold(one_cell(p));
                 step();
-                have at(region(0).entry, p[0]) == 1 by simp();
-                have at(region(0).exit, p[0]) == 0 by simp();
+                have at(region(0).entry, p[0]) == 1 by solve();
+                have at(region(0).exit, p[0]) == 0 by solve();
                 apply(changed_one_to_zero(
                     at(region(0).entry, p[0]),
                     at(region(0).exit, p[0])
                 ));
                 execute();
-                simp();
+                solve();
             }
         "#;
     let apply_offset = click_source
@@ -5296,14 +5313,14 @@ fn source_expansion_preserves_proof_marks() {
             ensures to_integer(result) == to_integer(at(before_increment, x) + 1) by {
                 mark before_increment;
                 execute();
-                simp();
+                solve();
             }
         }
     "#;
     verify_c0_sources(click_source, &[("increment.c", c_source)])
         .expect("the marked proof should verify before expansion");
 
-    let selected = click_source.rfind("simp();").unwrap();
+    let selected = click_source.rfind("solve();").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
     let expanded = expand_c0_tactic_source_at(
         click_source,
@@ -5313,7 +5330,7 @@ fn source_expansion_preserves_proof_marks() {
     )
     .expect("the smart tactic after a mark should expand");
     assert!(expanded.contains("mark before_increment;"));
-    assert!(!expanded.contains("simp();"));
+    assert!(!expanded.contains("solve();"));
     verify_c0_sources(&expanded, &[("increment.c", c_source)])
         .expect("the expansion should check through the named snapshot");
 }
@@ -5346,7 +5363,7 @@ fn marked_constant_store_transport_retains_load_identity() {
             ensures owner->other == 0;
         } by {
             execute();
-            simp();
+            solve();
         }
 
         int32 pipeline(struct cell* owner) {
@@ -5360,7 +5377,7 @@ fn marked_constant_store_transport_retains_load_identity() {
                 at(after_write, owner->value == 11),
                 owner->value == 11
             );
-            simp();
+            solve();
         }
     "#;
     let sources = [("touch_other.c", touch_c), ("pipeline.c", pipeline_c)];
@@ -5468,7 +5485,7 @@ fn post_execution_store_transport_expands_from_the_recorded_store_equation() {
                 at(region(0).exit, p[0]) == 7,
                 p[0] == 7
             );
-            simp();
+            solve();
         }
     "#;
     let sources = [("store_both.c", c_source)];
@@ -5516,7 +5533,7 @@ fn statement_snapshots_support_complete_loadability_propositions() {
                     at(region(0).entry, viewable(p[0..2]));
                 }
                 execute();
-                simp();
+                solve();
             }
         "#;
 
@@ -5551,7 +5568,7 @@ fn statement_snapshots_preserve_declared_resource_argument_types() {
                     assumption();
                 }
                 fold(owner_cell(owner));
-                simp();
+                solve();
             }
         "#;
 
@@ -5573,13 +5590,13 @@ fn source_expander_locates_frontier_local_have_proofs() {
             int32 preserve_value(int32 x) {
                 ensures result == x;
             } by {
-                have x == x by simp();
+                have x == x by solve();
                 execute();
-                simp();
+                solve();
             }
         "#;
     let have_offset = click_source
-        .find("have x == x by simp()")
+        .find("have x == x by solve()")
         .expect("frontier-local proof should exist");
     let line = click_source[..have_offset]
         .bytes()
@@ -5626,7 +5643,7 @@ fn smart_apply_uses_ambient_loadability_only_for_argument_lowering() {
                 requires first == second;
                 requires second == third;
                 ensures first == third by {
-                    simp();
+                    solve();
                 }
             }
 
@@ -5649,7 +5666,7 @@ fn smart_apply_uses_ambient_loadability_only_for_argument_lowering() {
                     data
                 ));
                 execute();
-                simp();
+                solve();
             }
         "#;
     let apply_offset = click_source
@@ -5708,7 +5725,7 @@ fn selected_branched_post_execution_apply_shares_identical_path_certificates() {
             } by {
                 execute();
                 apply(retain_one_or_two(result));
-                simp();
+                solve();
             }
         "#;
     let apply_offset = click_source
@@ -5767,8 +5784,8 @@ fn selected_branched_post_execution_have_shares_identical_path_certificates() {
                 ensures result == 1 or result == 2;
             } by {
                 execute();
-                have result == 1 or result == 2 by simp();
-                simp();
+                have result == 1 or result == 2 by solve();
+                solve();
             }
         "#;
     let have_offset = click_source
@@ -5791,7 +5808,7 @@ fn selected_branched_post_execution_have_shares_identical_path_certificates() {
             .expect("branched post-execution have should produce path certificates");
     verify_c0_sources(&expanded, &[("choose.c", c_source)])
         .expect("expanded have must verify before checking its formatting");
-    assert!(!expanded.contains("have result == 1 or result == 2 by simp()"));
+    assert!(!expanded.contains("have result == 1 or result == 2 by solve()"));
     assert!(
         !expanded.contains("if at(region(0).entry, flag) != at(region(0).entry, 0) {"),
         "{expanded}"
@@ -5851,12 +5868,12 @@ fn selected_pure_case_split_simp_expands_by_removal() {
                 ensures sorted: sorted_range(p, 0, 3) by {
                     execute();
                     unfold(sorted_range);
-                    simp();
+                    solve();
                 }
             }
         "#;
     let simp_offset = click_source
-        .find("simp();")
+        .find("solve();")
         .expect("proof should contain the selected simp");
     let line = click_source[..simp_offset]
         .bytes()
@@ -5872,7 +5889,7 @@ fn selected_pure_case_split_simp_expands_by_removal() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[("sort3.c", c_source)], line, column)
         .expect("a pure case-split simp should expand");
-    assert!(!expanded.contains("simp()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     assert!(!expanded.contains("if p[1] < p[0] {"), "{expanded}");
     verify_c0_sources(&expanded, &[("sort3.c", c_source)])
         .expect("the removed closer's paths should close via the ordinary path-end check");
@@ -5903,16 +5920,16 @@ fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
                 requires x <= 0;
                 ensures result == 0;
             } by {
-                branch { step(); simp(); } else {}
+                branch { step(); solve(); } else {}
                 step();
-                simp();
+                solve();
             }
         "#;
     let sources = [("flag.c", c_source)];
     verify_c0_sources(click_source, &sources).expect("the infeasible-arm proof should verify");
 
     let selected = click_source
-        .find("step(); simp();")
+        .find("step(); solve();")
         .expect("proof should contain the arm's selected simp")
         + "step(); ".len();
     let line = click_source[..selected]
@@ -5929,7 +5946,7 @@ fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &sources, line, column)
         .expect("a smart tactic on a dropped C path should expand");
-    assert!(!expanded.contains("step(); simp();"), "{expanded}");
+    assert!(!expanded.contains("step(); solve();"), "{expanded}");
     assert!(expanded.contains("branch { step();"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
         .expect("removing the dropped arm's closer should still verify");
@@ -5948,9 +5965,9 @@ fn source_expander_lowers_smart_simp_inside_have() {
             int32 identity(int32 x) {
                 ensures result == x;
             } by {
-                have x == x by simp();
+                have x == x by solve();
                 execute();
-                simp();
+                solve();
             }
         "#;
     let have_offset = click_source
@@ -5978,13 +5995,13 @@ fn source_expander_lowers_smart_simp_inside_have() {
             .find("execute()")
             .expect("expanded proof should retain its suffix")];
     assert!(expanded_have.contains("normalize();"), "{expanded_have}");
-    assert!(!expanded_have.contains("simp();"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the expanded smart have should check");
 }
 
 /// The `simp` written in a smart `have` body selects the `have` site, as
-/// the `have` keyword does, for a bare `by simp()` and for a block body.
+/// the `have` keyword does, for a bare `by solve()` and for a block body.
 #[test]
 fn source_expander_selects_a_smart_have_by_the_simp_in_its_body() {
     let c_source = "int32 identity(int32 x) { return x; }";
@@ -5992,12 +6009,12 @@ fn source_expander_selects_a_smart_have_by_the_simp_in_its_body() {
         int32 identity(int32 x) {\n\
         \x20   ensures result == x;\n\
         } by {\n\
-        \x20   have x == x by simp();\n\
+        \x20   have x == x by solve();\n\
         \x20   have x <= x by {\n\
-        \x20       simp();\n\
+        \x20       solve();\n\
         \x20   }\n\
         \x20   execute();\n\
-        \x20   simp();\n\
+        \x20   solve();\n\
         }\n";
     let sources = [("identity.c", c_source)];
     for (have, nested) in [((5, 5), (5, 20)), ((6, 5), (7, 9))] {
@@ -6022,11 +6039,11 @@ fn source_expander_rewrites_one_smart_tactic_inside_a_mixed_have_body() {
         \x20   ensures result == x;\n\
         } by {\n\
         \x20   have x <= x by {\n\
-        \x20       have x == x by { simp(); }\n\
-        \x20       simp();\n\
+        \x20       have x == x by { solve(); }\n\
+        \x20       solve();\n\
         \x20   }\n\
         \x20   execute();\n\
-        \x20   simp();\n\
+        \x20   solve();\n\
         }\n";
     let sources = [("identity.c", c_source)];
     verify_c0_sources(click_source, &sources).expect("the fixture should verify");
@@ -6038,7 +6055,7 @@ fn source_expander_rewrites_one_smart_tactic_inside_a_mixed_have_body() {
     assert_eq!(rewritten[..6], lines[..6], "{body_simp}");
     assert_eq!(rewritten[6], "        normalize();", "{body_simp}");
     assert!(
-        body_simp.ends_with("    }\n    execute();\n    simp();\n}\n"),
+        body_simp.ends_with("    }\n    execute();\n    solve();\n}\n"),
         "{body_simp}"
     );
     verify_c0_sources(&body_simp, &sources).expect("the rewritten body simp should check");
@@ -6056,7 +6073,7 @@ fn source_expander_rewrites_one_smart_tactic_inside_a_mixed_have_body() {
     }
     assert!(
         inner_have.contains(
-            "    have x <= x by {\n        have x == x by {\n            normalize();\n        }\n        simp();\n    }\n"
+            "    have x <= x by {\n        have x == x by {\n            normalize();\n        }\n        solve();\n    }\n"
         ),
         "{inner_have}"
     );
@@ -6119,13 +6136,13 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_post_execution_if_arm() {
         } by {\n\
         \x20   execute();\n\
         \x20   if x > 0 {\n\
-        \x20       simp();\n\
+        \x20       solve();\n\
         \x20   } else {\n\
         \x20       have x <= x by {\n\
-        \x20           have x == x by simp();\n\
-        \x20           simp();\n\
+        \x20           have x == x by solve();\n\
+        \x20           solve();\n\
         \x20       }\n\
-        \x20       simp();\n\
+        \x20       solve();\n\
         \x20   }\n\
         }\n";
     assert_mixed_have_body_simp_expands(click_source, &[("identity.c", c_source)], 11, 13);
@@ -6152,15 +6169,15 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_branch_arm() {
         \x20   step();\n\
         \x20   branch {\n\
         \x20       have c != 0 by {\n\
-        \x20           have c == c by simp();\n\
-        \x20           simp();\n\
+        \x20           have c == c by solve();\n\
+        \x20           solve();\n\
         \x20       }\n\
         \x20       step();\n\
-        \x20       simp();\n\
+        \x20       solve();\n\
         \x20   } else {}\n\
         \x20   step();\n\
         \x20   step();\n\
-        \x20   simp();\n\
+        \x20   solve();\n\
         }\n";
     assert_mixed_have_body_simp_expands(click_source, &[("early_exit.c", c_source)], 10, 13);
 }
@@ -6188,18 +6205,18 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_loop_preserve_phase() {
         \x20       decreases n - i;\n\
         \x20       invariant i >= 0;\n\
         \x20       invariant i <= n;\n\
-        \x20       initialize by simp();\n\
+        \x20       initialize by solve();\n\
         \x20       preserve by {\n\
         \x20           have i <= n by {\n\
-        \x20               have i == i by simp();\n\
-        \x20               simp();\n\
+        \x20               have i == i by solve();\n\
+        \x20               solve();\n\
         \x20           }\n\
         \x20           step();\n\
         \x20           close_invariants();\n\
         \x20       }\n\
         \x20   }\n\
         \x20   step();\n\
-        \x20   simp();\n\
+        \x20   solve();\n\
         }\n";
     assert_mixed_have_body_simp_expands(click_source, &[("count_up.c", c_source)], 16, 17);
 }
@@ -6236,7 +6253,7 @@ fn count_up_with_initialize(phase: &str) -> String {
         \x20       }}\n\
         \x20   }}\n\
         \x20   step();\n\
-        \x20   simp();\n\
+        \x20   solve();\n\
         }}\n"
     )
 }
@@ -6248,10 +6265,10 @@ fn count_up_with_initialize(phase: &str) -> String {
 fn source_expander_rewrites_a_have_body_tactic_in_a_loop_initialize_helper() {
     let click_source = count_up_with_initialize(
         "\x20           have 0 <= n by {\n\
-        \x20               have n == n by simp();\n\
-        \x20               simp();\n\
+        \x20               have n == n by solve();\n\
+        \x20               solve();\n\
         \x20           }\n\
-        \x20           simp();\n",
+        \x20           solve();\n",
     );
     assert_mixed_have_body_simp_expands(&click_source, &[("count_up.c", COUNT_UP_C)], 15, 17);
 }
@@ -6261,10 +6278,10 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_loop_initialize_helper() {
 #[test]
 fn source_expander_rewrites_a_have_body_tactic_in_an_initialize_invariant_body() {
     let click_source = count_up_with_initialize(
-        "\x20           have i >= 0 by simp();\n\
+        "\x20           have i >= 0 by solve();\n\
         \x20           have i <= n by {\n\
-        \x20               have n == n by simp();\n\
-        \x20               simp();\n\
+        \x20               have n == n by solve();\n\
+        \x20               solve();\n\
         \x20           }\n",
     );
     assert_mixed_have_body_simp_expands(&click_source, &[("count_up.c", COUNT_UP_C)], 16, 17);
@@ -6282,17 +6299,17 @@ fn source_expander_rewrites_a_tactic_in_an_arm_inside_a_have_body() {
         \x20   ensures result == x;\n\
         } by {\n\
         \x20   have x <= x by {\n\
-        \x20       have x == x by simp();\n\
+        \x20       have x == x by solve();\n\
         \x20       if x > 0 {\n\
-        \x20           have x > 0 by simp();\n\
-        \x20           simp();\n\
+        \x20           have x > 0 by solve();\n\
+        \x20           solve();\n\
         \x20       } else {\n\
-        \x20           have x == x by simp();\n\
-        \x20           simp();\n\
+        \x20           have x == x by solve();\n\
+        \x20           solve();\n\
         \x20       }\n\
         \x20   }\n\
         \x20   execute();\n\
-        \x20   simp();\n\
+        \x20   solve();\n\
         }\n";
     for (line, column) in [(9, 13), (12, 13)] {
         assert_mixed_have_body_simp_expands(if_source, &sources, line, column);
@@ -6311,16 +6328,16 @@ fn source_expander_rewrites_a_tactic_in_an_arm_inside_a_have_body() {
         \x20       }\n\
         \x20       cases {\n\
         \x20           x > 0 => {\n\
-        \x20               have x > 0 by simp();\n\
-        \x20               simp();\n\
+        \x20               have x > 0 by solve();\n\
+        \x20               solve();\n\
         \x20           }\n\
         \x20           not (x > 0) => {\n\
-        \x20               simp();\n\
+        \x20               solve();\n\
         \x20           }\n\
         \x20       }\n\
         \x20   }\n\
         \x20   execute();\n\
-        \x20   simp();\n\
+        \x20   solve();\n\
         }\n";
     for (line, column) in [(16, 17), (19, 17)] {
         assert_mixed_have_body_simp_expands(cases_source, &sources, line, column);
@@ -6340,15 +6357,15 @@ fn source_expander_rewrites_the_continuation_after_an_if_in_a_have_body() {
         } by {\n\
         \x20   have x <= x by {\n\
         \x20       if x > 0 {\n\
-        \x20           have x == x by simp();\n\
-        \x20           have x > 0 by simp();\n\
+        \x20           have x == x by solve();\n\
+        \x20           have x > 0 by solve();\n\
         \x20       } else {\n\
-        \x20           have x == x by simp();\n\
+        \x20           have x == x by solve();\n\
         \x20       }\n\
-        \x20       simp();\n\
+        \x20       solve();\n\
         \x20   }\n\
         \x20   execute();\n\
-        \x20   simp();\n\
+        \x20   solve();\n\
         }\n";
     let expanded =
         assert_mixed_have_body_simp_expands(click_source, &[("identity.c", c_source)], 12, 9);
@@ -6370,16 +6387,16 @@ fn smart_tactic_selection_by_line_is_unique_or_lists_candidates() {
         \x20   ensures result == x;\n\
         } by {\n\
         \x20   have x <= x by {\n\
-        \x20       have x == x by { simp(); }\n\
-        \x20       simp();\n\
+        \x20       have x == x by { solve(); }\n\
+        \x20       solve();\n\
         \x20   }\n\
-        \x20   have x >= x by { have x == x by simp(); simp(); }\n\
+        \x20   have x >= x by { have x == x by solve(); solve(); }\n\
         \x20   execute();\n\
-        \x20   simp();\n\
+        \x20   solve();\n\
         }\n";
     let sources = [("identity.c", c_source)];
     let select = |line, column| c0_select_smart_tactic(click_source, &sources, line, column);
-    for (line, column, name) in [(6, 9, "have"), (7, 9, "simp"), (11, 5, "simp")] {
+    for (line, column, name) in [(6, 9, "have"), (7, 9, "solve"), (11, 5, "solve")] {
         let selected = select(line, None).expect("the line starts one smart tactic");
         assert_eq!(
             (selected.position.line, selected.position.column),
@@ -6400,10 +6417,10 @@ fn smart_tactic_selection_by_line_is_unique_or_lists_candidates() {
             .iter()
             .map(|candidate| (candidate.position.line, candidate.position.column))
             .collect::<Vec<_>>(),
-        [(9, 22), (9, 45)]
+        [(9, 22), (9, 46)]
     );
-    let selected = select(9, Some(45)).expect("a column disambiguates the line");
-    assert_eq!((selected.position.line, selected.position.column), (9, 45));
+    let selected = select(9, Some(46)).expect("a column disambiguates the line");
+    assert_eq!((selected.position.line, selected.position.column), (9, 46));
     let none = select(5, None).expect_err("line 5 starts only a non-smart have");
     assert!(none.reason.contains("no smart tactic starts on this line"));
 }
@@ -6414,14 +6431,14 @@ fn pure_structural_simp_builds_recursive_conjunction_on_proof() {
         theorem nonnegative_pair_direct(x: int32, y: int32) {
             requires 0 < x;
             requires 0 < y;
-            ensures 0 <= x and 0 <= y by simp();
+            ensures 0 <= x and 0 <= y by solve();
         }
 
         theorem nonnegative_pair_script(x: int32, y: int32) {
             requires 0 < x;
             requires 0 < y;
             ensures 0 <= x and 0 <= y by {
-                simp();
+                solve();
             }
         }
 
@@ -6430,9 +6447,9 @@ fn pure_structural_simp_builds_recursive_conjunction_on_proof() {
             requires 0 < y;
             ensures 0 <= x and 0 <= y by {
                 if flag == 0 {
-                    simp();
+                    solve();
                 } else {
-                    simp();
+                    solve();
                 }
             }
         }
@@ -6450,21 +6467,21 @@ fn pure_structural_simp_builds_recursive_conjunction_on_proof() {
     for (offset, expected_applications) in [
         (
             click_source
-                .find("simp();")
+                .find("solve();")
                 .expect("the direct theorem should contain smart simp"),
             2,
         ),
         (
             script_start
                 + click_source[script_start..]
-                    .find("simp();")
+                    .find("solve();")
                     .expect("the script theorem should contain smart simp"),
             2,
         ),
         (
             branch_start
                 + click_source[branch_start..]
-                    .find("simp();")
+                    .find("solve();")
                     .expect("the branch theorem should contain smart simp"),
             4,
         ),
@@ -6494,29 +6511,29 @@ fn post_execution_restricted_simp_retains_selected_premises_and_expansion() {
             ensures 0 <= result;
         } by {
             execute();
-            have 0 <= result by { simp(); }
-            simp() using { 0 <= result; }
+            have 0 <= result by { solve(); }
+            solve() using { 0 <= result; }
         }
     "#;
     let sources = [("identity.c", c_source)];
     verify_c0_sources(click_source, &sources)
         .expect("restricted exit simp should see the preceding have");
     let position =
-        expansion::position_at_offset(click_source, click_source.find("simp() using").unwrap());
+        expansion::position_at_offset(click_source, click_source.find("solve() using").unwrap());
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("restricted exit simp should retain its checked certificate");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_c0_sources(&expanded, &sources).expect("the expansion should check independently");
     for replacement in [
-        "simp() using { x == x; }",
-        "simp() using { result < 0; }",
-        "simp() using { 0 <= result; x < 0; }",
+        "solve() using { x == x; }",
+        "solve() using { result < 0; }",
+        "solve() using { 0 <= result; x < 0; }",
     ] {
-        let invalid = click_source.replace("simp() using { 0 <= result; }", replacement);
+        let invalid = click_source.replace("solve() using { 0 <= result; }", replacement);
         let error = verify_c0_sources(&invalid, &sources)
             .expect_err("only listed, available premises may be used");
-        assert!(error.message().contains("simp() using"), "{error:?}");
+        assert!(error.message().contains("solve() using"), "{error:?}");
         assert!(
             error.message().contains("only the listed premises"),
             "{error:?}"
@@ -6539,8 +6556,8 @@ fn post_execution_restricted_simp_checks_each_return_path() {
             ensures 0 <= result;
         } by {
             execute();
-            have 0 <= result by { simp(); }
-            simp() using { 0 <= result; }
+            have 0 <= result by { solve(); }
+            solve() using { 0 <= result; }
         }
     "#;
     verify_c0_sources(click_source, &sources)
@@ -6560,21 +6577,21 @@ fn post_execution_restricted_simp_continues_an_introduced_claim() {
                 execute();
                 intro();
                 intro();
-                simp() using { 0 <= k; }
+                solve() using { 0 <= k; }
             }
         }
     "#;
     verify_c0_sources(click_source, &sources)
         .expect("restricted simp must continue the claim's introduced binder");
     let position =
-        expansion::position_at_offset(click_source, click_source.find("simp() using").unwrap());
+        expansion::position_at_offset(click_source, click_source.find("solve() using").unwrap());
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column).unwrap();
     verify_c0_sources(&expanded, &sources)
         .expect("the closer's expansion must stay inside the introduced proof");
     assert!(
         verify_c0_sources(
-            &click_source.replace("simp() using { 0 <= k; }", "simp() using { k == k; }"),
+            &click_source.replace("solve() using { 0 <= k; }", "solve() using { k == k; }"),
             &sources
         )
         .is_err()
@@ -6593,15 +6610,15 @@ fn post_execution_restricted_simp_checks_grouped_ownership_and_value_claims() {
             ensures 0 <= *p;
         } by {
             execute();
-            have *p == x by { simp(); }
-            have 0 <= *p by { simp(); }
-            simp() using { *p == x; 0 <= *p; }
+            have *p == x by { solve(); }
+            have 0 <= *p by { solve(); }
+            solve() using { *p == x; 0 <= *p; }
         }
     "#;
     verify_c0_sources(click_source, &sources)
         .expect("the checked resource transition and restricted propositions must agree");
     let position =
-        expansion::position_at_offset(click_source, click_source.find("simp() using").unwrap());
+        expansion::position_at_offset(click_source, click_source.find("solve() using").unwrap());
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column).unwrap();
     verify_c0_sources(&expanded, &sources)
@@ -6622,7 +6639,7 @@ fn restricted_simp_expands_to_graph_normalization() {
                 requires x == y;
                 requires y == z;
                 ensures x == z by {
-                    simp() using {
+                    solve() using {
                         x == y;
                         y == z;
                     }
@@ -6632,7 +6649,7 @@ fn restricted_simp_expands_to_graph_normalization() {
     let verified = verify_click_theorems(click_source);
     verified.expect("restricted equality simp should build its typed path through Proof");
     let offset = click_source
-        .find("simp() using")
+        .find("solve() using")
         .expect("proof should contain restricted simp");
     let line = click_source[..offset]
         .bytes()
@@ -6651,7 +6668,7 @@ fn restricted_simp_expands_to_graph_normalization() {
     assert!(expanded.contains("normalize() using"), "{expanded}");
     assert!(expanded.contains("x == y;"), "{expanded}");
     assert!(expanded.contains("y == z;"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[]).expect("explicit equality certificate should check");
     for premise in ["requires x == y;", "requires y == z;"] {
@@ -6668,14 +6685,14 @@ fn uint64_bit_test_inequality_expands_to_rewrite_and_normalize() {
             requires 1u64 == (word & 1u64);
 
             ensures (word & 1u64) != 0u64 by {
-                simp();
+                solve();
             }
         }
     "#;
     verify_click_theorems(click_source)
         .expect("the reversed set-bit premise should prove the masked word is nonzero");
 
-    let offset = click_source.find("simp();").unwrap();
+    let offset = click_source.find("solve();").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("the smart uint64 inequality should expand");
@@ -6684,7 +6701,7 @@ fn uint64_bit_test_inequality_expands_to_rewrite_and_normalize() {
         "{expanded}"
     );
     assert!(expanded.contains("normalize();"), "{expanded}");
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded)
         .expect("the explicit uint64 inequality certificate should independently reverify");
 }
@@ -6694,7 +6711,7 @@ fn uint64_bit_test_inequality_rejects_missing_false_and_malformed_evidence() {
     let insufficient = r#"
         theorem low_bits_match_is_not_enough(word: uint64, other: uint64) {
             requires (word & 1u64) == (other & 1u64);
-            ensures (word & 1u64) != 0u64 by { simp(); }
+            ensures (word & 1u64) != 0u64 by { solve(); }
         }
     "#;
     verify_click_theorems(insufficient)
@@ -6703,7 +6720,7 @@ fn uint64_bit_test_inequality_rejects_missing_false_and_malformed_evidence() {
     let false_claim = r#"
         theorem clear_low_bit_is_not_nonzero(word: uint64) {
             requires (word & 1u64) == 0u64;
-            ensures (word & 1u64) != 0u64 by { simp(); }
+            ensures (word & 1u64) != 0u64 by { solve(); }
         }
     "#;
     verify_click_theorems(false_claim)
@@ -6737,7 +6754,7 @@ fn pure_rewrite_retains_a_structural_surface_successor_for_simp() {
             requires z == 0;
             ensures x <= 0 and z <= 0 by {
                 rewrite(x == y);
-                simp();
+                solve();
             }
         }
     "#;
@@ -6746,14 +6763,14 @@ fn pure_rewrite_retains_a_structural_surface_successor_for_simp() {
     verified.expect("rewrite followed by structural simp should remain on Proof");
 
     let simp_offset = click_source
-        .find("simp();")
+        .find("solve();")
         .expect("source should contain the structural smart step");
     let position = expansion::position_at_offset(click_source, simp_offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("the retained rewrite successor should expand");
     assert_eq!(expanded.matches("rewrite(").count(), 3, "{expanded}");
     assert!(expanded.contains("both {"), "{expanded}");
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded)
         .expect("the expanded rewrite and structural child proofs should verify independently");
 }
@@ -6769,14 +6786,14 @@ fn restricted_simp_after_unfold_expands_explicit_conjunction_extraction() {
                 requires equality_chain(x, y, z);
                 ensures x == z by {
                     unfold(equality_chain);
-                    simp() using {
+                    solve() using {
                         x == y;
                         y == z;
                     }
                 }
             }
         "#;
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -6795,7 +6812,7 @@ fn restricted_simp_after_unfold_expands_explicit_conjunction_extraction() {
     assert!(expanded.contains("extract(x == y);"), "{expanded}");
     assert!(expanded.contains("extract(y == z);"), "{expanded}");
     assert!(expanded.contains("normalize() using"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[])
         .expect("explicit conjunction-elimination certificate should check");
@@ -6814,13 +6831,13 @@ fn restricted_simp_expands_strict_order_to_nonstrict_arithmetic_certificate() {
             theorem strict_order_implies_nonstrict(x: int32, y: int32) {
                 requires x < y;
                 ensures x <= y by {
-                    simp() using {
+                    solve() using {
                         x < y;
                     }
                 }
             }
         "#;
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -6837,7 +6854,7 @@ fn restricted_simp_expands_strict_order_to_nonstrict_arithmetic_certificate() {
         .expect("strict-to-nonstrict simp should have an explicit certificate");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded strict-order proof should check");
 }
@@ -6857,10 +6874,10 @@ fn post_execution_simp_applies_strict_order_rule() {
             ensures result <= 10;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -6888,13 +6905,13 @@ fn restricted_simp_expands_negated_strict_order_to_greater_equal() {
         theorem not_negative_is_nonnegative(x: int32) {
             requires not (x < 0);
             ensures x >= 0 by {
-                simp() using {
+                solve() using {
                     not (x < 0);
                 }
             }
         }
     "#;
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -6929,12 +6946,12 @@ fn post_execution_simp_expands_successor_strict_increase() {
             ensures x < result;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let verified = verify_c0_sources(click_source, &[("increment.c", c_source)]);
     verified.expect("the typed strict-increment rule should verify through the fixed-state Proof");
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -6971,13 +6988,13 @@ fn post_execution_simp_expands_increment_definedness() {
             ensures defined(x + 1);
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let verified = verify_c0_sources(click_source, &[("increment.c", c_source)]);
     verified
         .expect("the typed increment-definedness rule should verify through the fixed-state Proof");
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(
         click_source,
@@ -7008,13 +7025,13 @@ fn post_execution_simp_expands_increment_lower_bound() {
             ensures 0 <= result;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let verified = verify_c0_sources(click_source, &[("increment_nonnegative.c", c_source)]);
     verified
         .expect("the typed increment-lower-bound rule should verify through the fixed-state Proof");
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7056,10 +7073,10 @@ fn post_execution_simp_expands_order_equality_closure() {
             ensures result == 1;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7092,13 +7109,13 @@ fn restricted_simp_expands_nonstrict_unequal_order() {
             requires left <= right;
             requires not (left == right);
             ensures left < right by {
-                simp();
+                solve();
             }
         }
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("nonstrict unequal order should verify through Proof");
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7114,7 +7131,7 @@ fn restricted_simp_expands_nonstrict_unequal_order() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("nonstrict unequal order should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("simp()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("nonstrict unequal certificate should check");
 }
 
@@ -7133,12 +7150,12 @@ fn post_execution_simp_expands_increment_upper_bound() {
             ensures result <= 10;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let verified = verify_c0_sources(click_source, &[("increment_below.c", c_source)]);
     verified.expect("the typed increment bound should verify through the fixed-state Proof");
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7180,10 +7197,10 @@ fn post_execution_simp_expands_strict_transitivity() {
             ensures result < last;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7221,10 +7238,10 @@ fn post_execution_simp_expands_greater_equal_transitivity() {
             ensures result >= first;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7262,14 +7279,14 @@ fn post_execution_simp_expands_greater_equal_increment_bound() {
             ensures result >= 0;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let verified = verify_c0_sources(click_source, &[("increment_ge.c", c_source)]);
     verified.expect(
         "the typed greater-equal increment rule should verify through the fixed-state Proof",
     );
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7307,14 +7324,14 @@ fn post_execution_simp_expands_strict_greater_increment_bound() {
             ensures result > 0;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let verified = verify_c0_sources(click_source, &[("increment_gt.c", c_source)]);
     verified.expect(
         "the typed strict-greater increment rule should verify through the fixed-state Proof",
     );
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7352,13 +7369,13 @@ fn post_execution_simp_expands_greater_order_equality() {
             ensures result == 0;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let verified = verify_c0_sources(click_source, &[("identity_zero.c", c_source)]);
     verified.expect("post-execution >=/not-> equality should verify through Proof");
 
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7395,12 +7412,12 @@ fn post_execution_simp_composes_negated_successor_bound() {
             ensures result >= 1;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let verified = verify_c0_sources(click_source, &[("identity_at_least_one.c", c_source)]);
     verified.expect("the typed successor-bound Proof should verify");
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7436,7 +7453,7 @@ fn restricted_simp_composes_negated_successor_bound() {
         theorem not_below_two_is_at_least_one(value: int32) {
             requires not (value < 2);
             ensures value >= 1 by {
-                simp() using {
+                solve() using {
                     not (value < 2);
                 }
             }
@@ -7444,7 +7461,7 @@ fn restricted_simp_composes_negated_successor_bound() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the restricted successor-bound Proof should verify");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7461,7 +7478,7 @@ fn restricted_simp_composes_negated_successor_bound() {
         .expect("restricted successor lower bound should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded restricted successor proof should check");
 }
@@ -7493,10 +7510,10 @@ fn post_execution_simp_unfolds_predicate_goal_explicitly() {
             ensures sorted_pair(p);
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7545,20 +7562,20 @@ fn pure_simp_retains_one_selected_equality_rewrite_before_normalize() {
             requires value == 1;
 
             ensures 0 <= value - 1 by {
-                simp();
+                solve();
             }
         }
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the selected equality rewrite should close on the pure Proof");
 
-    let offset = click_source.find("simp()").unwrap();
+    let offset = click_source.find("solve()").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("the retained equality-refinement path should expand");
     assert!(expanded.contains("rewrite(value == 1);"), "{expanded}");
     assert!(expanded.contains("normalize();"), "{expanded}");
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded).expect("the expanded rewrite path should check");
 }
 
@@ -7568,7 +7585,7 @@ fn restricted_simp_expands_increment_upper_bound_to_arithmetic_certificate() {
         theorem increment_stays_bounded(value: int32, upper: int32) {
             requires value < upper;
             ensures to_integer(value + 1) <= to_integer(upper) by {
-                simp() using {
+                solve() using {
                     value < upper;
                 }
             }
@@ -7576,7 +7593,7 @@ fn restricted_simp_expands_increment_upper_bound_to_arithmetic_certificate() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed increment rule should verify through the pure Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7594,7 +7611,7 @@ fn restricted_simp_expands_increment_upper_bound_to_arithmetic_certificate() {
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -7605,7 +7622,7 @@ fn restricted_simp_expands_positive_to_nonnegative_arithmetic_certificate() {
         theorem positive_is_nonnegative(value: int32) {
             requires 0 < value;
             ensures 0 <= value by {
-                simp() using {
+                solve() using {
                     0 < value;
                 }
             }
@@ -7613,7 +7630,7 @@ fn restricted_simp_expands_positive_to_nonnegative_arithmetic_certificate() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("positive-to-nonnegative simp should verify through Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7631,7 +7648,7 @@ fn restricted_simp_expands_positive_to_nonnegative_arithmetic_certificate() {
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -7642,7 +7659,7 @@ fn restricted_simp_expands_positive_predecessor_to_arithmetic_certificate() {
         theorem positive_predecessor_is_nonnegative(value: int32) {
             requires 0 < value;
             ensures 0 <= to_integer(value - 1) by {
-                simp() using {
+                solve() using {
                     0 < value;
                 }
             }
@@ -7650,7 +7667,7 @@ fn restricted_simp_expands_positive_predecessor_to_arithmetic_certificate() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed predecessor-nonnegative rule should verify through the pure Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7668,7 +7685,7 @@ fn restricted_simp_expands_positive_predecessor_to_arithmetic_certificate() {
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -7679,7 +7696,7 @@ fn restricted_simp_expands_positive_predecessor_decrease_to_arithmetic_certifica
         theorem positive_predecessor_decreases(value: int32) {
             requires 0 < value;
             ensures to_integer(value - 1) < to_integer(value) by {
-                simp() using {
+                solve() using {
                     0 < value;
                 }
             }
@@ -7687,7 +7704,7 @@ fn restricted_simp_expands_positive_predecessor_decrease_to_arithmetic_certifica
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed predecessor-decrease rule should verify through the pure Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7705,7 +7722,7 @@ fn restricted_simp_expands_positive_predecessor_decrease_to_arithmetic_certifica
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -7717,7 +7734,7 @@ fn restricted_simp_expands_predecessor_upper_bound_to_arithmetic_certificate() {
             requires 0 <= value;
             requires value <= bound;
             ensures to_integer(value - 1) <= to_integer(bound) by {
-                simp() using {
+                solve() using {
                     0 <= value;
                     value <= bound;
                 }
@@ -7726,7 +7743,7 @@ fn restricted_simp_expands_predecessor_upper_bound_to_arithmetic_certificate() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed predecessor-upper-bound rule should verify through the pure Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("predecessor upper-bound simp should expand");
@@ -7734,7 +7751,7 @@ fn restricted_simp_expands_predecessor_upper_bound_to_arithmetic_certificate() {
     assert!(expanded.contains("0 <= value;"), "{expanded}");
     assert!(expanded.contains("value <= bound;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded predecessor theorem should check");
 }
@@ -7745,7 +7762,7 @@ fn restricted_simp_retains_nested_one_le_predecessor_nonnegative_proof() {
         theorem one_le_predecessor_is_nonnegative(value: int32) {
             requires 1 <= value;
             ensures 0 <= to_integer(value - 1) by {
-                simp() using {
+                solve() using {
                     1 <= value;
                 }
             }
@@ -7753,13 +7770,13 @@ fn restricted_simp_retains_nested_one_le_predecessor_nonnegative_proof() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the nested predecessor proof should verify through the pure Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("one-le predecessor proof should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded nested predecessor proof should check");
 }
@@ -7770,7 +7787,7 @@ fn restricted_simp_retains_nested_one_le_predecessor_decrease_proof() {
         theorem one_le_predecessor_decreases(value: int32) {
             requires 1 <= value;
             ensures to_integer(value - 1) < to_integer(value) by {
-                simp() using {
+                solve() using {
                     1 <= value;
                 }
             }
@@ -7778,13 +7795,13 @@ fn restricted_simp_retains_nested_one_le_predecessor_decrease_proof() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the nested predecessor-decrease proof should verify through the pure Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("one-le predecessor-decrease proof should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded)
         .expect("expanded nested predecessor-decrease proof should check");
@@ -7796,7 +7813,7 @@ fn restricted_simp_retains_equal_one_predecessor_path() {
         theorem equal_one_predecessor_is_nonnegative(value: int32) {
             requires 1 == value;
             ensures 0 <= to_integer(value - 1) by {
-                simp() using {
+                solve() using {
                     1 == value;
                 }
             }
@@ -7804,14 +7821,14 @@ fn restricted_simp_retains_equal_one_predecessor_path() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the equal-one predecessor proof should verify through the pure Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("equal-one predecessor proof should expand");
     assert!(expanded.contains("have 1 <= value"), "{expanded}");
     assert!(expanded.contains("rewrite(value == 1)"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded equal-one predecessor proof should check");
 }
@@ -7822,7 +7839,7 @@ fn restricted_simp_retains_equal_one_predecessor_zero_path() {
         theorem equal_one_predecessor_is_zero(value: int32) {
             requires 1 == value;
             ensures to_integer(value - 1) == 0 by {
-                simp() using {
+                solve() using {
                     1 == value;
                 }
             }
@@ -7830,7 +7847,7 @@ fn restricted_simp_retains_equal_one_predecessor_zero_path() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the predecessor-zero proof should verify through the pure Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("equal-one predecessor-zero proof should expand");
@@ -7838,7 +7855,7 @@ fn restricted_simp_retains_equal_one_predecessor_zero_path() {
     // an intermediate rewrite is no longer required.
     assert!(expanded.contains("normalize() using"), "{expanded}");
     assert!(expanded.contains("normalize()"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded predecessor-zero proof should check");
 }
@@ -7849,7 +7866,7 @@ fn restricted_simp_expands_strict_increment_to_arithmetic_certificate() {
             theorem increment_is_greater(value: int32, upper: int32) {
                 requires value < upper;
                 ensures to_integer(value) < to_integer(value + 1) by {
-                    simp() using {
+                    solve() using {
                         value < upper;
                     }
                 }
@@ -7857,7 +7874,7 @@ fn restricted_simp_expands_strict_increment_to_arithmetic_certificate() {
         "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed strict-increment rule should verify through the pure Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7874,7 +7891,7 @@ fn restricted_simp_expands_strict_increment_to_arithmetic_certificate() {
         .expect("strict increment should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[]).expect("strict increment certificate should check");
 }
@@ -7885,19 +7902,19 @@ fn simp_expands_increment_definedness_to_arithmetic_certificate() {
         theorem increment_is_defined(value: int32) {
             requires value < 2147483647;
             ensures defined(value + 1) by {
-                simp();
+                solve();
             }
         }
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed increment-definedness rule should verify through the pure Proof");
-    let offset = click_source.find("simp()").unwrap();
+    let offset = click_source.find("solve()").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("increment-definedness simp should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < 2147483647;"), "{expanded}");
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded increment-definedness proof should check");
 }
@@ -7913,7 +7930,7 @@ fn restricted_simp_expands_increment_lower_bound_to_arithmetic_certificate() {
             requires lower <= value;
             requires value < upper;
             ensures to_integer(lower) <= to_integer(value + 1) by {
-                simp() using {
+                solve() using {
                     lower <= value;
                     value < upper;
                 }
@@ -7922,7 +7939,7 @@ fn restricted_simp_expands_increment_lower_bound_to_arithmetic_certificate() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed increment-lower-bound rule should verify through the pure Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7941,7 +7958,7 @@ fn restricted_simp_expands_increment_lower_bound_to_arithmetic_certificate() {
     assert!(expanded.contains("lower <= value;"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -7957,7 +7974,7 @@ fn restricted_simp_expands_increment_order_to_arithmetic_certificate() {
             requires lower <= value;
             requires value < upper;
             ensures to_integer(lower + 1) <= to_integer(value + 1) by {
-                simp() using {
+                solve() using {
                     lower <= value;
                     value < upper;
                 }
@@ -7966,7 +7983,7 @@ fn restricted_simp_expands_increment_order_to_arithmetic_certificate() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed increment-order rule should verify through the pure Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -7985,7 +8002,7 @@ fn restricted_simp_expands_increment_order_to_arithmetic_certificate() {
     assert!(expanded.contains("lower <= value;"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -8007,11 +8024,11 @@ fn restricted_simp_rewrites_a_named_successor_before_increment_order() {
             requires value < 2147483647;
             ensures 1 <= result by {
                 execute();
-                simp();
+                solve();
             }
         }
     "#;
-    let offset = click_source.find("simp()").unwrap();
+    let offset = click_source.find("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -8033,7 +8050,7 @@ fn restricted_simp_rewrites_a_named_successor_before_increment_order() {
     .expect("named successor order should lower to an explicit rewrite and increment rule");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("at(function.entry, value)"), "{expanded}");
-    assert!(!expanded.contains("simp()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c0_sources(&expanded, &[("named_successor.c", c_source)])
         .expect("named successor certificate should check");
 }
@@ -8089,7 +8106,7 @@ fn restricted_simp_certifies_unchanged_prefix_after_indexed_store() {
             unfold(vector_storage(owner));
             execute();
             fold(vector_storage(owner));
-            simp();
+            solve();
         }
     "#;
     // The first goal at `simp` can already be an available fact. Expand
@@ -8105,8 +8122,8 @@ fn restricted_simp_certifies_unchanged_prefix_after_indexed_store() {
         "{expanded}"
     );
     assert!(expanded.contains("k < old(owner->len)"), "{expanded}");
-    assert!(!expanded.contains("simp();"), "{expanded}");
-    assert!(!expanded.contains("auto();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c0_sources(&expanded, &[("vector_push.c", c_source)])
         .expect("unchanged-prefix certificate should check");
     let includes_store = expanded.replacen(
@@ -8125,7 +8142,7 @@ fn restricted_simp_expands_adjacent_order_to_arithmetic_certificate() {
         theorem two_at_most_implies_one_below(value: int32) {
             requires 2 <= value;
             ensures 1 < value by {
-                simp() using {
+                solve() using {
                     2 <= value;
                 }
             }
@@ -8133,7 +8150,7 @@ fn restricted_simp_expands_adjacent_order_to_arithmetic_certificate() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed adjacent-order rule should verify through the pure Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -8151,7 +8168,7 @@ fn restricted_simp_expands_adjacent_order_to_arithmetic_certificate() {
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("2 <= value;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -8169,13 +8186,13 @@ fn smart_simp_transcribes_a_three_edge_signed_order_path() {
             requires second < third;
             requires third <= last;
             ensures first < last by {
-                simp();
+                solve();
             }
         }
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the checked order-path Proof should verify");
-    let offset = click_source.find("simp();").unwrap();
+    let offset = click_source.find("solve();").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -8192,7 +8209,7 @@ fn smart_simp_transcribes_a_three_edge_signed_order_path() {
         .expect("the retained three-edge order path should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded).expect("the transcribed order path should check");
 }
 
@@ -8209,14 +8226,14 @@ fn smart_simp_transcribes_a_three_edge_bitvector_equality_path() {
             requires second == third;
             requires third == last;
             ensures first == last by {
-                simp();
+                solve();
             }
         }
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the checked equality-path Proof should verify");
 
-    let offset = click_source.find("simp();").unwrap();
+    let offset = click_source.find("solve();").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -8230,7 +8247,7 @@ fn smart_simp_transcribes_a_three_edge_bitvector_equality_path() {
         + 1;
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("the retained three-edge equality path should expand");
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
     verify_click_theorems(&expanded).expect("the transcribed equality path should check");
 }
@@ -8242,7 +8259,7 @@ fn smart_simp_retains_both_signed_equality_rules_as_arithmetic_certificates() {
             requires left <= right;
             requires not (left < right);
             ensures left == right by {
-                simp();
+                solve();
             }
         }
 
@@ -8250,14 +8267,14 @@ fn smart_simp_retains_both_signed_equality_rules_as_arithmetic_certificates() {
             requires left >= right;
             requires not (left > right);
             ensures left == right by {
-                simp();
+                solve();
             }
         }
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed <=/not-< equality rule should verify through Proof");
 
-    let offset = click_source.find("simp();").unwrap();
+    let offset = click_source.find("solve();").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -8274,7 +8291,7 @@ fn smart_simp_retains_both_signed_equality_rules_as_arithmetic_certificates() {
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_click_theorems(&expanded).expect("the named equality step should independently check");
 
-    let offset = click_source.rfind("simp();").unwrap();
+    let offset = click_source.rfind("solve();").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -8310,13 +8327,13 @@ fn outcome_simp_consumes_its_recorded_bitvector_equality_path() {
             ensures result == last;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let verified = verify_c0_sources(click_source, &[("choose_first.c", c_source)]);
     verified.expect("the outcome equality path should verify");
 
-    let offset = click_source.rfind("simp();").unwrap();
+    let offset = click_source.rfind("solve();").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(
         click_source,
@@ -8325,7 +8342,7 @@ fn outcome_simp_consumes_its_recorded_bitvector_equality_path() {
         position.column,
     )
     .expect("the retained outcome equality path should expand");
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
     verify_c0_sources(&expanded, &[("choose_first.c", c_source)])
         .expect("the transcribed outcome equality path should check");
@@ -8348,13 +8365,13 @@ fn outcome_simp_closes_its_recorded_order_path_by_arithmetic() {
             ensures first < last;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let verified = verify_c0_sources(click_source, &[("validate_chain.c", c_source)]);
     verified.expect("the outcome order path should verify through the fixed-state Proof");
 
-    let offset = click_source.rfind("simp();").unwrap();
+    let offset = click_source.rfind("solve();").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(
         click_source,
@@ -8365,7 +8382,7 @@ fn outcome_simp_closes_its_recorded_order_path_by_arithmetic() {
     .expect("the retained outcome theorem path should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c0_sources(&expanded, &[("validate_chain.c", c_source)])
         .expect("the transcribed outcome theorem path should check");
 }
@@ -8376,7 +8393,7 @@ fn restricted_simp_expands_constant_order_weakening_to_arithmetic_certificate() 
         theorem three_at_least_implies_nonnegative(value: int32) {
             requires 3 <= value;
             ensures 0 <= value by {
-                simp() using {
+                solve() using {
                     3 <= value;
                 }
             }
@@ -8384,7 +8401,7 @@ fn restricted_simp_expands_constant_order_weakening_to_arithmetic_certificate() 
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the constant lower-bound weakening should verify");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -8402,7 +8419,7 @@ fn restricted_simp_expands_constant_order_weakening_to_arithmetic_certificate() 
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("3 <= value;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -8413,7 +8430,7 @@ fn restricted_simp_expands_constant_strict_upper_bound_to_arithmetic_certificate
         theorem three_at_most_implies_below_five(value: int32) {
             requires value <= 3;
             ensures value < 5 by {
-                simp() using {
+                solve() using {
                     value <= 3;
                 }
             }
@@ -8421,14 +8438,14 @@ fn restricted_simp_expands_constant_strict_upper_bound_to_arithmetic_certificate
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the constant strict upper-bound weakening should verify");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("constant strict upper-bound simp should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value <= 3;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded strict upper-bound proof should check");
 }
 
@@ -8438,7 +8455,7 @@ fn restricted_simp_retains_increment_under_a_larger_constant() {
         theorem increment_three_at_most_is_five_at_most(value: int32) {
             requires value <= 3;
             ensures to_integer(value + 1) <= 5 by {
-                simp() using {
+                solve() using {
                     value <= 3;
                 }
             }
@@ -8446,14 +8463,14 @@ fn restricted_simp_retains_increment_under_a_larger_constant() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the increment constant-bound rule should verify through Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("increment constant-bound simp should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value <= 3;"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded increment constant-bound proof should check");
 }
 
@@ -8464,7 +8481,7 @@ fn restricted_simp_retains_symbolic_add_definedness_theorem() {
             requires amount >= 0;
             requires to_integer(2147483647 - amount) >= to_integer(value);
             ensures defined(value + amount) by {
-                simp() using {
+                solve() using {
                     amount >= 0;
                     to_integer(2147483647 - amount) >= to_integer(value);
                 }
@@ -8473,7 +8490,7 @@ fn restricted_simp_retains_symbolic_add_definedness_theorem() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the symbolic-add definedness rule should verify through Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("symbolic-add definedness simp should expand");
@@ -8488,7 +8505,7 @@ fn restricted_simp_retains_symbolic_add_definedness_theorem() {
         expanded.contains("to_integer((2147483647 - amount)) >= to_integer(value);"),
         "{expanded}"
     );
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded symbolic-add definedness proof should check");
 }
 
@@ -8499,7 +8516,7 @@ fn restricted_simp_retains_symbolic_subtract_definedness_by_integer_bounds() {
             requires amount >= 0;
             requires value >= amount;
             ensures defined(value - amount) by {
-                simp() using {
+                solve() using {
                     amount >= 0;
                     value >= amount;
                 }
@@ -8508,14 +8525,14 @@ fn restricted_simp_retains_symbolic_subtract_definedness_by_integer_bounds() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the symbolic-subtract definedness rule should verify through Proof");
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("symbolic-subtract definedness simp should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("amount >= 0;"), "{expanded}");
     assert!(expanded.contains("value >= amount;"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_click_theorems(&expanded)
         .expect("expanded symbolic-subtract definedness proof should check");
 }
@@ -8528,7 +8545,7 @@ fn restricted_simp_retains_one_plus_operand_specific_certificates() {
                 theorem one_plus_is_defined(value: int32) {
                     requires 2147483647 > value;
                     ensures defined(1 + value) by {
-                        simp() using { 2147483647 > value; }
+                        solve() using { 2147483647 > value; }
                     }
                 }
             "#,
@@ -8540,7 +8557,7 @@ fn restricted_simp_retains_one_plus_operand_specific_certificates() {
                 theorem one_plus_increases(value: int32) {
                     requires 2147483647 > value;
                     ensures to_integer(value) < to_integer(1 + value) by {
-                        simp() using { 2147483647 > value; }
+                        solve() using { 2147483647 > value; }
                     }
                 }
             "#,
@@ -8551,14 +8568,14 @@ fn restricted_simp_retains_one_plus_operand_specific_certificates() {
     for (click_source, _, application) in cases {
         let verified = verify_click_theorems(click_source);
         verified.expect("the operand-order-specific one-plus rule should verify through Proof");
-        let offset = click_source.find("simp() using").unwrap();
+        let offset = click_source.find("solve() using").unwrap();
         let position = expansion::position_at_offset(click_source, offset);
         let expanded =
             expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
                 .expect("one-plus simp should expand");
         assert!(expanded.contains(application), "{expanded}");
         assert!(expanded.contains("2147483647 > value;"), "{expanded}");
-        assert!(!expanded.contains("simp() using"), "{expanded}");
+        assert!(!expanded.contains("solve() using"), "{expanded}");
         verify_click_theorems(&expanded).expect("expanded one-plus proof should check");
     }
 }
@@ -8575,7 +8592,7 @@ fn restricted_simp_composes_equalities_with_adjacent_order() {
             requires bound == length;
             requires position == 0;
             ensures position < bound by {
-                simp() using {
+                solve() using {
                     1 <= length;
                     bound == length;
                     position == 0;
@@ -8583,7 +8600,7 @@ fn restricted_simp_composes_equalities_with_adjacent_order() {
             }
         }
     "#;
-    let offset = click_source.find("simp() using").unwrap();
+    let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -8607,7 +8624,7 @@ fn restricted_simp_composes_equalities_with_adjacent_order() {
     ] {
         assert!(expanded.contains(cited), "{cited}\n{expanded}");
     }
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("composed explicit certificate should check");
 }
@@ -8628,13 +8645,13 @@ fn restricted_simp_inside_have_expands_to_graph_normalization() {
                 ensures result == x;
             } by {
                 have x == z by {
-                    simp() using {
+                    solve() using {
                         x == y;
                         y == z;
                     }
                 }
                 execute();
-                simp();
+                solve();
             }
         "#;
     let offset = click_source
@@ -8665,7 +8682,7 @@ fn restricted_simp_inside_have_expands_to_graph_normalization() {
         "{expanded_have}"
     );
     assert!(expanded_have.contains("y == z;"), "{expanded_have}");
-    assert!(!expanded_have.contains("simp() using"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("explicit equality have certificate should check");
@@ -8693,14 +8710,14 @@ fn restricted_simp_expands_loadable_subrange_to_explicit_transport() {
             ensures result == old(data[index]);
         } by {
             have viewable(data[index..index + 1]) by {
-                simp() using {
+                solve() using {
                     viewable(data[0..length]);
                     0 <= index;
                     index < length;
                 }
             }
             execute();
-            simp();
+            solve();
         }
     "#;
     let offset = click_source
@@ -8756,7 +8773,7 @@ fn restricted_simp_expands_loadable_subrange_to_explicit_transport() {
          };\n\
          }"
     );
-    assert!(!expanded_have.contains("simp() using"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
     verify_c0_sources(&expanded, &sources).expect("explicit viewability transport should check");
 }
@@ -8798,14 +8815,14 @@ fn restricted_simp_rewrites_pointer_aliases_inside_memory_loads() {
             unfold(valued_array(original, length, value));
             step();
             have alias[index] == value by {
-                simp() using {
+                solve() using {
                     original[0] == value;
                     alias == original;
                     index == 0;
                 }
             }
             fold(valued_array(original, length, value));
-            simp();
+            solve();
         }
     "#;
     let offset = click_source.find("have alias[index] == value").unwrap();
@@ -8840,7 +8857,7 @@ fn restricted_simp_rewrites_pointer_aliases_inside_memory_loads() {
     ] {
         assert!(expanded_have.contains(selected), "{expanded_have}");
     }
-    assert!(!expanded_have.contains("simp() using"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
     verify_c0_sources(&expanded, &sources)
         .expect("expanded pointer-alias certificate should check");
@@ -8881,12 +8898,12 @@ fn post_execution_restricted_simp_expands_without_derive() {
         } by {
             execute();
             have to_integer(x + 1) == to_integer(z) by {
-                simp() using {
+                solve() using {
                     to_integer(x + 1) == to_integer(y);
                     y == z;
                 }
             }
-            simp();
+            solve();
         }
     "#;
     let offset = click_source
@@ -8935,7 +8952,7 @@ fn source_expander_lowers_smart_apply_inside_have() {
     let click_source = r#"
             theorem int32_reflexive(value: int32) {
                 ensures value == value by {
-                    simp();
+                    solve();
                 }
             }
 
@@ -8948,7 +8965,7 @@ fn source_expander_lowers_smart_apply_inside_have() {
                     apply(int32_reflexive(x));
                 }
                 execute();
-                simp();
+                solve();
             }
         "#;
     let have_offset = click_source
@@ -8991,7 +9008,7 @@ fn fixed_state_have_bare_apply_retains_and_checks_its_exact_premise() {
             theorem equality_symmetric(first: int32, second: int32) {
                 requires first == second;
                 ensures second == first by {
-                    simp() using { first == second; }
+                    solve() using { first == second; }
                 }
             }
 
@@ -9065,7 +9082,7 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
             theorem equality_symmetric(first: int32, second: int32) {
                 requires first == second;
                 ensures second == first by {
-                    simp() using { first == second; }
+                    solve() using { first == second; }
                 }
             }
 
@@ -9078,10 +9095,10 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
                 have second == first and first == second by {
                     extract(first == second);
                     apply(equality_symmetric(first, second));
-                    simp();
+                    solve();
                 }
                 step();
-                simp();
+                solve();
             }
         "#;
     let verified = verify_c0_sources(click_source, &[("choose.c", c_source)]);
@@ -9119,7 +9136,7 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
         expanded_have.contains("extract(first == second);"),
         "{expanded_have}"
     );
-    assert!(!expanded_have.contains("simp();"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c0_sources(&expanded, &[("choose.c", c_source)])
         .expect("the serialized retained proof should independently reverify");
 }
@@ -9193,7 +9210,7 @@ fn post_return_resource_exchange_accepts_a_preceding_pure_have() {
             fold(marker(x));
             unfold(marker(x));
             fold(marker(x));
-            simp();
+            solve();
         }
     "#;
     let sources = [("identity.c", c_source)];
@@ -9324,7 +9341,7 @@ fn execution_resource_fold_is_recorded_once_and_checks() {
             unfold(marker(x));
             fold(marker(x));
             execute();
-            simp();
+            solve();
         }
     "#;
 
@@ -9382,7 +9399,7 @@ fn linear_execution_open_retains_one_checked_scope_and_checks() {
                 step();
             }
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -9440,7 +9457,7 @@ fn linear_execution_open_retains_checked_prefix_on_one_proof() {
             open(marker(x)) {
                 step();
             }
-            simp();
+            solve();
         }
     "#;
 
@@ -9484,7 +9501,7 @@ fn linear_execute_inside_open_retains_checked_statement_steps() {
             open(marker(x)) {
                 execute();
             }
-            simp();
+            solve();
         }
     "#;
 
@@ -9533,9 +9550,9 @@ fn grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof() {
         theorem int32_sign_split(value: int32) {
             ensures value <= 0 or value > 0 by {
                 if value <= 0 {
-                    simp();
+                    solve();
                 } else {
-                    simp();
+                    solve();
                 }
             }
         }
@@ -9707,7 +9724,7 @@ fn quantified_contract_resource_open_stays_on_one_proof() {
             open(marker(x)) {
                 execute();
             }
-            simp();
+            solve();
         }
     "#;
     let sources = [("preserve_markers.c", c_source)];
@@ -9776,11 +9793,11 @@ fn linear_execute_until_inside_open_stops_on_checked_frontier() {
             ensures result == x;
         } by {
             open(marker(x)) {
-                execute_until(region(2));
+                step_until(region(2));
                 step();
             }
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -9843,7 +9860,7 @@ fn linear_open_have_retains_the_selected_theorem_application() {
                 step();
             }
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -9906,7 +9923,7 @@ fn nested_composite_resource_scopes_stay_on_one_proof() {
                     execute();
                 }
             }
-            simp();
+            solve();
         }
     "#;
     let sources = [("read_cell.c", c_source)];
@@ -9971,7 +9988,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
     let click_source = r#"
         theorem ordered_is_less_equal(lower: int32, upper: int32) {
             requires lower < upper;
-            ensures lower <= upper by auto();
+            ensures lower <= upper;
         }
 
         resource ordered(lower: int32, upper: int32) {
@@ -9988,7 +10005,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
                 apply(ordered_is_less_equal(lower, upper));
                 step();
             }
-            simp();
+            solve();
         }
     "#;
 
@@ -10048,7 +10065,7 @@ fn linear_open_retains_a_direct_bare_fact_transport() {
                 transport(old(p[0]) == 7, p[0] == 7);
                 step();
             }
-            simp();
+            solve();
         }
     "#;
 
@@ -10127,7 +10144,7 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
                 }
             }
             step();
-            simp();
+            solve();
         }
     "#;
     let sources = [("read_if.c", c_source)];
@@ -10232,7 +10249,7 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
                 }
             }
             step();
-            simp();
+            solve();
         }
     "#;
     let sources = [("read_if.c", c_source)];
@@ -10307,14 +10324,14 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
             branch {
                 if x >= 0 {
                     execute();
-                    simp();
+                    solve();
                 } else {
                     execute();
-                    simp();
+                    solve();
                 }
             } else {
                 execute();
-                simp();
+                solve();
             }
         }
     "#;
@@ -10363,7 +10380,7 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
         .find("if x >= 0")
         .expect("the nested proof if should be present");
     let selected_simp = click_source[nested_if..]
-        .find("simp();")
+        .find("solve();")
         .map(|offset| nested_if + offset)
         .expect("the nested then arm should contain a simp");
     let position = expansion::position_at_offset(click_source, selected_simp);
@@ -10378,7 +10395,7 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
     );
 
     assert_eq!(
-        selected_expansion.matches("simp();").count(),
+        selected_expansion.matches("solve();").count(),
         2,
         "selected expansion should replace only the attributed nested-arm simp"
     );
@@ -10417,7 +10434,7 @@ fn branch_interface_retains_its_checked_abstract_join() {
                 fact x >= 0;
             } then { step(); } else { step(); }
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -10492,7 +10509,7 @@ fn branch_interface_retains_exact_unchanged_ownership() {
                 owns marker(x);
             } then { step(); } else { step(); }
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -10558,7 +10575,7 @@ fn branch_interface_normalizes_an_entailed_owned_quantity_on_proof() {
                 owns marker(x);
             } then { step(); } else { step(); }
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -10623,7 +10640,7 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
     let click_source = r#"
         theorem ordered_is_less_equal(lower: int32, upper: int32) {
             requires lower < upper;
-            ensures lower <= upper by auto();
+            ensures lower <= upper;
         }
 
         verifying "retain_order.c";
@@ -10643,7 +10660,7 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
                 apply(ordered_is_less_equal(lower, upper));
             }
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -10695,7 +10712,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
     let click_source = r#"
         theorem ordered_is_less_equal(lower: int32, upper: int32) {
             requires lower < upper;
-            ensures lower <= upper by auto();
+            ensures lower <= upper;
         }
 
         verifying "choose_bound.c";
@@ -10710,7 +10727,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
             } then { step(); } else { step(); }
             apply(ordered_is_less_equal(lower, upper));
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -10780,7 +10797,7 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
             } then { step(); } else { step(); }
             transport(old(lower) < old(upper), lower < upper);
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -10839,7 +10856,7 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
     let click_source = r#"
         theorem positive_is_nonnegative(value: int32) {
             requires 0 < value;
-            ensures 0 <= value by auto();
+            ensures 0 <= value;
         }
 
         verifying "select_positive.c";
@@ -10855,9 +10872,9 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             have selected >= 0 by {
                 apply(positive_is_nonnegative(selected));
             }
-            execute_until(region(5));
+            step_until(region(5));
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -10944,7 +10961,7 @@ fn branch_join_retains_linear_execute_on_its_common_successor() {
                 fact selected < 2147483647;
             } then { step(); } else { step(); }
             execute();
-            simp();
+            solve();
         }
     "#;
 
@@ -11017,7 +11034,7 @@ fn incremented_strict_lower_bound_retains_its_arithmetic_path() {
                 fact selected < 2147483647;
             } then { step(); } else { step(); }
             execute();
-            simp();
+            solve();
         }
     "#;
 
@@ -11066,8 +11083,8 @@ fn post_execution_have_anchors_strict_increment_arithmetic_premises() {
                 fact selected < 2147483647;
             } then { step(); } else { step(); }
             execute();
-            have result > 0 by simp();
-            simp();
+            have result > 0 by solve();
+            solve();
         }
     "#;
 
@@ -11089,7 +11106,7 @@ fn post_execution_have_anchors_strict_increment_arithmetic_premises() {
     )
     .expect("the retained strict-positive have should expand");
     assert!(
-        !expanded.contains("have result > 0 by simp()"),
+        !expanded.contains("have result > 0 by solve()"),
         "{expanded}"
     );
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
@@ -11137,7 +11154,7 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
                 transport(old(p[0]) == 7, p[0] == 7);
             }
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -11213,7 +11230,7 @@ fn branch_arms_retain_nested_have_proofs() {
                 }
             }
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -11279,7 +11296,7 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
             } else {
                 execute();
             }
-            simp();
+            solve();
         }
     "#;
 
@@ -11403,8 +11420,8 @@ fn nested_callback_status_cases_verify() {
         (8, "have"),
         (10, "have"),
         (11, "have"),
-        (13, "simp"),
-        (16, "simp"),
+        (13, "solve"),
+        (16, "solve"),
     ];
     assert_eq!(
         lift.iter()
@@ -11679,7 +11696,7 @@ fn decided_branch_interface_retains_the_surviving_checked_state() {
                 fact x == 1;
             } then { step(); } else { step(); }
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -11738,7 +11755,7 @@ fn open_scope_retains_its_checked_branch_interface() {
                 } then { step(); } else { step(); }
                 step();
             }
-            simp();
+            solve();
         }
     "#;
 
@@ -11805,7 +11822,7 @@ fn open_scope_retains_its_checked_execution_branch() {
                 }
                 step();
             }
-            simp();
+            solve();
         }
     "#;
 
@@ -11870,7 +11887,7 @@ fn open_scope_retains_a_decided_execution_branch_and_its_continuation() {
                 branch { step(); } else { step(); }
                 step();
             }
-            simp();
+            solve();
         }
     "#;
 
@@ -11964,7 +11981,7 @@ fn automatic_terminal_branch_retains_its_checked_proof_outcomes() {
                 ensures result == 1 or result == 2;
             } by {
                 execute();
-                simp();
+                solve();
             }
         "#;
 
@@ -12027,7 +12044,7 @@ fn fixed_state_smart_have_retains_a_checked_simple_closer() {
                 requires value >= 0;
                 ensures result >= 0;
             } by {
-                have value >= 0 by simp();
+                have value >= 0 by solve();
                 step();
                 assumption();
             }
@@ -12051,9 +12068,9 @@ fn fixed_state_smart_have_retains_a_checked_arithmetic_certificate() {
                 requires y < z;
                 ensures result < z;
             } by {
-                have x < z by simp();
+                have x < z by solve();
                 execute();
-                simp();
+                solve();
             }
         "#;
     let verified = verify_c0_sources(click_source, &[("first.c", c_source)]);
@@ -12066,7 +12083,7 @@ fn fixed_state_smart_have_retains_a_checked_arithmetic_certificate() {
         CProofClaim::Grouped,
     )
     .expect("the theorem-backed have should expand into proof steps");
-    assert!(!expanded.contains("have x < z by simp()"), "{expanded}");
+    assert!(!expanded.contains("have x < z by solve()"), "{expanded}");
     assert!(expanded.contains("have x < z by {"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_c0_sources(&expanded, &[("first.c", c_source)])
@@ -12167,7 +12184,7 @@ fn quantified_outcome_simp_keeps_its_binder_on_the_checked_goal() {
                 };
             } by {
                 execute();
-                simp();
+                solve();
             }
         "#;
 
@@ -12208,7 +12225,7 @@ fn outcome_simp_with_no_open_claims_is_an_empty_proof_transition() {
         } by {
             unfold(object_cell(obj));
             execute();
-            simp();
+            solve();
         }
     "#;
     let sources = [("release.c", c_source)];
@@ -12221,7 +12238,7 @@ fn outcome_simp_with_no_open_claims_is_an_empty_proof_transition() {
         .split("void release")
         .nth(1)
         .expect("expanded release proof should exist");
-    assert!(!release_proof.contains("simp();"), "{expanded}");
+    assert!(!release_proof.contains("solve();"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
         .expect("the expansion without the empty simp should check");
 }
@@ -12261,7 +12278,7 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
         } by {
             fold(capacity of pool_slot(pool));
             execute();
-            simp();
+            solve();
         }
     "#;
     let sources = [("init.c", c_source)];
@@ -12315,7 +12332,7 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
             ensures permutation::permutation(p, old(p), 0, 3) by {
                 execute();
                 unfold(permutation::permutation);
-                simp();
+                solve();
             }
         }
     "#;
@@ -12424,16 +12441,16 @@ fn successive_post_execution_ifs_stay_on_one_proof() {
             ensures 0 <= result and result <= 3 by {
                 execute();
                 if at(region(2).entry, x) > at(region(2).entry, 0) {
-                    have result == result by simp();
+                    have result == result by solve();
                 } else {
-                    have result == result by simp();
+                    have result == result by solve();
                 }
                 if at(region(5).entry, y) > at(region(5).entry, 0) {
-                    have result == result by simp();
+                    have result == result by solve();
                 } else {
-                    have result == result by simp();
+                    have result == result by solve();
                 }
-                simp();
+                solve();
             }
         }
     "#;
@@ -12522,7 +12539,7 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                 invariant all_le_range(p, 0, j, p[j]);
                 initialize by {
                     unfold(all_le_range);
-                    simp();
+                    solve();
                 }
                 preserve by {
                     branch ensuring {
@@ -12532,18 +12549,18 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                         step();
                         step();
                         step();
-                        have defined(j + 1) by { simp(); }
-                        have p[j] <= p[j + 1] by { simp(); }
+                        have defined(j + 1) by { solve(); }
+                        have p[j] <= p[j + 1] by { solve(); }
                         have all_le_range(p, 0, j, p[j + 1]) by {
                             unfold(all_le_range);
-                            simp();
+                            solve();
                         }
                     } else {
-                        have defined(j + 1) by { simp(); }
-                        have p[j] <= p[j + 1] by { simp(); }
+                        have defined(j + 1) by { solve(); }
+                        have p[j] <= p[j + 1] by { solve(); }
                         have all_le_range(p, 0, j, p[j + 1]) by {
                             unfold(all_le_range);
-                            simp();
+                            solve();
                         }
                     }
                     step();
@@ -12553,7 +12570,7 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
             }
             step();
             unfold(all_le_range);
-            simp();
+            solve();
         }
     "#;
     let sources = [("bubble_pass3.c", c_source)];
@@ -13113,7 +13130,7 @@ fn smart_have_expansion_plans_against_the_ordinary_surface_goal() {
     );
     let smart = explicit.replacen(
         "have owner->head == old(owner->head) by {\n        normalize();\n    }",
-        "have owner->head == old(owner->head) by {\n        simp();\n    }",
+        "have owner->head == old(owner->head) by {\n        solve();\n    }",
         1,
     );
     assert_ne!(
@@ -13373,7 +13390,7 @@ fn outcome_simp_transports_loadability_on_the_checked_proof() {
             ensures viewable(p[0..1]);
         } by {
             execute();
-            simp();
+            solve();
         }
 
         int32 use_summary(int32* p) {
@@ -13381,7 +13398,7 @@ fn outcome_simp_transports_loadability_on_the_checked_proof() {
             ensures viewable(p[0..1]);
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let sources = [("summarize.c", summarize_c), ("use_summary.c", use_c)];
@@ -13430,7 +13447,7 @@ fn outcome_simp_retains_checked_unchanged_old_equality_on_the_proof() {
                 invariant i <= n;
             }
             step();
-            simp();
+            solve();
         }
     "#;
     let sources = [("shifted.c", c_source)];
@@ -13469,7 +13486,7 @@ fn outcome_simp_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() {
             ensures p[1] != 'y' by {
                 execute();
                 unfold(bytes::all_not_equal);
-                simp();
+                solve();
             }
         }
     "#;
@@ -13529,7 +13546,7 @@ fn outcome_simp_materializes_selected_composite_separation_on_the_checked_proof(
                 observe(nested_owned_buffer(owner));
                 observe(backing_buffer(owner));
                 execute();
-                simp();
+                solve();
             }
         }
     "#;
@@ -13592,9 +13609,9 @@ fn quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_pro
             } by {
                 intro();
                 intro();
-                simp();
+                solve();
             }
-            simp();
+            solve();
         }
     "#;
     let sources = [("shifted_copy.c", c_source)];
@@ -13670,7 +13687,7 @@ fn quantified_old_transport_expands_to_one_quantified_frame() {
                 invariant i <= n;
             }
             step();
-            simp();
+            solve();
         }
     "#;
     let sources = [("shifted_copy.c", c_source)];
@@ -13711,10 +13728,10 @@ fn source_expander_lowers_smart_simp_after_unfold_inside_have() {
             } by {
                 have reflexive(x) by {
                     unfold(reflexive);
-                    simp();
+                    solve();
                 }
                 execute();
-                simp();
+                solve();
             }
         "#;
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
@@ -13752,7 +13769,7 @@ fn source_expander_lowers_smart_simp_after_unfold_inside_have() {
         "{expanded_have}"
     );
     assert!(expanded_have.contains("normalize();"), "{expanded_have}");
-    assert!(!expanded_have.contains("simp();"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the expanded unfolded smart have should check");
 }
@@ -13777,13 +13794,13 @@ fn source_expander_extracts_unfolded_conjuncts_inside_have() {
             } by {
                 have x == z by {
                     unfold(equality_chain);
-                    simp() using {
+                    solve() using {
                         x == y;
                         y == z;
                     }
                 }
                 execute();
-                simp();
+                solve();
             }
         "#;
     let offset = click_source.find("have x == z").unwrap();
@@ -13804,7 +13821,7 @@ fn source_expander_extracts_unfolded_conjuncts_inside_have() {
             .expect("restricted simp should extract its unfolded conjunct premises");
     assert!(expanded.contains("extract(x == y);"), "{expanded}");
     assert!(expanded.contains("extract(y == z);"), "{expanded}");
-    assert!(!expanded.contains("simp() using"), "{expanded}");
+    assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("expanded fixed-state proof conjunction extraction should check");
@@ -13833,9 +13850,9 @@ fn source_expander_preserves_pointer_field_form_inside_smart_have() {
                 views holder_storage(owner);
                 ensures result == 0;
             } by {
-                have owner->data == data by simp();
+                have owner->data == data by solve();
                 execute();
-                simp();
+                solve();
             }
         "#;
     let have_offset = click_source
@@ -13900,9 +13917,9 @@ fn source_expander_synthesizes_an_indexed_load_through_a_pointer_field() {
                 ensures result == 0;
             } by {
                 unfold(second_is);
-                have data[1] == value by simp();
+                have data[1] == value by solve();
                 execute();
-                simp();
+                solve();
             }
         "#;
     let have_offset = click_source
@@ -13949,9 +13966,9 @@ fn smart_have_uses_transport_planned_at_the_mutation_boundary() {
             } by {
                 unfold(first_is_seven);
                 step();
-                have p[0] == 7 by simp();
+                have p[0] == 7 by solve();
                 step();
-                simp();
+                solve();
             }
         "#;
     let have_offset = click_source
@@ -13976,11 +13993,11 @@ fn smart_have_uses_transport_planned_at_the_mutation_boundary() {
         .find("have p[0] == 7")
         .expect("expanded proof should retain the selected have")
         ..expanded
-            .find("step();\n                simp();")
+            .find("step();\n                solve();")
             .expect("expanded proof should retain its suffix")];
     assert!(expanded_have.contains("assumption();"), "{expanded_have}");
     assert!(!expanded_have.contains("transport("), "{expanded_have}");
-    assert!(!expanded_have.contains("simp();"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c0_sources(&expanded, &[("transport.c", c_source)])
         .expect("the expansion should check using the transport planned by the prior statement");
 }
@@ -14014,7 +14031,7 @@ fn source_expander_recalls_a_fact_at_a_recorded_statement_entry() {
             } by {
                 observe(one(p));
                 execute();
-                simp();
+                solve();
             }
 
             int32 pipeline(int32 p[1]) {
@@ -14022,10 +14039,10 @@ fn source_expander_recalls_a_fact_at_a_recorded_statement_entry() {
                 ensures result == 1;
             } by {
                 observe(one(p));
-                execute_until(region(2));
-                have at(region(1).entry, p[0]) == 1 by simp();
+                step_until(region(2));
+                have at(region(1).entry, p[0]) == 1 by solve();
                 execute();
-                simp();
+                solve();
             }
         "#;
     let have_offset = click_source
@@ -14108,7 +14125,7 @@ fn source_expander_derives_separation_from_call_postconditions() {
                 ensures owner->data == data;
             } by {
                 execute();
-                simp();
+                solve();
             }
 
             int32 pipeline(
@@ -14126,15 +14143,15 @@ fn source_expander_derives_separation_from_call_postconditions() {
                 views data[0..length];
                 ensures result == 0;
             } by {
-                execute_until(region(2));
+                step_until(region(2));
                 have separate(
                     memory(*right),
                     memory(left->data[0..left->len])
                 ) by {
-                    simp();
+                    solve();
                 }
                 execute();
-                simp();
+                solve();
             }
         "#;
     let have_offset = click_source
@@ -14191,7 +14208,7 @@ fn branched_smart_simp_expansion_checks_as_surface_click() {
             verifying "choose.c";
 
             int32 choose(int32 flag) {
-                ensures result == 1 or result == 2 by { execute(); simp(); }
+                ensures result == 1 or result == 2 by { execute(); solve(); }
             }
         "#;
 
@@ -14200,7 +14217,7 @@ fn branched_smart_simp_expansion_checks_as_surface_click() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("branched smart simp should lower to surface tactics");
-    let expanded_source = click_source.replacen("by { execute(); simp(); }", &expanded, 1);
+    let expanded_source = click_source.replacen("by { execute(); solve(); }", &expanded, 1);
     verify_c0_sources(&expanded_source, &[("choose.c", c_source)])
         .expect("printed branched smart simp expansion should check");
 }
@@ -14216,8 +14233,8 @@ fn source_expander_replaces_only_the_selected_claim_proof() {
             verifying "identity.c";
 
             int32 identity(int32 x) {
-                ensures first: result == x by { execute(); simp(); }
-                ensures second: result == x + 0 by { execute(); simp(); }
+                ensures first: result == x by { execute(); solve(); }
+                ensures second: result == x + 0 by { execute(); solve(); }
             }
         "#;
 
@@ -14228,8 +14245,8 @@ fn source_expander_replaces_only_the_selected_claim_proof() {
         CProofClaim::Ensure(1),
     )
     .expect("selected smart proof should expand");
-    assert_eq!(expanded.matches("by { execute(); simp(); }").count(), 1);
-    assert!(expanded.contains("ensures first: result == x by { execute(); simp(); }"));
+    assert_eq!(expanded.matches("by { execute(); solve(); }").count(), 1);
+    assert!(expanded.contains("ensures first: result == x by { execute(); solve(); }"));
     verify_c0_sources(&expanded, &[("identity.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "source-expanded sidecar should re-verify: {}\n{expanded}",
@@ -14253,7 +14270,7 @@ fn source_expander_replaces_and_checks_grouped_proof() {
                 ensures second: result == x + 0;
             } by {
                 execute();
-                simp();
+                solve();
             }
         "#;
 
@@ -14404,12 +14421,12 @@ verifying "main.c";
 void write_zero(int *p) {
     owns p[0..1];
     ensures p[0] == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void clear() {
     owns left::count;
     ensures left::count == 0;
-} by { execute(); simp(); }
-int main() { ensures result == 0; } by { execute(); simp(); }
+} by { execute(); solve(); }
+int main() { ensures result == 0; } by { execute(); solve(); }
 "#;
     verify_c0_sources(source, &sources).unwrap();
     for invalid in [
@@ -14434,7 +14451,7 @@ fn qualified_static_direct_assignment_requires_effect_or_ownership() {
         "static int count = 7; void clear(void) { count = 0; }",
     )];
     let unqualified = r#"verifying "left.c";
-void clear() { ensures count == 0; } by { execute(); simp(); }"#;
+void clear() { ensures count == 0; } by { execute(); solve(); }"#;
     let error = verify_c0_sources(unqualified, &sources)
         .expect_err("a direct static write needs an effect or owned resource");
     assert!(error.message().contains("outside the mutable footprint"));
@@ -14456,11 +14473,11 @@ fn qualified_static_helper_requires_transferred_ownership() {
 void write_zero(int *p) {
     owns p[0..1];
     ensures p[0] == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void clear() {
     owns counter::count;
     ensures counter::count == 0;
-} by { execute(); simp(); }"#;
+} by { execute(); solve(); }"#;
     verify_c0_sources(source, &sources).unwrap();
     let missing = source.replace("owns counter::count;", "");
     assert!(
@@ -14771,11 +14788,11 @@ fn pure_pointer_add_zero_simp_expands_to_a_checked_certificate() {
                 requires offset == 0;
 
                 ensures base + offset == target by {
-                    simp();
+                    solve();
                 }
             }
         "#;
-    let offset = click_source.find("simp()").unwrap();
+    let offset = click_source.find("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -14791,7 +14808,7 @@ fn pure_pointer_add_zero_simp_expands_to_a_checked_certificate() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("the pointer-offset identity simp should have an explicit certificate");
     assert!(expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded pointer identity proof should check");
 }
 
@@ -14801,9 +14818,9 @@ fn pure_branching_disjunction_simp_expands_to_left_right() {
             theorem int32_sign_split(x: int32) {
                 ensures x <= 0 or x > 0 by {
                     if x <= 0 {
-                        simp();
+                        solve();
                     } else {
-                        simp();
+                        solve();
                     }
                 }
             }
@@ -14825,7 +14842,7 @@ fn pure_branching_disjunction_simp_expands_to_left_right() {
         .expect("the branching disjunction proof should have an explicit certificate");
     assert!(expanded.contains("assumption();"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
-    assert!(!expanded.contains("simp()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded branching disjunction proof should check");
 }
 
@@ -14837,11 +14854,11 @@ fn pure_folded_constant_successor_simp_expands_to_successor_bound() {
                 requires 2 <= bound;
 
                 ensures x + 1 < bound by {
-                    simp();
+                    solve();
                 }
             }
         "#;
-    let offset = click_source.find("simp()").unwrap();
+    let offset = click_source.find("solve()").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -14858,7 +14875,7 @@ fn pure_folded_constant_successor_simp_expands_to_successor_bound() {
         .expect("the folded constant successor simp should have an explicit certificate");
     assert!(expanded.contains("rewrite(x == 0);"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("simp()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded constant successor proof should check");
 }
 
@@ -14891,9 +14908,9 @@ fn unfolded_conjunction_have_simp_expands_to_both_scopes() {
                 execute();
                 have ordered_pair(pair) by {
                     unfold(ordered_pair);
-                    simp();
+                    solve();
                 }
-                simp();
+                solve();
             }
         "#;
     let verified = verify_c0_sources(click_source, &[("set_pair.c", c_source)]);
@@ -14951,10 +14968,10 @@ fn outcome_predecessor_bound_simp_expands_to_an_arithmetic_certificate() {
                 unfold(ordered_pair);
                 execute();
                 assumption();
-                simp();
+                solve();
             }
         "#;
-    let offset = click_source.rfind("simp()").unwrap();
+    let offset = click_source.rfind("solve()").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(
         click_source,
@@ -14965,7 +14982,7 @@ fn outcome_predecessor_bound_simp_expands_to_an_arithmetic_certificate() {
     .expect("the predecessor bound simp should expand to the named rule");
     assert!(expanded.contains("both {"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("simp()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c0_sources(&expanded, &[("drop_one.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "the expanded predecessor bound certificate should check: {}\n{expanded}",
@@ -15047,7 +15064,7 @@ fn loop_preservation_case_after_step_expands_in_place() {
                 decreases 1 - i;
                 invariant i >= 0;
                 invariant i <= 1;
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     step();
                     if flag == i {
@@ -15059,7 +15076,7 @@ fn loop_preservation_case_after_step_expands_in_place() {
                 }
             }
             step();
-            simp();
+            solve();
         }
     "#;
     let sources = [("count_once.c", c_source)];
@@ -15106,7 +15123,7 @@ fn loop_preservation_case_before_step_expands_in_place() {
                 decreases 1 - i;
                 invariant i >= 0;
                 invariant i <= 1;
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     if flag == i {
                         have flag == i by { assumption(); }
@@ -15118,7 +15135,7 @@ fn loop_preservation_case_before_step_expands_in_place() {
                 }
             }
             step();
-            simp();
+            solve();
         }
     "#;
     let sources = [("count_once.c", c_source)];
@@ -15206,11 +15223,11 @@ fn loop_entry_logical_read_expands_without_hidden_introductions() {
                 decreases 3 - i;
                 invariant i >= 0 and i <= 3;
                 invariant forall (k: int32) { 0 <= k and k < i implies p[k] == k };
-                initialize by simp();
-                preserve by simp();
+                initialize by solve();
+                preserve by solve();
             }
             step();
-            simp();
+            solve();
         }
     "#;
     let sources = [("fill3_entry_guard.c", c_source)];
@@ -15250,14 +15267,16 @@ fn specification_conditional_branch_is_an_expanded_proof_step() {
 int32 select_when_positive(int32 limit, int32 left, int32 right) {
     requires limit > 0;
     ensures result == (if limit > 0 { left } else { right });
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 "#;
     let sources = [(
         "select_when_positive.c",
         "int32 select_when_positive(int32 limit, int32 left, int32 right) {\n    return left;\n}\n",
     )];
     verify_c0_sources(click_source, &sources).expect("smart conditional proof should verify");
-    let offset = click_source.find("simp();").expect("expected smart tactic");
+    let offset = click_source
+        .find("solve();")
+        .expect("expected smart tactic");
     let position = expansion::position_at_offset(click_source, offset);
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column).unwrap();
@@ -15294,9 +15313,9 @@ fn integer_quantifiers_substitute_checked_mixed_atoms_and_expand() {
     let source = r#"
 function combine(n: Nat, z: Integer) -> Integer { to_integer(n) + z }
 theorem mixed_integer_atoms(x: int32, n: Nat) {
-    ensures function_atom: forall (z: Integer) { combine(n, z) + 1 > combine(n, z) } by { simp(); }
-    ensures machine_atom: forall (z: Integer) { z + to_integer(x) == to_integer(x) + z } by { simp(); }
-    ensures mixed_clause: forall (z: Integer) { x == x and combine(n, z) == combine(n, z) } by { simp(); }
+    ensures function_atom: forall (z: Integer) { combine(n, z) + 1 > combine(n, z) } by { solve(); }
+    ensures machine_atom: forall (z: Integer) { z + to_integer(x) == to_integer(x) + z } by { solve(); }
+    ensures mixed_clause: forall (z: Integer) { x == x and combine(n, z) == combine(n, z) } by { solve(); }
     ensures witnessed: exists (z: Integer) { z == to_integer(x) } by {
         witness { z: to_integer(x) };
         normalize();
@@ -15312,9 +15331,9 @@ theorem mixed_integer_atoms(x: int32, n: Nat) {
             .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
     }
     for invalid in [
-        "function f(z: Integer) -> Integer { z } theorem bad() { ensures forall(z: Integer) { f(z) == 0 } by { simp(); } }",
-        "theorem bad(x: int32) { ensures exists(z: Integer) { z == to_integer(x + 1) } by { witness { z: to_integer(x + 1) }; simp(); } }",
-        "theorem bad(x: int32) { ensures forall(z: Integer) { to_integer(x + 1) == to_integer(x + 1) } by { simp(); } }",
+        "function f(z: Integer) -> Integer { z } theorem bad() { ensures forall(z: Integer) { f(z) == 0 } by { solve(); } }",
+        "theorem bad(x: int32) { ensures exists(z: Integer) { z == to_integer(x + 1) } by { witness { z: to_integer(x + 1) }; solve(); } }",
+        "theorem bad(x: int32) { ensures forall(z: Integer) { to_integer(x + 1) == to_integer(x + 1) } by { solve(); } }",
     ] {
         assert!(
             verify_c0_sources(invalid, &[]).is_err(),
@@ -15351,9 +15370,9 @@ int32 span_length(struct span* span) {
     ensures to_integer(result) == to_integer(span->end - span->start);
 } by {
     open(span_bounds(span)) {
-        have defined(span->end - span->start) by auto();
+        have defined(span->end - span->start);
         step();
-        simp();
+        solve();
     }
 }
 "#;
@@ -15371,7 +15390,7 @@ fn smart_closer_after_a_return_inside_an_open_scope_expands_and_reverifies() {
         .expect("the open-scope return proof should verify");
 
     let closer = OPEN_SCOPE_RETURN_CLICK
-        .rfind("simp();")
+        .rfind("solve();")
         .expect("proof should contain the scope's closer");
     let position = expansion::position_at_offset(OPEN_SCOPE_RETURN_CLICK, closer);
     let expanded = expand_c0_tactic_source_at(
@@ -15426,7 +15445,7 @@ void object_retain_many(struct object* obj, int32 amount) {
         fold(amount of reference(obj));
     }
     execute();
-    simp();
+    solve();
 }
 "#;
 
@@ -15444,7 +15463,7 @@ fn grouped_closer_with_a_produced_resource_claim_expands_and_reverifies() {
         .expect("the produced-resource proof should verify");
 
     let closer = PRODUCED_RESOURCE_CLICK
-        .rfind("simp();")
+        .rfind("solve();")
         .expect("proof should contain the grouped closer");
     let position = expansion::position_at_offset(PRODUCED_RESOURCE_CLICK, closer);
     let expanded = expand_c0_tactic_source_at(
@@ -15463,7 +15482,7 @@ fn grouped_closer_with_a_produced_resource_claim_expands_and_reverifies() {
 }
 
 /// The two-constructor analogue of `mdtests/proof_match_three_constructors.md`:
-/// each arm refolds its instance and closes the contract with `simp()`.
+/// each arm refolds its instance and closes the contract with `solve()`.
 const MATCH_ARM_OLD_MODEL_C: &str = "int read(int* p) { return *p; }";
 
 const MATCH_ARM_OLD_MODEL_CLICK: &str = r#"
@@ -15501,7 +15520,7 @@ int read(int* p) {
                 unfold(bi_code(Bi::Zero));
                 normalize();
             }
-            simp();
+            solve();
         },
         Bi::Other(value) => {
             unfold(c);
@@ -15512,7 +15531,7 @@ int read(int* p) {
                 unfold(bi_code(Bi::Other(value)));
                 normalize();
             }
-            simp();
+            solve();
         },
     }
 }
@@ -15531,7 +15550,7 @@ fn match_arm_closer_anchors_the_case_fact_at_entry_and_reverifies() {
         .expect("the two-constructor match proof should verify");
 
     let closer = MATCH_ARM_OLD_MODEL_CLICK
-        .rfind("simp();")
+        .rfind("solve();")
         .expect("proof should contain the second arm's closer");
     let position = expansion::position_at_offset(MATCH_ARM_OLD_MODEL_CLICK, closer);
     let expanded = expand_c0_tactic_source_at(
@@ -15582,7 +15601,7 @@ int32 contains3(int32 values[], int32 target) {
     ensures target in old([values[0], values[1], values[2]]) implies result != 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
 
@@ -15610,7 +15629,7 @@ fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     // closer conflicted with the leaves the others had already filled.
     let sources = [("contains3.c", FOUR_RETURN_C)];
     let closer = FOUR_RETURN_CLICK
-        .rfind("simp();")
+        .rfind("solve();")
         .expect("proof should contain the grouped closer");
     let position = expansion::position_at_offset(FOUR_RETURN_CLICK, closer);
     let expanded =
@@ -15653,7 +15672,7 @@ struct node* unpack(struct node* node) {
     execute();
     fold(packed(node));
     assumption();
-    arithmetic() using {
+    solve() using {
         aligned(result, 8);
         node->word == address(result) + (node->word & 1);
     };
@@ -15668,7 +15687,7 @@ fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
         .expect("the witness fold/unfold proof should verify");
 
     let closer = WITNESS_RESOURCE_CLICK
-        .rfind("arithmetic() using {")
+        .rfind("solve() using {")
         .expect("proof should contain the closer");
     let position = expansion::position_at_offset(WITNESS_RESOURCE_CLICK, closer);
     let expanded = expand_c0_tactic_source_at(
@@ -15731,7 +15750,7 @@ fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
                 invariant i >= 0;
             }
             step();
-            simp();
+            solve();
         }
     "#;
     let sources = [("two_ifs.c", c_source)];
@@ -15784,14 +15803,14 @@ int spin(int n) {
         invariant i <= n;
 
         initialize by {
-            have i >= 0 by simp();
-            have i <= n by simp();
+            have i >= 0 by solve();
+            have i <= n by solve();
             assumption();
         }
-        preserve by simp();
+        preserve by solve();
     }
     step();
-    simp();
+    solve();
 }
 "#;
 
@@ -15811,7 +15830,7 @@ int spin(int n) {
 
         initialize by {
             have n + 0 == n by { normalize(); }
-            simp();
+            solve();
         }
         preserve by {
             step();
@@ -15819,7 +15838,7 @@ int spin(int n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 "#;
 
@@ -15834,7 +15853,7 @@ fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
     verify_c0_sources(LOOP_INITIALIZE_SMART_HAVE_CLICK, &sources)
         .expect("the initialize script should verify");
 
-    for have in ["have i >= 0 by simp();", "have i <= n by simp();"] {
+    for have in ["have i >= 0 by solve();", "have i <= n by solve();"] {
         let offset = LOOP_INITIALIZE_SMART_HAVE_CLICK
             .find(have)
             .unwrap_or_else(|| panic!("the proof should contain `{have}`"));
@@ -15858,15 +15877,16 @@ fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
 
 #[test]
 fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
-    // `preserve by simp();` is one smart tactic standing for the whole phase,
-    // like `initialize by simp();`. Every driver step under it is generated, so
+    // `preserve by solve();` is one smart tactic standing for the whole phase,
+    // like `initialize by solve();`. Every driver step under it is generated, so
     // none claimed the source occurrence and audit reported
     // `Grouped proof has no source tactic 4`.
     let sources = [("spin.c", LOOP_INITIALIZE_PHASE_C)];
-    for phase in ["preserve by simp();", "preserve by { simp(); }"] {
-        let source = LOOP_INITIALIZE_SMART_HAVE_CLICK.replace("preserve by simp();", phase);
+    for phase in ["preserve by solve();", "preserve by { solve(); }"] {
+        let source = LOOP_INITIALIZE_SMART_HAVE_CLICK.replace("preserve by solve();", phase);
         let offset = source.find(phase).expect("the proof contains the phase");
-        let position = expansion::position_at_offset(&source, offset + phase.find("simp").unwrap());
+        let position =
+            expansion::position_at_offset(&source, offset + phase.find("solve").unwrap());
         let expanded =
             expand_c0_tactic_source_at(&source, &sources, position.line, position.column)
                 .expect("a smart `preserve` phase should expand");
@@ -15883,14 +15903,14 @@ fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
 #[test]
 fn a_helper_have_in_a_loop_initialize_script_is_expanded_once() {
     // The entry planner nested every sibling step inside every invariant's
-    // proof, so expanding the closing `simp()` printed the helper once per
+    // proof, so expanding the closing `solve()` printed the helper once per
     // invariant and the rewrite failed round-trip validation.
     let sources = [("spin.c", LOOP_INITIALIZE_PHASE_C)];
     verify_c0_sources(LOOP_INITIALIZE_HELPER_HAVE_CLICK, &sources)
         .expect("the helper initialize script should verify");
 
     let offset = LOOP_INITIALIZE_HELPER_HAVE_CLICK
-        .find("            simp();")
+        .find("            solve();")
         .expect("the proof should contain the phase closer");
     let position = expansion::position_at_offset(LOOP_INITIALIZE_HELPER_HAVE_CLICK, offset + 12);
     let expanded = expand_c0_tactic_source_at(
@@ -15919,8 +15939,8 @@ fn loop_initialization_duplicate_clauses_keep_distinct_bodies() {
     let click_source = LOOP_INITIALIZE_HELPER_HAVE_CLICK
         .replace("invariant i <= n;", "invariant i >= 0;")
         .replace(
-            "            simp();",
-            r#"            have i >= 0 by { arithmetic() using { n >= 0; } }
+            "            solve();",
+            r#"            have i >= 0 by { solve() using { n >= 0; } }
             have i >= 0 by { normalize(); }"#,
         );
     let sources = [("spin.c", LOOP_INITIALIZE_PHASE_C)];
@@ -15957,7 +15977,7 @@ fn loop_initialization_duplicate_clauses_keep_distinct_bodies() {
         .next()
         .unwrap();
     assert_eq!(initialize.matches("have i >= 0").count(), 2, "{expanded}");
-    assert!(!initialize.contains("arithmetic() using"), "{expanded}");
+    assert!(!initialize.contains("solve() using"), "{expanded}");
     let expanded_again = expand_c0_claim_source(&expanded, &sources, "spin", CProofClaim::Grouped)
         .expect("explicit entry proof should remain checkable on a second expansion");
     assert_eq!(expanded_again, expanded);
@@ -15988,7 +16008,7 @@ fn a_consumed_arm_instance_equation_is_cited_at_entry_after_its_unfold() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let offset = click_source
-        .rfind("simp();")
+        .rfind("solve();")
         .expect("the arm closes with a smart simp");
     let position = expansion::position_at_offset(click_source, offset);
     let expanded =
@@ -16026,7 +16046,7 @@ fn local_job_views_expand_and_reverify_without_ownership_annotations() {
             .expect("local loan and lifetime certificates should expand");
     }
     assert!(!click.contains("execute();"), "{click}");
-    assert!(!click.contains("simp();"), "{click}");
+    assert!(!click.contains("solve();"), "{click}");
     verify_c0_sources(&click, &sources).expect("expanded local job must independently reverify");
 }
 
@@ -16059,7 +16079,7 @@ fn an_unfold_bound_scalar_field_expands_and_reverifies() {
         "the expansion should keep the field binding: {expanded}"
     );
     assert!(
-        !expanded.contains("simp();") && !expanded.contains("close_invariants();"),
+        !expanded.contains("solve();") && !expanded.contains("close_invariants();"),
         "every smart site should be replaced: {expanded}"
     );
     verify_c0_sources(&expanded, &sources)
@@ -16096,7 +16116,7 @@ fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
         "the decided branch should be printed as its checked split: {expanded}"
     );
     assert!(
-        !expanded.contains("simp();") && !expanded.contains("close_invariants();"),
+        !expanded.contains("solve();") && !expanded.contains("close_invariants();"),
         "every smart site should be replaced: {expanded}"
     );
     verify_c0_sources(&expanded, &sources)
@@ -16130,7 +16150,7 @@ fn expand_iterated_ownership_claim(fixture: &str, claim: &str, kept: &[&str]) {
         );
     }
     assert!(
-        !expanded.contains("simp();") && !expanded.contains("close_invariants();"),
+        !expanded.contains("solve();") && !expanded.contains("close_invariants();"),
         "every smart site should be replaced: {expanded}"
     );
     verify_c0_sources(&expanded, &sources)
@@ -16402,7 +16422,7 @@ fn restricted_simp_does_not_borrow_the_ambient_equality_graph() {
         theorem restricted(a: int32, b: int32, c: int32) {
             requires a == b;
             requires b == c;
-            ensures a == c by { simp() using { a == b; } }
+            ensures a == c by { solve() using { a == b; } }
         }
     "#;
     for source in [source.to_string(), source.replace("int32", "int32*")] {
@@ -16412,7 +16432,7 @@ fn restricted_simp_does_not_borrow_the_ambient_equality_graph() {
             let selected = omitted.replace("using { a == b; }", "using { a == b; b == c; }");
             verify_c0_sources(&selected, &[]).expect("the selected graph establishes transitivity");
             // The simple tactic deliberately has broader ambient semantics.
-            let ambient = omitted.replace("simp()", "normalize()");
+            let ambient = omitted.replace("solve()", "normalize()");
             verify_c0_sources(&ambient, &[])
                 .expect("explicit normalization may use the ambient graph");
         }
@@ -16445,7 +16465,7 @@ fn normalize_using_scaled_int32_expands_and_rechecks() {
     let false_goal = source.replace("ensures p + i == p + k;", "ensures p + i != p + k;");
     assert_ne!(false_goal, source);
     assert!(verify_c0_sources(&false_goal, &c_sources).is_err());
-    let restricted = source.replacen("normalize() using { }", "simp() using { i == j; }", 1);
+    let restricted = source.replacen("normalize() using { }", "solve() using { i == j; }", 1);
     assert_ne!(restricted, source);
     assert!(verify_c0_sources(&restricted, &c_sources).is_err());
 }
@@ -16479,7 +16499,7 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
     assert!(verify_c0_sources(&false_goal, &c_sources).is_err());
     let restricted = source.replacen(
         "normalize() using { }",
-        "simp() using { defined(a + c); defined(b + c); }",
+        "solve() using { defined(a + c); defined(b + c); }",
         1,
     );
     assert_ne!(restricted, source);
@@ -16524,7 +16544,7 @@ fn normalize_using_int32_loads_expands_and_rechecks() {
     assert!(verify_c0_sources(&false_goal, &c_sources).is_err());
     let restricted = source.replacen(
         "normalize() using { }",
-        "simp() using { 0 <= i; i < n; 0 <= j; j < n; }",
+        "solve() using { 0 <= i; i < n; 0 <= j; j < n; }",
         1,
     );
     assert_ne!(restricted, source);
@@ -16535,7 +16555,7 @@ fn normalize_using_int32_loads_expands_and_rechecks() {
         void store(int32 p[]) {
             owns p[0..1];
             ensures p[0] == old(p[0]);
-        } by { execute(); simp(); }
+        } by { execute(); solve(); }
     "#;
     verify_c0_sources(&store.replace("old(p[0])", "9"), &store_c)
         .expect("the store itself verifies");
@@ -16552,7 +16572,7 @@ fn normalize_using_int32_loads_expands_and_rechecks() {
         int32 read(int32 p[], int32 i, int32 j) {
             requires i == j;
             ensures result == result;
-        } by { execute(); simp(); }
+        } by { execute(); solve(); }
     "#;
     assert!(
         verify_c0_sources(read, &read_c).is_err(),
@@ -16667,7 +16687,7 @@ fn authority_callback_count_refinement_expands_every_smart_site() {
 fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
     let valid_source = "resource cell(p: int32*) { owns p[0..1]; }
         verifying \"keep.c\";
-        void keep(int32* p) { owns cell(p); } by { execute(); simp(); }";
+        void keep(int32* p) { owns cell(p); } by { execute(); solve(); }";
     let valid_project = ClickProject::new(
         "duplicate.click",
         [ClickModuleSource::new("duplicate.click", valid_source, [])],
@@ -16680,9 +16700,9 @@ fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
         .expect("the same C body returns one borrowed exclusive unit");
     let mut accepted_closers = Vec::new();
     for (produced, closer) in [
-        ("cell", "simp();"),
+        ("cell", "solve();"),
         ("cell", "assumption(); assumption();"),
-        ("other_cell", "simp();"),
+        ("other_cell", "solve();"),
         ("other_cell", "assumption(); assumption();"),
     ] {
         let source = format!(
@@ -16737,14 +16757,14 @@ void attach(struct parent* p, struct child* kid) {
 } by {
     execute();
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
-    simp();
+    solve();
 }
 void clear_payload(struct child* kid) {
     owns kid->payload;
     ensures kid->payload == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 void caller(struct parent* p, struct child* kid) {
     requires kid != 0;
@@ -16755,11 +16775,11 @@ void caller(struct parent* p, struct child* kid) {
     ensures p->kid == kid;
 } by {
     let { link: link } = step(attach, {});
-    have p->kid == kid by simp();
+    have p->kid == kid by solve();
     step();
-    have p->kid == kid by simp();
+    have p->kid == kid by solve();
     execute();
-    simp();
+    solve();
 }
 "#;
     let c_source = r#"
@@ -16824,7 +16844,7 @@ int32 keep(int32* p, int32* q, int32 i, int32 n) {
 } by {
     fold(tag(q[i]));
     execute();
-    simp();
+    solve();
 }
 "#;
     let c_sources = [("fold_context.c", c_source)];
@@ -16858,7 +16878,7 @@ void put(int32* p, int32 i, int32 n) {
     requires i < n;
     owns p[1..n];
     ensures p[i] == 7;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 "#;
     let inputs = [("symbolic_write.c", c)];
     verify_c0_sources(source, &inputs)
@@ -16893,7 +16913,7 @@ void put(int32* p, int32* q, int32 i, int32 n) {
     requires i < n;
     owns p[1..n];
     ensures q[i] == 7;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 "#;
     let inputs = [("symbolic_write.c", c)];
     verify_c0_sources(source, &inputs)
@@ -16916,7 +16936,7 @@ void put(int32* p, int32* q, int32 i, int32 n) {
     );
 }
 
-/// A loop with no invariant has nothing to initialize, so a `simp` that is
+/// A loop with no invariant has nothing to initialize, so a `solve` that is
 /// its `initialize` block's only tactic contributes no step. A `by { ... }`
 /// block must hold a tactic, so the expansion keeps `assumption();` there
 /// rather than emptying the block, and the rewritten proof verifies.
@@ -16930,26 +16950,22 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
         } by {\n\
         \x20   loop {\n\
         \x20       decreases x;\n\
-        \x20       initialize by { simp(); }\n\
+        \x20       initialize by { solve(); }\n\
         \x20       preserve by {\n\
         \x20           step();\n\
         \x20           close_invariants();\n\
         \x20       }\n\
         \x20   }\n\
         \x20   execute();\n\
-        \x20   simp();\n\
+        \x20   solve();\n\
         }\n";
     let c_sources = [("drain.c", c_source)];
-    for proof in ["simp();", "{ simp(); }", "auto();", "{ auto(); }"] {
+    for proof in ["solve();", "{ solve(); }"] {
         let source = click_source.replace(
-            "initialize by { simp(); }",
+            "initialize by { solve(); }",
             &format!("initialize by {proof}"),
         );
-        let name = if proof.contains("auto") {
-            "auto"
-        } else {
-            "simp"
-        };
+        let name = "solve";
         let column = source.lines().nth(6).unwrap().find(name).unwrap() + 1;
         let expanded = expand_c0_tactic_source_at(&source, &c_sources, 7, column)
             .expect("the initialize call expands");
@@ -16989,7 +17005,7 @@ fn the_implicit_grouped_proof_expands_after_the_contract_and_reverifies() {
 
         int32 inc(int32 x) {
             requires x >= 0 and x <= 100;
-            ensures result >= 1 by auto();
+            ensures result >= 1;
             ensures result <= 101;
             ensures result <= 200;
         }
@@ -17003,10 +17019,7 @@ fn the_implicit_grouped_proof_expands_after_the_contract_and_reverifies() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &c_sources, position.line, position.column)
             .expect("the implicit grouped proof should expand");
-    assert!(
-        expanded.contains("ensures result >= 1 by auto();"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("ensures result >= 1;"), "{expanded}");
     assert!(
         expanded.contains("ensures result <= 200;\n        } by {"),
         "{expanded}"
@@ -17054,11 +17067,11 @@ fn throwing_call_forks_expand_and_reverify_in_every_position() {
     let c_sources = [("forks.c", c_source)];
     for proofs in [
         ["", "", ""],
-        [" by auto()", " by auto()", ""],
-        ["", "", " by auto();"],
+        [" by solve()", " by solve()", ""],
+        ["", "", ";"],
     ] {
         let click_source = format!(
-            "verifying \"forks.c\";\nint32 helper(int32 x) throws int32 {{\n    ensures result == x by auto();\n    exceptional ensures exception == 7 by auto();\n}}\n{}{}{}",
+            "verifying \"forks.c\";\nint32 helper(int32 x) throws int32 {{\n    ensures result == x;\n    exceptional ensures exception == 7;\n}}\n{}{}{}",
             contract("straight", "result == x", proofs),
             contract("after", "result == x", proofs),
             contract("inside", "result >= 0", proofs),
@@ -17105,7 +17118,7 @@ fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() 
         ),
     ] {
         let source = format!(
-            "verifying \"choose.c\";\nint32 choose(int32 x) {{ requires 0 <= x; requires x <= 100; ensures result == ({expected}); }} by {{\nexecute();\nsimp();\n}}"
+            "verifying \"choose.c\";\nint32 choose(int32 x) {{ requires 0 <= x; requires x <= 100; ensures result == ({expected}); }} by {{\nexecute();\nsolve();\n}}"
         );
         verify_c0_sources(&source, &[("choose.c", c_source)]).unwrap();
         let expanded = expand_c0_tactic_source_at(&source, &[("choose.c", c_source)], 4, 1)
@@ -17133,8 +17146,13 @@ fn uint32_arithmetic_bound_weakening_expands_and_rechecks() {
         let expanded = expand_c0_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
             .expect("unsigned weakening should expand");
         // An unsigned bound is the Integer bound of its observation, so the
-        // step is an Integer certificate with no sign-bit encoding.
-        assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
+        // step has no sign-bit encoding: `normalize() using` proves it, or an
+        // Integer certificate when arithmetic, which `solve() using` tries
+        // last, is the closer that does.
+        assert!(
+            expanded.contains("normalize() using") || expanded.contains("arithmetic_certificate {"),
+            "{expanded}"
+        );
         assert!(!expanded.contains("signed_int32"), "{expanded}");
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
@@ -17156,13 +17174,13 @@ fn uint32_arithmetic_bound_weakening_expands_and_rechecks() {
     ] {
         let invalid = format!(
             "theorem invalid(lane: uint32) {{ requires {premise}; \
-             ensures {goal} by {{ arithmetic() using {{ {premise}; }} }} }}"
+             ensures {goal} by {{ solve() using {{ {premise}; }} }} }}"
         );
         verify_c0_sources(&invalid, &[]).expect_err("insufficient unsigned bounds must fail");
     }
     let missing = source.replacen(
-        "arithmetic() using { lane <= 65520u32; }",
-        "arithmetic() using {};",
+        "solve() using { lane <= 65520u32; }",
+        "solve() using {};",
         1,
     );
     verify_c0_sources(&missing, &[]).expect_err("unlisted bounds must not prove the ceiling");
@@ -17264,11 +17282,11 @@ uint32 identity(uint32 a, uint32 b) {
 } by {
     have to_integer(a) * to_integer(b) == 0 by {
         rewrite(to_integer(b) == 0);
-        arithmetic() using {};
+        solve() using {};
     }
     execute();
     rewrite(to_integer(b) == 0);
-    arithmetic() using {};
+    solve() using {};
 }
 "#;
     let inputs = [("identity.c", c_source)];
@@ -17319,7 +17337,7 @@ int64 identity(int64 x, int64 y) {
 } by {
     execute();
     rewrite(to_integer(x) == to_integer(y));
-    simp();
+    solve();
 }
 "#;
     let inputs = [("identity.c", c_source)];
@@ -17354,7 +17372,7 @@ fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
         };
         let source = format!("theorem {name}(a: int32, b: int32) {{
             requires b >= 1; requires b <= 1000; {extra} requires {premise};
-            ensures a <= 999 by {{ arithmetic() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
+            ensures a <= 999 by {{ solve() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
         }}");
         verify_c0_sources(&source, &[]).expect("symbolic upper bound should verify");
         let expanded = expand_c0_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
@@ -17532,8 +17550,8 @@ fn whole_claim_expansion_routes_return_closers_only_to_checked_branches() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let tail = "branch { step(); simp(); } else {}\n    step(); simp();";
-    let original_branch = "branch { step(); simp(); } else { step(); simp(); }";
+    let tail = "branch { step(); solve(); } else {}\n    step(); solve();";
+    let original_branch = "branch { step(); solve(); } else { step(); solve(); }";
     for (case, source) in [
         ("then only", original.clone()),
         (
@@ -17597,8 +17615,8 @@ int32 f(int32 n) {
     ensures result == 5;
 } by {
     branch {
-        branch { step(); simp(); } else { step(); simp(); }
-    } else { step(); simp(); }
+        branch { step(); solve(); } else { step(); solve(); }
+    } else { step(); solve(); }
 }
 "#;
     verify_c0_sources(source, &[("nested.c", c)]).unwrap();
@@ -17627,7 +17645,7 @@ fn pruned_empty_c_arm_expansion_walks_the_tail_iteratively() {
 int32 f(int32 n) {{
     requires n == {count};
     ensures result == {count};
-}} by {{ execute(); simp(); }}
+}} by {{ execute(); solve(); }}
 "#
         );
         let sources = [("tail.c", c.as_str())];
@@ -17653,13 +17671,13 @@ fn check_exceptional_claim_label_expansion(fixture: &str) {
     let expanded =
         expand_c0_claim_source_by_label(&source, &sources, "helper.exceptional_ensures_0")
             .unwrap_or_else(|error| panic!("{fixture}: {}", error.message()));
+    // Both claims omit their proofs, so one grouped proof covers them, and
+    // selecting the exceptional claim expands that proof.
+    assert_ne!(expanded, source, "the selected claim's proof is expanded");
     assert!(
-        expanded.contains("ensures result == x by auto();"),
-        "the normal claim remains unselected: {expanded}"
-    );
-    assert!(
-        !expanded.contains("exceptional ensures exception == 7 by auto();"),
-        "the selected exceptional proof is expanded: {expanded}"
+        expanded.contains("ensures result == x;")
+            && expanded.contains("exceptional ensures exception == 7;"),
+        "the claims keep their spelling: {expanded}"
     );
     verify_c0_sources(&expanded, &sources)
         .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.message()));
@@ -17690,10 +17708,8 @@ fn exceptional_claim_label_expands_routed_throw_fixture() {
 #[test]
 fn exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects() {
     let c_sources = [("helper.c", "int32 helper(int32 x) { return x; }")];
-    for proof in [" by auto()", ""] {
-        let source = format!(
-            "verifying \"helper.c\"; int32 helper(int32 x) throws int32 {{ ensures result == x by auto(); exceptional ensures threw: exception == 7{proof}; }}"
-        );
+    {
+        let source = "verifying \"helper.c\"; int32 helper(int32 x) throws int32 { ensures result == x; exceptional ensures threw: exception == 7; }".to_string();
         let project = |source: &str| {
             ClickProject::new(
                 "helper.click",
@@ -17719,7 +17735,7 @@ fn exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects() {
 
 #[test]
 fn whole_function_expansion_validates_against_imported_pure_declarations() {
-    let source = "import \"spec.click\"; verifying \"identity.c\"; int32 identity(int32 x) { ensures result == spec(x); } by { execute(); unfold(spec(x)); simp(); }";
+    let source = "import \"spec.click\"; verifying \"identity.c\"; int32 identity(int32 x) { ensures result == spec(x); } by { execute(); unfold(spec(x)); solve(); }";
     let project = ClickProject::new(
         "identity.click",
         [
@@ -17811,12 +17827,12 @@ fn c_style_click_comments_preserve_loading_and_expansion_offsets() {
         ),
     ] {
         let source = format!(
-            "{leading}verifying \"identity.c\";\nint32 identity(int32 x) {{\n ensures result == x;\n}} by {{\n execute(); {inner} simp();\n}}\n{trailing}"
+            "{leading}verifying \"identity.c\";\nint32 identity(int32 x) {{\n ensures result == x;\n}} by {{\n execute(); {inner} solve();\n}}\n{trailing}"
         );
         assert_eq!(verifying_source_paths(&source).unwrap(), vec!["identity.c"]);
         let sources = [("identity.c", c_source)];
         verify_c0_sources(&source, &sources).unwrap();
-        let offset = source.find("simp();").unwrap();
+        let offset = source.find("solve();").unwrap();
         let position = expansion::position_at_offset(&source, offset);
         let expanded =
             expand_c0_tactic_source_at(&source, &sources, position.line, position.column).unwrap();
@@ -17837,7 +17853,7 @@ theorem empty_difference(end: int32, x: int32, y: int32) {
  ensures marks(end, x) - marks(end, y) == 0 by {
   peel(marks(end, x)) using { end <= 0; }
   peel(marks(end, y)) using { end <= 0; }
-  arithmetic() using { }
+  solve() using { }
  }
 }
 theorem empty_product(end: int32, x: int32, y: int32, z: int32) {
@@ -17846,7 +17862,7 @@ theorem empty_product(end: int32, x: int32, y: int32, z: int32) {
   peel(marks(end, x)) using { end <= 0; }
   peel(marks(end, y)) using { end <= 0; }
   peel(marks(end, z)) using { end <= 0; }
-  arithmetic() using { }
+  solve() using { }
  }
 }
 "#
@@ -17885,11 +17901,11 @@ theorem empty_order(end: int32) {
  requires end <= 0;
  ensures 0 <= marks(end) by {
   peel(marks(end)) using { end <= 0; }
-  arithmetic() using { marks(end) == 0; }
+  solve() using { marks(end) == 0; }
  }
  ensures marks(end) <= 0 by {
   peel(marks(end)) using { end <= 0; }
-  arithmetic() using { }
+  solve() using { }
  }
 }
 "#
@@ -18018,7 +18034,7 @@ fn line_containing(source: &str, text: &str) -> usize {
 /// own: its label, and a line of its proof, select just that phase, and the
 /// expansion replaces only the phase's `by` clause with its checked
 /// certificate. The rest of the contract proof, including the other phase
-/// and the `simp()` after the loop, is untouched.
+/// and the `solve()` after the loop, is untouched.
 #[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
@@ -18033,7 +18049,7 @@ fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
     // Arithmetic certificates need no additional import; only the selected
     // phase changes, and the surrounding source stays byte-for-byte intact.
     let body = expanded.as_str();
-    let written = "preserve by simp();";
+    let written = "preserve by solve();";
     let start = click.find(written).unwrap();
     let end = start + written.len();
     assert!(body.starts_with(&click[..start]), "{expanded}");
@@ -18110,7 +18126,7 @@ int32 f(int32 a, int32 b) {
         invariant a <= 0;
     }
     step();
-    simp();
+    solve();
 }
 "#;
 
@@ -18242,7 +18258,7 @@ int32 f(struct cell* root) {
     unfold(child);
     execute();
     fold(child);
-    simp();
+    solve();
 }"#;
     let control = guarded
         .replace("    if p != 0 {\n", "")
@@ -18277,7 +18293,7 @@ fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
         let source = fixture
             .click_source
             .unwrap()
-            .replace("unfold(black", "have d == d by auto(); unfold(black");
+            .replace("unfold(black", "have d == d; unfold(black");
         verify_c0_sources(&source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(&source, &[], label).unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -18306,7 +18322,7 @@ function is_positive(value: int32) -> int32 { if value > 0 { 1 } else { 0 } }
 int32 first(int32 x, int32 y) {
     requires is_positive(x) == 1 or is_positive(y) == 1;
     requires is_positive(y) == 1 or is_positive(x) == 1;
-    ensures 1 == 1 by auto();
+    ensures 1 == 1;
 }
 
 int32 caller(int32 a, int32 b) {
@@ -18327,7 +18343,7 @@ int32 caller(int32 a, int32 b) {
             }
         }
         step();
-        simp();
+        solve();
     }
 }
 "#;
@@ -18340,7 +18356,7 @@ int32 caller(int32 a, int32 b) {
         expanded.contains("step() {")
             && expanded.contains("requires is_positive(a) == 1 or is_positive(b) == 1 by {")
             && expanded.contains("requires is_positive(b) == 1 or is_positive(a) == 1 by {")
-            && !expanded.contains("by simp()"),
+            && !expanded.contains("by solve()"),
         "the expansion should keep both entries with checked bodies: {expanded}"
     );
     verify_c0_sources(&expanded, &c_sources).expect("the expansion should reverify");
@@ -18382,7 +18398,7 @@ void make(int32 x, int32 y) {
 } by {
     fold(either(x, y));
     execute();
-    simp();
+    solve();
 }
 "#;
     let c_sources = [("make.c", c_source)];
@@ -18430,7 +18446,7 @@ void set(int32* p, int32* q, int32 x) {
 } by {
     open(cell(p)) { step(); }
     execute();
-    simp();
+    solve();
 }
 "#;
     let c_sources = [("set.c", c_source)];
@@ -18631,7 +18647,7 @@ fn returned_struct_pointer_lemmas_survive_expansion_and_retained_verification() 
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
     verify_c0_project(&project, &sources).unwrap();
-    let position = expansion::position_at_offset(&source, source.rfind("simp();").unwrap());
+    let position = expansion::position_at_offset(&source, source.rfind("solve();").unwrap());
     let expanded = expand_project_tactic_source_at(
         &project,
         &ProgramInputs::Bundle(sources.clone()),
@@ -18664,12 +18680,12 @@ fn claim_expansion_that_cites_a_library_theorem_by_path_rechecks_in_its_session(
 
 uint32 keep(uint32 x) {
     ensures result == x;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 uint32 dec(uint32 x) {
     requires x > 0u32;
     ensures result < x;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 "#;
     let sources = [(
         "dec.c",
@@ -19133,18 +19149,18 @@ fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
             int32 split(int32 x) {{ ensures result == 0; }} by {{
                 {head} {{
                     step();
-                    have x >= 1 by {{ simp(); }}
+                    have x >= 1 by {{ solve(); }}
                 }} else {{
                     step();
-                    have x >= 1 by {{ simp(); }}
+                    have x >= 1 by {{ solve(); }}
                 }}
                 step();
-                simp();
+                solve();
             }}"
         );
         verify_c0_sources(&source, &c).unwrap();
         let positions = source
-            .match_indices("simp();")
+            .match_indices("solve();")
             .map(|(offset, _)| expansion::position_at_offset(&source, offset))
             .collect::<Vec<_>>();
         for position in &positions {
@@ -19216,7 +19232,7 @@ fn tidied_expansion_closers_leave_other_closers_alone() {
     let continued =
         "f by {\n    have a by {\n        normalize();\n    }\n    assumption();\n    step();\n}\n";
     // No claim proved by `normalize();` alone.
-    let simplified = "f by {\n    have a by {\n        simp();\n    }\n    assumption();\n}\n";
+    let simplified = "f by {\n    have a by {\n        solve();\n    }\n    assumption();\n}\n";
     for expanded in [short, continued, simplified] {
         assert_eq!(
             tidy_expansion_closers(original, expanded),
@@ -19253,16 +19269,16 @@ fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
  requires 0 <= b;
  ensures 0 <= a and 0 <= b by {
   both {
-   arithmetic() using { 0 <= a; };
+   solve() using { 0 <= a; };
   } and {
-   arithmetic() using { 0 <= b; };
+   solve() using { 0 <= b; };
   }
  }
 }
 ";
     verify_click_theorems(source).unwrap();
     for premise in ["0 <= a;", "0 <= b;"] {
-        let written = format!("arithmetic() using {{ {premise} }}");
+        let written = format!("solve() using {{ {premise} }}");
         let at = expansion::position_at_offset(source, source.find(&written).unwrap());
         let expanded = expand_c0_tactic_source_at(source, &[], at.line, at.column)
             .unwrap_or_else(|error| panic!("{premise}: {}", error.message()));

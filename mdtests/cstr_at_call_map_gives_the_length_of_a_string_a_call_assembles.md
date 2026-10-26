@@ -43,7 +43,7 @@ uint64 measure(uint8* src, uint64 n) {
 } by {
     step(string_length, { n: n });
     execute();
-    simp();
+    solve();
 }
 
 uint64 relay(const uint8* src) {
@@ -53,7 +53,7 @@ uint64 relay(const uint8* src) {
 } by {
     step(string_length, { n: n });
     execute();
-    simp();
+    solve();
 }
 ```
 

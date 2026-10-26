@@ -87,7 +87,7 @@ void erase_augmented(struct node* node, struct node* parent,
 } by {
     open(callback_suite(augment)) {
         execute();
-        simp();
+        solve();
     }
 }
 ```

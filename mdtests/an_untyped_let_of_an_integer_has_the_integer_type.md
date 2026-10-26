@@ -22,19 +22,19 @@ theorem chain(x: int32) {
     let b = a + 1;
     let c = b * 2;
     requires x == 2147483647;
-    ensures b > x by auto();
-    ensures c == 2 * to_integer(x) + 2 by auto();
+    ensures b > x;
+    ensures c == 2 * to_integer(x) + 2;
 }
 
 theorem nested_chain(x: int32) {
     ensures (let a = to_integer(x); let b = a + 1; let c = b * 2; c) == 2 * to_integer(x) + 2
-        by auto();
+;
 }
 
 int32 identity(int32 x) {
     let a = to_integer(x);
     let b = a + 1;
-    ensures to_integer(result) + 1 == b by auto();
+    ensures to_integer(result) + 1 == b;
 }
 ```
 

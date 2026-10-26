@@ -44,8 +44,6 @@ verifying "struct_by_value_pointer_run.c";
 struct packet finish(struct packet value) {
     ensures result.length == 7;
     ensures result.data == value.data;
-} by {
-    auto();
 }
 
 int32 run_struct_by_value_pointer() {

@@ -10,7 +10,7 @@ arithmetic an Integer
 theorem machine_chain(a: int32) {
     let t = a;
     let u = t + 1;
-    ensures u > t by auto();
+    ensures u > t;
 }
 ```
 

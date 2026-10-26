@@ -20,5 +20,5 @@ void leak(struct packet input, int32** out) {
 ```
 
 ```expect
-fail: checked outcome `simp` search did not retain a complete proof
+fail: checked outcome `solve` search did not retain a complete proof
 ```

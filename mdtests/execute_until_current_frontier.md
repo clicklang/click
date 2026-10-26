@@ -1,6 +1,6 @@
-# execute until from the current frontier
+# step until from the current frontier
 
-`execute_until` composes with earlier execution steps and selected branches.
+`step_until` composes with earlier execution steps and selected branches.
 It records the same statement snapshots as repeated
 `step` calls.
 
@@ -52,7 +52,7 @@ int32 execute_until_after_step(int32 x) {
         and at(region(2).exit, y) == 5
         and at(region(3).entry, y) == 5 by {
         step();
-        execute_until(region(3));
+        step_until(region(3));
         step();
         solve();
     }
@@ -66,8 +66,8 @@ int32 execute_until_selected_branch(int32 flag) {
         and at(region(5).entry, y) == 2 by {
         step();
         step();
-        execute_until(region(3));
-        execute_until(region(5));
+        step_until(region(3));
+        step_until(region(5));
         step();
         solve();
     }
@@ -83,7 +83,7 @@ int32 execute_until_after_advance(int32 flag) {
         } else {
             step();
         }
-        execute_until(region(6));
+        step_until(region(6));
         step();
         solve();
     }

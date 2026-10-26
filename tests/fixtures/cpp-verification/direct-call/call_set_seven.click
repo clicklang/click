@@ -6,7 +6,7 @@ int32 set_seven(int32& value) {
     ensures result == value;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 call_set_seven(int32& value) {
@@ -15,5 +15,5 @@ int32 call_set_seven(int32& value) {
     ensures result == value;
 } by {
     execute();
-    simp();
+    solve();
 }

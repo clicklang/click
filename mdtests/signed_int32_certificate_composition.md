@@ -37,7 +37,7 @@ theorem signed_pair_compound(n: int32) {
 theorem machine_to_integer_then_integer_arithmetic(x: int32) {
     requires 0 <= x;
     ensures 0 <= to_integer(x) + 1 by {
-        have to_integer(0) <= to_integer(x) by auto();
+        have to_integer(0) <= to_integer(x);
         arithmetic_certificate {
             premise 0: to_integer(0) <= to_integer(x) => to_integer(0) <= to_integer(x);
             trivial => to_integer(x) + 1 >= to_integer(x);

@@ -25,7 +25,7 @@ uint64 read_terminator(uint8 haystack[], uint64 known_len) {
     ensures result < 18446744073709551615u64;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

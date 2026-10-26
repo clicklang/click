@@ -80,7 +80,7 @@ void erase_mutating(struct node* node, struct node* parent,
     open(callback_suite(augment)) {
         execute();
     }
-    simp();
+    solve();
 }
 ```
 

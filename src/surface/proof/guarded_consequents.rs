@@ -127,7 +127,7 @@ impl<'a> Proof<'a> {
         Ok(None)
     }
 
-    /// The `simp() using { .. }` form: a listed guarded equality whose guard
+    /// The `solve() using { .. }` form: a listed guarded equality whose guard
     /// the list does not state.
     pub(super) fn try_restricted_guarded_consequent(
         &self,
@@ -209,7 +209,7 @@ impl<'a> Proof<'a> {
         false
     }
 
-    /// `have <guard> by { simp(); }`, or the proof unchanged when the guard
+    /// `have <guard> by { solve(); }`, or the proof unchanged when the guard
     /// is already available.
     fn prove_guard(&self, surface_guard: &ClickProposition) -> Result<Option<Self>, ClickError> {
         let Some(scope) = attempt::candidate_outcome(self.begin_have(surface_guard.clone()))?

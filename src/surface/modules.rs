@@ -602,7 +602,7 @@ function list_head(xs: SmallList) -> int32 {
 predicate list_empty(xs: SmallList) { xs == SmallList::Nil }
 abstract resource list_token(key: int32);
 theorem imported_false(x: int32) {
-    ensures x == x + 1 by { simp(); }
+    ensures x == x + 1 by { solve(); }
 }
 "#,
                     [],
@@ -698,7 +698,7 @@ void f(int32* p) {
     unfold(inner);
     execute();
     let leaf = fold(Leaf(p), { value: old(box.value) });
-    simp();
+    solve();
 }
 "#;
         let project = |entry: &str| {
@@ -840,7 +840,7 @@ theorem local_conditional(x: int32) {
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "theorem false_step(x: int32) { ensures x == x + 1 by simp(); }",
+                    "theorem false_step(x: int32) { ensures x == x + 1 by solve(); }",
                     [],
                 ),
                 ClickModuleSource::new(
@@ -874,8 +874,8 @@ int32 identity(int32 x) {
             "library.click",
             r#"
 verifying "test.c";
-int32 helper(int32 x) { ensures result == x + 1 by { execute(); simp(); } }
-tactic impossible(x: int32) { ensures x == x + 1; } by { simp(); }
+int32 helper(int32 x) { ensures result == x + 1 by { execute(); solve(); } }
+tactic impossible(x: int32) { ensures x == x + 1; } by { solve(); }
 "#,
             [],
         );
@@ -885,7 +885,7 @@ tactic impossible(x: int32) { ensures x == x + 1; } by { simp(); }
 import "library.click";
 verifying "test.c";
 int32 caller(int32 x) {
-    ensures result == x + 1 by { execute(); simp(); }
+    ensures result == x + 1 by { execute(); solve(); }
 }
 void user() { ensures 0 == 1; } by { impossible(0); execute(); assumption(); }
 "#,
@@ -945,7 +945,7 @@ void user() { ensures 0 == 1; } by { impossible(0); execute(); assumption(); }
             "library.click",
             r#"
 verifying "test.c";
-int32 helper(int32 x) { ensures result == x by { execute(); simp(); } }
+int32 helper(int32 x) { ensures result == x by { execute(); solve(); } }
 tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
 "#,
             [],
@@ -986,12 +986,12 @@ tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "verifying \"test.c\"; int32 helper(int32 x) { ensures result == x by auto(); }",
+                    "verifying \"test.c\"; int32 helper(int32 x) { ensures result == x; }",
                     [],
                 ),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"library.click\"; verifying \"test.c\"; int32 caller() { ensures result == 0 by { execute(); simp(); } }",
+                    "import \"library.click\"; verifying \"test.c\"; int32 caller() { ensures result == 0 by { execute(); solve(); } }",
                     ["library.click".to_string()],
                 ),
             ],
@@ -1014,13 +1014,13 @@ tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
             r#"
 import "library.click";
 verifying "test.c";
-int32 identity(int32 x) { ensures result == x by { execute(); simp(); } }
+int32 identity(int32 x) { ensures result == x by { execute(); solve(); } }
 "#,
             ["library.click".to_string()],
         );
         let library = ClickModuleSource::new(
             "library.click",
-            "theorem library_fact(x: int32) { ensures x == x by simp(); }",
+            "theorem library_fact(x: int32) { ensures x == x by solve(); }",
             [],
         );
         let c = [("test.c", "int identity(int x) { return x; }")];
@@ -1047,7 +1047,7 @@ int32 identity(int32 x) { ensures result == x by { execute(); simp(); } }
                 entry,
                 ClickModuleSource::new(
                     "library.click",
-                    "// changed imported input\ntheorem library_fact(x: int32) { ensures x == x by simp(); }",
+                    "// changed imported input\ntheorem library_fact(x: int32) { ensures x == x by solve(); }",
                     [],
                 ),
             ],
@@ -1066,12 +1066,12 @@ int32 identity(int32 x) { ensures result == x by { execute(); simp(); } }
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "theorem imported_bad() { ensures 0 == 1 by simp(); }",
+                    "theorem imported_bad() { ensures 0 == 1 by solve(); }",
                     [],
                 ),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"library.click\";\ntheorem local_ok() { ensures 0 == 0 by auto(); }",
+                    "import \"library.click\";\ntheorem local_ok() { ensures 0 == 0; }",
                     ["library.click".to_string()],
                 ),
             ],
@@ -1100,7 +1100,7 @@ int32 identity(int32 x) { ensures result == x by { execute(); simp(); } }
         let rewritten = project.with_entry_source(expanded.clone());
         assert_eq!(
             rewritten.modules()[0].source(),
-            "theorem imported_bad() { ensures 0 == 1 by simp(); }"
+            "theorem imported_bad() { ensures 0 == 1 by solve(); }"
         );
         let rewritten_position = expansion::project_tactic_source_position(
             &rewritten,
@@ -1133,15 +1133,15 @@ int32 identity(int32 x) { ensures result == x by { execute(); simp(); } }
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "theorem imported_bad() { ensures 0 == 1 by simp(); }",
+                    "theorem imported_bad() { ensures 0 == 1 by solve(); }",
                     [],
                 ),
                 ClickModuleSource::new(
                     "entry.click",
                     r#"
 import "library.click";
-theorem selected_ok() { ensures 0 == 0 by auto(); }
-theorem sibling_bad() { ensures 0 == 1 by simp(); }
+theorem selected_ok() { ensures 0 == 0; }
+theorem sibling_bad() { ensures 0 == 1 by solve(); }
 "#,
                     ["library.click".to_string()],
                 ),
@@ -1176,12 +1176,12 @@ theorem sibling_bad() { ensures 0 == 1 by simp(); }
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "theorem imported_ok(x: int32) { ensures x == x by simp(); }",
+                    "theorem imported_ok(x: int32) { ensures x == x by solve(); }",
                     [],
                 ),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"library.click\"; verifying \"test.c\"; int32 identity(int32 x) { ensures result == x by auto(); }",
+                    "import \"library.click\"; verifying \"test.c\"; int32 identity(int32 x) { ensures result == x; }",
                     ["library.click".to_string()],
                 ),
             ],
@@ -1264,7 +1264,7 @@ theorem sibling_bad() { ensures 0 == 1 by simp(); }
                 ClickModuleSource::new("library.click", "verifying \"library.c\";", []),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"library.click\"; theorem ok() { ensures 0 == 0 by simp(); }",
+                    "import \"library.click\"; theorem ok() { ensures 0 == 0 by solve(); }",
                     ["library.click".to_string()],
                 ),
             ],
@@ -1338,7 +1338,7 @@ theorem sibling_bad() { ensures 0 == 1 by simp(); }
             ),
             ClickModuleSource::new(
                 "entry.click",
-                "import \"right.click\"; import \"left.click\"; theorem ok() { ensures 0 == 0 by simp(); }",
+                "import \"right.click\"; import \"left.click\"; theorem ok() { ensures 0 == 0 by solve(); }",
                 ["right.click".to_string(), "left.click".to_string()],
             ),
         ];
@@ -1346,7 +1346,7 @@ theorem sibling_bad() { ensures 0 == 1 by simp(); }
         let mut reversed = modules;
         reversed[3] = ClickModuleSource::new(
             "entry.click",
-            "import \"left.click\"; import \"right.click\"; theorem ok() { ensures 0 == 0 by simp(); }",
+            "import \"left.click\"; import \"right.click\"; theorem ok() { ensures 0 == 0 by solve(); }",
             ["left.click".to_string(), "right.click".to_string()],
         );
         let second = ClickProject::new("entry.click", reversed);
@@ -1373,12 +1373,12 @@ theorem sibling_bad() { ensures 0 == 1 by simp(); }
             [
                 ClickModuleSource::new(
                     "a.click",
-                    "import \"b.click\"; theorem a() { ensures 0 == 0 by simp(); }",
+                    "import \"b.click\"; theorem a() { ensures 0 == 0 by solve(); }",
                     ["b.click".to_string()],
                 ),
                 ClickModuleSource::new(
                     "b.click",
-                    "import \"a.click\"; theorem b() { ensures 0 == 0 by simp(); }",
+                    "import \"a.click\"; theorem b() { ensures 0 == 0 by solve(); }",
                     ["a.click".to_string()],
                 ),
             ],
@@ -1433,7 +1433,7 @@ theorem b() { ensures 0 == 0 by { apply(a()); assumption(); } }
                 ),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"bad.click\"; theorem selected() { ensures 0 == 0 by simp(); }",
+                    "import \"bad.click\"; theorem selected() { ensures 0 == 0 by solve(); }",
                     ["bad.click".to_string()],
                 ),
             ],
@@ -1457,7 +1457,7 @@ function finish(x: Countdown) -> int32 decreases x {
                 ),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"good.click\"; theorem selected() { ensures 0 == 0 by simp(); }",
+                    "import \"good.click\"; theorem selected() { ensures 0 == 0 by solve(); }",
                     ["good.click".to_string()],
                 ),
             ],

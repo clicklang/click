@@ -2,7 +2,7 @@
 
 `x + 1` is defined when `x == 5 or x == 7`, but the kernel's fast check does
 not split the disjunction. Definedness is one of the statement's
-requirements, like a callee's precondition: the implicit `auto` proves it
+requirements, like a callee's precondition: the implicit closer proves it
 under a bare `step()`, and a written `step() by { ... }` proves it
 explicitly. A shift's requirement is its count's whole range.
 

@@ -262,14 +262,14 @@ int eleven() {
     ensures result == 18 or result == -1;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int twelve() {
     ensures result == 18 or result == -1;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

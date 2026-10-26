@@ -1,8 +1,8 @@
 # A chain bound closes in its non-strict form
 
 `x < n` and `n <= 4` give `x < 4`, which is `x <= 3` written the other way.
-A chain that ends at `4` concludes the strict form, so `simp` proves that
-and restates it; `arithmetic() using` adds the two premises directly.
+A chain that ends at `4` concludes the strict form, so `solve()` proves that
+and restates it; `solve() using` adds the two premises directly.
 
 ```click
 theorem signed_by_simp(x: int32, n: int32) {

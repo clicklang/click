@@ -18,7 +18,7 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures rb_tree_parent_consistent(tree.model) == 1;
 } by {
     let { tree: tree } = step(__rb_insert, { c: c, t: t });
-    execute(); simp();
+    execute(); solve();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -39,5 +39,5 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures rb_tree_parent_consistent(tree.model) == 1;
 } by {
     let { tree: tree } = step(__rb_insert_augmented, { c: c, t: t });
-    execute(); simp();
+    execute(); solve();
 }

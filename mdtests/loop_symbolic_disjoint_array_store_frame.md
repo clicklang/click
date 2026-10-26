@@ -46,7 +46,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
         };
         views next[0..n];
         owns visited[0..n];
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             mark iter;
             have forall (k: int32) {
@@ -63,7 +63,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
             if cur == to {
                 step();
                 step();
-                simp();
+                solve();
             } else {
                 step();
             }
@@ -94,7 +94,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
         }
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

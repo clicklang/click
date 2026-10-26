@@ -64,7 +64,7 @@ void pool_destroy(struct pool* pool) {
     step();
     unfold(authority(pool_slot(pool)));
     unfold(authority(pool_object(pool, _)));
-    execute(); unfold(valid_pool); simp();
+    execute(); unfold(valid_pool); solve();
 }
 void fixed(struct pool* pool) {
     consumes pool_control(pool);
@@ -82,7 +82,7 @@ void fixed(struct pool* pool) {
     have to_integer(pool->capacity) == to_integer(count(pool_slot(pool)));
     have to_integer(count(pool_object(pool, _))) == 0;
     fold(pool_control(pool));
-    execute(); unfold(valid_pool); simp();
+    execute(); unfold(valid_pool); solve();
 }
 
 ```

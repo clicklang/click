@@ -66,7 +66,7 @@ fn proof(export: &RustExport) -> String {
         } else {
             ("impl demo::Value", "new")
         };
-        proof.push_str(&format!("{block} {{ fn {method}({params}) -> demo::Value {{ ensures result.a == 1u32; ensures result.b == 0u32; }} by {{ execute(); simp(); }} }}\n"));
+        proof.push_str(&format!("{block} {{ fn {method}({params}) -> demo::Value {{ ensures result.a == 1u32; ensures result.b == 0u32; }} by {{ execute(); solve(); }} }}\n"));
     }
     proof
 }

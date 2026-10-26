@@ -11,7 +11,7 @@ where it is stated, naming the difference that must not overflow.
 theorem predecessor(i: int64, length: int64) {
     requires i <= length;
     ensures to_integer(i - 1i64) <= to_integer(length) by {
-        arithmetic() using { i <= length; };
+        solve() using { i <= length; };
     }
 }
 ```

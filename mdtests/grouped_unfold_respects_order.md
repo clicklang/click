@@ -20,7 +20,7 @@ int32 identity(int32 x) {
     ensures result >= 0;
 } by {
     execute();
-    simp();
+    solve();
     unfold(nonnegative);
 }
 ```

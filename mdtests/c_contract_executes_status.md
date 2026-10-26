@@ -38,12 +38,12 @@ theorem lift(callback: int32 (*)(int32*, int32))
         step(Raw);
         if result != 0 {
             have cell[0] == item by { extract(cell[0] == item); assumption(); }
-            fold(Cell(cell)); simp();
+            fold(Cell(cell)); solve();
         } else {
             have cell[0] == old(cell[0]) by {
                 extract(cell[0] == old(cell[0])); assumption();
             }
-            fold(Cell(cell)); simp();
+            fold(Cell(cell)); solve();
         }
     }
 }
@@ -61,10 +61,10 @@ int32 check_update(int32 (*callback)(int32*, int32), int32* cell, int32 value) {
     unfold(Cell(cell));
     if c(status) != 0 {
         have cell[0] == value by { extract(cell[0] == value); assumption(); }
-        execute(); fold(Cell(cell)); simp();
+        execute(); fold(Cell(cell)); solve();
     } else {
         have cell[0] == c(before);
-        execute(); fold(Cell(cell)); simp();
+        execute(); fold(Cell(cell)); solve();
     }
 }
 ```

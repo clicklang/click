@@ -48,7 +48,7 @@ int32 loop_preserve_branch(int32 n) {
                     }
                 }
             } else {
-                have to_integer(i + 1) >= 0 by auto();
+                have to_integer(i + 1) >= 0;
                 step();
                 step();
                 close_invariants() by solve();

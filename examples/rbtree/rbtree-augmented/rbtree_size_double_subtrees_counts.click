@@ -20,8 +20,8 @@ theorem sized_double_subtrees_bounds(pv: int32, far: SizedTree, middle: SizedTre
         apply(sized_valid_value_nonnegative(far));
         apply(sized_valid_value_nonnegative(middle));
         apply(sized_valid_value_nonnegative(other));
-        have -2147483648 <= to_integer(pv) by auto();
-        have to_integer(pv) <= 2147483647 by auto();
+        have -2147483648 <= to_integer(pv);
+        have to_integer(pv) <= 2147483647;
         have to_integer(pv) - to_integer(1) >= -2147483648 by {
             solve() using {
                 to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) + to_integer(sized_value(other));
@@ -33,7 +33,7 @@ theorem sized_double_subtrees_bounds(pv: int32, far: SizedTree, middle: SizedTre
         have to_integer(pv) - to_integer(1) <= 2147483647 by {
             solve() using { to_integer(pv) <= 2147483647; };
         }
-        have defined(pv - 1) by auto();
+        have defined(pv - 1);
         have 1 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) <= 2147483647 by {
             solve() using {
                 to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) + to_integer(sized_value(other));
@@ -46,7 +46,7 @@ theorem sized_double_subtrees_bounds(pv: int32, far: SizedTree, middle: SizedTre
         }
         apply(size_children_fit(sized_value(far), sized_value(middle)));
         apply(size_children_fit(sized_value(middle), sized_value(far)));
-        have 0 <= sized_value(other) by auto();
+        have 0 <= sized_value(other);
         have to_integer(sized_value(far)) <= 2147483646 - to_integer(sized_value(middle)) by {
             solve() using { 1 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) <= 2147483647; };
         }
@@ -67,9 +67,9 @@ theorem sized_double_subtrees_subtract_other_defined(pv: int32, far: SizedTree, 
         apply(sized_valid_value_nonnegative(far));
         apply(sized_valid_value_nonnegative(middle));
         apply(sized_valid_value_nonnegative(other));
-        have -2147483648 <= to_integer(pv) by auto();
-        have to_integer(pv) <= 2147483647 by auto();
-        have to_integer(pv - 1) == to_integer(pv) - to_integer(1) by auto();
+        have -2147483648 <= to_integer(pv);
+        have to_integer(pv) <= 2147483647;
+        have to_integer(pv - 1) == to_integer(pv) - to_integer(1);
         have to_integer(pv - 1) - to_integer(sized_value(other)) >= -2147483648 by {
             solve() using {
                 to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) + to_integer(sized_value(other));
@@ -85,8 +85,8 @@ theorem sized_double_subtrees_subtract_other_defined(pv: int32, far: SizedTree, 
                 0 <= to_integer(sized_value(other));
             };
         }
-        have defined((pv - 1) - sized_value(other)) by auto();
-        have to_integer((pv - 1) - sized_value(other)) == to_integer((pv - 1)) - to_integer(sized_value(other)) by auto();
+        have defined((pv - 1) - sized_value(other));
+        have to_integer((pv - 1) - sized_value(other)) == to_integer((pv - 1)) - to_integer(sized_value(other));
         assumption();
     }
 }
@@ -96,8 +96,8 @@ theorem sized_double_subtrees_repaired_count(pv: int32, far: SizedTree, middle: 
     requires defined(pv - 1);
     requires defined(pv - 1 - sized_value(other));
     ensures to_integer(pv - 1 - sized_value(other)) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) by {
-        have to_integer(pv - 1) == to_integer(pv) - to_integer(1) by auto();
-        have to_integer((pv - 1) - sized_value(other)) == to_integer((pv - 1)) - to_integer(sized_value(other)) by auto();
+        have to_integer(pv - 1) == to_integer(pv) - to_integer(1);
+        have to_integer((pv - 1) - sized_value(other)) == to_integer((pv - 1)) - to_integer(sized_value(other));
         solve() using {
             to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) + to_integer(sized_value(other));
             to_integer(pv - 1) == to_integer(pv) - to_integer(1);

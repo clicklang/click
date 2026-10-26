@@ -50,5 +50,5 @@ int32* uaf_local(int32 fallback[], int32 j) {
 ```
 
 ```expect
-fail: checked outcome `simp` search did not retain a complete proof
+fail: checked outcome `solve` search did not retain a complete proof
 ```

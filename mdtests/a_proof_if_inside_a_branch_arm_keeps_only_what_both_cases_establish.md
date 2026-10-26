@@ -24,12 +24,12 @@ int32 pick(int32 a, int32 c) {
  } then {
   step();
   if c == 0 {
-   have x == 0 or c == 0 by { auto(); }
+   have x == 0 or c == 0;
   } else {
-   have 0 <= x by { auto(); }
+   have 0 <= x;
   }
  } else {
-  have x == 0 or c == 0 by { auto(); }
+  have x == 0 or c == 0;
  }
  }
 }

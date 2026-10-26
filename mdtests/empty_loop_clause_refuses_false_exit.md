@@ -26,5 +26,5 @@ int32 spin(int32 x) diverges {
 ```
 
 ```expect
-fail: simp
+fail: solve
 ```

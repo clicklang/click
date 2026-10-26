@@ -2221,7 +2221,7 @@ mod tests {
     fn a_per_sidecar_import_config_is_refused_with_its_replacement() {
         let directory = tempfile::tempdir().unwrap();
         let sidecar = directory.path().join("main.click");
-        let source = "verifying \"main.c\";\nint32 one() { ensures result == 1; } by { execute(); simp(); }\n";
+        let source = "verifying \"main.c\";\nint32 one() { ensures result == 1; } by { execute(); solve(); }\n";
         fs::write(
             directory.path().join("main.c"),
             "int one(void) { return 1; }\n",
@@ -2345,9 +2345,9 @@ mod tests {
             abstract resource token(p: int32*);\n\
             resource cell(p: int32*) { owns p[0..1]; }\n\
             function twice(x: int32) -> int32 { x + x }\n";
-        let theorem = "theorem reflexive(x: int32) { ensures x == x by { simp(); } }\n";
+        let theorem = "theorem reflexive(x: int32) { ensures x == x by { solve(); } }\n";
         let entry = "import \"module.click\";\nverifying \"answer.c\";\n\
-            int32 answer() { ensures result == 1; } by { execute(); simp(); }\n";
+            int32 answer() { ensures result == 1; } by { execute(); solve(); }\n";
         fs::write(root.join("module.click"), module).unwrap();
         fs::write(root.join("theorems.click"), theorem).unwrap();
         fs::write(root.join("entry.click"), entry).unwrap();
@@ -2410,7 +2410,7 @@ mod tests {
             std::thread::current().name().unwrap_or("test")
         ));
         fs::create_dir_all(&root).unwrap();
-        let click = "verifying \"answer.c\";\nint32 answer() { ensures result == 1; } by { execute(); simp(); }\n";
+        let click = "verifying \"answer.c\";\nint32 answer() { ensures result == 1; } by { execute(); solve(); }\n";
         let path = root.join("answer.click");
         fs::write(&path, click).unwrap();
         fs::write(
@@ -2537,7 +2537,7 @@ mod tests {
             r#"{"target":"x86_64-unknown-linux-gnu","runtime":"modeled-pthread"}"#,
         )
         .unwrap();
-        let click = "verifying \"answer.c\";\nint32 answer() { ensures result == 1; } by { execute(); simp(); }\n";
+        let click = "verifying \"answer.c\";\nint32 answer() { ensures result == 1; } by { execute(); solve(); }\n";
         let path = nested.join("answer.click");
         fs::write(&path, click).unwrap();
         let project = read_click_project(&path, click).unwrap();
@@ -2563,7 +2563,7 @@ mod tests {
             r#"{"target":"x86_64-unknown-linux-gnu","runtime":"modeled-pthread"}"#,
         )
         .unwrap();
-        let click = "verifying \"answer.c\";\nint32 answer() { ensures result == 1; } by { execute(); simp(); }\n";
+        let click = "verifying \"answer.c\";\nint32 answer() { ensures result == 1; } by { execute(); solve(); }\n";
         let path = nested.join("answer.click");
         fs::write(&path, click).unwrap();
         fs::write(
@@ -2910,7 +2910,7 @@ mod tests {
         assert!(!replaced.ends_with('\n'));
         assert!(
             mdtest
-                .replace_click_source(&markdown.replace("step();", "simp();"), "assumption();")
+                .replace_click_source(&markdown.replace("step();", "solve();"), "assumption();")
                 .is_err()
         );
     }
@@ -3028,7 +3028,7 @@ mod tests {
 
         fs::write(
             root.join("outside.click"),
-            "theorem outside() { ensures 0 == 0 by simp(); }",
+            "theorem outside() { ensures 0 == 0 by solve(); }",
         )
         .unwrap();
         let escape = "import \"../outside.click\";";

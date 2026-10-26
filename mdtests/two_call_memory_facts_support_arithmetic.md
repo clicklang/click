@@ -1,7 +1,7 @@
 # Two calls' `ensures` about one cell support arithmetic
 
 After two calls to `grow`, the cell's middle value is readable only at the
-second call's entry. `simp` substitutes both calls' equalities to read the
+second call's entry. The implicit closer substitutes both calls' equalities to read the
 final value as an offset from entry.
 
 ```c filename=two_call_memory_facts_support_arithmetic.c

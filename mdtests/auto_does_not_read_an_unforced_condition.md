@@ -1,11 +1,11 @@
-# `auto` does not read an unforced condition out of a definition
+# The implicit closer does not read an unforced condition out of a definition
 
-`auto` reads a condition out of a fact `f(args) == k` only when every way
+The implicit closer reads a condition out of a fact `f(args) == k` only when every way
 through `f`'s definition that fails the condition ends in a constant other
 than `k`
 ([`auto_reads_a_condition_out_of_a_definition.md`](auto_reads_a_condition_out_of_a_definition.md)).
 Here `balanced(...) == 0` holds on every way that fails a condition, so the
-fact forces none of them, and `auto` fails promptly.
+fact forces none of them, and the implicit closer fails promptly.
 
 ```click
 spec enum Tree {
@@ -29,7 +29,7 @@ function balanced(tree: Tree) -> int
 
 theorem not_forced(value: int, left: Tree, right: Tree) {
     requires balanced(Tree::Node(value, left, right)) == 0;
-    ensures balanced(left) == 1 by auto();
+    ensures balanced(left) == 1;
 }
 ```
 

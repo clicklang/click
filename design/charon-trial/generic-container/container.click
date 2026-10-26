@@ -46,12 +46,12 @@ theorem length_nonnegative<T>(xs: List<T>) {
         induct(xs) as ih {
             List::Nil => {
                 unfold(length(List<T>::Nil));
-                simp();
+                solve();
             }
             List::Cons(value, rest) => {
                 apply(ih(rest));
                 unfold(length(List<T>::Cons(value, rest)));
-                arithmetic() using { length(rest) >= 0; };
+                solve() using { length(rest) >= 0; };
             }
         }
     }
@@ -126,8 +126,8 @@ impl<T> generic_container::Stack<T> {
         execute();
         let after = fold(nodes<T>(self.head), { values: List::Cons(value, old(before.values)) }, { tail: before });
         unfold(length(List::Cons(value, old(before.values))));
-        have to_integer(old(self.len) + 1u64) == to_integer(old(self.len)) + to_integer(1u64) by auto();
-        simp();
+        have to_integer(old(self.len) + 1u64) == to_integer(old(self.len)) + to_integer(1u64);
+        solve();
     }
 
     fn pop(&mut self) -> Option<T> {
@@ -151,7 +151,7 @@ impl<T> generic_container::Stack<T> {
             List::Cons(v, tail_values) => {
                 unfold(length(List::Cons(v, tail_values)));
                 apply(length_nonnegative(tail_values));
-                have to_integer(self.len) >= 1 by arithmetic() using {
+                have to_integer(self.len) >= 1 by solve() using {
                     to_integer(self.len) == length(List::Cons(v, tail_values));
                     length(List::Cons(v, tail_values)) == length(tail_values) + 1;
                     length(tail_values) >= 0;
@@ -164,26 +164,26 @@ impl<T> generic_container::Stack<T> {
                     List::Nil => {
                         let {} = unfold(tail);
                         let after = fold(nodes<T>(self.head), { values: List<T>::Nil }, {});
-                        have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64) by auto();
+                        have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64);
                         unfold(length(List<T>::Nil));
-                        have to_integer(old(self.len) - 1u64) == 0 by arithmetic() using {
+                        have to_integer(old(self.len) - 1u64) == 0 by solve() using {
                             to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - 1;
                             to_integer(old(self.len)) == length(List::Cons(v, List<T>::Nil));
                             length(List::Cons(v, List<T>::Nil)) == length(List<T>::Nil) + 1;
                             length(List<T>::Nil) == 0;
                         };
-                        simp();
+                        solve();
                     }
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
                         let after = fold(nodes<T>(self.head), { values: List::Cons(w, more) }, { tail: next });
-                        have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64) by auto();
-                        have to_integer(old(self.len) - 1u64) == length(List::Cons(w, more)) by arithmetic() using {
+                        have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64);
+                        have to_integer(old(self.len) - 1u64) == length(List::Cons(w, more)) by solve() using {
                             to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - 1;
                             to_integer(old(self.len)) == length(List::Cons(v, List::Cons(w, more)));
                             length(List::Cons(v, List::Cons(w, more))) == length(List::Cons(w, more)) + 1;
                         };
-                        simp();
+                        solve();
                     }
                 }
             }
@@ -215,14 +215,14 @@ fn generic_container::round_trip(x: u32) -> Option<u32> {
 theorem first_cons<T>(v: T, xs: List<T>) {
     ensures first(List::Cons(v, xs)) == Option<T>::Some(v) by {
         unfold(first(List::Cons(v, xs)));
-        simp();
+        solve();
     }
 }
 
 theorem rest_cons<T>(v: T, xs: List<T>) {
     ensures rest(List::Cons(v, xs)) == xs by {
         unfold(rest(List::Cons(v, xs)));
-        simp();
+        solve();
     }
 }
 
@@ -255,11 +255,11 @@ impl<T> generic_container::Container<T> for generic_container::Stack<T> {
     function items(self) -> List<T> { state.values }
     function size(self) -> usize { self.len }
     fn put(&mut self, value: T) {
-    } by { execute(); simp(); }
+    } by { execute(); solve(); }
     fn take(&mut self) -> Option<T> {
-    } by { execute(); simp(); }
+    } by { execute(); solve(); }
     fn count(&self) -> usize {
-    } by { execute(); simp(); }
+    } by { execute(); solve(); }
 }
 
 // Through any container of `u32`: what is put is what is taken, and the
@@ -274,10 +274,10 @@ fn generic_container::round_trip_dyn(container: &mut dyn generic_container::Cont
     execute();
     apply(first_cons(x, old(items(container))));
     apply(rest_cons(x, old(items(container))));
-    simp();
+    solve();
 }
 
 // A new stack lent as a container returns what was put.
 fn generic_container::through_dyn(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
-} by { execute(); simp(); }
+} by { execute(); solve(); }

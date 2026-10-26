@@ -33,5 +33,5 @@ int32 free_then_read(int32 data[], int32 count) {
 ```
 
 ```expect
-fail: checked outcome `simp` search did not retain a complete proof
+fail: checked outcome `solve` search did not retain a complete proof
 ```

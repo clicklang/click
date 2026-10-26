@@ -456,9 +456,10 @@ fn signed_term_constant_value(term: &crate::kernel::Bitvector32Term) -> Option<i
     }
     values.pop().flatten()
 }
-/// What a failing bare `arithmetic()` says in place of "the listed premises":
-/// it listed none, and it never reads the context for them.
-const BARE_ARITHMETIC_HINT: &str = "`arithmetic()` without `using` reads no facts from the context, so list the facts the goal depends on with `using { ... }`";
+/// What arithmetic over the empty list of `solve() using {}` says in place of
+/// "the listed premises": it listed none, and it never reads the context for
+/// them.
+const BARE_ARITHMETIC_HINT: &str = "`solve() using {}` reads no facts from the context, so list the facts the goal depends on in its `using { ... }`";
 
 /// How `arithmetic` read each listed premise while planning over the Integer
 /// linear fragment, written in the reader's own spelling.
@@ -1237,7 +1238,7 @@ impl<'a> Proof<'a> {
             return match self.try_wide_arithmetic_using(premises) {
                 Ok(proof) => Ok(proof),
                 Err(Some(reason)) => Err(self.step_error(format!(
-                    "`arithmetic` read the current goal as a 64-bit comparison: {reason}"
+                    "arithmetic read the current goal as a 64-bit comparison: {reason}"
                 ))),
                 Err(None) => ordinary,
             };
@@ -1640,14 +1641,12 @@ impl<'a> Proof<'a> {
         };
         let premises = anchored_surface_premises
             .iter()
-            .map(|premise| {
-                self.lower_cited_surface_proposition(premise, "`arithmetic using` premise")
-            })
+            .map(|premise| self.lower_cited_surface_proposition(premise, "`solve() using` premise"))
             .collect::<Result<Vec<_>, _>>()?;
         for (index, premise) in premises.iter().enumerate() {
             if !self.facts().listed_premise_available(premise, &[], false) {
                 return Err(self.step_error(format!(
-                    "`arithmetic using` premise {index} is not exactly available"
+                    "`solve() using` premise {index} is not exactly available"
                 )));
             }
         }
@@ -1786,7 +1785,7 @@ impl<'a> Proof<'a> {
                                             && error.message().contains("not exactly available")
                                         {
                                             return self.step_error(format!(
-                                            "`arithmetic using` premise {index} is not exactly available"
+                                            "`solve() using` premise {index} is not exactly available"
                                         ));
                                         }
                                         error
@@ -1804,7 +1803,7 @@ impl<'a> Proof<'a> {
                             // failed is spelling one of its steps in source form. Say
                             // so, rather than reporting the premises as insufficient.
                             return Err(self.step_error(format!(
-                            "`arithmetic` proved the goal from the listed premises with a {}-node signed_int32 certificate, but one of its steps cannot be printed in source form; this is a Click rendering gap, not a missing premise",
+                            "arithmetic proved the goal from the listed premises with a {}-node signed_int32 certificate, but one of its steps cannot be printed in source form; this is a Click rendering gap, not a missing premise",
                             plan.nodes.len()
                         )));
                         }
@@ -1828,17 +1827,17 @@ impl<'a> Proof<'a> {
             .and_then(crate::surface::checking::ArithmeticPlan::integer_affine)
             {
                 return Err(self.step_error(format!(
-                    "`arithmetic` proved the goal from the listed premises with a {}-node Integer certificate, but one of its steps cannot be printed in source form; this is a Click rendering gap, not a missing premise",
+                    "arithmetic proved the goal from the listed premises with a {}-node Integer certificate, but one of its steps cannot be printed in source form; this is a Click rendering gap, not a missing premise",
                     plan.nodes.len()
                 )));
             }
             if premises.is_empty() {
                 return Err(self.step_error(format!(
-                    "`arithmetic` read the current goal as an Integer linear claim, which does not hold on its own; {BARE_ARITHMETIC_HINT}"
+                    "arithmetic read the current goal as an Integer linear claim, which does not hold on its own; {BARE_ARITHMETIC_HINT}"
                 )));
             }
             return Err(self.step_error(format!(
-                "`arithmetic` read the current goal as an Integer linear claim; no combination of the listed premises proves it{}",
+                "arithmetic read the current goal as an Integer linear claim; no combination of the listed premises proves it{}",
                 describe_integer_premise_reading(&premises, &anchored_surface_premises)
             )));
         }
@@ -1848,13 +1847,13 @@ impl<'a> Proof<'a> {
                 && !unsigned_order
             {
                 return Err(self.step_error(
-                    "`arithmetic` requires a supported signed int32 comparison or equality goal",
+                    "arithmetic requires a supported signed int32 comparison or equality goal",
                 ));
             }
             if let Some((nonlinear, machine_operation)) = signed_goal_shape_flags(goal) {
                 if nonlinear {
                     return Err(self.step_error(
-                        "`arithmetic` requires a supported signed int32 comparison or equality goal",
+                        "arithmetic requires a supported signed int32 comparison or equality goal",
                     ));
                 }
                 // A `uint32` order over a plain variable is decided from the
@@ -1863,11 +1862,11 @@ impl<'a> Proof<'a> {
                 if machine_operation && !(unsigned_order && unsigned_order_names_a_variable(goal)) {
                     if premises.is_empty() {
                         return Err(self.step_error(format!(
-                            "`arithmetic` cannot establish that every int32 operation in the current goal is defined without overflow from the goal alone; {BARE_ARITHMETIC_HINT}"
+                            "arithmetic cannot establish that every int32 operation in the current goal is defined without overflow from the goal alone; {BARE_ARITHMETIC_HINT}"
                         )));
                     }
                     return Err(self.step_error(
-                        "`arithmetic` cannot establish that every int32 operation in the current goal is defined without overflow from exactly the listed premises",
+                        "arithmetic cannot establish that every int32 operation in the current goal is defined without overflow from exactly the listed premises",
                     ));
                 }
             }
@@ -1887,11 +1886,11 @@ impl<'a> Proof<'a> {
         }
         if premises.is_empty() {
             return Err(self.step_error(format!(
-                "`arithmetic` could not construct a checked arithmetic certificate from the goal alone; {BARE_ARITHMETIC_HINT}"
+                "arithmetic could not construct a checked arithmetic certificate from the goal alone; {BARE_ARITHMETIC_HINT}"
             )));
         }
         Err(self.step_error(
-            "`arithmetic` could not construct a checked arithmetic certificate from exactly the listed premises",
+            "arithmetic could not construct a checked arithmetic certificate from exactly the listed premises",
         ))
     }
 

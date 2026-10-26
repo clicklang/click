@@ -49,7 +49,7 @@ int read(int* p) {
                 unfold(tri_code(Tri::Zero));
                 normalize();
             }
-            simp();
+            solve();
         },
         Tri::One => {
             unfold(c);
@@ -60,7 +60,7 @@ int read(int* p) {
                 unfold(tri_code(Tri::One));
                 normalize();
             }
-            simp();
+            solve();
         },
         Tri::Other(value) => {
             unfold(c);
@@ -71,7 +71,7 @@ int read(int* p) {
                 unfold(tri_code(Tri::Other(value)));
                 normalize();
             }
-            simp();
+            solve();
         },
     }
 }

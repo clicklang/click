@@ -81,7 +81,7 @@ tactic: step
     |     ^^^^^^^
 goal: x <= 2147483646
 help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`
-refused by: the implicit `auto` that proves this statement's requirements (smart: it may miss; if the goal holds, prove it through smaller steps)
+refused by: the implicit closer that proves this statement's requirements (smart: it may miss; if the goal holds, prove it through smaller steps)
 see: click docs tracing
 
 To get a trace:
@@ -90,7 +90,7 @@ To get a trace:
 
 The omitted proof's execution is still named `execute()` in the report, and
 the closer that proves a statement's requirements is named the implicit
-`auto`. In C, signed overflow is undefined behavior, and `x + 1` overflows when `x` is
+closer. In C, signed overflow is undefined behavior, and `x + 1` overflows when `x` is
 the largest `int`: the goal `x <= 2147483646` is false there, so no proof can
 close it. Click proves the absence of undefined behavior along with
 every claim, so the call is safe only when `x + 1` fits. The contract needs a

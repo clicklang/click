@@ -6,7 +6,7 @@ conversion is a bijection from `0..255` onto `-128..127`, so a fact about
 the signed read decides the unsigned one: `p[0] == 7` gives
 `((unsigned char *)p)[0] == 7`, and `p[0] == -56` gives `200`. The
 contracts here state the byte as a user-space (signed) `char` and the bodies
-read it through an `unsigned char *` view. Both `simp` and its checked
+read it through an `unsigned char *` view. Both the implicit closer and its checked
 expansion use the same rule, in a returned value, a branch condition, and a
 callee's `unsigned char` precondition.
 `userspace_signed_char_fact_does_not_give_another_unsigned_byte.md` keeps

@@ -52,12 +52,12 @@ theorem length_nonnegative(xs: List<int32>) {
         induct(xs) as ih {
             List::Nil => {
                 unfold(length(List<int32>::Nil));
-                simp();
+                solve();
             }
             List::Cons(value, rest) => {
                 apply(ih(rest));
                 unfold(length(List<int32>::Cons(value, rest)));
-                arithmetic() using { length(rest) >= 0; };
+                solve() using { length(rest) >= 0; };
             }
         }
     }
@@ -70,7 +70,7 @@ void destroy(Node* p) {
         owns list: nodes(p);
         decreases length(list.items);
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match list.items {
                 List::Nil => { contradiction(list.items == List<int32>::Nil); },
@@ -78,8 +78,8 @@ void destroy(Node* p) {
                     let { tail: tail } = unfold(list);
                     unfold(length(List::Cons(value, rest)));
                     apply(length_nonnegative(rest));
-                    have 0 <= length(tail.items) by simp();
-                    have length(tail.items) < length(List::Cons(value, rest)) by arithmetic() using {
+                    have 0 <= length(tail.items) by solve();
+                    have length(tail.items) < length(List::Cons(value, rest)) by solve() using {
                         length(List::Cons(value, rest)) == length(rest) + 1;
                         tail.items == rest;
                     };
@@ -91,7 +91,7 @@ void destroy(Node* p) {
         }
     }
     unfold(list);
-    simp();
+    solve();
 }
 ```
 

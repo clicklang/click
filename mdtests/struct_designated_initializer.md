@@ -47,14 +47,10 @@ verifying "struct_designated_initializer.c";
 
 int32 direct_designators() {
     ensures result == 35;
-} by {
-    auto();
 }
 
 int32 nested_designator() {
     ensures result == 8;
-} by {
-    auto();
 }
 ```
 

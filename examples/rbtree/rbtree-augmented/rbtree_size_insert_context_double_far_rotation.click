@@ -180,15 +180,15 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             to_integer(sized_value(SizedTree::Empty)) == 0;
                         };
                     }
-                    have -2147483648 <= to_integer(pv) by auto();
-                    have to_integer(pv) <= 2147483647 by auto();
+                    have -2147483648 <= to_integer(pv);
+                    have to_integer(pv) <= 2147483647;
                     have to_integer(pv) - to_integer(1) >= -2147483648 by { solve() using {
                         to_integer(pv) == 2 + to_integer(sized_value(far));
                         0 <= to_integer(sized_value(far));
                     }; }
                     have to_integer(pv) - to_integer(1) <= 2147483647 by { solve() using { to_integer(pv) <= 2147483647; }; }
-                    have defined(pv - 1) by auto();
-                    have to_integer(pv - 1) == to_integer(pv) - to_integer(1) by auto();
+                    have defined(pv - 1);
+                    have to_integer(pv - 1) == to_integer(pv) - to_integer(1);
                     have to_integer(pv - 1) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(SizedTree::Empty)) by { solve() using {
                         to_integer(pv - 1) == to_integer(pv) - to_integer(1);
                         to_integer(pv) == 2 + to_integer(sized_value(far));

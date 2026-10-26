@@ -9,10 +9,10 @@ spelling of every pair matches the theorem's own, the second is mirrored.
 ```click
 import click::integer;
 theorem observed_range(value: uint32) {
-    ensures 0 <= to_integer(value) by auto();
-    ensures to_integer(value) >= 0 by auto();
-    ensures to_integer(value) <= 4294967295 by auto();
-    ensures 4294967295 >= to_integer(value) by auto();
+    ensures 0 <= to_integer(value);
+    ensures to_integer(value) >= 0;
+    ensures to_integer(value) <= 4294967295;
+    ensures 4294967295 >= to_integer(value);
 }
 
 theorem integer_successor_is_greater(value: Integer) {
@@ -26,14 +26,14 @@ theorem strict_integer_order(value: Integer) {
 
 theorem strict_signed_order(value: int32) {
     requires value < 100;
-    ensures to_integer(value) < to_integer(value + 1) by auto();
-    ensures to_integer(value + 1) > to_integer(value) by auto();
+    ensures to_integer(value) < to_integer(value + 1);
+    ensures to_integer(value + 1) > to_integer(value);
 }
 
 theorem unsigned_order(value: uint32, upper: uint32) {
     requires value < upper;
-    ensures to_integer(value + 1u32) <= to_integer(upper) by auto();
-    ensures to_integer(upper) >= to_integer(value + 1u32) by auto();
+    ensures to_integer(value + 1u32) <= to_integer(upper);
+    ensures to_integer(upper) >= to_integer(value + 1u32);
 }
 ```
 

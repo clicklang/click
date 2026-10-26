@@ -79,9 +79,9 @@ proof, use `by T(args);`, such as `by assumption();`, or `by solve();` for a
 claim with no C left, such as a `have` or a pure theorem. Braces
 are optional around that single tactic. Use `by { ... }` for a sequence of
 tactics. Call-style tactics always take parentheses, including `solve()`.
-Write `solve`, `solve() using`, and `step_until`, not their older spellings
-`simp`, `auto`, `arithmetic`, and `execute_until`, and don't write
-`execute()`. Structural forms such as `if`, `match`, and `have` retain their
+Write `solve`, `solve() using`, and `step_until`; the parser refuses the
+removed spellings `simp`, `auto`, `arithmetic`, and `execute_until`. Don't
+write `execute()`. Structural forms such as `if`, `match`, and `have` retain their
 own grammar. For binary proof splits
 (`if` and `branch`), write `then` exactly when an `ensuring` interface precedes
 the arms. Call modifiers follow the

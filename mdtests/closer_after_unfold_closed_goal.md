@@ -3,7 +3,7 @@
 `unfold` refreshes the goal through one defining equation, and when the
 refreshed goal is already an available fact the goal is closed by that
 alone; when it is not, a `normalize()` closes what is left. A proof cannot
-always tell which it will be, so a trailing `assumption`, `simp`, or
+always tell which it will be, so a trailing `assumption`, `solve`, or
 `normalize` after a closed goal asserts a closed judgment and emits nothing,
 in any position. The first `have` below needs its `normalize()`; the second
 does not, because unfolding `red_bit_value()` leaves exactly the fact the

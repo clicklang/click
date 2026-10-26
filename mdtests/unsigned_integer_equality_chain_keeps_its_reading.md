@@ -11,7 +11,7 @@ theorem unsigned_equality_chain(adler: uint64, seed: uint64, value: uint64, spec
     requires to_integer(adler) == to_integer(value);
     requires specification == to_integer(seed);
     ensures to_integer(value) == specification by {
-        arithmetic() using {
+        solve() using {
             to_integer(adler) == to_integer(seed);
             to_integer(adler) == to_integer(value);
             specification == to_integer(seed);

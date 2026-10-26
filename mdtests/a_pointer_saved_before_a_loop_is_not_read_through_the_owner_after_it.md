@@ -58,7 +58,7 @@ int32 f(struct holder* h, struct holder* g) {
         invariant i >= 0;
         owns holder(h);
         owns holder(g);
-        initialize by simp();
+        initialize by solve();
         preserve by {
             unfold(holder(h));
             unfold(holder(g));
@@ -69,7 +69,7 @@ int32 f(struct holder* h, struct holder* g) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

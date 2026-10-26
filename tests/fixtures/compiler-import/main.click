@@ -6,12 +6,12 @@ int32 from_header() {
     ensures result == 15;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 answer() {
     ensures result == 15;
 } by {
     execute();
-    simp();
+    solve();
 }

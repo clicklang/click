@@ -6,7 +6,7 @@ count: `memcpy(dst, src, 4); dst[4] = 0;` and then the copied bytes. The
 64-bit index into the 32-bit-bounded range `src[0..4]` of the `separate`
 requirement, so typed range membership places them by the exact guard fact
 before the separation keeps them apart from the store at `dst[4]`. Both the
-explicit `transport` and the smart `execute(); simp();` close it.
+explicit `transport` and the smart `execute(); solve();` close it.
 
 ```c filename=copy.c
 #include <string.h>
@@ -40,7 +40,7 @@ void copy_u_smart(uint8* dst, const uint8* src) {
     owns dst[0..5];
     requires separate(memory(dst[0..5]), memory(src[0..4]));
     ensures bytes::equal(dst, 0u64, src, 0u64, 4u64);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

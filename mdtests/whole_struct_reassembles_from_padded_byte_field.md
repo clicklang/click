@@ -11,12 +11,12 @@ int mixed_fields(struct mixed *p) { set_c(p); return p->a; }
 ```
 ```click
 verifying "mixed.c";
-int32 set_c(struct mixed* p) { owns *p; ensures result == 0; } by { execute(); simp(); }
+int32 set_c(struct mixed* p) { owns *p; ensures result == 0; } by { execute(); solve(); }
 int32 mixed_fields(struct mixed* p) {
     requires aligned(p, 4);
     owns p->a;
     owns p->c;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 ```expect
 pass

@@ -25,7 +25,7 @@ verifying "tsearch_height.c";
 int32 height(struct node *n) {
     requires n != 0;
     views n[0..1];
-    ensures result == n->h by auto();
+    ensures result == n->h;
 }
 ```
 

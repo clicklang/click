@@ -20,8 +20,8 @@ theorem countdown_explicit_is_zero(n: int32) {
             unfold(countdown_explicit(n));
             normalize() using { n <= 0; };
         } else {
-            have 0 <= to_integer(n - 1) by auto();
-            have to_integer(n - 1) < to_integer(n) by auto();
+            have 0 <= to_integer(n - 1);
+            have to_integer(n - 1) < to_integer(n);
             apply(ih(n - 1)) using {
                 0 <= to_integer(n - 1);
                 to_integer(n - 1) < to_integer(n);

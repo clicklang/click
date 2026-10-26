@@ -1,8 +1,8 @@
-# `simp` reads a definition's condition and joins constructor equations
+# `solve` reads a definition's condition and joins constructor equations
 
 Reading a condition out of a function's definition, and joining two
-constructor equations of one value, are strategies of `simp` over the facts
-connected to the goal, so `simp()` proves what `auto()` does in
+constructor equations of one value, are strategies of `solve` over the facts
+connected to the goal, so `solve()` proves what the omitted proof does in
 [`auto_reads_a_condition_out_of_a_definition.md`](auto_reads_a_condition_out_of_a_definition.md)
 and
 [`auto_reads_fields_through_two_constructor_equations.md`](auto_reads_fields_through_two_constructor_equations.md).

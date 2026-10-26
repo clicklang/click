@@ -10,7 +10,7 @@ predicate defined(x: int32) { x == 1 }
 
 theorem t(x: int32) {
     requires x == 5;
-    ensures defined(x) by auto();
+    ensures defined(x);
 }
 ```
 

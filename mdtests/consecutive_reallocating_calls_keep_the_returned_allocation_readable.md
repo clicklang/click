@@ -63,7 +63,7 @@ void box_renew(struct box* box) {
 } by {
     unfold(boxed(box));
     execute();
-    simp();
+    solve();
 }
 
 int32 box_cycle(struct box* box) {
@@ -71,7 +71,7 @@ int32 box_cycle(struct box* box) {
     ensures result == old(box->data[0]);
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

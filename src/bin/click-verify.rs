@@ -853,7 +853,7 @@ fn refusal_class_lines(context: &[String], written: Option<&str>, ended_open: bo
         let smart = click::docs::TacticClass::Smart;
         return vec![
             format!(
-                "refused by: the implicit `auto` that proves this statement's requirements ({}: {})",
+                "refused by: the implicit closer that proves this statement's requirements ({}: {})",
                 smart.label(),
                 smart.refusal_meaning()
             ),
@@ -1777,7 +1777,7 @@ mod tests {
     #[test]
     fn loop_entry_refusal_bounds_unexecuted_preservation_source() {
         let source = format!(
-            "verifying \"program.c\";\nvoid loop_wall() {{ ensures 0 == 0; }} by {{\nexecute_until(loop(0));\nloop {{ invariant i == 1; preserve by {{\n{}step();\n}} }}\nexecute();\n}}",
+            "verifying \"program.c\";\nvoid loop_wall() {{ ensures 0 == 0; }} by {{\nstep_until(loop(0));\nloop {{ invariant i == 1; preserve by {{\n{}step();\n}} }}\nexecute();\n}}",
             "have 0 == 0 by { normalize(); }\n".repeat(300)
         );
         let (root, path) = temporary_project(
@@ -1842,7 +1842,7 @@ mod tests {
             verifying "program.c";
             theorem negative(n: int32) {
                 requires n < 0;
-                ensures n < 1 by { simp(); }
+                ensures n < 1 by { solve(); }
             }
             extern int32 child(int32 x) {
                 requires 0 <= x;
@@ -1857,7 +1857,7 @@ mod tests {
                     apply(negative(r)) using { 0 <= r; }
                 }
                 step();
-                simp();
+                solve();
             }
         "#,
         );
@@ -2025,7 +2025,7 @@ void walk(int32 n) { requires n >= 0; ensures 0 == 0; } by {
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             have i >= 0 by { assumption(); }
             apply(positive(0));
@@ -2082,11 +2082,11 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             source.push_str(&format!("        invariant i >= -{bound};\n"));
         }
         source.push_str(
-            r#"        initialize by simp();
+            r#"        initialize by solve();
         preserve by { step(); close_invariants(); }
     }
     have 0 == 1 by { normalize(); }
-    execute(); simp();
+    execute(); solve();
 }
 "#,
         );
@@ -2234,7 +2234,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         let target = |index: &ProofSourceIndex, line, column| {
             resolve_trace_target(index, 8, &TraceTo { line, column })
         };
-        let source = "theorem shared() {\n    ensures true by { simp(); simp(); }\n}\ntheorem alone() {\n    ensures true by {\n        simp();\n    }\n}\n";
+        let source = "theorem shared() {\n    ensures true by { solve(); solve(); }\n}\ntheorem alone() {\n    ensures true by {\n        solve();\n    }\n}\n";
         let shared = index(source);
         assert_eq!(
             target(&shared, 14, None).unwrap(),
@@ -2251,14 +2251,14 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         );
 
         // A `cases` arm's block follows `=>`; its tactics are targets too.
-        let arm = "theorem arm() {\n    ensures true by {\n        cases {\n            true => {\n                simp();\n            }\n            false => {\n                simp();\n            }\n        }\n    }\n}\n";
+        let arm = "theorem arm() {\n    ensures true by {\n        cases {\n            true => {\n                solve();\n            }\n            false => {\n                solve();\n            }\n        }\n    }\n}\n";
         assert_eq!(
             target(&index(arm), 13, None).unwrap(),
             click::surface::SourcePosition::new(5, 17),
         );
 
         // A `have` with its proof on the same line is that line's target.
-        let nested = "theorem nested() {\n    ensures true by {\n        have true by { simp(); }\n    }\n}\n";
+        let nested = "theorem nested() {\n    ensures true by {\n        have true by { solve(); }\n    }\n}\n";
         assert_eq!(
             target(&index(nested), 11, None).unwrap(),
             click::surface::SourcePosition::new(3, 9),
@@ -2555,7 +2555,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                  ensures result == 0;\n\
              } by {\n\
                  execute();\n\
-                 simp();\n\
+                 solve();\n\
              }\n",
         );
         let run = || {
@@ -2609,7 +2609,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                      ensures result == 0;\n\
                  } by {\n\
                      execute();\n\
-                     simp();\n\
+                     solve();\n\
                  }\n",
             );
             let LoadedTarget {
@@ -2675,7 +2675,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                  ensures result == x;\n\
              } by {\n\
                  execute();\n\
-                 simp();\n\
+                 solve();\n\
              }\n",
         );
         let (result, events) = collect(|| entry_with([click_path.display().to_string()]));
@@ -2692,7 +2692,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
     fn a_c_parsing_work_stop_is_a_limit_error() {
         let c_source = "int identity(int x) { return x; }";
         let click_source = "verifying \"program.c\";\n\
-            int identity(int x) { ensures result == x; } by { execute(); simp(); }\n";
+            int identity(int x) { ensures result == x; } by { execute(); solve(); }\n";
         let (root, click_path) = temporary_project("parsing-work-limit", c_source, click_source);
         let error = entry_with([
             "--work-limit".to_string(),
@@ -2742,7 +2742,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                  ensures result == x;\n\
              } by {\n\
                  execute();\n\
-                 simp();\n\
+                 solve();\n\
              }\n",
         );
         let error = entry_with([
@@ -2792,7 +2792,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             &click_path,
             "verifying \"realloc.c\";\n\
                 int32 realloc_preserves_calloc_prefix() {\n\
-                    ensures result == 0 or result == -1 by auto();\n\
+                    ensures result == 0 or result == -1;\n\
                 }\n",
         )
         .expect("Click sidecar should be writable");

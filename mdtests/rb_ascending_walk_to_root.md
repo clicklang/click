@@ -31,7 +31,7 @@ be `0` where the invariant says `1` (package A21).
 
 The exit explicitly refutes `Left` and `Right`. Constructor injectivity on the
 `ctx_reroot` invariant gives `identity == parent`. Unfolding that frame exposes
-its nonnull fact `identity != 0`, which `simp` carries across that equality to
+its nonnull fact `identity != 0`, which `solve` carries across that equality to
 `parent != 0`, contradicting the exit's `parent == 0`. The surviving arm states
 `c.model == Context::Top`, so the walk can fold the root frame.
 
@@ -274,7 +274,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
         invariant c.model == ctx_reroot(c.model, parent);
         invariant plug(c.model, t.model) == plug(old(c.model), old(t.model));
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match c.model {
                 Context::Top => {
@@ -381,14 +381,14 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
             unfold(ctx_reroot(Context::Left(identity, grandparent, color, sibling_model, up_model), parent));
             have identity == parent by assumption();
             let { sibling: exit_sibling, up: exit_up } = unfold(c);
-            have parent != 0 by simp();
+            have parent != 0 by solve();
             contradiction(parent == 0);
         },
         Context::Right(identity, grandparent, color, sibling_model, up_model) => {
             unfold(ctx_reroot(Context::Right(identity, grandparent, color, sibling_model, up_model), parent));
             have identity == parent by assumption();
             let { sibling: exit_sibling, up: exit_up } = unfold(c);
-            have parent != 0 by simp();
+            have parent != 0 by solve();
             contradiction(parent == 0);
         },
     }
@@ -422,7 +422,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                 assumption();
             }
             step();
-            simp();
+            solve();
         },
     }
 }

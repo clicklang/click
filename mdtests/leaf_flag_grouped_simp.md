@@ -1,10 +1,10 @@
-# grouped `simp` certifies a boolean leaf check's vacuous implications
+# grouped `solve` certifies a boolean leaf check's vacuous implications
 
 A boolean-result leaf test returns early when a pointer field is non-null.
 On those paths an ensure such as `left == 0 implies (right == 0 implies
 result == 1)` is vacuously true: its lowered consequent is a false constant
 and the claim closes only through the contradiction between the assumed
-antecedent and the recorded branch fact. The grouped `simp` transition must
+antecedent and the recorded branch fact. The grouped `solve` transition must
 express that derivation with explicit path facts rather than an opaque
 certificate.
 
@@ -40,7 +40,7 @@ int32 leaf_flag(struct pair* p) {
     ensures result == 0 or result == 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

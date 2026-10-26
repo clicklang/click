@@ -1322,7 +1322,7 @@ id = "tactic.loop"
 path = "reference/tactics/index.md#execution"
 
 [[item]]
-id = "tactic.simp"
+id = "tactic.solve"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
@@ -1339,10 +1339,6 @@ path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
 id = "tactic.normalize"
-path = "reference/tactics/index.md#proposition-reasoning"
-
-[[item]]
-id = "tactic.arithmetic"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
@@ -1581,12 +1577,6 @@ id = "tactic-form.normalize"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.normalize-using"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.arithmetic"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.arithmetic-using"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.arithmetic-certificate"

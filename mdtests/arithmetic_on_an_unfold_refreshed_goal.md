@@ -4,10 +4,10 @@
 the listed guards select. It installs that refreshed claim in both forms: the
 kernel proposition the law substituted into, and the written spelling the law
 replaced `f(args)` by. A later tactic that dispatches on the written goal --
-`arithmetic` over the `Integer` linear fragment among them -- therefore reads
+arithmetic over the `Integer` linear fragment among them -- therefore reads
 the claim this step left open, not the one the reader wrote before it.
 
-Without the written form, the identical `arithmetic() using` that proves this
+Without the written form, the identical `solve() using` that proves this
 claim as a `have` was refused with the signed-int32 planner's precondition,
 because the `Integer` route is reached from the written goal.
 

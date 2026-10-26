@@ -3,7 +3,7 @@
 `x < 0` beside `x >= 0` leaves no value for `x`, so they prove any goal. The
 signed planner, which plans an interval for every operand it needs defined,
 declines the empty interval rather than planning a certificate the kernel would
-refuse. `arithmetic()` then refutes the goal's negation by simplex, its last
+refuse. Arithmetic then refutes the goal's negation by simplex, its last
 engine, and the kernel checks that refutation.
 
 ```c filename=arithmetic_proves_any_goal_from_contradictory_premises.c

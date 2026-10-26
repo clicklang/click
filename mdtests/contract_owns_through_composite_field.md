@@ -46,7 +46,7 @@ void probe(struct node* node) {
     unfold(pair(node));
     execute();
     fold(pair(node));
-    simp();
+    solve();
 }
 
 void probe_reversed(struct node* node) {
@@ -60,7 +60,7 @@ void probe_reversed(struct node* node) {
     unfold(pair(node));
     execute();
     fold(pair(node));
-    simp();
+    solve();
 }
 ```
 

@@ -39,7 +39,7 @@ void pool_destroy(struct pool* pool) {
 } by {
     unfold(pool_control(pool));
     unfold(pool->capacity of pool_slot(pool));
-    have count(pool_slot(pool)) == 0 by auto();
+    have count(pool_slot(pool)) == 0;
     step();
     unfold(authority(pool_slot(pool)));
     execute();

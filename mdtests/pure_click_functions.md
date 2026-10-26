@@ -90,39 +90,39 @@ predicate one_more(x: int32, y: int32) {
 
 int32 increment_value(int32 x) {
     requires x < 2147483647;
-    ensures result_value: result == inc(x) by { execute(); simp(); }
+    ensures result_value: result == inc(x) by { execute(); solve(); }
     ensures predicate_value: one_more(x, result) by {
         execute();
         unfold(one_more);
-        simp();
+        solve();
     }
 }
 
 int32 read_first_with_function(int32 p[1]) {
     views p[0..1];
-    ensures current_value: result == head(p) by auto();
-    ensures old_value: result == old(head(p)) by auto();
+    ensures current_value: result == head(p);
+    ensures old_value: result == old(head(p));
 }
 
 int32 branch_indicator(int32 x, int32 y) {
-    ensures result_value: result == eq_as_int(x, y) by auto();
+    ensures result_value: result == eq_as_int(x, y);
 }
 
 int32 count_three_matches(int32 p[3], int32 x) {
     views p[0..3];
-    ensures result_value: result == count3(p, x) by auto();
-    ensures stdlib_count_value: result == permutation::count(p, 0, 3, x) by auto();
+    ensures result_value: result == count3(p, x);
+    ensures stdlib_count_value: result == permutation::count(p, 0, 3, x);
 }
 
 int32 range_helpers() {
     ensures all_reflexive: (0..3).all(|k| { k == k }) by {
         execute();
-        simp();
+        solve();
     }
     ensures any_has_one: (0..3).any(|k| { k == 1 }) by {
         execute();
         witness { k: 1 };
-        simp();
+        solve();
     }
 }
 
@@ -131,7 +131,7 @@ int32 identity_permutation(int32 p[3]) {
     ensures same_multiset: permutation::permutation(p, p, 0, 3) by {
         execute();
         unfold(permutation::permutation);
-        simp();
+        solve();
     }
 }
 ```

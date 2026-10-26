@@ -17,5 +17,5 @@ void compose(const uint8* base, const uint8* middle, const uint8* end) {
 ```
 
 ```expect
-fail: checked outcome `simp() using` search did not retain a complete proof
+fail: checked outcome `solve() using` search did not retain a complete proof
 ```

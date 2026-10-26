@@ -13,7 +13,7 @@ unsigned long recolor(unsigned long word, int32 tag) {
     requires 0 <= tag;
     requires tag <= 1;
     ensures ((struct node*)(result & ~3)) == old((struct node*)(word & ~3));
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

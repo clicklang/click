@@ -39,7 +39,7 @@ int32 walk(int32 n) {
             step();
             have i <= n;
             have i < 2147483647 by { solve() using { i <= n; n < 2147483647; }; }
-            have defined(i + 1) by auto();
+            have defined(i + 1);
             close_invariants();
         }
     }

@@ -424,10 +424,10 @@ struct rb_node* rb_first(const struct rb_root* root) {
                 rewrite(ctx.model == Context::Top);
                 unfold(plug(Context::Top, sub.model));
                 rewrite(sub.model == RbTree::Empty);
-                simp();
+                solve();
             }
             execute();
-            simp();
+            solve();
         },
         RbTree::Node(entry_identity, entry_parent, entry_color,
                      entry_left, entry_right) => {
@@ -457,7 +457,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
                 invariant ctx_all_left(ctx.model) == 1;
                 invariant plug(ctx.model, t.model) == old(t.model);
 
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     match t.model {
                         RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
@@ -555,7 +555,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
                         assumption();
                     }
                     step();
-                    simp();
+                    solve();
                 },
             }
         },

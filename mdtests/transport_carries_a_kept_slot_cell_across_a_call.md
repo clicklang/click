@@ -54,7 +54,7 @@ void put(struct pool* pool, struct slot* s, int32 value) {
     ensures pool->data[s->at] == value;
 } by {
     let { at: a, end: e } = unfold(r);
-    have to_integer(a + 1) <= to_integer(e) by auto();
+    have to_integer(a + 1) <= to_integer(e);
     have s->at == a by {
         assumption();
     }
@@ -64,7 +64,7 @@ void put(struct pool* pool, struct slot* s, int32 value) {
     }
     execute();
     let r = fold(pool_slot(s, pool), { at: a, end: e });
-    simp();
+    solve();
 }
 
 void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
@@ -85,7 +85,7 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
         };
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

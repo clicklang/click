@@ -51,25 +51,25 @@ int32 composite_resource_vector_fill_loop_snapshot(
         invariant i >= 0 and i <= owner->len;
         owns vector(owner);
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             unfold(vector(owner));
             have i < owner->cap;
             step();
             step();
             have i >= 0 by {
-                simp() using {
+                solve() using {
                     at(region(3).entry, i) >= 0;
                     at(region(3).entry, i) < at(region(3).entry, owner->len);
                 };
             }
             have i <= owner->len by {
-                simp() using {
+                solve() using {
                     at(region(3).entry, i) < at(region(3).entry, owner->len);
                 };
             }
             have 0 <= 0 - at(region(3).entry, i) + owner->len - 1 by {
-                arithmetic() using {
+                solve() using {
                     at(region(3).entry, i) >= 0;
                     at(region(3).entry, i) < at(region(3).entry, owner->len);
                     0 <= owner->len;
@@ -78,7 +78,7 @@ int32 composite_resource_vector_fill_loop_snapshot(
             }
             have 0 - at(region(3).entry, i) + owner->len - 1
                 < 0 - at(region(3).entry, i) + owner->len by {
-                arithmetic() using {
+                solve() using {
                     at(region(3).entry, i) >= 0;
                     at(region(3).entry, i) < at(region(3).entry, owner->len);
                     0 <= owner->len;

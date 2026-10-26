@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn smart_proof_calls_have_identical_meaning_with_optional_braces() {
-    for tactic in ["simp", "auto", "assumption", "normalize"] {
+    for tactic in ["solve", "assumption", "normalize"] {
         let call = format!("by {tactic}();");
         let block = format!("by {{ {tactic}(); }}");
         let source = |proof: &str| {
@@ -27,25 +27,16 @@ fn smart_proof_calls_have_identical_meaning_with_optional_braces() {
             .unwrap_or_else(|error| panic!("{proof}: {error:?}"));
         }
     }
-    for proof in ["by auto();", "by { auto(); }"] {
-        verify_c0_sources(
-            &format!("verifying \"identity.c\"; int32 identity(int32 x) {{ ensures result == x {proof} }}"),
-            &[("identity.c", "int32 identity(int32 x) { return x; }")],
-        ).unwrap();
-    }
 }
 
 #[test]
 fn bare_smart_tactics_are_rejected_in_proofs_and_scripts() {
     for proof in [
-        "by simp;",
-        "by { simp; }",
-        "by auto;",
-        "by { auto; }",
-        "by { have x == 7 by assumption(); simp; }",
-        "by { have x == 7 by simp; assumption(); }",
-        "by { have x == 7 by auto; assumption(); }",
-        "by simp using { x == 7; };",
+        "by solve;",
+        "by { solve; }",
+        "by { have x == 7 by assumption(); solve; }",
+        "by { have x == 7 by solve; assumption(); }",
+        "by solve using { x == 7; };",
     ] {
         let source =
             format!("theorem fact(x: int32) {{ requires x == 7; ensures x == 7 {proof} }}");
@@ -55,12 +46,7 @@ fn bare_smart_tactics_are_rejected_in_proofs_and_scripts() {
             "{proof}: {error:?}"
         );
     }
-    for proof in [
-        "by simp(1);",
-        "by auto(1);",
-        "by { simp(1); }",
-        "by { auto(1); }",
-    ] {
+    for proof in ["by solve(1);", "by { solve(1); }"] {
         let error =
             parser::parse(&format!("theorem fact() {{ ensures true {proof} }}")).unwrap_err();
         assert!(
@@ -76,10 +62,10 @@ fn nested_single_tactic_calls_keep_their_checked_scopes() {
         "theorem fact(x: int32) {
         requires x == 7;
         ensures x == 7 by {
-            have first: x == 7 by auto();
-            have second: x == 7 by { simp(); }
+            have first: x == 7;
+            have second: x == 7 by { solve(); }
             have x == 7 by assumption();
-            simp() using { first; second; };
+            solve() using { first; second; };
         }
     }",
     )
@@ -88,7 +74,7 @@ fn nested_single_tactic_calls_keep_their_checked_scopes() {
 
 #[test]
 fn whole_proof_auto_call_cannot_be_shadowed_by_a_user_tactic() {
-    let error = parser::parse("tactic auto() { ensures true; } by simp();").unwrap_err();
+    let error = parser::parse("tactic solve() { ensures true; } by solve();").unwrap_err();
     assert!(error.message().contains("built-in"), "{error:?}");
 }
 
@@ -123,7 +109,7 @@ fn canonical_using_calls_wrap_long_premises_and_keep_their_terminator() {
     let head = format!(
         "theorem equal({left}: Integer, {right}: Integer) {{ requires {left} == {right}; ensures {left} == {right}"
     );
-    let source = format!("{head} by {{ arithmetic() using {{ {left} == {right}; }} }} }}");
+    let source = format!("{head} by {{ solve() using {{ {left} == {right}; }} }} }}");
     verify_click_theorems(&source).unwrap();
     let parsed = parser::parse(&source).unwrap();
     let proof = parsed.theorem_definitions()[0].ensures()[0].proof();
@@ -175,5 +161,34 @@ fn binary_splits_require_then_exactly_when_they_have_an_interface() {
         )))
         .unwrap_err();
         assert!(error.message().contains("then"), "{error:?}");
+    }
+}
+
+/// `simp`, `auto`, `arithmetic` and `execute_until` are removed spellings:
+/// in each place a tactic or a one-tactic proof stands, the parser refuses
+/// them and names what replaced them.
+#[test]
+fn removed_tactic_spellings_name_their_replacement() {
+    for (proof, replacement) in [
+        ("by simp();", "`solve()`"),
+        ("by { simp(); }", "`solve()`"),
+        ("by { normalize(); simp() using { x == 7; }; }", "`solve()`"),
+        ("by auto();", "the omitted proof"),
+        ("by { auto(); }", "the omitted proof"),
+        (
+            "by { have x == 7 by auto(); assumption(); }",
+            "the omitted proof",
+        ),
+        ("by arithmetic();", "`solve() using {}`"),
+        (
+            "by { arithmetic() using { x == 7; }; }",
+            "`solve() using { ... }`",
+        ),
+        ("by { execute_until(function.exit); }", "`step_until`"),
+    ] {
+        let source =
+            format!("theorem fact(x: int32) {{ requires x == 7; ensures x == 7 {proof} }}");
+        let error = parser::parse(&source).expect_err(proof);
+        assert!(error.message().contains(replacement), "{proof}: {error:?}");
     }
 }

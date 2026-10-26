@@ -34,16 +34,16 @@ int32 fill3_array_loop(int32 p[3]) {
             0 <= k and k < i implies p[k] == k
         };
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             step();
             step();
             have to_integer(i) == to_integer(at(region(3).entry, i) + 1);
-            simp();
+            solve();
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

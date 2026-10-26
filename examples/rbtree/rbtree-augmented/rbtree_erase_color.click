@@ -16,5 +16,5 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
     ensures rb_inorder(whole.model) == rb_inorder(plug(old(c.model), RbTree::Empty));
 } by {
     let { whole: whole } = step(____rb_erase_color, { c: c });
-    execute(); simp();
+    execute(); solve();
 }

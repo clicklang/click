@@ -2,7 +2,7 @@
 
 This is `arena_init` from `examples/arena`, its C unchanged, with only the
 resources its own contract names. `consumes *arena` gives the
-function-entry fact `aligned(arena, 8)`. Expanding the `simp()` that closes
+function-entry fact `aligned(arena, 8)`. Expanding the `solve()` that closes
 the loop's `preserve` proof once cited that fact as a premise read at
 function entry.
 
@@ -155,7 +155,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             result
         ));
         fold(arena_init_result(arena, result));
-        simp();
+        solve();
     } else {}
     branch {
         step();
@@ -172,29 +172,29 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             result
         ));
         fold(arena_init_result(arena, result));
-        simp();
-    } else {}
-    step();
-    branch {
-        step();
-        fold(arena_initialized_storage(
-            arena->data,
-            arena->occupied,
-            arena->capacity,
-            result
-        ));
-        fold(arena_initialized_access(
-            arena->data,
-            arena->occupied,
-            arena->capacity,
-            result
-        ));
-        fold(arena_init_result(arena, result));
-        simp();
+        solve();
     } else {}
     step();
     branch {
         step();
+        fold(arena_initialized_storage(
+            arena->data,
+            arena->occupied,
+            arena->capacity,
+            result
+        ));
+        fold(arena_initialized_access(
+            arena->data,
+            arena->occupied,
+            arena->capacity,
+            result
+        ));
+        fold(arena_init_result(arena, result));
+        solve();
+    } else {}
+    step();
+    branch {
+        step();
         step();
         fold(arena_initialized_storage(
             arena->data,
@@ -209,15 +209,15 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             result
         ));
         fold(arena_init_result(arena, result));
-        simp();
+        solve();
     } else {}
     have 1 <= capacity by {
-        arithmetic() using {
+        solve() using {
             not (capacity <= 0);
         };
     }
     have capacity <= 536870911 by {
-        arithmetic() using {
+        solve() using {
             not (capacity > 536870911);
         };
     }
@@ -230,13 +230,13 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         };
         owns occupied[0..capacity];
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             mark iteration;
             step();
             step();
             have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
-                arithmetic() using {
+                solve() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < capacity;
                     1 <= capacity;
@@ -244,17 +244,17 @@ int32 arena_init(struct arena* arena, int32 capacity) {
                 };
             }
             have to_integer(capacity - at(iteration, i) - 1) < to_integer(capacity - at(iteration, i)) by {
-                arithmetic() using {
+                solve() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < capacity;
                     1 <= capacity;
                     capacity <= 536870911;
                 };
             }
-            simp();
+            solve();
         }
     }
-    have i == capacity by auto();
+    have i == capacity;
     have forall (k: int32) {
         0 <= k and k < capacity implies occupied[k] == 0
     } by {

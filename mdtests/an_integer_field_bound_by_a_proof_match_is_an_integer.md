@@ -7,7 +7,7 @@ Integer bindings. `have depth(c.model) == wd` was refused because Integer
 expressions cannot be compared with C values, and `unfold(depth(..wd..))`
 because `wd` was not an Integer binding. Both now read the arm's Integer
 bindings, as they already read its algebraic ones, and the field takes part in
-`arithmetic` like any other Integer.
+arithmetic like any other Integer.
 
 ```c filename=an_integer_field_bound_by_a_proof_match_is_an_integer.c
 void touch(int32 n) {

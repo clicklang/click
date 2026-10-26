@@ -61,7 +61,7 @@ struct node* caller(struct node* p, struct node* q, struct node* parent) {
 } by {
     let { child: child, a: a, b: b } = unfold(f);
     unfold(child);
-    have separate(memory(p->word), memory(((struct sized*)(void*)p)->size)) by auto();
+    have separate(memory(p->word), memory(((struct sized*)(void*)p)->size));
     word_metadata_separation(p, q, { b: b });
     mark before_update;
     have ((struct node*)(p->word & ~3)) == parent by solve();

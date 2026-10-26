@@ -5,7 +5,7 @@ import click::integer;
 theorem adler_bounded_count(count: uint64) {
  requires count <= 2147483647u64;
  ensures to_integer((int32)(uint32)count) == to_integer(count) by {
-  have to_integer(count) <= 18446744073709551615 by auto();
+  have to_integer(count) <= 18446744073709551615;
   arithmetic_certificate rules {
    premise 0: 0 <= to_integer(count) => 0 <= to_integer(count);
    premise 1: to_integer(count) <= 2147483647 => to_integer(count) <= 2147483647;
@@ -14,7 +14,7 @@ theorem adler_bounded_count(count: uint64) {
   }
  }
  ensures 0 <= (int32)(uint32)count by {
-  have to_integer(count) <= 18446744073709551615 by auto();
+  have to_integer(count) <= 18446744073709551615;
   have to_integer((int32)(uint32)count) == to_integer(count) by {
    arithmetic_certificate rules {
     premise 0: 0 <= to_integer(count) => 0 <= to_integer(count);
@@ -27,7 +27,7 @@ theorem adler_bounded_count(count: uint64) {
   assumption();
  }
  ensures (uint64)(int32)(uint32)count == count by {
-  have to_integer(count) <= 18446744073709551615 by auto();
+  have to_integer(count) <= 18446744073709551615;
   have to_integer((int32)(uint32)count) == to_integer(count) by {
    arithmetic_certificate rules {
     premise 0: 0 <= to_integer(count) => 0 <= to_integer(count);
@@ -56,7 +56,7 @@ theorem adler_bounded_pointer_index(base: const uint8*, count: uint64) {
  requires count <= 2147483647u64;
  ensures base + count == base + (int32)(uint32)count by {
   apply(adler_bounded_count(count));
-  simp() using { to_integer((int32)(uint32)count) == to_integer(count); (uint64)(int32)(uint32)count == count; 0 <= (int32)(uint32)count; count <= 2147483647u64; };
+  solve() using { to_integer((int32)(uint32)count) == to_integer(count); (uint64)(int32)(uint32)count == count; 0 <= (int32)(uint32)count; count <= 2147483647u64; };
  }
 }
 

@@ -36,7 +36,7 @@ int32 read_ref(int32** p) {
             have old(*p) == linked by { assumption(); }
             open(control(*p)) { execute(); }
             let saved = fold(slot(p), { link: Link::Present(linked) });
-            simp();
+            solve();
         },
     }
 }

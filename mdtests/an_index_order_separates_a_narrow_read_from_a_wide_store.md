@@ -35,7 +35,7 @@ int32 upper_half_survives(int32* a, int32 i, int32 j) {
     ensures result == 5;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

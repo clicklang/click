@@ -16,13 +16,13 @@ int read(int* p) {
     ensures c.model == old(c.model);
 } by {
     match c.model {
-        Maybe::None => { unfold(c); execute(); fold(c); simp(); },
+        Maybe::None => { unfold(c); execute(); fold(c); solve(); },
         Maybe::Some(value) => {
             unfold(c);
             execute();
-            have result == value by { simp(); }
+            have result == value by { solve(); }
             fold(c);
-            simp();
+            solve();
         },
     }
 }
@@ -181,7 +181,7 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
             "    requires c.model != Maybe::None;\n    ensures c.model",
         )
         .replace(
-            "Maybe::None => { unfold(c); execute(); fold(c); simp(); },",
+            "Maybe::None => { unfold(c); execute(); fold(c); solve(); },",
             "Maybe::None => { contradiction(c.model == Maybe::None); },",
         );
     let sources = [("read.c", C)];
@@ -202,7 +202,7 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
             .unwrap_or_else(|error| panic!("{error:?}\n{expanded}"));
         assert!(expanded.contains("contradiction("));
         // `have` is one selectable C-proof tactic, including its nested proof.
-        for offset in [good.find("execute();").unwrap(), good.find("have result").unwrap(), good.rfind("simp();").unwrap()] {
+        for offset in [good.find("execute();").unwrap(), good.find("have result").unwrap(), good.rfind("solve();").unwrap()] {
             let position = expansion::position_at_offset(&good, offset);
             let selected =
                 expand_c0_tactic_source_at(&good, &sources, position.line, position.column)
@@ -250,7 +250,7 @@ int id(int x) {
         Tag::A => { contradiction(r.model == Tag::A); },
         Tag::B => {
             match r.model {
-                Tag::B => { execute(); simp(); },
+                Tag::B => { execute(); solve(); },
                 Tag::A => { contradiction(r.model == Tag::A); },
             }
         },
@@ -276,15 +276,15 @@ fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
         (
             "coverage",
             SOURCE.replace(
-                "Maybe::None => { unfold(c); execute(); fold(c); simp(); },",
+                "Maybe::None => { unfold(c); execute(); fold(c); solve(); },",
                 "",
             ),
         ),
         (
             "duplicate",
             SOURCE.replace(
-                "Maybe::None => { unfold(c); execute(); fold(c); simp(); },",
-                "Maybe::Some(other) => { unfold(c); execute(); fold(c); simp(); },",
+                "Maybe::None => { unfold(c); execute(); fold(c); solve(); },",
+                "Maybe::Some(other) => { unfold(c); execute(); fold(c); solve(); },",
             ),
         ),
         (
@@ -311,7 +311,7 @@ fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
             "sibling scope",
             SOURCE.replace(
                 "Maybe::None => { unfold(c);",
-                "Maybe::None => { have value == 0 by { simp(); } unfold(c);",
+                "Maybe::None => { have value == 0 by { solve(); } unfold(c);",
             ),
         ),
     ] {
@@ -334,8 +334,8 @@ fn proof_match_expands_and_rechecks() {
     });
     for offset in [
         SOURCE.find("execute();").unwrap(),
-        SOURCE.find("simp();").unwrap(),
-        SOURCE.rfind("simp();").unwrap(),
+        SOURCE.find("solve();").unwrap(),
+        SOURCE.rfind("solve();").unwrap(),
     ] {
         let position = expansion::position_at_offset(SOURCE, offset);
         let selected =
@@ -362,8 +362,8 @@ int read(int x) {
     ensures result == x;
 } by {
     match (match c.value { Maybe::None => Maybe::None, Maybe::Some(v) => Maybe::Some(v) }) {
-        Maybe::None => { execute(); simp(); },
-        Maybe::Some(value) => { execute(); simp(); },
+        Maybe::None => { execute(); solve(); },
+        Maybe::Some(value) => { execute(); solve(); },
     }
 }
 "#;
@@ -395,11 +395,11 @@ int id(int x) {
     ensures list.model == old(list.model);
 } by {
     match list.model {
-        Items::Nil => { step(); simp(); },
+        Items::Nil => { step(); solve(); },
         Items::Cons(head, tail) => {
             match tail {
-                Items::Nil => { step(); simp(); },
-                Items::Cons(next, rest) => { step(); simp(); },
+                Items::Nil => { step(); solve(); },
+                Items::Cons(next, rest) => { step(); solve(); },
             }
         },
     }

@@ -9,7 +9,7 @@ theorem nonlinear_product_is_outside_arithmetic(x: int32, y: int32) {
     requires x == y;
 
     ensures to_integer(x * y) == to_integer(y * y) by {
-        arithmetic() using {
+        solve() using {
             x == y;
         };
     }

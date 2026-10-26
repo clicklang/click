@@ -37,7 +37,7 @@ void *fill_range(void *argument) {
         };
 
         initialize by {
-            have job->begin <= index and index <= job->end by auto();
+            have job->begin <= index and index <= job->end;
             have forall (k: int32) { job->begin <= k and k < index implies job->output[k] == job->value } by {
                 intro();
                 intro();
@@ -60,14 +60,14 @@ void *fill_range(void *argument) {
                     solve();
                 } else {
                     extract(k <= index);
-                    have k == index by auto();
+                    have k == index;
                     rewrite(k == index);
                     solve();
                 }
             }
             step();
-            have 0 <= at(iteration, index) by auto();
-            have 0 <= job->end by auto();
+            have 0 <= at(iteration, index);
+            have 0 <= job->end;
             have 0 - at(iteration, index) + job->end - 1
                 < 0 - at(iteration, index) + job->end by {
                 solve() using {
@@ -84,7 +84,7 @@ void *fill_range(void *argument) {
                 intro();
                 extract(job->begin <= k);
                 extract(k < index);
-                have k <= at(iteration, index) by auto();
+                have k <= at(iteration, index);
                 instantiate(at(region(6).entry, forall (k: int32) {
                     job->begin <= k and k <= index implies job->output[k] == job->value
                 }), k) using { job->begin <= k; k <= at(iteration, index); };

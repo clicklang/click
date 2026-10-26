@@ -30,11 +30,11 @@ mode "kernel";
 verifying "main.c";
 
 long long *values(int64_t *p) {
-    ensures result == p by auto();
+    ensures result == p;
 }
 
 uint64_t *words(unsigned long long *p) {
-    ensures result == p by auto();
+    ensures result == p;
 }
 
 int32 identities() {

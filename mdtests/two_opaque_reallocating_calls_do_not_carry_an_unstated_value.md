@@ -43,7 +43,7 @@ int32 box_cycle(struct box* box) {
     ensures result == old(box->data[0]);
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

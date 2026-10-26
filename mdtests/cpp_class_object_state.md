@@ -41,23 +41,23 @@ int Shape::twice(int scale) const {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(this) and size(this) <= 100;
     ensures result == size(this) + scale;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 class Square : Shape {
     function size(this) -> int32 { this->side }
 }
 int Square::area(int scale) const {
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 int total(const Shape& shape, int scale) {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(shape) and size(shape) <= 100;
     ensures result == size(shape) + scale;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 int caller(const Square& square, int scale) {
     owns square;
     requires 0 <= scale and scale <= 100;
     requires 0 <= square.side and square.side <= 100;
     ensures result == square.side + scale;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

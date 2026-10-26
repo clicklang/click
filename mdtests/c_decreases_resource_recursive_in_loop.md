@@ -46,25 +46,25 @@ void zero_walk_loop(struct node* node) {
         decreases 1 - i;
         invariant i >= 0;
         invariant i <= 1;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             if node->next != 0 {
                 step();
                 step();
-                simp();
+                solve();
                 step();
                 close_invariants();
             } else {
                 step();
                 step();
-                simp();
+                solve();
                 step();
                 close_invariants();
             }
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

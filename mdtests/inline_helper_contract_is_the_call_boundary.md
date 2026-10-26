@@ -52,7 +52,7 @@ int32 drain_to_zero(int32 value) {
         invariant value >= 0;
         initialize by solve();
         preserve by {
-            have 0 <= to_integer(value - 1) by auto();
+            have 0 <= to_integer(value - 1);
             step();
             close_invariants() by {
                 both { solve() using { 0 <= value; }; }

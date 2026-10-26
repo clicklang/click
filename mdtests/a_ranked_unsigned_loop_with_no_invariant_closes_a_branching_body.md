@@ -28,7 +28,7 @@ int32 settle(uint32 state) {
         decreases state;
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

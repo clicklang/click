@@ -5,5 +5,5 @@ int64 remainder(int64 n, int64 d) {
     ensures result == n % d;
 } by {
     execute();
-    simp();
+    solve();
 }

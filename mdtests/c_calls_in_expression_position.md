@@ -54,27 +54,27 @@ verifying "call_expression_index_of.c";
 verifying "call_expression_index.c";
 
 int32 call_expression_increment(int32 value) {
-    ensures result == 1 by auto();
+    ensures result == 1;
 }
 
 int32 call_expression_return(int32 value) {
-    ensures result == 2 by auto();
+    ensures result == 2;
 }
 
 int32 call_expression_nested(int32 value) {
-    ensures result == 1 by auto();
+    ensures result == 1;
 }
 
 int32 call_expression_condition(int32 value) {
-    ensures result == 1 by auto();
+    ensures result == 1;
 }
 
 int32 call_expression_index_of() {
-    ensures result == 0 by auto();
+    ensures result == 0;
 }
 
 int32 call_expression_index() {
-    ensures result == 8 by auto();
+    ensures result == 8;
 }
 ```
 

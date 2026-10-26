@@ -3,7 +3,7 @@
 `left[0..n]` is viewed and `visited[0..n]` owned, so the contract's entry
 partition separates them. The store `visited[cur] = 1` and the call, whose
 checked write set is `visited[0..n]`, both miss every `left[k]` the guard
-admits, so the entry values of `left` carry across both, and `simp` finds
+admits, so the entry values of `left` carry across both, and the omitted proof of the `have` finds
 the transport.
 
 ```c filename=quantified_frame_carries_a_separated_array_past_a_store_and_a_call.c

@@ -1,4 +1,4 @@
-# `arithmetic()` substitutes an atom through a listed equality
+# `solve() using` substitutes an atom through a listed equality
 
 `y == x` and `0 <= x` give `0 <= y`: the certificate weakens the equality to
 the direction `x - y <= 0` and adds it to `-x <= 0`, both steps the kernel's

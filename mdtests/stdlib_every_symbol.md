@@ -393,7 +393,7 @@ theorem one_plus_one() {
         == Nat::Succ(Nat::Succ(Nat::Zero)) by {
         unfold(nat::add(Nat::Succ(Nat::Zero), Nat::Succ(Nat::Zero)));
         unfold(nat::add(Nat::Zero, Nat::Succ(Nat::Zero)));
-        simp();
+        solve();
     }
 }
 
@@ -417,7 +417,7 @@ theorem nested_length(xs: List<List<int32>>, ys: List<List<int32>>) {
 
 theorem option_constructors(value: int32) {
     ensures Option<int32>::Some(value) != Option<int32>::None by {
-        simp();
+        solve();
     }
 }
 
@@ -425,7 +425,7 @@ theorem singleton_length(value: int32) {
     ensures list::length(List<int32>::Cons(value, List<int32>::Nil)) == Nat::Succ(Nat::Zero) by {
         unfold(list::length(List<int32>::Cons(value, List<int32>::Nil)));
         unfold(list::length(List<int32>::Nil));
-        simp();
+        solve();
     }
 }
 
@@ -454,7 +454,7 @@ theorem list_laws(xs: List<int32>, ys: List<int32>, zs: List<int32>, value: int3
     }
     ensures list::contains(List<int32>::Cons(value, xs), value) by {
         apply(list::contains_cons(value, xs, value));
-        simp();
+        solve();
     }
 }
 
@@ -586,7 +586,7 @@ theorem docs_use_uint32_difference_decreases_after_increment(value: uint32, boun
 
     ensures integer::uint32_wrapping_add(integer::uint32_wrapping_sub(0u32, value), integer::uint32_wrapping_sub(bound, 1u32)) < integer::uint32_wrapping_add(integer::uint32_wrapping_sub(0u32, value), bound) by {
         apply(integer::uint32_difference_decreases_after_increment(value, bound));
-        simp();
+        solve();
     }
 }
 
@@ -1000,14 +1000,14 @@ theorem use_format_padded_digit(v: uint64) {
     requires format::decimal_length(v) == 1u64;
     ensures format::padded_digit(v, 3u64, 48u8, 0u64) == 48u8 by {
         unfold(format::padded_digit(v, 3u64, 48u8, 0u64));
-        simp();
+        solve();
     }
 }
 
 theorem use_format_signed_digit() {
     ensures format::signed_digit(-5, 0u64) == 45u8 by {
         unfold(format::signed_digit(-5, 0u64));
-        simp();
+        solve();
     }
 }
 
@@ -1015,7 +1015,7 @@ theorem use_format_signed_length(v: int32) {
     requires 0 <= v;
     ensures format::signed_length(v) == format::decimal_length(format::magnitude(v)) by {
         unfold(format::signed_length(v));
-        simp();
+        solve();
     }
 }
 ```
