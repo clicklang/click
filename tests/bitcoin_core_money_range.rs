@@ -4041,13 +4041,17 @@ fn axiomatic_std_array_reference_element_resources_verify() {
             let parsed = read_click_project(&path, &source).unwrap();
             let verified = verify_program_prepared_project(&parsed, &import)
                 .unwrap_or_else(|error| panic!("{name}: {}\n{source}", error.message()));
-            let expanded = click::surface::expand_verified_function_claim_source_by_label(
-                &source,
-                &verified,
-                "probe.contract",
-            )
-            .unwrap()
-            .expect("the verified probe claim is declared in this source");
+            // One claim's omitted proof is that claim's; several share the
+            // function's grouped proof.
+            let expand = |label| {
+                click::surface::expand_verified_function_claim_source_by_label(
+                    &source, &verified, label,
+                )
+                .unwrap()
+            };
+            let expanded = expand("probe.contract")
+                .or_else(|| expand("probe.ensures_0"))
+                .expect("the verified probe claim is declared in this source");
             verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
                 .unwrap_or_else(|error| panic!("{name}: {}\n{expanded}", error.message()));
         }

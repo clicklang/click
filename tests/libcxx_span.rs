@@ -97,12 +97,12 @@ fn check(root: &Path, import: &PreparedCppImport, sidecar: &str, refusals: &[(St
     let parsed = read_click_project(&path, &source).unwrap();
     verify_program_prepared_project(&parsed, import)
         .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
-    let expanded = expand_project_claim_source_by_label(
-        &parsed,
-        &ProgramInputs::program(import),
-        "probe.contract",
-    )
-    .unwrap_or_else(|error| panic!("{}", error.message()));
+    // One claim's omitted proof is that claim's; several share the
+    // function's grouped proof.
+    let inputs = ProgramInputs::program(import);
+    let expanded = expand_project_claim_source_by_label(&parsed, &inputs, "probe.contract")
+        .or_else(|_| expand_project_claim_source_by_label(&parsed, &inputs, "probe.ensures_0"))
+        .unwrap_or_else(|error| panic!("{}", error.message()));
     assert!(
         !expanded.contains("__data_") && !expanded.contains("__size_"),
         "{expanded}"

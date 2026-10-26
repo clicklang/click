@@ -2184,7 +2184,7 @@ fn rust_a_u32_cell_read_as_i32_is_its_sign_cast() {
         fn read_unsigned(value: &u32) -> u32 { views *value; requires *value == 4294967295u32; ensures result == 4294967295u32; }\n\
         fn store_and_read_signed(value: &mut u32) -> i32 { owns *value; ensures result == -1; ensures *value == 4294967295u32; }\n";
     C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
-    let wrong = claim.replace("ensures result == -1; } by", "ensures result == 1; } by");
+    let wrong = claim.replace("ensures result == -1; }", "ensures result == 1; }");
     assert_ne!(wrong, claim);
     assert!(C0VerificationSession::new_program_prepared(&wrong, &prepared).is_err());
 }
@@ -3333,8 +3333,8 @@ fn charon_generic_container_refuses_a_stronger_put_and_a_false_caller() {
     let prepared = generic_container_prepared();
     for (before, after, expected) in [
         (
-            "    fn put(&mut self, value: T) {\n    } by",
-            "    fn put(&mut self, value: T) {\n        requires length(state.values) == 0;\n    } by",
+            "    fn put(&mut self, value: T) {\n    }\n    fn take",
+            "    fn put(&mut self, value: T) {\n        requires length(state.values) == 0;\n    }\n    fn take",
             "does not refine the trait method interface",
         ),
         (

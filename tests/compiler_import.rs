@@ -731,7 +731,7 @@ fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
         verified[0].import_identity.as_deref(),
         Some(imports[0].identity())
     );
-    let offset = proof.find("step_until(function.exit);").unwrap();
+    let offset = proof.find("ensures").unwrap();
     let line = proof[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')

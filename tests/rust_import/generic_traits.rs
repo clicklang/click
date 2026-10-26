@@ -133,7 +133,7 @@ fn charon_generic_object_state_is_verified_once_for_every_type() {
     for (head, before, after, expected) in [
         // The generic implementation answers to the generic interface.
         (
-            "fn get(&self) -> T {\n    } by",
+            "{\n    }\n    fn get(&self) -> T ",
             "        ensures result == held(self);\n    }\n}",
             "        ensures result != held(self);\n    }\n}",
             "`<generic_state::Wrap<T> as generic_state::Holder<T>>::get.interface_ensures_0`",
@@ -164,8 +164,8 @@ fn charon_generic_object_state_is_verified_once_for_every_type() {
     // An implementation for every type whose `requires` the interface does
     // not give is refused, as an instance's is.
     let invalid = STATE_SIDECAR.replacen(
-        "    fn put(&mut self, x: T) {\n    } by",
-        "    fn put(&mut self, x: T) {\n        requires self.puts == 7;\n    } by",
+        "    fn put(&mut self, x: T) {\n    }\n    fn get",
+        "    fn put(&mut self, x: T) {\n        requires self.puts == 7;\n    }\n    fn get",
         1,
     );
     assert_ne!(invalid, STATE_SIDECAR);

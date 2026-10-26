@@ -7266,20 +7266,13 @@ fn check_sidecar_tactic_with_tools(
     });
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&parsed, import).unwrap();
-    let sites =
-        project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(import)).unwrap();
-    let first = match claim_prefix {
-        Some(prefix) => sites
-            .iter()
-            .find(|site| site.claim_label.starts_with(prefix))
-            .expect("selected caller tactic"),
-        None => sites.first().unwrap(),
-    };
+    // The expansion may leave the claim no smart tactic; its first written
+    // tactic selects it.
     let position = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(import),
         &first.claim_label,
-        first.source_index,
+        0,
     )
     .unwrap();
     session
@@ -16306,10 +16299,8 @@ int32* identity(int32* data) { ensures result == data; }
 int32* run(int32* data) { ensures result == data; }
 "#;
     check_first_claim_certificate(&project, &import, sidecar);
-    let hostile = sidecar.replace(
-        "ensures result == data; } by",
-        "ensures result == data + 1; } by",
-    );
+    let hostile = sidecar.replace("ensures result == data; }", "ensures result == data + 1; }");
+    assert_ne!(hostile, sidecar);
     let path = project.directory.join("bad.click");
     fs::write(&path, &hostile).unwrap();
     assert!(
