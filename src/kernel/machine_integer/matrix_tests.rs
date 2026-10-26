@@ -797,6 +797,149 @@ fn conversion_preserves_every_value_its_destination_holds() {
     }
 }
 
+/// The value `bits` denotes at `ty`: its low `ty`-width bits read in `ty`.
+fn reading(ty: Ty, bits: u128) -> BigInt {
+    let width = ty.format().bits();
+    let low = if width == 128 {
+        bits
+    } else {
+        bits & ((1u128 << width) - 1)
+    };
+    MachineIntegerConstant::from_bits(ty.format(), low)
+        .expect("the low bits fit")
+        .to_integer()
+}
+
+/// The 32-bit canonical carrier of `value` at an 8- or 16-bit `ty`: its
+/// zero or sign extension.
+fn carrier_bits(value: &BigInt) -> u32 {
+    use num_traits::ToPrimitive;
+    value.to_i64().expect("a narrow value") as i32 as u32
+}
+
+/// Rule K7, value by value: for every narrow destination and every source
+/// of at most 64 bits, the word `narrow_cast_word` spells is the canonical
+/// carrier of the cast's value, `n mod 2^w` read in the destination, and
+/// the constructors' fold of the cast agrees. Exhaustive over the low byte
+/// at 8 bits, each paired with high bits that set, clear and mix the
+/// source's sign; sampled at 16 bits.
+#[test]
+fn a_narrow_cast_word_is_the_carrier_of_its_value_at_every_narrow_format() {
+    const HIGH: [u128; 6] = [
+        0,
+        0x100,
+        0x8000,
+        0x8000_0000,
+        0xffff_ff00,
+        0x8000_0000_1234_5600,
+    ];
+    let mut checked = 0usize;
+    for destination in FORMATS {
+        if destination.format().bits() >= 32 {
+            assert!(representation::narrow_carrier_mask(destination).is_none());
+            continue;
+        }
+        let low: Vec<u128> = if destination.format().bits() == 8 {
+            (0..=255).collect()
+        } else {
+            (0..=0xffffu128)
+                .step_by(257)
+                .chain([0x7fff, 0x8000, 0xffff])
+                .collect()
+        };
+        for source in FORMATS {
+            if source.format().bits() > 64 {
+                assert!(
+                    representation::narrow_cast_word(source, destination, value(source, 1))
+                        .is_none()
+                );
+                continue;
+            }
+            for high in HIGH {
+                for low in &low {
+                    let n = reading(source, high | low);
+                    let operand = constant(source, &n);
+                    // `n mod 2^w` read in the destination, from `n` itself.
+                    let n_bits = {
+                        use num_traits::ToPrimitive;
+                        n.to_i128()
+                            .map(|v| v as u128)
+                            .or_else(|| n.to_u128())
+                            .unwrap()
+                    };
+                    let expected = carrier_bits(&reading(destination, n_bits));
+                    let word =
+                        representation::narrow_cast_word(source, destination, operand.clone())
+                            .expect("a narrow destination from at most 64 bits");
+                    assert_eq!(
+                        word.as_const(),
+                        Some(expected),
+                        "{source:?} -> {destination:?}: {n}"
+                    );
+                    let cast = Bitvector32Term::machine_integer_cast(source, destination, operand);
+                    assert_eq!(
+                        cast.as_const(),
+                        Some(expected),
+                        "{source:?} -> {destination:?}: {n}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert!(checked > 4 * 8 * 6 * 200, "{checked} words checked");
+}
+
+/// The conversion table has one entry for every pair of formats. Its term
+/// folds every constant to the modular conversion, and a conversion into a
+/// narrow format is the cast node at every source, so C, C++ and Rust build
+/// one term (`design/machine-integers.md`, "Conversions in the languages").
+#[test]
+fn the_conversion_table_has_one_term_per_pair_of_formats() {
+    use conversion::{ConversionLowering as L, ConversionPolicy as P};
+    for source in FORMATS {
+        for destination in FORMATS {
+            let modular = conversion::lower(source, destination, P::Modular);
+            let checked = conversion::lower(source, destination, P::Checked);
+            assert_eq!(
+                modular.lowering, checked.lowering,
+                "{source:?} -> {destination:?}"
+            );
+            assert!(!modular.owes_range, "{source:?} -> {destination:?}");
+            if destination.format().contains(source.format()) {
+                assert!(!checked.owes_range, "{source:?} -> {destination:?} widens");
+            }
+            if source == destination {
+                assert_eq!(modular.lowering, L::Identity);
+            } else if destination.format().bits() < 32 {
+                assert_eq!(modular.lowering, L::Cast, "{source:?} -> {destination:?}");
+                let operand = value(source, 172_081);
+                let term = conversion::convert_term(source, destination, operand.clone());
+                assert_eq!(
+                    term,
+                    Bitvector32Term::machine_integer_cast(source, destination, operand),
+                    "{source:?} -> {destination:?}"
+                );
+            }
+            for x in samples(source) {
+                let Some(input) = source.constant_value(
+                    MachineIntegerConstant::from_integer(source.format(), &x).unwrap(),
+                ) else {
+                    panic!("{x} is a {source:?} constant");
+                };
+                let expected = MachineIntegerConstant::from_integer(source.format(), &x)
+                    .unwrap()
+                    .convert_modulo(destination.format());
+                assert_eq!(
+                    conversion::convert_value(input, destination),
+                    destination.constant_value(expected),
+                    "{source:?} -> {destination:?}: {x}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn a_division_reads_only_at_its_own_signedness() {
     let (x, four) = (

@@ -536,6 +536,37 @@ Progress:
 - State the surviving library families once, per
   `roadmap/standard-library.md`.
 
+Progress:
+
+- One conversion table (2026-10-26). `kernel/machine_integer/conversion.rs`
+  holds it: `lower(source, destination, policy)` gives the node a
+  conversion builds (`Identity`, the narrow `Word` reuse, `SignCast` σ,
+  `Cast`, `LowWord`, `Extend64`, `Reinterpret64`) and, under the `Checked`
+  policy of a specification's cast, whether it owes the destination range;
+  `convert_term` builds the node and `convert_value` converts an evaluated
+  value. C's conversions (`narrow_integer`, the 128-bit boundary), C++20
+  integral conversions and Rust `as` (`convert_modulo_value`) take their
+  terms from it. Every conversion into an 8- or 16-bit format is now the
+  `MachineIntegerCast` C builds, in C++ and Rust too, where they built the
+  mask `x & m` or the sign extension `((x & m) ^ s) - s`, and C++ and Rust
+  file its range facts as C does. Rule K7 ([Decisions](#decisions),
+  2026-10-26) relates the cast to the mask. The cross-language fixture's
+  two narrowing gaps closed: C `narrow_u8` (`(uint8)x == (x & 255u32)`) and
+  Rust `narrow_i8` (`integer_cast_identity` reads the cast). Printed output
+  changed only as approved: C++ and Rust print `(uint8)x` and `(int8)x`
+  where they printed the mask arithmetic, and their traces show the narrow
+  range facts C's do. Widening of narrow values still reuses the word
+  (rule K8, next), and the C matrices (`coerce_c_value_to_type_as`'s
+  integer arms, the `promote_c_*_path_value` family) remain until K8.
+  A soundness defect surfaced and is fixed with it: the cast evaluator
+  read a C++ or Rust modular cast as a specification's checked one, so a
+  narrowing that built a cast node filed the checked identity with its
+  operand and no range obligation. Before the table only a 128-bit source
+  reached it (`static_cast<unsigned char>(v)` of a `uint128` proved
+  `to_integer(result) == to_integer(v)` for every `v`); with the cast in
+  place of the mask every C++ and Rust narrowing would have
+  (`a_modular_narrowing_files_its_range_and_no_identity_with_its_operand`).
+
 ### Stage 5. A logical `bool`
 
 - Give Click `bool` its own kernel sort, separate from every integer
@@ -669,4 +700,32 @@ Maintainer direction, 2026-10-25:
   not depend on the reading of the bits.
 - **Printing shows σ where the signedness changes.** A value, fact or step
   holding σ prints it as `(uint32)x` or `(int32)x`; nothing else changes.
+
+Maintainer direction, 2026-10-26:
+
+- **K7 (the word of a narrow cast).** For a destination `F` of `b` = 8 or
+  16 bits, `m = 2^b - 1` and `s = 2^(b-1)`, and a source `S` of at most 64
+  bits, with `w = x` when `S` has at most 32 bits and `w = UInt32From64(x)`
+  when it has 64:
+  - `word(Cast(S -> F, x)) == w & m` when `F` is unsigned;
+  - `word(Cast(S -> F, x)) == ((w & m) ^ s) - s` when `F` is signed.
+
+  Soundness: the cast denotes `n mod 2^b` read in `F`, where `n =
+  to_integer_S(x)`; by the Stage 0 invariant its word is the zero or sign
+  extension of those `b` bits. `w` holds `n mod 2^32`, whose low `b` bits
+  are `n mod 2^b`. `& m` zero-extends them; for `t` those bits, `(t ^ s) -
+  s` is `t` when `t < s` and `t - 2^b` otherwise, with no 32-bit wrap,
+  which is the sign extension. Where: the e-graph, when it interns a
+  narrow cast, interns this word from the operand's class and merges the
+  two (`TermClasses::narrow_cast_node`): at most five nodes and one merge,
+  O(1) per cast, no scan.
+- **K8 (the word of a narrow widening), for the next step.** `word32` of
+  `Cast(S -> F, v)` for a narrow `S` and a 32-bit `F` is `v`'s word, peeled
+  as σ is; a 64-bit `F` keeps the legacy extension over that word.
+  Soundness: by the Stage 0 invariant `v`'s word is `n`'s 32-bit sign or
+  zero extension, which is `n`'s word in `F`.
+- **Printing.** C++ and Rust print a narrow conversion as `(uint8)x` or
+  `(int8)x` where they printed its mask arithmetic, and show the narrow
+  range facts C shows. After K8 a promoted narrow value prints as
+  `(int32)c` where it is at rest, as σ does; it is shown, not hidden.
 

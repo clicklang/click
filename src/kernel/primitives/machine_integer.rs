@@ -344,93 +344,12 @@ impl MachineIntegerType {
         })
     }
 
-    /// Convert an evaluated, typed machine value modulo this type's width.
-    /// Only root constants fold here; symbolic operands are retained in the
-    /// existing term arena. The value wrapper supplies source signedness.
+    /// Convert an evaluated, typed machine value modulo this type's width:
+    /// the conversion table's modular entry
+    /// (`machine_integer::conversion::convert_value`), which C++20 integral
+    /// conversions and Rust `as` share with C.
     pub(crate) fn convert_modulo_value(self, value: CValue) -> Option<CValue> {
-        crate::instrumentation::record_deterministic_work(1);
-        let value = value.numeric_value().clone();
-        // Boolean values are normalized 0/1 and have their own storage type.
-        // Integer conversion observes that numeric value without retagging
-        // arbitrary bytes as a Boolean.
-        let value = match value {
-            CValue::Bool(term) => CValue::UInt8(term),
-            value => value,
-        };
-        let source = Self::from_c_type(value.c_type())?;
-        // Root validation stays local even when an operand contains a large
-        // legacy expression. Wide operands cannot reinterpret word nodes.
-        if source.format().bits() == 128 || self.format().bits() == 128 {
-            let term = match value {
-                crate::kernel::integer_c_value!(term) => term,
-                _ => return None,
-            };
-            if !source.accepts_cast_operand(&term) {
-                return None;
-            }
-            return Some(
-                self.value_from_term(Bitvector32Term::machine_integer_cast(source, self, term)),
-            );
-        }
-        if let Some(constant) = source.constant_from_value(&value) {
-            return self.constant_value(constant.convert_modulo(self.format()));
-        }
-        if source == self {
-            return Some(value);
-        }
-        let term = match value {
-            crate::kernel::integer_c_value!(term) => term,
-            _ => return None,
-        };
-        let source_format = source.format();
-        let destination = self.format();
-        let term = if destination.bits() == 64 {
-            match (
-                destination.is_signed(),
-                source_format.bits(),
-                source_format.is_signed(),
-            ) {
-                (true, 64, _) => Bitvector32Term::int64_from_uint64_bits(term),
-                (false, 64, _) => Bitvector32Term::uint64_from_int64(term),
-                (true, _, true) => Bitvector32Term::int64_from_32(term),
-                (true, _, false) => Bitvector32Term::int64_from_uint32(term),
-                (false, _, true) => Bitvector32Term::uint64_from_int32(term),
-                (false, _, false) => Bitvector32Term::uint64_from_32(term),
-            }
-        } else {
-            let word = if source_format.bits() == 64 {
-                Bitvector32Term::uint32_from_64(term)
-            } else {
-                term
-            };
-            if destination.bits() == 32 {
-                if is_sign_cast32(source, self) {
-                    Bitvector32Term::sign_cast32(source, self, word)
-                } else {
-                    word
-                }
-            } else if destination.is_signed() {
-                // The narrow signed value still uses a sign-extended word.
-                // Mask first, flip the sign bit, then subtract it. The masked
-                // intermediate is at most 65535, so subtraction cannot
-                // overflow the 32-bit carrier (unlike a signed left shift).
-                let mask = (1u32 << destination.bits()) - 1;
-                let sign = 1u32 << (destination.bits() - 1);
-                Bitvector32Term::subtract(
-                    Bitvector32Term::bitwise_xor(
-                        Bitvector32Term::bitwise_and(word, Bitvector32Term::Constant(mask)),
-                        Bitvector32Term::Constant(sign),
-                    ),
-                    Bitvector32Term::Constant(sign),
-                )
-            } else {
-                Bitvector32Term::bitwise_and(
-                    word,
-                    Bitvector32Term::Constant((1u32 << destination.bits()) - 1),
-                )
-            }
-        };
-        Some(self.value_from_term(term))
+        crate::kernel::machine_integer::conversion::convert_value(value, self)
     }
 
     /// Root validation for the bounded wide runtime profile. The term arena

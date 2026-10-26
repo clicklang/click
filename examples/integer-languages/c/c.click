@@ -1,7 +1,7 @@
 // The C side of the cross-language integer fixture
 // (`tests/examples/integer_languages.rs`): the same claims as
-// `../cpp/cpp.click` and `../rust/rust.click`. A case C does not verify yet is
-// in `c.click-gap`.
+// `../cpp/cpp.click` and `../rust/rust.click`. C verifies every case; a case
+// it did not would be in `c.click-gap`.
 
 import click::integer;
 
@@ -106,6 +106,12 @@ int32 shr_i32(int32 a, uint32 n) {
     requires n < 32u32;
     ensures result == a >> n;
     ensures (a == -8 and n == 1u32) implies result == -4;
+}
+
+uint8 narrow_u8(uint32 x) {
+    ensures (uint32) result == (x & 255u32);
+    ensures x == 4000000000u32 implies result == 0u8;
+    ensures x == 300u32 implies result == 44u8;
 }
 
 int8 narrow_i8(int32 x) {

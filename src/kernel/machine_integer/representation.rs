@@ -411,3 +411,59 @@ pub(crate) fn low_word(ty: MachineIntegerType, value: &Bitvector32Term) -> Optio
         _ => None,
     }
 }
+
+/// The mask and, for a signed format, the sign bit that spell an 8- or
+/// 16-bit format's canonical carrier of a word's low bits (rule K7,
+/// [`narrow_cast_word`]): `(2^w - 1, None)` unsigned, `(2^w - 1, Some(2^(w-1)))`
+/// signed. `None` for a format of 32 bits or more.
+pub(crate) fn narrow_carrier_mask(ty: MachineIntegerType) -> Option<(u32, Option<u32>)> {
+    let format = ty.format();
+    let bits = format.bits();
+    if bits >= 32 {
+        return None;
+    }
+    let mask = (1u32 << bits) - 1;
+    Some((mask, format.is_signed().then_some(1u32 << (bits - 1))))
+}
+
+/// Rule K7 (`design/machine-integers.md`, Decisions, 2026-10-26): the
+/// 32-bit word of `Cast(source -> destination, value)` into an 8- or 16-bit
+/// format, from a source of at most 64 bits. With `w` the operand's word
+/// (`value` itself up to 32 bits, its low word `UInt32From64(value)` at 64),
+/// `m = 2^bits - 1` and `s = 2^(bits - 1)`:
+///
+/// - unsigned destination: `w & m`;
+/// - signed destination: `((w & m) ^ s) - s`.
+///
+/// Soundness: the cast denotes `n mod 2^bits` read in the destination, `n`
+/// the operand's value, and by the narrow-value invariant
+/// (`docs/internals/kernel.md`, "One meaning for a narrow value") its word
+/// is the zero or sign extension of those low bits. The operand's word, or
+/// low word, is `n mod 2^32`, whose low `bits` bits are `n mod 2^bits`. The
+/// mask zero-extends them; for `b` those bits, `(b ^ s) - s` is `b` when
+/// `b < s` and `b - 2^bits` otherwise, with no 32-bit wrap, which is their
+/// sign extension. `None` for any other conversion.
+///
+/// The e-graph interns this word from the operand's class
+/// (`TermClasses::narrow_cast_node`); the matrix checks it value by value.
+#[cfg(test)]
+pub(crate) fn narrow_cast_word(
+    source: MachineIntegerType,
+    destination: MachineIntegerType,
+    value: Bitvector32Term,
+) -> Option<Bitvector32Term> {
+    let (mask, sign) = narrow_carrier_mask(destination)?;
+    let word = match source.format().bits() {
+        8 | 16 | 32 => value,
+        64 => Bitvector32Term::uint32_from_64(value),
+        _ => return None,
+    };
+    let low = Bitvector32Term::bitwise_and(word, Bitvector32Term::Constant(mask));
+    Some(match sign {
+        None => low,
+        Some(sign) => Bitvector32Term::subtract(
+            Bitvector32Term::bitwise_xor(low, Bitvector32Term::Constant(sign)),
+            Bitvector32Term::Constant(sign),
+        ),
+    })
+}

@@ -86,6 +86,8 @@ pub(in crate::kernel) use evidence::scalar_evidence_pair;
 pub(in crate::kernel) use inputs::InputKey;
 pub(crate) use inputs::{ReadEqualityCheckpoint, ReadEqualityDelta};
 #[cfg(test)]
+mod narrow_cast_tests;
+#[cfg(test)]
 mod object_type_tests;
 mod pointer_facts;
 mod separation;
