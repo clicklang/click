@@ -410,8 +410,12 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
             );
             assert_eq!(result.len(), 1);
             if expected_zero {
+                // The facts permit the formation; the result keeps its
+                // written offset rather than being respelled as null.
                 assert!(matches!(&result[0].outcome,
-                    CExpressionOutcome::Value(CValue::Pointer(value)) if value.pointer() == &Pointer::null()));
+                    CExpressionOutcome::Value(CValue::Pointer(value))
+                        if value.pointer().is_in_null_block()
+                            && value.pointer() != &Pointer::null()));
             } else {
                 assert!(matches!(
                     &result[0].outcome,
@@ -423,7 +427,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
 }
 
 #[test]
-fn a_registered_zero_index_keeps_null_pointer_formation_unchanged() {
+fn a_registered_zero_index_permits_null_pointer_formation() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_c_memory(CMemory::new());
     let address = Pointer::symbolic(Variable(933_100));
@@ -446,5 +450,5 @@ fn a_registered_zero_index_keeps_null_pointer_formation_unchanged() {
     );
     assert!(matches!(result.as_slice(), [CExpressionPath {
         outcome: CExpressionOutcome::Value(CValue::Pointer(value)), ..
-    }] if value.pointer() == &Pointer::null()));
+    }] if value.pointer().is_in_null_block()));
 }

@@ -3402,16 +3402,6 @@ impl PureFactContext {
         None
     }
 
-    pub(in crate::kernel) fn exact_pointer_value_aliases<'a>(
-        &'a self,
-        value: &CPointerValue,
-    ) -> impl Iterator<Item = &'a CPointerValue> {
-        self.equality_graph
-            .admitted
-            .pointer_value_classes
-            .direct_aliases(value)
-    }
-
     fn adjust_pointer_value_equality(&mut self, proposition: &Proposition, insert: bool) {
         let (left, right) = match proposition {
             Proposition::Equal(

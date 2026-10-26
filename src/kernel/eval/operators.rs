@@ -2454,13 +2454,24 @@ fn pointer_offset_by_elements_paths(
         }];
     }
 
-    let result = if !displaces {
+    // Only a literal zero offset spells the result as the pointer itself;
+    // an offset the facts prove zero keeps its written displacement.
+    let literally_zero = matches!(&zero, Proposition::ConditionIs(condition, value)
+        if PureFactContext::decide_intrinsically(condition) == Some(*value));
+    let result = if literally_zero {
         pointer.clone()
     } else {
         match byte_stride_index(&offset, byte_width, unsigned, wide, &facts, assumptions) {
             Some((index, stride)) => pointer.offset_by_typed_elements(index, stride, false, false),
             None => pointer.offset_by_typed_elements(offset.clone(), byte_width, unsigned, wide),
         }
+    };
+    // The formation checks may use the facts: a displacement they prove zero
+    // is checked as the pointer itself.
+    let checked = if displaces {
+        result.clone()
+    } else {
+        pointer.clone()
     };
     let mut guards = Vec::new();
     let mut owed = Vec::new();
@@ -2499,9 +2510,9 @@ fn pointer_offset_by_elements_paths(
     // extend the concrete materialization bound; it is still only consulted
     // when the result (including a range endpoint) is provably in the range.
     let membership =
-        held_range_membership(state, assumptions, &facts, &pointer, &result, byte_width);
+        held_range_membership(state, assumptions, &facts, &pointer, &checked, byte_width);
     if !matches!(membership, HeldRangeMembership::Inside) {
-        let Some(bounds) = pointer_block_bounds(state, &result, byte_width) else {
+        let Some(bounds) = pointer_block_bounds(state, &checked, byte_width) else {
             return Vec::new();
         };
         guards.extend(bounds);
@@ -2520,7 +2531,7 @@ fn pointer_offset_by_elements_paths(
         // with no range that resolves the result owes nothing here; the
         // access through the pointer is what is refused then. Displacing by
         // zero is left alone, as for null.
-        if displaces && state.memory().block_size(&result.block).is_none() {
+        if displaces && state.memory().block_size(&checked.block).is_none() {
             match membership {
                 HeldRangeMembership::Inside => {
                     unreachable!("a contained pointer owes no formation guard")
@@ -2560,7 +2571,7 @@ fn pointer_offset_by_elements_paths(
     // A pointer into a subobject stays in it, one past its end included.
     match subobject_formation_guards(
         &value,
-        &result,
+        &checked,
         &facts,
         &obligations,
         assumptions,
