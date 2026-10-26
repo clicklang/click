@@ -102,6 +102,30 @@ fn narrow_u8(x: u32) -> u8 {
     ensures x == 300u32 implies result == 44u8;
 } by { execute(); solve(); }
 
+fn narrow_i8(x: i32) -> i8 {
+    ensures (-128 <= x and x <= 127) implies to_integer(result) == to_integer(x);
+    ensures x == 200 implies to_integer(result) == -56;
+    ensures x == -129 implies to_integer(result) == 127;
+} by {
+    if -128 <= x and x <= 127 {
+        execute();
+        have -128 <= to_integer(x);
+        have to_integer(x) <= 127;
+        have to_integer(result) == to_integer(x) by {
+            arithmetic_certificate rules {
+                premise 0: -128 <= to_integer(x) => -128 <= to_integer(x);
+                premise 1: to_integer(x) <= 127 => to_integer(x) <= 127;
+                integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(x);
+                conclusion 0;
+            }
+        };
+        solve();
+    } else {
+        execute();
+        solve();
+    }
+}
+
 fn narrow_u8_in_range(x: u32) -> u8 {
     requires x <= 255u32;
     ensures to_integer(result) == to_integer(x);

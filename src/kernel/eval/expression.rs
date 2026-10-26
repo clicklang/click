@@ -701,6 +701,19 @@ pub(in crate::kernel) enum IntegerConversion {
     Checked,
 }
 
+impl IntegerConversion {
+    /// The conversion table's policy (`machine_integer::conversion`).
+    pub(in crate::kernel) fn policy(
+        self,
+    ) -> crate::kernel::machine_integer::conversion::ConversionPolicy {
+        use crate::kernel::machine_integer::conversion::ConversionPolicy;
+        match self {
+            Self::Modular => ConversionPolicy::Modular,
+            Self::Checked => ConversionPolicy::Checked,
+        }
+    }
+}
+
 /// Converts a C value at an implicit conversion boundary, by C's rule.
 pub(in crate::kernel) fn coerce_c_value_to_type(
     value: CValue,
@@ -750,10 +763,13 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
         };
         // C's conversion is modulo 2^N for a signed destination too; a
         // specification's owes the signed range. An unsigned destination is
-        // modulo 2^N under both.
-        if conversion == IntegerConversion::Checked
-            && destination.format().is_signed()
-            && !destination.format().contains(source.format())
+        // modulo 2^N under both (the conversion table's policy column).
+        if crate::kernel::machine_integer::conversion::lower(
+            source,
+            destination,
+            conversion.policy(),
+        )
+        .owes_range
         {
             let observed = IntegerTerm::from_machine(source, c_value_bitvector_term(&value)?)?;
             let (min, max) = destination.format().bounds();
@@ -1007,7 +1023,7 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
 fn narrow_integer(
     value: CValue,
     target: CType,
-    conversion: IntegerConversion,
+    policy: IntegerConversion,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<CValue> {
@@ -1017,7 +1033,10 @@ fn narrow_integer(
         crate::kernel::integer_c_value!(term) => term,
         _ => return None,
     };
-    let checked = conversion == IntegerConversion::Checked;
+    use crate::kernel::machine_integer::conversion;
+    // The conversion table says what this conversion owes; its term is the
+    // table's whatever the policy.
+    let checked = conversion::lower(source, destination, policy.policy()).owes_range;
     match destination {
         MachineIntegerType::Int32 => {
             if checked {
@@ -1057,7 +1076,11 @@ fn narrow_integer(
                     add_narrowing_bound_obligation(obligations, assumptions, condition, context)?;
                 }
             }
-            Some(CValue::Int32(Bitvector32Term::uint32_from_64(term)))
+            Some(CValue::Int32(conversion::convert_term(
+                source,
+                destination,
+                term,
+            )))
         }
         MachineIntegerType::Int64 => {
             if checked {
@@ -1073,20 +1096,20 @@ fn narrow_integer(
                     "int64 narrowing upper bound",
                 )?;
             }
-            Some(CValue::Int64(Bitvector32Term::int64_from_uint64_bits(term)))
+            Some(CValue::Int64(conversion::convert_term(
+                source,
+                destination,
+                term,
+            )))
         }
         _ if source == destination => Some(destination.value_from_term(term)),
         // The node is the same whatever the context knows, so a smart search
         // and the checked trace of its steps produce one term; the identity
         // inside the range is reasoning (`narrowed_cast_identity`), never a
         // context-dependent choice of representation here.
-        _ if !checked => Some(
-            destination.value_from_term(Bitvector32Term::machine_integer_cast(
-                source,
-                destination,
-                term,
-            )),
-        ),
+        _ if !checked => {
+            Some(destination.value_from_term(conversion::convert_term(source, destination, term)))
+        }
         _ => {
             let (bounds, _) =
                 crate::kernel::assumptions::narrowed_cast_identity(&term, source, destination)?;
@@ -1103,13 +1126,7 @@ fn narrow_integer(
             // destination. Inside the range the obligations above require,
             // it denotes its operand; the caller files that identity
             // (`checked_narrowing_identity`).
-            Some(
-                destination.value_from_term(Bitvector32Term::machine_integer_cast(
-                    source,
-                    destination,
-                    term,
-                )),
-            )
+            Some(destination.value_from_term(conversion::convert_term(source, destination, term)))
         }
     }
 }
@@ -2024,9 +2041,16 @@ fn evaluate_c_cast_paths(
             CExpressionOutcome::Value(value) => {
                 let effective_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
-                // A cast C source or a specification wrote converts modulo
-                // 2^N; any other `Standard` cast owes the range.
-                let conversion = if integer_mode == CIntegerCastMode::CConversion {
+                // A cast C source wrote, a C++20 integral conversion and a
+                // Rust `as` convert modulo 2^N and owe nothing; any other
+                // `Standard` cast owes the range. A modular conversion files
+                // no identity with its operand: its node is the same
+                // `MachineIntegerCast` a checked one builds, but nothing
+                // establishes the range the identity needs.
+                let conversion = if matches!(
+                    integer_mode,
+                    CIntegerCastMode::CConversion | CIntegerCastMode::Modulo
+                ) {
                     IntegerConversion::Modular
                 } else {
                     IntegerConversion::Checked
@@ -2170,11 +2194,15 @@ fn evaluate_c_cast_paths(
                         None => pointer,
                     }))
                 });
-                // A C conversion into a narrow type lands in that type's
-                // range whatever its operand; file the range where the value
-                // is produced, as a narrow read does.
+                // A C conversion, a C++20 integral conversion or a Rust `as`
+                // into a narrow type lands in that type's range whatever its
+                // operand; file the range where the value is produced, as a
+                // narrow read does.
                 if let Ok(value) = &coerced
-                    && integer_mode == CIntegerCastMode::CConversion
+                    && matches!(
+                        integer_mode,
+                        CIntegerCastMode::CConversion | CIntegerCastMode::Modulo
+                    )
                     && matches!(
                         crate::kernel::c_narrow_integer_range(value),
                         Some((Bitvector32Term::MachineIntegerCast { .. }, _, _))

@@ -445,8 +445,14 @@ The shared kernel `c_integer_cast_modulo` boundary implements Rust integer `as`
 and C++20 integral conversions for the admitted 8–64-bit runtime types. It
 checks the evaluated source and destination types, folds root constants through
 `MachineIntegerConstant`, and retains symbolic operands in the common term
-arena. Narrow signed results keep the existing sign-extended 32-bit carrier;
-unsigned results retain the low destination bits. Widening uses source
+arena. Its terms come from the one conversion table
+(`machine_integer::conversion::lower` and `convert_term`), which C's
+conversions use too, so a conversion has one term in every language: a
+result of 8 or 16 bits is the `MachineIntegerCast` node C builds, printed
+`(uint8)x` or `(int8)x`, and is filed with its destination's range as C's
+is, and with nothing else: the identity with its operand is a checked
+(specification) narrowing's, filed beside its range obligations. Rule K7 (below) makes its word the operand's low bits, so
+`(uint8)x == (x & 255u32)` holds with no fact. Widening uses source
 signedness before the destination interpretation. Conversion construction
 inspects only a bounded number of root nodes.
 
@@ -504,7 +510,7 @@ above (Rust `as`, C++ conversions, specification casts). A sign-cleared
 `unsigned` array index is σ to `int32` (`pointer_index_term`). The
 constructor folds a constant and undoes a σ, so `σ(σ(x))` is `x`.
 Narrow promotions still reuse their canonical carrier (Stage 4 of
-`design/machine-integers.md`).
+`design/machine-integers.md`, rule K8, makes them casts).
 
 σ keeps every bit, so the kernel reads σ(x) as `x`'s 32-bit word
 (decision of 2026-10-25):
@@ -586,6 +592,33 @@ key and lookup finds it at either format, and it is never filed twice
 (`mdtests/a_uint32_equality_above_int32_max_is_one_fact_with_its_int32_word.md`,
 `a_32_bit_equality_is_one_fact_at_either_signedness`,
 `rust_a_u32_equality_above_i32_max_is_stated_used_and_printed_as_itself`).
+
+## The word of a narrow cast
+
+Every conversion into an 8- or 16-bit format, in C, C++, Rust or a
+specification, is `MachineIntegerCast` (the conversion table's `Cast`
+entry). Rule K7 (decision of 2026-10-26) gives its 32-bit word: for a
+destination of `b` bits, `m = 2^b - 1` and `s = 2^(b-1)`, and `w` the
+operand's word (its low word `UInt32From64(x)` for a 64-bit operand),
+
+| Destination | Word of `Cast(S -> F, x)` |
+|---|---|
+| unsigned (`uint8`, `uint16`) | `w & m` |
+| signed (`int8`, `int16`) | `((w & m) ^ s) - s` |
+
+Soundness: the cast denotes `n mod 2^b` read in `F`, whose word is the zero
+or sign extension of those bits (`docs/internals/kernel.md`, "One meaning
+for a narrow value"). `w` holds `n mod 2^32`, so its low `b` bits are
+`n mod 2^b`; the mask zero-extends them, and for `t` those bits `(t ^ s) -
+s` is `t` below `s` and `t - 2^b` from `s`, without a 32-bit wrap: their
+sign extension. The e-graph holds the identity: interning a narrow cast
+puts it in one class with that word, built from the operand's class, so a
+written mask of the operand, or of an equal word, meets the cast with no
+fact (`examples/integer-languages`, `narrow_u8`). The work is constant per
+cast. Inside the destination range the cast also equals its operand
+(`narrowed_cast_identity`), and `integer_cast_identity` reads it as a cast,
+so `x as i8` in Rust verifies the in-range identity as C's
+`(signed char)x` does.
 
 ## Wide runtime scalars
 

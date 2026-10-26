@@ -7,7 +7,8 @@
 //!
 //! Every case of [`CASES`] is in each language's sidecar (`c.click`,
 //! `cpp.click`, `rust.click`) or, as a named gap, in its gap file
-//! (`c.click-gap`, ...), which holds the same claims and proof.
+//! (`cpp.click-gap`, `rust.click-gap`), which holds the same claims and proof; a
+//! language with no gap has no gap file.
 //! [`claims_agree_across_languages`] holds every language to the same
 //! signatures and claims. The example harness verifies the three sidecars as
 //! it verifies every example, so a language that falls behind fails there,
@@ -63,6 +64,9 @@ enum Gap {
     /// The front end refuses the source, with this message.
     Import(&'static str),
     /// The source imports, but verification refuses the claims at this goal.
+    /// No case has one since Stage 4 of `design/machine-integers.md` gave
+    /// the three languages one narrowing term; the next one is named here.
+    #[allow(dead_code, reason = "no verification gap remains; a new one uses it")]
     Verify(&'static str),
 }
 
@@ -75,12 +79,6 @@ struct Case {
 const SHIFT: Gap = Gap::Import("unsupported binary operator");
 const SIGNED_CHAR: Gap = Gap::Import("the supported C++ slice supports bool");
 const WRAPPING: Gap = Gap::Import("unmodeled external call");
-/// C narrows to a `MachineIntegerCast`, which no rule relates to the mask
-/// C++ and Rust lower `(uint8)` to (`design/machine-integers.md`, Stage 4).
-const C_NARROWING_MASK: Gap = Gap::Verify("goal: (uint8)x == (x & 255u32)");
-/// Rust's `as i8` is `((x & 255) ^ 128) - 128`, which `integer_cast_identity`
-/// does not read as a cast (`design/machine-integers.md`, Stage 4).
-const RUST_SIGNED_NARROWING: Gap = Gap::Verify("node 0 requires an exact typed cast observation");
 
 #[rustfmt::skip]
 const CASES: &[Case] = &[
@@ -100,8 +98,8 @@ const CASES: &[Case] = &[
     Case { name: "div_i32", gaps: [None, None, None] },
     Case { name: "rem_i32", gaps: [None, None, None] },
     Case { name: "shr_i32", gaps: [None, Some(SHIFT), None] },
-    Case { name: "narrow_u8", gaps: [Some(C_NARROWING_MASK), None, None] },
-    Case { name: "narrow_i8", gaps: [None, Some(SIGNED_CHAR), Some(RUST_SIGNED_NARROWING)] },
+    Case { name: "narrow_u8", gaps: [None, None, None] },
+    Case { name: "narrow_i8", gaps: [None, Some(SIGNED_CHAR), None] },
     Case { name: "narrow_u8_in_range", gaps: [None, None, None] },
     Case { name: "add_i64", gaps: [None, None, None] },
     Case { name: "wrapping_add_u64", gaps: [None, None, Some(WRAPPING)] },
@@ -127,8 +125,14 @@ fn sidecar(language: Language) -> String {
     read(language, &format!("{}.click", language.stem()))
 }
 
+/// The language's gap file, or nothing for a language with no gap.
 fn gap_file(language: Language) -> String {
-    read(language, &format!("{}.click-gap", language.stem()))
+    let name = format!("{}.click-gap", language.stem());
+    if fixture(language).join(&name).exists() {
+        read(language, &name)
+    } else {
+        String::new()
+    }
 }
 
 /// Verifies `function` from `source`, read as the language's sidecar in the
@@ -310,15 +314,11 @@ fn verification_gaps_are_still_refused(language: Language) {
 }
 
 #[test]
-#[ignore = "nightly: 0.6s in the parallel gate (2026-10-26)"]
-fn c_verification_gaps_are_still_refused() {
-    verification_gaps_are_still_refused(Language::C);
-}
-
-#[test]
-#[ignore = "nightly: 0.4 to 0.8s in the parallel gate (2026-10-26)"]
-fn rust_verification_gaps_are_still_refused() {
-    verification_gaps_are_still_refused(Language::Rust);
+#[ignore = "nightly: each gap verifies its case (0.4 to 0.8s in the parallel gate, 2026-10-26)"]
+fn verification_gaps_are_still_refused_in_every_language() {
+    for language in LANGUAGES {
+        verification_gaps_are_still_refused(language);
+    }
 }
 
 /// A false claim about a `uint32` above `INT32_MAX` is refused, and the

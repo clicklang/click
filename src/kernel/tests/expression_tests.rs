@@ -3732,6 +3732,59 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
     );
 }
 
+/// A modular narrowing (C++20, Rust `as`) is the `MachineIntegerCast` C
+/// builds and files only its destination range: never the identity with
+/// its operand that a specification's checked narrowing files beside its
+/// range obligations. Filing it made `static_cast<unsigned char>(v)` of a
+/// `uint128` (before Stage 4, and of every source after the cast replaced
+/// the mask) equal to `v` whatever `v` was, so `v == 511` proved the result
+/// `0`.
+#[test]
+fn a_modular_narrowing_files_its_range_and_no_identity_with_its_operand() {
+    for (index, source) in [
+        CValue::Int32(Bitvector32Term::Variable(Variable(983_101))),
+        crate::kernel::uint32(Bitvector32Term::Variable(Variable(983_102))),
+        CValue::Int64(Bitvector32Term::Variable(Variable(983_103))),
+        CValue::UInt64(Bitvector32Term::Variable(Variable(983_104))),
+        CValue::Int128(Bitvector32Term::Variable(Variable(983_105))),
+        CValue::UInt128(Bitvector32Term::Variable(Variable(983_106))),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for target in [CType::Int8, CType::UInt8, CType::Int16, CType::UInt16] {
+            let paths = evaluate_c_expression_paths(
+                &CState::new(),
+                &c_integer_cast_modulo(CExpression::Value(source.clone()), target),
+                &PureFactContext::new(),
+                &mut ExecutionBudget::default(),
+            )
+            .expect("a modular narrowing evaluates");
+            let [path] = paths.as_slice() else {
+                panic!("one path: {paths:?}");
+            };
+            let CExpressionOutcome::Value(value) = &path.outcome else {
+                panic!("{index} -> {target:?}: {:?}", path.outcome);
+            };
+            assert!(
+                matches!(
+                    value,
+                    crate::kernel::integer_c_value!(Bitvector32Term::MachineIntegerCast { .. })
+                ),
+                "{index} -> {target:?}: {value:?}"
+            );
+            let range = crate::kernel::c_narrow_integer_range_facts(value).unwrap();
+            let filed: Vec<_> = path
+                .facts
+                .iter()
+                .map(|fact| fact.proposition().clone())
+                .collect();
+            assert_eq!(filed, range, "{index} -> {target:?}");
+            assert!(path.obligations.is_empty(), "{index} -> {target:?}");
+        }
+    }
+}
+
 #[test]
 fn unsigned_narrowing_distributes_constant_subtraction_modulo_the_low_word() {
     let value = Bitvector32Term::Variable(Variable(983_120));
