@@ -775,7 +775,20 @@ fn conversion_preserves_every_value_its_destination_holds() {
             // pair, and bounds its operand in the destination's range.
             let operand = value(source, 172_061);
             let original = observe(source, operand.clone());
-            let converted = Bitvector32Term::machine_integer_cast(source, destination, operand);
+            let converted =
+                Bitvector32Term::machine_integer_cast(source, destination, operand.clone());
+            // A narrow widening into 32 bits names its operand's word (rule
+            // K8), so its observation is the observation of that word.
+            if converted.sign_cast32_operand().is_none()
+                && converted.word_cast32_operand().is_some()
+            {
+                assert_eq!(
+                    IntegerTerm::from_machine(destination, converted),
+                    IntegerTerm::from_machine(destination, operand),
+                    "{source:?} -> {destination:?}"
+                );
+                continue;
+            }
             let Some(observed) = IntegerTerm::from_machine(destination, converted) else {
                 panic!("{source:?} -> {destination:?} is observable");
             };
@@ -888,6 +901,91 @@ fn a_narrow_cast_word_is_the_carrier_of_its_value_at_every_narrow_format() {
         }
     }
     assert!(checked > 4 * 8 * 6 * 200, "{checked} words checked");
+}
+
+/// Rule K8, value by value: the widening of every value `n` of an 8- or
+/// 16-bit format into `int32` or `uint32` has the 32-bit word of `n`'s
+/// canonical carrier (exhaustive at 8 bits, sampled at 16), so the
+/// widening's word is its operand's; and symbolically the widening node is
+/// peeled to its operand by `word32` and `into_word32`, so an operator over
+/// it is the operator over the operand.
+#[test]
+fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() {
+    use num_traits::ToPrimitive;
+    let mut checked = 0usize;
+    for source in FORMATS {
+        if source.format().bits() >= 32 {
+            continue;
+        }
+        let (min, max) = range::range(source);
+        let (min, max) = (min.to_i64().unwrap(), max.to_i64().unwrap());
+        let step = if source.format().bits() == 8 { 1 } else { 251 };
+        let values = (min..=max)
+            .step_by(step)
+            .chain([min, -1, 0, 1, max])
+            .filter(|n| *n >= min);
+        for n in values {
+            let n = BigInt::from(n);
+            let carrier = constant(source, &n).constant32().unwrap();
+            for destination in [Ty::Int32, Ty::UInt32] {
+                let widened = MachineIntegerConstant::from_integer(source.format(), &n)
+                    .unwrap()
+                    .convert_modulo(destination.format());
+                if destination.format().contains(source.format()) {
+                    assert_eq!(
+                        widened.to_integer(),
+                        n,
+                        "{source:?} -> {destination:?} widens"
+                    );
+                }
+                let word = destination
+                    .constant_term(widened)
+                    .unwrap()
+                    .constant32()
+                    .unwrap();
+                assert_eq!(word, carrier, "{source:?} -> {destination:?}: {n}");
+                checked += 1;
+            }
+        }
+        for destination in [Ty::Int32, Ty::UInt32] {
+            let operand = value(source, 172_091);
+            let cast = conversion::convert_term(source, destination, operand.clone());
+            assert!(matches!(cast, Bitvector32Term::MachineIntegerCast { .. }));
+            assert_eq!(cast.word32(), &operand, "{source:?} -> {destination:?}");
+            assert_eq!(cast.word_cast32_operand(), Some((source, &operand)));
+            assert_eq!(cast.clone().into_word32(), operand);
+            assert_eq!(
+                Bitvector32Term::add(cast, Bitvector32Term::Constant(1)),
+                Bitvector32Term::add(operand, Bitvector32Term::Constant(1)),
+                "{source:?} -> {destination:?}"
+            );
+        }
+        // A widening into 64 bits keeps its own node; into a narrow format
+        // it is no word cast (its word is rule K7's).
+        for destination in [
+            Ty::Int8,
+            Ty::UInt8,
+            Ty::Int16,
+            Ty::UInt16,
+            Ty::Int64,
+            Ty::UInt64,
+        ] {
+            let operand = value(source, 172_092);
+            let converted = conversion::convert_term(source, destination, operand.clone());
+            assert!(
+                converted.word_cast32_operand().is_none(),
+                "{source:?} -> {destination:?}"
+            );
+            if destination != source && destination.format().bits() < 32 {
+                assert_ne!(
+                    converted.word32(),
+                    &operand,
+                    "{source:?} -> {destination:?}"
+                );
+            }
+        }
+    }
+    assert!(checked > 4 * 256, "{checked} values checked");
 }
 
 /// The conversion table has one entry for every pair of formats. Its term

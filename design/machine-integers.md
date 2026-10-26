@@ -540,8 +540,9 @@ Progress:
 
 - One conversion table (2026-10-26). `kernel/machine_integer/conversion.rs`
   holds it: `lower(source, destination, policy)` gives the node a
-  conversion builds (`Identity`, the narrow `Word` reuse, `SignCast` σ,
-  `Cast`, `LowWord`, `Extend64`, `Reinterpret64`) and, under the `Checked`
+  conversion builds (`Identity`, `SignCast` σ, `Cast`, `LowWord`,
+  `Extend64`, `Reinterpret64`; a narrow `Word` reuse until the next step)
+  and, under the `Checked`
   policy of a specification's cast, whether it owes the destination range;
   `convert_term` builds the node and `convert_value` converts an evaluated
   value. C's conversions (`narrow_integer`, the 128-bit boundary), C++20
@@ -566,6 +567,28 @@ Progress:
   `to_integer(result) == to_integer(v)` for every `v`); with the cast in
   place of the mask every C++ and Rust narrowing would have
   (`a_modular_narrowing_files_its_range_and_no_identity_with_its_operand`).
+- Narrow widening is a cast (2026-10-26). The widening of an 8- or 16-bit
+  value into `int32` or `uint32` is the table's `Cast` in every language:
+  C's integer promotions and usual arithmetic conversions
+  (`promote_c_int32_path_value`, `promote_c_uint32_path_value`), its
+  widening assignments, returns and arguments (`coerce_c_value_to_type_as`),
+  C++ integral promotions and Rust `as` (`convert_value`), and Rust
+  `From` (`IntegerFrom`, through the C coercion). Rule K8
+  ([Decisions](#decisions)) reads the node as its operand's word:
+  `word32` and `into_word32` peel it as they peel σ, one match on the root,
+  so every 32-bit operator, comparison, overflow test, extension, Integer
+  observation, the e-graph, the difference graph and element indices see
+  the word they saw when the word was reused. `word_cast32_operand` names
+  either cast; the checked narrowing of a widened value is built from its
+  operand's format (`checked_narrowing_identity`), and
+  `integer_cast_identity` reads a widening by its word only through
+  `narrow_widening`'s canonical-carrier check, never by the bare word
+  comparison σ uses. A widening into 64 bits keeps its legacy extension
+  node over the word. Printed output changed only as approved: a promoted
+  narrow value at rest (stored, returned, passed) prints `(int32)c` or
+  `(uint32)c`. C's widening between narrow formats (`int8` or `uint8` to
+  `int16`, `uint8` to `uint16`) still reuses the word: K8 covers 32-bit
+  destinations only, and C++ and Rust build the K7 cast there.
 
 ### Stage 5. A logical `bool`
 
@@ -719,7 +742,7 @@ Maintainer direction, 2026-10-26:
   narrow cast, interns this word from the operand's class and merges the
   two (`TermClasses::narrow_cast_node`): at most five nodes and one merge,
   O(1) per cast, no scan.
-- **K8 (the word of a narrow widening), for the next step.** `word32` of
+- **K8 (the word of a narrow widening).** `word32` of
   `Cast(S -> F, v)` for a narrow `S` and a 32-bit `F` is `v`'s word, peeled
   as σ is; a 64-bit `F` keeps the legacy extension over that word.
   Soundness: by the Stage 0 invariant `v`'s word is `n`'s 32-bit sign or
