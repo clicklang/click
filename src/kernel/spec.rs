@@ -6959,22 +6959,20 @@ pub(crate) fn refine_object_pointer_argument(
                 .any(|object| {
                     object.offset == PointerOffsetTerm::Constant(0)
                         && memory.declared_class(object).as_ref() == Some(object_class)
-                }))
+                })
+            // A pointer the facts prove null meets the requirement too. It
+            // keeps its written address rather than being respelled as null.
+            || assumptions.decide(&ConditionTerm::pointer_equal(
+                pointer.pointer().clone(),
+                Pointer::null(),
+            )) == Some(true))
     {
         *pointer = pointer
             .clone()
             .with_object_class(Some(object_class.clone()));
         return true;
     }
-    if assumptions.decide(&ConditionTerm::pointer_equal(
-        pointer.pointer().clone(),
-        Pointer::null(),
-    )) != Some(true)
-    {
-        return false;
-    }
-    pointer.replace_pointer(Pointer::null());
-    true
+    false
 }
 
 fn evaluate_spec_pure_function_argument_paths_in(
