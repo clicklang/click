@@ -2358,7 +2358,7 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
                     }
                 }
             }
-            for (_, surface_goal, equalities) in &direct_claims {
+            for (claim_index, surface_goal, equalities) in &direct_claims {
                 // In a grouped set with resource
                 // claims, retained provenance
                 // already carries pre-execution
@@ -2381,12 +2381,47 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
                 } else {
                     surface_goal.clone()
                 };
-                let Ok(mut scope) =
-                    direct_proof.begin_have(scope_surface_goal)
-                else {
-                    check_verification_deadline()?;
-                    selected = false;
-                    break;
+                let mut scope = match direct_proof.begin_have(scope_surface_goal) {
+                    Ok(scope) => scope,
+                    Err(error) => {
+                        check_verification_deadline()?;
+                        if !require_explicit_closers {
+                            selected = false;
+                            break;
+                        }
+                        // A claim whose goal cannot be stated never
+                        // closes. Its own refusal names it and the
+                        // lowering error; the other claims of the group,
+                        // which it would otherwise leave unclosed, are
+                        // not reported.
+                        let claim_label =
+                            function_claim_label(function_block, &claims[*claim_index]);
+                        let reason = match outcome_proof.as_ref() {
+                            Some(root) => close_claim_directly_from_outcome(
+                                root,
+                                function,
+                                &claims[*claim_index],
+                                pre_state,
+                                outcome,
+                                surface_goal,
+                                equalities,
+                                unfolded_predicates,
+                                &claim_label,
+                                path_index,
+                                entry_pure_facts.as_slice(),
+                                execution.paths(),
+                                parameter_binding,
+                                spec_definitions,
+                                ClaimClosureSearch::None,
+                                None,
+                            )?
+                            .err(),
+                            None => None,
+                        };
+                        return Err(reason.unwrap_or(error).with_context(format!(
+                            "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not retain a complete transition for every pending claim"
+                        )));
+                    }
                 };
                 let mut rewrites_applied = true;
                 for equality in equalities {
