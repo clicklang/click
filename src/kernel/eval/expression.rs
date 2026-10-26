@@ -600,10 +600,35 @@ pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
     }
 }
 
-/// The widening of a narrow C value into `int32` or `uint32`: the
-/// conversion table's cast, whose word is the value's (rule K8).
-fn widen_narrow_c_value(value: CValue, destination: MachineIntegerType) -> Option<Bitvector32Term> {
+/// C's integer promotion and usual arithmetic conversions: `value` read at
+/// `destination`, the operation's format (`int32`, `uint32`, `int64` or
+/// `uint64`, chosen by `conversion::usual_arithmetic_format`), as the
+/// conversion table builds it. A narrow value widened into 32 bits is the
+/// table's cast, whose word is its operand's (rule K8). A `_Bool` value,
+/// which is no machine format yet (Stage 5 of `design/machine-integers.md`),
+/// keeps its 0-or-1 word, extended at 64 bits. `None` for a value C does
+/// not convert so: one `destination` neither contains nor reads modulo
+/// 2^N as an unsigned type at least as wide, a 128-bit value, a pointer or
+/// a float.
+pub(in crate::kernel) fn promote_c_path_value(
+    value: CValue,
+    destination: MachineIntegerType,
+) -> Option<Bitvector32Term> {
+    let value = value.numeric_value().clone();
+    let to = destination.format();
+    if let CValue::Bool(word) = value {
+        return match (to.bits(), to.is_signed()) {
+            (32, _) => Some(word),
+            (64, true) => Some(Bitvector32Term::int64_from_32(word)),
+            (64, false) => Some(Bitvector32Term::uint64_from_32(word)),
+            _ => None,
+        };
+    }
     let source = MachineIntegerType::from_c_type(value.c_type())?;
+    let from = source.format();
+    if from.bits() > 64 || !(to.contains(from) || (!to.is_signed() && from.bits() <= to.bits())) {
+        return None;
+    }
     let term = match value {
         crate::kernel::integer_c_value!(term) => term,
         _ => return None,
@@ -615,93 +640,37 @@ fn widen_narrow_c_value(value: CValue, destination: MachineIntegerType) -> Optio
     ))
 }
 
-pub(in crate::kernel) fn promote_c_int32_path_value(value: CValue) -> Option<Bitvector32Term> {
-    match value.numeric_value().clone() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Int128(_) | CValue::UInt128(_) => None,
-
-        CValue::Void => None,
-        CValue::Bool(value) => Some(value),
-        CValue::Int32(value) => Some(value),
-        // Integer promotion of a narrow value (rule K8).
-        value @ (CValue::Int8(_) | CValue::Int16(_) | CValue::UInt8(_) | CValue::UInt16(_)) => {
-            widen_narrow_c_value(value, MachineIntegerType::Int32)
-        }
-        CValue::UInt32(_) | CValue::Int64(_) | CValue::UInt64(_) => None,
-        CValue::Pointer(_) | CValue::Parameter(_) | CValue::Float32(_) | CValue::Float64(_) => None,
+/// A C integer conversion between machine types of at most 64 bits, by the
+/// conversion table. One that can change the value into a signed type, or
+/// into an 8- or 16-bit one, is the narrowing [`narrow_integer`] builds,
+/// where a specification's conversion owes its range; every other is the
+/// table's term (σ, a widening, the low word of a 64-bit value). A widening
+/// between two narrow formats reuses the word and is not built here.
+fn convert_c_integer(
+    value: CValue,
+    target: CType,
+    conversion: IntegerConversion,
+    obligations: &mut Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Option<CValue> {
+    let source = MachineIntegerType::from_c_type(value.c_type())?;
+    let destination = MachineIntegerType::from_c_type(target)?;
+    let (from, to) = (source.format(), destination.format());
+    let sign_cast = from.bits() == 32 && to.bits() == 32;
+    if !to.contains(from) && (to.bits() < 32 || (to.is_signed() && !sign_cast)) {
+        return narrow_integer(value, target, conversion, obligations, assumptions);
     }
-}
-
-pub(in crate::kernel) fn promote_c_uint32_path_value(value: CValue) -> Option<Bitvector32Term> {
-    match value.numeric_value().clone() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Bool(value) | CValue::UInt32(value) => Some(value),
-        // The usual arithmetic conversions read an `int` as `unsigned int`.
-        CValue::Int32(value) => Some(Bitvector32Term::sign_cast32(
-            MachineIntegerType::Int32,
-            MachineIntegerType::UInt32,
-            value,
+    let term = match value {
+        crate::kernel::integer_c_value!(term) => term,
+        _ => return None,
+    };
+    Some(
+        destination.value_from_term(crate::kernel::machine_integer::conversion::convert_term(
+            source,
+            destination,
+            term,
         )),
-        // The usual arithmetic conversions read a narrow value as
-        // `unsigned int` (rule K8).
-        value @ (CValue::Int8(_) | CValue::Int16(_) | CValue::UInt8(_) | CValue::UInt16(_)) => {
-            widen_narrow_c_value(value, MachineIntegerType::UInt32)
-        }
-        CValue::Int128(_)
-        | CValue::UInt128(_)
-        | CValue::Void
-        | CValue::Int64(_)
-        | CValue::UInt64(_)
-        | CValue::Pointer(_)
-        | CValue::Parameter(_)
-        | CValue::Float32(_)
-        | CValue::Float64(_) => None,
-    }
-}
-
-pub(in crate::kernel) fn promote_c_int64_path_value(value: CValue) -> Option<Bitvector32Term> {
-    match value.numeric_value().clone() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Int64(value) => Some(value),
-        CValue::Bool(value) => Some(Bitvector32Term::int64_from_32(value)),
-        CValue::Int8(value) => Some(Bitvector32Term::int64_from_32(value)),
-        CValue::Int16(value)
-        | CValue::Int32(value)
-        | CValue::UInt8(value)
-        | CValue::UInt16(value) => Some(Bitvector32Term::int64_from_32(value)),
-        CValue::UInt32(value) => Some(Bitvector32Term::int64_from_uint32(value)),
-        CValue::Int128(_)
-        | CValue::UInt128(_)
-        | CValue::Void
-        | CValue::UInt64(_)
-        | CValue::Pointer(_)
-        | CValue::Parameter(_)
-        | CValue::Float32(_)
-        | CValue::Float64(_) => None,
-    }
-}
-
-pub(in crate::kernel) fn promote_c_uint64_path_value(value: CValue) -> Option<Bitvector32Term> {
-    match value.numeric_value().clone() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::UInt64(value) => Some(value),
-        CValue::Bool(value) => Some(Bitvector32Term::uint64_from_32(value)),
-        CValue::UInt8(value) | CValue::UInt16(value) | CValue::UInt32(value) => {
-            Some(Bitvector32Term::uint64_from_32(value))
-        }
-        CValue::Int8(value) => Some(Bitvector32Term::uint64_from_int32(value)),
-        CValue::Int16(value) | CValue::Int32(value) => {
-            Some(Bitvector32Term::uint64_from_int32(value))
-        }
-        CValue::Int64(value) => Some(Bitvector32Term::uint64_from_int64(value)),
-        CValue::Int128(_)
-        | CValue::UInt128(_)
-        | CValue::Void
-        | CValue::Pointer(_)
-        | CValue::Parameter(_)
-        | CValue::Float32(_)
-        | CValue::Float64(_) => None,
-    }
+    )
 }
 
 /// The rule an integer conversion to a narrower type, or to the other
@@ -808,7 +777,7 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
                 add_narrowing_bound_obligation(obligations, assumptions, condition, context)?;
             }
         }
-        return destination.convert_modulo_value(value);
+        return crate::kernel::machine_integer::conversion::convert_value(value, destination);
     }
     if let Some(value) = coerce_c_null_pointer_constant(value.clone(), target_type) {
         return Some(value);
@@ -874,67 +843,21 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
         (CType::UInt64, CValue::Bool(value)) => {
             Some(CValue::UInt64(Bitvector32Term::uint64_from_32(value)))
         }
-        (
-            CType::Int32,
-            value @ (CValue::Int8(_) | CValue::Int16(_) | CValue::UInt8(_) | CValue::UInt16(_)),
-        ) => widen_narrow_c_value(value, MachineIntegerType::Int32).map(CValue::Int32),
-        (CType::Int32, CValue::UInt32(value)) => Some(CValue::Int32(Bitvector32Term::sign_cast32(
-            MachineIntegerType::UInt32,
-            MachineIntegerType::Int32,
-            value,
-        ))),
-        (CType::UInt32, CValue::Int32(value)) => {
-            Some(CValue::UInt32(Bitvector32Term::sign_cast32(
-                MachineIntegerType::Int32,
-                MachineIntegerType::UInt32,
-                value,
-            )))
-        }
-
-        (CType::UInt32, CValue::Int64(value) | CValue::UInt64(value)) => Some(
-            crate::kernel::uint32(Bitvector32Term::uint32_from_64(value)),
-        ),
-        (CType::Int32, value @ (CValue::Int64(_) | CValue::UInt64(_))) => {
-            narrow_integer(value, target_type, conversion, obligations, assumptions)
-        }
-        (
-            CType::UInt32,
-            value @ (CValue::Int8(_) | CValue::Int16(_) | CValue::UInt8(_) | CValue::UInt16(_)),
-        ) => widen_narrow_c_value(value, MachineIntegerType::UInt32).map(crate::kernel::uint32),
-
+        // C's widening between narrow formats reuses the word: K8 reads a
+        // widening into 32 bits only.
         (CType::Int16, CValue::Int8(value) | CValue::UInt8(value)) => Some(CValue::Int16(value)),
         (CType::UInt16, CValue::UInt8(value)) => Some(CValue::UInt16(value)),
         (
-            target @ (CType::Int8 | CType::UInt8 | CType::Int16 | CType::UInt16),
-            value @ (CValue::Int8(_)
-            | CValue::UInt8(_)
-            | CValue::Int16(_)
-            | CValue::UInt16(_)
-            | CValue::Int32(_)
-            | CValue::UInt32(_)
-            | CValue::Int64(_)
-            | CValue::UInt64(_)),
-        ) => narrow_integer(value, target, conversion, obligations, assumptions),
-        (CType::Int64, value @ CValue::UInt64(_)) => {
-            narrow_integer(value, target_type, conversion, obligations, assumptions)
-        }
-        (CType::Int64, CValue::Int64(value)) => Some(CValue::Int64(value)),
-        (CType::Int64, crate::kernel::int_promoted_c_value!(value)) => {
-            Some(CValue::Int64(Bitvector32Term::int64_from_32(value)))
-        }
-        (CType::Int64, CValue::UInt32(value)) => {
-            Some(CValue::Int64(Bitvector32Term::int64_from_uint32(value)))
-        }
-        (CType::UInt64, CValue::UInt64(value)) => Some(CValue::UInt64(value)),
-        (CType::UInt64, CValue::Int64(value)) => {
-            Some(CValue::UInt64(Bitvector32Term::uint64_from_int64(value)))
-        }
-        (CType::UInt64, crate::kernel::int_promoted_c_value!(value)) => {
-            Some(CValue::UInt64(Bitvector32Term::uint64_from_int32(value)))
-        }
-        (CType::UInt64, CValue::UInt32(value)) => {
-            Some(CValue::UInt64(Bitvector32Term::uint64_from_32(value)))
-        }
+            target @ (CType::Int8
+            | CType::UInt8
+            | CType::Int16
+            | CType::UInt16
+            | CType::Int32
+            | CType::UInt32
+            | CType::Int64
+            | CType::UInt64),
+            value @ crate::kernel::integer64_c_value!(_),
+        ) => convert_c_integer(value, target, conversion, obligations, assumptions),
         (CType::Float32, CValue::Float32(value)) => Some(CValue::Float32(value)),
         (CType::Float32, CValue::Float64(value)) => {
             let converted = value
@@ -2119,7 +2042,12 @@ fn evaluate_c_cast_paths(
                     }
                 } else if integer_mode == CIntegerCastMode::Modulo {
                     MachineIntegerType::from_c_type(target_type)
-                        .and_then(|destination| destination.convert_modulo_value(value))
+                        .and_then(|destination| {
+                            crate::kernel::machine_integer::conversion::convert_value(
+                                value,
+                                destination,
+                            )
+                        })
                         .ok_or(CRuntimeError::TypeMismatch)
                 } else if integer_mode == CIntegerCastMode::UInt64BitsToInt64 {
                     match (target_type, value.numeric_value().clone()) {
@@ -2133,9 +2061,11 @@ fn evaluate_c_cast_paths(
                         value @ (CValue::Int8(_)
                         | CValue::Int16(_)
                         | CValue::UInt8(_)
-                        | CValue::UInt16(_)) => promote_c_int32_path_value(value)
-                            .map(CValue::Int32)
-                            .ok_or(CRuntimeError::TypeMismatch),
+                        | CValue::UInt16(_)) => {
+                            promote_c_path_value(value, MachineIntegerType::Int32)
+                                .map(CValue::Int32)
+                                .ok_or(CRuntimeError::TypeMismatch)
+                        }
                         value => cast_c_value_to_type_with_integer_origin(
                             value,
                             target_type,
@@ -2154,7 +2084,7 @@ fn evaluate_c_cast_paths(
                     // A narrow value's range was filed where the value was
                     // produced, in both orders for an unsigned type, so the
                     // widened word needs no fact of its own.
-                    promote_c_uint32_path_value(value)
+                    promote_c_path_value(value, MachineIntegerType::UInt32)
                         .map(CValue::UInt32)
                         .ok_or(CRuntimeError::TypeMismatch)
                 } else {
@@ -4153,11 +4083,17 @@ mod packed_word_contract_tests {
         let word = CValue::UInt64(Bitvector32Term::UInt64Constant(4_294_967_297))
             .complete_word(Pointer::symbolic(Variable(997_030)));
         assert_eq!(
-            MachineIntegerType::UInt32.convert_modulo_value(word.clone()),
+            crate::kernel::machine_integer::conversion::convert_value(
+                word.clone(),
+                MachineIntegerType::UInt32
+            ),
             Some(CValue::UInt32(Bitvector32Term::UInt32Constant(1)))
         );
         assert_eq!(
-            MachineIntegerType::UInt64.convert_modulo_value(word),
+            crate::kernel::machine_integer::conversion::convert_value(
+                word,
+                MachineIntegerType::UInt64
+            ),
             Some(CValue::UInt64(Bitvector32Term::UInt64Constant(
                 4_294_967_297
             )))

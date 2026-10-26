@@ -4102,7 +4102,7 @@ fn execute_c_switch_paths(
         } = selector_path;
         match outcome {
             CExpressionOutcome::Value(value) => {
-                let Some(selector) = promote_c_int32_path_value(value) else {
+                let Some(selector) = promote_c_path_value(value, MachineIntegerType::Int32) else {
                     paths.push(CStatementExecutionPath::new(
                         CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                         facts,

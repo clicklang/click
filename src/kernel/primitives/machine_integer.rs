@@ -344,14 +344,6 @@ impl MachineIntegerType {
         })
     }
 
-    /// Convert an evaluated, typed machine value modulo this type's width:
-    /// the conversion table's modular entry
-    /// (`machine_integer::conversion::convert_value`), which C++20 integral
-    /// conversions and Rust `as` share with C.
-    pub(crate) fn convert_modulo_value(self, value: CValue) -> Option<CValue> {
-        crate::kernel::machine_integer::conversion::convert_value(value, self)
-    }
-
     /// Root validation for the bounded wide runtime profile. The term arena
     /// is shared, but its legacy arithmetic nodes must not acquire a wide
     /// interpretation merely by changing a value wrapper.
@@ -795,11 +787,11 @@ mod tests {
                 if source.format().bits() != 128 && destination.format().bits() != 128 {
                     continue;
                 }
-                let symbolic = destination
-                    .convert_modulo_value(
-                        source.value_from_term(Bitvector32Term::Variable(variable)),
-                    )
-                    .unwrap();
+                let symbolic = crate::kernel::machine_integer::conversion::convert_value(
+                    source.value_from_term(Bitvector32Term::Variable(variable)),
+                    destination,
+                )
+                .unwrap();
                 for integer in &samples {
                     let input =
                         MachineIntegerConstant::from_integer(source.format(), integer).unwrap();
@@ -808,9 +800,11 @@ mod tests {
                         variable,
                         &source.constant_term(input).unwrap(),
                     );
-                    let literal = destination
-                        .convert_modulo_value(source.constant_value(input).unwrap())
-                        .unwrap();
+                    let literal = crate::kernel::machine_integer::conversion::convert_value(
+                        source.constant_value(input).unwrap(),
+                        destination,
+                    )
+                    .unwrap();
                     let modulus = BigInt::from(1) << destination.format().bits();
                     let mut expected = ((integer % &modulus) + &modulus) % &modulus;
                     if destination.format().is_signed() && expected >= (&modulus >> 1) {
@@ -938,11 +932,11 @@ mod tests {
                 }));
             }
             for destination in types {
-                let symbolic = destination
-                    .convert_modulo_value(
-                        source.value_from_term(Bitvector32Term::Variable(variable)),
-                    )
-                    .unwrap();
+                let symbolic = crate::kernel::machine_integer::conversion::convert_value(
+                    source.value_from_term(Bitvector32Term::Variable(variable)),
+                    destination,
+                )
+                .unwrap();
                 assert_eq!(symbolic.c_type(), destination.c_type());
                 for integer in &samples {
                     let constant = MachineIntegerConstant::from_integer(format, integer).unwrap();

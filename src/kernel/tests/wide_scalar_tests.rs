@@ -429,8 +429,7 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
     }
     let value = CValue::Int128(Bitvector32Term::Variable(Variable(149_005)));
     assert!(
-        MachineIntegerType::Int64
-            .convert_modulo_value(value)
+        crate::kernel::machine_integer::conversion::convert_value(value, MachineIntegerType::Int64)
             .is_some()
     );
 }
@@ -497,15 +496,17 @@ fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
         );
     }
     assert!(
-        MachineIntegerType::Int128
-            .convert_modulo_value(CValue::Int64(Bitvector32Term::MachineIntegerConstant(
+        crate::kernel::machine_integer::conversion::convert_value(
+            CValue::Int64(Bitvector32Term::MachineIntegerConstant(
                 MachineIntegerConstant::from_unsigned(
                     MachineIntegerType::UInt128.format(),
                     u128::MAX
                 )
                 .unwrap()
-            )))
-            .is_none()
+            )),
+            MachineIntegerType::Int128
+        )
+        .is_none()
     );
 }
 

@@ -988,6 +988,39 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
     assert!(checked > 4 * 256, "{checked} values checked");
 }
 
+/// C11 6.3.1.8 in LP64, at every pair of formats: promotion takes the
+/// narrow formats to `int32`; then `uint64` wins, then `int64` (which holds
+/// every `uint32`), then `uint32`, else `int32`. A 128-bit operand has no
+/// C operation here.
+#[test]
+fn the_usual_arithmetic_conversions_rank_every_pair_of_formats() {
+    for left in FORMATS {
+        for right in FORMATS {
+            let actual = conversion::usual_arithmetic_format(left, right);
+            if left.format().bits() == 128 || right.format().bits() == 128 {
+                assert_eq!(actual, None, "{left:?}, {right:?}");
+                continue;
+            }
+            let either = |ty: Ty| left == ty || right == ty;
+            let expected = if either(Ty::UInt64) {
+                Ty::UInt64
+            } else if either(Ty::Int64) {
+                Ty::Int64
+            } else if either(Ty::UInt32) {
+                Ty::UInt32
+            } else {
+                Ty::Int32
+            };
+            assert_eq!(actual, Some(expected), "{left:?}, {right:?}");
+            assert_eq!(
+                conversion::usual_arithmetic_format(right, left),
+                actual,
+                "{left:?}, {right:?} commute"
+            );
+        }
+    }
+}
+
 /// The conversion table has one entry for every pair of formats. Its term
 /// folds every constant to the modular conversion, and a conversion into a
 /// narrow format is the cast node at every source, so C, C++ and Rust build

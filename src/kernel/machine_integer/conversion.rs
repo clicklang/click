@@ -16,7 +16,7 @@
 //! says, for a source and destination format and a policy, which node a
 //! conversion builds and whether it owes its range, and [`convert_term`]
 //! builds that node. C's conversions (`narrow_integer`), C++20 integral
-//! conversions and Rust `as` (`MachineIntegerType::convert_modulo_value`)
+//! conversions and Rust `as` (`conversion::convert_value`)
 //! build their terms here, so one conversion has one term in every
 //! language. The policy changes only what the conversion owes, never its
 //! term.
@@ -104,6 +104,55 @@ pub(crate) fn lower(
     }
 }
 
+/// C11 6.3.1.8, the usual arithmetic conversions, over formats in the LP64
+/// model Click targets: the format two integer operands of formats `left`
+/// and `right` are converted to. Each is first promoted (6.3.1.1): a format
+/// of fewer than 32 bits, every value of which `int32` holds, to `int32`.
+/// Then the two agree; or, of one signedness, the wider is taken; or the
+/// unsigned one is taken when it is at least as wide as the signed one; or
+/// the signed one when it holds every value of the unsigned one; or else
+/// the unsigned format of the signed one's width. `None` for a 128-bit
+/// operand, which no C operation here takes. Width and signedness checks
+/// only.
+pub(crate) fn usual_arithmetic_format(
+    left: MachineIntegerType,
+    right: MachineIntegerType,
+) -> Option<MachineIntegerType> {
+    let promote = |ty: MachineIntegerType| {
+        if ty.format().bits() < 32 {
+            MachineIntegerType::Int32
+        } else {
+            ty
+        }
+    };
+    let (left, right) = (promote(left), promote(right));
+    let (l, r) = (left.format(), right.format());
+    if l.bits() > 64 || r.bits() > 64 {
+        return None;
+    }
+    if left == right {
+        return Some(left);
+    }
+    if l.is_signed() == r.is_signed() {
+        return Some(if l.bits() >= r.bits() { left } else { right });
+    }
+    let (signed, unsigned) = if l.is_signed() {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    Some(if unsigned.format().bits() >= signed.format().bits() {
+        unsigned
+    } else if signed.format().contains(unsigned.format()) {
+        signed
+    } else {
+        match signed {
+            MachineIntegerType::Int32 => MachineIntegerType::UInt32,
+            _ => MachineIntegerType::UInt64,
+        }
+    })
+}
+
 /// The term of the conversion of `value`, a term of `source`, to
 /// `destination`, as [`lower`] says. A constant operand folds (the
 /// constructors fold a root constant); nothing else is inspected, so the
@@ -134,7 +183,7 @@ pub(crate) fn convert_term(
 
 /// The modular conversion of an evaluated, typed machine value to
 /// `destination`: the one entry point of C++20 integral conversions and
-/// Rust `as` (`MachineIntegerType::convert_modulo_value`), and of C's
+/// Rust `as` (`conversion::convert_value`), and of C's
 /// conversions involving 128 bits. A Boolean source observes its 0-or-1
 /// value. A root constant folds exactly; a 128-bit conversion first checks
 /// its operand's root (`accepts_cast_operand`). `None` for a value that is
@@ -413,9 +462,10 @@ pub(crate) fn cast(
     };
     let promoted_unsigned_source = masked_unsigned_source && machine.ty().format().bits() == 32;
     if (legacy_type(operand.ty()) && legacy_type(machine.ty())) || promoted_unsigned_source {
-        let legacy = machine
-            .ty()
-            .convert_modulo_value(operand.ty().value_from_term(operand.value().clone()));
+        let legacy = convert_value(
+            operand.ty().value_from_term(operand.value().clone()),
+            machine.ty(),
+        );
         if legacy == Some(machine.ty().value_from_term(machine.value().clone()))
             || legacy.as_ref().is_some_and(|value| {
                 matches!(

@@ -3,7 +3,7 @@
 //!
 //! C converts an integer to a narrower type, or between the two signednesses
 //! of one width, modulo 2^N (`Bitvector32Term::MachineIntegerCast`; see
-//! `MachineIntegerType::convert_modulo_value`). When the operand's value
+//! `conversion::convert_value`). When the operand's value
 //! lies in the destination's range the conversion changes nothing, and its result is the
 //! operand's own carrier: the same 32-bit word for a source that fits in 32
 //! bits, the low word for a 64-bit source. This module states that identity
