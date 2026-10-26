@@ -5782,9 +5782,9 @@ fn evaluate_resource_count_paths(
                     .as_ref()
                     .ok_or(ExecutionLimit::AuthorityCountNeedsOwnership)?;
                 // Count observes an already owned authority; pointer equality
-                // never creates or transfers one. Try only indexed exact
-                // aliases of this explicit anchor, authenticating the held
-                // description in the live ledger before using its count.
+                // never creates or transfers one. The anchor is used as
+                // written, authenticating the held description in the live
+                // ledger before using its count.
                 let owned_description = |candidate: &ResourceDescription| {
                     let candidate = creation.population_type_description(candidate);
                     let required =
@@ -5802,37 +5802,7 @@ fn evaluate_resource_count_paths(
                             _ => None,
                         })
                 };
-                let canonical = owned_description(&description).or_else(|| {
-                    let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments()
-                    else {
-                        return None;
-                    };
-                    path_assumptions
-                        .exact_pointer_value_aliases(pointer)
-                        .find_map(|alias| {
-                            let candidate = description
-                                .map_values(|_| AlgebraicValue::C(CValue::Pointer(alias.clone())));
-                            owned_description(&candidate)
-                        })
-                        .or_else(|| {
-                            path_assumptions
-                                .exact_pointer_aliases(pointer.pointer())
-                                .cloned()
-                                .chain(
-                                    path_assumptions
-                                        .exact_pointer_offset_aliases(pointer.pointer()),
-                                )
-                                .find_map(|alias| {
-                                    crate::instrumentation::record_deterministic_work(1);
-                                    let mut value = pointer.clone();
-                                    value.replace_pointer(alias);
-                                    let candidate = description.map_values(|_| {
-                                        AlgebraicValue::C(CValue::Pointer(value.clone()))
-                                    });
-                                    owned_description(&candidate)
-                                })
-                        })
-                });
+                let canonical = owned_description(&description);
                 let description =
                     canonical.unwrap_or_else(|| creation.population_type_description(&description));
                 let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {

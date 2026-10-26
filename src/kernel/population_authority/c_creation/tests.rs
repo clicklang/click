@@ -2493,7 +2493,7 @@ fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
 }
 
 #[test]
-fn count_alias_uses_only_a_checked_owned_authority_anchor() {
+fn count_uses_its_written_anchor_not_a_proven_alias() {
     let description = member_description(PointerBlock::ExternalArgument);
     let [AlgebraicValue::C(CValue::Pointer(anchor))] = description.arguments() else {
         panic!("pointer anchor")
@@ -2505,10 +2505,12 @@ fn count_alias_uses_only_a_checked_owned_authority_anchor() {
             byte_width: 4,
         },
     };
-    let count = SpecExpression::CountedResourceCount {
+    let count_of = |pointer: CPointerValue| SpecExpression::CountedResourceCount {
         name: "reference".into(),
-        arguments: vec![Some(SpecExpression::Value(CValue::pointer(alias.clone())))],
+        arguments: vec![Some(SpecExpression::Value(CValue::Pointer(pointer)))],
     };
+    let anchor_count = count_of(anchor.clone());
+    let alias_count = count_of(CPointerValue::new(alias.clone(), anchor.c_type()));
     let events = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,
@@ -2533,35 +2535,36 @@ fn count_alias_uses_only_a_checked_owned_authority_anchor() {
         ),
         true,
     );
-    let evaluate = |state: &CState, assumptions: &PureFactContext| {
+    let evaluate = |state: &CState, count: &SpecExpression, assumptions: &PureFactContext| {
         crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
             state,
-            &count,
+            count,
             assumptions,
             &BTreeMap::new(),
             &mut ExecutionBudget::default(),
         )
     };
     assert_eq!(
-        evaluate(&state, &equal).unwrap()[0].value,
+        evaluate(&state, &anchor_count, &PureFactContext::new()).unwrap()[0].value,
         CValue::Int32(Bitvector32Term::Constant(7))
     );
     assert!(
-        evaluate(&state, &PureFactContext::new()).is_err(),
-        "an unproved pointer alias cannot borrow the authority"
+        evaluate(&state, &alias_count, &equal).is_err(),
+        "lowering does not respell a count's anchor through a proven alias"
     );
     assert!(
         evaluate(
             &state.clone().with_resource_context(ResourceContext::new()),
-            &equal
+            &anchor_count,
+            &PureFactContext::new()
         )
         .is_err(),
-        "pointer equality cannot supply missing ownership"
+        "a count needs its owned authority"
     );
     let mut foreign = state;
     Arc::make_mut(&mut foreign.population_effects).creation = Some(CreationEvents::new());
     assert!(
-        evaluate(&foreign, &equal).is_err(),
+        evaluate(&foreign, &anchor_count, &PureFactContext::new()).is_err(),
         "an ownership head without authenticated ledger authority cannot supply a count"
     );
 }
