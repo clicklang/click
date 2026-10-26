@@ -7,7 +7,7 @@ int32 bump_pointer(int32* pointer) {
     ensures result == pointer[0];
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 bump_reference(int32& value) {
@@ -17,5 +17,5 @@ int32 bump_reference(int32& value) {
     ensures result == value;
 } by {
     execute();
-    simp();
+    solve();
 }

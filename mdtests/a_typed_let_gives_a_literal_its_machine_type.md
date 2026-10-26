@@ -16,13 +16,13 @@ theorem typed_literals(x: int64) {
     let g: uint64 = 18446744073709551615;
     let h: int64 = -9223372036854775808;
     requires x == c;
-    ensures x == c by auto();
-    ensures to_integer(a) == -128 by auto();
-    ensures to_integer(b) == 32767 by auto();
-    ensures to_integer(f) == 4294967295 by auto();
-    ensures to_integer(g) == 18446744073709551615 by auto();
-    ensures to_integer(h) < 0 by auto();
-    ensures to_integer(d) + to_integer(e) == 65790 by auto();
+    ensures x == c;
+    ensures to_integer(a) == -128;
+    ensures to_integer(b) == 32767;
+    ensures to_integer(f) == 4294967295;
+    ensures to_integer(g) == 18446744073709551615;
+    ensures to_integer(h) < 0;
+    ensures to_integer(d) + to_integer(e) == 65790;
 }
 ```
 

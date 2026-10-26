@@ -18,7 +18,7 @@ struct node* list_empty() {
 } by {
     execute();
     fold(list(result));
-    simp();
+    solve();
 }
 
 int32 list_head(struct node* node) {
@@ -29,7 +29,7 @@ int32 list_head(struct node* node) {
 } by {
     observe(list(node));
     execute();
-    simp();
+    solve();
 }
 
 int32 list_push_front(
@@ -48,7 +48,7 @@ int32 list_push_front(
 } by {
     execute();
     fold(list(node));
-    simp();
+    solve();
 }
 
 int32 list_pop_front(
@@ -65,7 +65,7 @@ int32 list_pop_front(
 } by {
     unfold(list(node));
     execute();
-    simp();
+    solve();
 }
 
 int32 list_roundtrip(
@@ -81,5 +81,5 @@ int32 list_roundtrip(
     ensures node->next == tail;
 } by {
     execute();
-    simp();
+    solve();
 }

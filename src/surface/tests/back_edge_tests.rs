@@ -5,13 +5,13 @@ int32 count(int32 n) {
  requires 0 <= n and n <= 1000;
  ensures result == n;
 } by {
- execute_until(loop(0));
+ step_until(loop(0));
  loop {
   decreases n-i;
   invariant 0 <= i and i <= n;
-  preserve by { execute_until(back_edge()); close_invariants(); }
+  preserve by { step_until(back_edge()); close_invariants(); }
  }
- execute(); simp();
+ execute(); solve();
 }"#;
 fn source(body: &str) -> String {
     format!("int32 count(int32 n) {{ int32 i; i=0; while(i<n) {{ {body} }} return i; }}")
@@ -40,10 +40,10 @@ fn back_edge_rejects_exits_wrong_phase_and_false_invariants() {
     }
     let c = source("i=i+1;");
     for proof in [
-        PROOF.replacen("execute_until(loop(0));", "execute_until(back_edge());", 1),
+        PROOF.replacen("step_until(loop(0));", "step_until(back_edge());", 1),
         PROOF.replace(
             "close_invariants();",
-            "execute_until(back_edge()); close_invariants();",
+            "step_until(back_edge()); close_invariants();",
         ),
         PROOF.replace("decreases n-i;", "decreases i;"),
     ] {
@@ -56,8 +56,8 @@ fn back_edge_parses_and_preserves_bare_labels() {
     assert!(!parsed.function_blocks().is_empty());
     assert!(parse(&PROOF.replace("back_edge()", "back_edge(1)")).is_err());
     let labeled = PROOF.replace(
-        "execute_until(back_edge());",
-        "mark back_edge; execute_until(back_edge);",
+        "step_until(back_edge());",
+        "mark back_edge; step_until(back_edge);",
     );
     assert!(parse(&labeled).is_ok());
 }

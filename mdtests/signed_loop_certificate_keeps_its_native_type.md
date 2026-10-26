@@ -26,7 +26,7 @@ int32 f(int32 n) {
         invariant 0 <= i and i <= n;
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

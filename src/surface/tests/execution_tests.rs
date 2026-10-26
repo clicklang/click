@@ -19,7 +19,7 @@ fn generic_result_type_fixture() -> (&'static str, &'static str) {
             execute();
             unfold(select(p, result));
             normalize();
-            simp();
+            solve();
         }
     "#;
     (source, c_source)
@@ -88,7 +88,7 @@ fn authority_establishes_and_retires_empty_stack_population() {
             fold(authority(reference(&x)));
             unfold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     parser::parse_file_items(click_source)
@@ -117,14 +117,14 @@ fn authority_conserves_one_local_member() {
         } by {
             step();
             fold(authority(reference(&x)));
-            have count(reference(&x)) == 0 by { simp(); }
+            have count(reference(&x)) == 0 by { solve(); }
             fold(reference(&x));
-            have count(reference(&x)) == 1 by { simp(); }
+            have count(reference(&x)) == 1 by { solve(); }
             unfold(reference(&x));
-            have count(reference(&x)) == 0 by { simp(); }
+            have count(reference(&x)) == 0 by { solve(); }
             unfold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     verify_c0_project(
@@ -154,7 +154,7 @@ fn authority_cannot_reestablish_after_retirement() {
             unfold(authority(reference(&x)));
             fold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -186,7 +186,7 @@ fn authority_rejects_automatic_storage_end_with_live_authority() {
             step();
             fold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -214,7 +214,7 @@ fn authority_imported_pointer_without_live_storage_cannot_establish_population()
         } by {
             fold(authority(reference(p)));
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -247,7 +247,7 @@ fn authority_cannot_create_untracked_member_before_establishment() {
             fold(reference(&x));
             fold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -280,7 +280,7 @@ fn authority_rejects_double_member_consumption() {
             unfold(reference(&x));
             unfold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -309,7 +309,7 @@ fn authority_cannot_retire_with_live_member() {
             fold(reference(&x));
             unfold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -336,9 +336,9 @@ fn authority_count_requires_owned_authority() {
             owns p[0..1];
             ensures result == 7;
         } by {
-            have count(reference(p)) == 0 by { simp(); }
+            have count(reference(p)) == 0 by { solve(); }
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -360,7 +360,7 @@ fn authority_count_of_a_population_without_authority_is_refused() {
             ensures count(reference(p)) == 0;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -387,7 +387,7 @@ fn authority_plain_c_helper_call_follows_the_ordinary_call_rules() {
             ensures result == 7;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -418,14 +418,14 @@ fn authority_calls_a_verified_helper_without_population_effects() {
             ensures result == 7;
         } by {
             execute();
-            simp();
+            solve();
         }
 
         int32 value() {
             ensures result == 7;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     verify_c0_project(
@@ -455,7 +455,7 @@ fn authority_helper_returns_the_same_authority_and_member() {
             ensures result == 7;
         } by {
             execute();
-            simp();
+            solve();
         }
 
         int32 value() {
@@ -470,7 +470,7 @@ fn authority_helper_returns_the_same_authority_and_member() {
             unfold(reference(&x));
             unfold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     verify_c0_project(
@@ -501,7 +501,7 @@ fn authority_helper_consumes_one_member_and_returns_authority() {
         } by {
             unfold(reference(p));
             execute();
-            simp();
+            solve();
         }
 
         int32 value() {
@@ -513,10 +513,10 @@ fn authority_helper_consumes_one_member_and_returns_authority() {
             step();
             step();
             step();
-            have count(reference(&x)) == 0 by { simp(); }
+            have count(reference(&x)) == 0 by { solve(); }
             unfold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     verify_c0_project(
@@ -547,7 +547,7 @@ fn authority_helper_produces_one_member_and_returns_authority() {
         } by {
             fold(reference(p));
             execute();
-            simp();
+            solve();
         }
 
         int32 value() {
@@ -558,11 +558,11 @@ fn authority_helper_produces_one_member_and_returns_authority() {
             step();
             step();
             step();
-            have count(reference(&x)) == 1 by { simp(); }
+            have count(reference(&x)) == 1 by { solve(); }
             unfold(reference(&x));
             unfold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     verify_c0_project(
@@ -584,7 +584,7 @@ fn authority_helper_cannot_claim_creation_without_folding_member() {
             ensures result == 7;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -612,7 +612,7 @@ fn authority_helper_cannot_birth_imported_member_twice() {
             fold(reference(p));
             fold(reference(p));
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -642,13 +642,13 @@ fn authority_creating_helper_requires_caller_authority() {
         } by {
             fold(reference(p));
             execute();
-            simp();
+            solve();
         }
         int32 value() {
             ensures result == 7;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -672,7 +672,7 @@ fn authority_helper_cannot_create_private_memory_from_opaque_authority() {
         } by {
             fold(reference(p));
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -698,7 +698,7 @@ fn authority_helper_cannot_claim_consumption_without_spending_member() {
             ensures result == 7;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -723,7 +723,7 @@ fn authority_helper_cannot_spend_imported_member_twice() {
             unfold(reference(p));
             unfold(reference(p));
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -753,7 +753,7 @@ fn authority_consuming_helper_requires_caller_member() {
         } by {
             unfold(reference(p));
             execute();
-            simp();
+            solve();
         }
         int32 value() {
             ensures result == 7;
@@ -761,7 +761,7 @@ fn authority_consuming_helper_requires_caller_member() {
             step();
             fold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(
@@ -787,7 +787,7 @@ fn verifies_loadable_segment_proposition_for_indexed_read() {
                 requires index < n;
                 views p[0..n];
 
-                ensures returns_loaded_value: result == p[index] by auto();
+                ensures returns_loaded_value: result == p[index];
             }
         "#;
 
@@ -815,7 +815,7 @@ fn bounded_assignment_preserves_successor_definedness() {
                 ensures to_integer(result) == to_integer((x + 1) + 1);
             } by {
                 execute();
-                simp();
+                solve();
             }
         "#;
 
@@ -835,7 +835,7 @@ fn uninitialized_scalar_read_fails_verification() {
             verifying "read_uninitialized.c";
 
             int32 read_uninitialized() {
-                ensures result == 0 by auto();
+                ensures result == 0;
             }
         "#;
 
@@ -860,7 +860,7 @@ fn uninitialized_local_array_read_fails_verification() {
             verifying "read_uninitialized_array.c";
 
             int32 read_uninitialized_array() {
-                ensures result == 0 by auto();
+                ensures result == 0;
             }
         "#;
 
@@ -887,7 +887,7 @@ fn pointer_argument_keeps_its_null_execution_path() {
             verifying "pointer_is_null.c";
 
             int32 pointer_is_null(int32* p) {
-                ensures result == 0 by auto();
+                ensures result == 0;
             }
         "#;
 
@@ -920,7 +920,7 @@ fn step_and_execute_step_advance_one_concrete_loop_transition() {
                     step();
                     step();
                     step();
-                    simp();
+                    solve();
                 }
             }
         "#;
@@ -955,7 +955,7 @@ fn early_return_completes_without_a_body_rerun() {
                 ensures result >= 0;
             } by {
                 execute();
-                simp();
+                solve();
             }
         "#;
 
@@ -995,7 +995,7 @@ fn symbolic_loop_bound_invariant_completes_without_a_body_rerun() {
                     invariant i >= 0 and i <= n;
                 }
                 step();
-                simp();
+                solve();
             }
         "#;
 
@@ -1033,7 +1033,7 @@ fn malloc_null_check_completes_without_a_body_rerun() {
                 ensures result == -1 or result == 0;
             } by {
                 execute();
-                simp();
+                solve();
             }
         "#;
 
@@ -1065,9 +1065,9 @@ fn post_execution_case_split_completes_without_a_body_rerun() {
             } by {
                 execute();
                 if a == 5 {
-                    simp();
+                    solve();
                 } else {
-                    simp();
+                    solve();
                 }
             }
         "#;
@@ -1117,10 +1117,10 @@ fn have_after_loop_completes_without_a_body_rerun() {
                     decreases 1 - j;
                     invariant j >= 0 and j <= 1;
                 }
-                have i == 1 by simp();
-                have j == 1 by simp();
+                have i == 1 by solve();
+                have j == 1 by solve();
                 step();
-                simp();
+                solve();
             }
         "#;
 
@@ -1148,7 +1148,7 @@ fn applied_user_theorem_completes_without_a_body_rerun() {
                 requires x < 2147483647;
 
                 ensures defined(x + 1) by {
-                    simp();
+                    solve();
                 }
             }
 
@@ -1158,7 +1158,7 @@ fn applied_user_theorem_completes_without_a_body_rerun() {
             } by {
                 apply(increment_is_defined(x));
                 step();
-                simp();
+                solve();
             }
         "#;
 
@@ -1193,7 +1193,7 @@ fn verified_loop_summary_completes_without_a_body_rerun() {
                 step();
                 step();
                 have i == 0 by {
-                    simp();
+                    solve();
                 }
                 loop {
                     decreases 3 - i;
@@ -1201,7 +1201,7 @@ fn verified_loop_summary_completes_without_a_body_rerun() {
                     invariant i <= 3;
                 }
                 step();
-                simp();
+                solve();
             }
         "#;
 
@@ -1250,7 +1250,7 @@ fn execute_in_loop_preservation_keeps_the_function_exit_miss() {
             loop {
                 decreases more;
                 invariant 0 <= more;
-                initialize by simp();
+                initialize by solve();
                 preserve by { execute(); }
             }
             execute();
@@ -1290,8 +1290,8 @@ fn bounded_execute_resumes_and_explores_symbolic_branches() {
                     step();
                     step();
                     execute();
-                    simp();
-                    simp();
+                    solve();
+                    solve();
                 }
             }
         "#;
@@ -1600,7 +1600,7 @@ fn struct_name_signature_mismatch_reports_direct_error() {
 
         int32 get_value(struct expected* p) {
             views p->value;
-            ensures result == old(p->value) by auto();
+            ensures result == old(p->value);
         }
     "#;
 
@@ -1674,7 +1674,7 @@ fn observed_cursor_facts_produce_checkable_surface_certificates() {
             observe(input_cursor(owner));
             observe(readable_input(owner->data, owner->len));
             execute();
-            simp();
+            solve();
         }
 
         int32 input_cursor_take(struct input_cursor* owner) {
@@ -1688,16 +1688,16 @@ fn observed_cursor_facts_produce_checkable_surface_certificates() {
             unfold(input_cursor(owner));
             observe(readable_input(owner->data, owner->len));
             execute();
-            have 0 <= owner->pos by simp();
-            have owner->pos <= owner->len by simp();
+            have 0 <= owner->pos by solve();
+            have owner->pos <= owner->len by solve();
             have separate(
                 memory(*owner),
                 memory(owner->data[0..owner->len])
             ) by {
-                simp();
+                solve();
             }
             fold(input_cursor(owner));
-            simp();
+            solve();
         }
 
     "#;
@@ -1707,7 +1707,7 @@ fn observed_cursor_facts_produce_checkable_surface_certificates() {
         ("input_cursor_take.c", take_c_source),
     ];
     let final_simp = click_source
-        .rfind("simp();")
+        .rfind("solve();")
         .expect("final simp should exist");
     let position = expansion::position_at_offset(click_source, final_simp);
     let expanded =
@@ -1773,20 +1773,20 @@ fn explicit_store_step_with_unfolded_resource_facts_verifies() {
             step();
             have terminated_at(owner->data, owner->len) by {
                 unfold(terminated_at);
-                simp();
+                solve();
             }
-            have owner->data[owner->len] == 0 by simp();
-            have 0 <= owner->len by simp();
-            have owner->len < owner->cap by simp();
+            have owner->data[owner->len] == 0 by solve();
+            have 0 <= owner->len by solve();
+            have owner->len < owner->cap by solve();
             have separate(
                 memory(*owner),
                 memory(owner->data[0..owner->cap])
             ) by {
-                simp();
+                solve();
             }
             fold(owned_string(owner));
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -1863,23 +1863,23 @@ fn expanded_read_step_uses_contextual_range_separation() {
             ensures owner->data[owner->len] == 0;
         } by {
             unfold(owned_string(owner));
-            have 0 <= owner->len - 1 by simp();
-            have owner->len - 1 < owner->len by simp();
+            have 0 <= owner->len - 1 by solve();
+            have owner->len - 1 < owner->len by solve();
             execute();
             have terminated_at(owner->data, owner->len) by {
                 unfold(terminated_at);
-                simp();
+                solve();
             }
-            have 0 <= owner->len by simp();
-            have owner->len < owner->cap by simp();
+            have 0 <= owner->len by solve();
+            have owner->len < owner->cap by solve();
             have separate(
                 memory(*owner),
                 memory(owner->data[0..owner->cap])
             ) by {
-                simp();
+                solve();
             }
             fold(owned_string(owner));
-            simp();
+            solve();
         }
     "#;
     let execute_offset = click_source
@@ -1955,11 +1955,11 @@ fn decrement_contract_checks_nonnegative_and_equality_certificates() {
             requires value == count;
             ensures to_integer(result) == to_integer(value - 1);
         } by {
-            have 0 <= to_integer(value - 1) by simp();
-            have to_integer(value - 1) < to_integer(value) by simp();
-            have to_integer(value - 1) == to_integer(count - 1) by simp();
+            have 0 <= to_integer(value - 1) by solve();
+            have to_integer(value - 1) < to_integer(value) by solve();
+            have to_integer(value - 1) == to_integer(count - 1) by solve();
             execute();
-            simp();
+            solve();
         }
     "#;
 
@@ -1995,14 +1995,14 @@ fn branch_continuation_tactics_are_timed_as_source_operations() {
             step();
             branch {
                 execute();
-                simp();
+                solve();
             } else {}
             step();
             have x == a by {
-                simp();
+                solve();
             }
             execute();
-            simp();
+            solve();
         }
     "#;
     let (verified, events) = crate::instrumentation::collect(|| {
@@ -2082,7 +2082,7 @@ fn execute_splits_a_symbolic_switch_on_the_proof() {
             ensures result == 10 or result == 20 or result == 30;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     // The whole verification runs on one thread, so the counter it reads is
@@ -2118,7 +2118,7 @@ fn execute_splits_a_short_circuit_condition_on_the_proof() {
             ensures result == 0 or result == 1;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     std::thread::Builder::new()
@@ -2158,7 +2158,7 @@ fn execute_branches_on_a_pending_allocation_on_the_proof() {
             ensures result == 0;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     std::thread::Builder::new()
@@ -2195,7 +2195,7 @@ fn execute_walks_a_decided_loop_on_the_proof() {
             ensures result == 3;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     std::thread::Builder::new()
@@ -2231,7 +2231,7 @@ fn execute_stops_a_loop_that_never_exits_at_its_step_budget() {
             ensures result == 0;
         } by {
             execute();
-            simp();
+            solve();
         }
     "#;
     std::thread::Builder::new()
@@ -2273,9 +2273,9 @@ fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
         int32 spin_then() {
             ensures result == 1;
         } by {
-            execute_until(region(3));
+            step_until(region(3));
             execute();
-            simp();
+            solve();
         }
     "#;
     std::thread::Builder::new()
@@ -2305,7 +2305,7 @@ fn execute_short_circuit_complements_expand_with_exact_operand_selectors() {
         let click_source = r#"verifying "choose.c";
 int32 choose(int32 a, int32 b) {
     ensures result == 1 or result == 2;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 "#;
         let sources = [("choose.c", c_source.as_str())];
         verify_c0_sources(click_source, &sources).unwrap();
@@ -2380,7 +2380,7 @@ fn simp_keeps_valid_integer_offset_function_goals() {
         void good(uint32 input) {
             ensures plus(to_integer(input)) == to_integer(input) + 1;
             ensures to_integer(input) == to_integer(input) + 0;
-        } by { execute(); simp(); }
+        } by { execute(); solve(); }
     "#;
     verify_c0_sources(source, &[("offset.c", "void good(uint32 input) {}")])
         .expect("valid function equations and zero offsets remain provable");

@@ -13,10 +13,10 @@ int unsigned_value(unsigned long value) { return value; }
 verifying "narrow.c";
 int signed_value(long value) {
     ensures result == (uint32)value;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int unsigned_value(unsigned long value) {
     ensures result == (uint32)value;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

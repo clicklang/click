@@ -8,22 +8,22 @@ contract fn Doubling(x: i32) -> i32 {
 fn function_pointers::twice(x: i32) -> i32 {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn function_pointers::apply(f: fn(i32) -> i32, x: i32) -> i32 {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 theorem twice_is_doubling() {
     ensures Doubling(function_pointers::twice) by {
         unfold(Doubling);
-        simp();
+        solve();
     }
 }
 
 fn function_pointers::caller(x: i32) -> i32 {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { apply(twice_is_doubling()); execute(); auto(); }
+} by { apply(twice_is_doubling()); execute(); solve(); }

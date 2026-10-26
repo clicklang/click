@@ -8,7 +8,7 @@ old(st.total) + got`. Under `result == 1` the operands are bounded
 (`old(st.total) < 100`, `got == 1`), so the sum cannot overflow.
 
 The smart closer selects the guarded equality and proves its guard with a
-nested `simp`. For an `int64` sum that proof is the checked `int64_defined`
+nested `solve`. For an `int64` sum that proof is the checked `int64_defined`
 rule of the `rules` arithmetic-certificate family: each operand's range is
 its width range narrowed by the constant bounds the context indexes under
 that operand, and the rule concludes definedness when the exact result range
@@ -65,7 +65,7 @@ int64 bump(struct box* b) {
     let { total: n } = unfold(st);
     let st = fold(counted(b), { total: n + 1 });
     execute();
-    simp();
+    solve();
 }
 
 int64 caller(struct box* b) {
@@ -76,7 +76,7 @@ int64 caller(struct box* b) {
     step();
     step(bump, { st: st });
     execute();
-    simp();
+    solve();
 }
 ```
 

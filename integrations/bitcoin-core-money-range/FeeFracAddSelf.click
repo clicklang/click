@@ -12,5 +12,5 @@ void FeeFrac::operator+=(const FeeFrac& other) {
     ensures this->size == old(this->size) + old(this->size);
 } by {
     execute();
-    simp();
+    solve();
 }

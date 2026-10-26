@@ -85,9 +85,9 @@ fn audits_checked_frontiers(fixture: &str) {
     assert_cli(&p, &["verify"]);
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     for selector in [
-        "execute_until(read(0))",
-        "execute_until(assignment(total, 1))",
-        "execute_until(back_edge())",
+        "step_until(read(0))",
+        "step_until(assignment(total, 1))",
+        "step_until(back_edge())",
     ] {
         let offset = proof.find(selector).unwrap();
         let line = proof[..offset].bytes().filter(|&b| b == b'\n').count() + 1;

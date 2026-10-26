@@ -1,10 +1,10 @@
-# `by simp();` on a function postcondition names the fix
+# `by solve();` on a function postcondition names the fix
 
-`simp` reasons about the state at function exit and never runs the C body,
-so a postcondition proved `by simp();` is refused before any statement runs.
-The refusal says what to write instead: `execute();` first, or `by auto();`,
-which executes and then simplifies. It is the same refusal `simp` gets inside
-an execution arm
+`solve` reasons about the state at function exit and never runs the C body,
+so a postcondition proved `by solve();` is refused before any statement runs.
+The refusal says what to write instead: a step to the exit first, or the
+omitted proof, which executes and then closes. It is the same refusal
+`solve` gets inside an execution arm
 ([`simp_before_exit_in_arm_names_the_frontier.md`](simp_before_exit_in_arm_names_the_frontier.md)).
 
 ```c filename=simp_before_execution.c

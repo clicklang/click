@@ -6,7 +6,7 @@ comparison is made.
 ```click
 theorem unbounded_affine_overflow(x: int32) {
     ensures to_integer(2 * x) < to_integer(x + (x + 1)) by {
-        arithmetic();
+        solve() using {};
     }
 }
 ```

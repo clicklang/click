@@ -6,5 +6,5 @@ int32 stage_restore(int32& value) {
     ensures result == old(value);
 } by {
     execute();
-    simp();
+    solve();
 }

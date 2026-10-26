@@ -110,7 +110,7 @@ checked derivation of one query, never an assumption-free name. Old facts stay
 facts about their snapshots; the framed application equality is the bridge.
 Because the rule is a checked simple step that answers the same for every
 caller, a smart tactic composing the checked transport reaches it too: `solve`
-(written there as its older spelling `simp()`) closes
+closes
 `mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md`, and
 `click expand` rewrites it into the explicit transport.
 

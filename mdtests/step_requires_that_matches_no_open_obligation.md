@@ -19,7 +19,7 @@ verifying "step_requires_that_matches_no_open_obligation.c";
 int32 first(int32 x, int32 y) {
     requires x > 0 or y > 0;
     requires y > 0 or x > 0;
-    ensures 1 == 1 by auto();
+    ensures 1 == 1;
 }
 
 int32 caller(int32 a, int32 b) {

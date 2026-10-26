@@ -15,7 +15,7 @@ authorized resource ticket(p: void*) {}
 void drop(void* p) {
     owns authority(ticket(p));
     consumes ticket(p);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 run(void* p) {
     owns authority(ticket(p));
     consumes ticket(p);
@@ -24,7 +24,7 @@ int32 run(void* p) {
 } by {
     step();
     have count(ticket(p)) == 0;
-    step(); simp();
+    step(); solve();
 }
 ```
 

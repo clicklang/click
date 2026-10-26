@@ -505,27 +505,27 @@ theorem floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, val
             apply(integer::multiply_add(q, -1, d));
             rewrite(value == q + -1);
             rewrite((q + -1) * d == q * d + -1 * d);
-            arithmetic() using { n == q * d + r; 1 - d <= r; };
+            solve() using { n == q * d + r; 1 - d <= r; };
         } else {
-            have 0 <= r by { arithmetic() using { not (r < 0); }; }
+            have 0 <= r by { solve() using { not (r < 0); }; }
             have value == q;
             rewrite(value == q);
-            arithmetic() using { n == q * d + r; 0 <= r; };
+            solve() using { n == q * d + r; 0 <= r; };
         }
     }
     ensures n < (value + 1) * d by {
         if r < 0 {
             have value == q + -1;
-            have value + 1 == q by { arithmetic() using { value == q + -1; }; }
+            have value + 1 == q by { solve() using { value == q + -1; }; }
             rewrite(value + 1 == q);
-            arithmetic() using { n == q * d + r; r < 0; };
+            solve() using { n == q * d + r; r < 0; };
         } else {
-            have 0 <= r by { arithmetic() using { not (r < 0); }; }
+            have 0 <= r by { solve() using { not (r < 0); }; }
             have value == q;
             apply(integer::multiply_add(q, 1, d));
             rewrite(value == q);
             rewrite((q + 1) * d == q * d + 1 * d);
-            arithmetic() using { n == q * d + r; r <= d - 1; };
+            solve() using { n == q * d + r; r <= d - 1; };
         }
     }
 }
@@ -543,27 +543,27 @@ theorem ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, v
             apply(integer::multiply_add(q, 1, d));
             rewrite(value == q + 1);
             rewrite((q + 1) * d == q * d + 1 * d);
-            arithmetic() using { n == q * d + r; r <= d - 1; };
+            solve() using { n == q * d + r; r <= d - 1; };
         } else {
-            have r <= 0 by { arithmetic() using { not (0 < r); }; }
+            have r <= 0 by { solve() using { not (0 < r); }; }
             have value == q;
             rewrite(value == q);
-            arithmetic() using { n == q * d + r; r <= 0; };
+            solve() using { n == q * d + r; r <= 0; };
         }
     }
     ensures (value + -1) * d < n by {
         if 0 < r {
             have value == q + 1;
-            have value + -1 == q by { arithmetic() using { value == q + 1; }; }
+            have value + -1 == q by { solve() using { value == q + 1; }; }
             rewrite(value + -1 == q);
-            arithmetic() using { n == q * d + r; 0 < r; };
+            solve() using { n == q * d + r; 0 < r; };
         } else {
-            have r <= 0 by { arithmetic() using { not (0 < r); }; }
+            have r <= 0 by { solve() using { not (0 < r); }; }
             have value == q;
             apply(integer::multiply_add(q, -1, d));
             rewrite(value == q);
             rewrite((q + -1) * d == q * d + -1 * d);
-            arithmetic() using { n == q * d + r; 1 - d <= r; };
+            solve() using { n == q * d + r; 1 - d <= r; };
         }
     }
 }
@@ -602,31 +602,31 @@ theorem positive_divisor_quotient_strict_lower(n: Integer, d: Integer, bound: In
     requires bound < 0;
     requires bound * d < n;
     ensures bound < truncating_quotient(n, d) by {
-        have bound * d <= n by { arithmetic() using { bound * d < n; }; }
+        have bound * d <= n by { solve() using { bound * d < n; }; }
         apply(integer::positive_divisor_quotient_lower(n, d, bound));
         if bound < truncating_quotient(n, d) {
             assumption();
         } else {
-            have truncating_quotient(n, d) == bound by { arithmetic() using {
+            have truncating_quotient(n, d) == bound by { solve() using {
                 bound <= truncating_quotient(n, d); not (bound < truncating_quotient(n, d));
             }; }
             if n <= 0 {
-                have 0 < d by { arithmetic() using { 1 <= d; }; }
+                have 0 < d by { solve() using { 1 <= d; }; }
                 apply(integer::nonpositive_dividend_remainder(n, d));
                 apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
                     rewrite(bound == truncating_quotient(n, d));
                     assumption();
                 }
-                have not (bound * d < n) by { arithmetic() using {
+                have not (bound * d < n) by { solve() using {
                     n == bound * d + truncating_remainder(n, d); truncating_remainder(n, d) <= 0;
                 }; }
                 contradiction(bound * d < n);
             } else {
-                have 0 <= n by { arithmetic() using { not (n <= 0); }; }
-                have 0 * d <= n by { arithmetic() using { 0 <= n; }; }
+                have 0 <= n by { solve() using { not (n <= 0); }; }
+                have 0 * d <= n by { solve() using { 0 <= n; }; }
                 apply(integer::positive_divisor_quotient_lower(n, d, 0));
-                have not (bound < 0) by { arithmetic() using {
+                have not (bound < 0) by { solve() using {
                     0 <= truncating_quotient(n, d); truncating_quotient(n, d) == bound;
                 }; }
                 contradiction(bound < 0);
@@ -641,31 +641,31 @@ theorem positive_divisor_quotient_strict_upper(n: Integer, d: Integer, bound: In
     requires 0 < bound;
     requires n < bound * d;
     ensures truncating_quotient(n, d) < bound by {
-        have n <= bound * d by { arithmetic() using { n < bound * d; }; }
+        have n <= bound * d by { solve() using { n < bound * d; }; }
         apply(integer::positive_divisor_quotient_upper(n, d, bound));
         if truncating_quotient(n, d) < bound {
             assumption();
         } else {
-            have truncating_quotient(n, d) == bound by { arithmetic() using {
+            have truncating_quotient(n, d) == bound by { solve() using {
                 truncating_quotient(n, d) <= bound; not (truncating_quotient(n, d) < bound);
             }; }
             if 0 <= n {
-                have 0 < d by { arithmetic() using { 1 <= d; }; }
+                have 0 < d by { solve() using { 1 <= d; }; }
                 apply(integer::nonnegative_dividend_remainder(n, d));
                 apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
                     rewrite(bound == truncating_quotient(n, d));
                     assumption();
                 }
-                have not (n < bound * d) by { arithmetic() using {
+                have not (n < bound * d) by { solve() using {
                     n == bound * d + truncating_remainder(n, d); 0 <= truncating_remainder(n, d);
                 }; }
                 contradiction(n < bound * d);
             } else {
-                have n <= 0 by { arithmetic() using { not (0 <= n); }; }
-                have n <= 0 * d by { arithmetic() using { n <= 0; }; }
+                have n <= 0 by { solve() using { not (0 <= n); }; }
+                have n <= 0 * d by { solve() using { n <= 0; }; }
                 apply(integer::positive_divisor_quotient_upper(n, d, 0));
-                have not (0 < bound) by { arithmetic() using {
+                have not (0 < bound) by { solve() using {
                     truncating_quotient(n, d) <= 0; truncating_quotient(n, d) == bound;
                 }; }
                 contradiction(0 < bound);
@@ -683,12 +683,12 @@ theorem lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, l
         if lower + 1 <= q {
             assumption();
         } else {
-            have q == lower by { arithmetic() using { lower <= q; not (lower + 1 <= q); }; }
+            have q == lower by { solve() using { lower <= q; not (lower + 1 <= q); }; }
             have n == lower * d + r by {
                 rewrite(lower == q);
                 assumption();
             }
-            have not (r < 0) by { arithmetic() using { lower * d <= n; n == lower * d + r; }; }
+            have not (r < 0) by { solve() using { lower * d <= n; n == lower * d + r; }; }
             contradiction(r < 0);
         }
     }
@@ -703,12 +703,12 @@ theorem upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, u
         if q <= upper + -1 {
             assumption();
         } else {
-            have q == upper by { arithmetic() using { q <= upper; not (q <= upper + -1); }; }
+            have q == upper by { solve() using { q <= upper; not (q <= upper + -1); }; }
             have n == upper * d + r by {
                 rewrite(upper == q);
                 assumption();
             }
-            have not (0 < r) by { arithmetic() using { n <= upper * d; n == upper * d + r; }; }
+            have not (0 < r) by { solve() using { n <= upper * d; n == upper * d + r; }; }
             contradiction(0 < r);
         }
     }
@@ -756,7 +756,7 @@ theorem scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lo
                 conclusion 0;
             }
         }
-        arithmetic() using { lower * size <= lower * amount; lower * amount <= value * amount; };
+        solve() using { lower * size <= lower * amount; lower * amount <= value * amount; };
     }
     ensures value * amount <= upper * size by {
         apply(integer::multiply_order_nonnegative(value, upper, amount));
@@ -768,7 +768,7 @@ theorem scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lo
                 conclusion 0;
             }
         }
-        arithmetic() using { value * amount <= upper * amount; upper * amount <= upper * size; };
+        solve() using { value * amount <= upper * amount; upper * amount <= upper * size; };
     }
 }
 
@@ -777,14 +777,14 @@ theorem uint64_product_bound_from_division(x: uint64, y: uint64) {
     requires y != 0u64;
     requires x <= 18446744073709551615u64 / y;
     ensures to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64) by {
-        have to_integer(y) != 0 by auto();
-        have 0 <= to_integer(y) by auto();
+        have to_integer(y) != 0;
+        have 0 <= to_integer(y);
         have 0 <= to_integer(18446744073709551615u64) by normalize();
         apply(integer::uint64_divide_to_integer(18446744073709551615u64, y)) using {
             y != 0u64;
             to_integer(y) != 0;
         };
-        have to_integer(x) <= to_integer(18446744073709551615u64 / y) by auto();
+        have to_integer(x) <= to_integer(18446744073709551615u64 / y);
         apply(integer::multiply_order_nonnegative(to_integer(x), to_integer(18446744073709551615u64 / y), to_integer(y))) using {
             to_integer(x) <= to_integer(18446744073709551615u64 / y);
             0 <= to_integer(y);
@@ -799,7 +799,7 @@ theorem uint64_product_bound_from_division(x: uint64, y: uint64) {
             rewrite(to_integer(18446744073709551615u64 / y) == truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)));
             normalize();
         }
-        arithmetic() using {
+        solve() using {
             to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64 / y) * to_integer(y);
             to_integer(18446744073709551615u64 / y) * to_integer(y) == truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)) * to_integer(y);
             to_integer(18446744073709551615u64) == truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)) * to_integer(y) + truncating_remainder(to_integer(18446744073709551615u64), to_integer(y));

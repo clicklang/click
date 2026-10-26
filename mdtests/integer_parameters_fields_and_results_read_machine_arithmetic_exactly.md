@@ -54,7 +54,7 @@ theorem an_integer_field_holds_the_exact_sum(a: int32) {
 
 theorem a_library_theorem_takes_the_exact_sum(a: uint32, b: uint32) {
     ensures 0 <= truncating_remainder(a + b, 3) by {
-        have 0 <= a + b by auto();
+        have 0 <= a + b;
         apply(integer::nonnegative_dividend_remainder(a + b, 3));
     }
 }

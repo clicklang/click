@@ -34,26 +34,26 @@ int32 phase_count(int32 n) {
         invariant i >= 0;
         invariant j >= 0;
         invariant j <= 2;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             if j > 0 {
-                have 0 <= to_integer(j - 1) by auto();
+                have 0 <= to_integer(j - 1);
                 step();
                 step();
-                have j >= 0 by { arithmetic() using { 0 <= j; }; }
-                simp();
+                have j >= 0 by { solve() using { 0 <= j; }; }
+                solve();
             } else {
-                have 0 <= to_integer(i - 1) by auto();
+                have 0 <= to_integer(i - 1);
                 step();
                 step();
                 step();
-                have i >= 0 by { arithmetic() using { 0 <= i; }; }
-                simp();
+                have i >= 0 by { solve() using { 0 <= i; }; }
+                solve();
             }
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

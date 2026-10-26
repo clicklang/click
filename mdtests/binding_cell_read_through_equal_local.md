@@ -7,7 +7,7 @@ C statement is written through. The C here reads `parent->value`, and the two
 spellings are one address only because the contract pins the payload —
 `f.model == holder_reroot(f.model, parent)` puts
 `Full(identity, value)` and `Full(parent, value)` in one equality class, and
-constructor injectivity in that class gives `identity == parent` to `simp`.
+constructor injectivity in that class gives `identity == parent` to `solve`.
 
 `unfold` owns and states the arm's cells at the binding itself, and the exact
 pointer equality between the binding and the C object lets the read through

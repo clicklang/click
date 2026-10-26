@@ -58,7 +58,7 @@ int32 loop_writes_union() {
         invariant i <= 2;
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

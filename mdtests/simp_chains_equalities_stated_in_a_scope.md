@@ -1,14 +1,14 @@
-# `simp` chains the equalities a scope states
+# `solve` chains the equalities a scope states
 
 Each frame across a call is one equality, so carrying a cell's value back
 through two calls is a chain: `occ[k] == at(b, occ[k])`, `at(b, occ[k]) ==
-at(a, occ[k])`, and `at(a, occ[k]) == 0`. `simp` closes `occ[k] == 0` from
+at(a, occ[k])`, and `at(a, occ[k]) == 0`. `solve` closes `occ[k] == 0` from
 the three in one step, rewriting along the chain.
 
 The links are `have`s written inside the scope `intro` opened. A `have`
 there used to leave no spelling for its fact, so the equality-rewrite search
 found the three candidates but could cite none of them, and every link needed
-its own two-premise `simp() using { .. }`. A scope's `have` is now spelled for
+its own two-premise `solve() using { .. }`. A scope's `have` is now spelled for
 the premise lookups later steps of the same scope make, as one at an outcome
 or an execution frontier already was. The expansion is the three `rewrite`s
 and `normalize()`, and it re-verifies. The chain's work is linear in its
@@ -18,10 +18,10 @@ length and an unrelated query's is flat
 The two frame links are explicit `transport`s from a reflexive source. Each
 call's havoc edge records the caller's `occ[0..n]` as kept (the caller owns it
 outside the transfer), so a context holding only `0 <= k` and `k < n` already
-decides a link. `simp` chose that condition-only context, and none of its
+decides a link. `solve` chose that condition-only context, and none of its
 certificate planners spells a frame equality from those premises alone; a
-`simp()` link fails promptly and names the call. The chain itself, the
-subject here, is still one `simp`.
+`solve()` link fails promptly and names the call. The chain itself, the
+subject here, is still one `solve`.
 
 ```c filename=simp_chains_equalities_stated_in_a_scope.c
 void mark_one(int* other) {
@@ -43,7 +43,7 @@ void mark_one(int32* other) {
     ensures other[0] == 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 caller(int32* occ, int32* other, int32 n) {
@@ -83,12 +83,12 @@ int32 caller(int32* occ, int32* other, int32 n) {
                 0 <= k;
                 k < n;
             };
-            simp();
+            solve();
         }
-        simp();
+        solve();
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

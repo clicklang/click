@@ -735,7 +735,7 @@ fn prepare_audit(arguments: &Arguments, deadline: Instant) -> Result<AuditInvent
         println!("  implicit-auto discovery FAILED: {failure}");
     }
     println!(
-        "  {} claims proved by the implicit `auto` with no smart site",
+        "  {} claims proved by the implicit closer with no smart site",
         implicit_sites.len()
     );
     sites.extend(implicit_sites);

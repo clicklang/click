@@ -9,8 +9,8 @@ void consume(int32* p) {
     consumes token(p);
     ensures 1 <= count(token(p));
 } by {
-    have 0 < count(token(p)) by { arithmetic() using { 1 <= count(token(p)); }; }
-    have 0 <= count(token(p)) - 1 by auto();
+    have 0 < count(token(p)) by { solve() using { 1 <= count(token(p)); }; }
+    have 0 <= count(token(p)) - 1;
     unfold(token(p)); execute(); solve();
 }
 ```

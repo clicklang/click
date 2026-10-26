@@ -74,7 +74,7 @@ int32 probe_present(struct node* root) {
             let t = fold(tree_at(root), {
                 model: HeapTree::Node(identity, value, left_model, right_model)
             }, { left: l, right: rt });
-            simp();
+            solve();
         },
     }
 }
@@ -94,7 +94,7 @@ int32 probe_absent(struct node* root) {
             let t = fold(tree_at(root), {
                 model: HeapTree::Node(identity, value, left_model, right_model)
             }, { left: l, right: rt });
-            simp();
+            solve();
         },
     }
 }

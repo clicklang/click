@@ -892,7 +892,7 @@ mod tests {
         let source = "verifying \"a.rs\";\n\
                       theorem t() {\n\
                       let b: u8 = 256;\n\
-                      ensures to_integer(b) == 0 by auto();\n\
+                      ensures to_integer(b) == 0;\n\
                       }\n";
         let error = parse(source).expect_err("256 is not a u8").to_string();
         assert!(

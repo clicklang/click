@@ -80,12 +80,12 @@ void spin(struct cell* node, int32 n) {
             }
             close_invariants() by {
                 both {
-                    have at(region(3).entry, i) + 1 >= at(region(3).entry, 0) by auto();
+                    have at(region(3).entry, i) + 1 >= at(region(3).entry, 0);
                     solve();
                 } and {
                     both {
                         intro();
-                        have at(region(3).entry, i) + 1 <= at(region(3).entry, n) by auto();
+                        have at(region(3).entry, i) + 1 <= at(region(3).entry, n);
                         solve();
                     } and {
                         both {

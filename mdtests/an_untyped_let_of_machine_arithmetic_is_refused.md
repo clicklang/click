@@ -12,7 +12,7 @@ theorem untyped_sum(a: int32, b: int32) {
     let s = a + b;
     requires 0 <= a;
     requires 0 <= b;
-    ensures s >= a by auto();
+    ensures s >= a;
 }
 ```
 

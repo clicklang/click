@@ -195,7 +195,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(sized_value(SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)));
                     unfold(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)));
                     apply(sized_double_middle_bounds(pv, nv, far, SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)));
-                    have to_integer(pv - 1) == to_integer(pv) - to_integer(1) by auto();
+                    have to_integer(pv - 1) == to_integer(pv) - to_integer(1);
                     let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, nv, SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right), SizedTree::Empty) }, { metadata: n_size, left: n_left, right: n_right });
                     mark before_inner_rotation;
                     have node->__rb_parent_color == address(p) + (node->__rb_parent_color & 1) by { assumption(); }

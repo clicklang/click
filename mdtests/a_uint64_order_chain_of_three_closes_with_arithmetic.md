@@ -1,6 +1,6 @@
-# A `uint64` order chain of three closes with `arithmetic`
+# A `uint64` order chain of three closes with `solve() using`
 
-`arithmetic() using` proves a 64-bit order goal from a chain of three listed
+`solve() using` proves a 64-bit order goal from a chain of three listed
 order premises, `i < n`, `n <= m` and `m <= length`, as it does from two: the
 Integer step adds the third premise whole to a pair. The same holds over
 `int32`.

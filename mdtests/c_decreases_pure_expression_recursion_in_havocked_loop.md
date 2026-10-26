@@ -53,7 +53,7 @@ int32 walk(int32 n) {
             have level(n - 1) < level(old(n)) by {
                 unfold(level(n - 1));
                 unfold(level(old(n)));
-                have n - 1 < n by auto();
+                have n - 1 < n;
                 solve();
             }
             step();

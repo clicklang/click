@@ -3,7 +3,7 @@
 ```click
 theorem strict_observation(left: int32, right: int32) {
     requires left < right;
-    ensures to_integer(left) < to_integer(right) by auto();
+    ensures to_integer(left) < to_integer(right);
 }
 
 theorem refused(left: int32, right: int32) {

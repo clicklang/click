@@ -9,8 +9,8 @@ theorem adler_empty_remainder_position(total: int32, remaining: int32) {
   have 0 <= remaining by { rewrite(remaining == total); assumption(); }
   have remaining <= total by { rewrite(remaining == total); normalize(); }
   have to_integer(remaining) == to_integer(total) by { rewrite(remaining == total); normalize(); }
-  have to_integer(total - remaining) == to_integer(total) - to_integer(remaining) by auto();
-  arithmetic() using { to_integer(total - remaining) == to_integer(total) - to_integer(remaining); to_integer(remaining) == to_integer(total); };
+  have to_integer(total - remaining) == to_integer(total) - to_integer(remaining);
+  solve() using { to_integer(total - remaining) == to_integer(total) - to_integer(remaining); to_integer(remaining) == to_integer(total); };
  }
 }
 
@@ -21,8 +21,8 @@ theorem adler_complete_remainder_position(total: int32, remaining: int32) {
   have 0 <= remaining by { rewrite(remaining == 0); normalize(); }
   have remaining <= total by { rewrite(remaining == 0); assumption(); }
   have to_integer(remaining) == 0 by { rewrite(remaining == 0); normalize(); }
-  have to_integer(total - remaining) == to_integer(total) - to_integer(remaining) by auto();
-  arithmetic() using { to_integer(total - remaining) == to_integer(total) - to_integer(remaining); to_integer(remaining) == 0; };
+  have to_integer(total - remaining) == to_integer(total) - to_integer(remaining);
+  solve() using { to_integer(total - remaining) == to_integer(total) - to_integer(remaining); to_integer(remaining) == 0; };
  }
 }
 
@@ -30,7 +30,7 @@ theorem adler_complete_remainder_position(total: int32, remaining: int32) {
 theorem adler_remainder_native_count_observation(count: uint64) {
  requires count <= 22204u64;
  ensures to_integer((uint32)count) == to_integer(count) by {
-  have to_integer(count) <= 18446744073709551615 by auto();
+  have to_integer(count) <= 18446744073709551615;
   arithmetic_certificate rules {
    premise 0: 0 <= to_integer(count) => 0 <= to_integer(count);
    premise 1: to_integer(count) <= 22204 => to_integer(count) <= 22204;

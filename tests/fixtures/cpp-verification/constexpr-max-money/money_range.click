@@ -9,13 +9,13 @@ bool money_range(const int64& value) {
     if value >= 0i64 {
         if value <= 2100000000000000i64 {
             execute();
-            simp();
+            solve();
         } else {
             execute();
-            simp();
+            solve();
         }
     } else {
         execute();
-        simp();
+        solve();
     }
 }

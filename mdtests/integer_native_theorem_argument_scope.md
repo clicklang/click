@@ -10,7 +10,7 @@ theorem bounded(z: Integer) {
   have z <= 18446744073709551615 by solve() using { z <= 65520; };
   apply(integer::to_uint64_round_trip(z));
   have to_integer(to_uint64(z)) <= to_integer(65520u64) by solve() using { to_integer(to_uint64(z)) == z; z <= 65520; };
-  have (to_uint64(z)) <= 65520u64 by auto(); assumption();
+  have (to_uint64(z)) <= 65520u64; assumption();
  }
 }
 ```

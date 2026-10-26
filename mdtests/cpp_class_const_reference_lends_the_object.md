@@ -36,17 +36,17 @@ class Square : Shape {
     function size(this) -> int32 { this->side }
 }
 int Square::area(int scale) const {
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int peek_then_poke(const Shape& a, Square& s) {
     owns s;
     requires 0 <= size(a) and size(a) <= 100;
     ensures result == size(a);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int caller(Square& sq) {
     owns sq;
     requires 0 <= sq.side and sq.side <= 100;
     ensures result == sq.side;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

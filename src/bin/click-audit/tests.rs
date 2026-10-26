@@ -128,7 +128,7 @@ fn named_claim_selection_is_exact_ordered_and_rejects_ambiguity() {
             origin: None,
         },
         claim: claim.to_string(),
-        tactic_name: "auto".to_string(),
+        tactic_name: "implicit tail".to_string(),
     };
     let sites = vec![
         site("a.click", "alpha.ensures_0", 1),
@@ -185,9 +185,9 @@ fn changed_selection_maps_leaf_proof_and_contract_changes_to_callers() {
 verifying "leaf.c";
 verifying "caller.c";
 verifying "unrelated.c";
-int32 leaf(int32 x) { ensures result == x; } by simp();
-int32 caller(int32 x) { ensures result == x; } by auto();
-int32 unrelated(int32 x) { ensures result == x; } by auto();
+int32 leaf(int32 x) { ensures result == x; } by solve();
+int32 caller(int32 x) { ensures result == x; }
+int32 unrelated(int32 x) { ensures result == x; }
 "#;
     let site = |claim: &str, line| AuditSite {
         click_path: PathBuf::from("example.click"),
@@ -202,7 +202,7 @@ int32 unrelated(int32 x) { ensures result == x; } by auto();
             origin: None,
         },
         claim: claim.to_string(),
-        tactic_name: "auto".to_string(),
+        tactic_name: "implicit tail".to_string(),
     };
     let sites = vec![
         site("leaf.contract", 1),
@@ -211,7 +211,7 @@ int32 unrelated(int32 x) { ensures result == x; } by auto();
     ];
 
     for changed in [
-        baseline.replacen("by simp()", "by auto()", 1),
+        baseline.replacen("by solve()", "by solve()", 1),
         baseline.replacen("result == x", "result >= x", 1),
     ] {
         let selection =
@@ -336,8 +336,8 @@ fn an_expansion_that_does_more_work_fails_the_comparison_deterministically() {
         "by {{\n        step();\n{}        assumption();\n    }}",
         "        have result == 1 by {\n            normalize();\n        }\n".repeat(300)
     );
-    let lean = original.replacen("by auto();", explicit, 1);
-    let heavy = original.replacen("by auto();", &redundant, 1);
+    let lean = original.replacen("by solve();", explicit, 1);
+    let heavy = original.replacen("by solve();", &redundant, 1);
     assert_ne!(lean, original);
     assert_ne!(heavy, original);
     let limits = AuditLimits::default();
@@ -503,7 +503,7 @@ fn start_cursor_is_an_inclusive_global_lower_bound() {
             origin: None,
         },
         claim: "claim".to_string(),
-        tactic_name: "simp".to_string(),
+        tactic_name: "solve".to_string(),
     };
     let sites = vec![
         site("/tmp/a.click", 10),
@@ -544,7 +544,7 @@ int32 example() {
     ensures result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
     let sources = [("example.c", c_source)];
@@ -560,7 +560,7 @@ int32 example() {
             .collect::<Vec<_>>(),
         vec![
             ("example.contract", 0, "execute"),
-            ("example.contract", 1, "simp"),
+            ("example.contract", 1, "solve"),
         ]
     );
     verify_c0_sources(click_source, &sources).unwrap();
@@ -582,7 +582,7 @@ int32 example() {
     ensures result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
     let sources = [("example.c", c_source)];
@@ -591,7 +591,7 @@ int32 example() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("redundant trailing simp should expand away");
-    assert!(!expanded.contains("simp();"));
+    assert!(!expanded.contains("solve();"));
 
     let source = AuditSource {
         container_source: expanded.clone(),
@@ -635,14 +635,14 @@ int32 count_to_one() {
     step();
     loop {
         invariant i >= 0 and i <= 1;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             step();
             close_invariants();
         }
     }
     step();
-    simp();
+    solve();
 }
 "#;
     let sources = [("loop.c", c_source)];
@@ -654,11 +654,9 @@ int32 count_to_one() {
             .all(|site| !site.claim_label.contains(".invariant_")),
         "{inventory:?}"
     );
-    assert!(
-        inventory.iter().any(|site| {
-            site.claim_label == "count_to_one.contract" && site.tactic_name == "simp"
-        })
-    );
+    assert!(inventory.iter().any(|site| {
+        site.claim_label == "count_to_one.contract" && site.tactic_name == "solve"
+    }));
 }
 
 #[test]
@@ -697,7 +695,8 @@ fn repository_root_targets_examples_and_passing_mdtests() {
         .expect("audit should resolve an mdtest's imported Click modules");
     assert!(
         imported_sites.iter().any(|site| {
-            site.claim.contains("imported_function_is_available") && site.tactic_name == "auto"
+            site.claim.contains("imported_function_is_available")
+                && site.tactic_name == "implicit tail"
         }),
         "{imported_sites:?}"
     );
@@ -756,11 +755,11 @@ int32 write_selected(int32 p[2], int32 flag) {
 } by {
     execute();
     if result == 0 {
-        have result + 1 == 1 by simp();
+        have result + 1 == 1 by solve();
     } else {
-        have result - 1 == 0 by simp();
+        have result - 1 == 0 by solve();
     }
-    simp();
+    solve();
 }
 "#;
     let click_path = directory.join("branched.click");
@@ -810,9 +809,9 @@ int32 flag(int32 x) {
     requires x <= 0;
     ensures result == 0;
 } by {
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     step();
-    simp();
+    solve();
 }
 "#;
     let click_path = directory.join("dropped_arm.click");
@@ -828,7 +827,7 @@ int32 flag(int32 x) {
         .expect("the dropped arm's simp should be an auditable site");
     let expanded = expand_location(&format_location(&site_location(site)))
         .expect("a smart tactic on a dropped C path should expand");
-    assert!(!expanded.contains("step(); simp();"), "{expanded}");
+    assert!(!expanded.contains("step(); solve();"), "{expanded}");
     let source = load_audit_source_from_text(&click_path, expanded.clone()).unwrap();
     let refs = source_refs(&source.c_sources);
     verify_c0_sources(&source.click_source, &refs)
@@ -856,7 +855,7 @@ fn prepared_audit_reuses_validated_inputs_across_sites() {
         "int identity(int x) { return x; }\n",
     )
     .unwrap();
-    fs::write(&path, "verifying \"unit.c\";\nint32 identity(int32 x) { ensures result == x; } by { execute(); simp(); }\n").unwrap();
+    fs::write(&path, "verifying \"unit.c\";\nint32 identity(int32 x) { ensures result == x; } by { execute(); solve(); }\n").unwrap();
     fs::write(
         &project_file,
         serde_json::to_vec(&serde_json::json!({"units": {"unit": {
@@ -932,12 +931,12 @@ void object_retain_many(struct object* obj, int32 amount) {
     ensures defined(obj->refs);
 } by {
     open(control(obj)) {
-        have obj->refs == count(reference(obj)) by simp();
+        have obj->refs == count(reference(obj)) by solve();
         step();
         fold(amount of reference(obj));
     }
     execute();
-    simp();
+    solve();
 }
 "#;
     let click_path = directory.join("scope_have.click");
@@ -958,8 +957,8 @@ void object_retain_many(struct object* obj, int32 amount) {
     };
     let sites = inventory_sites(std::slice::from_ref(&click_path)).unwrap();
     for needle in [
-        "have obj->refs == count(reference(obj)) by simp();",
-        "simp();\n}",
+        "have obj->refs == count(reference(obj)) by solve();",
+        "solve();\n}",
     ] {
         let line = line_of(needle);
         let site = sites
@@ -1016,7 +1015,7 @@ int32 compare_smart(uint8 bytes[]) {
     ensures 1 == 1 by {
         step();
         step();
-        simp();
+        solve();
     }
 }
 "#;
@@ -1084,7 +1083,7 @@ struct node* unpack(struct node* node) {
     execute();
     fold(packed(node));
     assumption();
-    arithmetic() using {
+    solve() using {
         aligned(result, 8);
         node->word == address(result) + (node->word & 1);
     };
@@ -1098,7 +1097,7 @@ struct node* unpack(struct node* node) {
 
     let closer_line = click_source
         .lines()
-        .position(|line| line.trim() == "arithmetic() using {")
+        .position(|line| line.trim() == "solve() using {")
         .expect("proof should contain the closer")
         + 1;
     let sites = inventory_sites(std::slice::from_ref(&click_path)).unwrap();
@@ -1168,12 +1167,12 @@ uint32 count_live(struct cell* node) {
 } by {
     if node == 0 {
         execute();
-        simp();
+        solve();
     } else {
         unfold(tagged(node));
         execute();
         fold(tagged(node));
-        simp();
+        solve();
     }
 }
 "#;
@@ -1256,7 +1255,7 @@ int32 stop_at(int32 n) {
         invariant i >= 0;
     }
     step();
-    simp();
+    solve();
 }
 "#;
     let click_path = directory.join("stop_at.click");
@@ -1420,14 +1419,14 @@ int32 double_it(int32 x) {
     ensures result == x + x;
 } by {
     execute();
-    simp();
+    solve();
 }
 "#,
     )
     .unwrap();
     let sites = inventory_sites(std::slice::from_ref(&click_path))
         .expect("the sidecar should load under its project root");
-    assert!(sites.iter().any(|site| site.tactic_name == "simp"));
+    assert!(sites.iter().any(|site| site.tactic_name == "solve"));
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -1439,10 +1438,10 @@ fn loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_sit
     let original = fs::read_to_string(fixture).unwrap();
     let source = original.replacen(
         "function plug(",
-        "theorem ptr_self(p: struct rb_node*) { ensures p == p by { simp(); } }\n\
+        "theorem ptr_self(p: struct rb_node*) { ensures p == p by { solve(); } }\n\
          theorem ptr_equal(p: struct rb_node*, q: struct rb_node*) { requires p == q; ensures p == q by { assumption(); } }\n\nfunction plug(",
         1,
-    ).replace("initialize by simp();", "");
+    ).replace("initialize by solve();", "");
     let anchor = "                    have identity == parent by assumption();";
     assert!(
         source.contains(anchor),
@@ -1883,7 +1882,7 @@ fn inventory_obeys_the_work_and_whole_run_bounds() {
     let path = directory.join("unit.click");
     fs::write(
         &path,
-        "theorem identity() { ensures 0 == 0 by { simp(); } }",
+        "theorem identity() { ensures 0 == 0 by { solve(); } }",
     )
     .unwrap();
     let mut arguments = parse_arguments([path.display().to_string()]).unwrap();
@@ -1937,7 +1936,7 @@ int32 compare(uint8 bytes[]) {
     ensures 1 == 1 by {
         step();
         step();
-        simp();
+        solve();
     }
 }
 "#;
@@ -1958,7 +1957,7 @@ int32 compare(uint8 bytes[]) {
     // with implicit auto and has no smart sites, so only the whole-claim
     // cold check can detect the omitted evidence.
     let incomplete =
-        click_source.replace("simp();", "have 1 == 1 by { normalize(); } assumption();");
+        click_source.replace("solve();", "have 1 == 1 by { normalize(); } assumption();");
     verify_c0_sources(&incomplete, &[("compare.c", c_source)]).unwrap();
     let source = load_audit_source(&path).unwrap();
     let expected_error = click::surface::without_implicit_auto(|| {
@@ -2027,7 +2026,7 @@ fn audit_mixed_mdtests_checks_positive_sources() {
     .unwrap();
     fs::write(
         &positive,
-        "```click\ntheorem identity() { ensures 0 == 0 by simp(); }\n```\n```expect\npass\n```\n",
+        "```click\ntheorem identity() { ensures 0 == 0 by solve(); }\n```\n```expect\npass\n```\n",
     )
     .unwrap();
     let sites = inventory_sites(&audit_targets(directory.path()).unwrap()).unwrap();
@@ -2036,7 +2035,7 @@ fn audit_mixed_mdtests_checks_positive_sources() {
     run_audit(parse_arguments([directory.path().display().to_string()]).unwrap()).unwrap();
     fs::write(
         &positive,
-        "```click\ntheorem bad() { ensures true && true by simp(); }\n```\n```expect\npass\n```\n",
+        "```click\ntheorem bad() { ensures true && true by solve(); }\n```\n```expect\npass\n```\n",
     )
     .unwrap();
     let error =

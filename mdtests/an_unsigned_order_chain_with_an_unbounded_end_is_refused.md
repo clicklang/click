@@ -8,7 +8,7 @@ bound on `n`, `x < n` says nothing about `x < 4u32`.
 theorem below_unbounded(x: uint32, n: uint32) {
     requires x < n;
     ensures x < 4u32 by {
-        arithmetic() using {
+        solve() using {
             x < n;
         };
     }

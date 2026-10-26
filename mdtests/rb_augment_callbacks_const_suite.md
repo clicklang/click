@@ -82,7 +82,7 @@ void dummy_propagate(struct node* node, struct node* stop) {
     ensures node->left == old(node->left);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void dummy_copy(struct node* old, struct node* new) {
@@ -92,7 +92,7 @@ void dummy_copy(struct node* old, struct node* new) {
     ensures new->left == old(new->left);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void dummy_rotate(struct node* old, struct node* new) {
@@ -103,7 +103,7 @@ void dummy_rotate(struct node* old, struct node* new) {
     ensures new->right == old(new->right);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 resource callback_suite(augment: const struct rb_augment_callbacks*) {
@@ -130,7 +130,7 @@ void erase_augmented(struct node* node, struct node* parent,
 } by {
     open(callback_suite(augment)) {
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -153,14 +153,14 @@ void erase_dummy(struct node* node, struct node* parent) {
     apply(dummy_rotate_contract());
     fold(callback_suite(&dummy_callbacks));
     execute();
-    simp();
+    solve();
 }
 
-theorem dummy_propagate_contract() { ensures Propagate(&dummy_propagate) by { unfold(Propagate); simp(); } }
+theorem dummy_propagate_contract() { ensures Propagate(&dummy_propagate) by { unfold(Propagate); solve(); } }
 
-theorem dummy_copy_contract() { ensures Copy(&dummy_copy) by { unfold(Copy); simp(); } }
+theorem dummy_copy_contract() { ensures Copy(&dummy_copy) by { unfold(Copy); solve(); } }
 
-theorem dummy_rotate_contract() { ensures Rotate(&dummy_rotate) by { unfold(Rotate); simp(); } }
+theorem dummy_rotate_contract() { ensures Rotate(&dummy_rotate) by { unfold(Rotate); solve(); } }
 ```
 
 ```expect

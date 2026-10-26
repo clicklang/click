@@ -30,7 +30,7 @@ int32 parent_value(struct node* node, struct node* next) {
     ensures result == next->value;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

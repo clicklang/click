@@ -17,12 +17,12 @@ candidate.
 
 The implicit tail that ends every script, an omitted proof included, is smart
 work charged to the smart budget at the site after the script's last tactic.
-Profile rows still use the older names: `execute` for the tail's execution,
-`auto` for its closer, `simp` for a written `solve()` or `solve() using`, and
-`arithmetic` for the older `arithmetic()` spellings. The implicit closer that
-proves a simple tactic's open requirement, such as a bare `step()`'s obligation
-or a bare `fold`'s body fact, is reported as its own smart row named
-`implicit auto` at that tactic's site and charged to the smart budget. A bare
+Profile rows name the tail's execution `execute` and its closer
+`implicit tail`, and a written `solve()` or `solve() using` `solve`. The
+implicit closer that proves a simple tactic's open requirement, such as a bare
+`step()`'s obligation or a bare `fold`'s body fact, is reported as its own
+smart row named `implicit closer` at that tactic's site and charged to the
+smart budget. A bare
 simple tactic is not a selectable expansion site, so the row's expansion
 command expands its claim (`click expand --claim`), which writes the proof as
 the tactic's `by`.

@@ -1,6 +1,6 @@
 # arithmetic proves int64 order goals
 
-`arithmetic() using` reads a signed 64-bit order goal as it reads an
+`solve() using` reads a signed 64-bit order goal as it reads an
 unsigned one, through the exact Integer observations of its operands
 (`mdtests/a_size_t_loop_stepping_by_two_closes_with_arithmetic.md`). The
 difference is what a sum owes. An unsigned sum wraps, so it is observed

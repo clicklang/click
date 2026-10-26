@@ -1,7 +1,7 @@
-# simp refuses a uint32 difference that may wrap
+# solve refuses a uint32 difference that may wrap
 
 `3 - x <u 4 - x` is false at `x == 4`, where `3 - x` wraps to `UINT_MAX`.
-The descent lemma requires `x <u 4`; `x <=u 4` is not that fact, so `simp`
+The descent lemma requires `x <u 4`; `x <=u 4` is not that fact, so `solve`
 leaves the goal open.
 
 ```click

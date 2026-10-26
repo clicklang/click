@@ -23,7 +23,7 @@ theorem lift(cell: int32 (*)()) executes cell() {
     ensures Progress(cell) as { cell: cell } by {
         step(Exact, { cell: cell });
         have cell.revision == old(cell.revision) + 1 by assumption();
-        auto();
+        solve();
     }
 }
 verifying "counter.c";

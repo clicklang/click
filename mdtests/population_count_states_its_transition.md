@@ -25,7 +25,7 @@ void object_retain(int32* obj) {
 } by {
     fold(object_ref(obj));
     execute();
-    simp();
+    solve();
 }
 ```
 

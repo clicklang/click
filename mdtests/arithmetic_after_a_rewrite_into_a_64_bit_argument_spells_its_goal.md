@@ -2,7 +2,7 @@
 
 A `rewrite` by an observation equality can replace a `uint64` argument of a
 specification function, so the goal no longer matches its written template.
-`arithmetic` then spells the goal from the checked state, and a word argument
+Arithmetic then spells the goal from the checked state, and a word argument
 of any 32-, 64- or 128-bit type is spelled as its term, not only an `int32`
 one.
 

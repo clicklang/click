@@ -53,8 +53,8 @@ void drain(int32 n) {
 
                 initialize by solve();
                 preserve by {
-                    have 0 <= to_integer(n - 1) by auto();
-                    have to_integer(n - 1) >= 0 by auto();
+                    have 0 <= to_integer(n - 1);
+                    have to_integer(n - 1) >= 0;
                     step();
                     close_invariants();
                 }

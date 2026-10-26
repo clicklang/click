@@ -33,7 +33,7 @@ int32 never_negative(char buf[], int32 len, uint32 value, char name[]) {
     ensures (uint64) result < (uint64) len implies buf[(uint64) result] == 0u8;
     ensures (uint64) result >= (uint64) len implies buf[(uint64) len - 1u64] == 0u8;
 } by {
-    have (uint64) len != 0u64 by { auto(); }
+    have (uint64) len != 0u64;
     step(snprintf, { n1: 8u64 });
 }
 ```

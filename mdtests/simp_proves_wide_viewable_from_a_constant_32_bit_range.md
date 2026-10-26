@@ -1,4 +1,4 @@
-# `simp` proves a `size_t`-bounded viewable range from a constant 32-bit one
+# `solve` proves a `size_t`-bounded viewable range from a constant 32-bit one
 
 `viewable(bytes[0..3])` and `viewable(bytes[0..n])` with `n == 3u64` name the same
 bytes, so the wide range follows from the stated 32-bit one.

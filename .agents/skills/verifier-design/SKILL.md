@@ -18,7 +18,8 @@ touches more than one part, do this check for each.
 ## 2. Prefer the slow part
 
 If the change adds reasoning, first try to place it in the slow part: a new
-strategy inside `simp`, `arithmetic`, or `auto`, or a search helper that fills
+strategy inside `solve`, its arithmetic engine, or the implicit closer, or a
+search helper that fills
 an argument a tactic already accepts. Put it in the fast part only when every
 proof needs it on every step, and say why.
 

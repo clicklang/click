@@ -57,18 +57,18 @@ contract int32 Copy() {
 }
 
 int32 propagate() {
-    ensures result == 3 by auto();
+    ensures result == 3;
 }
 
 int32 copy() {
-    ensures result == 5 by auto();
+    ensures result == 5;
 }
 
 int32 run_suite(const struct callbacks *callbacks) {
     views callbacks_storage(callbacks);
     requires Propagate(callbacks->propagate);
     requires Copy(callbacks->copy);
-    ensures result == 35 by auto();
+    ensures result == 35;
 }
 
 int32 caller() {

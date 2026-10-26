@@ -1,6 +1,6 @@
 # recursive pure proofs do not start induction implicitly
 
-One symbolic equation is exposed, but `simp` does not invent an induction
+One symbolic equation is exposed, but `solve` does not invent an induction
 hypothesis or unfold recursively to an arbitrary depth.
 
 ```click
@@ -23,5 +23,5 @@ theorem missing_induction(n: int32) {
 ```
 
 ```expect
-fail: `simp` failed
+fail: `solve` failed
 ```

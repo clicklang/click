@@ -18,10 +18,10 @@ resource cell(p: int32*) {
 
 void set(int32 p[], int32 x) {
     consumes cell(p);
-    produces cell(p) by auto();
+    produces cell(p);
 }
 ```
 
 ```expect
-fail: `set` consumes and produces `cell(p)`; write the one clause `owns cell(p);`, with the `produces` clause's proof
+fail: `set` consumes and produces `cell(p)`; write the one clause `owns cell(p);`
 ```

@@ -74,7 +74,7 @@ int f() {
     ensures result == 18 or result == -1;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

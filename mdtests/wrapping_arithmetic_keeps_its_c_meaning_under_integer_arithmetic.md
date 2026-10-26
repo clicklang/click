@@ -29,11 +29,11 @@ uint64 step(uint64 state, uint64 inc) {
         integer::uint64_wrapping_mul(state, 6364136223846793005u64),
         inc
     );
-} by auto();
+}
 
 uint32 down(uint32 value) {
     ensures result == integer::uint32_wrapping_sub(value, 1u32);
-} by auto();
+}
 ```
 
 ```expect

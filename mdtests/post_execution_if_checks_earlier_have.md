@@ -27,5 +27,5 @@ int32 pick(int32 a, int32 b) {
 ```
 
 ```expect
-fail: `pick.contract` proof step tactic 1 > have body tactic 1: `simp` failed for `pick.contract`: could not establish `old(a) < old(b)`
+fail: `pick.contract` proof step tactic 1 > have body tactic 1: `solve` failed for `pick.contract`: could not establish `old(a) < old(b)`
 ```

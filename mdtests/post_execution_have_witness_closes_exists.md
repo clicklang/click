@@ -1,7 +1,7 @@
 # A post-execution `have` proves an existential with `witness`
 
 After `execute()`, a scoped `have` proves an existential about `result` with
-`witness`, and the later `simp()` closes the matching postcondition from it.
+`witness`, and the later `solve()` closes the matching postcondition from it.
 
 ```c filename=post_have_witness.c
 int32 identity(int32 x) {

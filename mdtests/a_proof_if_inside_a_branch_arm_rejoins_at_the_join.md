@@ -25,19 +25,19 @@ int32 pick(int32 a, int32 c) {
  } then {
   step();
   if c == 0 {
-   have 0 <= x by { auto(); }
-   have x <= 1 by { auto(); }
+   have 0 <= x;
+   have x <= 1;
   } else {
-   have 0 <= x by { auto(); }
-   have x <= 1 by { auto(); }
+   have 0 <= x;
+   have x <= 1;
   }
  } else {
   if c == 0 {
-   have 0 <= x by { auto(); }
+   have 0 <= x;
   } else {
-   have 0 <= x by { auto(); }
+   have 0 <= x;
   }
-  have x <= 1 by { auto(); }
+  have x <= 1;
  }
  }
 }

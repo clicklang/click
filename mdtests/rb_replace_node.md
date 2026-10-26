@@ -252,7 +252,7 @@ void replace_root_node(struct rb_node* victim, struct rb_node* new_node,
             new_node));
         normalize();
     }
-    simp();
+    solve();
 }
 
 
@@ -302,7 +302,7 @@ void replace_left_child(struct rb_node* victim, struct rb_node* new_node,
             new_node));
         normalize();
     }
-    simp();
+    solve();
 }
 void replace_right_child(struct rb_node* victim, struct rb_node* new_node,
                         struct rb_node* parent, struct rb_node* grandparent,
@@ -352,7 +352,7 @@ void replace_right_child(struct rb_node* victim, struct rb_node* new_node,
             new_node));
         normalize();
     }
-    simp();
+    solve();
 }
 ```
 

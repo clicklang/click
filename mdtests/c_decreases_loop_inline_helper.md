@@ -42,7 +42,7 @@ int32 drain(int32 n) {
         invariant n >= 0;
         initialize by solve();
         preserve by {
-            have 0 <= to_integer(n - 1) by auto();
+            have 0 <= to_integer(n - 1);
             step();
             close_invariants() by {
                 both { solve() using { 0 <= n; }; }

@@ -5,7 +5,7 @@ while `x + 1` is in `0..255`. A `signed_int32` certificate relates the
 conversion to its operand with `interval_narrowed_cast`: the operand's
 checked interval, here `1..255` from `0 <= x < 255`, must lie inside the
 destination range, and the conversion then has that interval and the
-operand's affine form. `simp` plans this certificate, and the expansion
+operand's affine form. `solve` plans this certificate, and the expansion
 below is the one it prints.
 `mdtests/a_conversion_one_past_its_range_is_not_its_operand.md` refuses the
 same certificate one value wider.

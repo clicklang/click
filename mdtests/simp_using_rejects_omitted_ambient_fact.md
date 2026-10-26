@@ -1,4 +1,4 @@
-# `simp() using` does not consume omitted ambient facts
+# `solve() using` does not consume omitted ambient facts
 
 The explicit-premise form is a restricted smart tactic. Facts in the ambient
 theorem context are unavailable unless the `using` block names them.

@@ -20,7 +20,7 @@ int32 forall_scope(int32 value) {
         execute();
         intro();
         intro();
-        simp();
+        solve();
     }
 }
 ```

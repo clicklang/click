@@ -24,7 +24,7 @@ theorem lift(callback: int32 (*)()) executes callback() {
     ensures Progress(callback) as { cell: k } by {
         step(Exact, { cell: k });
         have k.revision == old(k.revision) + 1 by assumption();
-        have old(k.revision) < old(k.revision) + 1 by auto();
+        have old(k.revision) < old(k.revision) + 1;
         solve();
     }
 }

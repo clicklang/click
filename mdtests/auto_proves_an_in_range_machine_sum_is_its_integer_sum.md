@@ -1,8 +1,8 @@
-# auto proves an in-range machine sum is its Integer sum
+# The implicit closer proves an in-range machine sum is its Integer sum
 
 Under Integer specification arithmetic a contract about `x - 1` or `a + b` compares
 exact Integers, while the C function computes them in its machine type. When
-the facts bound the Integer result inside that type, `auto` proves the two
+the facts bound the Integer result inside that type, the implicit closer proves the two
 agree: it bounds the result from the facts and the operands' type ranges,
 applies `integer_operation_identity`, and closes the goal, with no bridge
 lemma (`mdtests/an_in_range_machine_difference_is_its_integer_difference.md`

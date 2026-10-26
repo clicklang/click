@@ -1915,9 +1915,9 @@ theorem set_one_is_make_positive() {
         unfold(MakePositive);
 
         if active != 0 {
-            simp();
+            solve();
         } else {
-            simp();
+            solve();
         }
     }
 }

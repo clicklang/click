@@ -1,6 +1,6 @@
 # A tactic other than a closer after a closed goal names what closed it
 
-Only `assumption`, `simp`, and `normalize` may follow a tactic that already
+Only `assumption`, `solve`, and `normalize` may follow a tactic that already
 closed a `have`'s goal. Here `color_bit(Color::Red) == 0` is established
 first, so unfolding `red_bit_value()` in the second body leaves exactly that
 fact and closes the goal at once; the `rewrite` after it has no goal to

@@ -9,7 +9,7 @@ RestoreState::RestoreState(int32* slot) {
     ensures slot[0] == 7;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 RestoreState::~RestoreState() {
@@ -22,7 +22,7 @@ RestoreState::~RestoreState() {
     ensures this->pointer[0] == old(this->saved);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 capture(int32& value) {
@@ -31,5 +31,5 @@ int32 capture(int32& value) {
     ensures value == old(value);
 } by {
     execute();
-    simp();
+    solve();
 }

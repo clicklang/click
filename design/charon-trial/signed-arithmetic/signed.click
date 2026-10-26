@@ -9,54 +9,54 @@ verifying "signed.rs";
 
 fn half(x: i32) -> i32 {
     ensures result == x / 2i32;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn modulo(x: i64, y: i64) -> i64 {
     requires 0i64 <= x and 0i64 < y;
     ensures result == x % y;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn quotient8(x: i8, y: i8) -> i8 {
     requires 0i8 <= x and 0i8 < y;
     ensures result == x / y;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn remainder16(x: i16, y: i16) -> i16 {
     requires 0i16 <= x and 0i16 < y;
     ensures result == x % y;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn negate(x: i16) -> i16 {
     requires -100i16 <= x and x <= 100i16;
     ensures result as i32 == 0i32 - x as i32;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn negate32(x: i32) -> i32 {
     requires x != -2147483648i32;
     ensures result == 0i32 - x;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn mask(x: i32, y: i32) -> i32 {
     ensures result == (x & y);
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn toggle(x: i32, y: i32) -> i32 {
     ensures result == (x ^ y);
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn either(x: isize, y: isize) -> isize {
     ensures result == (x | y);
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn complement(x: i64) -> i64 {
     ensures result == ~x;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn split(total: &mut isize, parts: isize) {
     owns *total;
     requires 0isize <= *total and 0isize < parts;
     ensures *total == old(*total) / parts;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 // A signed left shift wraps, as Rust's does: the bits are shifted as an
 // unsigned word and reinterpreted at the operand's width. A right shift is
@@ -65,14 +65,14 @@ fn split(total: &mut isize, parts: isize) {
 fn shift_left(x: i32, n: u32) -> i32 {
     requires n < 32u32;
     ensures result == (x << n);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 fn shift_right(x: i64, n: i32) -> i64 {
     requires 0i32 <= n and n < 64i32;
     ensures result == (x >> n);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 fn shift_narrow(x: i8, n: u32) -> i8 {
     requires n < 8u32;
     ensures true;
-} by { execute(); simp(); }
+} by { execute(); solve(); }

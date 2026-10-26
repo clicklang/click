@@ -33,7 +33,7 @@ int32 setup(struct s* p, int32 d[], int32 n) {
 } by {
     execute();
     fold(box(p));
-    simp();
+    solve();
 }
 
 int32 bump(struct s* p) {
@@ -45,7 +45,7 @@ int32 bump(struct s* p) {
     unfold(box(p));
     execute();
     fold(box(p));
-    simp();
+    solve();
 }
 
 int32 probe(struct s* p, int32 d[], int32 n) {
@@ -63,7 +63,7 @@ int32 probe(struct s* p, int32 d[], int32 n) {
     };
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -72,7 +72,7 @@ theorem maybe_match_none(value: int32, fallback: int32) {
 }
 
 int32 identity(int32 value) {
-    ensures result == unwrap_constructed(value, 0) by auto();
+    ensures result == unwrap_constructed(value, 0);
 }
 ```
 

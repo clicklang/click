@@ -3,7 +3,7 @@
 `poke` holds `flat(p)` folded and stores to `p->value`. Holding the resource
 authorizes reads of the memory it owns directly and nothing more: a store
 needs the field itself, which `unfold(flat(p))` would produce. The written
-step is refused; `auto` would open `flat(p)` first
+step is refused; the implicit tail would open `flat(p)` first
 (`auto_opens_a_folded_resource_to_store_through_it.md`).
 
 The read is `c_reads_through_an_owned_resource.md`.

@@ -30,13 +30,13 @@ int32 read(int32* p) {
                 unfold(c);
                 execute();
                 let c = fold(cell(p), { model: Pair::First(value) });
-                simp();
+                solve();
             },
             Pair::Second(value) => {
                 unfold(c);
                 execute();
                 let c = fold(cell(p), { model: Pair::Second(value) });
-                simp();
+                solve();
             },
         }
     }

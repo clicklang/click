@@ -31,9 +31,11 @@ pub(super) fn frozen_proof_input(source: &str) -> String {
             .any(|entry| entry.frozen_sha256.as_deref() == Some(hash.as_str())),
         "only a hash-pinned historical fixture may use this adapter"
     );
-    let mut input = source
-        .replace("close_invariants by", "close_invariants() by")
-        .replace("statement(", "region(");
+    let mut input = frozen_tactic_spelling(
+        source
+            .replace("close_invariants by", "close_invariants() by")
+            .replace("statement(", "region("),
+    );
     for (old, current) in [
         (
             "int32 sum(const uint8* bytes, uint64 bytes_len)",
@@ -56,6 +58,17 @@ pub(super) fn frozen_proof_input(source: &str) -> String {
         input = input.replace(old, current);
     }
     frozen_library_names(input.replace("bytes_len", "bytes.len()")) + FROZEN_LIBRARY_IMPORTS
+}
+
+/// `source` with the tactic spellings the pinned proofs use and the parser
+/// no longer reads spelled as today's: `simp()` is `solve()`, `arithmetic()`
+/// is `solve() using`, and `execute_until` is `step_until`.
+fn frozen_tactic_spelling(source: String) -> String {
+    source
+        .replace("simp()", "solve()")
+        .replace("arithmetic() using", "solve() using")
+        .replace("arithmetic()", "solve() using {}")
+        .replace("execute_until(", "step_until(")
 }
 
 /// `source` with each bare library theorem citation of the pinned proofs
@@ -99,7 +112,8 @@ fn charon_frozen_proof_adapter_preserves_the_contracts_and_pinned_bytes() {
                 .replace(".rs\"", ".c\"")
                 .replace("close_invariants by", "close_invariants() by")
                 .replace("statement(", "region("),
-        ) + FROZEN_LIBRARY_IMPORTS;
+        );
+        let c_input = frozen_tactic_spelling(c_input) + FROZEN_LIBRARY_IMPORTS;
         assert_eq!(
             click::surface::parse(&input).unwrap().function_blocks(),
             click::surface::parse(&c_input).unwrap().function_blocks(),

@@ -9,7 +9,7 @@ The body writes only `i`, so the array argument `count` folds over names the
 same snapshot at the back edge as at the iteration's start, and the
 permutation invariant is preserved without a step of its own. The bundle the
 closer sees is therefore the two `decreases` obligations; the invariant used
-to need an `intro(); simp();` leaf beside them, when every statement renamed
+to need an `intro(); solve();` leaf beside them, when every statement renamed
 that argument.
 
 ```c filename=loop_stdlib_permutation_invariant.c

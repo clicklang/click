@@ -33,8 +33,6 @@ struct packet clone_packet(struct packet* source) {
     ensures result.inner.value == source->inner.value;
     ensures result.inner.flag == source->inner.flag;
     ensures result.tail == source->tail;
-} by {
-    auto();
 }
 ```
 

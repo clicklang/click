@@ -4886,16 +4886,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "arithmetic",
-        syntax: "arithmetic()",
-        class: "smart",
-    },
-    PublicTacticForm {
-        id: "arithmetic-using",
-        syntax: "arithmetic() using",
-        class: "smart",
-    },
-    PublicTacticForm {
         id: "arithmetic-certificate",
         syntax: "arithmetic_certificate { premise ...; conclusion N; }",
         class: "simple",
@@ -5149,7 +5139,7 @@ impl ProofTactic {
 
 impl SmartTactic {
     /// The smart site a `by` proof of this tactic is: `by auto();` is the
-    /// omitted proof, and `by simp();` is `solve`.
+    /// omitted proof, and `by solve();` is `solve`.
     pub fn site(self) -> SmartSite {
         match self {
             Self::Auto => SmartSite::Implicit,

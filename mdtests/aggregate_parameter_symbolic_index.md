@@ -14,11 +14,11 @@ int32 indexed(struct packet input, int32 i) {
     ensures result == input.items[i];
 } by {
     if i == 0 {
-        execute(); rewrite(i == 0); simp();
+        execute(); rewrite(i == 0); solve();
     } else {
-        have 0 < i by { arithmetic() using { 0 <= i; i != 0; }; }
-        have i == 1 by { arithmetic() using { 0 < i; i < 2; }; }
-        execute(); rewrite(i == 1); simp();
+        have 0 < i by { solve() using { 0 <= i; i != 0; }; }
+        have i == 1 by { solve() using { 0 < i; i < 2; }; }
+        execute(); rewrite(i == 1); solve();
     }
 }
 ```

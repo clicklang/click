@@ -28,7 +28,7 @@ int32* at(const struct S* s, uint64 i) {
     views s->p[0..s->e.v];
     requires i < s->e.v;
     ensures result == s->p + i;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 set_at(struct S* s, uint64 i, int32 v) {
     views s->p;
     views s->e.v;
@@ -39,13 +39,13 @@ int32 set_at(struct S* s, uint64 i, int32 v) {
     ensures forall (k: uint64) { k < s->e.v and k != i implies s->p[k] == old(s->p[k]) };
 } by {
     execute();
-    have s->p == old(s->p) by simp();
-    have s->e.v == old(s->e.v) by simp();
+    have s->p == old(s->p) by solve();
+    have s->e.v == old(s->e.v) by solve();
     transport(
         forall (k: uint64) { k < s->e.v and k != i implies old(s->p[k]) == old(s->p[k]) },
         forall (k: uint64) { k < s->e.v and k != i implies s->p[k] == old(s->p[k]) }
     );
-    simp();
+    solve();
 }
 ```
 

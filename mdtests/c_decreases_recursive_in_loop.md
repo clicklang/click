@@ -38,25 +38,25 @@ int32 recursive_loop(int32 n) {
         invariant i >= 0;
         invariant i <= 1;
         invariant result == 0;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             if n > 0 {
                 step();
                 step();
-                simp();
+                solve();
                 step();
                 close_invariants();
             } else {
                 step();
                 step();
-                simp();
+                solve();
                 step();
                 close_invariants();
             }
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

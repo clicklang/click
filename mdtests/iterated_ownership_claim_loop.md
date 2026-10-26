@@ -78,7 +78,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
         invariant w.next == i;
         decreases end - i;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             let { next: n } = unfold(w);
             have n == i;
@@ -91,9 +91,9 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 intro();
                 intro();
                 extract(to_integer(i + 1) <= to_integer(k));
-                have i < i + 1 by auto();
-                have i < k by auto();
-                have i <= k by auto();
+                have i < i + 1;
+                have i < k;
+                have i <= k;
                 have n <= k by {
                     rewrite(n == i);
                     assumption();
@@ -138,8 +138,8 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     assumption();
                 }
                 have at(opened, i) < end;
-                have at(opened, i) < at(opened, i) + 1 by auto();
-                have at(opened, i) < k by auto();
+                have at(opened, i) < at(opened, i) + 1;
+                have at(opened, i) < k;
                 have 0 <= at(opened, i) by assumption();
                 have at(opened, i) < capacity by assumption();
                 have 0 <= k;
@@ -163,14 +163,14 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 next: at(opened, i) + 1
             });
             have 0 <= to_integer(end - at(region(3).entry, i) - 1) by {
-                arithmetic() using {
+                solve() using {
                     at(region(3).entry, i) < end;
                     0 <= at(region(3).entry, i);
                     end <= capacity;
                 };
             }
             have to_integer(end - at(region(3).entry, i) - 1) < to_integer(end - at(region(3).entry, i)) by {
-                arithmetic() using {
+                solve() using {
                     at(region(3).entry, i) < end;
                     0 <= at(region(3).entry, i);
                     end <= capacity;
@@ -183,7 +183,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
     execute();
     fold(arena_cells(data, occupied, capacity));
     fold(region(data, start, end));
-    simp();
+    solve();
 }
 ```
 

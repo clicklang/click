@@ -1,7 +1,7 @@
-# simp refuses a uint32 predecessor without its guard
+# solve refuses a uint32 predecessor without its guard
 
 `x - 1 <u x` is false at `x == 0`, where the predecessor wraps to
-`UINT_MAX`. Without the fact `0 <u x` there is no lemma to apply, and `simp`
+`UINT_MAX`. Without the fact `0 <u x` there is no lemma to apply, and `solve`
 leaves the goal open.
 
 ```click

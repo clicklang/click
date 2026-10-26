@@ -2,7 +2,7 @@
 
 `fill` sets every cell of `occ` to `1` and returns `1`, the shape of an
 allocator's occupancy postcondition: `result == 1 implies forall (k: int32)
-{ ... }`. After the loop, `simp()` closes the claim by introducing the guard
+{ ... }`. After the loop, `solve()` closes the claim by introducing the guard
 and the binder and instantiating the loop invariant; claim expansion renders
 that proof as a `have` of the claim followed by `assumption()`. The `have`
 and the claim lower the guarded quantifier with independent fresh binders,
@@ -42,7 +42,7 @@ int fill(int32* occ, int32 cap) {
         owns occ[0..cap];
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

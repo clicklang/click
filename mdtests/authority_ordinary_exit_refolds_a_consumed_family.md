@@ -2,7 +2,7 @@
 
 `box_renew` unfolds the `boxed(box)` it consumes, replaces the allocation,
 and returns without an explicit `fold`. Under both resource semantics the
-closing `simp` reads the body outcome through the contract's checked
+closing `solve` reads the body outcome through the contract's checked
 resource transition, which folds the returned `boxed(box)` once the body
 holds its pieces.
 
@@ -53,7 +53,7 @@ void box_renew(struct box* box) {
 } by {
     unfold(boxed(box));
     execute();
-    simp();
+    solve();
 }
 
 int32 box_cycle(struct box* box) {
@@ -61,7 +61,7 @@ int32 box_cycle(struct box* box) {
     ensures result == old(box->data[0]);
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

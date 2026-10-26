@@ -1,8 +1,7 @@
-# A written `auto` closes one goal
+# A written `solve` closes one goal
 
-Written as a step of a script, `auto();` is the older spelling of `solve();`:
-it closes the first open goal, and the next closer, here `normalize()`, takes
-the second.
+Written as a step of a script, `solve();` closes the first open goal, and the
+next closer, here `normalize()`, takes the second.
 
 ```c filename=a_written_auto_closes_one_goal.c
 int32 f(int32 n) {
@@ -19,7 +18,7 @@ int32 f(int32 n) {
     ensures result == n;
 } by {
     step_until(function.exit);
-    auto();
+    solve();
     normalize();
 }
 ```

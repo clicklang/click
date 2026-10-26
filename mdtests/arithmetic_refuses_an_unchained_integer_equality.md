@@ -9,7 +9,7 @@ theorem unchained_integer_equalities(t: Integer, a: Integer, b: Integer, x: Inte
     requires t == a + x;
     requires a == b;
     ensures t == b + y by {
-        arithmetic() using {
+        solve() using {
             t == a + x;
             a == b;
         };

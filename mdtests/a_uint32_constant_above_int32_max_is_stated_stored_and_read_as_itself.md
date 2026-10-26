@@ -21,25 +21,25 @@ int above(unsigned *u) { return *u > 2147483647u; }
 ```click
 verifying "a_uint32_constant_above_int32_max_is_stated_stored_and_read_as_itself.c";
 
-unsigned literal() { ensures result == 4294967295u32 by auto(); }
+unsigned literal() { ensures result == 4294967295u32; }
 
 unsigned stored(unsigned *u) {
     owns u[0..1];
     ensures result == 4000000000u32;
     ensures u[0] == 4000000000u32;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 unsigned stated(unsigned *u) {
     views u[0..1];
     requires u[0] == 4000000000u32;
     ensures result == 4000000000u32;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int above(unsigned *u) {
     views u[0..1];
     requires u[0] == 4000000000u32;
     ensures result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

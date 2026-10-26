@@ -1,6 +1,6 @@
 # fill_n verifies a symbolic pointer loop
 
-This checks that `auto` can use a symbolic range requirement and loop
+This checks that `solve()` can use a symbolic range requirement and loop
 invariants to verify a pointer loop without unrolling the loop to a concrete
 bound.
 

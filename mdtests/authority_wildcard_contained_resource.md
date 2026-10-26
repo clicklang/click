@@ -33,21 +33,21 @@ void issue(int32* pool, int32* p) {
     requires defined(count(slot(pool, _)) + 1);
     produces slot(pool, p);
     ensures to_integer(count(slot(pool, _))) == to_integer(old(count(slot(pool, _))) + 1);
-} by { fold(slot(pool, p)); execute(); simp(); }
+} by { fold(slot(pool, p)); execute(); solve(); }
 void update(int32* pool, int32* p) {
     owns slot(pool, p);
     ensures p[0] == 7;
-} by { open(slot(pool, p)) { open(cell(pool, p)) { step(); } } execute(); simp(); }
+} by { open(slot(pool, p)) { open(cell(pool, p)) { step(); } } execute(); solve(); }
 void release(int32* pool, int32* p) {
     owns authority(slot(pool, _));
     consumes slot(pool, p);
     produces cell(pool, p);
     ensures p[0] == old(p[0]);
     ensures to_integer(count(slot(pool, _))) == to_integer(old(count(slot(pool, _))) - 1);
-} by { unfold(slot(pool, p)); execute(); simp(); }
+} by { unfold(slot(pool, p)); execute(); solve(); }
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { execute(); simp(); } else {}
+    branch { execute(); solve(); } else {}
     step(); step();
     fold(authority(cell(&pool, _)));
     fold(cell(&pool, p));
@@ -67,7 +67,7 @@ int32 lifecycle() { ensures result == 0 or result == 9; } by {
     unfold(cell(&pool, p));
     unfold(cell(&pool, p + 1));
     unfold(authority(cell(&pool, _)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

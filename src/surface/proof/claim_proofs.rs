@@ -260,7 +260,7 @@ fn unsupported_proof_shape(
         // the proof left open. Say which, rather than calling the shape
         // unimplemented, since the fix is in the proof script.
         return ClickError::new(format!(
-            "`{proof_label}`: a `branch` or proof `if` split the path, one arm returned, and the tactics after the split ran out before the continuing arm reached the function exit, so that path is still open. The proof after the split runs inside the continuing arm; finish it there (for example with `execute();` and `simp();`), or check the continuation's last tactics."
+            "`{proof_label}`: a `branch` or proof `if` split the path, one arm returned, and the tactics after the split ran out before the continuing arm reached the function exit, so that path is still open. The proof after the split runs inside the continuing arm; finish it there (for example with `execute();` and `solve();`), or check the continuation's last tactics."
         ));
     }
     let claim_description = if claim_labels.len() == 1 {
@@ -1357,7 +1357,7 @@ fn begin_outcome_existence_proof<'a>(
 enum ClaimClosureSearch<'p> {
     /// Explain why the claim is open without searching.
     None,
-    /// `simp() using`: only the listed premises.
+    /// `solve() using`: only the listed premises.
     Restricted(&'p [ClickProposition]),
     /// The direct logical closure, then `simp`.
     Simp,
@@ -1827,7 +1827,7 @@ fn apply_post_execution_arithmetic_using<'a>(
             .listed_premise_available(premise, &[], false)
         {
             return Err(focused.step_error(format!(
-                "post-execution `arithmetic using` premise {premise_index} is not exactly available"
+                "post-execution `solve() using` premise {premise_index} is not exactly available"
             )));
         }
     }
@@ -1952,7 +1952,7 @@ fn fold_produced_resources<'a>(
     Ok(())
 }
 
-/// Closes claims after execution with a written `simp`, `simp() using` or
+/// Closes claims after execution with a written `simp`, `solve() using` or
 /// `auto`, or with the implicit `auto` that ends a proof: a claim proof the
 /// earlier tactics opened, a divergent path's claims, the claims of a
 /// grouped proof together, and then each claim on its own. `Ok(())` means
@@ -1998,11 +1998,11 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
         _ => None,
     };
     let closer_name = if restricted_premises.is_some() {
-        "simp() using"
+        "solve() using"
     } else if matches!(post_tactic, PostExecutionTactic::AutoClose) {
-        "auto"
+        "implicit tail"
     } else {
-        "simp"
+        "solve"
     };
     // `auto` tries `simp` first on each pending
     // claim, then the rest of its search on a claim
@@ -2117,7 +2117,7 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
     if let Some((claim_index, before_simp, completed)) = opened_closure {
         if !completed.is_complete() {
             return Err(ClickError::new(format!(
-                "`{proof_label}` path {path_index}, tactic {tactic_index}: retained existential Proof remained incomplete after `simp`"
+                "`{proof_label}` path {path_index}, tactic {tactic_index}: retained existential Proof remained incomplete after `solve`"
             )));
         }
         // The steps are checked inside the proof
@@ -2261,7 +2261,7 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
                 ProofCertificate::from_proof_tactics(&tactics)
                     .map_err(|error| {
                         ClickError::new(format!(
-                            "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `simp` produced an invalid surface certificate: {error}"
+                            "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `solve` produced an invalid surface certificate: {error}"
                         ))
                     })?;
             if proof_context.constants.grouped_contract {
@@ -2645,7 +2645,7 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
                             ])
                             .map_err(|error| {
                                 ClickError::new(format!(
-                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `simp` produced an invalid surface certificate: {error}"
+                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `solve` produced an invalid surface certificate: {error}"
                                 ))
                             })?;
                         for (claim_index, _, _) in &direct_resource_claims {
@@ -5179,7 +5179,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     {
                         let claim_label = function_claim_label(function_block, claim);
                         let summary = format!(
-                            "`{proof_label}` path {path_index} left `{claim_label}` unproved: `auto` could not close it at the end of the proof; establish the facts and resources it needs before then (claim index {claim_index})"
+                            "`{proof_label}` path {path_index} left `{claim_label}` unproved: the implicit closer could not close it at the end of the proof; establish the facts and resources it needs before then (claim index {claim_index})"
                         );
                         if let Some(error) = closures[claim_index].last_error() {
                             return Err(error.clone().with_context(summary));
@@ -6097,7 +6097,7 @@ mod evidence_tests {
         let source = r#"
             resource marker() { fact 0 == 0; }
             verifying "zero.c";
-            int32 zero() { owns marker(); ensures result == 0; } by { execute(); simp(); }
+            int32 zero() { owns marker(); ensures result == 0; } by { execute(); solve(); }
         "#;
         let verified =
             verify_c0_sources(source, &[("zero.c", "int32 zero() { return 0; }")]).unwrap();
@@ -6175,10 +6175,10 @@ mod evidence_tests {
         let source = r#"
             verifying "spin.c";
             int32 spin() diverges { ensures 0 == 1; } by {
-                loop diverges { invariant 0 == 0; initialize by simp();
+                loop diverges { invariant 0 == 0; initialize by solve();
                     preserve by { step(); close_invariants(); }
                 }
-                simp();
+                solve();
             }
         "#;
         let verified = verify_c0_sources(

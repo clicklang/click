@@ -36,7 +36,7 @@ int32 nested_branch_steps(int32 x) {
                 fact y >= 0;
             } then {
                 step();
-                have y >= 0 by auto();
+                have y >= 0;
             } else {
                 step();
             }

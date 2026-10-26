@@ -8,7 +8,7 @@ int* probe(int* p) noexcept { return p + 1; }
 verifying "formation.cpp";
 int32* probe(int32* p) {
     ensures true;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

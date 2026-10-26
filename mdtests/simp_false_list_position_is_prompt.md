@@ -24,7 +24,7 @@ theorem wrong_position(xs: List<int32>, tail: List<int32>, first: int32, second:
     requires xs == List<int32>::Cons(first, tail);
     requires adjacent(xs, first, second) == 1;
     ensures flag != 0 implies adjacent(xs, second, first) == 1 by {
-        simp();
+        solve();
     }
 }
 ```

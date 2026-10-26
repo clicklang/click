@@ -77,27 +77,27 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
         invariant to_integer(run.lo + run_length) == to_integer(i);
         invariant 0 <= run_length and run_length <= i;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             mark iteration;
             let { lo: lo, hi: hi } = unfold(run);
             have hi == i by {
-                simp();
+                solve();
             }
             have to_integer(lo + run_length) == to_integer(i) by {
-                simp();
+                solve();
             }
             have lo <= i by {
-                simp() using {
+                solve() using {
                     lo <= hi;
                     hi == i;
                 };
             }
-            have 0 <= i by auto();
-            have to_integer(i + 1) <= to_integer(capacity) by auto();
+            have 0 <= i;
+            have to_integer(i + 1) <= to_integer(capacity);
             if occupied[i] == 0 {
                 have run_length < capacity by {
-                    arithmetic() using {
+                    solve() using {
                         run_length <= i;
                         i < capacity;
                     };
@@ -109,55 +109,55 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 }
                 step();
                 have hi == at(iteration, i) by {
-                    simp();
+                    solve();
                 }
                 have to_integer(i) == to_integer(at(iteration, i) + 1) by {
                     normalize();
                 }
                 have lo <= at(iteration, i) by {
-                    simp() using {
+                    solve() using {
                         lo <= hi;
                         hi == at(iteration, i);
                     };
                 }
-                have to_integer(at(iteration, i)) < to_integer(at(iteration, i) + 1) by auto();
+                have to_integer(at(iteration, i)) < to_integer(at(iteration, i) + 1);
                 have at(iteration, i) < i by {
                     rewrite(to_integer(i) == to_integer(at(iteration, i) + 1));
                     assumption();
                 }
-                have at(iteration, i) <= i by auto();
-                have lo <= i by auto();
+                have at(iteration, i) <= i;
+                have lo <= i;
                 have i <= capacity by {
-                    simp();
+                    solve();
                 }
                 have to_integer(run_length) == to_integer(at(iteration, run_length) + 1) by {
                     normalize();
                 }
                 have to_integer(lo + at(iteration, run_length)) == to_integer(at(iteration, i)) by {
-                    simp();
+                    solve();
                 }
                 have to_integer(lo + run_length) == to_integer(i) by {
                     rewrite(to_integer(run_length) == to_integer(at(iteration, run_length) + 1));
                     rewrite(to_integer(i) == to_integer(at(iteration, i) + 1));
-                    simp();
+                    solve();
                 }
                 have 0 <= run_length and run_length <= i by {
-                    simp();
+                    solve();
                 }
                 let run = fold(arena_scan(data, occupied, capacity), {
                     lo: lo, hi: i
                 });
                 have run.hi == i by {
-                    simp();
+                    solve();
                 }
                 have to_integer(run.lo + run_length) == to_integer(i) by {
-                    simp();
+                    solve();
                 }
                 have 0 <= at(iteration, i) by {
                     assumption();
                 }
                 have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
-                    arithmetic() using {
+                    solve() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
@@ -165,7 +165,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 }
                 have to_integer(capacity - at(iteration, i) - 1)
                     < to_integer(capacity - at(iteration, i)) by {
-                    arithmetic() using {
+                    solve() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
@@ -188,7 +188,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     assumption();
                 }
                 have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
-                    arithmetic() using {
+                    solve() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
@@ -196,7 +196,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 }
                 have to_integer(capacity - at(iteration, i) - 1)
                     < to_integer(capacity - at(iteration, i)) by {
-                    arithmetic() using {
+                    solve() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
@@ -209,7 +209,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
     let { lo: run_lo, hi: run_hi } = unfold(run);
     fold(arena_cells(data, occupied, capacity));
     execute();
-    simp();
+    solve();
 }
 ```
 

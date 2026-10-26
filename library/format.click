@@ -798,7 +798,7 @@ theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
 theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
     ensures 48u8 <= format::decimal_digit(v, k) by {
         unfold(format::decimal_digit(v, k));
-        have 48u8 <= (uint8) (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) by { auto(); }
+        have 48u8 <= (uint8) (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64);
         assumption();
     }
 }

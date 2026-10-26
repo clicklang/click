@@ -26,7 +26,7 @@ clause, a written `have`, a call's precondition, a definedness requirement such
 as the absence of signed overflow, or a memory access. The report prints it on
 a `goal:` line. Whatever its source, a goal is proved the same way: by the implicit tail when
 the proof is omitted or the script leaves the goal open, by the implicit closer
-(reported as `implicit auto`) when a `step()` or `fold` leaves a requirement
+(reported as `implicit closer`) when a `step()` or `fold` leaves a requirement
 open, or by explicit tactics you write.
 
 A goal is read in the state where it is required. A requirement of a C
@@ -109,8 +109,8 @@ explanation.
    **Accepts** list), stop at `failing-tactic`.
 
    To split a link that a smart tactic proved part of, read its trace: a step
-   marked ``(from `execute`)``, ``(from `auto`)``, ``(from `simp`)`` or
-   ``(from `implicit auto`)`` is one that smart work took, and a `chosen:`
+   marked ``(from `execute`)``, ``(from `implicit tail`)``, ``(from `solve`)``
+   or ``(from `implicit closer`)`` is one that smart work took, and a `chosen:`
    line is the written form of an argument its search chose ([Reading trace
    output](#reading-trace-output)). Writing those out leaves only the
    unproved part of the link.
@@ -306,10 +306,10 @@ access, not an equality about the current memory contents.
 Only the new facts at each checked step are printed, not the accumulated set.
 
 A step that a search produced says which one. A step that smart work checked
-ends its header with ``(from `auto`)`` or the like, naming it by its older
-name: `execute` for the steps the implicit tail's execution took, `auto` for
-the tail's closer, `simp` for a written `solve()`, and `implicit auto` for an
-obligation a `step()` or `fold` left open. A step whose `using` list a search chose, under a smart tactic or in an
+ends its header with ``(from `implicit tail`)`` or the like, naming its
+origin: `execute` for the steps the implicit tail's execution took,
+`implicit tail` for the tail's closer, `solve` for a written `solve()`, and
+`implicit closer` for an obligation a `step()` or `fold` left open. A step whose `using` list a search chose, under a smart tactic or in an
 elided form such as `apply(t(x))` or a bare `transport(P, Q)`, has a `chosen:`
 line with the step written out in full, as `click expand` writes it:
 

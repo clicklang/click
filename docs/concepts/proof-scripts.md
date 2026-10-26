@@ -19,15 +19,14 @@ An omitted proof closes the statement where it holds:
 - `ensures P;` on a C function holds at function exit, so the implicit tail
   runs the C to it first, then closes the claim on each path with the
   implicit closer: direct closure, then `solve`'s search. A script that ends
-  with the claim still open closes it the same way. `by auto();` is the older
-  spelling of this omitted proof.
+  with the claim still open closes it the same way.
 - `have P;` holds where it is written. It is `have P by solve();` and never
   executes C. On a linear `Integer` bound, `solve` refutes its integer
   negation from the facts connected to it
   (`mdtests/have_by_auto_refutes_a_linear_bound.md`), and its last strategy
   is a short chain of `rewrite` steps by the connected equalities
   (`mdtests/auto_rewrites_a_constructor_term_to_its_model.md`). Those mdtests
-  write `have P by auto();`, an older spelling of the same proof.
+  write `have P;`, whose omitted proof is the same proof.
 
 A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for
 any tactic written as a call, as in `have 0 <= x by assumption();`. `click
@@ -72,9 +71,7 @@ that returned state (`mdtests/resource_instance_fold_after_return_in_open.md`).
 this section shows how they appear in scripts.
 
 Smart tactics plan or search. The written smart tactic is `solve()`, with
-`solve() using { ... }`. `simp()` and a written `auto();` are older spellings
-of `solve()`, `arithmetic() using { ... }` of `solve() using { ... }`, and bare
-`arithmetic()` of `solve() using {}`. The implicit tail, which runs the C a
+`solve() using { ... }`. The implicit tail, which runs the C a
 script leaves and closes what is open, is smart work too, as are
 `close_invariants()` and the searches behind elided arguments. An elided form
 such as bare `apply(...)` or bare `transport(...)` is a smart site: a search
@@ -237,7 +234,7 @@ match c.model {
         unfold(c);
         execute();
         let c = fold(cell(node), { model: Maybe::Some(value) });
-        simp();
+        solve();
     },
 }
 ```

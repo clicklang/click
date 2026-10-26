@@ -44,7 +44,7 @@ theorem marks_nonnegative(lo: int32, hi: int32) {
                 to_integer(lo) <= to_integer(hi - 1);
                 to_integer(hi - 1) < 2147483647;
             };
-            have 0 <= to_integer(if to_integer(hi - 1) == 0 { 1 } else { 0 }) by auto();
+            have 0 <= to_integer(if to_integer(hi - 1) == 0 { 1 } else { 0 });
             solve() using {
                 0 <= marks(lo, hi - 1);
                 0 <= to_integer(if to_integer(hi - 1) == 0 { 1 } else { 0 });

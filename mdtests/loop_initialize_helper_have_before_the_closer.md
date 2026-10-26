@@ -3,14 +3,14 @@
 A step written beside the invariant proofs in an `initialize by { ... }`
 script is a helper: it establishes one standalone fact that the rest of the
 phase reads. Before this fixture the whole script was handed to each
-per-invariant entry planner, so expanding the closing `simp()` copied the
+per-invariant entry planner, so expanding the closing `solve()` copied the
 helper into every invariant's proof; `click verify` accepted the sidecar while
 `click audit` failed the rewrite with "certificate failed round-trip
 validation".
 
 A leading run of `unfold` and non-invariant `have` steps is now planned once,
 in written position, and its facts reach every invariant below. Expanding the
-trailing `simp()` therefore leaves the helper where it was written and adds
+trailing `solve()` therefore leaves the helper where it was written and adds
 one `have` per invariant after it.
 
 ```c filename=loop_initialize_helper_have_before_the_closer.c

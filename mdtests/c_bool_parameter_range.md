@@ -3,7 +3,7 @@
 A C `_Bool` object holds only `0` or `1`, and returning one from an `int`
 function converts it to that same integer. Both facts are usable without a
 case split: the entry value of a `bool` parameter carries its range
-`flag == 0 or flag == 1`, so `simp()` proves the range disjunction of the
+`flag == 0 or flag == 1`, so `solve()` proves the range disjunction of the
 converted result as well as its equality with the parameter. A caller that
 passes a `bool`, or an integer converted to `bool` at the call, uses the
 callee's contract as written.
@@ -37,11 +37,11 @@ int32 in_range_reversed(bool flag) {
 }
 
 int32 auto_equal(bool flag) {
-    ensures result == flag by auto();
+    ensures result == flag;
 }
 
 int32 auto_range(bool flag) {
-    ensures result == 0 or result == 1 by auto();
+    ensures result == 0 or result == 1;
 }
 
 int32 forwards(bool b) {

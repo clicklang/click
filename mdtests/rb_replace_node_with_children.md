@@ -262,7 +262,7 @@ void replace_node_with_children(struct rb_node* victim, struct rb_node* new_node
             new_node));
         normalize();
     }
-    simp();
+    solve();
 }
 ```
 

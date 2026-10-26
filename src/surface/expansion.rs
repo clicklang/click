@@ -4535,7 +4535,11 @@ fn proof_tactic_entries(
             Ok(())
         }
         SourceProof::Default => {
-            entries.push(whole_proof(omitted_proof_span(), edit.selector(), "auto"));
+            entries.push(whole_proof(
+                omitted_proof_span(),
+                edit.selector(),
+                "implicit tail",
+            ));
             Ok(())
         }
     }
@@ -4543,8 +4547,8 @@ fn proof_tactic_entries(
 
 fn smart_tactic_name(tactic: SmartTactic) -> &'static str {
     match tactic {
-        SmartTactic::Auto => "auto",
-        SmartTactic::Simp => "simp",
+        SmartTactic::Auto => "implicit tail",
+        SmartTactic::Simp => "solve",
     }
 }
 
@@ -5242,7 +5246,7 @@ struct FlatSourceTactic<'t> {
 #[derive(Clone, Copy)]
 enum FlatTactic<'t> {
     Written(&'t ProofTactic),
-    /// A frontier-local loop phase proved by one smart tactic (`by simp()`).
+    /// A frontier-local loop phase proved by one smart tactic (`by solve()`).
     Phase(SmartTactic, usize),
 }
 

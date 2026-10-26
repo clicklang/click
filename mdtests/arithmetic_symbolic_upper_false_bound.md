@@ -14,7 +14,7 @@ int32 f(int32 a, int32 b) {
     ensures result == 0;
 } by {
     have a <= 998 by {
-        arithmetic() using { to_integer(a) <= to_integer(1000 - b); a >= 0; b >= 1; b <= 1000; };
+        solve() using { to_integer(a) <= to_integer(1000 - b); a >= 0; b >= 1; b <= 1000; };
     }
     step();
     solve();

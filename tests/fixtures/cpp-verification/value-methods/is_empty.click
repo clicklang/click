@@ -9,9 +9,9 @@ bool FeeFrac::IsEmpty() const {
 } by {
     if this->size == 0 {
         execute();
-        simp();
+        solve();
     } else {
         execute();
-        simp();
+        solve();
     }
 }

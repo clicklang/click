@@ -44,7 +44,7 @@ int copy_pair() {
     ensures result == 7 or result == -1;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

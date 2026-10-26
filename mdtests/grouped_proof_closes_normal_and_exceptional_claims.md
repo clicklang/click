@@ -1,8 +1,8 @@
 # A grouped proof closes normal and exceptional claims
 
-The two omitted proofs share one implicit `} by auto();`. On the path where
+The two omitted proofs share one implicit tail. On the path where
 `helper` throws, the outcome value is the thrown one, which the
-`exceptional ensures` clause names `exception`; the grouped `simp` closes
+`exceptional ensures` clause names `exception`; the implicit closer closes
 that clause on the throw path and `result == x` on the return path from one
 execution. Expanding the grouped proof writes one `outcomes` arm per path.
 
@@ -15,8 +15,8 @@ int32 caller(int32 x) { return helper(x); }
 verifying "grouped_proof_closes_normal_and_exceptional_claims.c";
 
 int32 helper(int32 x) throws int32 {
-    ensures result == x by auto();
-    exceptional ensures exception == 7 by auto();
+    ensures result == x;
+    exceptional ensures exception == 7;
 }
 
 int32 caller(int32 x) throws int32 {

@@ -12,7 +12,7 @@ void FeeFrac::operator+=(const FeeFrac& other) {
     ensures this->size == old(this->size) + old(this->size);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 double_size(struct FeeFrac& value, int32& untouched) {
@@ -29,5 +29,5 @@ int32 double_size(struct FeeFrac& value, int32& untouched) {
     ensures result == value.size;
 } by {
     execute();
-    simp();
+    solve();
 }

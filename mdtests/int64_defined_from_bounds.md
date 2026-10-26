@@ -12,7 +12,7 @@ a constant `int64` order or equality fact on one operand; the checker reads
 only those premises.
 
 `sum` and `difference` write the step out. `sum_by_simp` and
-`sum_by_listed_simp` leave it to `simp` and `simp() using`, which cite the
+`sum_by_listed_simp` leave it to `solve` and `solve() using`, which cite the
 constant bounds on each operand: the facts indexed under that operand, or the
 listed ones. `mixed` adds an `int64` to a value widened from `unsigned int`:
 only the `int64` operand needs a bound, and the postcondition states the exact

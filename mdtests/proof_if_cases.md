@@ -20,9 +20,9 @@ int32 sign_before_execution(int32 x) {
 theorem int32_sign_split(x: int32) {
     ensures x <= 0 or x > 0 by {
         if x <= 0 {
-            simp();
+            solve();
         } else {
-            simp();
+            solve();
         }
     }
 }
@@ -34,9 +34,9 @@ int32 sign_after_execution(int32 x) {
     ensures result <= 0 or result > 0 by {
         execute();
         if result <= 0 {
-            simp();
+            solve();
         } else {
-            simp();
+            solve();
         }
     }
 }
@@ -45,10 +45,10 @@ int32 sign_before_execution(int32 x) {
     ensures result <= 0 or result > 0 by {
         if x <= 0 {
             execute();
-            simp();
+            solve();
         } else {
             execute();
-            simp();
+            solve();
         }
     }
 }

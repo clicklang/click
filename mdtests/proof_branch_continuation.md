@@ -35,7 +35,7 @@ int32 joined_increment(int32* p, int32 x) {
         }
         step();
         step();
-        simp();
+        solve();
     }
 }
 ```

@@ -38,7 +38,7 @@ int32 swap_repeat(struct node* node, struct node* other) {
     ensures result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

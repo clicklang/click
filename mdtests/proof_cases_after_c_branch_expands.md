@@ -7,7 +7,7 @@ after `execute()`. Its `else` arm proves `result == 18` with a `cases` on
 
 The proof `if` splits the non-negative C path into two outcomes, so the
 `result == 0` arm is reached both from the `copied < 0` branch and from the
-fall-through branch, and `simp()` closes it differently on each. Claim
+fall-through branch, and `solve()` closes it differently on each. Claim
 expansion used to synthesize the proof cases across all outcomes at once,
 found two outcomes in one proof arm with different closers and no proof-level
 condition between them, and refused with "distinct certified paths have no
@@ -42,7 +42,7 @@ int pick(int x) {
     ensures result == 18 or result == -1;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int use_pick(int x) {
@@ -50,22 +50,22 @@ int use_pick(int x) {
 } by {
     execute();
     if result == 0 {
-        simp();
+        solve();
     } else {
         have result == 18 by {
             cases {
                 result == 18 => {
-                    simp();
+                    solve();
                 }
                 result == -1 => {
                     have result < 0 by {
-                        simp();
+                        solve();
                     }
                     contradiction(result < 0);
                 }
             }
         }
-        simp();
+        solve();
     }
 }
 ```

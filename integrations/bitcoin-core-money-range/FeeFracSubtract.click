@@ -19,5 +19,5 @@ void FeeFrac::operator-=(const FeeFrac& other) {
     ensures other.size == old(other.size);
 } by {
     execute();
-    simp();
+    solve();
 }

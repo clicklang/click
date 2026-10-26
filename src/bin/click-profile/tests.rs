@@ -76,7 +76,7 @@ fn structured_work_exhaustion_attributes_the_active_tactic() {
         source_tactic_path: None,
         claim: "sample.contract".to_string(),
         tactic_index: 3,
-        tactic_name: "simp".to_string(),
+        tactic_name: "solve".to_string(),
         class: "smart".to_string(),
         statement_index: 2,
         source_index: 3,
@@ -99,7 +99,7 @@ fn structured_work_exhaustion_attributes_the_active_tactic() {
     else {
         panic!("work exhaustion should not be classified as a phase or driver timeout");
     };
-    assert_eq!(interrupted.tactic_name, "simp");
+    assert_eq!(interrupted.tactic_name, "solve");
     assert_eq!(interrupted.category, TacticCategory::Smart);
 }
 
@@ -797,7 +797,7 @@ fn generated_commands_quote_locations_and_artifacts() {
         claim: "claim".to_string(),
         tactic_index: 0,
         source_index: 0,
-        tactic_name: "simp".to_string(),
+        tactic_name: "solve".to_string(),
         category: TacticCategory::Smart,
         statement_index: 0,
         position: None,

@@ -109,7 +109,7 @@ void tree_node_init(struct tree_node* node, int value,
     let root = fold(tree_at(node), {
         model: HeapTree::Node(node, value, l.model, r.model)
     }, { left: l, right: r });
-    simp();
+    solve();
 }
 
 function heap_right(tree: HeapTree) -> HeapTree {
@@ -382,8 +382,8 @@ struct tree_node* tree_rotate_left(struct tree_node* root) {
     match t.model {
         HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
         HeapTree::Node(node, value, left_model, right_model) => {
-            have heap_right(t.model) == right_model by auto();
-            have right_model != HeapTree::Empty by auto();
+            have heap_right(t.model) == right_model;
+            have right_model != HeapTree::Empty;
             match right_model {
                 HeapTree::Empty => { contradiction(right_model == HeapTree::Empty); },
                 HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model) => {
@@ -415,8 +415,8 @@ struct tree_node* tree_rotate_right(struct tree_node* root) {
     match t.model {
         HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
         HeapTree::Node(node, value, left_model, right_model) => {
-            have heap_left(t.model) == left_model by auto();
-            have left_model != HeapTree::Empty by auto();
+            have heap_left(t.model) == left_model;
+            have left_model != HeapTree::Empty;
             match left_model {
                 HeapTree::Empty => { contradiction(left_model == HeapTree::Empty); },
                 HeapTree::Node(pivot_node, pivot_value, far_left_model, middle_model) => {
@@ -448,16 +448,16 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
             unfold(t);
             execute();
             let t = fold(tree_at(root), { model: HeapTree::Empty });
-            simp();
+            solve();
         },
         HeapTree::Node(node, value, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
-            branch { step(); simp(); } else {}
+            branch { step(); solve(); } else {}
             branch {
                 step();
                 let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
-                have address(node) == address(target) by auto();
-                simp();
+                have address(node) == address(target);
+                solve();
             } else {}
             have not(address(node) == address(target)) by {
                 rewrite(node == root);
@@ -471,15 +471,15 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                         rewrite(l.model == left_model);
                         normalize();
                     }
-                    have heap_member(l.model, target) != false by auto();
+                    have heap_member(l.model, target) != false;
                     rewrite(left_model == l.model);
                     assumption();
                 }
                 let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
-                simp();
+                solve();
             } else {}
             have heap_member(left_model, target) == 0 by {
-                simp() using {
+                solve() using {
                     found_left == 0;
                     found_left == heap_member(left_model, target);
                 };
@@ -496,7 +496,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                 rewrite(result == heap_member(right_model, target));
                 normalize() using { not(address(node) == address(target)); };
             }
-            simp();
+            solve();
         },
     }
 }
@@ -519,7 +519,7 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
         invariant t.model != HeapTree::Empty;
         invariant plug(ctx.model, t.model) == old(t.model);
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match t.model {
                 HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
@@ -562,7 +562,7 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
                 model: HeapTree::Node(identity, value, left_model, right_model)
             }, { left: l, right: rt });
             step();
-            simp();
+            solve();
         },
     }
 }
@@ -585,7 +585,7 @@ struct tree_node* tree_rightmost(struct tree_node* root) {
         invariant t.model != HeapTree::Empty;
         invariant plug(ctx.model, t.model) == old(t.model);
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match t.model {
                 HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
@@ -628,7 +628,7 @@ struct tree_node* tree_rightmost(struct tree_node* root) {
                 model: HeapTree::Node(identity, value, left_model, right_model)
             }, { left: l, right: rt });
             step();
-            simp();
+            solve();
         },
     }
 }
@@ -663,7 +663,7 @@ theorem tree_mirror_twice<T>(tree: Tree<T>) {
         induct(tree) as ih {
             Tree::Empty => {
                 unfold(tree_mirror(Tree<T>::Empty));
-                simp();
+                solve();
             }
             Tree::Node(left, value, right) => {
                 apply(ih(left));

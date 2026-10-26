@@ -1,7 +1,7 @@
-# simp is written without parentheses anywhere
+# solve is written the same way anywhere
 
-`by simp();` drops the parentheses, and so may a `simp` step inside a block:
-`simp();` is `simp();`, with or without a `using` list.
+`solve();` is written the same way as a block's only step and after a `have`,
+with or without a `using` list.
 
 ```click
 theorem bare_simp_steps(x: int32) {

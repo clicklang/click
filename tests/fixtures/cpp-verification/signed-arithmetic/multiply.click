@@ -7,5 +7,5 @@ int64 multiply(int64 a, int64 b) {
     ensures result == a * b;
 } by {
     execute();
-    simp();
+    solve();
 }

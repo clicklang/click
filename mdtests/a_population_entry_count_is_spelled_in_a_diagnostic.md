@@ -42,16 +42,16 @@ void pool_checkout(struct pool* pool, struct object* object) {
     ensures pool->checked_out == old(pool->checked_out) + 1;
 } by {
     open(pool_control(pool)) {
-        have count(pool_slot(pool)) >= 1 by auto();
-        have defined(count(pool_object(pool, _)) + 1) by auto();
-        have defined(pool->checked_out + 1) by auto();
+        have count(pool_slot(pool)) >= 1;
+        have defined(count(pool_object(pool, _)) + 1);
+        have defined(pool->checked_out + 1);
         unfold(pool_slot(pool));
         step();
         fold(pool_object(pool, object));
-        have defined(old(pool->checked_out) + 1) by auto();
-        have to_integer(pool->checked_out) == to_integer(count(pool_object(pool, _))) by auto();
+        have defined(old(pool->checked_out) + 1);
+        have to_integer(pool->checked_out) == to_integer(count(pool_object(pool, _)));
         have to_integer(pool->capacity)
-            == to_integer(pool->checked_out) + to_integer(count(pool_slot(pool))) + 1 by auto();
+            == to_integer(pool->checked_out) + to_integer(count(pool_slot(pool))) + 1;
     }
 }
 ```

@@ -144,7 +144,7 @@ struct InitializeScriptLayout<'a> {
     /// The absolute source index of each tactic of `shared`, when it is a
     /// written script.
     shared_source_indices: Vec<usize>,
-    /// Absolute source indices of the trailing `simp()` closers: a smart
+    /// Absolute source indices of the trailing `solve()` closers: a smart
     /// tactic that stands for the whole remaining phase rather than for one
     /// invariant.
     closers: Vec<usize>,
@@ -238,8 +238,8 @@ fn initialize_script_layout<'a>(
             .iter()
             .all(|tactic| matches!(tactic, ProofTactic::Assumption | ProofTactic::Simp));
     let invariant_bodies = names_every_invariant.then_some(grouped);
-    // Only a `simp()` that stands for what is left of the phase is a
-    // whole-phase closer. A `simp()` written before the steps it closes
+    // Only a `solve()` that stands for what is left of the phase is a
+    // whole-phase closer. A `solve()` written before the steps it closes
     // would be one invariant's own proof, not the phase's.
     let closer_start = if names_every_invariant {
         helper_end + consumed
@@ -1347,12 +1347,12 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     "simple",
                 )
             } else if let Some((tactic_index, source_index)) = region_simp {
-                (tactic_index, source_index, "simp", "smart")
+                (tactic_index, source_index, "solve", "smart")
             } else {
                 // The implicit bundle closer plans a default `simp` body.
                 // Its premise selection is smart work even when the first
                 // checked member happens to close by assumption.
-                (tactics.len(), tactics.len(), "simp", "smart")
+                (tactics.len(), tactics.len(), "solve", "smart")
             };
         let _timing = crate::instrumentation::enabled().then(|| {
             if crate::instrumentation::starts_enabled() {

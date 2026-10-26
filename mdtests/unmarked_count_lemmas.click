@@ -14,11 +14,11 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
         induct(hi) as ih;
         if hi <= lo {
             peel(unmarked(v, lo, hi)) using { hi <= lo; };
-            simp();
+            solve();
         } else {
-            have 0 <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) <= to_integer(n) by { arithmetic() using { 0 <= lo; lo < hi; hi <= n; }; }
+            have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) <= to_integer(n) by { solve() using { 0 <= lo; lo < hi; hi <= n; }; }
             apply(ih(hi - 1)) using {
                 0 <= to_integer(hi - 1);
                 to_integer(hi - 1) < to_integer(hi);
@@ -27,17 +27,17 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
                 n <= 1073741823;
                 viewable(v[lo..n]);
             };
-            have to_integer(lo) <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < 2147483647 by { arithmetic() using { 0 <= lo; lo < hi; }; }
+            have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < 2147483647 by { solve() using { 0 <= lo; lo < hi; }; }
             peel(unmarked(v, lo, hi)) using {
                 to_integer(lo) <= to_integer(hi - 1);
                 to_integer(hi - 1) < 2147483647;
             };
             have 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
-            have to_integer(0) <= to_integer((if v[hi - 1] == 0 { 1 } else { 0 })) by auto();
+            have to_integer(0) <= to_integer((if v[hi - 1] == 0 { 1 } else { 0 }));
             have 0 <= unmarked(v, lo, hi - 1)
                 + to_integer(if v[hi - 1] == 0 { 1 } else { 0 }) by {
-                arithmetic() using {
+                solve() using {
                     0 <= unmarked(v, lo, hi - 1);
                     to_integer(0) <= to_integer(if v[hi - 1] == 0 { 1 } else { 0 });
                 };
@@ -70,14 +70,14 @@ theorem unmarked_frame(
         if hi <= lo {
             peel(unmarked(a, lo, hi)) using { hi <= lo; };
             peel(unmarked(b, lo, hi)) using { hi <= lo; };
-            simp();
+            solve();
         } else {
-            have 0 <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(lo) <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) <= to_integer(m) by { arithmetic() using { 0 <= lo; lo < hi; hi <= m; }; }
-            have to_integer(hi - 1) < to_integer(m) by { arithmetic() using { 0 <= lo; lo < hi; hi <= m; }; }
-            have to_integer(hi - 1) < 2147483647 by { arithmetic() using { 0 <= lo; lo < hi; }; }
+            have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) <= to_integer(m) by { solve() using { 0 <= lo; lo < hi; hi <= m; }; }
+            have to_integer(hi - 1) < to_integer(m) by { solve() using { 0 <= lo; lo < hi; hi <= m; }; }
+            have to_integer(hi - 1) < 2147483647 by { solve() using { 0 <= lo; lo < hi; }; }
             apply(ih(hi - 1)) using {
                 0 <= to_integer(hi - 1);
                 to_integer(hi - 1) < to_integer(hi);
@@ -105,13 +105,13 @@ theorem unmarked_frame(
             };
             have to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                 == to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) by {
-                simp() using { a[hi - 1] == b[hi - 1]; };
+                solve() using { a[hi - 1] == b[hi - 1]; };
             }
             have unmarked(a, lo, hi - 1)
                 + to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                 == unmarked(b, lo, hi - 1)
                     + to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) by {
-                arithmetic() using {
+                solve() using {
                     unmarked(a, lo, hi - 1) == unmarked(b, lo, hi - 1);
                     to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                         == to_integer(if b[hi - 1] == 0 { 1 } else { 0 });
@@ -149,20 +149,20 @@ theorem unmarked_point_update(
     ensures unmarked(b, lo, hi) == unmarked(a, lo, hi) - 1 by {
         induct(hi) as ih;
         if hi <= lo {
-            have j < lo by { arithmetic() using { j < hi; hi <= lo; }; }
+            have j < lo by { solve() using { j < hi; hi <= lo; }; }
             contradiction(lo <= j);
         } else {
-            have 0 <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(lo) <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) <= to_integer(n) by { arithmetic() using { 0 <= lo; lo < hi; hi <= n; }; }
-            have to_integer(hi - 1) < to_integer(n) by { arithmetic() using { 0 <= lo; lo < hi; hi <= n; }; }
-            have to_integer(hi - 1) < 2147483647 by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(j) <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; j < hi; }; }
+            have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) <= to_integer(n) by { solve() using { 0 <= lo; lo < hi; hi <= n; }; }
+            have to_integer(hi - 1) < to_integer(n) by { solve() using { 0 <= lo; lo < hi; hi <= n; }; }
+            have to_integer(hi - 1) < 2147483647 by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(j) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; j < hi; }; }
             if to_integer(j) == to_integer(hi - 1) {
-                have j <= n by { arithmetic() using { j < hi; hi <= n; }; }
+                have j <= n by { solve() using { j < hi; hi <= n; }; }
                 have to_integer(hi - 1) <= to_integer(j) by {
-                    arithmetic() using { 0 <= lo; lo < hi; to_integer(j) == to_integer(hi - 1); };
+                    solve() using { 0 <= lo; lo < hi; to_integer(j) == to_integer(hi - 1); };
                 }
                 apply(unmarked_frame(a, b, lo, n, j, hi - 1)) using {
                     0 <= lo;
@@ -174,8 +174,8 @@ theorem unmarked_point_update(
                     viewable(b[lo..n]);
                     forall (k: int32) { lo <= k and k < j implies a[k] == b[k] };
                 };
-                have a[hi - 1] == 0 by { simp() using { a[j] == 0; to_integer(j) == to_integer(hi - 1); }; }
-                have b[hi - 1] != 0 by { simp() using { b[j] != 0; to_integer(j) == to_integer(hi - 1); }; }
+                have a[hi - 1] == 0 by { solve() using { a[j] == 0; to_integer(j) == to_integer(hi - 1); }; }
+                have b[hi - 1] != 0 by { solve() using { b[j] != 0; to_integer(j) == to_integer(hi - 1); }; }
                 peel(unmarked(a, lo, hi)) using {
                     to_integer(lo) <= to_integer(hi - 1);
                     to_integer(hi - 1) < 2147483647;
@@ -191,16 +191,16 @@ theorem unmarked_point_update(
                     normalize() using { b[hi - 1] != 0; };
                 }
                 have to_integer(if a[hi - 1] == 0 { 1 } else { 0 }) == 1 by {
-                    simp() using { (if a[hi - 1] == 0 { 1 } else { 0 }) == 1; };
+                    solve() using { (if a[hi - 1] == 0 { 1 } else { 0 }) == 1; };
                 }
                 have to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) == 0 by {
-                    simp() using { (if b[hi - 1] == 0 { 1 } else { 0 }) == 0; };
+                    solve() using { (if b[hi - 1] == 0 { 1 } else { 0 }) == 0; };
                 }
                 have unmarked(b, lo, hi - 1)
                     + to_integer(if b[hi - 1] == 0 { 1 } else { 0 })
                     == unmarked(a, lo, hi - 1)
                         + to_integer(if a[hi - 1] == 0 { 1 } else { 0 }) - 1 by {
-                    arithmetic() using {
+                    solve() using {
                         unmarked(a, lo, hi - 1) == unmarked(b, lo, hi - 1);
                         to_integer(if a[hi - 1] == 0 { 1 } else { 0 }) == 1;
                         to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) == 0;
@@ -246,13 +246,13 @@ theorem unmarked_point_update(
                 };
                 have to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                     == to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) by {
-                    simp() using { a[hi - 1] == b[hi - 1]; };
+                    solve() using { a[hi - 1] == b[hi - 1]; };
                 }
                 have unmarked(b, lo, hi - 1)
                     + to_integer(if b[hi - 1] == 0 { 1 } else { 0 })
                     == unmarked(a, lo, hi - 1)
                         + to_integer(if a[hi - 1] == 0 { 1 } else { 0 }) - 1 by {
-                    arithmetic() using {
+                    solve() using {
                         unmarked(b, lo, hi - 1) == unmarked(a, lo, hi - 1) - 1;
                         to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                             == to_integer(if b[hi - 1] == 0 { 1 } else { 0 });

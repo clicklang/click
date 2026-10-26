@@ -30,7 +30,7 @@ uint64 known_length(const uint8* s, uint64 n) {
     ensures result == k;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 uint64 measure(const uint8* src, uint64 m) {
@@ -38,7 +38,7 @@ uint64 measure(const uint8* src, uint64 m) {
     ensures result == m;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

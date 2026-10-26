@@ -1,7 +1,7 @@
 # forall array segment rejects an overwritten cell
 
 This checks that quantified segment preservation does not become vacuous:
-`auto` should reject a `forall` postcondition when the segment includes a cell
+the omitted proof should reject a `forall` postcondition when the segment includes a cell
 that the function overwrites.
 
 ```c filename=forall_array_segment_rejects_overwritten_cell.c
@@ -18,7 +18,7 @@ int32 forall_array_segment_rejects_overwritten_cell(int32 p[]) {
     consumes p[0..1];
     ensures segment_unchanged: forall (k: int32) {
         0 <= k and k < 1 implies p[k] == old(p[k])
-    } by auto();
+    };
 }
 ```
 

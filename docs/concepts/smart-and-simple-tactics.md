@@ -26,9 +26,7 @@ work expands into simple tactics:
 - `solve()` is the one written smart tactic. It closes the first open goal
   with the available facts and bounded rules and runs no C.
   `solve() using { P; ... }` closes it from only the listed premises, trying
-  arithmetic over them last; a miss adds arithmetic's reason. `simp()` and a
-  written `auto();` are older spellings of `solve()`, `arithmetic() using { ... }` of
-  `solve() using { ... }`, and bare `arithmetic()` of `solve() using {}`.
+  arithmetic over them last; a miss adds arithmetic's reason.
   The written simple form of an arithmetic step is `arithmetic_certificate`.
 - The *implicit tail* ends every proof script, including the empty script of
   an omitted proof. It runs the C that is left, splitting at each C branch the
@@ -36,9 +34,8 @@ work expands into simple tactics:
   every open goal on every path with the implicit closer: direct closure, then
   `solve`'s search, and on a returned path that holds the body of a resource
   the contract `produces`, a fold of that resource. It has no spelling of its
-  own; `by auto();` is the older spelling of the omitted proof. The same
-  closer proves a requirement that a bare `step()` or `fold` left open, and is
-  reported as `implicit auto` there.
+  own. The same closer proves a requirement that a bare `step()` or `fold`
+  left open, and is reported as `implicit closer` there.
 - `close_invariants()` is a fixed expansion into
   `close_invariants() by { ... }` with `solve()` on each invariant member.
 - The searches behind elided arguments, below.
@@ -47,7 +44,7 @@ work expands into simple tactics:
 it crosses is proved as a bare `step()`'s is. It walks a loop the facts decide
 and never splits: at a C branch the facts do not decide it is refused, naming
 the proof `if` or `branch` to write there. The tactic reference classifies it
-as smart. `execute_until` is its older spelling. `execute()`
+as smart. `execute()`
 names the tail's execution; it is still accepted as a written tactic but is
 being removed, so write `step_until(function.exit)` or leave the C to the
 tail.
@@ -82,10 +79,10 @@ unrelated facts.
 
 The [tactic reference](../reference/tactics/index.md) gives every form's
 class, and `click docs NAME` prints it. A [proof trace](tracing.md#reading-trace-output)
-marks each step smart work produced with the older names: ``(from `execute`)``
-for the implicit tail's execution, ``(from `auto`)`` for its closer,
-``(from `simp`)`` for a written `solve`, and ``(from `implicit auto`)`` for the
-closer of a step's requirement. It prints a `chosen:` line with the written
+marks each step smart work produced with its origin: ``(from `execute`)``
+for the implicit tail's execution, ``(from `implicit tail`)`` for its closer,
+``(from `solve`)`` for a written `solve`, and ``(from `implicit closer`)`` for
+the closer of a step's requirement. It prints a `chosen:` line with the written
 form of an argument a search chose. [`click profile`](../reference/cli/profile.md) reports a smart
 site, elided forms included, as `SMART`, and a written simple tactic as
 `SIMPLE`.

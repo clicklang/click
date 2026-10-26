@@ -1,6 +1,6 @@
-# Ordinary simp records the predicate unfolding needed by refinement
+# Ordinary `solve` records the predicate unfolding needed by refinement
 
-Opening the contract does not itself unfold the predicate. Ordinary `simp`
+Opening the contract does not itself unfold the predicate. Ordinary `solve`
 can select its checked unfolding, just as in other proposition proofs.
 
 ```c filename=predicate_refinement_requires_unfold.c

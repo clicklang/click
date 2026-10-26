@@ -4,7 +4,7 @@ A conditional whose branches are Integers is an Integer: here `n + 1` and
 `n`, compared with `n - 1`. Its condition stays a proposition. Lowering keeps
 both branches, because the condition is not a literal constant, so the proof
 splits on the condition and each case reduces the conditional to its branch
-with `simp`, as it would a machine conditional
+with `solve`, as it would a machine conditional
 (`mdtests/an_integer_if_is_reduced_under_a_known_condition.md`).
 
 ```click
@@ -22,7 +22,7 @@ theorem successor_or_self_exceeds_predecessor(n: Integer, k: int32) {
 
 theorem equal_branches_are_one_value(x: Integer, y: Integer, c: bool) {
     requires x == y;
-    ensures (if c { x } else { y }) == x by auto();
+    ensures (if c { x } else { y }) == x;
 }
 ```
 

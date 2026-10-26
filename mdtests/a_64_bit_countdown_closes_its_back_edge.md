@@ -2,7 +2,7 @@
 
 After `i -= 1` under the guard `i > 0`, the back edge owes `0 <= i` and
 `i <= n` of the decremented counter. `close_invariants()` closes each member
-with `simp()`, and reads a member it cannot close as spelled once more at the
+with `solve()`, and reads a member it cannot close as spelled once more at the
 iteration entry, `at(<entry>, 0 <= i - 1)`, so the step sees the difference
 the body took; over the back-edge locals it reads `0 <= i`, which the guard
 at the iteration entry does not mention. Its `Integer` certificate cites the

@@ -45,9 +45,9 @@ int32 count_up(int32 *a, int32 n) {
                 intro();
                 intro();
                 extract(to_integer(k) <= to_integer(i + 1));
-                simp();
+                solve();
             }
-            simp();
+            solve();
         }
         preserve by {
             step();
@@ -56,7 +56,7 @@ int32 count_up(int32 *a, int32 n) {
         }
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

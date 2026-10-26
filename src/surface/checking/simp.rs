@@ -81,7 +81,7 @@ pub(in crate::surface) fn normalize_proposition(proposition: &Proposition) -> Si
 pub(in crate::surface) use crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality;
 
 /// The single explicit-certificate search shared by every smart-simplification
-/// construction path. Both the fixed-state proof `simp() using` chain and the
+/// construction path. Both the fixed-state proof `solve() using` chain and the
 /// post-execution outcome planner must call through here, so a named simple
 /// rule available to one is available to the other. `is_available` is the
 /// caller's judgment of when the current goal closes by `assumption`.

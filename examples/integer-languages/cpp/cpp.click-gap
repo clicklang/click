@@ -13,13 +13,13 @@ uint32 shr_u32(uint32 a, uint32 n) {
     requires n < 32u32;
     ensures result == a >> n;
     ensures (a == 2147483648u32 and n == 1u32) implies result == 1073741824u32;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 int32 shr_i32(int32 a, uint32 n) {
     requires n < 32u32;
     ensures result == a >> n;
     ensures (a == -8 and n == 1u32) implies result == -4;
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 int8 narrow_i8(int32 x) {
     ensures (-128 <= x and x <= 127) implies to_integer(result) == to_integer(x);
@@ -28,8 +28,8 @@ int8 narrow_i8(int32 x) {
 } by {
     if -128 <= x and x <= 127 {
         execute();
-        have -128 <= to_integer(x) by auto();
-        have to_integer(x) <= 127 by auto();
+        have -128 <= to_integer(x);
+        have to_integer(x) <= 127;
         have to_integer(result) == to_integer(x) by {
             arithmetic_certificate rules {
                 premise 0: -128 <= to_integer(x) => -128 <= to_integer(x);
@@ -38,9 +38,9 @@ int8 narrow_i8(int32 x) {
                 conclusion 0;
             }
         };
-        auto();
+        solve();
     } else {
         execute();
-        auto();
+        solve();
     }
 }

@@ -81,7 +81,6 @@ path per arm, and closes `result >= 0` on each. A script that ends in a split
 whose arms each reach their own end, such as `match` or `outcomes`, ends in
 those arms, and each arm has its own tail. The tail's execution and closing are
 charged to the smart budget at the site after the script's last tactic.
-`} by auto();` is the older spelling of the omitted proof, still accepted.
 
 A proof is at one program point at a time. Once a script reaches function exit
 on its path, with `step_until(function.exit)` or inside one arm of a proof
@@ -107,8 +106,7 @@ open goal at the current frontier and runs no C; the implicit tail then runs
 any C that is left and closes the rest. On a `have` or a pure theorem's
 `ensures`, `by solve();` restates what the omitted proof does. On a C
 function's `ensures` it is refused, because execution has not reached function
-exit there; omit the proof instead. `simp()` and a written `auto();` are older
-spellings of `solve()`, still accepted. See the
+exit there; omit the proof instead. See the
 [proof tactics reference](../reference/tactics/index.md).
 
 Expansion records the steps, splits and closers the implicit tail took, so an
@@ -164,7 +162,6 @@ expansion output.
   `statement(i).call(f, j)`, `region(N)`, `loop(N)`, `assignment(x, N)`,
   `read(N)`, `back_edge()`, `loop(i).back_edge()`, and `function.exit`. The
   target must be forward and reachable on the current execution path.
-  `execute_until` is its older spelling, still accepted.
 - `loop { ... }`: verify the loop exactly at the current frontier and advance
   to its checked abstract exit. Its nested `initialize`, `preserve`, invariant,
   invariant, and resource clauses construct the kernel rule; it never seeks to a
@@ -235,9 +232,8 @@ expansion output.
   spelling of the same rule.
 - `solve() using { Q; ... }`: smart simplification restricted to exactly the
   listed proposition facts. It tries arithmetic over them last, and a miss
-  adds arithmetic's reason. `simp() using` and `arithmetic() using` are older
-  spellings, and bare `arithmetic()` is the older spelling of
-  `solve() using {}`. Expansion must produce named simple rules; if no
+  adds arithmetic's reason. `solve() using {}` reads no facts from the
+  context. Expansion must produce named simple rules; if no
   explicit tactic vocabulary covers the selected proof, expansion fails
   locally instead of retaining a hidden search step.
 
@@ -247,7 +243,7 @@ expansion output.
   accepted only while a pure goal is active, typically inside `have ... by` or
   a theorem proof.
 - `solve();`: close the first open goal by smart contextual simplification.
-  It runs no C. `simp();` and a written `auto();` are older spellings.
+  It runs no C.
 
 An opaque predicate does not expose the memory footprint needed for framing.
 When a predicate fact must cross execution, unfold it before those execution
@@ -323,9 +319,9 @@ For example, pure case analysis needs no C execution:
 theorem int32_sign_split(x: int32) {
     ensures x <= 0 or x > 0 by {
         if x <= 0 {
-            simp();
+            solve();
         } else {
-            simp();
+            solve();
         }
     }
 }

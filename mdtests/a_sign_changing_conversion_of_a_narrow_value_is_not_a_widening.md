@@ -14,7 +14,7 @@ verifying "sign_change.c";
 
 unsigned int sign_change(signed char x) {
     ensures to_integer(result) == to_integer(x);
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

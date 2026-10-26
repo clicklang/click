@@ -107,7 +107,7 @@ void rb_set_root(struct rb_node* node, struct rb_root* root) {
             execute();
             let u = fold(rb_at(root->rb_node), { model: old(t.model) },
                          { left: l, right: r });
-            simp();
+            solve();
         },
     }
 }

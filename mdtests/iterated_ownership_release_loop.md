@@ -73,7 +73,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
         invariant start <= i;
         decreases i - start;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             let { next: n } = unfold(w);
             have n == i;
@@ -85,7 +85,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
             mark opened;
             step();
             have start <= i by {
-                arithmetic() using {
+                solve() using {
                     start < at(opened, i);
                     0 <= start;
                 };
@@ -99,7 +99,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                 intro();
                 intro();
                 if i < k {
-                    have to_integer(i + 1) <= to_integer(k) by auto();
+                    have to_integer(i + 1) <= to_integer(k);
                     have n <= k by {
                         rewrite(n == at(opened, i));
                         assumption();
@@ -113,10 +113,10 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                         };
                         assumption();
                     }
-                    have 0 < k by auto();
-                    have 0 <= k by auto();
-                    have k < capacity by auto();
-                    have i < capacity by auto();
+                    have 0 < k;
+                    have 0 <= k;
+                    have k < capacity;
+                    have i < capacity;
                     transport(
                         at(opened, occupied[k]) == 0,
                         occupied[k] == 0
@@ -130,7 +130,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                     };
                     assumption();
                 } else {
-                    have i == k by auto();
+                    have i == k;
                     have k == i;
                     rewrite(k == i);
                     normalize();
@@ -138,19 +138,19 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
             }
             have at(opened, i) <= end by assumption();
             have i <= end by {
-                have to_integer(at(opened, i) - 1) <= to_integer(end) by auto();
+                have to_integer(at(opened, i) - 1) <= to_integer(end);
                 assumption();
             }
             let w = fold(arena_window(data, occupied, capacity, start, end), { next: i });
             have 0 <= to_integer(0 - start + at(region(3).entry, i) - 1) by {
-                arithmetic() using {
+                solve() using {
                     start < at(region(3).entry, i);
                     0 <= start;
                 };
             }
             have to_integer(0 - start + at(region(3).entry, i) - 1)
                 < to_integer(0 - start + at(region(3).entry, i)) by {
-                arithmetic() using {
+                solve() using {
                     start < at(region(3).entry, i);
                     0 <= start;
                 };
@@ -158,15 +158,15 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
             close_invariants();
         }
     }
-    have i >= start by auto();
-    have i == start by auto();
+    have i >= start;
+    have i == start;
     have w.next == start by {
         rewrite(w.next == i);
         rewrite(i == start);
         normalize();
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

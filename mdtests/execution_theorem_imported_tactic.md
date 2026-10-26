@@ -20,7 +20,7 @@ int32 zero(int32* p) {
     unfold(before);
     execute();
     let after = fold(cell(p), { value: *p });
-    simp();
+    solve();
 }
 contract int32 Keep(int32* p) {
     consumes before: cell(p);
@@ -32,7 +32,7 @@ theorem zero_contract() executes zero(int32* p) {
     ensures Keep(&zero) as { before: input, after: output } by {
         let { after: middle } = rename_cell(p, { before: input });
         let { after: output } = step(zero, { before: middle });
-        simp();
+        solve();
     }
 }
 ```

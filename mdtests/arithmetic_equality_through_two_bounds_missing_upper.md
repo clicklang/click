@@ -6,7 +6,7 @@ The two-direction equality planner must refuse when the upper bound is absent.
 theorem missing_upper(a: Integer, d: Integer) {
     requires a == d;
     requires 2 <= d;
-    ensures a == 2 by arithmetic() using { a == d; 2 <= d; };
+    ensures a == 2 by solve() using { a == d; 2 <= d; };
 }
 ```
 

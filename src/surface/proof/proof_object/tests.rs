@@ -5618,9 +5618,9 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
                 execute();
                 have result == result by {
                     apply(result_reflexive(result));
-                    simp();
+                    solve();
                 }
-                simp();
+                solve();
             }
         "#,
     )
@@ -5715,7 +5715,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
                 apply(less_than_implies_less_equal(result, upper)) using {
                     result < upper;
                 }
-                simp();
+                solve();
             }
         "#,
     )

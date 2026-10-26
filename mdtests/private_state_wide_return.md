@@ -30,21 +30,21 @@ unsigned long bump(struct counter *p) {
     ensures to_integer(p->value) == to_integer(old(p->value) + 1u64);
     ensures result == p->value;
     ensures to_integer(result) == to_integer(old(p->value) + 1u64);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 unsigned long left() {
     owns left_file::state.value;
     ensures to_integer(left_file::state.value) == to_integer(old(left_file::state.value) + 1u64);
     ensures result == left_file::state.value;
     ensures to_integer(result) == to_integer(old(left_file::state.value) + 1u64);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 unsigned long right() {
     owns right_file::state.value;
     ensures to_integer(right_file::state.value) == to_integer(old(right_file::state.value) + 1u64);
     ensures result == right_file::state.value;
     ensures to_integer(result) == to_integer(old(right_file::state.value) + 1u64);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int main() { ensures result == 41; }
 by {
@@ -54,7 +54,7 @@ by {
     step();
     have right_file::state.value == 41u64;
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -19,11 +19,11 @@ int32 count(int32 n) {
  requires 0 <= n and n <= 1000;
  ensures result == n;
 } by {
- execute_until(loop(0));
+ step_until(loop(0));
  loop {
   decreases n-i;
   invariant 0 <= i and i <= n;
-  preserve by { execute_until(loop(0).back_edge()); close_invariants(); }
+  preserve by { step_until(loop(0).back_edge()); close_invariants(); }
  }
  execute(); solve();
 }

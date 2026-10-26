@@ -13,6 +13,6 @@ impl adler2::Adler32 {
      execute();
      have result == old(((self.b as u32) << 16) | (self.a as u32));
      rewrite(result == old(((self.b as u32) << 16) | (self.a as u32)));
-     simp();
+     solve();
     }
 }

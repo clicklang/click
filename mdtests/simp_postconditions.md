@@ -1,6 +1,6 @@
-# simp proves local postcondition normalization
+# the omitted proof proves local postcondition normalization
 
-This checks the conservative `simp` tactic. It proves straight-line
+This checks the omitted proof's conservative closer. It proves straight-line
 postconditions by deterministic local normalization, not by loop verification or
 effect reasoning.
 

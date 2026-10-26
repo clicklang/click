@@ -1,6 +1,6 @@
-# a restricted simp proves a conjunction from its listed premises
+# a restricted solve proves a conjunction from its listed premises
 
-`simp() using { ... }` proves a conjunction one conjunct at a time, each from
+`solve() using { ... }` proves a conjunction one conjunct at a time, each from
 the same listed premises, and then closes the conjunction from the conjuncts.
 Each conjunct here needs a listed premise, and `result == i` follows from the
 returned value.

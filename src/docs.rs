@@ -87,7 +87,7 @@ pub const SEARCH_MISS_MEANING: &str = "a search fills its elided argument; if th
 /// The simple form that writes the argument `form` elides: the `using` form
 /// the reference lists beside a smart form, `apply(theorem(args)) using {
 /// P; ... }` for `apply(theorem(args))`. `None` for a form that elides
-/// nothing, including `simp()`, whose `using` form is smart too.
+/// nothing, including `solve()`, whose `using` form is smart too.
 fn explicit_form<'a>(forms: &'a [(String, TacticClass)], form: &str) -> Option<&'a str> {
     let elided = format!("{} using ", form.trim_matches('`'));
     forms
@@ -559,16 +559,16 @@ mod tests {
     fn a_written_tactic_selects_its_class() {
         let class = |written| written_tactic_class(written).map(|(_, class)| class);
         assert_eq!(class("normalize();"), Some(TacticClass::Simple));
-        assert_eq!(class("auto();"), Some(TacticClass::Smart));
+        assert_eq!(class("solve();"), Some(TacticClass::Smart));
         assert_eq!(class("apply(t(x));"), Some(TacticClass::Smart));
         assert_eq!(
             class("apply(t(x)) using { a == b; };"),
             Some(TacticClass::Simple)
         );
         assert_eq!(class("step();"), Some(TacticClass::Simple));
-        assert_eq!(class("step() by { auto(); }"), Some(TacticClass::Control));
+        assert_eq!(class("step() by { solve(); }"), Some(TacticClass::Control));
         assert_eq!(
-            class("have x == 1 by { auto(); }"),
+            class("have x == 1 by { solve(); }"),
             Some(TacticClass::Control)
         );
         assert_eq!(class("frobnicate();"), None);
@@ -581,9 +581,11 @@ mod tests {
         assert!(!written_tactic_elides_argument(
             "apply(t(x)) using { a == b; };"
         ));
-        assert!(!written_tactic_elides_argument("simp();"));
-        assert!(!written_tactic_elides_argument("simp() using { a == b; };"));
-        assert!(!written_tactic_elides_argument("auto();"));
+        assert!(!written_tactic_elides_argument("solve();"));
+        assert!(!written_tactic_elides_argument(
+            "solve() using { a == b; };"
+        ));
+        assert!(!written_tactic_elides_argument("solve();"));
         let apply = lookup("apply").unwrap();
         assert!(
             apply.contains(&format!(

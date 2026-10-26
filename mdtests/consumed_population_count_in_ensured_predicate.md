@@ -31,9 +31,7 @@ theorem subtract_from_sum(total: int32, left: int32, right: int32, amount: int32
     requires defined(left + right);
     requires defined(total - amount);
     ensures defined(left + (right - amount)) and
-            total - amount == left + (right - amount) by {
-        auto();
-    }
+            total - amount == left + (right - amount);
 }
 
 authorized resource slot(owner: struct owner*) {
@@ -71,7 +69,7 @@ void consume_population(struct owner* owner, int32 amount) {
 } by {
     open(accounting(owner)) {
         unfold(valid_capacity);
-        have defined(owner->used + count(slot(owner))) by auto();
+        have defined(owner->used + count(slot(owner)));
         apply(subtract_from_sum(owner->capacity, owner->used, count(slot(owner)), amount)) using {
             0 <= owner->used;
             0 <= amount;
@@ -82,11 +80,11 @@ void consume_population(struct owner* owner, int32 amount) {
         };
         unfold(amount of slot(owner));
         step();
-        have owner->capacity == owner->used + count(slot(owner)) by auto();
+        have owner->capacity == owner->used + count(slot(owner));
     }
     execute();
     unfold(valid_capacity);
-    simp();
+    solve();
 }
 ```
 

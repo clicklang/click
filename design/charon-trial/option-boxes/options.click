@@ -5,12 +5,12 @@ fn option_boxes::maybe(x: u32, make: bool) -> u32 {
     ensures make == false implies result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 fn option_boxes::dropped(x: u32, make: bool) -> u32 {
     ensures result == x;
 } by {
     execute();
-    simp();
+    solve();
 }

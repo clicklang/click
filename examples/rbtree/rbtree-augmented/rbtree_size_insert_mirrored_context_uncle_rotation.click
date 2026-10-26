@@ -203,8 +203,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rb_subtree_size(sized_shape(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))) == to_integer(uv);
                         rb_subtree_size(sized_shape(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))) >= 0;
                     }; }
-                    have -2147483648 <= to_integer(gv) by auto();
-                    have to_integer(gv) <= 2147483647 by auto();
+                    have -2147483648 <= to_integer(gv);
+                    have to_integer(gv) <= 2147483647;
                     have 1 + to_integer(mv) + to_integer(uv) <= 2147483647 by { solve() using {
                         to_integer(gv) == 2 + to_integer(nv) + to_integer(mv) + to_integer(uv);
                         to_integer(nv) >= 0;

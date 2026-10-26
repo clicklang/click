@@ -3,7 +3,7 @@
 `pick` promises `st.live == old(st.live) + result` only where that sum is
 defined: the caller receives `defined(old(st.live) + got) implies st.live ==
 old(st.live) + got`. Here nothing bounds `old(st.live)` or `got` from above,
-so the sum can overflow and the guard cannot be discharged. `simp` must not
+so the sum can overflow and the guard cannot be discharged. `solve` must not
 use the consequent, and `old(st.live) <= st.live` does not follow.
 
 With bounds that exclude overflow the same closer does use it:

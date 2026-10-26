@@ -17,8 +17,6 @@ verifying "big.c";
 
 int32 first() {
     ensures true;
-} by {
-    auto();
 }
 ```
 

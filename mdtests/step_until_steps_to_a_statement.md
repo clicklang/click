@@ -1,7 +1,7 @@
 # `step_until` steps to a statement
 
 `step_until(statement(i))` repeats `step()` up to the selected statement, and
-the proof continues there. `execute_until` is its older spelling.
+the proof continues there. The removed spelling `execute_until` is refused.
 
 ```c filename=step_until_steps_to_a_statement.c
 int32 add_twice(int32 x) {

@@ -3,7 +3,7 @@
 ```click
 theorem invalid_unsigned_sum(a: uint32, b: uint32) {
     requires defined(a + b);
-    ensures to_integer(a + b) == to_integer(a) + to_integer(b) by auto();
+    ensures to_integer(a + b) == to_integer(a) + to_integer(b);
 }
 ```
 

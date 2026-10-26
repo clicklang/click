@@ -50,13 +50,13 @@ verifying "reader.c";
 int32 read_target_alias() {
     views target_file::target_alias;
     views target_file::target_alias[0..1];
-    ensures result == target_file::target_alias[0] by auto();
+    ensures result == target_file::target_alias[0];
 }
 
 int32 read_static_alias() {
     views target_file::read_static_alias::local_alias;
     views target_file::read_static_alias::local_alias[0..1];
-    ensures result == target_file::read_static_alias::local_alias[0] by auto();
+    ensures result == target_file::read_static_alias::local_alias[0];
 }
 
 int32 run() {

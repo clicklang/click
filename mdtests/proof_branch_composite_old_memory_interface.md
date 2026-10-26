@@ -43,7 +43,7 @@ verifying "advance_composite_old_memory_interface.c";
 int32 read_first(struct buffer* owner) {
     views buffer(owner);
 
-    ensures result == owner->data[0] by auto();
+    ensures result == owner->data[0];
 }
 
 int32 retain_original(struct buffer* owner, int32 flag) {
@@ -51,7 +51,7 @@ int32 retain_original(struct buffer* owner, int32 flag) {
 
     ensures result == old(owner->data[0]);
 } by {
-    execute_until(region(3));
+    step_until(region(3));
     observe(buffer(owner));
     branch {
         step();
@@ -59,7 +59,7 @@ int32 retain_original(struct buffer* owner, int32 flag) {
         step();
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

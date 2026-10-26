@@ -567,7 +567,7 @@ fn is_builtin_tactic_spelling(name: &str) -> bool {
 }
 
 /// Turn the default `have P;` simplification into the same one-step script
-/// as an explicit `have P by simp();`. Out of line to keep recursive frames small.
+/// as an explicit `have P by solve();`. Out of line to keep recursive frames small.
 #[inline(never)]
 fn have_proof_as_written_in_full(proof: SourceProof) -> SourceProof {
     if proof == SourceProof::Tactic(SmartTactic::Simp) {
@@ -578,7 +578,22 @@ fn have_proof_as_written_in_full(proof: SourceProof) -> SourceProof {
 }
 
 fn is_tactic_name(name: &str) -> bool {
-    matches!(name, "auto" | "simp" | "solve")
+    name == "solve"
+}
+
+/// The refusal of a removed tactic spelling, naming what replaced it.
+fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "simp" => "`simp()` is now `solve()`, which closes the first open goal",
+        "auto" => {
+            "`auto()` is removed: a `by auto();` proof is the omitted proof, so delete it, and a written `auto();` is `solve();`"
+        }
+        "arithmetic" => {
+            "`arithmetic()` is now `solve() using { ... }`, which closes the goal from only the listed premises; `arithmetic()` with no list is `solve() using {}`"
+        }
+        "execute_until" => "`execute_until` is now `step_until`",
+        _ => return None,
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -8322,9 +8337,10 @@ impl Parser {
 
     fn starts_standalone_smart_proof(&self) -> bool {
         match self.peek_ident() {
-            Some("auto") => true,
-            // Route the old bare spelling through the missing-parentheses diagnostic.
-            Some("simp" | "solve") => self.peek_next() != Some(&Token::LParen),
+            // A removed spelling is refused with its replacement.
+            Some(name) if removed_tactic_refusal(name).is_some() => true,
+            // Route a bare `solve` through the missing-parentheses diagnostic.
+            Some("solve") => self.peek_next() != Some(&Token::LParen),
             _ => false,
         }
     }
@@ -8377,7 +8393,7 @@ impl Parser {
 
     fn parse_loop_phase_proof(&mut self) -> Result<SourceProof, ClickError> {
         let proof = self.parse_by_clause()?;
-        // A lone phase `simp()` owns the generated execution and closure steps,
+        // A lone phase `solve()` owns the generated execution and closure steps,
         // with either brace spelling. Keep it out of per-step source capture.
         if matches!(&proof, SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::Simp]))
         {
@@ -9041,7 +9057,7 @@ impl Parser {
         Ok(current.expect("the both tactic chain has a root"))
     }
 
-    /// `have P;`, `have P by simp();` or `have P by { ... }`, after the word
+    /// `have P;`, `have P by solve();` or `have P by { ... }`, after the word
     /// `have`. Out of line: the tactic dispatcher that calls it is on the
     /// recursive proof-parsing path and keeps none of this in its frame.
     #[inline(never)]
@@ -9110,7 +9126,7 @@ impl Parser {
         // to run toward the fact, `auto` is `simp`.
         let proof = self.parse_by_clause()?;
         self.skip_redundant_semicolon();
-        // `have P;`, `have P by simp();` and `have P by { simp(); }` are
+        // `have P;`, `have P by solve();` and `have P by { solve(); }` are
         // one proof step. They are one syntax tree too, so every
         // consumer proves and reports them the same way.
         Ok(ProofTactic::Have(ProofHave {
@@ -9140,11 +9156,6 @@ impl Parser {
             // closing fold leaves open, as after `fold(r) by`.
             let close_proof = if self.peek_ident() == Some("by") {
                 self.position += 1;
-                if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::LParen) {
-                    return Err(self.error(
-                        "`open(...) { ... } by auto()` is `open(...) { ... }`: its closing fold's open body facts already go to `auto`",
-                    ));
-                }
                 Some(self.parse_step_proof_body()?)
             } else {
                 None
@@ -9598,8 +9609,7 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::SmartExecute
             }
-            // `execute_until` is the older spelling of `step_until`.
-            "step_until" | "execute_until" => {
+            "step_until" => {
                 self.expect(Token::LParen)?;
                 let region_ref = if self.peek_ident() == Some("function")
                     && self.peek_next() == Some(&Token::Dot)
@@ -9809,15 +9819,6 @@ impl Parser {
                 }
                 ProofTactic::Normalize
             }
-            "arithmetic" => {
-                self.expect_empty_tactic_args(&name)?;
-                if self.peek_ident() == Some("using") {
-                    let premises = self.parse_exact_premises()?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::ArithmeticUsing(premises));
-                }
-                ProofTactic::ArithmeticUsing(Vec::new())
-            }
             "arithmetic_certificate" => {
                 return self.parse_arithmetic_certificate_tactic();
             }
@@ -9894,7 +9895,7 @@ impl Parser {
                     });
                 }
             }
-            "simp" | "solve" => {
+            "solve" => {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
                     let premises = self.parse_exact_premises()?;
@@ -9922,16 +9923,8 @@ impl Parser {
                 ProofTactic::ConstructResource(resource)
             }
             "induct" => return self.parse_induct_proof_tactic(),
-            // `auto();` is the older spelling of `solve();`: it closes one
-            // goal, and the implicit tail closes the rest.
-            "auto" => {
-                self.expect_empty_tactic_args(&name)?;
-                ProofTactic::Simp
-            }
-            _ if is_tactic_name(&name) => {
-                return Err(self.error(format!(
-                    "`{name}` is only available as a standalone smart tactic; use `by {name}();`"
-                )));
+            _ if let Some(refusal) = removed_tactic_refusal(&name) => {
+                return Err(self.error(refusal));
             }
             _ => return Err(self.error(format!("unknown tactic `{name}`"))),
         };
@@ -10137,18 +10130,13 @@ impl Parser {
     /// open obligation, or a block of `requires P by ...` entries.
     #[inline(never)]
     fn parse_step_proof(&mut self, step: ProofTactic) -> Result<ProofTactic, ClickError> {
-        let (tactic, call) = if matches!(step, ProofTactic::FoldResource(_)) {
-            ("fold", "fold(...)")
+        let tactic = if matches!(step, ProofTactic::FoldResource(_)) {
+            "fold"
         } else {
-            ("step", "step()")
+            "step"
         };
         if self.peek_ident() == Some("by") {
             self.position += 1;
-            if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::LParen) {
-                return Err(self.error(format!(
-                    "`{call} by auto()` is `{call}`: its open obligations already go to `auto`",
-                )));
-            }
             let body = self.parse_step_proof_body()?;
             self.skip_redundant_semicolon();
             return Ok(ProofTactic::StepProved {
@@ -10233,13 +10221,6 @@ impl Parser {
     fn parse_close_invariants_body(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         if self.peek() == Some(&Token::LBrace) {
             return self.parse_possibly_empty_tactic_block();
-        }
-        // `auto` has no script spelling, and the bare closer is already the
-        // smart one; say so rather than suggest the `by auto();` just written.
-        if self.peek_ident() == Some("auto") {
-            return Err(self.error(
-                "`close_invariants() by auto()` is not a form: write `close_invariants();`, whose closer is already smart, or end the `preserve` script and let the back edge close implicitly",
-            ));
         }
         match self.peek() {
             Some(Token::Ident(_)) => Ok(vec![self.parse_implicit_proof_tactic()?]),
@@ -11471,8 +11452,11 @@ impl Parser {
 
     fn parse_tactic(&mut self) -> Result<SmartTactic, ClickError> {
         let tactic = match self.next() {
-            Some(Token::Ident(name)) if name == "auto" => SmartTactic::Auto,
-            Some(Token::Ident(name)) if name == "simp" || name == "solve" => SmartTactic::Simp,
+            Some(Token::Ident(name)) if name == "solve" => SmartTactic::Simp,
+            Some(Token::Ident(name)) if let Some(refusal) = removed_tactic_refusal(&name) => {
+                self.position -= 1;
+                return Err(self.error(refusal));
+            }
             Some(Token::Ident(name)) => {
                 return Err(self.error(format!("expected tactic, got `{name}`")));
             }
@@ -11481,11 +11465,7 @@ impl Parser {
             }
             None => return Err(self.error("expected tactic, got end of input")),
         };
-        let name = match tactic {
-            SmartTactic::Auto => "auto",
-            SmartTactic::Simp => "simp",
-        };
-        self.expect_empty_tactic_args(name)?;
+        self.expect_empty_tactic_args("solve")?;
         self.expect(Token::Semicolon)?;
         Ok(tactic)
     }
@@ -16131,8 +16111,6 @@ mod tactic_classification_tests {
         ("extract", "extract(x == 1);"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),
-        ("arithmetic", "arithmetic();"),
-        ("arithmetic-using", "arithmetic() using { x == 1; };"),
         (
             "arithmetic-certificate",
             "arithmetic_certificate { trivial => x + 1 > x; conclusion 0; }",

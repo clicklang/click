@@ -11,7 +11,7 @@ impl Drop for Guard {
         ensures *self.slot == old(self.saved);
     } by {
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -20,5 +20,5 @@ fn cleanup(value: &mut i32) {
     ensures *value == 42;
 } by {
     execute();
-    simp();
+    solve();
 }

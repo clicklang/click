@@ -1,4 +1,4 @@
-# `arithmetic()` substitution keeps the equality's offset
+# Substitution in `solve() using` keeps the equality's offset
 
 `y == x + 1` and `0 <= x` do not give `y <= x`, which is false for every `x`.
 Substituting through the equality carries its `+ 1`, so the certificate
@@ -19,7 +19,7 @@ int32 next(int32 x, int32 y) {
     requires 0 <= x;
     ensures result == 0;
 } by {
-    have y <= x by { arithmetic() using { to_integer(y) == to_integer(x + 1); 0 <= x; }; }
+    have y <= x by { solve() using { to_integer(y) == to_integer(x + 1); 0 <= x; }; }
     step();
     solve();
 }

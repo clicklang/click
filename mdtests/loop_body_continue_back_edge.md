@@ -43,7 +43,7 @@ int32 count_down(int32 n) {
 
         initialize by solve();
         preserve by {
-            have 0 <= to_integer(i - 1) by auto();
+            have 0 <= to_integer(i - 1);
             step();
             step();
             close_invariants();

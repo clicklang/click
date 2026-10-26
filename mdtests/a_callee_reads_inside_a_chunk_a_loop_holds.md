@@ -44,7 +44,7 @@ uint32 sum(const uint8* bytes, uint64 length, uint64 start) {
             have done + 4 <= 16 by { solve() using { done <= 12u64; }; }
             mark head;
             step_until(back_edge());
-            have done == at(head, done) + 4 by { auto(); }
+            have done == at(head, done) + 4;
             have at(head, done) <= 12u64;
             have done <= 16u64 by { solve() using { done == at(head, done) + 4; at(head, done) <= 12u64; }; }
             have 0 <= 16 - done by { solve() using { done == at(head, done) + 4; at(head, done) <= 12u64; }; }

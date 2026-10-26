@@ -56,7 +56,7 @@ int32 unchanged(int32* occupied, int32 capacity) {
                 tag: PrefixTag::End(prefix)
             });
             step();
-            simp();
+            solve();
         },
     }
 }

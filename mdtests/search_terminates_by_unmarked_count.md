@@ -50,7 +50,7 @@ theorem walk_in_range(next: int32[], n: int32, from: int32, fuel: Nat) {
         induct(fuel) as ih {
             Nat::Zero => {
                 unfold(walk(next, from, Nat::Zero));
-                simp();
+                solve();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
@@ -104,7 +104,7 @@ theorem walk_frame(a: int32[], b: int32[], n: int32, from: int32, fuel: Nat) {
                 }
                 unfold(walk(a, from, Nat::Succ(previous)));
                 unfold(walk(b, from, Nat::Succ(previous)));
-                simp() using {
+                solve() using {
                     walk(a, from, previous) == walk(b, from, previous);
                     a[walk(a, from, previous)] == b[walk(a, from, previous)];
                 };
@@ -133,7 +133,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
     have exists (fuel: Nat) { walk(next, from, fuel) == cur } by {
         witness { fuel: Nat::Zero };
         unfold(walk(next, from, Nat::Zero));
-        simp();
+        solve();
     }
     loop {
         decreases unmarked(visited, 0, n);
@@ -145,7 +145,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
         invariant exists (fuel: Nat) { walk(next, from, fuel) == cur };
         views next[0..n];
         owns visited[0..n];
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             mark iter;
             obtain (previous: Nat) { walk(next, from, previous) == cur }
@@ -161,7 +161,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             if cur == to {
                 step();
                 step();
-                simp();
+                solve();
             } else {
                 step();
             }
@@ -204,7 +204,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             apply(unmarked_point_update(at(iter, visited), visited, 0, n, n, cur));
             apply(unmarked_nonnegative(visited, 0, n, n));
             have unmarked(visited, 0, n) < unmarked(at(iter, visited), 0, n) by {
-                arithmetic() using {
+                solve() using {
                     to_integer(unmarked(visited, 0, n)) == to_integer(unmarked(at(iter, visited), 0, n) - 1);
                 };
             }
@@ -212,13 +212,13 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             have viewable(next[0..n]);
             apply(walk_frame(at(iter, next), next, n, from, previous));
             have walk(next, from, previous) == at(iter, cur) by {
-                simp() using {
+                solve() using {
                     at(iter, walk(next, from, previous)) == at(iter, cur);
                     walk(at(iter, next), from, previous) == walk(next, from, previous);
                 };
             }
             have next[walk(next, from, previous)] == next[at(iter, cur)] by {
-                simp() using { walk(next, from, previous) == at(iter, cur); };
+                solve() using { walk(next, from, previous) == at(iter, cur); };
             }
             have exists (fuel: Nat) { walk(next, from, fuel) == cur } by {
                 witness { fuel: Nat::Succ(previous) };
@@ -228,7 +228,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
         }
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

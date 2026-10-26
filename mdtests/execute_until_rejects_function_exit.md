@@ -12,7 +12,7 @@ verifying "execute_until_after_exit.c";
 int32 execute_until_after_exit(int32 x) {
     ensures result == x by {
         execute();
-        execute_until(region(0));
+        step_until(region(0));
         solve();
     }
 }

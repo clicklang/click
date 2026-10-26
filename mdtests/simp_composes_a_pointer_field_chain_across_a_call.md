@@ -1,4 +1,4 @@
-# `simp` composes a pointer-field chain across a call
+# `solve` composes a pointer-field chain across a call
 
 `first` and `second` point at one arena. `touch(second)` keeps
 `second->arena` and `second->arena->data`. Each link of
@@ -6,11 +6,11 @@
 `first->arena->data == second->arena->data` (both arena pointers are
 `arena`), `second->arena->data == at(m, second->arena->data)` (the callee's
 frame), and `at(m, second->arena->data) == at(m, first->arena->data)`. The
-closing `simp` composes the three.
+closing `solve` composes the three.
 
 Its equality-rewrite chain used to keep only the first rewrite that changed
 the goal and continue from it; here that was an alias rewrite at the other
-snapshot, from which no further link closed, so `simp` reported that
+snapshot, from which no further link closed, so `solve` reported that
 `first->arena` may have changed. Each link now keeps up to four
 goal-changing rewrites: the first continues the chain and each other gets a
 one-link closing probe, so the order in which candidates were found no
@@ -45,7 +45,7 @@ void touch(struct region* region) {
     ensures region->arena->data == old(region->arena->data);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 caller(struct arena* arena, struct region* first, struct region* second) {
@@ -59,10 +59,10 @@ int32 caller(struct arena* arena, struct region* first, struct region* second) {
     mark m;
     step();
     have second->arena == arena by {
-        simp();
+        solve();
     }
     have first->arena == arena by {
-        simp();
+        solve();
     }
     have first->arena->data == second->arena->data by {
         rewrite(first->arena == arena);
@@ -70,16 +70,16 @@ int32 caller(struct arena* arena, struct region* first, struct region* second) {
         normalize();
     }
     have second->arena->data == at(m, second->arena->data) by {
-        simp();
+        solve();
     }
     have at(m, second->arena->data) == at(m, first->arena->data) by {
-        simp();
+        solve();
     }
     have first->arena->data == at(m, first->arena->data) by {
-        simp();
+        solve();
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

@@ -31,7 +31,7 @@ verifying "c_static_function.c";
 
 int32 add_one(int32 value) {
     requires value < 100;
-    ensures to_integer(result) == to_integer(value + 1) by auto();
+    ensures to_integer(result) == to_integer(value + 1);
 }
 
 int32 run(int32 value) {
@@ -39,7 +39,7 @@ int32 run(int32 value) {
     ensures to_integer(result) == to_integer(value + 2);
 } by {
     let { result: r } = step(add_one, {});
-    have to_integer(value + 1) <= to_integer(99) by auto();
+    have to_integer(value + 1) <= to_integer(99);
     have r < 100 by { solve() using { to_integer(r) == to_integer(value + 1); to_integer(value + 1) <= 99; }; }
     step();
     step();

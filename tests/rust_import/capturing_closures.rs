@@ -22,7 +22,7 @@ fn charon_capturing_closures_meet_parameterized_contracts() {
     // closure's bound on `k` is the caller's, not the contract's. `moved`
     // captures `k + 1`, whose bound the refinement's exact routes do not
     // derive from the caller's bound on `k`, so it is left unselected.
-    let moved = "fn capturing_closures::moved(k: i32, x: i32) -> i32 {\n    requires 0 <= k and k <= 999;\n    requires 0 <= x and x <= 1000;\n    ensures result == x + k + 1;\n} by { execute(); simp(); }\n";
+    let moved = "fn capturing_closures::moved(k: i32, x: i32) -> i32 {\n    requires 0 <= k and k <= 999;\n    requires 0 <= x and x <= 1000;\n    ensures result == x + k + 1;\n} by { execute(); solve(); }\n";
     assert!(SIDECAR.contains(moved));
     let without_bound = SIDECAR
         .replacen("    requires 0 <= amount and amount <= 1000;\n", "", 1)
@@ -64,8 +64,8 @@ fn charon_capturing_closures_meet_parameterized_contracts() {
         // A closure that captures nothing is its function.
         (
             "capturing_closures::plain",
-            "    ensures result == y + 1;\n} by { execute(); simp(); }\n\nfn capturing_closures::plain(",
-            "    ensures result >= y;\n} by { execute(); simp(); }\n\nfn capturing_closures::plain(",
+            "    ensures result == y + 1;\n} by { execute(); solve(); }\n\nfn capturing_closures::plain(",
+            "    ensures result >= y;\n} by { execute(); solve(); }\n\nfn capturing_closures::plain(",
             "does not satisfy named contract `Increments`",
         ),
     ] {

@@ -965,6 +965,7 @@ impl CertificateError {
     /// is required; saying which one and where is the whole diagnostic.
     pub fn message(&self) -> String {
         let tactic = match self.tactic_class {
+            TacticClass::Smart(SmartSite::Implicit) => "the implicit closer".to_string(),
             TacticClass::Smart(site) => format!("smart tactic `{}`", smart_site_spelling(site)),
             TacticClass::Control(_) => "a control tactic".to_string(),
             TacticClass::Simple(_) => "a step with no certificate form".to_string(),
@@ -1019,7 +1020,7 @@ pub(super) fn smart_site_spelling(site: SmartSite) -> &'static str {
         }
         SmartSite::Elided(ElidedArgument::FrameEvidence) => "transport",
         SmartSite::CloseInvariants => "close_invariants",
-        SmartSite::Implicit => "auto",
+        SmartSite::Implicit => "implicit tail",
     }
 }
 

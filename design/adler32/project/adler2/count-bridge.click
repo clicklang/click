@@ -36,7 +36,7 @@ theorem adler_count_at_least(r: uint64, k: uint64) {
  requires k <= r;
  requires r <= 22208u64;
  ensures (int32)(uint32)k <= (int32)(uint32)r by {
-  have k <= 22208u64 by arithmetic() using { k <= r; r <= 22208u64; };
+  have k <= 22208u64 by solve() using { k <= r; r <= 22208u64; };
   apply(adler_count_observation(r)) using { r <= 22208u64; };
   apply(adler_count_observation(k)) using { k <= 22208u64; };
   have to_integer((int32)(uint32)k) <= to_integer((int32)(uint32)r) by {
@@ -51,16 +51,16 @@ theorem adler_count_step(r: uint64, k: uint64) {
  requires k <= r;
  requires r <= 22208u64;
  ensures to_integer((int32)(uint32)(r - k)) == to_integer((int32)(uint32)r - (int32)(uint32)k) by {
-  have k <= 22208u64 by arithmetic() using { k <= r; r <= 22208u64; };
-  have to_integer(r - k) <= to_integer(22208u64) by arithmetic() using { k <= r; r <= 22208u64; };
+  have k <= 22208u64 by solve() using { k <= r; r <= 22208u64; };
+  have to_integer(r - k) <= to_integer(22208u64) by solve() using { k <= r; r <= 22208u64; };
   apply(adler_count_observation(r)) using { r <= 22208u64; };
   apply(adler_count_observation(k)) using { k <= 22208u64; };
   apply(adler_count_observation(r - k)) using { to_integer(r - k) <= to_integer(22208u64); };
   apply(adler_count_bounds(r)) using { r <= 22208u64; };
   apply(adler_count_bounds(k)) using { k <= 22208u64; };
   apply(adler_count_at_least(r, k)) using { k <= r; r <= 22208u64; };
-  have to_integer(r - k) == to_integer(r) - to_integer(k) by auto();
-  have to_integer(((int32)(uint32)r) - ((int32)(uint32)k)) == to_integer(((int32)(uint32)r)) - to_integer(((int32)(uint32)k)) by auto();
+  have to_integer(r - k) == to_integer(r) - to_integer(k);
+  have to_integer(((int32)(uint32)r) - ((int32)(uint32)k)) == to_integer(((int32)(uint32)r)) - to_integer(((int32)(uint32)k));
   have to_integer((int32)(uint32)(r - k)) == to_integer((int32)(uint32)r - (int32)(uint32)k) by {
    rewrite(to_integer((int32)(uint32)(r - k)) == to_integer(r - k));
    rewrite(to_integer(r - k) == to_integer(r) - to_integer(k));
@@ -102,7 +102,7 @@ theorem adler_count_zero(r: uint64) {
  ensures r == 0u64 by {
   apply(adler_count_observation(r)) using { r <= 22208u64; };
   have to_integer((int32)(uint32)r) == 0 by { rewrite((int32)(uint32)r == 0); normalize(); }
-  have to_integer(r) == 0 by arithmetic() using { to_integer((int32)(uint32)r) == to_integer(r); to_integer((int32)(uint32)r) == 0; };
+  have to_integer(r) == 0 by solve() using { to_integer((int32)(uint32)r) == to_integer(r); to_integer((int32)(uint32)r) == 0; };
   have to_integer(r) == to_integer(0u64) by normalize() using { to_integer(r) == 0; };
   assumption();
  }
@@ -123,7 +123,7 @@ theorem adler_count_byte_observation(bytes: uint8[], count: uint64) {
  requires count <= 22208u64;
  ensures to_integer((int32)bytes[count]) == to_integer((int32)bytes[(int32)(uint32)count]) by {
   apply(adler_count_byte_pointer(bytes, count)) using { count <= 22208u64; };
-  have bytes[count] == bytes[(int32)(uint32)count] by simp() using { bytes + count == bytes + (int32)(uint32)count; };
+  have bytes[count] == bytes[(int32)(uint32)count] by solve() using { bytes + count == bytes + (int32)(uint32)count; };
   rewrite(bytes[count] == bytes[(int32)(uint32)count]);
   normalize();
  }
@@ -142,7 +142,7 @@ theorem adler_count_chunk_byte_observation(bytes: uint8[], count: uint64, lane: 
    rewrite(bytes + count == bytes + (int32)(uint32)count);
    normalize() using { defined((int32)(uint32)count + lane); };
   }
-  have (bytes + count)[lane] == bytes[(int32)(uint32)count + lane] by simp() using { bytes + count + lane == bytes + ((int32)(uint32)count + lane); };
+  have (bytes + count)[lane] == bytes[(int32)(uint32)count + lane] by solve() using { bytes + count + lane == bytes + ((int32)(uint32)count + lane); };
   rewrite((bytes + count)[lane] == bytes[(int32)(uint32)count + lane]);
   normalize();
  }
@@ -161,8 +161,8 @@ theorem adler_count_previous_chunk_byte_observation(bytes: uint8[], total: uint6
  requires lane <= 3;
  ensures to_integer((int32)(bytes + (total - remaining - 4u64))[lane]) == to_integer((int32)bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 4 + lane]) by {
   have total <= 22208u64 by normalize() using { total <= 22204u64; };
-  have to_integer(total - remaining) <= to_integer(22208u64) by arithmetic() using { remaining <= total; total <= 22204u64; };
-  have to_integer(total - remaining - 4u64) <= to_integer(22204u64) by arithmetic() using { remaining <= total; to_integer(4u64) <= to_integer(total - remaining); total <= 22204u64; };
+  have to_integer(total - remaining) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 22204u64; };
+  have to_integer(total - remaining - 4u64) <= to_integer(22204u64) by solve() using { remaining <= total; to_integer(4u64) <= to_integer(total - remaining); total <= 22204u64; };
   apply(adler_count_step(total, remaining)) using { remaining <= total; total <= 22208u64; };
   apply(adler_count_lane_step(total - remaining)) using { to_integer(4u64) <= to_integer(total - remaining); to_integer(total - remaining) <= to_integer(22208u64); };
   apply(adler_count_chunk_byte_observation(bytes, total - remaining - 4u64, lane)) using { to_integer(total - remaining - 4u64) <= to_integer(22204u64); 0 <= lane; lane <= 3; };
@@ -184,11 +184,11 @@ theorem adler_small_prefix_integer_advance(total: int32, remaining: int32) {
  requires total <= 22204;
  requires 4 <= to_integer(total - remaining);
  ensures to_integer(total - remaining) == to_integer((total - remaining) - 4) + 4 by {
-  have defined(total - remaining) by auto();
+  have defined(total - remaining);
   have defined(total - remaining) by assumption();
   have defined((total - remaining) - 4);
-  have to_integer((total - remaining) - 4) == to_integer((total - remaining)) - to_integer(4) by auto();
-  arithmetic() using { to_integer((total - remaining) - 4) == to_integer(total - remaining) - to_integer(4); };
+  have to_integer((total - remaining) - 4) == to_integer((total - remaining)) - to_integer(4);
+  solve() using { to_integer((total - remaining) - 4) == to_integer(total - remaining) - to_integer(4); };
  }
 }
 
@@ -202,8 +202,8 @@ theorem adler_count_previous_byte_observation(bytes: uint8[], total: uint64, rem
  requires (int32)(uint32)total <= 22207;
  ensures to_integer((int32)(bytes + (total - remaining - 1u64))[0]) == to_integer((int32)bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 1]) by {
   have total <= 22208u64 by normalize() using { total <= 22207u64; };
-  have to_integer(total - remaining) <= to_integer(22208u64) by arithmetic() using { remaining <= total; total <= 22207u64; };
-  have to_integer(total - remaining - 1u64) <= to_integer(22207u64) by arithmetic() using { remaining <= total; to_integer(1u64) <= to_integer(total - remaining); total <= 22207u64; };
+  have to_integer(total - remaining) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 22207u64; };
+  have to_integer(total - remaining - 1u64) <= to_integer(22207u64) by solve() using { remaining <= total; to_integer(1u64) <= to_integer(total - remaining); total <= 22207u64; };
   apply(adler_count_step(total, remaining)) using { remaining <= total; total <= 22208u64; };
   apply(adler_count_tail_step(total - remaining)) using { to_integer(1u64) <= to_integer(total - remaining); to_integer(total - remaining) <= to_integer(22208u64); };
   have to_integer(total - remaining - 1u64) <= to_integer(22208u64) by normalize() using { to_integer(total - remaining - 1u64) <= to_integer(22207u64); };

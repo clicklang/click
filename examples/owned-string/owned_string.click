@@ -5,7 +5,7 @@ theorem incremented_zero_is_one(before: int32, after: int32) {
     ensures after == 1 by {
         rewrite(after == before + 1);
         rewrite(before == 0);
-        simp();
+        solve();
     }
 }
 
@@ -16,7 +16,7 @@ theorem decremented_one_is_zero(before: int32, after: int32) {
     ensures after == 0 by {
         rewrite(after == before - 1);
         rewrite(before == 1);
-        simp();
+        solve();
     }
 }
 
@@ -25,7 +25,7 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires second == third;
 
     ensures first == third by {
-        simp();
+        solve();
     }
 }
 
@@ -38,7 +38,7 @@ theorem pointer_equality_transitive(
     requires second == third;
 
     ensures first == third by {
-        simp();
+        solve();
     }
 }
 
@@ -51,7 +51,7 @@ theorem pointer_add_zero_equals(
     requires offset == 0;
 
     ensures base + offset == target by {
-        simp();
+        solve();
     }
 }
 
@@ -116,7 +116,7 @@ int32 owned_string_init(
     step();
     have terminated_at(owner->data, owner->len) by {
         unfold(terminated_at);
-        simp();
+        solve();
     }
     have 0 <= owner->len;
     have owner->len < owner->cap;
@@ -124,7 +124,7 @@ int32 owned_string_init(
         memory(*owner),
         memory(owner->data[0..owner->cap])
     ) by {
-        simp() using {
+        solve() using {
             separate(memory(*owner), memory(data[0..capacity]));
             owner->data == data;
             owner->cap == capacity;
@@ -175,10 +175,10 @@ int32 owned_string_set(
         memory(*owner),
         memory(owner->data[0..owner->cap])
     ) by {
-        simp();
+        solve();
     }
     have owner->data[index] == value by {
-        simp();
+        solve();
     }
     fold(owned_string(owner));
     step();
@@ -202,24 +202,24 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     step();
     step();
     step();
-    have 0 <= to_integer(index + 1) by auto();
-    have to_integer(index + 1) < to_integer(owner->cap) by auto();
+    have 0 <= to_integer(index + 1);
+    have to_integer(index + 1) < to_integer(owner->cap);
     step();
-    have owner->len == at(region(4).entry, (index + 1)) by auto();
+    have owner->len == at(region(4).entry, (index + 1));
     step();
     have 0 <= old(owner->len) + 1 by {
-        arithmetic() using {
+        solve() using {
             0 <= old(owner->len);
             old(owner->len) < old(owner->cap);
             old(owner->cap) <= 1073741823;
         }
     }
     have owner->data == old(owner->data) by {
-        simp();
+        solve();
     }
     have terminated_at(owner->data, owner->len) by {
         unfold(terminated_at);
-        simp();
+        solve();
     }
     fold(owned_string(owner));
     have owner->len == (old(owner->len) + 1) by {
@@ -266,8 +266,8 @@ int32 owned_string_pop(struct owned_string* owner) {
     ensures owner->data[owner->len] == 0;
 } by {
     unfold(owned_string(owner));
-    have 0 <= to_integer(owner->len - 1) by auto();
-    have to_integer(owner->len - 1) < to_integer(owner->len) by auto();
+    have 0 <= to_integer(owner->len - 1);
+    have to_integer(owner->len - 1) < to_integer(owner->len);
     step();
     step();
     step();
@@ -280,8 +280,8 @@ int32 owned_string_pop(struct owned_string* owner) {
         normalize();
     }
     fold(owned_string(owner));
-    have owner->data[owner->len] == 0 by auto();
-    auto();
+    have owner->data[owner->len] == 0;
+    solve();
 }
 
 int32 owned_string_pop_preserves_first(struct owned_string* owner) {
@@ -311,13 +311,13 @@ int32 owned_string_clear(struct owned_string* owner) {
     step();
     step();
     step();
-    have terminated_at(owner->data, owner->len) by auto();
+    have terminated_at(owner->data, owner->len);
     have 0 <= owner->len;
     have separate(
         memory(*owner),
         memory(owner->data[0..owner->cap])
     ) by {
-        simp();
+        solve();
     }
     fold(owned_string(owner));
     assumption();
@@ -353,7 +353,7 @@ int32 owned_string_pipeline(
     have (owner->len + 1) < owner->cap by {
         rewrite(owner->cap == capacity);
         rewrite(owner->len == 0);
-        have 1 < at(region(2).entry, capacity) by auto();
+        have 1 < at(region(2).entry, capacity);
         assumption();
     }
     step();

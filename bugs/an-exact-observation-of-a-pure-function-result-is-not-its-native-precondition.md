@@ -27,7 +27,7 @@ extern int32 take(uint32 a) {
 }
 int32 native_call() {
     ensures result == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 `execute()` refuses: "condition-certificate premise search did not derive

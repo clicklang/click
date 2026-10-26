@@ -12,7 +12,7 @@ void set_value(struct node* n, int32 v) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 
 void caller(struct node* n) {
@@ -22,5 +22,5 @@ void caller(struct node* n) {
     step();
     fold(cell(n));
     step();
-    simp();
+    solve();
 }

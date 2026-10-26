@@ -44,7 +44,7 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
             have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(at(repair, deficit.model), RbTree::Empty);
             have rb_inorder(whole.model) == rb_inorder(plug(at(repair, deficit.model), RbTree::Empty));
             have at(repair, deficit.model) == old(up.model);
-            execute(); simp();
+            execute(); solve();
         }
     } else {
         have rebalance == 0;
@@ -71,6 +71,6 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
             rewrite(whole.model == plug(old(up.model), RbTree::Empty));
             rewrite(old(up.model) == at(balanced, deficit.model)); assumption();
         }
-        execute(); simp();
+        execute(); solve();
     }
 }

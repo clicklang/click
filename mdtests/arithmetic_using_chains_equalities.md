@@ -1,4 +1,4 @@
-# `arithmetic() using` substitutes listed equalities
+# `solve() using` substitutes listed equalities
 
 An equality premise bounds its atom on both sides, so `x == 5` proves `x - 1`
 defined and closes `x - 1 == 4`. Equalities whose own operations need

@@ -46,12 +46,12 @@ theorem length_nonnegative<T>(xs: List<T>) {
         induct(xs) as ih {
             List::Nil => {
                 unfold(length(List<T>::Nil));
-                simp();
+                solve();
             }
             List::Cons(value, rest) => {
                 apply(ih(rest));
                 unfold(length(List<T>::Cons(value, rest)));
-                arithmetic() using { length(rest) >= 0; };
+                solve() using { length(rest) >= 0; };
             }
         }
     }
@@ -126,8 +126,8 @@ impl<T> generic_stack::Stack<T> {
         execute();
         let after = fold(nodes<T>(self.head), { values: List::Cons(value, old(before.values)) }, { tail: before });
         unfold(length(List::Cons(value, old(before.values))));
-        have to_integer(old(self.len) + 1u64) == to_integer(old(self.len)) + to_integer(1u64) by auto();
-        simp();
+        have to_integer(old(self.len) + 1u64) == to_integer(old(self.len)) + to_integer(1u64);
+        solve();
     }
 
     fn pop(&mut self) -> Option<T> {
@@ -151,7 +151,7 @@ impl<T> generic_stack::Stack<T> {
             List::Cons(v, tail_values) => {
                 unfold(length(List::Cons(v, tail_values)));
                 apply(length_nonnegative(tail_values));
-                have to_integer(self.len) >= 1 by arithmetic() using {
+                have to_integer(self.len) >= 1 by solve() using {
                     to_integer(self.len) == length(List::Cons(v, tail_values));
                     length(List::Cons(v, tail_values)) == length(tail_values) + 1;
                     length(tail_values) >= 0;
@@ -164,26 +164,26 @@ impl<T> generic_stack::Stack<T> {
                     List::Nil => {
                         let {} = unfold(tail);
                         let after = fold(nodes<T>(self.head), { values: List<T>::Nil }, {});
-                        have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64) by auto();
+                        have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64);
                         unfold(length(List<T>::Nil));
-                        have to_integer(old(self.len) - 1u64) == 0 by arithmetic() using {
+                        have to_integer(old(self.len) - 1u64) == 0 by solve() using {
                             to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - 1;
                             to_integer(old(self.len)) == length(List::Cons(v, List<T>::Nil));
                             length(List::Cons(v, List<T>::Nil)) == length(List<T>::Nil) + 1;
                             length(List<T>::Nil) == 0;
                         };
-                        simp();
+                        solve();
                     }
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
                         let after = fold(nodes<T>(self.head), { values: List::Cons(w, more) }, { tail: next });
-                        have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64) by auto();
-                        have to_integer(old(self.len) - 1u64) == length(List::Cons(w, more)) by arithmetic() using {
+                        have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64);
+                        have to_integer(old(self.len) - 1u64) == length(List::Cons(w, more)) by solve() using {
                             to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - 1;
                             to_integer(old(self.len)) == length(List::Cons(v, List::Cons(w, more)));
                             length(List::Cons(v, List::Cons(w, more))) == length(List::Cons(w, more)) + 1;
                         };
-                        simp();
+                        solve();
                     }
                 }
             }

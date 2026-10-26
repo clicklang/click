@@ -50,7 +50,7 @@ void box_repoint(struct box* box, int32* other) {
 } by {
     unfold(boxed(box));
     execute();
-    simp();
+    solve();
 }
 
 void box_release(struct box* box, int32* other) {
@@ -60,7 +60,7 @@ void box_release(struct box* box, int32* other) {
     consumes other[0..1];
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

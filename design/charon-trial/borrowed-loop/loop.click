@@ -12,7 +12,7 @@ impl Drop for Guard {
         ensures self.saved == old(self.saved);
         ensures *self.slot == old(self.saved);
     } by {
-        execute(); simp();
+        execute(); solve();
     }
 }
 
@@ -22,7 +22,7 @@ fn guarded_walk(value: &mut i32, n: i32) -> i32 {
     ensures result == n;
     ensures value[0] == old(value[0]);
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         decreases n - i;
         preserve by {
@@ -30,11 +30,11 @@ fn guarded_walk(value: &mut i32, n: i32) -> i32 {
                 0 <= i;
                 i <= n;
             };
-            have 0 < n - i by { arithmetic() using { 0 <= i; i < n; }; }
+            have 0 < n - i by { solve() using { 0 <= i; i < n; }; }
             apply(integer::int32_positive_predecessor_is_nonnegative(n - i)) using { 0 < n - i; };
             apply(integer::int32_positive_predecessor_strictly_decreases(n - i)) using { 0 < n - i; };
-            execute_until(back_edge());
-            close_invariants() by simp();
+            step_until(back_edge());
+            close_invariants() by solve();
         }
         owns value[0..1];
         views guard.slot;
@@ -45,14 +45,14 @@ fn guarded_walk(value: &mut i32, n: i32) -> i32 {
         invariant guard.slot == value;
         invariant guard.saved == old(value[0]);
     }
-    execute(); simp();
+    execute(); solve();
 }
 
 fn final_header(n: i32) -> i32 {
     requires n >= 0;
     ensures result == n;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         decreases n - i;
         preserve by {
@@ -60,13 +60,13 @@ fn final_header(n: i32) -> i32 {
                 0 <= i;
                 i <= n;
             };
-            have 0 < n - i by { arithmetic() using { 0 <= i; i < n; }; }
+            have 0 < n - i by { solve() using { 0 <= i; i < n; }; }
             apply(integer::int32_positive_predecessor_is_nonnegative(n - i)) using { 0 < n - i; };
             apply(integer::int32_positive_predecessor_strictly_decreases(n - i)) using { 0 < n - i; };
-            execute_until(back_edge());
-            close_invariants() by simp();
+            step_until(back_edge());
+            close_invariants() by solve();
         }
         invariant 0 <= i and i <= n;
     }
-    execute(); simp();
+    execute(); solve();
 }

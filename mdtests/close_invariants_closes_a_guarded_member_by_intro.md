@@ -8,7 +8,7 @@ bundle states that member under its definedness guard:
 implication.
 
 Every leaf is already a fact: the body states the disjunction with `assumption()`
-and both ranking inequalities with `arithmetic()`. The member compares exact
+and both ranking inequalities with `solve() using`. The member compares exact
 observations, `to_integer(2 + run) == to_integer(i)`, which name `2 + run` only
 where it is defined, so the `else` arm first derives `defined(2 + run)` from the
 Integer bounds of the incremented `run`. The closing proof is
@@ -54,7 +54,7 @@ int32 count_run(int32 n) {
         invariant 0 <= run and run <= i;
         invariant (i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i));
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             mark iteration;
             if i < 2 {
@@ -67,14 +67,14 @@ int32 count_run(int32 n) {
                 have 0 <= at(iteration, i);
                 have 0 <= n;
                 have 0 <= to_integer(n - at(iteration, i) - 1) by {
-                    arithmetic() using {
+                    solve() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, n);
                         0 <= n;
                     };
                 }
                 have to_integer(n - at(iteration, i) - 1) < to_integer(n - at(iteration, i)) by {
-                    arithmetic() using {
+                    solve() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, n);
                         0 <= n;
@@ -82,11 +82,11 @@ int32 count_run(int32 n) {
                 }
                 close_invariants();
             } else {
-                have 2 <= i by { arithmetic() using { not (i < 2); }; }
+                have 2 <= i by { solve() using { not (i < 2); }; }
                 have to_integer(2 + run) == to_integer(i) by {
                     cases {
                         (i <= 2 and run == 0) => {
-                            have i == 2 by auto();
+                            have i == 2;
                             rewrite(run == 0);
                             rewrite(i == 2);
                             normalize() using { i <= 2; };
@@ -98,7 +98,7 @@ int32 count_run(int32 n) {
                     }
                 }
                 have run < n by {
-                    arithmetic() using {
+                    solve() using {
                         run <= i;
                         i < n;
                     };
@@ -107,26 +107,26 @@ int32 count_run(int32 n) {
                 step();
                 have 0 <= i and i <= n;
                 have 0 <= run and run <= i;
-                have to_integer(run) == to_integer(at(iteration, run)) + 1 by auto();
-                have to_integer(i) == to_integer(at(iteration, i)) + 1 by auto();
-                have to_integer(2 + at(iteration, run)) == to_integer(at(iteration, i)) by auto();
-                have to_integer(2 + at(iteration, run)) == 2 + to_integer(at(iteration, run)) by auto();
-                have to_integer(2) + to_integer(run) <= 2147483647 by auto();
-                have to_integer(2) + to_integer(run) >= -2147483648 by auto();
-                have defined(2 + run) by auto();
-                have 2 <= i and to_integer(2 + run) == to_integer(i) by auto();
+                have to_integer(run) == to_integer(at(iteration, run)) + 1;
+                have to_integer(i) == to_integer(at(iteration, i)) + 1;
+                have to_integer(2 + at(iteration, run)) == to_integer(at(iteration, i));
+                have to_integer(2 + at(iteration, run)) == 2 + to_integer(at(iteration, run));
+                have to_integer(2) + to_integer(run) <= 2147483647;
+                have to_integer(2) + to_integer(run) >= -2147483648;
+                have defined(2 + run);
+                have 2 <= i and to_integer(2 + run) == to_integer(i);
                 have (i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i)) by assumption();
                 have 0 <= at(iteration, i);
                 have 0 <= n;
                 have 0 <= to_integer(n - at(iteration, i) - 1) by {
-                    arithmetic() using {
+                    solve() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, n);
                         0 <= n;
                     };
                 }
                 have to_integer(n - at(iteration, i) - 1) < to_integer(n - at(iteration, i)) by {
-                    arithmetic() using {
+                    solve() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, n);
                         0 <= n;
@@ -137,7 +137,7 @@ int32 count_run(int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -72,7 +72,7 @@ void steal(struct node* old, struct node* new) {
     ensures new->augmented <= 1000;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 struct node* rotate_left(
@@ -108,7 +108,7 @@ struct node* rotate_left(
     fold(shape(pivot));
     step();
     step();
-    simp();
+    solve();
 }
 
 struct node* rotate_steal(struct node* node) {
@@ -130,7 +130,7 @@ struct node* rotate_steal(struct node* node) {
     ensures result->augmented <= 1000;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

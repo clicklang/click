@@ -54,27 +54,27 @@ void copy_tag(struct node* parent, struct node* sibling) {
     owns sibling->tag;
     ensures sibling->tag == old(parent->tag);
     ensures parent->tag == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void inspect(struct node* parent, int32 side) {
     consumes tree_context: parent_at(parent);
     requires parent == parent_identity(tree_context.model);
     requires side == direction(tree_context.model);
     ensures 1 == 1;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         owns tree_context: parent_at(root);
         invariant parent == parent_identity(tree_context.model);
         invariant side == direction(tree_context.model);
         decreases 0;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match tree_context.model {
                 Parent::Left(pid, sm) => {
                     have parent == parent_identity(Parent::Left(pid, sm)) by { rewrite(Parent::Left(pid, sm) == tree_context.model); assumption(); }
-                    have parent == pid by { unfold(parent_identity(Parent::Left(pid, sm))); simp(); }
+                    have parent == pid by { unfold(parent_identity(Parent::Left(pid, sm))); solve(); }
                     have side == direction(Parent::Left(pid, sm)) by { rewrite(Parent::Left(pid, sm) == tree_context.model); assumption(); }
-                    have side == 1 by { unfold(direction(Parent::Left(pid, sm))); simp(); }
+                    have side == 1 by { unfold(direction(Parent::Left(pid, sm))); solve(); }
                     let { c: c } = unfold(tree_context);
                     mark tag_inputs;
             match c.model {
@@ -99,9 +99,9 @@ void inspect(struct node* parent, int32 side) {
                 },
                 Parent::Right(pid, sm) => {
                     have parent == parent_identity(Parent::Right(pid, sm)) by { rewrite(Parent::Right(pid, sm) == tree_context.model); assumption(); }
-                    have parent == pid by { unfold(parent_identity(Parent::Right(pid, sm))); simp(); }
+                    have parent == pid by { unfold(parent_identity(Parent::Right(pid, sm))); solve(); }
                     have side == direction(Parent::Right(pid, sm)) by { rewrite(Parent::Right(pid, sm) == tree_context.model); assumption(); }
-                    have side == 0 by { unfold(direction(Parent::Right(pid, sm))); simp(); }
+                    have side == 0 by { unfold(direction(Parent::Right(pid, sm))); solve(); }
                     let { c: c } = unfold(tree_context);
                     mark tag_inputs;
             match c.model {
@@ -128,7 +128,7 @@ void inspect(struct node* parent, int32 side) {
             }
         }
     }
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

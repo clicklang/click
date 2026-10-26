@@ -20,7 +20,7 @@ resource cell(p: int32*) {
 }
 
 /* banner */ theorem int32_positive_is_nonnegative(x: int32) {
-    ensures x == x by simp();
+    ensures x == x by solve();
 }
 
 theorem client(xs: List<int32>) {
@@ -35,7 +35,7 @@ void keep(int32* p) {
     unfold(cell);
     execute();
     let cell = fold(cell(p), { marker: 0 });
-    simp();
+    solve();
 }
 ```
 

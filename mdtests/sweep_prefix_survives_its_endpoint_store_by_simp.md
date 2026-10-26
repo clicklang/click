@@ -1,13 +1,13 @@
-# simp carries the sweep's prefix count across the endpoint store
+# an omitted proof carries the sweep's prefix count across the endpoint store
 
 This is `sweep_maintains_a_zero_unmarked_count.md` with its
-explicit `transport(...) using { ... }` replaced by `simp()`. `simp`'s
+explicit `transport(...) using { ... }` replaced by a `have` with the omitted proof. Its
 snapshot transport closure proposes the iteration-entry fact as the source and
 asks the same checked transport, which reaches the checked fold read frame:
 `unmarked(visited, 0, i)` reads only `visited[0..i]`, and the store writes
 `visited[i]`, at the prefix's end. The fold read frame answers the same for
 every caller, so no new search is involved; `click expand` rewrites this
-`simp()` into that explicit transport, and the expansion re-verifies.
+omitted proof into that explicit transport, and the expansion re-verifies.
 
 ```c filename=sweep_prefix_survives_its_endpoint_store_by_simp.c
 void sweep(int32 visited[], int32 n) {
@@ -40,13 +40,13 @@ void sweep(int32 visited[], int32 n) {
         invariant i <= n;
         invariant unmarked(visited, 0, i) == 0;
         owns visited[0..n];
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             mark iter;
             have i < 1073741823 by {
-                arithmetic() using { i < n; n <= 1073741823; };
+                solve() using { i < n; n <= 1073741823; };
             }
-            have i < 2147483647 by { arithmetic() using { i < 1073741823; }; }
+            have i < 2147483647 by { solve() using { i < 1073741823; }; }
             step();
             have unmarked(visited, 0, i) == 0;
             have unmarked(visited, 0, i + 1) == 0 by {
@@ -54,14 +54,14 @@ void sweep(int32 visited[], int32 n) {
                     0 <= to_integer((i + 1) - 1);
                     to_integer((i + 1) - 1) < 2147483647;
                 };
-                simp();
+                solve();
             }
             step();
             close_invariants();
         }
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

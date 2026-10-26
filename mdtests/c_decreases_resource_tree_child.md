@@ -43,10 +43,10 @@ int32 leftmost_zero(struct node* node) {
     observe(zero_tree(node));
     if node->left == 0 {
         execute();
-        simp();
+        solve();
     } else {
         execute();
-        simp();
+        solve();
     }
 }
 ```

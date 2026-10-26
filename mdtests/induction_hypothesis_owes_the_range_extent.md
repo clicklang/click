@@ -25,11 +25,11 @@ theorem hypothesis_owes_the_range_extent(v: int32[], lo: int32, hi: int32) {
             assumption();
         } else {
             have lo < hi;
-            have 0 <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have to_integer(lo) <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }
+            have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
             have to_integer(hi - 1) <= 1073741823 by {
-                arithmetic() using { 0 <= hi; hi <= 1073741823; };
+                solve() using { 0 <= hi; hi <= 1073741823; };
             }
             have viewable(v[lo..hi - 1]);
             apply(ih(hi - 1)) using {

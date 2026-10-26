@@ -1,9 +1,9 @@
 # Order chains of three facts close
 
 A chain of order facts composes the same way however long it is, and an
-unsigned chain the same way as a signed one. `simp` finds the chain and
+unsigned chain the same way as a signed one. `solve` finds the chain and
 names a transitivity lemma per edge, `int32_*` or `uint32_*` by the
-operands' type; `arithmetic() using` adds the premises it lists.
+operands' type; `solve() using` adds the premises it lists.
 
 ```click
 theorem signed_by_simp(x: int32, a: int32, b: int32) {

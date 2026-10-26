@@ -58,7 +58,7 @@ int32 replace_allocated_cell(struct cell_owner* owner) {
     unfold(allocated_cell(owner));
     execute();
     fold(allocated_cell(owner));
-    simp();
+    solve();
 }
 
 int32 replace_after_scoped_open(struct cell_owner* owner) {
@@ -69,7 +69,7 @@ int32 replace_after_scoped_open(struct cell_owner* owner) {
     open(allocated_cell(owner)) {
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

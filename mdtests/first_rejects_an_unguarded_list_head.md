@@ -5,7 +5,7 @@ A small list form of the nonempty guard that
 null for a null `head` and `head` otherwise, and its contract claims, with no
 guard, that the result starts the modeled list. Nothing ties the model to the
 C pointer, and on the null path the claim would need a null head in an
-arbitrary list, so the clause must be refused. `simp()` unfolds
+arbitrary list, so the clause must be refused. The omitted proof unfolds
 `starts_with` into its `match` and tries the path's pointer equality inside it
 before giving up. This catches a pointer rewrite through a match body with
 bindings that it cannot carry, or a contract lowering of that body that turns

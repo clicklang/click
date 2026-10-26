@@ -1,6 +1,6 @@
 # A failing `have` reports its written operation
 
-The checked driver runs this source body once. Its first `simp()` cannot prove
+The checked driver runs this source body once. Its first `solve()` cannot prove
 `n + 1 > 500`, so that operation reports the failure before the following
 `normalize()` runs. The diagnostic retains the source body position and the
 failing goal. A whole-script shape precheck must not hide this failure, and no
@@ -27,5 +27,5 @@ int spin(int n) {
 ```
 
 ```expect
-fail: have body tactic 1: `simp` failed for `spin.contract`: could not establish `(to_integer(n) + 1) > 500`
+fail: have body tactic 1: `solve` failed for `spin.contract`: could not establish `(to_integer(n) + 1) > 500`
 ```

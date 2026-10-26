@@ -1,4 +1,4 @@
-# `auto` widens a narrow value to 64 bits
+# The implicit closer widens a narrow value to 64 bits
 
 A 64-bit type that contains an 8- or 16-bit type reads the narrow value
 from the sign extension of its word, or for an unsigned value from its

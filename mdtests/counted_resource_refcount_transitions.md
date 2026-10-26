@@ -52,7 +52,7 @@ struct object* object_retain(struct object* obj) {
         fold(object_ref(obj));
     }
     execute();
-    simp();
+    solve();
 }
 
 void object_release_nonfinal(struct object* obj) {
@@ -68,7 +68,7 @@ void object_release_nonfinal(struct object* obj) {
         step();
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

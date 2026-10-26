@@ -3720,7 +3720,7 @@ mod selected_premise_tests {
             source_tactic_path: None,
             claim: "viewability".into(),
             tactic_index: 0,
-            tactic_name: "simp".into(),
+            tactic_name: "solve".into(),
             class: "smart".into(),
             statement_index: 0,
             source_index: 0,

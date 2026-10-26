@@ -3,8 +3,8 @@
 The program of
 [`a_parent_cast_fact_is_not_carried_across_a_store_through_another_node.md`](a_parent_cast_fact_is_not_carried_across_a_store_through_another_node.md),
 with the cast fact restated after the store through `o`:
-`have ((struct rb_node*)(g->__rb_parent_color & ~3)) == xid by simp();`.
-`simp` carries the unfolded fact across the store, which `o`'s separately
+`have ((struct rb_node*)(g->__rb_parent_color & ~3)) == xid by solve();`.
+`solve` carries the unfolded fact across the store, which `o`'s separately
 held cell does not overlap, and the restated fact names the read the C cast
 makes next. The cast result then designates `xid`, whose cells are held, and
 `p->rb_left` is formed and read. Where a branch join lies between the unfold

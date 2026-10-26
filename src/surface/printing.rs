@@ -974,11 +974,8 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::NormalizeUsing(premises) => {
             write_using_premises(output, "normalize()", premises, indent)
         }
-        ProofTactic::ArithmeticUsing(premises) if premises.is_empty() => {
-            line(output, &prefix, "arithmetic();")
-        }
         ProofTactic::ArithmeticUsing(premises) => {
-            write_using_premises(output, "arithmetic()", premises, indent)
+            write_using_premises(output, "solve()", premises, indent)
         }
         ProofTactic::Intro => line(output, &prefix, "intro();"),
         ProofTactic::IntroAs(name) => line(output, &prefix, &format!("intro() as {name};")),
@@ -989,7 +986,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &format!("contradiction({});", source_click_proposition(fact)),
         ),
         ProofTactic::SimpUsing(simp) => {
-            write_using_premises(output, "simp()", &simp.premises, indent)
+            write_using_premises(output, "solve()", &simp.premises, indent)
         }
         ProofTactic::ArithmeticCertificate(certificate) => {
             write_arithmetic_certificate(output, certificate, indent)
@@ -1886,6 +1883,10 @@ fn write_using_premises(
     indent: usize,
 ) {
     let prefix = "    ".repeat(indent);
+    if premises.is_empty() {
+        line(output, &prefix, &format!("{name} using {{}};"));
+        return;
+    }
     line(output, &prefix, &format!("{name} using {{"));
     write_premise_list(output, premises, indent + 1);
     line(output, &prefix, "};");
@@ -2441,7 +2442,7 @@ mod tests {
                 requires index == 1;
                 views p[0..4];
                 ensures {printed};
-            }} by {{ execute(); rewrite(index == 1); simp(); }}
+            }} by {{ execute(); rewrite(index == 1); solve(); }}
         "#
         );
         let sources = [(

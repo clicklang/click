@@ -22,5 +22,5 @@ void caller(int32* p) {
 } by { execute(); assumption(); solve(); }
 ```
 ```expect
-fail: simp
+fail: solve
 ```

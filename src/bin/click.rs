@@ -124,7 +124,7 @@ mod tests {
         .unwrap();
         fs::write(
             &sidecar,
-            "verifying \"viewed_global.c\";\nvoid set_second() {\n    views words[1..2];\n    ensures words[1] == 7 by auto();\n}\n",
+            "verifying \"viewed_global.c\";\nvoid set_second() {\n    views words[1..2];\n    ensures words[1] == 7;\n}\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -160,7 +160,7 @@ mod tests {
         fs::write(directory.join("f.c"), "int32 f() { return 1; }\n").unwrap();
         fs::write(
             directory.join("f.click"),
-            "verifying \"f.c\";\nint32 f() { ensures result == 1 by auto(); }\n",
+            "verifying \"f.c\";\nint32 f() { ensures result == 1; }\n",
         )
         .unwrap();
         let original = std::env::current_dir().unwrap();
@@ -219,10 +219,10 @@ mod tests {
              \x20   owns p[0..1];\n\
              \x20   ensures p[0] == 1 by {\n\
              \x20       execute();\n\
-             \x20       simp();\n\
+             \x20       solve();\n\
              \x20   }\n\
              }\n\
-             void g(int32* p) { owns p[0..1]; ensures p[0] == 2 by { execute(); simp(); } }\n",
+             void g(int32* p) { owns p[0..1]; ensures p[0] == 2 by { execute(); solve(); } }\n",
         )
         .unwrap();
         let path = sidecar.display().to_string();
@@ -236,7 +236,7 @@ mod tests {
         let by_label = expand("f.ensures_0", "ensures.click").unwrap();
         assert!(by_label.contains("    owns p[0..1];\n"), "{by_label}");
         assert!(
-            !by_label.contains("execute();\n        simp();"),
+            !by_label.contains("execute();\n        solve();"),
             "{by_label}"
         );
         let by_line = expand(&format!("{path}:5"), "line.click").unwrap();
@@ -318,7 +318,7 @@ mod tests {
             fs::write(
                 &sidecar,
                 format!(
-                    "verifying \"f.c\";\nint32 f() {{\n    ensures result == 0;\n}} by {{\n    step(); step(); step();\n    loop {{ decreases 5 - i; invariant i >= 0; invariant i <= 4;{preserve} }}\n    execute(); simp();\n}}\n"
+                    "verifying \"f.c\";\nint32 f() {{\n    ensures result == 0;\n}} by {{\n    step(); step(); step();\n    loop {{ decreases 5 - i; invariant i >= 0; invariant i <= 4;{preserve} }}\n    execute(); solve();\n}}\n"
                 ),
             )
             .unwrap();
@@ -334,7 +334,7 @@ mod tests {
             "{error}"
         );
 
-        write_proof(" preserve by { step(); step(); simp(); }");
+        write_proof(" preserve by { step(); step(); solve(); }");
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
@@ -378,10 +378,10 @@ mod tests {
             fs::write(&sidecar, format!("verifying \"f.c\";\n{proof}")).unwrap();
             entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err()
         };
-        let three_steps = "} by {\n    step(); step(); step(); simp();\n}\n";
+        let three_steps = "} by {\n    step(); step(); step(); solve();\n}\n";
 
         let store = verify(
-            "int32 store() {\n    ensures result == 0;\n} by {\n    step(); step(); step();\n    loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }\n    execute(); simp();\n}\n",
+            "int32 store() {\n    ensures result == 0;\n} by {\n    step(); step(); step();\n    loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }\n    execute(); solve();\n}\n",
         );
         assert!(
             store.contains(
@@ -461,7 +461,7 @@ mod tests {
         let help = "help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`";
 
         let call = run(
-            "int32 callee(int32 n) {\n    requires n >= 0;\n    ensures result == n;\n}\nint32 caller(int32 n) {\n    ensures result == n + 1;\n} by {\n    step(); step(); step(); simp();\n}\n",
+            "int32 callee(int32 n) {\n    requires n >= 0;\n    ensures result == n;\n}\nint32 caller(int32 n) {\n    ensures result == n + 1;\n} by {\n    step(); step(); step(); solve();\n}\n",
             &[],
         );
         assert!(
@@ -472,7 +472,7 @@ mod tests {
         // open requirements, so the refusal is that smart tactic's miss.
         assert!(
             call.contains(
-                "\nrefused by: the implicit `auto` that proves this statement's requirements (smart: "
+                "\nrefused by: the implicit closer that proves this statement's requirements (smart: "
             ) && call.contains("\nsee: click docs tracing\n"),
             "{call}"
         );
@@ -509,13 +509,13 @@ mod tests {
         // `step()` the implicit `auto` proves it, so an unprovable one is
         // that smart tactic's miss.
         let overflow = run(
-            "int32 next(int32 x) {\n    requires x >= 0;\n    ensures result == x + 1;\n} by {\n    step(); simp();\n}\n",
+            "int32 next(int32 x) {\n    requires x >= 0;\n    ensures result == x + 1;\n} by {\n    step(); solve();\n}\n",
             &[],
         );
         assert!(
             overflow.contains("\ngoal: x <= 2147483646\n")
                 && overflow.contains(
-                    "\nrefused by: the implicit `auto` that proves this statement's requirements (smart: "
+                    "\nrefused by: the implicit closer that proves this statement's requirements (smart: "
                 ),
             "{overflow}"
         );
@@ -578,7 +578,7 @@ mod tests {
         // The C block body starts on line 6; `total = a + b;` is line 8.
         fs::write(
             &path,
-            "# Located\n\nProse before the blocks.\n\n```c filename=add.c\nint32 add(int32 a, int32 b) {\n    int32 total;\n    total = a + b;\n    return total;\n}\n```\n\n```click\nverifying \"add.c\";\nint32 add(int32 a, int32 b) {\n    ensures result == a + b;\n} by {\n    step(); step(); step(); simp();\n}\n```\n\n```expect\nfail: signed overflow\n```\n",
+            "# Located\n\nProse before the blocks.\n\n```c filename=add.c\nint32 add(int32 a, int32 b) {\n    int32 total;\n    total = a + b;\n    return total;\n}\n```\n\n```click\nverifying \"add.c\";\nint32 add(int32 a, int32 b) {\n    ensures result == a + b;\n} by {\n    step(); step(); step(); solve();\n}\n```\n\n```expect\nfail: signed overflow\n```\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
@@ -610,14 +610,14 @@ mod tests {
         let passing = directory.join("passing.md");
         fs::write(
             &passing,
-            mdtest("int32 f() { ensures result == 1 by auto(); }", "pass"),
+            mdtest("int32 f() { ensures result == 1; }", "pass"),
         )
         .unwrap();
         let failing = directory.join("failing.md");
         fs::write(
             &failing,
             mdtest(
-                "int32 f() { ensures result == 1; } by { step(); step(); simp(); }",
+                "int32 f() { ensures result == 1; } by { step(); step(); solve(); }",
                 "fail: step",
             ),
         )
@@ -661,7 +661,7 @@ mod tests {
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); step(); simp(); }\n",
+            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); step(); solve(); }\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -703,7 +703,7 @@ mod tests {
         .unwrap();
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); have 0 == 1 by { normalize(); } step(); simp(); }\n",
+            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); have 0 == 1 by { normalize(); } step(); solve(); }\n",
         )
         .unwrap();
         let nested = entry([
@@ -757,12 +757,12 @@ mod tests {
             .unwrap();
         let identity = |body: &str| {
             format!(
-                "verifying \"identity.c\";\nint32 identity(int32 x) {{\n    ensures result == x;\n}} by {{\n    have x <= x by {{\n{body}    }}\n    execute();\n    simp();\n}}\n"
+                "verifying \"identity.c\";\nint32 identity(int32 x) {{\n    ensures result == x;\n}} by {{\n    have x <= x by {{\n{body}    }}\n    execute();\n    solve();\n}}\n"
             )
         };
         let count_up = |phase: &str| {
             format!(
-                "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        preserve by {{\n            step();\n            close_invariants();\n        }}\n    }}\n    step();\n    simp();\n}}\n"
+                "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        preserve by {{\n            step();\n            close_invariants();\n        }}\n    }}\n    step();\n    solve();\n}}\n"
             )
         };
         // Each case's `assumption()` must fail. A goal that is a mirrored
@@ -773,41 +773,41 @@ mod tests {
             (
                 "if_arm",
                 identity(
-                    "        have x == x by simp();\n        if x > 0 {\n            simp();\n        } else {\n            assumption();\n        }\n",
+                    "        have x == x by solve();\n        if x > 0 {\n            solve();\n        } else {\n            assumption();\n        }\n",
                 ),
                 10,
             ),
             (
                 "cases_arm",
                 identity(
-                    "        have x > 0 or not (x > 0) by {\n            if x > 0 {\n                assumption();\n            } else {\n                assumption();\n            }\n        }\n        cases { x > 0 => {\n            simp();\n        } not (x > 0) => {\n            assumption();\n        } }\n",
+                    "        have x > 0 or not (x > 0) by {\n            if x > 0 {\n                assumption();\n            } else {\n                assumption();\n            }\n        }\n        cases { x > 0 => {\n            solve();\n        } not (x > 0) => {\n            assumption();\n        } }\n",
                 ),
                 16,
             ),
             (
                 "if_continuation",
                 identity(
-                    "        if x > 0 {\n            have x == x by simp();\n            have x == x by simp();\n        } else {\n            have x == x by simp();\n        }\n        assumption();\n",
+                    "        if x > 0 {\n            have x == x by solve();\n            have x == x by solve();\n        } else {\n            have x == x by solve();\n        }\n        assumption();\n",
                 ),
                 12,
             ),
             (
                 "initialize_helper",
                 count_up(
-                    "            have -1 < n by {\n                have n == n by simp();\n                assumption();\n            }\n            simp();\n",
+                    "            have -1 < n by {\n                have n == n by solve();\n                assumption();\n            }\n            solve();\n",
                 ),
                 15,
             ),
             (
                 "initialize_invariant_body",
                 count_up(
-                    "            have i >= 0 by simp();\n            have -1 < n by {\n                have n == n by simp();\n                assumption();\n            }\n",
+                    "            have i >= 0 by solve();\n            have -1 < n by {\n                have n == n by solve();\n                assumption();\n            }\n",
                 ),
                 16,
             ),
             (
                 "initialize_shared_script",
-                count_up("            have n == n by simp();\n            assumption();\n"),
+                count_up("            have n == n by solve();\n            assumption();\n"),
                 14,
             ),
         ];
@@ -874,7 +874,7 @@ mod tests {
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by {\n    step();\n    have exists (x: int32) { x == 0 } by {\n        obtain (x: int32) {\n            x == 0\n        };\n    }\n    simp();\n}\n",
+            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by {\n    step();\n    have exists (x: int32) { x == 0 } by {\n        obtain (x: int32) {\n            x == 0\n        };\n    }\n    solve();\n}\n",
         )
         .unwrap();
         let traced = entry([
@@ -957,7 +957,7 @@ mod tests {
         fs::write(&sidecar, source).unwrap();
         entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
         let release_end = source.find("void parent_attach(").unwrap();
-        let simp = source[..release_end].rfind("        simp();").unwrap();
+        let simp = source[..release_end].rfind("        solve();").unwrap();
         let line = source[..simp].bytes().filter(|byte| *byte == b'\n').count() + 1;
         entry([
             "expand".to_string(),
@@ -983,7 +983,7 @@ mod tests {
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\nint32 f() { ensures result == 0; } by { step(); step(); simp(); }\n",
+            "verifying \"f.c\";\nint32 f() { ensures result == 0; } by { step(); step(); solve(); }\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -1086,7 +1086,7 @@ int32 child(int32 *a, int32 *visited, int32 x) {
     views a[0..2];
     owns visited[0..1];
     requires separate(memory(a[0..2]), memory(visited[0..1]));
-    ensures result == 1 by { execute(); simp(); }
+    ensures result == 1 by { execute(); solve(); }
     ensures result != 0 implies exists (z: int32) { z == x } by {
         execute(); intro(); witness { z: x }; normalize();
     }
@@ -1100,13 +1100,13 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
     ensures result == 1;
 } by {
     let { result: r } = step(child, { });
-    have r != 0 by { simp(); }
-    have defined(a[cur]) by { simp(); }
+    have r != 0 by { solve(); }
+    have defined(a[cur]) by { solve(); }
     have exists (z: int32) { z == a[cur] } by {
         extract(exists (z: int32) { z == a[cur] });
         assumption();
     }
-    step(); simp();
+    step(); solve();
 }
 "#,
         )
@@ -1232,13 +1232,13 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
 } by {
     mark before_call;
     let { result: r } = step(child, {});
-    have defined(at(before_call, a[i])) by { simp(); }
+    have defined(at(before_call, a[i])) by { solve(); }
     have exists (path: Path) {
         pick(at(before_call, a[i]), path) == at(before_call, a[i])
     } by {
         assumption();
     }
-    step(); simp();
+    step(); solve();
 }
 "#,
         )
@@ -1270,7 +1270,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         let sidecar = directory.join("calls.click");
         fs::write(
             &sidecar,
-            "verifying \"calls.c\";\nvoid read(int32* p) { owns p[0..1]; } by { execute(); simp(); }\nvoid caller(int32* second) { ensures second == second; } by { step(); simp(); }\n",
+            "verifying \"calls.c\";\nvoid read(int32* p) { owns p[0..1]; } by { execute(); solve(); }\nvoid caller(int32* second) { ensures second == second; } by { step(); solve(); }\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -1299,7 +1299,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         let sidecar = directory.join("goal.click");
         fs::write(
             &sidecar,
-            "verifying \"goal.c\";\nint32 bump(int32 x, int32 j, int32 y) {\n    requires 0 <= x and x <= j;\n    requires j < 10;\n    requires y > 3;\n    ensures result == x + 2;\n} by { execute(); simp(); }\n",
+            "verifying \"goal.c\";\nint32 bump(int32 x, int32 j, int32 y) {\n    requires 0 <= x and x <= j;\n    requires j < 10;\n    requires y > 3;\n    ensures result == x + 2;\n} by { execute(); solve(); }\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -1334,7 +1334,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         let sidecar = directory.join("case.click");
         fs::write(
             &sidecar,
-            "verifying \"case.c\";\nint32 pick(int32 x, int32 y, int32 z) {\n    requires x < 10;\n    requires z > 3;\n    ensures result == 0;\n} by {\n    if y > 3 { execute(); simp(); } else { execute(); simp(); }\n}\n",
+            "verifying \"case.c\";\nint32 pick(int32 x, int32 y, int32 z) {\n    requires x < 10;\n    requires z > 3;\n    ensures result == 0;\n} by {\n    if y > 3 { execute(); solve(); } else { execute(); solve(); }\n}\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -1370,14 +1370,14 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
 theorem good(x: int32, y: int32) {
     requires x == y;
     ensures y == x by {
-        have y == x by { simp(); }
+        have y == x by { solve(); }
         assumption();
     }
 }
 theorem bad(x: int32, y: int32) {
     requires x == y;
     ensures x == 0 by {
-        have y == x by { simp(); }
+        have y == x by { solve(); }
         have x == 0 by { normalize(); }
         assumption();
     }
@@ -1392,7 +1392,7 @@ theorem arms(x: int32) {
         normalize();
     }
 }
-int32 f() { ensures result == 2; } by { step(); simp(); }
+int32 f() { ensures result == 2; } by { step(); solve(); }
 "#,
         )
         .unwrap();
@@ -1464,7 +1464,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\ntheorem f(x: int32) { ensures x == x by { normalize(); } }\nint32 f() { ensures result == 1; } by { step(); simp(); }\n",
+            "verifying \"f.c\";\ntheorem f(x: int32) { ensures x == x by { normalize(); } }\nint32 f() { ensures result == 1; } by { step(); solve(); }\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -1494,7 +1494,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); simp(); }\nint32 g() { ensures result == 2; } by { step(); step(); simp(); }\n",
+            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); solve(); }\nint32 g() { ensures result == 2; } by { step(); step(); solve(); }\n",
         )
         .unwrap();
         assert!(entry(["verify".to_string(), sidecar.display().to_string()]).is_err());
@@ -1576,7 +1576,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
             &path,
             mdtest(
                 valid_c,
-                "verifying \"inc.c\";\nint32 inc(int32 x) {\n    ensures result == x by { have x: x == x by { simp(); } step(); simp(); }\n}",
+                "verifying \"inc.c\";\nint32 inc(int32 x) {\n    ensures result == x by { have x: x == x by { solve(); } step(); solve(); }\n}",
             ),
         )
         .unwrap();
@@ -1626,7 +1626,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         let source = r#"theorem arithmetic_tool_parity(n: int32) {
     requires n <= 10;
     ensures n <= 10 by {
-        arithmetic() using { n <= 10; }
+        solve() using { n <= 10; }
     }
 }
 "#;
@@ -1645,7 +1645,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         .expect("click expand should emit the checked arithmetic certificate");
         let expanded = fs::read_to_string(&expanded_path).unwrap();
         assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-        assert!(!expanded.contains("arithmetic()"), "{expanded}");
+        assert!(!expanded.contains("solve() using"), "{expanded}");
 
         entry(["verify".to_string(), expanded_path.display().to_string()])
             .expect("click verify should recheck the expanded certificate");
@@ -1787,9 +1787,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
             .map(|_| "0 == 0")
             .collect::<Vec<_>>()
             .join(" implies ");
-        format!(
-            "theorem at_limit_implication() {{ requires {implications}; ensures 0 == 0 by auto(); }}\n"
-        )
+        format!("theorem at_limit_implication() {{ requires {implications}; ensures 0 == 0; }}\n")
     }
 
     fn verify_and_profile_supported_boundary(label: &str, source: String) {
@@ -1822,7 +1820,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         exercise_supported_boundary(
             "expression",
             format!(
-                "theorem at_limit_expression() {{ requires {additions} == 0; ensures 0 == 0 by auto(); }}\n"
+                "theorem at_limit_expression() {{ requires {additions} == 0; ensures 0 == 0; }}\n"
             ),
             "at_limit_expression.ensures_0",
         );
@@ -1865,7 +1863,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         exercise_supported_boundary(
             "quantifiers",
             format!(
-                "theorem at_limit_quantifiers() {{ requires {quantifier_body}; ensures 0 == 0 by auto(); }}\n"
+                "theorem at_limit_quantifiers() {{ requires {quantifier_body}; ensures 0 == 0; }}\n"
             ),
             "at_limit_quantifiers.ensures_0",
         );
@@ -1881,7 +1879,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         exercise_supported_boundary(
             "conditionals",
             format!(
-                "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0 by auto(); }}\n"
+                "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0; }}\n"
             ),
             "at_limit_conditionals.ensures_0",
         );
@@ -1913,7 +1911,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
             "type",
             format!(
                 "spec enum BoundaryBox<T> {{ Wrapped(T) }}\n\
-                 theorem at_limit_type(value: {nested_type}) {{ ensures 0 == 0 by auto(); }}\n"
+                 theorem at_limit_type(value: {nested_type}) {{ ensures 0 == 0; }}\n"
             ),
             "at_limit_type.ensures_0",
         );
@@ -2151,7 +2149,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\n\nvoid release(int32 *x, int32 i, int32 j) {\n    requires 0 <= i;\n    requires i <= j;\n    consumes x[0..(i + 1)];\n    consumes x[j..(j + 1)];\n} by {\n    execute();\n    simp();\n}\n",
+            "verifying \"f.c\";\n\nvoid release(int32 *x, int32 i, int32 j) {\n    requires 0 <= i;\n    requires i <= j;\n    consumes x[0..(i + 1)];\n    consumes x[j..(j + 1)];\n} by {\n    execute();\n    solve();\n}\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -2189,7 +2187,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\n\nint32 leak() {\n    ensures result == -1 or result == 0;\n} by {\n    execute();\n    simp();\n}\n",
+            "verifying \"f.c\";\n\nint32 leak() {\n    ensures result == -1 or result == 0;\n} by {\n    execute();\n    solve();\n}\n",
         )
         .unwrap();
         let leak = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();

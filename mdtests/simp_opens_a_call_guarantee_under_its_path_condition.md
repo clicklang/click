@@ -1,8 +1,8 @@
-# `simp` opens a call guarantee under its path condition
+# `solve` opens a call guarantee under its path condition
 
 A callee's conditional guarantee reaches the caller as an implication,
 `r == 0 implies cell[0] == 0 and cell[1] == at(before_probe, cell[0])`.
-Inside the branch whose path condition is exactly that antecedent, `simp`
+Inside the branch whose path condition is exactly that antecedent, `solve`
 concludes the consequent by modus ponens: the checked `extract` rule's
 indexed consequent lookup finds the implication and sees its antecedent
 available, so no `extract` block is written and nothing is searched. The
@@ -41,7 +41,7 @@ int32 probe(int32 *cell) {
     owns cell[0..2];
     ensures result == 0 or result == 1;
     ensures result == 0 implies cell[0] == 0 and cell[1] == old(cell[0]);
-} by auto();
+}
 
 int32 use_probe(int32 *cell) {
     owns cell[0..2];

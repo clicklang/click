@@ -1,6 +1,6 @@
-# `simp` before the function exit inside a proof `match` arm names the frontier
+# `solve` before the function exit inside a proof `match` arm names the frontier
 
-`simp` closes the outcome claims at function exit and does not execute. A
+`solve` closes the outcome claims at function exit and does not execute. A
 script that steps through every statement of a body still stands before the
 body's end, one step short of the exit, and the arm driver used to decline
 that shape with a generic "not implemented in this execution context". It

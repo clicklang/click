@@ -52,7 +52,7 @@ resource context(p: struct node*, root: struct root*) { field model: Context; ma
 void helper(struct node *p, struct node *q, struct root *root) {
  consumes before: context(p, root);
  produces after: context(q, root);
-} by { match before.model { Context::Top => { unfold(before); execute(); let after = fold(context(q, root), {model: Context::Top}); simp(); } } }
+} by { match before.model { Context::Top => { unfold(before); execute(); let after = fold(context(q, root), {model: Context::Top}); solve(); } } }
 void probe(struct node *p, struct root *root) {
  owns p->right;
  consumes b: shell(p->right); consumes c: context(p, root);
@@ -77,7 +77,7 @@ void probe(struct node *p, struct root *root) {
   mark before_write;
   step();
   have near->tag == at(before_write, rid->tag) by { normalize() using { near == rid; }; }
-  execute(); simp();
+  execute(); solve();
  } }
  } }
  } }

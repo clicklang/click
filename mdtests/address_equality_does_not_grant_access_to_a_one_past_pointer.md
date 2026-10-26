@@ -15,7 +15,7 @@ verifying "compare.c";
 int32 cmp(int32* q, int32* p) {
     views p[0..1];
     ensures 1 == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

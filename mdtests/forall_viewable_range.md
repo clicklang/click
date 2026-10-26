@@ -21,7 +21,7 @@ int32 range_probe(uint8 bytes[], int32 len) {
     ensures result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

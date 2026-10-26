@@ -8,7 +8,7 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires second == third;
 
     ensures first == third by {
-        simp();
+        solve();
     }
 }
 
@@ -116,7 +116,7 @@ int32 vector_copy(
                     normalize();
                 }
                 have not (0 <= k) by {
-                    arithmetic() using {
+                    solve() using {
                         k < i;
                         i == 0;
                     };
@@ -127,7 +127,7 @@ int32 vector_copy(
         preserve by {
             step();
             step();
-            simp();
+            solve();
         }
     }
     have i == length by {
@@ -273,7 +273,7 @@ int32 vector_grow(struct vector* owner) {
         assumption();
     }
     have ((uint32)new_capacity) <= 1073741823u32 by {
-        arithmetic() using {
+        solve() using {
             0 <= new_capacity;
             new_capacity <= 536870911;
         };
@@ -283,7 +283,7 @@ int32 vector_grow(struct vector* owner) {
             normalize();
         }
         rewrite(old_capacity == owner->cap);
-        arithmetic() using {
+        solve() using {
             1 <= owner->cap;
             owner->cap <= 536870910;
         };
@@ -296,7 +296,7 @@ int32 vector_grow(struct vector* owner) {
         assumption();
     }
     have ((uint32)owner->len) <= 1073741823u32 by {
-        arithmetic() using {
+        solve() using {
             0 <= owner->len;
             owner->len <= 536870910;
         };
@@ -326,13 +326,13 @@ int32 vector_grow(struct vector* owner) {
             normalize();
         }
         have result == 0 implies owner->cap == old(owner->cap) by {
-            simp();
+            solve();
         }
         have result == 0 implies owner->data == old(owner->data) by {
-            simp();
+            solve();
         }
         have result == 1 implies owner->cap == (old(owner->cap) + 1) by {
-            simp();
+            solve();
         }
         assumption();
         assumption();
@@ -375,7 +375,7 @@ int32 vector_grow(struct vector* owner) {
             };
             assumption();
         }
-        have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by simp();
+        have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by solve();
         let after = fold(allocated_vector(owner), { cap: owner->cap });
         have result == 1 by {
             normalize();
@@ -387,13 +387,13 @@ int32 vector_grow(struct vector* owner) {
             normalize();
         }
         have result == 0 implies owner->cap == old(owner->cap) by {
-            simp();
+            solve();
         }
         have result == 0 implies owner->data == old(owner->data) by {
-            simp();
+            solve();
         }
         have result == 1 implies owner->cap == (old(owner->cap) + 1) by {
-            simp();
+            solve();
         }
         assumption();
         assumption();
@@ -662,13 +662,13 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 assumption();
             }
             have result == 0 implies owner->len == old(owner->len) by {
-                simp();
+                solve();
             }
             have result == 0 implies owner->cap == old(owner->cap) by {
-                simp();
+                solve();
             }
             have result == 0 implies owner->data == old(owner->data) by {
-                simp();
+                solve();
             }
             have at(region(8).entry, owner->len) == old(owner->len) by {
                 assumption();
@@ -819,13 +819,13 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             assumption();
         }
         have result == 0 implies owner->len == old(owner->len) by {
-            simp();
+            solve();
         }
         have result == 0 implies owner->cap == old(owner->cap) by {
-            simp();
+            solve();
         }
         have result == 0 implies owner->data == old(owner->data) by {
-            simp();
+            solve();
         }
         have result == 1 implies owner->len == (old(owner->len) + 1) by {
             intro();
@@ -924,7 +924,7 @@ void* producer(void* argument) {
     have 1 <= slack;
     unfold(credit(log));
     have to_integer(1) <= to_integer(slack) by apply(integer::int32_less_equal_to_integer(1, slack));
-    have to_integer(cap) <= to_integer(536870909) by arithmetic() using {
+    have to_integer(cap) <= to_integer(536870909) by solve() using {
         to_integer(cap) + to_integer(slack) <= 536870910;
         to_integer(1) <= to_integer(slack);
         to_integer(1) == 1;
@@ -954,7 +954,7 @@ void* producer(void* argument) {
     have to_integer(cap + 1) == to_integer(cap) + to_integer(1) by apply(integer::int32_add_to_integer(cap, 1));
     have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by apply(integer::int32_subtract_to_integer(slack, 1));
     have to_integer(pushed_cap) <= to_integer(cap + 1) by apply(integer::int32_less_equal_to_integer(pushed_cap, cap + 1));
-    have to_integer(pushed_cap) + to_integer(slack - 1) <= 536870910 by arithmetic() using {
+    have to_integer(pushed_cap) + to_integer(slack - 1) <= 536870910 by solve() using {
         to_integer(pushed_cap) <= to_integer(cap + 1);
         to_integer(cap + 1) == to_integer(cap) + to_integer(1);
         to_integer(slack - 1) == to_integer(slack) - to_integer(1);
@@ -966,7 +966,7 @@ void* producer(void* argument) {
         access: access, guard: guard, state: restored
     });
     step();
-    simp();
+    solve();
 }
 
 int32 run_two_producers(struct shared_log* log) {
@@ -985,7 +985,7 @@ int32 run_two_producers(struct shared_log* log) {
     fold(credit(log));
     fold(credit(log));
     have to_integer(before.cap) <= to_integer(536870908) by apply(integer::int32_less_equal_to_integer(before.cap, 536870908));
-    have to_integer(before.cap) + to_integer(2) <= 536870910 by arithmetic() using {
+    have to_integer(before.cap) + to_integer(2) <= 536870910 by solve() using {
         to_integer(before.cap) <= to_integer(536870908);
         to_integer(536870908) == 536870908;
         to_integer(2) == 2;
@@ -997,7 +997,7 @@ int32 run_two_producers(struct shared_log* log) {
         unfold(credit(log));
         unfold(credit(log));
         step();
-        simp();
+        solve();
     } else {}
     step();
     branch {
@@ -1006,7 +1006,7 @@ int32 run_two_producers(struct shared_log* log) {
         unfold(credit(log));
         unfold(credit(log));
         step();
-        simp();
+        solve();
     } else {}
     step();
     branch {
@@ -1015,12 +1015,12 @@ int32 run_two_producers(struct shared_log* log) {
         let { cap: cap3, slack: slack3, items: after } = unfold(state);
         unfold(credit(log));
         step();
-        simp();
+        solve();
     } else {}
     step();
     step();
     step(pthread_mutex_destroy(&log->mu), { lifetime: lifetime });
     let { cap: cap4, slack: slack4, items: after } = unfold(state);
     step();
-    simp();
+    solve();
 }

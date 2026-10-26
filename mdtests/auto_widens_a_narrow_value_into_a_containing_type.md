@@ -1,8 +1,8 @@
-# `auto` widens a narrow value into a containing type
+# The implicit closer widens a narrow value into a containing type
 
 An 8- or 16-bit value's word is the canonical carrier of its type, its sign
 or zero extension, so a type of at most 32 bits that contains the narrow
-type reads the same value from the same word. `auto` proves
+type reads the same value from the same word. The implicit closer proves
 `to_integer(result) == to_integer(x)` for each such C widening of a narrow
 parameter, with no premise. The 64-bit widenings are
 [`auto_widens_a_narrow_value_to_64_bits.md`](auto_widens_a_narrow_value_to_64_bits.md),

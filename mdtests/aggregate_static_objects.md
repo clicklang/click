@@ -72,23 +72,23 @@ int32 bump_shared() {
     requires shared.value < 1000;
     owns shared.value;
     owns shared.ready;
-    ensures to_integer(result) == to_integer(old(shared.value) + 1) by auto();
-    ensures to_integer(shared.value) == to_integer(old(shared.value) + 1) by auto();
-    ensures shared.ready == 1 by auto();
+    ensures to_integer(result) == to_integer(old(shared.value) + 1);
+    ensures to_integer(shared.value) == to_integer(old(shared.value) + 1);
+    ensures shared.ready == 1;
 }
 
 int32 increment_private() {
     owns private.value;
     requires private.value < 1000;
-    ensures to_integer(result) == to_integer(old(private.value) + 1) by auto();
-    ensures to_integer(private.value) == to_integer(old(private.value) + 1) by auto();
+    ensures to_integer(result) == to_integer(old(private.value) + 1);
+    ensures to_integer(private.value) == to_integer(old(private.value) + 1);
 }
 
 int32 increment_file_private() {
     owns file_private.value;
     requires file_private.value < 1000;
-    ensures to_integer(result) == to_integer(old(file_private.value) + 1) by auto();
-    ensures to_integer(file_private.value) == to_integer(old(file_private.value) + 1) by auto();
+    ensures to_integer(result) == to_integer(old(file_private.value) + 1);
+    ensures to_integer(file_private.value) == to_integer(old(file_private.value) + 1);
 }
 
 int32 run() {
@@ -105,7 +105,7 @@ int32 run() {
     ensures result == 5;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

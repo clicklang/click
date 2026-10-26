@@ -63,7 +63,7 @@ void child_init(struct child* obj, int32 payload) {
     fold(child_ref(obj));
     fold(child_storage(obj));
     execute();
-    simp();
+    solve();
 }
 
 void child_release(struct child* obj) {
@@ -81,18 +81,18 @@ void child_release(struct child* obj) {
         unfold(child_ref(obj));
         unfold(authority(child_ref(obj)));
         execute();
-        simp();
+        solve();
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
-            arithmetic() using { 1 <= obj->refs; obj->refs != 1; };
+            solve() using { 1 <= obj->refs; obj->refs != 1; };
         }
         have to_integer(obj->refs - 1) >= 1;
         step();
         step();
         fold(child_control(obj));
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -101,7 +101,7 @@ int32 cleanup(int32 payload) {
 } by {
     step();
     step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     fold(authority(child_ref(kid)));
     fold(child_storage(kid));
     step();
@@ -109,11 +109,11 @@ int32 cleanup(int32 payload) {
     fold(child_control(kid));
     step();
     step();
-    branch { step(); step(); simp(); } else {}
+    branch { step(); step(); solve(); } else {}
     step();
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

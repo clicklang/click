@@ -17,7 +17,7 @@ void byte_prefix(const uint8* p, uint64 held, uint64 requested) {
     views p[0u64..held];
     ensures viewable(p[0u64..requested]);
 } by {
-    have requested <= 9223372036854775807u64 by auto();
+    have requested <= 9223372036854775807u64;
     step_until(function.exit);
     solve() using { requested <= held; viewable(p[0u64..held]); requested <= 9223372036854775807u64; };
 }
@@ -28,7 +28,7 @@ void word_prefix(const uint32* p, uint64 held, uint64 requested) {
     views p[0u64..held];
     ensures viewable(p[0u64..requested]);
 } by {
-    have requested <= 2305843009213693951u64 by auto();
+    have requested <= 2305843009213693951u64;
     step_until(function.exit);
     solve() using { to_integer(requested * 4u64) <= to_integer(held * 4u64); viewable(p[0u64..held]); requested <= 2305843009213693951u64; };
 }

@@ -33,26 +33,26 @@ int32 ack(int32 m, int32 n) {
         solve();
     } else {}
     have m > 0 by {
-        arithmetic() using {
+        solve() using {
             m >= 0;
             m != 0;
         };
     }
-    have 0 <= to_integer(m - 1) by auto();
-    have to_integer(m - 1) < to_integer(m) by auto();
+    have 0 <= to_integer(m - 1);
+    have to_integer(m - 1) < to_integer(m);
     branch {
         step();
         step();
         solve();
     } else {}
     have n > 0 by {
-        arithmetic() using {
+        solve() using {
             n >= 0;
             n != 0;
         };
     }
-    have 0 <= to_integer(n - 1) by auto();
-    have to_integer(n - 1) < to_integer(n) by auto();
+    have 0 <= to_integer(n - 1);
+    have to_integer(n - 1) < to_integer(n);
 }
 ```
 

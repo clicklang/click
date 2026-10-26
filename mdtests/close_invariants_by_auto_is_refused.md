@@ -1,9 +1,8 @@
 # `close_invariants() by auto()` is refused with the form to write
 
-`auto` has no script-tactic spelling, and the bare `close_invariants()` is
-already a smart closer. `close_invariants() by auto();` is therefore refused,
-and the refusal names the forms that work instead of suggesting the
-`by auto();` it was given.
+`auto` is removed, and the bare `close_invariants()` is already a smart
+closer. `close_invariants() by auto();` is therefore refused with the
+removal's refusal, which says to delete the `by auto()`.
 
 ```c filename=count.c
 #include <stdint.h>
@@ -35,5 +34,5 @@ uint64 count(uint64 n) {
 ```
 
 ```expect
-fail: `close_invariants() by auto()` is not a form: write `close_invariants();`, whose closer is already smart, or end the `preserve` script and let the back edge close implicitly
+fail: `auto()` is removed: a `by auto();` proof is the omitted proof, so delete it
 ```

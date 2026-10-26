@@ -255,9 +255,9 @@ int32 bubble_sort3_loop(int32 p[3]) {
         }
         unfold(sorted);
         unfold(sorted_range);
-        have p[0] <= p[1] by simp();
-        have p[1] <= p[2] by simp();
-        have p[0] <= p[2] by auto();
+        have p[0] <= p[1] by solve();
+        have p[1] <= p[2] by solve();
+        have p[0] <= p[2];
     }
 }
 ```

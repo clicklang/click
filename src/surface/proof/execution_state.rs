@@ -1831,8 +1831,8 @@ pub(super) fn post_execution_tactic_timing(
             },
         ),
         PostExecutionTactic::Transport { .. } => ("transport", "smart"),
-        PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_) => ("simp", "smart"),
-        PostExecutionTactic::AutoClose => ("auto", "smart"),
+        PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_) => ("solve", "smart"),
+        PostExecutionTactic::AutoClose => ("implicit tail", "smart"),
         // `arithmetic()` searches for its certificate.
         PostExecutionTactic::Leaf(tactic @ ProofTactic::ArithmeticUsing(_)) => {
             (tactic_name(tactic), "smart")

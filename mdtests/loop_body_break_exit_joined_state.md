@@ -12,7 +12,7 @@ what it established about that name. The guard-false exit's own facts are
 restated about the successor's name (it reached the successor through the
 head's value, and its own disjunct says so), so the exported disjunction is
 `(i == 0 and r == 0) or r == 1` — the two ways out, in names a proof after the
-loop can spell. `simp` reads the postcondition straight off it.
+loop can spell. `solve` reads the postcondition straight off it.
 
 Nothing is assumed of an exit that did not state it: a claim the disjunction
 does not support still fails, see
@@ -47,14 +47,14 @@ int32 assign_then_break(int32 n) {
         invariant i >= 0;
         invariant r == 0;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             step();
             step();
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -2,7 +2,7 @@
 
 This checks `at(region(N).entry, expr)` and
 `at(region(N).exit, expr)` after deterministic execution records statement
-boundaries. Both `execute()` and `execute_until(...)` use the same
+boundaries. Both `execute()` and `step_until(...)` use the same
 one-statement snapshot behavior as repeated `step()` calls.
 
 ```c filename=statement_at_snapshots.c

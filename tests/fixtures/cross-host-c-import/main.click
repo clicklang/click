@@ -5,5 +5,5 @@ int answer() {
     ensures result == 42;
 } by {
     execute();
-    simp();
+    solve();
 }

@@ -15,12 +15,12 @@ int32 local_prefix(int32 i) {
     requires 0 <= i and i < 2;
     ensures result == 1 or result == 2 by {
         if i < 1 {
-            have i <= 0 by auto();
+            have i <= 0;
             have i == 0;
             execute();
             solve();
         } else {
-            have i <= 1 by auto();
+            have i <= 1;
             have i == 1;
             execute();
             solve();

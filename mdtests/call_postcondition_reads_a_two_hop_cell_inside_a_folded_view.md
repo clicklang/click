@@ -36,7 +36,7 @@ int32 get(struct slot* s) {
 } by {
     unfold(pool_state(s->pool));
     execute();
-    simp();
+    solve();
 }
 
 int32 read_slot(struct slot* s) {
@@ -44,7 +44,7 @@ int32 read_slot(struct slot* s) {
     views pool_state(s->pool);
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

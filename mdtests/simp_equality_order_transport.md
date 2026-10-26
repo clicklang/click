@@ -1,6 +1,6 @@
-# simp transports equalities through integer bounds
+# solve transports equalities through integer bounds
 
-`simp` deterministically rewrites order goals through known equalities,
+`solve` deterministically rewrites order goals through known equalities,
 normalizes discrete integer bounds, and evaluates equality-linked arithmetic.
 
 ```click

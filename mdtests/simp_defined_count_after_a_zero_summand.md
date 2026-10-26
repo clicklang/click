@@ -1,10 +1,10 @@
-# simp proves a count's definedness once a zero summand is removed
+# solve proves a count's definedness once a zero summand is removed
 
 After `mint_n(o, n)`, the count is the entry count plus `n`, and the entry
-count is `0`. `simp` proves `defined(count(tok(o)) + 1)`: it proves
-`count(tok(o)) == n` by `simp`, then `defined(n + 1)` from the bounds of
+count is `0`. `solve` proves `defined(count(tok(o)) + 1)`: it proves
+`count(tok(o)) == n` by `solve`, then `defined(n + 1)` from the bounds of
 `n`, and rewrites the goal by the first. The same reasoning lets the
-implicit `auto` prove the second `mint_n` call's precondition.
+implicit closer prove the second `mint_n` call's precondition.
 
 ```c filename=simp_defined_count_after_a_zero_summand.c
 void mint_n(int32* o, int32 n) {}

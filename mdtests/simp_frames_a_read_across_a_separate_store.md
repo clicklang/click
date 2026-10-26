@@ -1,10 +1,10 @@
-# `simp` carries a read across a store a separation keeps away from it
+# `solve` carries a read across a store a separation keeps away from it
 
 The last store writes `owner->cell[0]` from `owner->phase`, which a branch
 set just before, so the goal reads `owner->phase` twice: once before the
 store, as the stored value, and once after it. The separation of `*owner` from
 the cell, carried through the branch's `ensuring`, shows the store left
-`owner->phase` alone. `simp` proves the goal by `transport` from the read's
+`owner->phase` alone. `solve` proves the goal by `transport` from the read's
 reflexive equality at the store's entry, citing that separation as the frame.
 The pattern is `examples/perpetual-service`'s `service_step`.
 
@@ -43,10 +43,10 @@ int32 service_step(struct service* owner) {
         owns owner->cell[0..1];
     } then {
         step();
-        have owner->cell == old(owner->cell) by auto();
+        have owner->cell == old(owner->cell);
     } else {
         step();
-        have owner->cell == old(owner->cell) by auto();
+        have owner->cell == old(owner->cell);
     }
     step();
     have owner->cell[0] == owner->phase by solve();

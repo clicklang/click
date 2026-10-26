@@ -96,16 +96,16 @@ fn authority_transfer_wrapper_preserves_a_tracked_member() {
         } by {
             step();
             step();
-            branch { execute(); simp(); } else {}
+            branch { execute(); solve(); } else {}
             fold(authority(member(p)));
             fold(member(p));
             fold(held(p));
             unfold(held(p));
-            have count(member(p)) == 1 by { simp(); }
+            have count(member(p)) == 1 by { solve(); }
             unfold(member(p));
             unfold(authority(member(p)));
             execute();
-            simp();
+            solve();
         }
     "#;
     let c = "int32 run(void) { int32* p = malloc(4); if (p == 0) return 0; free(p); return 1; }";
@@ -124,13 +124,13 @@ fn authority_member_wrapper_requires_population_cleanup_before_free() {
         } by {
             step();
             step();
-            branch { execute(); simp(); } else {}
+            branch { execute(); solve(); } else {}
             fold(authority(member(p)));
             fold(member(p));
             fold(authority(held(p)));
             fold(held(p));
-            have count(held(p)) == 1 by simp();
-            have count(member(p)) == 1 by simp();
+            have count(held(p)) == 1 by solve();
+            have count(member(p)) == 1 by solve();
             execute();
         }
     "#;
@@ -157,13 +157,13 @@ fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome()
         } by {
             step();
             step();
-            branch { execute(); simp(); } else {}
+            branch { execute(); solve(); } else {}
             fold(authority(member(p)));
             fold(member(p));
             fold(authority(held(p)));
             execute();
             fold(held(result));
-            simp();
+            solve();
         }
     "#;
     let c = "int32* run(void) { int32* p = malloc(4); if (p == 0) return 0; return p; }";

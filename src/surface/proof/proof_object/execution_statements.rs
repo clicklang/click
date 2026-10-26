@@ -180,11 +180,11 @@ impl<'a> Proof<'a> {
     }
 
     /// Closes the back-edge bundle as `close_invariants() by { ... }` with
-    /// `simp()` on each member. The bundle conjoins its members, balanced for
+    /// `solve()` on each member. The bundle conjoins its members, balanced for
     /// wide bundles, and each member may open with a spine of guards from
     /// earlier declarations; that fixed structure is descended by checked
     /// `both` and `intro` steps, and every member below it is closed by
-    /// `simp()` and nothing else. Every step advances this same `Proof`, so
+    /// `solve()` and nothing else. Every step advances this same `Proof`, so
     /// the retained certificate is the explicit proof `click expand` prints
     /// and re-verifies.
     pub(in crate::surface::proof) fn plan_invariant_bundle_closure(
@@ -273,7 +273,7 @@ impl<'a> Proof<'a> {
         let result = self.close_bundle_member_by_simp(goal)?;
         if result.is_none() {
             // Keep one bounded, lazy diagnostic for the actual kernel leaf.
-            // It is recorded only after `simp()` has declined; it does not
+            // It is recorded only after `solve()` has declined; it does not
             // turn a miss into an error.
             let diagnostic = self.step_error("checked loop invariant bundle leaf remained open");
             attempt::record_unclosed_goal("loop invariant bundle leaf", &diagnostic);
@@ -284,13 +284,13 @@ impl<'a> Proof<'a> {
         Ok(result)
     }
 
-    /// One bundle member, closed by `simp()`. A member is spelled over the
+    /// One bundle member, closed by `solve()`. A member is spelled over the
     /// back edge's locals, `0 <= i` after `i -= 1`, while the loop head's
     /// premises name the iteration entry, and a ranking member synthesized
     /// from `decreases` may have no back-edge spelling at all. So when
-    /// `simp()` does not close the member as spelled, it is stated once more
+    /// `solve()` does not close the member as spelled, it is stated once more
     /// as a `have` in its spelling at the iteration entry,
-    /// `at(<iteration entry>, 0 <= i - 1)`, proved by `simp()`, and the
+    /// `at(<iteration entry>, 0 <= i - 1)`, proved by `solve()`, and the
     /// member closed by `assumption`. Both are fixed presentations of the
     /// same goal, not a search over premises.
     fn close_bundle_member_by_simp(&self, goal: &Proposition) -> Result<Option<Self>, ClickError> {
@@ -1332,7 +1332,7 @@ impl<'a> Proof<'a> {
                         .iter()
                         .map(|requirement| {
                             spelling(requirement)
-                                .map(|spelled| format!("    requires {spelled} by auto();"))
+                                .map(|spelled| format!("    requires {spelled} by solve();"))
                         })
                         .collect::<Result<Vec<_>, _>>()?
                         .join("\n");
@@ -1589,7 +1589,7 @@ impl<'a> Proof<'a> {
             }
             None => {
                 let (proved, mut entries) =
-                    proved_by_auto.expect("the implicit `auto` proved every open fact");
+                    proved_by_auto.expect("the implicit closer proved every open fact");
                 (proved, entries.pop().expect("one entry").proof)
             }
         };
@@ -1860,7 +1860,7 @@ impl<'a> Proof<'a> {
         }
         let mut search = attempt::search_scope("close invariants body");
         let checkpoint = root.checkpoint();
-        // A bare `close_invariants()` closes each member with `simp()`; an
+        // A bare `close_invariants()` closes each member with `solve()`; an
         // explicit source body runs through the source driver exactly once.
         let _ = take_unclosed_bundle_member();
         // Catch every error here; `?` must not skip the obligation
@@ -2566,12 +2566,14 @@ impl<'a> Proof<'a> {
         tactic_index: usize,
         source_index: usize,
     ) -> Result<Self, ClickError> {
-        self.require_execution_frontier("`simp`")?;
+        self.require_execution_frontier("`solve`")?;
         let execution = self
             .execution()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
         if execution.core.frontier.region != ExecutionRegionKind::LoopBody {
-            return Err(self.step_error("a region `simp` is only available in a loop-region proof"));
+            return Err(
+                self.step_error("a region `solve` is only available in a loop-region proof")
+            );
         }
         let (proof, ()) = self.clone().edit_execution_presentation(|presentation| {
             presentation.region_simp = Some((tactic_index, source_index));

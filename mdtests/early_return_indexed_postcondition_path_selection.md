@@ -114,7 +114,7 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
                 intro();
                 contradiction(enabled == 1);
             }
-            simp();
+            solve();
         },
         WriteShape::At(position) => {
             unfold(before);
@@ -133,7 +133,7 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
                 intro();
                 normalize();
             }
-            simp();
+            solve();
         },
     }
 }

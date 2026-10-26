@@ -4,7 +4,7 @@ A listed premise that lowers to the ground constant it asserts (`0 <= 0`), or
 to a comparison of a term with itself (`n <= n`), holds with no fact behind
 it. The listed-premise check every `using` list shares accepts both, so
 the same premise is accepted by `peel ... using`, `apply ... using`,
-`instantiate ... using` and `arithmetic() using` alike, and a proof does not
+`instantiate ... using` and `solve() using` alike, and a proof does not
 need a `have 0 <= 0` or `have n <= n` first.
 
 The kernel's condition decision answers the same reflexive comparisons, so a
@@ -107,12 +107,12 @@ int32 probe(int32 n) {
 int32 span(int32 lo, int32 hi) {
     requires lo <= hi;
     requires 0 <= lo;
-    ensures result == hi - lo by auto();
+    ensures result == hi - lo;
 }
 
 int32 call_span(int32 n) {
     requires 0 <= n;
-    ensures result == 0 by auto();
+    ensures result == 0;
 }
 ```
 

@@ -90,28 +90,28 @@ int32 probe_contract(struct job *j) {
                     instantiate(at(region(3).entry, forall (k: int32) {
                         j->lo <= k and k < i implies j->p[k] == j->v
                     }), k) using { j->lo <= k; k < i; };
-                    simp();
+                    solve();
                 } else {
-                    have k == i by auto();
+                    have k == i;
                     rewrite(k == i);
-                    simp();
+                    solve();
                 }
             }
             step();
             have 0 <= at(region(3).entry, i) by {
-                simp() using {
+                solve() using {
                     0 <= j->lo;
                     j->lo <= at(region(3).entry, i);
                 };
             }
             have 0 <= j->hi by {
-                simp() using {
+                solve() using {
                     0 <= j->lo;
                     j->lo <= j->hi;
                 };
             }
             have 0 <= to_integer(0 - at(region(3).entry, i) + j->hi - 1) by {
-                arithmetic() using {
+                solve() using {
                     0 <= at(region(3).entry, i);
                     0 <= j->hi;
                     at(region(3).entry, i) < at(region(3).entry, j->hi);
@@ -120,7 +120,7 @@ int32 probe_contract(struct job *j) {
             }
             have to_integer(0 - at(region(3).entry, i) + j->hi - 1)
                 < to_integer(0 - at(region(3).entry, i) + j->hi) by {
-                arithmetic() using {
+                solve() using {
                     0 <= at(region(3).entry, i);
                     0 <= j->hi;
                     at(region(3).entry, i) < at(region(3).entry, j->hi);
@@ -131,7 +131,7 @@ int32 probe_contract(struct job *j) {
                 intro();
                 intro();
                 have k <= at(region(4).entry, i) by {
-                    arithmetic() using {
+                    solve() using {
                         k < i;
                         to_integer(i) == to_integer(at(region(4).entry, i) + 1);
                         at(region(4).entry, i) < j->hi;
@@ -142,11 +142,11 @@ int32 probe_contract(struct job *j) {
                 }), k) using { j->lo <= k; k <= at(region(4).entry, i); };
                 assumption();
             }
-            simp();
+            solve();
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

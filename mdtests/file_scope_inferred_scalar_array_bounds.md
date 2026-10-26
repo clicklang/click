@@ -41,17 +41,17 @@ verifying "reader.c";
 
 int32 read_flags() {
     owns flags[0..3];
-    ensures result == flags[1] by auto();
+    ensures result == flags[1];
 }
 
 int32 definition_anchor() {
     requires values[0] == 2;
-    ensures result == 2 by auto();
+    ensures result == 2;
 }
 
 int32 run() {
     requires values[1] == 6;
-    ensures result == 6 by auto();
+    ensures result == 6;
 }
 ```
 

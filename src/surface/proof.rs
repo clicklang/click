@@ -607,7 +607,7 @@ mod certificate_tests {
         let file = parse(
             r#"
                 theorem reflexive(x: int32) {
-                    ensures x <= x by auto();
+                    ensures x <= x;
                 }
             "#,
         )
@@ -667,11 +667,11 @@ mod certificate_tests {
             r#"
                 theorem required(x: int32) {
                     requires x >= 0;
-                    ensures x >= 0 by auto();
+                    ensures x >= 0;
                 }
 
                 theorem reflexive(x: int32) {
-                    ensures x == x by simp();
+                    ensures x == x by solve();
                 }
 
                 theorem applied(x: int32) {
@@ -685,7 +685,7 @@ mod certificate_tests {
                     requires x >= 0;
                     ensures (x >= 0) and (x >= 0) by {
                         apply(required(x));
-                        simp();
+                        solve();
                     }
                 }
 
@@ -699,12 +699,12 @@ mod certificate_tests {
                 theorem conjunction(x: int32) {
                     requires x >= 0;
                     requires x <= 10;
-                    ensures (x >= 0) and (x <= 10) by simp();
+                    ensures (x >= 0) and (x <= 10) by solve();
                 }
 
                 theorem disjunction(x: int32) {
                     requires x >= 0;
-                    ensures (x >= 0) or (x < 0) by auto();
+                    ensures (x >= 0) or (x < 0);
                 }
 
                 theorem impossible(x: int32) {
@@ -2943,7 +2943,7 @@ pub(super) fn prove_claim_by_auto(
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    // `auto` is exactly the script `execute(); simp();`.
+    // `auto` is exactly the script `execute(); solve();`.
     let tactics = [ProofTactic::SmartExecute, ProofTactic::AutoClose];
     let mut theorems = prove_claim_by_tactics(
         expansion_capture,
@@ -2983,7 +2983,7 @@ pub(super) fn prove_claim_by_simp(
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     if count_loop_regions(parsed_function) != 0 {
         return Err(ClickError::new(format!(
-            "`simp` does not prove loop-backed claims for `{claim_label}`; use `by auto();`"
+            "`solve` does not prove loop-backed claims for `{claim_label}`; omit the proof"
         )));
     }
 

@@ -4,7 +4,7 @@
 memory. The complete-pointer precondition lets entry normalization retain
 `a` as the value of `o->in`, including its bounds, before naming the nested
 read. Both sides therefore name the same cell and `normalize()` closes the
-goal. `simp()` checks the adjacent cell through the same relationship.
+goal. `solve()` checks the adjacent cell through the same relationship.
 
 The per-cell arena pipeline uses this pattern: its contracts are stated
 through `region->arena`, and the caller's invariant through `arena`.
@@ -37,10 +37,10 @@ int32 same(struct outer* o, struct inner* a) {
         normalize();
     }
     have o->in->cells[3] == a->cells[3] by {
-        simp();
+        solve();
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

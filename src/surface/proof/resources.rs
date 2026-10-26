@@ -5484,7 +5484,7 @@ void child_release(struct child* obj) {
     step();
     fold(child_control(obj));
     execute();
-    simp();
+    solve();
 }
 "#;
         let project = ClickProject::new(

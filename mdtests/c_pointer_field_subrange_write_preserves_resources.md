@@ -131,10 +131,10 @@ void arena_write(struct region* region, int32 index, int32 value) {
             defined(s + index) and to_integer(s + index) < to_integer(e);
         };
     }
-    have to_integer(s) <= to_integer(s + index) by auto();
-    have to_integer(s + index + 1) <= to_integer(e) by auto();
-    have region->start == s by auto();
-    have defined(region->start + index + 1) by auto();
+    have to_integer(s) <= to_integer(s + index);
+    have to_integer(s + index + 1) <= to_integer(e);
+    have region->start == s;
+    have defined(region->start + index + 1);
     have to_integer(region->start + index + 1) <= to_integer(e) by {
         rewrite(region->start == s);
         assumption();
@@ -149,7 +149,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have region->arena->capacity == c by {
         solve();
     }
-    have to_integer(region->start + index) < to_integer(region->arena->capacity) by auto();
+    have to_integer(region->start + index) < to_integer(region->arena->capacity);
     have separate(
         memory(*region),
         memory(*(region->arena->data + (region->start + index)))

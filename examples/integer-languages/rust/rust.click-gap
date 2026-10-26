@@ -15,15 +15,15 @@ verifying "integers.rs";
 
 fn wrapping_add_u32(a: u32, b: u32) -> u32 {
     ensures result == integer::uint32_wrapping_add(a, b);
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn wrapping_sub_u32(a: u32, b: u32) -> u32 {
     ensures result == integer::uint32_wrapping_sub(a, b);
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn wrapping_mul_u32(a: u32, b: u32) -> u32 {
     ensures result == integer::uint32_wrapping_mul(a, b);
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 
 fn narrow_i8(x: i32) -> i8 {
     ensures (-128 <= x and x <= 127) implies to_integer(result) == to_integer(x);
@@ -32,8 +32,8 @@ fn narrow_i8(x: i32) -> i8 {
 } by {
     if -128 <= x and x <= 127 {
         execute();
-        have -128 <= to_integer(x) by auto();
-        have to_integer(x) <= 127 by auto();
+        have -128 <= to_integer(x);
+        have to_integer(x) <= 127;
         have to_integer(result) == to_integer(x) by {
             arithmetic_certificate rules {
                 premise 0: -128 <= to_integer(x) => -128 <= to_integer(x);
@@ -42,13 +42,13 @@ fn narrow_i8(x: i32) -> i8 {
                 conclusion 0;
             }
         };
-        auto();
+        solve();
     } else {
         execute();
-        auto();
+        solve();
     }
 }
 
 fn wrapping_add_u64(a: u64, b: u64) -> u64 {
     ensures result == integer::uint64_wrapping_add(a, b);
-} by { execute(); auto(); }
+} by { execute(); solve(); }

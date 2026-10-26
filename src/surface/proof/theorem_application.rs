@@ -1309,7 +1309,7 @@ mod observed_integer_argument_tests {
 
     #[test]
     fn integer_theorem_observed_arguments_preserve_types_guards_and_expansion() {
-        let prefix = "theorem reflexive(z: Integer) { ensures z == z by simp(); } ";
+        let prefix = "theorem reflexive(z: Integer) { ensures z == z by solve(); } ";
         for (ty, expression, guard) in [
             ("int32", "x + 1", "defined(x + 1)"),
             ("int64", "x + 1i64", "defined(x + 1i64)"),
@@ -1348,7 +1348,7 @@ mod observed_integer_argument_tests {
             "to_integer(x / 0)",
         ] {
             let source = format!(
-                "{prefix} theorem refused(x: int32) {{ ensures x == x by {{ apply(reflexive({argument})); simp(); }} }}"
+                "{prefix} theorem refused(x: int32) {{ ensures x == x by {{ apply(reflexive({argument})); solve(); }} }}"
             );
             let Err(error) = verify_c0_sources(&source, &[]) else {
                 panic!("invalid argument accepted: {argument}");
@@ -1366,7 +1366,7 @@ function count(model: Count) -> int32 { match model { Count::At(value) => value,
 theorem count_less(value: int32, model: Count) {
     requires to_integer(count(model)) == to_integer(value) - 1;
     ensures to_integer(count(model)) < to_integer(value) by {
-        arithmetic() using { to_integer(count(model)) == to_integer(value) - 1; };
+        solve() using { to_integer(count(model)) == to_integer(value) - 1; };
     }
 }
 
@@ -1374,7 +1374,7 @@ theorem nested_count(value: int32) {
     requires defined(value - 1);
     ensures to_integer(count(Count::At(value - 1))) < to_integer(value) by {
         unfold(count(Count::At(value - 1)));
-        have to_integer(value - 1) == to_integer(value) - 1 by auto();
+        have to_integer(value - 1) == to_integer(value) - 1;
         have to_integer(count(Count::At(value - 1))) == to_integer(value) - 1 by {
             rewrite(count(Count::At(value - 1)) == value - 1); assumption();
         }
@@ -1421,7 +1421,7 @@ theorem nested_count(value: int32) {
                 }}
                 theorem known_count(model: Count) {{
                     requires to_integer(count_value(model)) == 0;
-                    ensures to_integer(count_value(model)) <= 0 by {{ arithmetic() using {{ to_integer(count_value(model)) == 0; }}; }}
+                    ensures to_integer(count_value(model)) <= 0 by {{ solve() using {{ to_integer(count_value(model)) == 0; }}; }}
                 }}
                 theorem guarded(x: int32, y: int32) {{
                     requires defined(x + y);
@@ -1452,7 +1452,7 @@ theorem nested_count(value: int32) {
     #[test]
     fn integer_theorem_arguments_capture_current_entry_snapshot_and_result_values() {
         let parsed = crate::surface::parser::parse_file_items(
-            "theorem reflexive(z: Integer) { ensures z == z by simp(); }",
+            "theorem reflexive(z: Integer) { ensures z == z by solve(); }",
         )
         .unwrap();
         let theorem = &parsed.theorem_definitions()[0];

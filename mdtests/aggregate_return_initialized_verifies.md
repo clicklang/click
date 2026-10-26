@@ -30,8 +30,6 @@ verifying "aggregate_return_initialized_verifies.c";
 struct point make_point() {
     ensures result.x == 3;
     ensures result.y == 4;
-} by {
-    auto();
 }
 
 int32 read_point() {
