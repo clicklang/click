@@ -1783,7 +1783,6 @@ impl CreationEvents {
     pub(in crate::kernel) fn observe_exact_member(
         &self,
         description: &ResourceDescription,
-        assumptions: &PureFactContext,
     ) -> Result<SymbolicPopulationCount, CreationRefusal> {
         if description.population_arity().is_some() {
             return Err(CreationRefusal::InvalidMember);
@@ -1796,29 +1795,6 @@ impl CreationEvents {
             return Err(CreationRefusal::MissingAuthority);
         }
         if let Some(import) = self.0.opaque_imports.get(&scope) {
-            if let Some(entry) = import.entry_count.clone()
-                && import.entry_symbolic_members.is_none()
-                && import.symbolic_delta.is_none()
-            {
-                let delta = i64::from(import.owned_members) - i64::from(import.entry_owned_members);
-                let current = if delta >= 0 {
-                    Bitvector32Term::add(entry, Bitvector32Term::Constant(delta as u32))
-                } else {
-                    Bitvector32Term::subtract(entry, Bitvector32Term::Constant((-delta) as u32))
-                };
-                if crate::kernel::quantity_condition_holds(
-                    assumptions,
-                    crate::kernel::ConditionTerm::equal(current, Bitvector32Term::Constant(0)),
-                ) {
-                    return Ok(SymbolicPopulationCount {
-                        entry_count: Bitvector32Term::Constant(0),
-                        delta: 0,
-                        entry_owned_members: 0,
-                        entry_symbolic_members: None,
-                        symbolic_delta: None,
-                    });
-                }
-            }
             if !scope.schema().is_fieldless() {
                 let key = Self::exact_count_key(description);
                 if import.named_ambiguous

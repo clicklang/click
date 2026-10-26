@@ -673,6 +673,15 @@ impl<'a> Proof<'a> {
         &self,
         application: &TheoremApplication,
     ) -> Result<Option<ProofStep>, ClickError> {
+        // The kernel's population law has no declared requirements to
+        // instantiate: its one premise is the written population count.
+        if let Some(step) =
+            crate::surface::proof::theorem_application::population_member_count_zero_step(
+                application,
+            )
+        {
+            return Ok(Some(step));
+        }
         match self.context.as_ref() {
             ProofContext::Pure(_) => self.select_pure_theorem_application_step(application),
             ProofContext::FixedState(_) => {

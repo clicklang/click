@@ -2819,39 +2819,23 @@ mod wildcard_scope_tests {
     }
 
     #[test]
-    fn empty_opaque_population_entails_zero_for_every_exact_member() {
+    fn exact_member_count_of_an_opaque_population_is_its_own_term() {
         let (scope, member) = opaque_scope(0);
         let entry = CreationEvents::new()
             .import_opaque_wildcard_authority(&scope)
             .unwrap();
-        let count = entry.observe_symbolic(&scope).unwrap().entry_count;
-        let empty = PureFactContext::new().assume_condition(
-            ConditionTerm::equal(count.clone(), Bitvector32Term::Constant(0)),
-            true,
-        );
-        assert_eq!(
-            entry
-                .observe_exact_member(&member, &empty)
-                .unwrap()
-                .entry_count,
-            Bitvector32Term::Constant(0)
-        );
-        let nonempty = PureFactContext::new().assume_condition(
-            ConditionTerm::equal(count, Bitvector32Term::Constant(1)),
-            true,
-        );
-        assert!(matches!(
-            entry
-                .observe_exact_member(&member, &nonempty)
-                .unwrap()
-                .entry_count,
-            Bitvector32Term::Variable(_)
-        ));
+        let total = entry.observe_symbolic(&scope).unwrap().entry_count;
+        // The member's count is its own term, never the total's value: a
+        // proof derives `0` from an empty total with the
+        // `population_member_count_zero` law.
+        let exact = entry.observe_exact_member(&member).unwrap().entry_count;
+        assert!(matches!(exact, Bitvector32Term::Variable(_)));
+        assert_ne!(exact, total);
         let child = entry.enter_call();
         let away = entry
             .transfer_call_fact(&entry, &child, &scope, true)
             .unwrap();
-        assert!(away.observe_exact_member(&member, &empty).is_err());
+        assert!(away.observe_exact_member(&member).is_err());
     }
 
     #[test]
@@ -2862,20 +2846,16 @@ mod wildcard_scope_tests {
             .unwrap();
         let key = Bitvector32Term::Variable(Variable(9_870_001));
         let mut arguments = member.arguments().to_vec();
-        arguments[1] = AlgebraicValue::C(CValue::Int32(key.clone()));
+        arguments[1] = AlgebraicValue::C(CValue::Int32(key));
         let aliased = ResourceDescription::new(
             member.family().into(),
             arguments.into(),
             member.schema().clone(),
         );
-        let equal = PureFactContext::new().assume_condition(
-            ConditionTerm::equal(key, Bitvector32Term::Constant(7)),
-            true,
-        );
-        assert!(imported.observe_exact_member(&member, &equal).is_ok());
+        assert!(imported.observe_exact_member(&member).is_ok());
         assert!(
-            imported.observe_exact_member(&aliased, &equal).is_err(),
-            "a proven-equal key does not select the member's count"
+            imported.observe_exact_member(&aliased).is_err(),
+            "a key that is not written as the member's does not select its count"
         );
     }
 
@@ -2926,11 +2906,9 @@ mod wildcard_scope_tests {
             two.checked_member_exchange(&PointerBlock::ExternalArgument, &wrong, false)
                 .is_err()
         );
-        assert!(two.observe_exact_member(&wrong, &bounds).is_err());
+        assert!(two.observe_exact_member(&wrong).is_err());
         assert_eq!(
-            two.observe_exact_member(&first, &bounds)
-                .unwrap()
-                .entry_count,
+            two.observe_exact_member(&first).unwrap().entry_count,
             Bitvector32Term::Constant(1)
         );
         let child = two.enter_call();
@@ -2973,22 +2951,16 @@ mod wildcard_scope_tests {
         assert!(returned.owns_imported_population_member(&second));
         assert_eq!(returned.observe_symbolic(&scope).unwrap().delta, 1);
         assert_eq!(
-            returned
-                .observe_exact_member(&first, &bounds)
-                .unwrap()
-                .entry_count,
+            returned.observe_exact_member(&first).unwrap().entry_count,
             Bitvector32Term::Constant(0)
         );
         let three = birth(&returned, &wrong);
         assert!(
-            three.observe_exact_member(&first, &bounds).is_err(),
+            three.observe_exact_member(&first).is_err(),
             "a later unresolved birth cannot preserve an old exact absence"
         );
         assert_eq!(
-            three
-                .observe_exact_member(&second, &bounds)
-                .unwrap()
-                .entry_count,
+            three.observe_exact_member(&second).unwrap().entry_count,
             Bitvector32Term::Constant(1)
         );
     }
@@ -3137,17 +3109,11 @@ mod wildcard_scope_tests {
             .0;
         assert_eq!(spent.observe(&pool, scope.family()), Ok(1));
         assert_eq!(
-            spent
-                .observe_exact_member(&selected, &facts)
-                .unwrap()
-                .entry_count,
+            spent.observe_exact_member(&selected).unwrap().entry_count,
             Bitvector32Term::Constant(1)
         );
         assert_eq!(
-            spent
-                .observe_exact_member(&other, &facts)
-                .unwrap()
-                .entry_count,
+            spent.observe_exact_member(&other).unwrap().entry_count,
             Bitvector32Term::Constant(0)
         );
         assert!(
@@ -3173,12 +3139,8 @@ mod wildcard_scope_tests {
             .unwrap();
         let first = description(&pool, &[1, 10]);
         let second = description(&pool, &[2, 20]);
-        let assumptions = PureFactContext::new();
         let count = |events: &CreationEvents, member: &ResourceDescription| {
-            events
-                .observe_exact_member(member, &assumptions)
-                .unwrap()
-                .entry_count
+            events.observe_exact_member(member).unwrap().entry_count
         };
         assert_eq!(count(&empty, &first), Bitvector32Term::Constant(0));
         let (one, _) = empty.checked_member_exchange(&pool, &first, true).unwrap();
@@ -3193,11 +3155,7 @@ mod wildcard_scope_tests {
         let transferred = spent
             .transfer_call_fact(&spent, &helper, &scope, true)
             .unwrap();
-        assert!(
-            transferred
-                .observe_exact_member(&first, &assumptions)
-                .is_err()
-        );
+        assert!(transferred.observe_exact_member(&first).is_err());
         let held = transferred.return_to(&helper);
         assert_eq!(count(&held, &first), Bitvector32Term::Constant(1));
     }
@@ -3208,8 +3166,7 @@ mod wildcard_scope_tests {
         let entry = CreationEvents::new()
             .import_opaque_wildcard_population(&scope, &member)
             .unwrap();
-        let assumptions = PureFactContext::new();
-        let exact = entry.observe_exact_member(&member, &assumptions).unwrap();
+        let exact = entry.observe_exact_member(&member).unwrap();
         let total = entry.observe_symbolic(&scope).unwrap();
         assert!(matches!(exact.entry_count, Bitvector32Term::Variable(_)));
         assert_ne!(exact.entry_count, total.entry_count);
@@ -3218,18 +3175,12 @@ mod wildcard_scope_tests {
         let (spent, _) = entry
             .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
             .unwrap();
-        let after = spent.observe_exact_member(&member, &assumptions).unwrap();
+        let after = spent.observe_exact_member(&member).unwrap();
         assert_eq!(after.entry_count, exact.entry_count);
         assert_eq!(after.delta, -1);
-        assert_eq!(
-            entry
-                .observe_exact_member(&member, &assumptions)
-                .unwrap()
-                .delta,
-            0
-        );
+        assert_eq!(entry.observe_exact_member(&member).unwrap().delta, 0);
         let (_, foreign) = opaque_scope(1);
-        assert!(spent.observe_exact_member(&foreign, &assumptions).is_err());
+        assert!(spent.observe_exact_member(&foreign).is_err());
     }
 
     #[test]
@@ -3250,15 +3201,10 @@ mod wildcard_scope_tests {
         let (one, _) = empty
             .checked_member_exchange(&pool, &unknown, true)
             .unwrap();
-        assert!(
-            one.observe_exact_member(&known, &PureFactContext::new())
-                .is_err()
-        );
+        assert!(one.observe_exact_member(&known).is_err());
         let (zero, _) = one.checked_member_exchange(&pool, &unknown, false).unwrap();
         assert_eq!(
-            zero.observe_exact_member(&known, &PureFactContext::new())
-                .unwrap()
-                .entry_count,
+            zero.observe_exact_member(&known).unwrap().entry_count,
             Bitvector32Term::Constant(0)
         );
     }
@@ -3295,16 +3241,12 @@ mod wildcard_scope_tests {
         let cast =
             ResourceDescription::new("slot".into(), arguments.into(), scope.schema().clone());
         assert_eq!(
-            one.observe_exact_member(&cast, &PureFactContext::new())
-                .unwrap()
-                .entry_count,
+            one.observe_exact_member(&cast).unwrap().entry_count,
             Bitvector32Term::Constant(1)
         );
         let (zero, _) = one.checked_member_exchange(&pool, &cast, false).unwrap();
         assert_eq!(
-            zero.observe_exact_member(&member, &PureFactContext::new())
-                .unwrap()
-                .entry_count,
+            zero.observe_exact_member(&member).unwrap().entry_count,
             Bitvector32Term::Constant(0)
         );
     }
@@ -3335,9 +3277,7 @@ mod wildcard_scope_tests {
             .checked_member_exchange_quantity(&pool, &member, true, &quantity, &facts)
             .unwrap();
         assert_eq!(
-            batch
-                .observe_exact_member(&member, &PureFactContext::new())
-                .err(),
+            batch.observe_exact_member(&member).err(),
             Some(CreationRefusal::UnknownTotal)
         );
     }
@@ -3579,10 +3519,9 @@ fn local_named_wildcard_members_count_occurrences_not_field_values() {
     let two = one
         .checked_instance_exchange(&ResourceReference::from_instance(&second), true)
         .unwrap();
-    let assumptions = PureFactContext::new();
     let exact = |events: &CreationEvents, instance: &ResourceInstance| {
         events
-            .observe_exact_member(&ResourceDescription::from_instance(instance), &assumptions)
+            .observe_exact_member(&ResourceDescription::from_instance(instance))
             .unwrap()
             .entry_count
             .as_const()
@@ -3936,17 +3875,12 @@ fn check_named_authority_import(arity: Option<usize>) {
             description.schema().clone(),
         );
         let exact_count = arity.map(|_| {
-            let observed = entry
-                .observe_exact_member(&exact, &PureFactContext::new())
-                .unwrap();
+            let observed = entry.observe_exact_member(&exact).unwrap();
             assert!(matches!(observed.entry_count, Bitvector32Term::Variable(_)));
             assert_eq!(observed.delta, 0);
             assert_eq!(observed.entry_owned_members, 0);
             assert_eq!(
-                entry
-                    .observe_exact_member(&exact, &PureFactContext::new())
-                    .unwrap()
-                    .entry_count,
+                entry.observe_exact_member(&exact).unwrap().entry_count,
                 observed.entry_count
             );
             observed.entry_count
@@ -4024,10 +3958,7 @@ fn check_named_authority_import(arity: Option<usize>) {
             .unwrap();
         if let Some(exact_count) = exact_count {
             assert_eq!(
-                returned
-                    .observe_exact_member(&exact, &PureFactContext::new())
-                    .unwrap()
-                    .entry_count,
+                returned.observe_exact_member(&exact).unwrap().entry_count,
                 exact_count
             );
         }
@@ -4171,20 +4102,14 @@ fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
         .unwrap();
     let one = entry.checked_imported_instance_consumption(&first).unwrap();
     assert_eq!(
-        one.observe_exact_member(
-            &ResourceDescription::from_instance(&first),
-            &PureFactContext::new()
-        )
-        .unwrap()
-        .delta,
+        one.observe_exact_member(&ResourceDescription::from_instance(&first))
+            .unwrap()
+            .delta,
         -1
     );
     assert!(
-        one.observe_exact_member(
-            &ResourceDescription::from_instance(&second),
-            &PureFactContext::new()
-        )
-        .is_err()
+        one.observe_exact_member(&ResourceDescription::from_instance(&second))
+            .is_err()
     );
     let two = one.checked_imported_instance_consumption(&second).unwrap();
     assert_eq!(
@@ -4192,11 +4117,8 @@ fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
         Some((false, Bitvector32Term::Constant(2)))
     );
     assert!(
-        two.observe_exact_member(
-            &ResourceDescription::from_instance(&first),
-            &PureFactContext::new()
-        )
-        .is_err(),
+        two.observe_exact_member(&ResourceDescription::from_instance(&first))
+            .is_err(),
         "the unresolved indices may alias"
     );
 }

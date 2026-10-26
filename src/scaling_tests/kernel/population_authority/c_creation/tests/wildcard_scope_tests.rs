@@ -214,20 +214,14 @@ fn exact_count_lookup_and_update_do_not_scan_neighboring_members() {
         let selected = description(&pool, &[0]);
         let (_, work) = crate::persistent::measure_persistent_work(|| {
             assert_eq!(
-                events
-                    .observe_exact_member(&selected, &PureFactContext::new())
-                    .unwrap()
-                    .entry_count,
+                events.observe_exact_member(&selected).unwrap().entry_count,
                 Bitvector32Term::Constant(1)
             );
             let (spent, _) = events
                 .checked_member_exchange(&pool, &selected, false)
                 .unwrap();
             assert_eq!(
-                spent
-                    .observe_exact_member(&selected, &PureFactContext::new())
-                    .unwrap()
-                    .entry_count,
+                spent.observe_exact_member(&selected).unwrap().entry_count,
                 Bitvector32Term::Constant(0)
             );
         });

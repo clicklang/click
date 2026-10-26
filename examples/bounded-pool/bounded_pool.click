@@ -297,6 +297,7 @@ void pool_transfer_pipeline(struct pool* source, struct pool* destination, struc
     have defined(count(pool_object(source, _)) + 1);
     open(pool_control(destination)) { step(); }
     have defined(count(pool_object(destination, _)) + 1);
+    apply(population_member_count_zero(count(pool_object(destination, object))));
     step();
     step_until(function.exit); unfold(valid_pool);
 }

@@ -843,6 +843,15 @@ void release(int32* pool, int32* p) {
 
 The helper's exact entry count is arbitrary unless its contract constrains it.
 Consuming the member subtracts one from that exact count as well as the total.
+
+An exact member's count is its own term, even where the facts prove the
+population empty. The kernel law `population_member_count_zero` relates the
+two: `apply(population_member_count_zero(count(slot(pool, p))))` needs the
+available fact `count(slot(pool, _)) == 0` and adds
+`count(slot(pool, p)) == 0`. Both counts are the ones `count(...)` lowers to
+at the current state
+(`mdtests/an_empty_population_counts_no_member.md`,
+`mdtests/an_empty_population_law_needs_the_population_count.md`).
 Creation similarly adds one; a helper promising an exact result of one can
 require an exact entry count of zero. Other concrete members keep their counts.
 Neither observation gives permission to open their private bodies.

@@ -7495,6 +7495,69 @@ pub fn prove_int32_positive_is_nonnegative(value: Bitvector32Term) -> Theorem {
     implication([premise], conclusion)
 }
 
+/// An empty population has no members. For the exact member `name(arguments)`
+/// of the population `name(arguments[0], _, ...)`, its count is zero when the
+/// population's is. Both counts are evaluated here exactly as `count(...)`
+/// lowers at `state`, so the theorem states the terms a proof writes, and the
+/// law holds of them by the meaning of a count; it is never a fact-dependent
+/// fold. `None` when either count does not lower to one defined `int32`.
+pub fn prove_population_member_count_zero(
+    state: &CState,
+    name: &str,
+    arguments: &[CValue],
+    assumptions: &PureFactContext,
+) -> Option<Theorem> {
+    if arguments.len() < 2 {
+        return None;
+    }
+    let count = |arguments: Vec<Option<SpecExpression>>| {
+        let paths = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+            state,
+            &SpecExpression::CountedResourceCount {
+                name: name.to_owned(),
+                arguments,
+            },
+            assumptions,
+            &BTreeMap::new(),
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .ok()?;
+        let [path] = paths.as_slice() else {
+            return None;
+        };
+        if !path.obligations.iter().all(|obligation| {
+            PureFactContext::settles_exactly(assumptions, obligation.proposition())
+        }) {
+            return None;
+        }
+        let CValue::Int32(value) = &path.value else {
+            return None;
+        };
+        Some(value.clone())
+    };
+    let member = count(
+        arguments
+            .iter()
+            .map(|argument| Some(SpecExpression::Value(argument.clone())))
+            .collect(),
+    )?;
+    let total = count(
+        std::iter::once(Some(SpecExpression::Value(arguments[0].clone())))
+            .chain(arguments[1..].iter().map(|_| None))
+            .collect(),
+    )?;
+    Some(implication(
+        [Proposition::ConditionIs(
+            ConditionTerm::equal(total, Bitvector32Term::Constant(0)),
+            true,
+        )],
+        Proposition::ConditionIs(
+            ConditionTerm::equal(member, Bitvector32Term::Constant(0)),
+            true,
+        ),
+    ))
+}
+
 /// The empty Integer fold law, guarded by the endpoint ordering.
 pub fn prove_integer_range_fold_empty(
     index: IntegerRangeFoldIndex,
