@@ -7767,6 +7767,7 @@ impl Parser {
             )
             && typed_load_type_from_name(self.peek_ident()).is_none()
             && self.peek_next() == Some(&Token::LParen)
+            && !self.looks_like_region_result()
         {
             if let Some(name) = self.peek_ident()
                 && let Some(value_parameters) = self.contract_value_parameter_names.get(name)
@@ -13882,6 +13883,22 @@ impl Parser {
         })
     }
 
+    /// Whether a `<region>.result` starts here: a `statement(...)` or
+    /// `region(N)` region followed by `.result`. Read ahead only.
+    fn looks_like_region_result(&mut self) -> bool {
+        if !matches!(self.peek_ident(), Some("statement" | "region"))
+            || self.peek_next() != Some(&Token::LParen)
+        {
+            return false;
+        }
+        let start = self.position;
+        let found = self.parse_code_region_ref().is_ok()
+            && self.peek() == Some(&Token::Dot)
+            && self.peek_next() == Some(&Token::Ident("result".to_string()));
+        self.position = start;
+        found
+    }
+
     fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
         // A proof may need the previous binding of a name shadowed by an
         // introduced quantifier. Keep the qualification on the variable name
@@ -13907,6 +13924,13 @@ impl Parser {
         if self.is_qualified_c_name() {
             let (name, lowered) = self.parse_qualified_c_name()?;
             return Ok(ContractExpression::QualifiedC { name, lowered });
+        }
+        // `<region>.result`: the value a call's region produced, beside the
+        // region's `entry` and `exit` points.
+        if self.looks_like_region_result() {
+            let region = self.parse_code_region_ref()?;
+            self.position += 2;
+            return Ok(ContractExpression::RegionResult(region));
         }
         if self.peek_ident() == Some("match") {
             if self.match_nesting >= MATCH_NESTING_LIMIT {

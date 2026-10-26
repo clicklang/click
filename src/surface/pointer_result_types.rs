@@ -542,6 +542,7 @@ impl Analysis<'_> {
             | ContractExpression::AlgebraicVariable { .. }
             | ContractExpression::Binding(_)
             | ContractExpression::CBinding(_)
+            | ContractExpression::RegionResult(_)
             | ContractExpression::CFragment(_) => {}
         }
         Ok(())

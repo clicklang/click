@@ -842,6 +842,7 @@ pub(in crate::surface) fn walk_written_expressions(
         | ContractExpression::QualifiedC { .. }
         | ContractExpression::CFragment(_)
         | ContractExpression::CBinding(_)
+        | ContractExpression::RegionResult(_)
         | ContractExpression::ResourceWildcard
         | ContractExpression::ResourceCount(_) => {}
         ContractExpression::CUnary { operand: inner, .. }

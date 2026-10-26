@@ -140,6 +140,7 @@ fn collect_signed_surface_terms<'a>(
             | ContractExpression::Binding(_)
             | ContractExpression::CFragment(_)
             | ContractExpression::CBinding(_)
+            | ContractExpression::RegionResult(_)
             | ContractExpression::ResourceCount(_)
             | ContractExpression::ResourceWildcard
             | ContractExpression::IntegerLiteral(_) => {}

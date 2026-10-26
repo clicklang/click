@@ -2919,6 +2919,7 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
         ContractExpression::Old(_)
         | ContractExpression::ResourceCount(_)
         | ContractExpression::ResourceWildcard
+        | ContractExpression::RegionResult(_)
         | ContractExpression::At { .. }
         | ContractExpression::If { .. }
         | ContractExpression::RangeFold { .. }

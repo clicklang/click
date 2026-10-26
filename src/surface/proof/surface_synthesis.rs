@@ -4579,6 +4579,9 @@ fn synthesize_surface_pointer(
     if let Some(expression) = state
         .locals()
         .pointer_objects_in_block(&pointer.block)
+        // A call's result temporary is spelled by its call, never by the
+        // frontend's name for it.
+        .filter(|(name, _)| !crate::surface::diagnostics::is_call_result_temporary(name))
         .find_map(|(name, base)| {
             crate::instrumentation::record_deterministic_work(1);
             let element_width = base.c_type().pointee_type()?.byte_width();
@@ -4679,6 +4682,26 @@ fn synthesize_surface_pointer(
     )?)
 }
 
+/// `<region>.result` for a pointer a call's result temporary holds: the
+/// call names the value it introduced, which no source name spells.
+fn synthesize_call_result_pointer(pointer: &Pointer, state: &CState) -> Option<ContractExpression> {
+    let layout = crate::surface::diagnostics::spelling_layout()?;
+    state
+        .locals()
+        .pointer_objects_in_block(&pointer.block)
+        .find_map(|(name, base)| {
+            crate::instrumentation::record_deterministic_work(1);
+            if !crate::surface::diagnostics::is_call_result_temporary(name)
+                || base.pointer() != pointer
+            {
+                return None;
+            }
+            let region = layout.temporary_call_region(name)?;
+            let steps = layout.source_path_spelling(region, ProgramPointKind::Exit)?;
+            Some(ContractExpression::RegionResult(CodeRegionRef::Path(steps)))
+        })
+}
+
 fn synthesize_surface_pointer_expression(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
@@ -4705,6 +4728,9 @@ fn synthesize_surface_pointer_expression(
         synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)
     {
         return Some(ContractExpression::CFragment(pointer));
+    }
+    if let Some(result) = synthesize_call_result_pointer(pointer, state) {
+        return Some(result);
     }
     if parameter_binding.arguments.iter().any(|argument| {
         matches!(

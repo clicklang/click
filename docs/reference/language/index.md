@@ -3532,6 +3532,16 @@ it: an `if`'s own region is its test
 (`mdtests/a_chained_region_ends_in_an_assignment_or_read.md`,
 `mdtests/a_chained_assignment_counts_only_the_statement_s_own_regions.md`).
 
+A call's region also has a value: `R.result` is the result of the call `R`
+names, such as `statement(0).call(make, 0).result`. It is the value the
+call's region assigned, read at the region's exit, so it names the call's
+result after every local or cell that held it has lost it, and a fact the
+call produced lowers from it exactly
+(`mdtests/a_call_result_is_spelled_by_its_call.md`). A region that is not a
+call producing a result is refused. Click writes a value only the frontend's
+temporary for a call held this way
+(`mdtests/an_unbound_call_result_is_reported_by_its_call.md`).
+
 Click writes points the same way. A diagnostic, a suggested premise or an
 expansion names a recorded point by its statement: `.entry` or `.exit` when
 the point is one, and the statement's `.call(f, j)` or `.region(j)` otherwise.

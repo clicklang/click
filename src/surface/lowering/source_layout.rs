@@ -98,6 +98,11 @@ struct SourceExecutionLayoutData {
     source_statements: BTreeMap<Vec<u32>, Vec<usize>>,
     /// The function each direct-call region calls, for `.call(f, j)`.
     call_targets: BTreeMap<usize, String>,
+    /// The local each call region assigns its result to, for
+    /// `<region>.result`, and the call region of each frontend result
+    /// temporary, which no other name spells.
+    call_results: BTreeMap<usize, String>,
+    temporary_call_regions: BTreeMap<String, usize>,
     /// The source path of the statement each region belongs to: the inverse
     /// of `source_statements`, for spelling a region by its statement.
     region_paths: BTreeMap<usize, Vec<u32>>,
@@ -604,6 +609,12 @@ impl SourceExecutionLayout {
             {
                 layout.call_targets.insert(index, function_name.clone());
             }
+            if let syntax::C0Statement::CallAssign { target, .. } = statement {
+                layout.call_results.insert(index, target.clone());
+                if crate::surface::diagnostics::is_call_result_temporary(target) {
+                    layout.temporary_call_regions.insert(target.clone(), index);
+                }
+            }
             let site = statement
                 .site()
                 .and_then(syntax::C0Site::get)
@@ -992,6 +1003,16 @@ impl SourceExecutionLayout {
     /// it has no region of its own (a block). `.region(j)`, `.call(f, j)`,
     /// `.assignment(x, j)` and `.read(j)` name one of the statement's own
     /// regions, counted in executable order.
+    /// The local the call at `region` assigns its result to.
+    pub(in crate::surface) fn call_result_local(&self, region: usize) -> Option<&str> {
+        self.data.call_results.get(&region).map(String::as_str)
+    }
+
+    /// The call region whose result the frontend temporary `local` holds.
+    pub(in crate::surface) fn temporary_call_region(&self, local: &str) -> Option<usize> {
+        self.data.temporary_call_regions.get(local).copied()
+    }
+
     pub(in crate::surface) fn source_path_region(
         &self,
         steps: &[crate::surface::SourcePathStep],
@@ -1809,6 +1830,8 @@ mod source_execution_layout_tests {
                 sites: BTreeMap::new(),
                 source_statements: BTreeMap::new(),
                 call_targets: BTreeMap::new(),
+                call_results: BTreeMap::new(),
+                temporary_call_regions: BTreeMap::new(),
                 region_paths: BTreeMap::new(),
                 loop_paths: BTreeMap::new(),
                 diagnostic_places: std::sync::OnceLock::new(),
