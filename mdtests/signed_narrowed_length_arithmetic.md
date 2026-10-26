@@ -15,25 +15,25 @@ int32 distance(uint64 n, int32 remaining) {
 verifying "signed_narrowed_length_arithmetic.c";
 int32 distance(uint64 n, int32 remaining) {
     requires 0 < remaining;
-    requires remaining <= (int32)(uint32)n;
-    requires 0 <= (int32)(uint32)n;
-    requires 1000 >= (int32)(uint32)n;
-    ensures to_integer(((int32)(uint32)n - result - 1)) < to_integer((int32)(uint32)n);
+    requires remaining <= n as uint32 as int32;
+    requires 0 <= n as uint32 as int32;
+    requires 1000 >= n as uint32 as int32;
+    ensures to_integer((n as uint32 as int32 - result - 1)) < to_integer(n as uint32 as int32);
 } by {
     step();
-    have to_integer(((int32)(uint32)n - remaining - 1)) < to_integer((int32)(uint32)n) by {
+    have to_integer((n as uint32 as int32 - remaining - 1)) < to_integer(n as uint32 as int32) by {
         solve() using {
             at(region(0).entry, 0 < remaining);
-            at(region(0).entry, remaining <= (int32)(uint32)n);
-            0 <= (int32)(uint32)n;
-            1000 >= (int32)(uint32)n;
+            at(region(0).entry, remaining <= n as uint32 as int32);
+            0 <= n as uint32 as int32;
+            1000 >= n as uint32 as int32;
         };
     }
-    have 1000 >= to_integer(((int32)(uint32)n - remaining - 1)) by {
+    have 1000 >= to_integer((n as uint32 as int32 - remaining - 1)) by {
         solve() using {
             at(region(0).entry, 0 < remaining);
-            at(region(0).entry, remaining <= (int32)(uint32)n);
-            0 <= (int32)(uint32)n; 1000 >= (int32)(uint32)n;
+            at(region(0).entry, remaining <= n as uint32 as int32);
+            0 <= n as uint32 as int32; 1000 >= n as uint32 as int32;
         };
     }
 }

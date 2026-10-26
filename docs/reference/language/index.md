@@ -193,7 +193,7 @@ conversion is exact: every value of its type is a value of the other. An
 `int32` converts to `int64`, a `uint32` to `int64`, a `uint8` to `uint32`,
 and an `int32` to `double`. A conversion that can change a value, a
 narrowing such as `int64` to `int32`, a change of sign such as `int32` to
-`uint32`, or a float's integer part, is written, as a cast `(int32) e` or a
+`uint32`, or a float's integer part, is written, as a cast `e as int32` or a
 checked `to_int32(e)`. An integer literal converts to any integer type that
 holds its value and is refused where it does not. C source keeps C's own
 conversions, including its modular ones; this rule is for Click's typed
@@ -208,9 +208,44 @@ them from the type its position expects, a function's return type or a
 `function wrap(x: int32) -> Seq<int64> { Seq::Cons(x, Seq::Nil) }` builds
 a `Seq<int64>`. A pure function's or predicate's argument and a pure
 function's result follow the same rule: `byte_plus_one(256)` with a `uint8`
-parameter is refused, and `byte_plus_one((uint8) 256)` passes `0`. The
+parameter is refused, and `byte_plus_one(256 as uint8)` passes `0`. The
 `bytes::` predicates measure ranges in `size_t`, so a C `int32` length is
-passed as `(uint64) n`.
+passed as `n as uint64`.
+
+### Casts
+
+A cast is written after its operand, `e as T`. An integer target is bare:
+`x as uint32`, `old(x) as int32`, `n / d as int128`. A pointer target is
+parenthesized: `p as (uint8 *)`, `p as (void *)`, `p as (struct node *)`,
+`p as (const struct node *)`. The targets are the ten machine integer types
+`int8` to `uint128`, `void *`, a pointer to one of them, and a pointer to a
+struct; a pointer target is unqualified except for a struct's `const`, and
+a byte view inherits its source's qualification. A Rust source's sidecar
+also writes Rust's scalar names, `x as u32`.
+
+`as` binds tighter than every binary operator and looser than every unary
+one, as in Rust, and chains left to right:
+
+| Written | Reads |
+|---|---|
+| `x as int32 + 1` | `(x as int32) + 1` |
+| `-x as int32` | `(-x) as int32` |
+| `-(x as int32)` | the negation of the cast |
+| `*(p as (uint8 *))` | a read through the byte view |
+| `x as int32 as uint64` | `(x as int32) as uint64` |
+| `(a + b) as uint32` | the cast of the sum |
+
+The C form `(T) e` is refused in Click text, with the suggestion to write
+`e as T` (`e as (T *)` for a pointer); C source keeps C's casts. A name an
+`as` clause binds, `induct(x) as ih`, `intro() as n`, `verifying "f.c" as
+f` or a loop label, may not be a cast's type name. Diagnostics, expansions
+and synthesized proofs print casts in this form, parenthesized only where
+precedence requires (`design/machine-integers.md`, Decisions, 2026-10-26). The
+precedence and the refusals are checked by
+`mdtests/a_cast_binds_tighter_than_binary_operators.md`,
+`mdtests/a_c_style_cast_in_click_text_names_the_as_form.md`,
+`mdtests/an_integer_cast_target_is_written_without_parentheses.md` and
+`mdtests/a_binder_named_like_a_type_is_refused_beside_as.md`.
 
 ### Postconditions
 
@@ -1751,10 +1786,10 @@ complete extent still needs its unsigned bounds. The cursor and short-extent
 regressions are in
 `mdtests/a_callee_takes_a_wide_window_through_a_checked_cursor.md`.
 
-A cast written in a place keeps its meaning: `bytes[(int32)index]` is the
+A cast written in a place keeps its meaning: `bytes[index as int32]` is the
 element at the truncated index, which is not the element the code reads at
 `bytes[index]` (`mdtests/a_cast_in_a_place_reads_the_truncated_index.md`).
-A cast written in a range bound does the same: `bytes[0..(int32)length]` is
+A cast written in a range bound does the same: `bytes[0..length as int32]` is
 the range up to the truncated length, read through 32-bit indices, and does
 not hold the element the code reads at a 64-bit index
 (`mdtests/a_cast_in_a_range_bound_truncates_the_bound.md`).
@@ -1983,7 +2018,7 @@ with the name of a visible library resource is a duplicate definition. A
 resource argument is typed as a predicate argument is: a `char`,
 `signed char`, or `unsigned char` pointer may be passed for a `uint8*`
 parameter, and a parameter of signed character pointer type passed there is
-read through its byte view `(uint8*)p`
+read through its byte view `p as (uint8 *)`
 (`mdtests/cstr_at_borrows_a_char_string_from_the_library.md`).
 
 A resource may declare pure fields before its body clauses:
@@ -2519,7 +2554,7 @@ This is how a resource describes a pointer packed into an integer word, such
 as a tail pointer with a mark bit or an `rb_node` parent with its color. The
 witness needs no syntax at `fold` or `unfold`. Unfolding binds it to a fresh
 symbolic pointer constrained by the `where` fact, and the program's own cast
-`(struct node*)(node->word & ~1)` then recovers exactly that pointer. Folding
+`(node->word & ~1) as (struct node *)` then recovers exactly that pointer. Folding
 binds it to the recorded origin of the word the `where` fact relates it to, so
 after `node->word = (unsigned long)tail;` the witness is `tail`. A word with no
 recorded origin cannot fold, and the diagnostic names the missing body fact.
@@ -2529,7 +2564,7 @@ named by the caller. `rb_at(p, parent)` in
 `mdtests/rb_ascent_parent_link_guard.md` takes
 the parent as its second parameter and states
 `fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);`,
-so `rb_parent`'s `(struct rb_node *)(r->__rb_parent_color & ~3)` recovers that
+so `rb_parent`'s `(r->__rb_parent_color & ~3) as (struct rb_node *)` recovers that
 parameter with its provenance. Keep the tag in the stated form
 `(p->__rb_parent_color & 1)` rather than an opaque pure-function application:
 clearing tag bits needs the tag proven below 4, and a function such as
@@ -2537,7 +2572,7 @@ clearing tag bits needs the tag proven below 4, and a function such as
 second fact `(p->__rb_parent_color & 1) == color_bit(color)` then ties the bit
 to the model.
 
-A cast fact such as `((struct rb_node*)(p->__rb_parent_color & ~3)) == parent`
+A cast fact such as `((p->__rb_parent_color & ~3) as (struct rb_node *)) == parent`
 names the read of the word at the state where it was stated. The program's
 cast reads the word where it executes, so after a store through another
 pointer the two are different reads, and the cast no longer designates
@@ -3299,25 +3334,25 @@ Contract expressions accept native scalar casts to `int8`, `uint8`, `int16`,
 A cast retains the native conversion semantics; it does not infer representable
 ranges or identify a narrowed observation with its source. Wide casts let
 sidecars name the explicit conversions in imported C++ expressions, such as
-`n / (int128)d`. Narrow casts use the existing conversion rules;
-`defined((uint16)x)` still needs the modeled range guards. Checked narrow
+`n / d as int128`. Narrow casts use the existing conversion rules;
+`defined(x as uint16)` still needs the modeled range guards. Checked narrow
 boundaries and historical casts are in
 [`contract_narrow_scalar_casts.md`](https://github.com/clicklang/click/blob/master/mdtests/contract_narrow_scalar_casts.md).
 Wide examples are in
 [`wide_contract_scalar_casts.md`](https://github.com/clicklang/click/blob/master/mdtests/wide_contract_scalar_casts.md).
 
 Native scalar object pointers also support the checked byte-view cast
-`(uint8*)p`, with an unqualified target that inherits the source qualification.
-A claim such as `result == (uint8*)p` compares allocation identity
+`p as (uint8 *)`, with an unqualified target that inherits the source qualification.
+A claim such as `result == p as (uint8 *)` compares allocation identity
 and byte offset, rather than numerical addresses. The cast preserves the
 source pointer's const qualification and grants no ownership, read permission,
 or initialization. Pointer arithmetic after the cast counts bytes;
-`old((uint8*)p)` selects the entry-state pointer. Integer origins, pointer-to-pointer
+`old(p as (uint8 *))` selects the entry-state pointer. Integer origins, pointer-to-pointer
 origins, and reverse casts from bytes to wider object types are rejected. See
 [`contract_byte_pointer_casts.md`](https://github.com/clicklang/click/blob/master/mdtests/contract_byte_pointer_casts.md).
 
-Contract expressions accept integer casts such as `(uint32)x` and `(int8)x`,
-including `old((uint32)p->value)`. A cast is C's conversion, as GCC and Clang
+Contract expressions accept integer casts such as `x as uint32` and `x as int8`,
+including `old(p->value as uint32)`. A cast is C's conversion, as GCC and Clang
 compute it: the value modulo 2^N of the destination type, defined for every
 operand, so a 64-to-`uint32` cast keeps the low 32 bits
 (`mdtests/a_narrow_specification_cast_is_always_defined.md`). The checked
@@ -3336,17 +3371,17 @@ contract to a struct pointer and describe the object through the result:
 
 <!-- verified-example: mdtests/fork_join_worker_direct_contract.md -->
 ```click
-views ((struct range_job *)argument)->begin;
-owns ((struct range_job *)argument)->output[
-    ((struct range_job *)argument)->begin..((struct range_job *)argument)->end];
-ensures range_filled((struct range_job *)argument);
+views (argument as (struct range_job *))->begin;
+owns (argument as (struct range_job *))->output[
+    (argument as (struct range_job *))->begin..(argument as (struct range_job *))->end];
+ensures range_filled(argument as (struct range_job *));
 ```
 
 The cast retypes the pointer for the clause; it does not change the pointer's
 value or provenance, and the C body's own conversion reaches the same object.
-The direct `(struct T*)argument` form accepts a `void*` C parameter and
+The direct `argument as (struct T *)` form accepts a `void*` C parameter and
 records one target struct per parameter for proof synthesis. Contracts may
-also write `(struct T*)(void*)pointer` for a current object-pointer expression,
+also write `pointer as (void *) as (struct T *)` for a current object-pointer expression,
 including a typed struct pointer, field, or resource parameter. This explicit
 form retains the target layout on the expression and does not assign a layout
 to the source parameter. Integer and function-pointer operands are rejected.

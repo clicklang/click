@@ -19,8 +19,8 @@ int read_cell(int *p) {
 verifying "typed_cast.c";
 
 int32 read_cell(int32 *p) {
-    views ((struct cell *)p)->value;
-    ensures result == ((struct cell *)p)->value;
+    views (p as (struct cell *))->value;
+    ensures result == (p as (struct cell *))->value;
 }
 ```
 

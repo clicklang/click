@@ -1687,12 +1687,12 @@ fn charon_chunk_lane_results_survive_local_stores_at_symbolic_heads() {
             "have lanes.lanes[3] == chunk[3] + 1u32",
         ),
         (
-            "have to_integer(lanes.lanes[0]) == to_integer((int32)chunk[0])",
-            "have to_integer(lanes.lanes[0]) == to_integer((int32)chunk[1])",
+            "have to_integer(lanes.lanes[0]) == to_integer(chunk[0] as int32)",
+            "have to_integer(lanes.lanes[0]) == to_integer(chunk[1] as int32)",
         ),
         (
-            "have to_integer(lanes.lanes[3]) == to_integer((int32)chunk[3])",
-            "have to_integer(lanes.lanes[3]) == to_integer((int32)chunk[3]) + 1",
+            "have to_integer(lanes.lanes[3]) == to_integer(chunk[3] as int32)",
+            "have to_integer(lanes.lanes[3]) == to_integer(chunk[3] as int32) + 1",
         ),
         ("views bytes[0..16];", ""),
     ] {

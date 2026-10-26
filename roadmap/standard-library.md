@@ -451,7 +451,7 @@ so they wait for this work rather than being fixed one by one.
   only if every such term is a C signed multiply whose overflow is already
   undefined), never, or with an explicit no-overflow obligation.
 - **Unsigned index spelling** (`pointer_index_term`, same file). A `uint32`
-  index whose facts prove `0 <= (int32)x` becomes the `int32` index
+  index whose facts prove `0 <= x as int32` becomes the `int32` index
   `sign_cast32(x)`; otherwise it becomes the 64-bit `uint64_from_32(x)`. The
   offset term and its width both depend on the facts. Choosing one
   spelling (for example, always zero-extending) needs a normalization step

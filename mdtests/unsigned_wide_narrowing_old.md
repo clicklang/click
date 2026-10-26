@@ -13,7 +13,7 @@ unsigned int take(struct state *p) {
 verifying "old.c";
 unsigned int take(struct state *p) {
     owns p->value;
-    ensures result == old((uint32)p->value);
+    ensures result == old(p->value as uint32);
     ensures to_integer(p->value) == to_integer(old(p->value) + 1u64);
 }
 ```

@@ -3,7 +3,7 @@
 The program of
 [`a_parent_cast_fact_is_not_carried_across_a_store_through_another_node.md`](a_parent_cast_fact_is_not_carried_across_a_store_through_another_node.md),
 with the cast fact restated after the store through `o`:
-`have ((struct rb_node*)(g->__rb_parent_color & ~3)) == xid by solve();`.
+`have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by solve();`.
 `solve` carries the unfolded fact across the store, which `o`'s separately
 held cell does not overlap, and the restated fact names the read the C cast
 makes next. The cast result then designates `xid`, whose cells are held, and
@@ -67,7 +67,7 @@ resource node_at(p: struct rb_node*) {
             fact p == identity;
             fact aligned(parent, 8);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
-            fact ((struct rb_node*)(p->__rb_parent_color & ~3)) == parent;
+            fact ((p->__rb_parent_color & ~3) as (struct rb_node *)) == parent;
         },
     }
 }
@@ -115,7 +115,7 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                     unfold(n);
                     unfold(u);
                     step();
-                    have ((struct rb_node*)(g->__rb_parent_color & ~3)) == xid by solve();
+                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by solve();
                     step();
                     step();
                     step();

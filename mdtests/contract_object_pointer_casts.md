@@ -36,13 +36,13 @@ struct sized_node* identity(struct rb_node* p) {
 ```click
 verifying "copy.c";
 void sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
-    views ((struct sized_node*)(void*)rb_old)->size;
-    owns ((struct sized_node*)(void*)rb_new)->size;
-    ensures ((struct sized_node*)(void*)rb_new)->size == old(((struct sized_node*)(void*)rb_old)->size);
-    ensures ((struct sized_node*)(void*)rb_old)->size == old(((struct sized_node*)(void*)rb_old)->size);
+    views (rb_old as (void *) as (struct sized_node *))->size;
+    owns (rb_new as (void *) as (struct sized_node *))->size;
+    ensures (rb_new as (void *) as (struct sized_node *))->size == old((rb_old as (void *) as (struct sized_node *))->size);
+    ensures (rb_old as (void *) as (struct sized_node *))->size == old((rb_old as (void *) as (struct sized_node *))->size);
 }
 struct sized_node* identity(struct rb_node* p) {
-    ensures address(result) == address((struct sized_node*)(void*)p);
+    ensures address(result) == address(p as (void *) as (struct sized_node *));
 }
 ```
 

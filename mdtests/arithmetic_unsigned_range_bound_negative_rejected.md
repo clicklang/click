@@ -6,7 +6,7 @@ follow without a nonnegative lower bound.
 ```click
 theorem missing_lower_bound(length: int32) {
     requires length <= 536870911;
-    ensures ((uint32)length) <= 1073741823u32 by {
+    ensures (length as uint32) <= 1073741823u32 by {
         solve() using {
             length <= 536870911;
         };

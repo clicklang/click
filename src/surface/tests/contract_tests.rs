@@ -69,8 +69,8 @@ fn historical_wide_view_bound_reads_the_marked_counter() {
             }} by {{
                 mark before;
                 step();
-                have to_integer(at(before, 16u64 * (uint64)n)) == to_integer(32u64) by solve();
-                have at(before, viewable(p[0u64..16u64 * (uint64)n])) by solve();
+                have to_integer(at(before, 16u64 * n as uint64)) == to_integer(32u64) by solve();
+                have at(before, viewable(p[0u64..16u64 * n as uint64])) by solve();
                 step_until(function.exit); solve();
             }}
         "#
@@ -156,8 +156,8 @@ fn native_contract_byte_casts_preserve_pointer_identity_and_offsets() {
     let proof = r#"verifying "bytes.c";
         uint32* probe(uint32* p) {
             views p[0..1];
-            ensures (uint8*)result == old((uint8*)(p + 1));
-            ensures (uint8*)result == (uint8*)p + 4;
+            ensures result as (uint8 *) == old((p + 1) as (uint8 *));
+            ensures result as (uint8 *) == p as (uint8 *) + 4;
         }"#;
     verify_c0_sources(proof, &[("bytes.c", source)]).unwrap();
     let expanded = expand_c0_claim_source(
@@ -176,17 +176,17 @@ fn native_contract_byte_casts_check_their_type_boundary() {
     for (parameter, expression, diagnostic) in [
         (
             "uint32 p",
-            "(uint8*)p == (uint8*)p",
+            "p as (uint8 *) == p as (uint8 *)",
             "scalar object pointer",
         ),
         (
             "uint32** p",
-            "(uint8*)p == (uint8*)p",
+            "p as (uint8 *) == p as (uint8 *)",
             "scalar object pointer",
         ),
         (
             "uint32* p",
-            "(uint8*)old(p) == (uint8*)p",
+            "old(p) as (uint8 *) == p as (uint8 *)",
             "around the whole cast",
         ),
         (
@@ -208,7 +208,7 @@ fn native_contract_byte_casts_check_their_type_boundary() {
 fn native_contract_byte_casts_do_not_grant_memory_access() {
     let source = "uint8 probe(uint8* p) { return *p; }";
     let proof = r#"verifying "bytes.c"; uint8 probe(uint8* p) {
-        views p[0..1]; ensures result == *((uint8*)p);
+        views p[0..1]; ensures result == *(p as (uint8 *));
     }"#;
     verify_c0_sources(proof, &[("bytes.c", source)]).unwrap();
     assert!(
@@ -2874,15 +2874,15 @@ fn casts_of_resource_fields_keep_their_declared_scalar_types() {
         void preserve(int32* p) {
             owns o: obj(p);
             requires o.size == -1;
-            ensures ((int64)o.size) == -1i64;
+            ensures (o.size as int64) == -1i64;
         } by {
-            have ((int32)o.size) == o.size by normalize();
+            have (o.size as int32) == o.size by normalize();
             step_until(function.exit); solve();
         }
     "#;
     verify_c0_sources(source, &[("field.c", c)])
         .expect("casts must see the resource field's declared machine type");
-    let unknown = source.replace("((int32)o.size)", "((int32)o.missing)");
+    let unknown = source.replace("(o.size as int32)", "(o.missing as int32)");
     let refusal = verify_c0_sources(&unknown, &[("field.c", c)])
         .expect_err("a cast cannot hide a missing resource field");
     assert!(

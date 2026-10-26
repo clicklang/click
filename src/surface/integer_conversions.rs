@@ -82,7 +82,7 @@ mod tests {
         verify_c0_sources(&expanded, &[]).unwrap();
         for requirement in [
             "to_integer(a * b) <= 4294967295",
-            "to_integer((int32)a) * to_integer((int32)b) <= 4294967295",
+            "to_integer(a as int32) * to_integer(b as int32) <= 4294967295",
             "to_integer(a) * to_integer(b) <= 4294967296",
         ] {
             let invalid =
@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn scalar_casts_keep_byte_read_width_in_definedness() {
         let c = "int32 read(const uint8* p) { return (int32)p[0]; }";
-        let source = "verifying \"read.c\"; int32 read(const uint8* p) { views p[0..1]; ensures defined((int32)p[0]); }";
+        let source = "verifying \"read.c\"; int32 read(const uint8* p) { views p[0..1]; ensures defined(p[0] as int32); }";
         verify_c0_sources(source, &[("read.c", c)]).unwrap();
         let expanded =
             expand_c0_claim_source_by_label(source, &[("read.c", c)], "read.ensures_0").unwrap();
@@ -106,8 +106,8 @@ mod tests {
         assert!(
             verify_c0_sources(
                 &source.replace(
-                    "ensures defined((int32)p[0])",
-                    "ensures defined((int32)p[1])"
+                    "ensures defined(p[0] as int32)",
+                    "ensures defined(p[1] as int32)"
                 ),
                 &[("read.c", c)]
             )
@@ -1167,18 +1167,18 @@ mod tests {
     fn contract_scalar_casts_check_all_supported_widths_and_recheck_expansion() {
         for ty in ["int32", "uint32", "int64", "uint64", "int128", "uint128"] {
             let source = format!(
-                "theorem cast(x: {ty}) {{ ensures ({ty})x == x by {{ have ({ty})x == x by solve(); assumption(); }} }}"
+                "theorem cast(x: {ty}) {{ ensures x as {ty} == x by {{ have x as {ty} == x by solve(); assumption(); }} }}"
             );
             verify_c0_sources(&source, &[]).unwrap();
             let expanded = expand_c0_claim_source_by_label(&source, &[], "cast.ensures_0").unwrap();
             verify_c0_sources(&expanded, &[]).unwrap();
-            let historical = source.replace(&format!("({ty})x"), &format!("({ty})old(x)"));
+            let historical = source.replace(&format!("x as {ty}"), &format!("old(x) as {ty}"));
             verify_c0_sources(&historical, &[]).unwrap();
             let expanded =
                 expand_c0_claim_source_by_label(&historical, &[], "cast.ensures_0").unwrap();
             verify_c0_sources(&expanded, &[]).unwrap();
             for invalid in [
-                source.replace(&format!("({ty})x"), &format!("({ty}*)x")),
+                source.replace(&format!("x as {ty}"), &format!("x as ({ty} *)")),
                 source.replace(&format!("x: {ty}"), "x: Integer"),
                 source.replace("== x", "!= x"),
             ] {

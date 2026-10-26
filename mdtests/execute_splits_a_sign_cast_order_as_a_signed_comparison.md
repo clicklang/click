@@ -2,7 +2,7 @@
 
 `(int)u < 0` compares `u`'s 32-bit word as `int32`. Assigned to a `bool`,
 the comparison's two values are cases the implicit tail splits on, spelling the
-case condition from the kernel's order. That spelling is `(int32)u < 0`:
+case condition from the kernel's order. That spelling is `u as int32 < 0`:
 the bare `u < 0` would lower to the `uint32` order, which is false, and
 the tail could not advance. Each case verifies.
 

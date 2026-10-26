@@ -408,7 +408,7 @@ and `let` binders, and algebraic datatype fields take Rust types too: the
 scalars (`u8`, `i32`, `u32`, `u64`, `usize`, `bool`, ...) and a raw pointer
 to one or to a crate struct, `*const T` or `*mut T`. Such a function takes values, not borrows,
 and a reference `&T` is refused there. `x as T` casts in a body as in a
-contract. The C spellings (`uint8`, `const uint8*`, `(int32)x`) still read
+contract. The C spellings (`uint8`, `const uint8*`, `x as int32`) still read
 the same types.
 
 A pure function may take a slice of scalars, `bytes: &[u8]`. As in a `fn`

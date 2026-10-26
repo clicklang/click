@@ -19,7 +19,7 @@ function decimal_length(v: uint64) -> uint64 {
 // The character of `v`'s `k`th decimal digit, counting from the most
 // significant, for `k < decimal_length(v)`.
 function decimal_digit(v: uint64, k: uint64) -> uint8 {
-    (uint8) (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64)
+    (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) as uint8
 }
 
 // The characters `%*u` writes for `v` in a field of `width`: `v`'s digits,
@@ -39,7 +39,7 @@ function padded_digit(v: uint64, width: uint64, pad: uint8, k: uint64) -> uint8 
 
 // The magnitude of a signed `int`, exact even for `INT_MIN`.
 function magnitude(v: int32) -> uint64 {
-    if v < 0 { (uint64) (0i64 - (int64) v) } else { (uint64) v }
+    if v < 0 { (0i64 - v as int64) as uint64 } else { v as uint64 }
 }
 
 // The characters `%d` writes for `v`: a `'-'` before a negative value's
@@ -787,7 +787,7 @@ theorem decimal_length_10(v: uint64) {
 
 theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
     requires format::decimal_length(v) == n;
-    ensures format::decimal_digit(v, k) == (uint8) (48u64 + v / format::pow10(n - 1u64 - k) % 10u64) by {
+    ensures format::decimal_digit(v, k) == (48u64 + v / format::pow10(n - 1u64 - k) % 10u64) as uint8 by {
         unfold(format::decimal_digit(v, k));
         rewrite(format::decimal_length(v) == n);
         solve();
@@ -798,7 +798,7 @@ theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
 theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
     ensures 48u8 <= format::decimal_digit(v, k) by {
         unfold(format::decimal_digit(v, k));
-        have 48u8 <= (uint8) (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64);
+        have 48u8 <= (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) as uint8;
         assumption();
     }
 }

@@ -172,7 +172,7 @@ fn pointer_word_certificates_keep_address_arithmetic_when_printed() {
 #[test]
 fn numeric_cast_certificates_keep_integer_default_arithmetic_when_printed() {
     let source = r#"theorem numeric_cast(word: uint64) {
-    ensures ((uint64)word) + 1 > ((uint64)word) by { solve() using {}; }
+    ensures (word as uint64) + 1 > (word as uint64) by { solve() using {}; }
 }"#;
     let expanded = expand_c0_claim_source_by_label(source, &[], "numeric_cast.ensures_0").unwrap();
     without_implicit_auto(|| verify_click_theorems(&expanded))
@@ -266,12 +266,12 @@ fn integer_equality_does_not_identify_signed_and_unsigned_observations() {
     // every premise and refutes the conclusion.
     let source = r#"import click::integer;
 theorem mixed_observations(adler: uint64, seed: int64, value: uint64, specification: Integer) {
-    requires to_integer(adler) == to_integer((uint64)seed);
+    requires to_integer(adler) == to_integer(seed as uint64);
     requires to_integer(adler) == to_integer(value);
     requires specification == to_integer(seed);
     ensures to_integer(value) == specification by {
         solve() using {
-            to_integer(adler) == to_integer((uint64)seed);
+            to_integer(adler) == to_integer(seed as uint64);
             to_integer(adler) == to_integer(value);
             specification == to_integer(seed);
         };
@@ -381,8 +381,8 @@ fn shifted_pointer_equality_rewrites_expand_and_recheck() {
     let source = r#"
         verifying "pointer.c";
         int32 same_block(int32* base, int32* cursor, uint64 remaining) {
-            requires ((int32)(uint32)remaining) == 4;
-            requires cursor == base + (4 - ((int32)(uint32)remaining));
+            requires (remaining as uint32 as int32) == 4;
+            requires cursor == base + (4 - (remaining as uint32 as int32));
             ensures result == 0;
         } by {
             have cursor == base;
@@ -1944,7 +1944,7 @@ fn entry_alignment_premise_expands_in_source_spelling() {
         "solve();\n        }\n    }\n    have i == capacity",
         0,
     );
-    assert!(!expanded.contains("(uint64)arena"), "{expanded}");
+    assert!(!expanded.contains("arena as uint64"), "{expanded}");
 }
 
 /// Written else nesting is not recursive driver depth: a failed allocation
@@ -3393,7 +3393,7 @@ theorem unsigned_compound(n: int32) {
     requires defined(n + 1);
     requires 0 <= to_integer(n + 1);
     requires to_integer(n + 1) <= 536870911;
-    ensures ((uint32)(n + 1)) <= 1073741823u32 by {
+    ensures ((n + 1) as uint32) <= 1073741823u32 by {
         solve() using {
             0 <= to_integer(n + 1);
             to_integer(n + 1) <= 536870911;
@@ -4031,7 +4031,7 @@ fn unsigned_narrowing_snapshot_expansion_reverifies() {
         unsigned int take(struct state *p) {
             requires viewable(p->value);
             owns p->value;
-            ensures result == old((uint32)p->value);
+            ensures result == old(p->value as uint32);
             ensures to_integer(p->value) == to_integer(old(p->value) + 1u64);
         }
     "#;
@@ -12461,7 +12461,7 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
 
     assert!(
         expanded.contains("if to_integer(k) < (to_integer(j) - 1)")
-            || expanded.contains("if k < ((int32)(j - 1))"),
+            || expanded.contains("if k < ((j - 1) as int32)"),
         "expanded proof from `{}` omitted the checked upper-bound split",
         path.display()
     );
@@ -13954,7 +13954,7 @@ fn source_expander_derives_separation_from_call_postconditions() {
                 int32 length
             ) {
                 requires 0 <= length;
-                requires ((uint32)length) <= 1073741823u32;
+                requires (length as uint32) <= 1073741823u32;
                 requires separate(memory(*owner), memory(data[0..length]));
                 owns *owner;
                 views data[0..length];
@@ -13971,7 +13971,7 @@ fn source_expander_derives_separation_from_call_postconditions() {
                 int32 length
             ) {
                 requires 1 <= length;
-                requires ((uint32)length) <= 1073741823u32;
+                requires (length as uint32) <= 1073741823u32;
                 requires separate(memory(*left), memory(data[0..length]));
                 requires separate(memory(*right), memory(data[0..length]));
                 owns *left;
@@ -14501,11 +14501,11 @@ fn wide_values_narrow_to_their_low_word_without_bounds() {
     verify_c0_sources(source, &sources).unwrap();
     for claim in [
         "ensures result == 0;",
-        "ensures result == (uint32)value + 1u32;",
+        "ensures result == value as uint32 + 1u32;",
     ] {
         assert!(
             verify_c0_sources(
-                &source.replacen("ensures result == (uint32)value;", claim, 1),
+                &source.replacen("ensures result == value as uint32;", claim, 1),
                 &sources
             )
             .is_err(),
@@ -18073,8 +18073,8 @@ int32 f(struct cell* root) {
 resource child_value(p: struct base*) {
     field number: int32;
     if p != 0 {
-        owns ((struct cell*)(void*)p)->value;
-        fact ((struct cell*)(void*)p)->value == number;
+        owns (p as (void *) as (struct cell *))->value;
+        fact (p as (void *) as (struct cell *))->value == number;
     }
 }
 int32 f(struct cell* root) {
@@ -18083,7 +18083,7 @@ int32 f(struct cell* root) {
     owns child: child_value(root->base.left);
     owns root->value;
     requires root->base.left != 0;
-    requires root->base.left != (struct base*)(void*)root;
+    requires root->base.left != root as (void *) as (struct base *);
     ensures result == old(child.number);
     ensures child.number == old(child.number);
     ensures root->value == old(child.number);
@@ -18682,22 +18682,22 @@ fn packed_pointer_cast_contracts_survive_expansion_and_retained_verification() {
         (
             "mdtests/a_bounded_native_word_tag_can_precede_its_pointer.md",
             "stamp.ensures_0",
-            "ensures ((int32*)(slot->word & ~3)) == p;",
+            "ensures ((slot->word & ~3) as (int32 *)) == p;",
         ),
         (
             "mdtests/a_checked_low_tag_add_preserves_an_incoming_word_relationship.md",
             "blacken.ensures_0",
-            "ensures ((struct node*)(result & ~3)) == old((struct node*)(word & ~3));",
+            "ensures ((result & ~3) as (struct node *)) == old((word & ~3) as (struct node *));",
         ),
         (
             "mdtests/a_bounded_variable_tag_keeps_a_stored_pointer_relationship.md",
             "stamp.ensures_0",
-            "ensures ((int32*)(slot->word & ~3)) == p;",
+            "ensures ((slot->word & ~3) as (int32 *)) == p;",
         ),
         (
             "mdtests/a_bounded_variable_tag_preserves_an_incoming_word_relationship.md",
             "recolor.ensures_0",
-            "ensures ((struct node*)(result & ~3)) == old((struct node*)(word & ~3));",
+            "ensures ((result & ~3) as (struct node *)) == old((word & ~3) as (struct node *));",
         ),
         (
             "mdtests/tagged_pointer_from_field_fact.md",

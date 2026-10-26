@@ -263,7 +263,7 @@ A model field or pure-helper parameter declared `void*` accepts an object
 pointer through implicit coercion: its carrier changes to `void*`, preserving
 its designation, bounds, qualifiers, and object-type evidence. Opaque helper
 calls and unfolded bodies use this same argument conversion. Function pointers
-are excluded. An authored `(void*)p` remains an explicit cast and selects the
+are excluded. An authored `p as (void *)` remains an explicit cast and selects the
 root view according to C cast semantics. Address-only models should use `void*`
 without inserting explicit casts that would change saved pointer views. See
 `mdtests/model_pointer_void_helper_preserves_selected_view.md` and

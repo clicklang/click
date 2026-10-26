@@ -3,7 +3,7 @@
 Status: the policy below was accepted in the task conversation on 2026-10-15.
 The implementation uses a hidden record for unchanged complete C integers. On 2026-10-16 the user also approved cast-based contracts
 for full packed-pointer relationships, using existing syntax such as
-`requires ((struct node*)(word & ~1)) == p;`. Their implementation and checked tagged-word transport are in
+`requires ((word & ~1) as (struct node *)) == p;`. Their implementation and checked tagged-word transport are in
 [PR #1245](https://github.com/clicklang/click/pull/1245). No new `represents` predicate is approved.
 This extends [pointer subobject extents](pointer-subobject-extents.md)
 and does not close its tracked bug.
@@ -120,7 +120,7 @@ its bounds to another equal integer.
 Use existing full pointer equality, without adding a predicate:
 
 ```click
-requires ((int32*)word) == p;
+requires (word as (int32 *)) == p;
 ```
 
 Under Phase B this states designation equality as well as address equality.
@@ -144,10 +144,10 @@ from ordinary address equations. These are separate operations.
 
 A resource's numeric word key observes its bits. When its contract also needs
 the complete decoded value, pass that value as a pointer argument, for example
-`owns h: held(w, (struct node*)w);`, and relate that pointer parameter to the
+`owns h: held(w, w as (struct node *));`, and relate that pointer parameter to the
 resource's model. Pointer arguments preserve designation and bounds. A fact
 about a word stored in memory can name that storage directly, as in
-`fact ((struct node*)p->parent_word) == q;`.
+`fact (p->parent_word as (struct node *)) == q;`.
 
 Resource-body publication and hypothetical arm checks request numeric word
 observations before loading. `WordRepresentationScope` avoids recovering a

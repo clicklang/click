@@ -67,10 +67,10 @@ resource counter_state(counter: struct mutex_counter*) {
 }
 
 void* increment_counter(void* argument) {
-    owns contribution((struct mutex_counter*)argument);
+    owns contribution(argument as (struct mutex_counter *));
     owns access: mutex_use(
-        &((struct mutex_counter*)argument)->mutex,
-        counter_state((struct mutex_counter*)argument)
+        &(argument as (struct mutex_counter *))->mutex,
+        counter_state(argument as (struct mutex_counter *))
     );
     ensures result == 0;
 } by {

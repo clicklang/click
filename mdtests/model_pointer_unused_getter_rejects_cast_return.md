@@ -7,7 +7,7 @@ struct other { int word; };
 
 ```click
 verifying "case.c";
-function wrong(p: struct other*) -> struct node* { (struct node*)(void*)p }
+function wrong(p: struct other*) -> struct node* { p as (void *) as (struct node *) }
 theorem unrelated() { ensures 1 == 1 by normalize(); }
 ```
 

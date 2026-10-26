@@ -11,7 +11,7 @@ int32 read_packed(unsigned long word, struct pair* pair) {
 verifying "packed.c";
 int32 read_packed(unsigned long word, struct pair* pair) {
     requires pair != 0;
-    requires ((int32*)(word & ~1)) == &pair->first;
+    requires ((word & ~1) as (int32 *)) == &pair->first;
     views pair->first;
     ensures result == pair->first;
 }

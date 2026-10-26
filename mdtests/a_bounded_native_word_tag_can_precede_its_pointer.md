@@ -13,7 +13,7 @@ void stamp(struct slot* slot, int32* p, unsigned long tag) {
     owns slot->word;
     requires aligned(p, 8);
     requires tag <= 1;
-    ensures ((int32*)(slot->word & ~3)) == p;
+    ensures ((slot->word & ~3) as (int32 *)) == p;
 }
 ```
 

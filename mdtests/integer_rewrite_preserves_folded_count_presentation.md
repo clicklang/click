@@ -6,7 +6,7 @@ must use the same normalized Integer claim, without extra assumptions.
 
 ```click
 function observed_batch_prefix(total: uint64, remaining: uint64) -> int32 {
- (int32)(uint32)(total - remaining)
+ (total - remaining) as uint32 as int32
 }
 theorem rewritten_bound(a: uint64, remaining: uint64) {
  requires observed_batch_prefix(16u64, remaining) == 16;

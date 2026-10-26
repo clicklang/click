@@ -717,13 +717,13 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 ]
             } else if phase == Some(RoundingPhase::NumeratorRejections) {
                 let mut cases = vec![
-                    source.replace("apply(integer::uint64_multiply_to_integer((uint64)this->fee, (uint64)at_size));", ""),
-                    source.replace(if down { "apply(integer::uint64_divide_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)(uint32)this->size));" } else { "apply(integer::uint64_divide_to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64), (uint64)(uint32)this->size));" }, ""),
+                    source.replace("apply(integer::uint64_multiply_to_integer(this->fee as uint64, at_size as uint64));", ""),
+                    source.replace(if down { "apply(integer::uint64_divide_to_integer((this->fee as uint64 * at_size as uint64), this->size as uint32 as uint64));" } else { "apply(integer::uint64_divide_to_integer((((this->fee as uint64 * at_size as uint64) + this->size as uint64) - 1u64), this->size as uint32 as uint64));" }, ""),
                 ];
                 if !down {
                     cases.extend([
-                        source.replace("have to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(((uint64)this->fee * (uint64)at_size)) + to_integer((uint64)this->size);", ""),
-                        source.replace("have to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) - to_integer(1u64);", ""),
+                        source.replace("have to_integer(((this->fee as uint64 * at_size as uint64) + this->size as uint64)) == to_integer((this->fee as uint64 * at_size as uint64)) + to_integer(this->size as uint64);", ""),
+                        source.replace("have to_integer((((this->fee as uint64 * at_size as uint64) + this->size as uint64) - 1u64)) == to_integer(((this->fee as uint64 * at_size as uint64) + this->size as uint64)) - to_integer(1u64);", ""),
                         source.replace("== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1", "== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 2"),
                     ]);
                 }
@@ -790,16 +790,16 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     source.replace(if down { "to_integer(result) * to_integer(this->size) <= to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) <= to_integer(result) * to_integer(this->size)" }, if down { "to_integer(result) * to_integer(this->size) < to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) < to_integer(result) * to_integer(this->size)" }),
                 ],
                 RoundingPhase::NumeratorRejections => vec![
-                    source.replace("apply(integer::uint64_multiply_to_integer((uint64)this->fee, (uint64)at_size));", ""),
+                    source.replace("apply(integer::uint64_multiply_to_integer(this->fee as uint64, at_size as uint64));", ""),
                     source.replace("to_integer(product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(product) == to_integer(this->fee) * to_integer(at_size) + 1"),
                     source.replace("to_integer(negative_product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(negative_product) == to_integer(this->fee) * to_integer(at_size) + 1"),
-                    source.replace(if down { "apply(integer::uint64_divide_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)(uint32)this->size));" } else { "apply(integer::uint64_divide_to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64), (uint64)(uint32)this->size));" }, ""),
+                    source.replace(if down { "apply(integer::uint64_divide_to_integer((this->fee as uint64 * at_size as uint64), this->size as uint32 as uint64));" } else { "apply(integer::uint64_divide_to_integer((((this->fee as uint64 * at_size as uint64) + this->size as uint64) - 1u64), this->size as uint32 as uint64));" }, ""),
                 ],
                 RoundingPhase::AdjustedNumeratorRejections => {
                     assert!(!down);
                     vec![
-                        source.replace("have to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(((uint64)this->fee * (uint64)at_size)) + to_integer((uint64)this->size);", ""),
-                        source.replace("have to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) - to_integer(1u64);", ""),
+                        source.replace("have to_integer(((this->fee as uint64 * at_size as uint64) + this->size as uint64)) == to_integer((this->fee as uint64 * at_size as uint64)) + to_integer(this->size as uint64);", ""),
+                        source.replace("have to_integer((((this->fee as uint64 * at_size as uint64) + this->size as uint64) - 1u64)) == to_integer(((this->fee as uint64 * at_size as uint64) + this->size as uint64)) - to_integer(1u64);", ""),
                         source.replace("== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1", "== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 2"),
                     ]
                 }
@@ -865,11 +865,11 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 assert!(selected.ends_with("Up"));
                 vec![
                     source.replace(
-                        "have to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(((uint64)this->fee * (uint64)at_size)) + to_integer((uint64)this->size);",
+                        "have to_integer(((this->fee as uint64 * at_size as uint64) + this->size as uint64)) == to_integer((this->fee as uint64 * at_size as uint64)) + to_integer(this->size as uint64);",
                         "",
                     ),
                     source.replace(
-                        "have to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) - to_integer(1u64);",
+                        "have to_integer((((this->fee as uint64 * at_size as uint64) + this->size as uint64) - 1u64)) == to_integer(((this->fee as uint64 * at_size as uint64) + this->size as uint64)) - to_integer(1u64);",
                         "",
                     ),
                     source.replace(
@@ -1406,7 +1406,7 @@ fn pinned_writable_byte_span_reference_preserves_view_offline() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); }";
+    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == std_span_data(span) as (uint8 *); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); }";
     check_pinned_byte_proof(&root, &import, source);
 }
 
@@ -1424,7 +1424,7 @@ fn pinned_writable_byte_span_by_value_preserves_pointer_snapshot() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_data(result) == old((uint8*)std_span_data(span)); ensures std_span_size(result) == old(std_span_size(span)) * 4u64; }";
+    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_data(result) == old(std_span_data(span) as (uint8 *)); ensures std_span_size(result) == old(std_span_size(span)) * 4u64; }";
     check_pinned_byte_proof(&root, &import, source);
     fs::remove_dir_all(root).unwrap();
 }
@@ -1508,7 +1508,7 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
     let base = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_size(result) == std_span_size(span) * 4u64; }";
     for bad in [
         base.replace(" * 4u64", " * 3u64"),
-        base.replace("ensures std_span_size(result)", "ensures std_span_data(result) == (uint8*)std_span_data(span) + 1; ensures std_span_size(result)"),
+        base.replace("ensures std_span_size(result)", "ensures std_span_data(result) == std_span_data(span) as (uint8 *) + 1; ensures std_span_size(result)"),
         base.replace("ensures std_span_size(result)", "ensures 1u64 <= std_span_size(result); ensures std_span_size(result)"),
         base.replace(
             "ensures std_span_size(result)",
@@ -1528,7 +1528,7 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); }";
+    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == std_span_data(span) as (uint8 *); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); }";
     check_pinned_byte_proof(&root, &import, source);
     for field in ["std_span_data", "std_span_size"] {
         let bad = source.replace(&format!("views {field}(span);"), "");
@@ -4390,7 +4390,7 @@ fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline(
     check_pinned_byte_proof(
         &root,
         &import,
-        "verifying \"span-probe.cpp\"; uint32* echo(uint32* p) { ensures result == p; } uint8* probe(uint32* p) { ensures result == (uint8*)p; }",
+        "verifying \"span-probe.cpp\"; uint32* echo(uint32* p) { ensures result == p; } uint8* probe(uint32* p) { ensures result == p as (uint8 *); }",
     );
     let artifact_path = cpp_description::artifact(&root.join("span.import-description.json"));
     let lock_path = root.join(click::project::LOCK_NAME);

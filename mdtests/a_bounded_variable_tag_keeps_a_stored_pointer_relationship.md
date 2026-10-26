@@ -14,7 +14,7 @@ void stamp(struct slot* slot, int32* p, int32 tag) {
     requires aligned(p, 8);
     requires 0 <= tag;
     requires tag <= 1;
-    ensures ((int32*)(slot->word & ~3)) == p;
+    ensures ((slot->word & ~3) as (int32 *)) == p;
 }
 ```
 

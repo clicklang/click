@@ -307,7 +307,7 @@ the resource's own clauses check when they are evaluated. A kernel token whose
 identity is itself bounds evidence keeps the complete comparison, so a member
 pointer does not claim its enclosing object's `allocation(p, n)`
 (`mdtests/a_member_pointer_does_not_claim_its_enclosing_allocation_bounds.md`). A caller holding `size_metadata(rb_old)`
-therefore supplies a callee's `size_metadata((struct rb_node*)(void*)node)`
+therefore supplies a callee's `size_metadata(node as (void *) as (struct rb_node *))`
 for `node = container_of(rb_old, struct sized_node, rb)`
 (`mdtests/a_resource_argument_matches_across_a_cast_that_selects_another_view.md`),
 and an instance for another node still does not
@@ -1005,7 +1005,7 @@ cannot compare it with the call's argument syntactically. It instead
 instantiates the exact definition over a symbolic entry state: the guard and
 the witness's `where` facts are assumed, the call's argument is evaluated in
 that state, and the pure kernel must decide that the argument is the witness
-pointer. In the marked list, `(struct node *)(node->word & ~1)` is the
+pointer. In the marked list, `(node->word & ~1) as (struct node *)` is the
 witness because the `where` fact and the alignment evidence determine it.
 Loads on the call path are the same uninterpreted reads the syntactic
 comparison relies on; the ordinary contract proof remains responsible for

@@ -78,13 +78,13 @@ theorem adler_native_four_lane_a_prefix_step_u64(bytes: uint8[], n: uint64, a_se
  requires a_seed <= 65520;
  requires 0 <= a;
  requires truncating_remainder(adler_lane_a(a, to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)), 65521) == adler_spec_a_u64(bytes, n, a_seed);
- requires to_integer(v0) == to_integer((int32)(bytes + n)[0]);
+ requires to_integer(v0) == to_integer((bytes + n)[0] as int32);
  requires to_integer(a0) + to_integer(v0) <= 4294967295;
- requires to_integer(v1) == to_integer((int32)(bytes + n)[1]);
+ requires to_integer(v1) == to_integer((bytes + n)[1] as int32);
  requires to_integer(a1) + to_integer(v1) <= 4294967295;
- requires to_integer(v2) == to_integer((int32)(bytes + n)[2]);
+ requires to_integer(v2) == to_integer((bytes + n)[2] as int32);
  requires to_integer(a2) + to_integer(v2) <= 4294967295;
- requires to_integer(v3) == to_integer((int32)(bytes + n)[3]);
+ requires to_integer(v3) == to_integer((bytes + n)[3] as int32);
  requires to_integer(a3) + to_integer(v3) <= 4294967295;
  ensures truncating_remainder(adler_lane_a(a, to_integer((a0 + v0)), to_integer((a1 + v1)), to_integer((a2 + v2)), to_integer((a3 + v3))), 65521) == adler_spec_a_u64(bytes, n + 4u64, a_seed) by {
   apply(adler_spec_a_canonical_u64(bytes, n, a_seed)) using { 0 <= a_seed; };
@@ -93,17 +93,17 @@ theorem adler_native_four_lane_a_prefix_step_u64(bytes: uint8[], n: uint64, a_se
    rewrite(adler_spec_a(bytes + n, 0, adler_spec_a_u64(bytes, n, a_seed)) == adler_spec_a_u64(bytes, n, a_seed));
    assumption();
   }
-  have to_integer(v1) == to_integer((int32)(bytes + n)[0 + 1]) by normalize() using { to_integer(v1) == to_integer((int32)(bytes + n)[1]); };
-  have to_integer(v2) == to_integer((int32)(bytes + n)[0 + 2]) by normalize() using { to_integer(v2) == to_integer((int32)(bytes + n)[2]); };
-  have to_integer(v3) == to_integer((int32)(bytes + n)[0 + 3]) by normalize() using { to_integer(v3) == to_integer((int32)(bytes + n)[3]); };
+  have to_integer(v1) == to_integer((bytes + n)[0 + 1] as int32) by normalize() using { to_integer(v1) == to_integer((bytes + n)[1] as int32); };
+  have to_integer(v2) == to_integer((bytes + n)[0 + 2] as int32) by normalize() using { to_integer(v2) == to_integer((bytes + n)[2] as int32); };
+  have to_integer(v3) == to_integer((bytes + n)[0 + 3] as int32) by normalize() using { to_integer(v3) == to_integer((bytes + n)[3] as int32); };
   apply(adler_native_four_lane_a_prefix_step(bytes + n, 0, adler_spec_a_u64(bytes, n, a_seed), a, a0, a1, a2, a3, v0, v1, v2, v3)) using {
    0 <= 0; 0 <= 2147483643;
    0 <= adler_spec_a_u64(bytes, n, a_seed); adler_spec_a_u64(bytes, n, a_seed) <= 65520; 0 <= a;
    truncating_remainder(adler_lane_a(a, to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)), 65521) == adler_spec_a(bytes + n, 0, adler_spec_a_u64(bytes, n, a_seed));
-   to_integer(v0) == to_integer((int32)(bytes + n)[0]); to_integer(a0) + to_integer(v0) <= 4294967295;
-   to_integer(v1) == to_integer((int32)(bytes + n)[0 + 1]); to_integer(a1) + to_integer(v1) <= 4294967295;
-   to_integer(v2) == to_integer((int32)(bytes + n)[0 + 2]); to_integer(a2) + to_integer(v2) <= 4294967295;
-   to_integer(v3) == to_integer((int32)(bytes + n)[0 + 3]); to_integer(a3) + to_integer(v3) <= 4294967295;
+   to_integer(v0) == to_integer((bytes + n)[0] as int32); to_integer(a0) + to_integer(v0) <= 4294967295;
+   to_integer(v1) == to_integer((bytes + n)[0 + 1] as int32); to_integer(a1) + to_integer(v1) <= 4294967295;
+   to_integer(v2) == to_integer((bytes + n)[0 + 2] as int32); to_integer(a2) + to_integer(v2) <= 4294967295;
+   to_integer(v3) == to_integer((bytes + n)[0 + 3] as int32); to_integer(a3) + to_integer(v3) <= 4294967295;
   };
   have to_integer(0 + 4) == to_integer(4u64) by normalize();
   apply(adler_spec_a_bridge(bytes + n, 0 + 4, 4u64, adler_spec_a_u64(bytes, n, a_seed))) using { to_integer(0 + 4) == to_integer(4u64); };
@@ -127,16 +127,16 @@ theorem adler_native_deferred_b_prefix_step_u64(bytes: uint8[], n: uint64, pos: 
  requires 0 <= adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3));
  requires truncating_remainder(adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)), 65521) == adler_spec_a_u64(bytes, n, a_seed);
  requires truncating_remainder(adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)), 65521) == adler_spec_b_u64(bytes, n, a_seed, b_seed);
- requires to_integer(v0) == to_integer((int32)(bytes + n)[0]);
+ requires to_integer(v0) == to_integer((bytes + n)[0] as int32);
  requires to_integer(a0) + to_integer(v0) <= 4294967295;
  requires to_integer(b0) + (to_integer(a0) + to_integer(v0)) <= 4294967295;
- requires to_integer(v1) == to_integer((int32)(bytes + n)[1]);
+ requires to_integer(v1) == to_integer((bytes + n)[1] as int32);
  requires to_integer(a1) + to_integer(v1) <= 4294967295;
  requires to_integer(b1) + (to_integer(a1) + to_integer(v1)) <= 4294967295;
- requires to_integer(v2) == to_integer((int32)(bytes + n)[2]);
+ requires to_integer(v2) == to_integer((bytes + n)[2] as int32);
  requires to_integer(a2) + to_integer(v2) <= 4294967295;
  requires to_integer(b2) + (to_integer(a2) + to_integer(v2)) <= 4294967295;
- requires to_integer(v3) == to_integer((int32)(bytes + n)[3]);
+ requires to_integer(v3) == to_integer((bytes + n)[3] as int32);
  requires to_integer(a3) + to_integer(v3) <= 4294967295;
  requires to_integer(b3) + (to_integer(a3) + to_integer(v3)) <= 4294967295;
  ensures truncating_remainder(adler_lane_b(to_integer(b) + to_integer(pos + 4) * to_integer(a), to_integer(a1 + v1), to_integer(a2 + v2), to_integer(a3 + v3), to_integer(b0 + (a0 + v0)), to_integer(b1 + (a1 + v1)), to_integer(b2 + (a2 + v2)), to_integer(b3 + (a3 + v3))), 65521) == adler_spec_b_u64(bytes, n + 4u64, a_seed, b_seed) by {
@@ -151,19 +151,19 @@ theorem adler_native_deferred_b_prefix_step_u64(bytes: uint8[], n: uint64, pos: 
    rewrite(adler_spec_b(bytes + n, 0, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed)) == adler_spec_b_u64(bytes, n, a_seed, b_seed));
    assumption();
   }
-  have to_integer(v1) == to_integer((int32)(bytes + n)[0 + 1]) by normalize() using { to_integer(v1) == to_integer((int32)(bytes + n)[1]); };
-  have to_integer(v2) == to_integer((int32)(bytes + n)[0 + 2]) by normalize() using { to_integer(v2) == to_integer((int32)(bytes + n)[2]); };
-  have to_integer(v3) == to_integer((int32)(bytes + n)[0 + 3]) by normalize() using { to_integer(v3) == to_integer((int32)(bytes + n)[3]); };
+  have to_integer(v1) == to_integer((bytes + n)[0 + 1] as int32) by normalize() using { to_integer(v1) == to_integer((bytes + n)[1] as int32); };
+  have to_integer(v2) == to_integer((bytes + n)[0 + 2] as int32) by normalize() using { to_integer(v2) == to_integer((bytes + n)[2] as int32); };
+  have to_integer(v3) == to_integer((bytes + n)[0 + 3] as int32) by normalize() using { to_integer(v3) == to_integer((bytes + n)[3] as int32); };
   apply(adler_native_deferred_b_prefix_step(bytes + n, 0, pos, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed), a, b, a0, a1, a2, a3, b0, b1, b2, b3, v0, v1, v2, v3)) using {
    0 <= 0; 0 <= 2147483643; 0 <= pos; pos <= 22204;
    0 <= adler_spec_a_u64(bytes, n, a_seed); adler_spec_a_u64(bytes, n, a_seed) <= 65520; 0 <= adler_spec_b_u64(bytes, n, a_seed, b_seed);
    0 <= adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3));
    truncating_remainder(adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)), 65521) == adler_spec_a(bytes + n, 0, adler_spec_a_u64(bytes, n, a_seed));
    truncating_remainder(adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)), 65521) == adler_spec_b(bytes + n, 0, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed));
-   to_integer(v0) == to_integer((int32)(bytes + n)[0]); to_integer(a0) + to_integer(v0) <= 4294967295; to_integer(b0) + (to_integer(a0) + to_integer(v0)) <= 4294967295;
-   to_integer(v1) == to_integer((int32)(bytes + n)[0 + 1]); to_integer(a1) + to_integer(v1) <= 4294967295; to_integer(b1) + (to_integer(a1) + to_integer(v1)) <= 4294967295;
-   to_integer(v2) == to_integer((int32)(bytes + n)[0 + 2]); to_integer(a2) + to_integer(v2) <= 4294967295; to_integer(b2) + (to_integer(a2) + to_integer(v2)) <= 4294967295;
-   to_integer(v3) == to_integer((int32)(bytes + n)[0 + 3]); to_integer(a3) + to_integer(v3) <= 4294967295; to_integer(b3) + (to_integer(a3) + to_integer(v3)) <= 4294967295;
+   to_integer(v0) == to_integer((bytes + n)[0] as int32); to_integer(a0) + to_integer(v0) <= 4294967295; to_integer(b0) + (to_integer(a0) + to_integer(v0)) <= 4294967295;
+   to_integer(v1) == to_integer((bytes + n)[0 + 1] as int32); to_integer(a1) + to_integer(v1) <= 4294967295; to_integer(b1) + (to_integer(a1) + to_integer(v1)) <= 4294967295;
+   to_integer(v2) == to_integer((bytes + n)[0 + 2] as int32); to_integer(a2) + to_integer(v2) <= 4294967295; to_integer(b2) + (to_integer(a2) + to_integer(v2)) <= 4294967295;
+   to_integer(v3) == to_integer((bytes + n)[0 + 3] as int32); to_integer(a3) + to_integer(v3) <= 4294967295; to_integer(b3) + (to_integer(a3) + to_integer(v3)) <= 4294967295;
   };
   have to_integer(0 + 4) == to_integer(4u64) by normalize();
   apply(adler_spec_b_bridge(bytes + n, 0 + 4, 4u64, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed))) using { to_integer(0 + 4) == to_integer(4u64); };
@@ -182,7 +182,7 @@ theorem adler_prefix_a_step_one_u64(bytes: uint8[], n: uint64, seed: Integer, re
  requires 0 <= seed;
  requires 0 <= representative;
  requires truncating_remainder(representative, 65521) == adler_spec_a_u64(bytes, n, seed);
- ensures truncating_remainder(representative + to_integer((int32)(bytes + n)[0]), 65521) == adler_spec_a_u64(bytes, n + 1u64, seed) by {
+ ensures truncating_remainder(representative + to_integer((bytes + n)[0] as int32), 65521) == adler_spec_a_u64(bytes, n + 1u64, seed) by {
   apply(adler_spec_a_canonical_u64(bytes, n, seed)) using { 0 <= seed; };
   apply(adler_spec_empty(bytes + n, adler_spec_a_u64(bytes, n, seed), 0)) using { 0 <= adler_spec_a_u64(bytes, n, seed); adler_spec_a_u64(bytes, n, seed) <= 65520; 0 <= 0; 0 <= 65520; };
   have truncating_remainder(representative, 65521) == adler_spec_a(bytes + n, 0, adler_spec_a_u64(bytes, n, seed)) by {
@@ -195,7 +195,7 @@ theorem adler_prefix_a_step_one_u64(bytes: uint8[], n: uint64, seed: Integer, re
   have to_integer(n) + to_integer(1u64) <= 18446744073709551615 by solve() using { to_integer(n) + 1 <= 18446744073709551615; };
   apply(adler_spec_a_concat_u64(bytes, n, 1u64, seed)) using { to_integer(n) + to_integer(1u64) <= 18446744073709551615; 0 <= seed; };
   solve() using {
-   truncating_remainder(representative + to_integer((int32)(bytes + n)[0]), 65521) == adler_spec_a(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, seed));
+   truncating_remainder(representative + to_integer((bytes + n)[0] as int32), 65521) == adler_spec_a(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, seed));
    adler_spec_a(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, seed)) == adler_spec_a_u64(bytes + n, 1u64, adler_spec_a_u64(bytes, n, seed));
    adler_spec_a_u64(bytes, n + 1u64, seed) == adler_spec_a_u64(bytes + n, 1u64, adler_spec_a_u64(bytes, n, seed));
   };
@@ -211,7 +211,7 @@ theorem adler_prefix_b_step_one_u64(bytes: uint8[], n: uint64, a_seed: Integer, 
  requires 0 <= b_rep;
  requires truncating_remainder(a_rep, 65521) == adler_spec_a_u64(bytes, n, a_seed);
  requires truncating_remainder(b_rep, 65521) == adler_spec_b_u64(bytes, n, a_seed, b_seed);
- ensures truncating_remainder((b_rep + a_rep + to_integer((int32)(bytes + n)[0])), 65521) == adler_spec_b_u64(bytes, n + 1u64, a_seed, b_seed) by {
+ ensures truncating_remainder((b_rep + a_rep + to_integer((bytes + n)[0] as int32)), 65521) == adler_spec_b_u64(bytes, n + 1u64, a_seed, b_seed) by {
   apply(adler_spec_a_canonical_u64(bytes, n, a_seed)) using { 0 <= a_seed; };
   apply(adler_spec_b_canonical_u64(bytes, n, a_seed, b_seed)) using { 0 <= a_seed; a_seed <= 65520; 0 <= b_seed; };
   apply(adler_spec_empty(bytes + n, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed))) using { 0 <= adler_spec_a_u64(bytes, n, a_seed); adler_spec_a_u64(bytes, n, a_seed) <= 65520; 0 <= adler_spec_b_u64(bytes, n, a_seed, b_seed); adler_spec_b_u64(bytes, n, a_seed, b_seed) <= 65520; };
@@ -229,7 +229,7 @@ theorem adler_prefix_b_step_one_u64(bytes: uint8[], n: uint64, a_seed: Integer, 
   have to_integer(n) + to_integer(1u64) <= 18446744073709551615 by solve() using { to_integer(n) + 1 <= 18446744073709551615; };
   apply(adler_spec_b_concat_u64(bytes, n, 1u64, a_seed, b_seed)) using { to_integer(n) + to_integer(1u64) <= 18446744073709551615; 0 <= a_seed; a_seed <= 65520; 0 <= b_seed; };
   solve() using {
-   truncating_remainder((b_rep + a_rep + to_integer((int32)(bytes + n)[0])), 65521) == adler_spec_b(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed));
+   truncating_remainder((b_rep + a_rep + to_integer((bytes + n)[0] as int32)), 65521) == adler_spec_b(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed));
    adler_spec_b(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed)) == adler_spec_b_u64(bytes + n, 1u64, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed));
    adler_spec_b_u64(bytes, n + 1u64, a_seed, b_seed) == adler_spec_b_u64(bytes + n, 1u64, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed));
   };
@@ -962,7 +962,7 @@ impl adler2::Adler32 {
       assumption();
      }
      have to_integer(b) + to_integer(__rust_mir_50) <= 4294967295 by solve() using { to_integer(b) <= 65520; to_integer(__rust_mir_50) <= 1455068160; };
-     have to_integer((int64)b + (int64)__rust_mir_50) <= 4294967295;
+     have to_integer(b as int64 + __rust_mir_50 as int64) <= 4294967295;
      have b <= 4294967295u32 - __rust_mir_50;
      have to_integer(b + __rust_mir_50) == to_integer(b) + to_integer(__rust_mir_50);
      have at(full_product, __rust_mir_51) == 22208u32 by solve();
@@ -1708,7 +1708,7 @@ impl adler2::Adler32 {
      have to_integer(__rust_mir_76) <= 1454806080 by { rewrite(to_integer(__rust_mir_76) == to_integer(at(seed_product, __rust_mir_77) * at(seed_product, __rust_mir_80))); rewrite(to_integer(at(seed_product, __rust_mir_77) * at(seed_product, __rust_mir_80)) == to_integer(at(seed_product, __rust_mir_77)) * to_integer(at(seed_product, __rust_mir_80))); assumption(); }
      have b <= 65520u32 by assumption();
      have to_integer(b) + to_integer(__rust_mir_76) <= 4294967295 by solve() using { to_integer(b) <= 65520; to_integer(__rust_mir_76) <= 1454806080; };
-     have to_integer((int64)b + (int64)__rust_mir_76) <= 4294967295;
+     have to_integer(b as int64 + __rust_mir_76 as int64) <= 4294967295;
      have b <= 4294967295u32 - __rust_mir_76;
      mark deferred_b;
      have to_integer(at(deferred_b, b)) == to_integer(at(remainder_lane_prefix, b));
@@ -1926,7 +1926,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_121) <= 65520 by solve() using { to_integer(av) <= 65520; };
      have to_integer(a) + to_integer(__rust_mir_121) <= 4294967295 by solve() using { to_integer(a) <= 65520; to_integer(__rust_mir_121) <= 65520; };
-     have to_integer((int64)a + (int64)__rust_mir_121) <= 4294967295;
+     have to_integer(a as int64 + __rust_mir_121 as int64) <= 4294967295;
      have a <= 4294967295u32 - __rust_mir_121;
      step_until(assignment(__rust_mir_122, 0));
      mark remainder_sum_a_0;
@@ -1952,7 +1952,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_121) <= 65520 by solve() using { to_integer(av) <= 65520; };
      have to_integer(a) + to_integer(__rust_mir_121) <= 4294967295 by solve() using { to_integer(a) <= 131040; to_integer(__rust_mir_121) <= 65520; };
-     have to_integer((int64)a + (int64)__rust_mir_121) <= 4294967295;
+     have to_integer(a as int64 + __rust_mir_121 as int64) <= 4294967295;
      have a <= 4294967295u32 - __rust_mir_121;
      step_until(assignment(__rust_mir_122, 0));
      mark remainder_sum_a_1;
@@ -1978,7 +1978,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_121) <= 65520 by solve() using { to_integer(av) <= 65520; };
      have to_integer(a) + to_integer(__rust_mir_121) <= 4294967295 by solve() using { to_integer(a) <= 196560; to_integer(__rust_mir_121) <= 65520; };
-     have to_integer((int64)a + (int64)__rust_mir_121) <= 4294967295;
+     have to_integer(a as int64 + __rust_mir_121 as int64) <= 4294967295;
      have a <= 4294967295u32 - __rust_mir_121;
      step_until(assignment(__rust_mir_122, 0));
      mark remainder_sum_a_2;
@@ -2004,7 +2004,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_121) <= 65520 by solve() using { to_integer(av) <= 65520; };
      have to_integer(a) + to_integer(__rust_mir_121) <= 4294967295 by solve() using { to_integer(a) <= 262080; to_integer(__rust_mir_121) <= 65520; };
-     have to_integer((int64)a + (int64)__rust_mir_121) <= 4294967295;
+     have to_integer(a as int64 + __rust_mir_121 as int64) <= 4294967295;
      have a <= 4294967295u32 - __rust_mir_121;
      step_until(assignment(__rust_mir_122, 0));
      mark remainder_sum_a_3;
@@ -2042,7 +2042,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_133) <= 262080 by solve() using { to_integer(bv) <= 262080; };
      have to_integer(b) + to_integer(__rust_mir_133) <= 4294967295 by solve() using { to_integer(b) <= 65520; to_integer(__rust_mir_133) <= 262080; };
-     have to_integer((int64)b + (int64)__rust_mir_133) <= 4294967295;
+     have to_integer(b as int64 + __rust_mir_133 as int64) <= 4294967295;
      have b <= 4294967295u32 - __rust_mir_133;
      step_until(assignment(__rust_mir_134, 0));
      mark remainder_sum_b_0;
@@ -2069,7 +2069,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_133) <= 327601 by solve() using { to_integer(bv) <= 327601; };
      have to_integer(b) + to_integer(__rust_mir_133) <= 4294967295 by solve() using { to_integer(b) <= 327600; to_integer(__rust_mir_133) <= 327601; };
-     have to_integer((int64)b + (int64)__rust_mir_133) <= 4294967295;
+     have to_integer(b as int64 + __rust_mir_133 as int64) <= 4294967295;
      have b <= 4294967295u32 - __rust_mir_133;
      step_until(assignment(__rust_mir_134, 0));
      mark remainder_sum_b_1;
@@ -2096,7 +2096,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_133) <= 393122 by solve() using { to_integer(bv) <= 393122; };
      have to_integer(b) + to_integer(__rust_mir_133) <= 4294967295 by solve() using { to_integer(b) <= 655201; to_integer(__rust_mir_133) <= 393122; };
-     have to_integer((int64)b + (int64)__rust_mir_133) <= 4294967295;
+     have to_integer(b as int64 + __rust_mir_133 as int64) <= 4294967295;
      have b <= 4294967295u32 - __rust_mir_133;
      step_until(assignment(__rust_mir_134, 0));
      mark remainder_sum_b_2;
@@ -2123,7 +2123,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_133) <= 458643 by solve() using { to_integer(bv) <= 458643; };
      have to_integer(b) + to_integer(__rust_mir_133) <= 4294967295 by solve() using { to_integer(b) <= 1048323; to_integer(__rust_mir_133) <= 458643; };
-     have to_integer((int64)b + (int64)__rust_mir_133) <= 4294967295;
+     have to_integer(b as int64 + __rust_mir_133 as int64) <= 4294967295;
      have b <= 4294967295u32 - __rust_mir_133;
      step_until(assignment(__rust_mir_134, 0));
      mark remainder_sum_b_3;
@@ -2246,7 +2246,7 @@ impl adler2::Adler32 {
        have to_integer(__rust_mir_144) <= to_integer(255u32);
        have to_integer(__rust_mir_144) <= 255 by solve() using { to_integer(__rust_mir_144) <= to_integer(255u32); };
        apply(adler_tail_iterator_step(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32)), to_integer(a), to_integer(b), to_integer(__rust_mir_144))) using { 1 <= at(tail_head, ((__rust_mir_138_remaining as u32) as i32)); ((remainder_len as u32) as i32) <= 3; to_integer(a) <= adler_tail_a_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32)))); to_integer(b) <= adler_tail_b_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32)))); to_integer(__rust_mir_144) <= 255; };
-       have to_integer((int64)a + (int64)__rust_mir_144) <= 4294967295;
+       have to_integer(a as int64 + __rust_mir_144 as int64) <= 4294967295;
        have a <= 4294967295u32 - __rust_mir_144;
        step_until(assignment(__rust_mir_146, 0));
        mark tail_add_a;
@@ -2285,7 +2285,7 @@ impl adler2::Adler32 {
        have a == __rust_mir_146;
        have to_integer(b) + to_integer(__rust_mir_147) <= adler_tail_b_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32))) + 1) by { rewrite(__rust_mir_147 == a); rewrite(a == __rust_mir_146); assumption(); }
        have to_integer(b) + to_integer(__rust_mir_147) <= 4294967295;
-       have to_integer((int64)b + (int64)__rust_mir_147) <= 4294967295;
+       have to_integer(b as int64 + __rust_mir_147 as int64) <= 4294967295;
        have b <= 4294967295u32 - __rust_mir_147;
        step_until(assignment(__rust_mir_148, 0));
        mark tail_add_b;

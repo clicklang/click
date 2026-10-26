@@ -10,7 +10,7 @@ int32 read(struct base* p) { return ((struct item*)(void*)p)->value; }
 verifying "read.c";
 int32 read(struct base* p) {
     views p->tag;
-    ensures result == ((struct item*)(void*)p)->value;
+    ensures result == (p as (void *) as (struct item *))->value;
 } by { step_until(function.exit); normalize(); }
 ```
 

@@ -11,7 +11,7 @@ target "x86_64-unknown-linux-gnu";
 verifying "first_is_nul.c";
 int32 first_is_nul(char* p) {
     views p[0..1];
-    requires ((uint8*)p)[0] == 1;
+    requires (p as (uint8 *))[0] == 1;
     ensures result == 1;
 }
 ```

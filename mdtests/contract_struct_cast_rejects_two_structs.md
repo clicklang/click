@@ -23,8 +23,8 @@ int pick(void *argument) {
 verifying "two_casts.c";
 
 int32 pick(void *argument) {
-    views ((struct a *)argument)->x;
-    ensures result == ((struct b *)argument)->y;
+    views (argument as (struct a *))->x;
+    ensures result == (argument as (struct b *))->y;
 }
 ```
 

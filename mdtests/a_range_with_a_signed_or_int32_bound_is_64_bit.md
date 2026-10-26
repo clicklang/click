@@ -22,7 +22,7 @@ unsigned char whole(const unsigned char *bytes, long n) { return first(bytes, n)
 ```click
 verifying "a_range_with_a_signed_or_int32_bound_is_64_bit.c";
 uint8 at(const uint8* bytes, int32 i, uint64 length) {
-    requires (uint64)i < length;
+    requires i as uint64 < length;
     views bytes[i..length];
     ensures result == bytes[i];
 }

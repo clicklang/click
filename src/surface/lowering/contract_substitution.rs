@@ -3019,7 +3019,7 @@ pub(in crate::surface) fn pure_function_result_value(
 /// [`pure_function_parameter_argument`] for an argument whose type is
 /// known: an argument already of the parameter's type needs no conversion,
 /// so the instantiated body reads it as written, `cd(n - 1)` rather than
-/// `cd((int32)n - 1)`. The conversion is a no-op there, so the lowered body
+/// `cd(n as int32 - 1)`. The conversion is a no-op there, so the lowered body
 /// is the same either way; only its spelling differs.
 pub(in crate::surface) fn pure_function_parameter_argument_of_type(
     parameter: &FunctionParameter,

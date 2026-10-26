@@ -6,7 +6,7 @@ void f(const unsigned char *p, int index) {}
 target "x86_64-unknown-linux-gnu";
 verifying "recorded.c";
 theorem same_byte(left: uint8, right: uint8) {
- requires (int32)left == (int32)right;
+ requires left as int32 == right as int32;
  ensures left == right by { assumption(); }
 }
 void f(const uint8* p, int32 index) {

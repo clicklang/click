@@ -1,6 +1,6 @@
 # A cast in a range bound truncates the bound
 
-`bytes[0..(int32)length]` is legal and means what it says: the range up to
+`bytes[0..length as int32]` is legal and means what it says: the range up to
 the length truncated to 32 bits, read through 32-bit indices. The C reads
 `bytes[index]` at the 64-bit index, which that range is not shown to hold,
 even with the length known to fit: an index is never narrowed to meet a
@@ -21,7 +21,7 @@ verifying "a_cast_in_a_range_bound_truncates_the_bound.c";
 uint8 read(const uint8* bytes, uint64 length, uint64 index) {
     requires length <= 2147483647u64;
     requires index < length;
-    views bytes[0..(int32)length];
+    views bytes[0..length as int32];
     ensures result == bytes[index];
 }
 ```

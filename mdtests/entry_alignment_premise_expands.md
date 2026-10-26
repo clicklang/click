@@ -8,7 +8,7 @@ function entry.
 
 The fact is `address(arena) & 7u64 == 0u64` inside, and the expansion wrote
 it with each side read at entry, as
-`at(function.entry, (((uint64)arena) & 7u64)) == at(function.entry, 0u64)`.
+`at(function.entry, ((arena as uint64) & 7u64)) == at(function.entry, 0u64)`.
 Click has no cast spelling for a pointer's address, so the rewrite did not
 parse and `click audit examples/arena` failed at that site while
 `click verify` accepted the proof. A snapshot-read alignment fact now renders

@@ -60,18 +60,121 @@ pub(super) fn frozen_proof_input(source: &str) -> String {
     frozen_library_names(input.replace("bytes_len", "bytes.len()")) + FROZEN_LIBRARY_IMPORTS
 }
 
-/// `source` with the tactic spellings the pinned proofs use and the parser
-/// no longer reads spelled as today's: `simp()` is `solve()`, `arithmetic()`
-/// is `solve() using`, `execute_until` is `step_until`, and the pinned
-/// proofs' `execute()`, written where one path runs on to function exit, is
-/// `step_until(function.exit)`.
+/// `source` with the tactic and cast spellings the pinned proofs use and the
+/// parser no longer reads spelled as today's: `simp()` is `solve()`,
+/// `arithmetic()` is `solve() using`, `execute_until` is `step_until`, the
+/// pinned proofs' `execute()`, written where one path runs on to function
+/// exit, is `step_until(function.exit)`, and a C-form cast `(T) e` is
+/// `(e as T)`.
 fn frozen_tactic_spelling(source: String) -> String {
-    source
+    frozen_cast_spelling(&source)
         .replace("execute();", "step_until(function.exit);")
         .replace("simp()", "solve()")
         .replace("arithmetic() using", "solve() using")
         .replace("arithmetic()", "solve() using {}")
         .replace("execute_until(", "step_until(")
+}
+
+/// `text` with each C-form integer cast `(T) e` of the pinned proofs written
+/// `(e as T)`. The operand is a unary expression: a parenthesized group or a
+/// name with its calls, indexes and fields, or another such cast. The pinned
+/// proofs cast only to integer types.
+fn frozen_cast_spelling(text: &str) -> String {
+    let mut output = String::new();
+    let mut rest = text;
+    while let Some(open) = rest.find('(') {
+        output.push_str(&rest[..open]);
+        rest = &rest[open..];
+        match frozen_cast(rest) {
+            Some((target, operand, end)) => {
+                output.push_str(&format!("({} as {target})", frozen_cast_spelling(operand)));
+                rest = &rest[end..];
+            }
+            None => {
+                output.push('(');
+                rest = &rest[1..];
+            }
+        }
+    }
+    output + rest
+}
+
+/// The target, operand text and end of a C-form integer cast at the start of
+/// `text`.
+fn frozen_cast(text: &str) -> Option<(&str, &str, usize)> {
+    let close = text.find(')')?;
+    let target = text[1..close].trim();
+    let integer = matches!(
+        target,
+        "int8" | "uint8" | "int16" | "uint16" | "int32" | "uint32" | "int64" | "uint64"
+    );
+    if !integer {
+        return None;
+    }
+    let start = close + 1 + (text[close + 1..].len() - text[close + 1..].trim_start().len());
+    let end = start + frozen_operand_length(&text[start..])?;
+    Some((target, &text[start..end], end))
+}
+
+/// The length of the unary expression at the start of `text`.
+fn frozen_operand_length(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut index = match bytes.first()? {
+        b'(' => {
+            if let Some((_, _, end)) = frozen_cast(text) {
+                return Some(end);
+            }
+            frozen_group_end(text, 0)?
+        }
+        byte if byte.is_ascii_alphanumeric() || *byte == b'_' => {
+            let mut index = 0;
+            while index < bytes.len()
+                && (bytes[index].is_ascii_alphanumeric()
+                    || bytes[index] == b'_'
+                    || text[index..].starts_with("::"))
+            {
+                index += if text[index..].starts_with("::") {
+                    2
+                } else {
+                    1
+                };
+            }
+            index
+        }
+        _ => return None,
+    };
+    loop {
+        match bytes.get(index) {
+            Some(b'(' | b'[') => index = frozen_group_end(text, index)?,
+            Some(b'.') if text[index + 1..].starts_with(|c: char| c.is_ascii_alphabetic()) => {
+                index += 1;
+                while index < bytes.len()
+                    && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_')
+                {
+                    index += 1;
+                }
+            }
+            _ => return Some(index),
+        }
+    }
+}
+
+/// The end of the bracket group opening at `open`.
+fn frozen_group_end(text: &str, open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (offset, byte) in text.as_bytes()[open..].iter().enumerate() {
+        match byte {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open + offset + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// `source` with each bare library theorem citation of the pinned proofs

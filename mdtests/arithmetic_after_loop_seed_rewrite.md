@@ -10,7 +10,7 @@ unsigned long seed(unsigned long word, unsigned long len) {
 import click::integer;
 verifying "render.c";
 function decode(word: uint64) -> uint64 { word & 65535u64 }
-function count(total: uint64, remaining: uint64) -> int32 { (int32)(uint32)(total - remaining) }
+function count(total: uint64, remaining: uint64) -> int32 { (total - remaining) as uint32 as int32 }
 function observe(n: int32, value: Integer) -> Integer { value }
 uint64 seed(uint64 word, uint64 len) {
  requires len <= 15u64;

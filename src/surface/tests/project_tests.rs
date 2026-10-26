@@ -2193,18 +2193,18 @@ int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
     step_until(read(0));
     let { result: value } = step();
     mark loaded;
-    have 0<=(int32)value and 255>=(int32)value by {solve();}
+    have 0<=value as int32 and 255>=value as int32 by {solve();}
     have value==load_uint8(p) by {solve();}
     step();
     have x==0 by {solve();}
     have value==at(loaded, x) by {solve();}
-    have 0<=(int32)value and 255>=(int32)value by {solve();}
+    have 0<=value as int32 and 255>=value as int32 by {solve();}
     step_until(function.exit); solve();
 }"#;
     verify_c0_sources(proof, &[("read.c", source)]).unwrap();
     for invalid in [
         proof.replace("views p[0..1];", ""),
-        proof.replace("255>=(int32)value", "256==(int32)value"),
+        proof.replace("255>=value as int32", "256==value as int32"),
         proof.replace("value==at(loaded, x)", "value==x"),
         proof.replace(
             "let { result: value } = step();",

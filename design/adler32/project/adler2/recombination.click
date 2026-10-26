@@ -31,10 +31,10 @@ theorem adler_recombine_lane_1(a: uint32, b: uint32) {
     requires to_integer(b) <= 262080;
     ensures to_integer(b + (65521u32 - a)) == to_integer(b) + (65521 - to_integer(a)) * 1
         and to_integer(b + (65521u32 - a)) <= 327601
-        and to_integer(((int64)b + (int64)(65521u32 - a))) <= to_integer(4294967295i64) by {
+        and to_integer((b as int64 + (65521u32 - a) as int64)) <= to_integer(4294967295i64) by {
         apply(adler_recombine_difference(a)) using { a < 65521u32; };
         have to_integer(b) + to_integer(65521u32 - a) <= 4294967295 by solve() using { to_integer(b) <= 262080; to_integer(65521u32 - a) <= 65521; };
-        have to_integer((int64)b + (int64)(65521u32 - a)) <= 4294967295;
+        have to_integer(b as int64 + (65521u32 - a) as int64) <= 4294967295;
         have b <= 4294967295u32 - to_integer(65521u32 - a);
         have to_integer(b + (65521u32 - a)) == to_integer(b) + to_integer((65521u32 - a));
         have to_integer(b + (65521u32 - a)) <= 327601 by { rewrite(to_integer(b + (65521u32 - a)) == to_integer(b) + to_integer(65521u32 - a)); solve() using { to_integer(b) <= 262080; to_integer(65521u32 - a) <= 65521; }; }
@@ -51,7 +51,7 @@ theorem adler_recombine_lane_2(a: uint32, b: uint32) {
     requires to_integer(b) <= 262080;
     ensures to_integer(b + ((65521u32 - a) * 2u32)) == to_integer(b) + (65521 - to_integer(a)) * 2
         and to_integer(b + ((65521u32 - a) * 2u32)) <= 393122
-        and to_integer(((int64)b + (int64)((65521u32 - a) * 2u32))) <= to_integer(4294967295i64) by {
+        and to_integer((b as int64 + ((65521u32 - a) * 2u32) as int64)) <= to_integer(4294967295i64) by {
         apply(adler_recombine_difference(a)) using { a < 65521u32; };
         have to_integer(65521u32 - a) <= to_integer(4294967295u32 / 2u32) by solve() using { to_integer(65521u32 - a) <= to_integer(65521u32); };
         have 2u32 == 0u32 or to_integer(65521u32 - a) <= to_integer(4294967295u32 / 2u32) by assumption();
@@ -62,7 +62,7 @@ theorem adler_recombine_lane_2(a: uint32, b: uint32) {
         }
         have to_integer((65521u32 - a) * 2u32) <= 131042 by { rewrite(to_integer((65521u32 - a) * 2u32) == to_integer(65521u32 - a) * 2); solve() using { to_integer(65521u32 - a) <= 65521; }; }
         have to_integer(b) + to_integer((65521u32 - a) * 2u32) <= 4294967295 by solve() using { to_integer(b) <= 262080; to_integer((65521u32 - a) * 2u32) <= 131042; };
-        have to_integer((int64)b + (int64)((65521u32 - a) * 2u32)) <= 4294967295;
+        have to_integer(b as int64 + ((65521u32 - a) * 2u32) as int64) <= 4294967295;
         have b <= 4294967295u32 - to_integer((65521u32 - a) * 2u32);
         have to_integer(b + ((65521u32 - a) * 2u32)) == to_integer(b) + to_integer(((65521u32 - a) * 2u32));
         have to_integer(b + ((65521u32 - a) * 2u32)) <= 393122 by { rewrite(to_integer(b + ((65521u32 - a) * 2u32)) == to_integer(b) + to_integer((65521u32 - a) * 2u32)); solve() using { to_integer(b) <= 262080; to_integer((65521u32 - a) * 2u32) <= 131042; }; }
@@ -79,7 +79,7 @@ theorem adler_recombine_lane_3(a: uint32, b: uint32) {
     requires to_integer(b) <= 262080;
     ensures to_integer(b + ((65521u32 - a) * 3u32)) == to_integer(b) + (65521 - to_integer(a)) * 3
         and to_integer(b + ((65521u32 - a) * 3u32)) <= 458643
-        and to_integer(((int64)b + (int64)((65521u32 - a) * 3u32))) <= to_integer(4294967295i64) by {
+        and to_integer((b as int64 + ((65521u32 - a) * 3u32) as int64)) <= to_integer(4294967295i64) by {
         apply(adler_recombine_difference(a)) using { a < 65521u32; };
         have to_integer(65521u32 - a) <= to_integer(4294967295u32 / 3u32) by solve() using { to_integer(65521u32 - a) <= to_integer(65521u32); };
         have 3u32 == 0u32 or to_integer(65521u32 - a) <= to_integer(4294967295u32 / 3u32) by assumption();
@@ -90,7 +90,7 @@ theorem adler_recombine_lane_3(a: uint32, b: uint32) {
         }
         have to_integer((65521u32 - a) * 3u32) <= 196563 by { rewrite(to_integer((65521u32 - a) * 3u32) == to_integer(65521u32 - a) * 3); solve() using { to_integer(65521u32 - a) <= 65521; }; }
         have to_integer(b) + to_integer((65521u32 - a) * 3u32) <= 4294967295 by solve() using { to_integer(b) <= 262080; to_integer((65521u32 - a) * 3u32) <= 196563; };
-        have to_integer((int64)b + (int64)((65521u32 - a) * 3u32)) <= 4294967295;
+        have to_integer(b as int64 + ((65521u32 - a) * 3u32) as int64) <= 4294967295;
         have b <= 4294967295u32 - to_integer((65521u32 - a) * 3u32);
         have to_integer(b + ((65521u32 - a) * 3u32)) == to_integer(b) + to_integer(((65521u32 - a) * 3u32));
         have to_integer(b + ((65521u32 - a) * 3u32)) <= 458643 by { rewrite(to_integer(b + ((65521u32 - a) * 3u32)) == to_integer(b) + to_integer((65521u32 - a) * 3u32)); solve() using { to_integer(b) <= 262080; to_integer((65521u32 - a) * 3u32) <= 196563; }; }

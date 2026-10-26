@@ -2,7 +2,7 @@
 
 The negative of
 [`an_integer_stated_body_fact_assembles_a_c_string_view.md`](an_integer_stated_body_fact_assembles_a_c_string_view.md),
-without its `have (uint64) n + 1 <= 18446744073709551615`. The Integer fact
+without its `have n as uint64 + 1 <= 18446744073709551615`. The Integer fact
 `to_integer(k) < to_integer(len) + 1` states the C fact `k < len + 1u64` only
 when `len + 1u64` does not wrap, so with no bound on `len` the view of `tmp`
 is not assembled from it.
@@ -37,21 +37,21 @@ int32 copy_name(char buf[], int32 n) {
     step();
     have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
     have forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) } by { enumerate(); }
-    have forall (k: uint64) { 0u64 <= k and k < (uint64) n implies tmp[k] != 0u8 } by {
+    have forall (k: uint64) { 0u64 <= k and k < n as uint64 implies tmp[k] != 0u8 } by {
         intro();
         intro();
         have k < 2u64 by { solve(); }
         instantiate(forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 }, k);
         assumption();
     }
-    have forall (k: uint64) { 0u64 <= k and k < (uint64) n + 1u64 implies defined(tmp[k]) } by {
+    have forall (k: uint64) { 0u64 <= k and k < n as uint64 + 1u64 implies defined(tmp[k]) } by {
         intro();
         intro();
         have k < 3u64 by { solve(); }
         instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) }, k);
         assumption();
     }
-    step(snprintf, { n0: (uint64) n });
+    step(snprintf, { n0: n as uint64 });
 }
 ```
 

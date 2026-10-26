@@ -38,8 +38,11 @@ fn comparison_operand(expression: &ContractExpression, mode: PropositionSpelling
     fn typed_count_reference(expression: &ContractExpression) -> Option<String> {
         match expression {
             ContractExpression::ResourceCount(_) => Some(format!(
-                "((int32){})",
-                describe_contract_expression(expression)
+                "({})",
+                crate::surface::diagnostics::click_cast(
+                    &describe_contract_expression(expression),
+                    "int32"
+                )
             )),
             ContractExpression::Old(inner) => {
                 Some(format!("old({})", typed_count_reference(inner)?))
@@ -67,9 +70,9 @@ fn comparison_operand(expression: &ContractExpression, mode: PropositionSpelling
     if mode == PropositionSpelling::Source
         && let Some(machine_type) = snapshot_machine_arithmetic(expression)
     {
-        return format!(
-            "({machine_type}){}",
-            describe_contract_expression(expression)
+        return crate::surface::diagnostics::click_cast(
+            &describe_contract_expression(expression),
+            machine_type,
         );
     }
     describe_contract_expression(expression)

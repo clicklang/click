@@ -75,9 +75,9 @@ void object_release(struct object *obj) {
     solve();
 }
 void* user(void* argument) {
-    owns access: mutex_use(&((struct object*)argument)->mu, control((struct object*)argument));
-    consumes reference((struct object*)argument);
-    produces permit((struct object*)argument);
+    owns access: mutex_use(&(argument as (struct object *))->mu, control(argument as (struct object *)));
+    consumes reference(argument as (struct object *));
+    produces permit(argument as (struct object *));
 } by {
     step();
     step();

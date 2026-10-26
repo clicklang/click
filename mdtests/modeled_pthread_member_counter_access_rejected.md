@@ -31,7 +31,7 @@ authorized resource reference(cell: struct cell*) {}
 verifying "modeled_pthread_member_counter_access_rejected.c";
 
 void *worker(void *argument) {
-    owns reference((struct cell *)argument);
+    owns reference(argument as (struct cell *));
 }
 
 int32 run(struct cell *cell) {

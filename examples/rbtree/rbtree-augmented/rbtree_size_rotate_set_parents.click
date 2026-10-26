@@ -64,9 +64,9 @@ theorem sized_context_parent_word_black(ctx: SizedContext, parent: struct rb_nod
 
 void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                              struct rb_root* root, int32 color) {
-    consumes c: sized_link_at(old, root, ((struct sized_node*)(void*)old)->size);
+    consumes c: sized_link_at(old, root, (old as (void *) as (struct sized_node *))->size);
     owns old->__rb_parent_color;
-    owns ((struct sized_node*)(void*)old)->size;
+    owns (old as (void *) as (struct sized_node *))->size;
     owns new->__rb_parent_color;
     requires old != 0;
     requires new != 0;
@@ -74,14 +74,14 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
     requires 0 <= color;
     requires color <= 1;
     requires sized_context_parent_word(c.model, old->__rb_parent_color) == 1;
-    produces after: sized_link_at(new, root, ((struct sized_node*)(void*)old)->size);
+    produces after: sized_link_at(new, root, (old as (void *) as (struct sized_node *))->size);
     ensures after.model == old(c.model);
-    ensures ((struct sized_node*)(void*)old)->size == old(((struct sized_node*)(void*)old)->size);
+    ensures (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size);
     ensures new->__rb_parent_color == old(old->__rb_parent_color);
     ensures old->__rb_parent_color == address(new) + color;
 } by {
     sized_link_replacement_distinct(old, new, root,
-        ((struct sized_node*)(void*)old)->size, { link: c });
+        (old as (void *) as (struct sized_node *))->size, { link: c });
     have sized_context_parent(old(c.model), 0) == 0 or new != sized_context_parent(old(c.model), 0) by {
         rewrite(old(c.model) == c.model); assumption();
     }
@@ -89,8 +89,8 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
         SizedContext::Top => {
             let { frames: frames } = unfold(c);
             unfold(frames);
-            let frames = fold(sized_context_at(old, root->rb_node, 0, ((struct sized_node*)(void*)old)->size), { model: SizedContext::Top });
-            let d = fold(sized_link_at(old, root, ((struct sized_node*)(void*)old)->size), { model: SizedContext::Top }, { frames: frames });
+            let frames = fold(sized_context_at(old, root->rb_node, 0, (old as (void *) as (struct sized_node *))->size), { model: SizedContext::Top });
+            let d = fold(sized_link_at(old, root, (old as (void *) as (struct sized_node *))->size), { model: SizedContext::Top }, { frames: frames });
             have sized_context_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model == SizedContext::Top); rewrite(SizedContext::Top == old(c.model)); assumption(); }
             have (old->__rb_parent_color & ~3) == 0 by {
                 if old->__rb_parent_color == 0 {
@@ -138,8 +138,8 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
         SizedContext::Left(id, above, pc, count, sibling, up) => {
             let { frames: frames } = unfold(c);
             let { metadata: metadata, sibling: s, up: u } = unfold(frames);
-            let frames = fold(sized_context_at(old, root->rb_node, 0, ((struct sized_node*)(void*)old)->size), { model: SizedContext::Left(id, above, pc, count, sibling, up) }, { metadata: metadata, sibling: s, up: u });
-            let d = fold(sized_link_at(old, root, ((struct sized_node*)(void*)old)->size), { model: SizedContext::Left(id, above, pc, count, sibling, up) }, { frames: frames });
+            let frames = fold(sized_context_at(old, root->rb_node, 0, (old as (void *) as (struct sized_node *))->size), { model: SizedContext::Left(id, above, pc, count, sibling, up) }, { metadata: metadata, sibling: s, up: u });
+            let d = fold(sized_link_at(old, root, (old as (void *) as (struct sized_node *))->size), { model: SizedContext::Left(id, above, pc, count, sibling, up) }, { frames: frames });
             have sized_context_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model == SizedContext::Left(id, above, pc, count, sibling, up)); rewrite(SizedContext::Left(id, above, pc, count, sibling, up) == old(c.model)); assumption(); }
             have (old->__rb_parent_color & ~3) == address(id) by {
                 if old->__rb_parent_color == address(id) {
@@ -187,8 +187,8 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
         SizedContext::Right(id, above, pc, count, sibling, up) => {
             let { frames: frames } = unfold(c);
             let { metadata: metadata, sibling: s, up: u } = unfold(frames);
-            let frames = fold(sized_context_at(old, root->rb_node, 0, ((struct sized_node*)(void*)old)->size), { model: SizedContext::Right(id, above, pc, count, sibling, up) }, { metadata: metadata, sibling: s, up: u });
-            let d = fold(sized_link_at(old, root, ((struct sized_node*)(void*)old)->size), { model: SizedContext::Right(id, above, pc, count, sibling, up) }, { frames: frames });
+            let frames = fold(sized_context_at(old, root->rb_node, 0, (old as (void *) as (struct sized_node *))->size), { model: SizedContext::Right(id, above, pc, count, sibling, up) }, { metadata: metadata, sibling: s, up: u });
+            let d = fold(sized_link_at(old, root, (old as (void *) as (struct sized_node *))->size), { model: SizedContext::Right(id, above, pc, count, sibling, up) }, { frames: frames });
             have sized_context_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model == SizedContext::Right(id, above, pc, count, sibling, up)); rewrite(SizedContext::Right(id, above, pc, count, sibling, up) == old(c.model)); assumption(); }
             have (old->__rb_parent_color & ~3) == address(id) by {
                 if old->__rb_parent_color == address(id) {

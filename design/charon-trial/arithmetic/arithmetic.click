@@ -2,7 +2,7 @@ verifying "arithmetic.rs";
 
 fn add_byte(sum: u32, byte: u8) -> u32 {
     requires sum <= 4294967040u32;
-    ensures result == sum + (uint32)byte;
+    ensures result == sum + byte as uint32;
 }
 
 fn times_three(value: u32) -> u32 {
@@ -19,7 +19,7 @@ fn pack(low: u32, high: u32) -> u32 {
 }
 
 fn low_byte(value: u32) -> u8 {
-    ensures ((uint32)result) == (value & 255u32);
+    ensures (result as uint32) == (value & 255u32);
 }
 
 fn high_bit(value: u32) -> bool {
@@ -31,7 +31,7 @@ fn high_bit(value: u32) -> bool {
 
 fn shifted_byte(value: u8, count: u32) -> u8 {
     requires count < 8u32;
-    ensures ((uint32)result) == (((uint32)value << count) & 255u32);
+    ensures (result as uint32) == ((value as uint32 << count) & 255u32);
 }
 
 fn discarded_shift_bits() -> u8 {
@@ -40,11 +40,11 @@ fn discarded_shift_bits() -> u8 {
 
 fn quotient_byte(value: u8, divisor: u8) -> u8 {
     requires divisor != 0;
-    ensures ((uint32)result) == (uint32)value / (uint32)divisor;
+    ensures (result as uint32) == value as uint32 / divisor as uint32;
 }
 fn quotient_word(value: u16, divisor: u16) -> u16 {
     requires divisor != 0;
-    ensures ((uint32)result) == (uint32)value / (uint32)divisor;
+    ensures (result as uint32) == value as uint32 / divisor as uint32;
 }
 fn quotient(value: u32, divisor: u32) -> u32 {
     requires divisor != 0u32;
@@ -52,7 +52,7 @@ fn quotient(value: u32, divisor: u32) -> u32 {
 }
 fn remainder_word(value: u16, divisor: u16) -> u16 {
     requires divisor != 0;
-    ensures ((uint32)result) == (uint32)value % (uint32)divisor;
+    ensures (result as uint32) == value as uint32 % divisor as uint32;
 }
 fn wide_quotient(value: usize, divisor: usize) -> usize {
     requires divisor != 0u64;
@@ -72,14 +72,14 @@ fn wide_right(value: usize, count: usize) -> usize {
 }
 fn word_right(value: u16, count: usize) -> u16 {
     requires count < 16u64;
-    ensures ((uint32)result) == (((uint32)value >> count) & 65535u32);
+    ensures (result as uint32) == ((value as uint32 >> count) & 65535u32);
 }
 fn signed_count(value: u32, count: i32) -> u32 {
     requires 0 <= count and count < 32;
     ensures result == value << count;
 }
-fn invert_byte(value: u8) -> u8 { ensures ((uint32)result) == ((~(uint32)value) & 255u32); }
-fn invert_word(value: u16) -> u16 { ensures ((uint32)result) == ((~(uint32)value) & 65535u32); }
+fn invert_byte(value: u8) -> u8 { ensures (result as uint32) == ((~(value as uint32)) & 255u32); }
+fn invert_word(value: u16) -> u16 { ensures (result as uint32) == ((~(value as uint32)) & 65535u32); }
 fn invert(value: u32) -> u32 { ensures result == ~value; }
 fn wide_invert(value: usize) -> usize { ensures result == ~value; }
 fn masked(value: u32, mask: u32) -> u32 { ensures result == ((value & mask) ^ ~value); }

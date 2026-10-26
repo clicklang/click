@@ -24,7 +24,7 @@ resource tree(p: struct node*) {
         Wrapped::Node(id, parent, left, right) => {
             owns p->word;
             fact p == id;
-            fact ((struct node*)(p->word & ~3)) == parent;
+            fact ((p->word & ~3) as (struct node *)) == parent;
         },
     }
 }

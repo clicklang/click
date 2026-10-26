@@ -1,7 +1,7 @@
 # normalize evaluates a substituted conversion
 
 `(word & 1) == zero_color()` compares a `uint64` with an `int32` call, so
-rewriting with it puts `(uint64)zero_color()` into the goal. After `unfold`
+rewriting with it puts `zero_color() as uint64` into the goal. After `unfold`
 the operand is the constant `0`, and `normalize` evaluates the conversion
 and `to_integer` of the result, then drops the `+ 0`.
 

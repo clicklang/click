@@ -12,7 +12,7 @@ verifying "tag.c";
 unsigned long recolor(unsigned long word, int32 tag) {
     requires 0 <= tag;
     requires tag <= 1;
-    ensures ((struct node*)(result & ~3)) == old((struct node*)(word & ~3));
+    ensures ((result & ~3) as (struct node *)) == old((word & ~3) as (struct node *));
 }
 ```
 

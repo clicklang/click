@@ -82,7 +82,7 @@ Click verifies C as it models it. The following are trusted:
   the x86-64 System V ABI and a default GCC or Clang build, and a compiler
   import passes `-fsigned-char` or `-funsigned-char` to match. A C string
   reaches a specification as `uint8` bytes: under signed plain `char` the
-  argument is the explicit byte view `(uint8*)s`, and the kernel reads a byte
+  argument is the explicit byte view `s as (uint8 *)`, and the kernel reads a byte
   through either character type as the same eight bits. See
   [Supported C](../reference/language/c.md#c-implementation-target).
 - Modeled system headers: `src/languages/c/modeled_*.h` declare `memcpy`,

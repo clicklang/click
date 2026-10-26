@@ -270,7 +270,7 @@ void pack(struct node* p, struct node* id) {
         // The arm binder `model_id` names the only spelling of this range.
         let binder_fact = lines
             .iter()
-            .find(|line| line.ends_with("\tviewable(((uint8 *)model_id)[0..8])\n"))
+            .find(|line| line.ends_with("\tviewable((model_id as (uint8 *))[0..8])\n"))
             .unwrap_or_else(|| panic!("{lines:#?}"));
         assert!(binder_fact.starts_with("spelled\t"), "{binder_fact}");
     }

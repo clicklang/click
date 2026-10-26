@@ -18,7 +18,7 @@ verifying "self-alias.c";
 void f(struct holder *h, int32 n) {
     requires n == 1;
     owns *h;
-    requires h->data == (int32 *)h;
+    requires h->data == h as (int32 *);
     ensures h->data == old(h->data);
 }
 ```

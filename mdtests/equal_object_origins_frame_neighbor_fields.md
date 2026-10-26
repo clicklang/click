@@ -66,8 +66,8 @@ mode "kernel";
 verifying "equal_object_origins_frame_neighbor_fields.c";
 resource size_metadata(node: struct rb_node*) {
     field value: int32;
-    owns ((struct sized_node*)(void*)node)->size;
-    fact ((struct sized_node*)(void*)node)->size == value;
+    owns (node as (void *) as (struct sized_node *))->size;
+    fact (node as (void *) as (struct sized_node *))->size == value;
 }
 spec enum InnerPhase {
     Before(struct rb_node*, struct rb_node*),
@@ -88,7 +88,7 @@ resource inner_node(node: struct rb_node*) {
             owns ps: size_metadata(node);
             fact node == identity;
             fact node->__rb_parent_color == address(above);
-            fact ((struct rb_node*)(node->__rb_parent_color & ~3)) == above;
+            fact ((node->__rb_parent_color & ~3) as (struct rb_node *)) == above;
             fact aligned(node, 8);
             fact ps.value == value;
         },
@@ -111,7 +111,7 @@ resource inner_state(node: struct rb_node*) {
             fact g->rb_right == 0;
             fact node->rb_left == 0;
             fact node->__rb_parent_color == address(p);
-            fact ((struct rb_node*)(node->__rb_parent_color & ~3)) == p;
+            fact ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p;
             fact aligned(node, 8); fact aligned(p, 8);
         },
         InnerPhase::After(g, p) => {

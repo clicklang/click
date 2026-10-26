@@ -1,6 +1,6 @@
 # A cast in a place reads the truncated index
 
-`bytes[(int32)index]` is legal and means what it says: the element at the
+`bytes[index as int32]` is legal and means what it says: the element at the
 index truncated to 32 bits. The C reads `bytes[index]`, at the 64-bit
 index. The two are the same element only when the index fits 32 bits, and
 that is not assumed, so a contract that names the cast place does not
@@ -19,7 +19,7 @@ verifying "a_cast_in_a_place_reads_the_truncated_index.c";
 uint8 read(const uint8* bytes, uint64 length, uint64 index) {
     requires index < length;
     views bytes[0..length];
-    ensures result == bytes[(int32)index];
+    ensures result == bytes[index as int32];
 }
 ```
 

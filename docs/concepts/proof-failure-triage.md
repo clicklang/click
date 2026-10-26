@@ -41,8 +41,8 @@ proof context for the goal:
 
 A value is printed in its own type: `-56` for an `int32`, `4294967240u32` for a
 `uint32`, and an unsigned comparison of `int32` operands converts them,
-`(uint32)n <= 1073741823u32`. Machine conversions are C casts such as
-`(int32)(uint32)size`, and an overflow condition reads as `defined(a + b)` or
+`n as uint32 <= 1073741823u32`. Machine conversions are C casts such as
+`size as uint32 as int32`, and an overflow condition reads as `defined(a + b)` or
 its negation.
 
 Float prerequisites retain source names and print numeric bounds rather than

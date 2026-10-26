@@ -19,7 +19,7 @@ int same(long *p, long long *q) {
 }
 
 int differ(unsigned long *p, long long *q) {
-    requires (uint8*)p == (uint8*)q;
+    requires p as (uint8 *) == q as (uint8 *);
     ensures result == 0;
 }
 ```

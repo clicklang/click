@@ -26,8 +26,8 @@ resource sized_link(node: struct rb_node*, previous: int32) {
 }
 
 int32 wrong_container(struct rb_node* node) {
-    owns link: sized_link(node, ((struct sized_node*)(void*)node)->size);
-    owns ((struct sized_node*)(void*)node)->size;
+    owns link: sized_link(node, (node as (void *) as (struct sized_node *))->size);
+    owns (node as (void *) as (struct sized_node *))->size;
     ensures true;
 }
 ```

@@ -17,7 +17,7 @@ unsigned long copy_word(unsigned long word) {
 }
 int32 read_packed(unsigned long word, struct node* p) {
     requires p != 0;
-    requires ((struct node*)(word & ~1)) == p;
+    requires ((word & ~1) as (struct node *)) == p;
     views p->value;
     ensures result == p->value;
 }

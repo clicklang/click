@@ -26,8 +26,8 @@ pub fn write(bytes: &mut [u8], index: usize, value: u8)
 uint8 read(const uint8* bytes, uint64 bytes_len, uint64 index) {
     requires bytes_len <= 2147483647u64;
     requires index < bytes_len;
-    views bytes[0..(int32)bytes_len];
-    ensures result == bytes[(int32)index];
+    views bytes[0..bytes_len as int32];
+    ensures result == bytes[index as int32];
 }
 ```
 
@@ -48,7 +48,7 @@ The author has to know five translations that appear nowhere in the Rust:
 4. A method is a free function named `Type_method`, and field access through
    `self` is `->`.
 5. A range bound is `int32`, so a `usize` length is cast at every use:
-   `(int32)bytes_len`, `(int32)(uint32)bytes_len`.
+   `bytes_len as int32`, `bytes_len as uint32 as int32`.
 
 C++ had the first two for references and they were removed by making
 "reference" a property of the parameter (`int32& value`; the name is the
@@ -102,8 +102,8 @@ For `bytes: &[u8]`:
 | Meaning | Today | Proposed |
 |---|---|---|
 | its length | `bytes_len` | `bytes.len()` |
-| an element | `bytes[(int32)index]` | `bytes[index]` |
-| the whole slice | `views bytes[0..(int32)bytes_len]` | `views *bytes` |
+| an element | `bytes[index as int32]` | `bytes[index]` |
+| the whole slice | `views bytes[0..bytes_len as int32]` | `views *bytes` |
 | part of it | `views bytes[a..b]` | `views bytes[a..b]` |
 
 `*bytes` is the `[u8]` the reference refers to, as `*value` is the `i32`.
@@ -128,7 +128,7 @@ model that the contract states, not a fact about slices.
 Two ways to remove the casts:
 
 - **Surface only.** A `usize` parameter or a slice length written alone as
-  an index or bound is converted, as the C-shaped `(int32)index` is. The
+  an index or bound is converted, as the C-shaped `index as int32` is. The
   bound stays a written `requires`, and any other `usize` expression is
   still cast where it is used. Small, and removes the casts from ordinary
   contracts.

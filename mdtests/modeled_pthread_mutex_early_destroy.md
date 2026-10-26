@@ -35,7 +35,7 @@ resource counter_state(counter: struct counter*) {
     fact counter->value == value;
 }
 void* worker(void* argument) {
-    owns access: mutex_use(&((struct counter*)argument)->mu, counter_state((struct counter*)argument));
+    owns access: mutex_use(&(argument as (struct counter *))->mu, counter_state(argument as (struct counter *)));
     ensures result == 0;
 } by {
     step();

@@ -69,7 +69,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     invariant len == 0u64;
     invariant old(len) == 5552u64;
     invariant buf == old(buf) + zlib_batch_count(n);
-    invariant viewable(buf[0u64..16u64 * (uint64)n]);
+    invariant viewable(buf[0u64..16u64 * n as uint64]);
     invariant to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_batch_count(n));
     invariant to_integer(sum2) == to_integer(zlib_batch_count(n)) + adler_weighted_sum(old(buf), zlib_batch_count(n), zlib_batch_count(n));
     invariant to_integer(adler) <= 1 + 255 * to_integer(zlib_batch_count(n));
@@ -85,7 +85,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
        at(batch_entry, viewable(buf[0u64..5552u64]));
       };
      }
-     have viewable(buf[0u64..16u64 * (uint64)n]) by assumption();
+     have viewable(buf[0u64..16u64 * n as uint64]) by assumption();
      apply(zlib_batch_prefix_initial());
      have zlib_batch_count(n) == 0 by assumption();
      apply(adler_sum_empty(old(buf), 0));
@@ -105,10 +105,10 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      apply(zlib_batch_nonempty_prefix(n));
      apply(zlib_batch_remaining_limit(n));
      apply(zlib_batch_nonempty_remaining(n));
-     have 16u64 <= 16u64 * (uint64)n by { unfold(zlib_batch_remaining(n)); assumption(); }
-     have 16u64 * (uint64)n <= 5552u64 by { unfold(zlib_batch_remaining(n)); assumption(); }
-     have 1u64 <= 16u64 * (uint64)n by solve() using { 16u64 <= 16u64 * (uint64)n; };
-     have 16u64 * (uint64)n <= 9223372036854775807u64 by solve() using { 16u64 * (uint64)n <= 5552u64; };
+     have 16u64 <= 16u64 * n as uint64 by { unfold(zlib_batch_remaining(n)); assumption(); }
+     have 16u64 * n as uint64 <= 5552u64 by { unfold(zlib_batch_remaining(n)); assumption(); }
+     have 1u64 <= 16u64 * n as uint64 by solve() using { 16u64 <= 16u64 * n as uint64; };
+     have 16u64 * n as uint64 <= 9223372036854775807u64 by solve() using { 16u64 * n as uint64 <= 5552u64; };
      apply(zlib_batch_cursor(old(buf), n));
      have buf == old(buf) + (5552u64 - zlib_batch_remaining(n)) by solve() using {
       buf == old(buf) + zlib_batch_count(n);
@@ -133,23 +133,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 5));
    step();
-   have adler == at(byte_0, adler + (uint64)(uint32)buf[0]) by solve();
-   have sum2 == at(byte_0, sum2 + (adler + (uint64)(uint32)buf[0])) by solve();
+   have adler == at(byte_0, adler + buf[0] as uint32 as uint64) by solve();
+   have sum2 == at(byte_0, sum2 + (adler + buf[0] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_batch_count(n) + 1) by solve() using {
-    adler == at(byte_0, adler + (uint64)(uint32)buf[0]);
-    at(byte_0, to_integer(adler + (uint64)(uint32)buf[0])) == 1 + adler_byte_sum(old(buf), zlib_batch_count(n) + 1);
+    adler == at(byte_0, adler + buf[0] as uint32 as uint64);
+    at(byte_0, to_integer(adler + buf[0] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), zlib_batch_count(n) + 1);
    };
    have to_integer(sum2) == to_integer(zlib_batch_count(n) + 1) + adler_weighted_sum(old(buf), zlib_batch_count(n) + 1, zlib_batch_count(n) + 1) by solve() using {
-    sum2 == at(byte_0, sum2 + (adler + (uint64)(uint32)buf[0]));
-    at(byte_0, to_integer(sum2 + (adler + (uint64)(uint32)buf[0]))) == to_integer(zlib_batch_count(n) + 1) + adler_weighted_sum(old(buf), zlib_batch_count(n) + 1, zlib_batch_count(n) + 1);
+    sum2 == at(byte_0, sum2 + (adler + buf[0] as uint32 as uint64));
+    at(byte_0, to_integer(sum2 + (adler + buf[0] as uint32 as uint64))) == to_integer(zlib_batch_count(n) + 1) + adler_weighted_sum(old(buf), zlib_batch_count(n) + 1, zlib_batch_count(n) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer(zlib_batch_count(n) + 1) by solve() using {
-    adler == at(byte_0, adler + (uint64)(uint32)buf[0]);
-    at(byte_0, to_integer(adler + (uint64)(uint32)buf[0])) <= 1 + 255 * to_integer(zlib_batch_count(n) + 1);
+    adler == at(byte_0, adler + buf[0] as uint32 as uint64);
+    at(byte_0, to_integer(adler + buf[0] as uint32 as uint64)) <= 1 + 255 * to_integer(zlib_batch_count(n) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer(zlib_batch_count(n) + 1) by solve() using {
-    sum2 == at(byte_0, sum2 + (adler + (uint64)(uint32)buf[0]));
-    at(byte_0, to_integer(sum2 + (adler + (uint64)(uint32)buf[0]))) <= 1415761 * to_integer(zlib_batch_count(n) + 1);
+    sum2 == at(byte_0, sum2 + (adler + buf[0] as uint32 as uint64));
+    at(byte_0, to_integer(sum2 + (adler + buf[0] as uint32 as uint64))) <= 1415761 * to_integer(zlib_batch_count(n) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 1)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 1)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 1), (zlib_batch_count(n) + 1)) by solve();
@@ -168,23 +168,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 6));
    step();
-   have adler == at(byte_1, adler + (uint64)(uint32)buf[1]) by solve();
-   have sum2 == at(byte_1, sum2 + (adler + (uint64)(uint32)buf[1])) by solve();
+   have adler == at(byte_1, adler + buf[1] as uint32 as uint64) by solve();
+   have sum2 == at(byte_1, sum2 + (adler + buf[1] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 1) + 1) by solve() using {
-    adler == at(byte_1, adler + (uint64)(uint32)buf[1]);
-    at(byte_1, to_integer(adler + (uint64)(uint32)buf[1])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 1) + 1);
+    adler == at(byte_1, adler + buf[1] as uint32 as uint64);
+    at(byte_1, to_integer(adler + buf[1] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 1) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 1) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 1) + 1, (zlib_batch_count(n) + 1) + 1) by solve() using {
-    sum2 == at(byte_1, sum2 + (adler + (uint64)(uint32)buf[1]));
-    at(byte_1, to_integer(sum2 + (adler + (uint64)(uint32)buf[1]))) == to_integer((zlib_batch_count(n) + 1) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 1) + 1, (zlib_batch_count(n) + 1) + 1);
+    sum2 == at(byte_1, sum2 + (adler + buf[1] as uint32 as uint64));
+    at(byte_1, to_integer(sum2 + (adler + buf[1] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 1) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 1) + 1, (zlib_batch_count(n) + 1) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 1) + 1) by solve() using {
-    adler == at(byte_1, adler + (uint64)(uint32)buf[1]);
-    at(byte_1, to_integer(adler + (uint64)(uint32)buf[1])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 1) + 1);
+    adler == at(byte_1, adler + buf[1] as uint32 as uint64);
+    at(byte_1, to_integer(adler + buf[1] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 1) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 1) + 1) by solve() using {
-    sum2 == at(byte_1, sum2 + (adler + (uint64)(uint32)buf[1]));
-    at(byte_1, to_integer(sum2 + (adler + (uint64)(uint32)buf[1]))) <= 1415761 * to_integer((zlib_batch_count(n) + 1) + 1);
+    sum2 == at(byte_1, sum2 + (adler + buf[1] as uint32 as uint64));
+    at(byte_1, to_integer(sum2 + (adler + buf[1] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 1) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 2)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 2)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 2), (zlib_batch_count(n) + 2)) by solve();
@@ -203,23 +203,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 7));
    step();
-   have adler == at(byte_2, adler + (uint64)(uint32)buf[2]) by solve();
-   have sum2 == at(byte_2, sum2 + (adler + (uint64)(uint32)buf[2])) by solve();
+   have adler == at(byte_2, adler + buf[2] as uint32 as uint64) by solve();
+   have sum2 == at(byte_2, sum2 + (adler + buf[2] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 2) + 1) by solve() using {
-    adler == at(byte_2, adler + (uint64)(uint32)buf[2]);
-    at(byte_2, to_integer(adler + (uint64)(uint32)buf[2])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 2) + 1);
+    adler == at(byte_2, adler + buf[2] as uint32 as uint64);
+    at(byte_2, to_integer(adler + buf[2] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 2) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 2) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 2) + 1, (zlib_batch_count(n) + 2) + 1) by solve() using {
-    sum2 == at(byte_2, sum2 + (adler + (uint64)(uint32)buf[2]));
-    at(byte_2, to_integer(sum2 + (adler + (uint64)(uint32)buf[2]))) == to_integer((zlib_batch_count(n) + 2) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 2) + 1, (zlib_batch_count(n) + 2) + 1);
+    sum2 == at(byte_2, sum2 + (adler + buf[2] as uint32 as uint64));
+    at(byte_2, to_integer(sum2 + (adler + buf[2] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 2) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 2) + 1, (zlib_batch_count(n) + 2) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 2) + 1) by solve() using {
-    adler == at(byte_2, adler + (uint64)(uint32)buf[2]);
-    at(byte_2, to_integer(adler + (uint64)(uint32)buf[2])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 2) + 1);
+    adler == at(byte_2, adler + buf[2] as uint32 as uint64);
+    at(byte_2, to_integer(adler + buf[2] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 2) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 2) + 1) by solve() using {
-    sum2 == at(byte_2, sum2 + (adler + (uint64)(uint32)buf[2]));
-    at(byte_2, to_integer(sum2 + (adler + (uint64)(uint32)buf[2]))) <= 1415761 * to_integer((zlib_batch_count(n) + 2) + 1);
+    sum2 == at(byte_2, sum2 + (adler + buf[2] as uint32 as uint64));
+    at(byte_2, to_integer(sum2 + (adler + buf[2] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 2) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 3)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 3)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 3), (zlib_batch_count(n) + 3)) by solve();
@@ -238,23 +238,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 8));
    step();
-   have adler == at(byte_3, adler + (uint64)(uint32)buf[3]) by solve();
-   have sum2 == at(byte_3, sum2 + (adler + (uint64)(uint32)buf[3])) by solve();
+   have adler == at(byte_3, adler + buf[3] as uint32 as uint64) by solve();
+   have sum2 == at(byte_3, sum2 + (adler + buf[3] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 3) + 1) by solve() using {
-    adler == at(byte_3, adler + (uint64)(uint32)buf[3]);
-    at(byte_3, to_integer(adler + (uint64)(uint32)buf[3])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 3) + 1);
+    adler == at(byte_3, adler + buf[3] as uint32 as uint64);
+    at(byte_3, to_integer(adler + buf[3] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 3) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 3) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 3) + 1, (zlib_batch_count(n) + 3) + 1) by solve() using {
-    sum2 == at(byte_3, sum2 + (adler + (uint64)(uint32)buf[3]));
-    at(byte_3, to_integer(sum2 + (adler + (uint64)(uint32)buf[3]))) == to_integer((zlib_batch_count(n) + 3) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 3) + 1, (zlib_batch_count(n) + 3) + 1);
+    sum2 == at(byte_3, sum2 + (adler + buf[3] as uint32 as uint64));
+    at(byte_3, to_integer(sum2 + (adler + buf[3] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 3) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 3) + 1, (zlib_batch_count(n) + 3) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 3) + 1) by solve() using {
-    adler == at(byte_3, adler + (uint64)(uint32)buf[3]);
-    at(byte_3, to_integer(adler + (uint64)(uint32)buf[3])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 3) + 1);
+    adler == at(byte_3, adler + buf[3] as uint32 as uint64);
+    at(byte_3, to_integer(adler + buf[3] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 3) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 3) + 1) by solve() using {
-    sum2 == at(byte_3, sum2 + (adler + (uint64)(uint32)buf[3]));
-    at(byte_3, to_integer(sum2 + (adler + (uint64)(uint32)buf[3]))) <= 1415761 * to_integer((zlib_batch_count(n) + 3) + 1);
+    sum2 == at(byte_3, sum2 + (adler + buf[3] as uint32 as uint64));
+    at(byte_3, to_integer(sum2 + (adler + buf[3] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 3) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 4)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 4)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 4), (zlib_batch_count(n) + 4)) by solve();
@@ -273,23 +273,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 9));
    step();
-   have adler == at(byte_4, adler + (uint64)(uint32)buf[4]) by solve();
-   have sum2 == at(byte_4, sum2 + (adler + (uint64)(uint32)buf[4])) by solve();
+   have adler == at(byte_4, adler + buf[4] as uint32 as uint64) by solve();
+   have sum2 == at(byte_4, sum2 + (adler + buf[4] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 4) + 1) by solve() using {
-    adler == at(byte_4, adler + (uint64)(uint32)buf[4]);
-    at(byte_4, to_integer(adler + (uint64)(uint32)buf[4])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 4) + 1);
+    adler == at(byte_4, adler + buf[4] as uint32 as uint64);
+    at(byte_4, to_integer(adler + buf[4] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 4) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 4) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 4) + 1, (zlib_batch_count(n) + 4) + 1) by solve() using {
-    sum2 == at(byte_4, sum2 + (adler + (uint64)(uint32)buf[4]));
-    at(byte_4, to_integer(sum2 + (adler + (uint64)(uint32)buf[4]))) == to_integer((zlib_batch_count(n) + 4) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 4) + 1, (zlib_batch_count(n) + 4) + 1);
+    sum2 == at(byte_4, sum2 + (adler + buf[4] as uint32 as uint64));
+    at(byte_4, to_integer(sum2 + (adler + buf[4] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 4) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 4) + 1, (zlib_batch_count(n) + 4) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 4) + 1) by solve() using {
-    adler == at(byte_4, adler + (uint64)(uint32)buf[4]);
-    at(byte_4, to_integer(adler + (uint64)(uint32)buf[4])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 4) + 1);
+    adler == at(byte_4, adler + buf[4] as uint32 as uint64);
+    at(byte_4, to_integer(adler + buf[4] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 4) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 4) + 1) by solve() using {
-    sum2 == at(byte_4, sum2 + (adler + (uint64)(uint32)buf[4]));
-    at(byte_4, to_integer(sum2 + (adler + (uint64)(uint32)buf[4]))) <= 1415761 * to_integer((zlib_batch_count(n) + 4) + 1);
+    sum2 == at(byte_4, sum2 + (adler + buf[4] as uint32 as uint64));
+    at(byte_4, to_integer(sum2 + (adler + buf[4] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 4) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 5)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 5)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 5), (zlib_batch_count(n) + 5)) by solve();
@@ -308,23 +308,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 10));
    step();
-   have adler == at(byte_5, adler + (uint64)(uint32)buf[5]) by solve();
-   have sum2 == at(byte_5, sum2 + (adler + (uint64)(uint32)buf[5])) by solve();
+   have adler == at(byte_5, adler + buf[5] as uint32 as uint64) by solve();
+   have sum2 == at(byte_5, sum2 + (adler + buf[5] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 5) + 1) by solve() using {
-    adler == at(byte_5, adler + (uint64)(uint32)buf[5]);
-    at(byte_5, to_integer(adler + (uint64)(uint32)buf[5])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 5) + 1);
+    adler == at(byte_5, adler + buf[5] as uint32 as uint64);
+    at(byte_5, to_integer(adler + buf[5] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 5) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 5) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 5) + 1, (zlib_batch_count(n) + 5) + 1) by solve() using {
-    sum2 == at(byte_5, sum2 + (adler + (uint64)(uint32)buf[5]));
-    at(byte_5, to_integer(sum2 + (adler + (uint64)(uint32)buf[5]))) == to_integer((zlib_batch_count(n) + 5) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 5) + 1, (zlib_batch_count(n) + 5) + 1);
+    sum2 == at(byte_5, sum2 + (adler + buf[5] as uint32 as uint64));
+    at(byte_5, to_integer(sum2 + (adler + buf[5] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 5) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 5) + 1, (zlib_batch_count(n) + 5) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 5) + 1) by solve() using {
-    adler == at(byte_5, adler + (uint64)(uint32)buf[5]);
-    at(byte_5, to_integer(adler + (uint64)(uint32)buf[5])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 5) + 1);
+    adler == at(byte_5, adler + buf[5] as uint32 as uint64);
+    at(byte_5, to_integer(adler + buf[5] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 5) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 5) + 1) by solve() using {
-    sum2 == at(byte_5, sum2 + (adler + (uint64)(uint32)buf[5]));
-    at(byte_5, to_integer(sum2 + (adler + (uint64)(uint32)buf[5]))) <= 1415761 * to_integer((zlib_batch_count(n) + 5) + 1);
+    sum2 == at(byte_5, sum2 + (adler + buf[5] as uint32 as uint64));
+    at(byte_5, to_integer(sum2 + (adler + buf[5] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 5) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 6)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 6)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 6), (zlib_batch_count(n) + 6)) by solve();
@@ -343,23 +343,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 11));
    step();
-   have adler == at(byte_6, adler + (uint64)(uint32)buf[6]) by solve();
-   have sum2 == at(byte_6, sum2 + (adler + (uint64)(uint32)buf[6])) by solve();
+   have adler == at(byte_6, adler + buf[6] as uint32 as uint64) by solve();
+   have sum2 == at(byte_6, sum2 + (adler + buf[6] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 6) + 1) by solve() using {
-    adler == at(byte_6, adler + (uint64)(uint32)buf[6]);
-    at(byte_6, to_integer(adler + (uint64)(uint32)buf[6])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 6) + 1);
+    adler == at(byte_6, adler + buf[6] as uint32 as uint64);
+    at(byte_6, to_integer(adler + buf[6] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 6) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 6) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 6) + 1, (zlib_batch_count(n) + 6) + 1) by solve() using {
-    sum2 == at(byte_6, sum2 + (adler + (uint64)(uint32)buf[6]));
-    at(byte_6, to_integer(sum2 + (adler + (uint64)(uint32)buf[6]))) == to_integer((zlib_batch_count(n) + 6) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 6) + 1, (zlib_batch_count(n) + 6) + 1);
+    sum2 == at(byte_6, sum2 + (adler + buf[6] as uint32 as uint64));
+    at(byte_6, to_integer(sum2 + (adler + buf[6] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 6) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 6) + 1, (zlib_batch_count(n) + 6) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 6) + 1) by solve() using {
-    adler == at(byte_6, adler + (uint64)(uint32)buf[6]);
-    at(byte_6, to_integer(adler + (uint64)(uint32)buf[6])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 6) + 1);
+    adler == at(byte_6, adler + buf[6] as uint32 as uint64);
+    at(byte_6, to_integer(adler + buf[6] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 6) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 6) + 1) by solve() using {
-    sum2 == at(byte_6, sum2 + (adler + (uint64)(uint32)buf[6]));
-    at(byte_6, to_integer(sum2 + (adler + (uint64)(uint32)buf[6]))) <= 1415761 * to_integer((zlib_batch_count(n) + 6) + 1);
+    sum2 == at(byte_6, sum2 + (adler + buf[6] as uint32 as uint64));
+    at(byte_6, to_integer(sum2 + (adler + buf[6] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 6) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 7)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 7)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 7), (zlib_batch_count(n) + 7)) by solve();
@@ -378,23 +378,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 12));
    step();
-   have adler == at(byte_7, adler + (uint64)(uint32)buf[7]) by solve();
-   have sum2 == at(byte_7, sum2 + (adler + (uint64)(uint32)buf[7])) by solve();
+   have adler == at(byte_7, adler + buf[7] as uint32 as uint64) by solve();
+   have sum2 == at(byte_7, sum2 + (adler + buf[7] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 7) + 1) by solve() using {
-    adler == at(byte_7, adler + (uint64)(uint32)buf[7]);
-    at(byte_7, to_integer(adler + (uint64)(uint32)buf[7])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 7) + 1);
+    adler == at(byte_7, adler + buf[7] as uint32 as uint64);
+    at(byte_7, to_integer(adler + buf[7] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 7) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 7) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 7) + 1, (zlib_batch_count(n) + 7) + 1) by solve() using {
-    sum2 == at(byte_7, sum2 + (adler + (uint64)(uint32)buf[7]));
-    at(byte_7, to_integer(sum2 + (adler + (uint64)(uint32)buf[7]))) == to_integer((zlib_batch_count(n) + 7) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 7) + 1, (zlib_batch_count(n) + 7) + 1);
+    sum2 == at(byte_7, sum2 + (adler + buf[7] as uint32 as uint64));
+    at(byte_7, to_integer(sum2 + (adler + buf[7] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 7) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 7) + 1, (zlib_batch_count(n) + 7) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 7) + 1) by solve() using {
-    adler == at(byte_7, adler + (uint64)(uint32)buf[7]);
-    at(byte_7, to_integer(adler + (uint64)(uint32)buf[7])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 7) + 1);
+    adler == at(byte_7, adler + buf[7] as uint32 as uint64);
+    at(byte_7, to_integer(adler + buf[7] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 7) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 7) + 1) by solve() using {
-    sum2 == at(byte_7, sum2 + (adler + (uint64)(uint32)buf[7]));
-    at(byte_7, to_integer(sum2 + (adler + (uint64)(uint32)buf[7]))) <= 1415761 * to_integer((zlib_batch_count(n) + 7) + 1);
+    sum2 == at(byte_7, sum2 + (adler + buf[7] as uint32 as uint64));
+    at(byte_7, to_integer(sum2 + (adler + buf[7] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 7) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 8)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 8)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 8), (zlib_batch_count(n) + 8)) by solve();
@@ -413,23 +413,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 13));
    step();
-   have adler == at(byte_8, adler + (uint64)(uint32)buf[8]) by solve();
-   have sum2 == at(byte_8, sum2 + (adler + (uint64)(uint32)buf[8])) by solve();
+   have adler == at(byte_8, adler + buf[8] as uint32 as uint64) by solve();
+   have sum2 == at(byte_8, sum2 + (adler + buf[8] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 8) + 1) by solve() using {
-    adler == at(byte_8, adler + (uint64)(uint32)buf[8]);
-    at(byte_8, to_integer(adler + (uint64)(uint32)buf[8])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 8) + 1);
+    adler == at(byte_8, adler + buf[8] as uint32 as uint64);
+    at(byte_8, to_integer(adler + buf[8] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 8) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 8) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 8) + 1, (zlib_batch_count(n) + 8) + 1) by solve() using {
-    sum2 == at(byte_8, sum2 + (adler + (uint64)(uint32)buf[8]));
-    at(byte_8, to_integer(sum2 + (adler + (uint64)(uint32)buf[8]))) == to_integer((zlib_batch_count(n) + 8) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 8) + 1, (zlib_batch_count(n) + 8) + 1);
+    sum2 == at(byte_8, sum2 + (adler + buf[8] as uint32 as uint64));
+    at(byte_8, to_integer(sum2 + (adler + buf[8] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 8) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 8) + 1, (zlib_batch_count(n) + 8) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 8) + 1) by solve() using {
-    adler == at(byte_8, adler + (uint64)(uint32)buf[8]);
-    at(byte_8, to_integer(adler + (uint64)(uint32)buf[8])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 8) + 1);
+    adler == at(byte_8, adler + buf[8] as uint32 as uint64);
+    at(byte_8, to_integer(adler + buf[8] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 8) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 8) + 1) by solve() using {
-    sum2 == at(byte_8, sum2 + (adler + (uint64)(uint32)buf[8]));
-    at(byte_8, to_integer(sum2 + (adler + (uint64)(uint32)buf[8]))) <= 1415761 * to_integer((zlib_batch_count(n) + 8) + 1);
+    sum2 == at(byte_8, sum2 + (adler + buf[8] as uint32 as uint64));
+    at(byte_8, to_integer(sum2 + (adler + buf[8] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 8) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 9)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 9)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 9), (zlib_batch_count(n) + 9)) by solve();
@@ -448,23 +448,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 14));
    step();
-   have adler == at(byte_9, adler + (uint64)(uint32)buf[9]) by solve();
-   have sum2 == at(byte_9, sum2 + (adler + (uint64)(uint32)buf[9])) by solve();
+   have adler == at(byte_9, adler + buf[9] as uint32 as uint64) by solve();
+   have sum2 == at(byte_9, sum2 + (adler + buf[9] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 9) + 1) by solve() using {
-    adler == at(byte_9, adler + (uint64)(uint32)buf[9]);
-    at(byte_9, to_integer(adler + (uint64)(uint32)buf[9])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 9) + 1);
+    adler == at(byte_9, adler + buf[9] as uint32 as uint64);
+    at(byte_9, to_integer(adler + buf[9] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 9) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 9) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 9) + 1, (zlib_batch_count(n) + 9) + 1) by solve() using {
-    sum2 == at(byte_9, sum2 + (adler + (uint64)(uint32)buf[9]));
-    at(byte_9, to_integer(sum2 + (adler + (uint64)(uint32)buf[9]))) == to_integer((zlib_batch_count(n) + 9) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 9) + 1, (zlib_batch_count(n) + 9) + 1);
+    sum2 == at(byte_9, sum2 + (adler + buf[9] as uint32 as uint64));
+    at(byte_9, to_integer(sum2 + (adler + buf[9] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 9) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 9) + 1, (zlib_batch_count(n) + 9) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 9) + 1) by solve() using {
-    adler == at(byte_9, adler + (uint64)(uint32)buf[9]);
-    at(byte_9, to_integer(adler + (uint64)(uint32)buf[9])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 9) + 1);
+    adler == at(byte_9, adler + buf[9] as uint32 as uint64);
+    at(byte_9, to_integer(adler + buf[9] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 9) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 9) + 1) by solve() using {
-    sum2 == at(byte_9, sum2 + (adler + (uint64)(uint32)buf[9]));
-    at(byte_9, to_integer(sum2 + (adler + (uint64)(uint32)buf[9]))) <= 1415761 * to_integer((zlib_batch_count(n) + 9) + 1);
+    sum2 == at(byte_9, sum2 + (adler + buf[9] as uint32 as uint64));
+    at(byte_9, to_integer(sum2 + (adler + buf[9] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 9) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 10)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 10)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 10), (zlib_batch_count(n) + 10)) by solve();
@@ -483,23 +483,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 15));
    step();
-   have adler == at(byte_10, adler + (uint64)(uint32)buf[10]) by solve();
-   have sum2 == at(byte_10, sum2 + (adler + (uint64)(uint32)buf[10])) by solve();
+   have adler == at(byte_10, adler + buf[10] as uint32 as uint64) by solve();
+   have sum2 == at(byte_10, sum2 + (adler + buf[10] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 10) + 1) by solve() using {
-    adler == at(byte_10, adler + (uint64)(uint32)buf[10]);
-    at(byte_10, to_integer(adler + (uint64)(uint32)buf[10])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 10) + 1);
+    adler == at(byte_10, adler + buf[10] as uint32 as uint64);
+    at(byte_10, to_integer(adler + buf[10] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 10) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 10) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 10) + 1, (zlib_batch_count(n) + 10) + 1) by solve() using {
-    sum2 == at(byte_10, sum2 + (adler + (uint64)(uint32)buf[10]));
-    at(byte_10, to_integer(sum2 + (adler + (uint64)(uint32)buf[10]))) == to_integer((zlib_batch_count(n) + 10) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 10) + 1, (zlib_batch_count(n) + 10) + 1);
+    sum2 == at(byte_10, sum2 + (adler + buf[10] as uint32 as uint64));
+    at(byte_10, to_integer(sum2 + (adler + buf[10] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 10) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 10) + 1, (zlib_batch_count(n) + 10) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 10) + 1) by solve() using {
-    adler == at(byte_10, adler + (uint64)(uint32)buf[10]);
-    at(byte_10, to_integer(adler + (uint64)(uint32)buf[10])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 10) + 1);
+    adler == at(byte_10, adler + buf[10] as uint32 as uint64);
+    at(byte_10, to_integer(adler + buf[10] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 10) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 10) + 1) by solve() using {
-    sum2 == at(byte_10, sum2 + (adler + (uint64)(uint32)buf[10]));
-    at(byte_10, to_integer(sum2 + (adler + (uint64)(uint32)buf[10]))) <= 1415761 * to_integer((zlib_batch_count(n) + 10) + 1);
+    sum2 == at(byte_10, sum2 + (adler + buf[10] as uint32 as uint64));
+    at(byte_10, to_integer(sum2 + (adler + buf[10] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 10) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 11)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 11)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 11), (zlib_batch_count(n) + 11)) by solve();
@@ -518,23 +518,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 16));
    step();
-   have adler == at(byte_11, adler + (uint64)(uint32)buf[11]) by solve();
-   have sum2 == at(byte_11, sum2 + (adler + (uint64)(uint32)buf[11])) by solve();
+   have adler == at(byte_11, adler + buf[11] as uint32 as uint64) by solve();
+   have sum2 == at(byte_11, sum2 + (adler + buf[11] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 11) + 1) by solve() using {
-    adler == at(byte_11, adler + (uint64)(uint32)buf[11]);
-    at(byte_11, to_integer(adler + (uint64)(uint32)buf[11])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 11) + 1);
+    adler == at(byte_11, adler + buf[11] as uint32 as uint64);
+    at(byte_11, to_integer(adler + buf[11] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 11) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 11) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 11) + 1, (zlib_batch_count(n) + 11) + 1) by solve() using {
-    sum2 == at(byte_11, sum2 + (adler + (uint64)(uint32)buf[11]));
-    at(byte_11, to_integer(sum2 + (adler + (uint64)(uint32)buf[11]))) == to_integer((zlib_batch_count(n) + 11) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 11) + 1, (zlib_batch_count(n) + 11) + 1);
+    sum2 == at(byte_11, sum2 + (adler + buf[11] as uint32 as uint64));
+    at(byte_11, to_integer(sum2 + (adler + buf[11] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 11) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 11) + 1, (zlib_batch_count(n) + 11) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 11) + 1) by solve() using {
-    adler == at(byte_11, adler + (uint64)(uint32)buf[11]);
-    at(byte_11, to_integer(adler + (uint64)(uint32)buf[11])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 11) + 1);
+    adler == at(byte_11, adler + buf[11] as uint32 as uint64);
+    at(byte_11, to_integer(adler + buf[11] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 11) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 11) + 1) by solve() using {
-    sum2 == at(byte_11, sum2 + (adler + (uint64)(uint32)buf[11]));
-    at(byte_11, to_integer(sum2 + (adler + (uint64)(uint32)buf[11]))) <= 1415761 * to_integer((zlib_batch_count(n) + 11) + 1);
+    sum2 == at(byte_11, sum2 + (adler + buf[11] as uint32 as uint64));
+    at(byte_11, to_integer(sum2 + (adler + buf[11] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 11) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 12)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 12)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 12), (zlib_batch_count(n) + 12)) by solve();
@@ -553,23 +553,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 17));
    step();
-   have adler == at(byte_12, adler + (uint64)(uint32)buf[12]) by solve();
-   have sum2 == at(byte_12, sum2 + (adler + (uint64)(uint32)buf[12])) by solve();
+   have adler == at(byte_12, adler + buf[12] as uint32 as uint64) by solve();
+   have sum2 == at(byte_12, sum2 + (adler + buf[12] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 12) + 1) by solve() using {
-    adler == at(byte_12, adler + (uint64)(uint32)buf[12]);
-    at(byte_12, to_integer(adler + (uint64)(uint32)buf[12])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 12) + 1);
+    adler == at(byte_12, adler + buf[12] as uint32 as uint64);
+    at(byte_12, to_integer(adler + buf[12] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 12) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 12) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 12) + 1, (zlib_batch_count(n) + 12) + 1) by solve() using {
-    sum2 == at(byte_12, sum2 + (adler + (uint64)(uint32)buf[12]));
-    at(byte_12, to_integer(sum2 + (adler + (uint64)(uint32)buf[12]))) == to_integer((zlib_batch_count(n) + 12) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 12) + 1, (zlib_batch_count(n) + 12) + 1);
+    sum2 == at(byte_12, sum2 + (adler + buf[12] as uint32 as uint64));
+    at(byte_12, to_integer(sum2 + (adler + buf[12] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 12) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 12) + 1, (zlib_batch_count(n) + 12) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 12) + 1) by solve() using {
-    adler == at(byte_12, adler + (uint64)(uint32)buf[12]);
-    at(byte_12, to_integer(adler + (uint64)(uint32)buf[12])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 12) + 1);
+    adler == at(byte_12, adler + buf[12] as uint32 as uint64);
+    at(byte_12, to_integer(adler + buf[12] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 12) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 12) + 1) by solve() using {
-    sum2 == at(byte_12, sum2 + (adler + (uint64)(uint32)buf[12]));
-    at(byte_12, to_integer(sum2 + (adler + (uint64)(uint32)buf[12]))) <= 1415761 * to_integer((zlib_batch_count(n) + 12) + 1);
+    sum2 == at(byte_12, sum2 + (adler + buf[12] as uint32 as uint64));
+    at(byte_12, to_integer(sum2 + (adler + buf[12] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 12) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 13)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 13)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 13), (zlib_batch_count(n) + 13)) by solve();
@@ -588,23 +588,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 18));
    step();
-   have adler == at(byte_13, adler + (uint64)(uint32)buf[13]) by solve();
-   have sum2 == at(byte_13, sum2 + (adler + (uint64)(uint32)buf[13])) by solve();
+   have adler == at(byte_13, adler + buf[13] as uint32 as uint64) by solve();
+   have sum2 == at(byte_13, sum2 + (adler + buf[13] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 13) + 1) by solve() using {
-    adler == at(byte_13, adler + (uint64)(uint32)buf[13]);
-    at(byte_13, to_integer(adler + (uint64)(uint32)buf[13])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 13) + 1);
+    adler == at(byte_13, adler + buf[13] as uint32 as uint64);
+    at(byte_13, to_integer(adler + buf[13] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 13) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 13) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 13) + 1, (zlib_batch_count(n) + 13) + 1) by solve() using {
-    sum2 == at(byte_13, sum2 + (adler + (uint64)(uint32)buf[13]));
-    at(byte_13, to_integer(sum2 + (adler + (uint64)(uint32)buf[13]))) == to_integer((zlib_batch_count(n) + 13) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 13) + 1, (zlib_batch_count(n) + 13) + 1);
+    sum2 == at(byte_13, sum2 + (adler + buf[13] as uint32 as uint64));
+    at(byte_13, to_integer(sum2 + (adler + buf[13] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 13) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 13) + 1, (zlib_batch_count(n) + 13) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 13) + 1) by solve() using {
-    adler == at(byte_13, adler + (uint64)(uint32)buf[13]);
-    at(byte_13, to_integer(adler + (uint64)(uint32)buf[13])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 13) + 1);
+    adler == at(byte_13, adler + buf[13] as uint32 as uint64);
+    at(byte_13, to_integer(adler + buf[13] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 13) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 13) + 1) by solve() using {
-    sum2 == at(byte_13, sum2 + (adler + (uint64)(uint32)buf[13]));
-    at(byte_13, to_integer(sum2 + (adler + (uint64)(uint32)buf[13]))) <= 1415761 * to_integer((zlib_batch_count(n) + 13) + 1);
+    sum2 == at(byte_13, sum2 + (adler + buf[13] as uint32 as uint64));
+    at(byte_13, to_integer(sum2 + (adler + buf[13] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 13) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 14)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 14)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 14), (zlib_batch_count(n) + 14)) by solve();
@@ -623,23 +623,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 19));
    step();
-   have adler == at(byte_14, adler + (uint64)(uint32)buf[14]) by solve();
-   have sum2 == at(byte_14, sum2 + (adler + (uint64)(uint32)buf[14])) by solve();
+   have adler == at(byte_14, adler + buf[14] as uint32 as uint64) by solve();
+   have sum2 == at(byte_14, sum2 + (adler + buf[14] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 14) + 1) by solve() using {
-    adler == at(byte_14, adler + (uint64)(uint32)buf[14]);
-    at(byte_14, to_integer(adler + (uint64)(uint32)buf[14])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 14) + 1);
+    adler == at(byte_14, adler + buf[14] as uint32 as uint64);
+    at(byte_14, to_integer(adler + buf[14] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 14) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 14) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 14) + 1, (zlib_batch_count(n) + 14) + 1) by solve() using {
-    sum2 == at(byte_14, sum2 + (adler + (uint64)(uint32)buf[14]));
-    at(byte_14, to_integer(sum2 + (adler + (uint64)(uint32)buf[14]))) == to_integer((zlib_batch_count(n) + 14) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 14) + 1, (zlib_batch_count(n) + 14) + 1);
+    sum2 == at(byte_14, sum2 + (adler + buf[14] as uint32 as uint64));
+    at(byte_14, to_integer(sum2 + (adler + buf[14] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 14) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 14) + 1, (zlib_batch_count(n) + 14) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 14) + 1) by solve() using {
-    adler == at(byte_14, adler + (uint64)(uint32)buf[14]);
-    at(byte_14, to_integer(adler + (uint64)(uint32)buf[14])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 14) + 1);
+    adler == at(byte_14, adler + buf[14] as uint32 as uint64);
+    at(byte_14, to_integer(adler + buf[14] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 14) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 14) + 1) by solve() using {
-    sum2 == at(byte_14, sum2 + (adler + (uint64)(uint32)buf[14]));
-    at(byte_14, to_integer(sum2 + (adler + (uint64)(uint32)buf[14]))) <= 1415761 * to_integer((zlib_batch_count(n) + 14) + 1);
+    sum2 == at(byte_14, sum2 + (adler + buf[14] as uint32 as uint64));
+    at(byte_14, to_integer(sum2 + (adler + buf[14] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 14) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 15)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 15)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 15), (zlib_batch_count(n) + 15)) by solve();
@@ -658,23 +658,23 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    step();
    step_until(assignment(sum2, 20));
    step();
-   have adler == at(byte_15, adler + (uint64)(uint32)buf[15]) by solve();
-   have sum2 == at(byte_15, sum2 + (adler + (uint64)(uint32)buf[15])) by solve();
+   have adler == at(byte_15, adler + buf[15] as uint32 as uint64) by solve();
+   have sum2 == at(byte_15, sum2 + (adler + buf[15] as uint32 as uint64)) by solve();
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 15) + 1) by solve() using {
-    adler == at(byte_15, adler + (uint64)(uint32)buf[15]);
-    at(byte_15, to_integer(adler + (uint64)(uint32)buf[15])) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 15) + 1);
+    adler == at(byte_15, adler + buf[15] as uint32 as uint64);
+    at(byte_15, to_integer(adler + buf[15] as uint32 as uint64)) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 15) + 1);
    };
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 15) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 15) + 1, (zlib_batch_count(n) + 15) + 1) by solve() using {
-    sum2 == at(byte_15, sum2 + (adler + (uint64)(uint32)buf[15]));
-    at(byte_15, to_integer(sum2 + (adler + (uint64)(uint32)buf[15]))) == to_integer((zlib_batch_count(n) + 15) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 15) + 1, (zlib_batch_count(n) + 15) + 1);
+    sum2 == at(byte_15, sum2 + (adler + buf[15] as uint32 as uint64));
+    at(byte_15, to_integer(sum2 + (adler + buf[15] as uint32 as uint64))) == to_integer((zlib_batch_count(n) + 15) + 1) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 15) + 1, (zlib_batch_count(n) + 15) + 1);
    };
    have to_integer(adler) <= 1 + 255 * to_integer((zlib_batch_count(n) + 15) + 1) by solve() using {
-    adler == at(byte_15, adler + (uint64)(uint32)buf[15]);
-    at(byte_15, to_integer(adler + (uint64)(uint32)buf[15])) <= 1 + 255 * to_integer((zlib_batch_count(n) + 15) + 1);
+    adler == at(byte_15, adler + buf[15] as uint32 as uint64);
+    at(byte_15, to_integer(adler + buf[15] as uint32 as uint64)) <= 1 + 255 * to_integer((zlib_batch_count(n) + 15) + 1);
    };
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 15) + 1) by solve() using {
-    sum2 == at(byte_15, sum2 + (adler + (uint64)(uint32)buf[15]));
-    at(byte_15, to_integer(sum2 + (adler + (uint64)(uint32)buf[15]))) <= 1415761 * to_integer((zlib_batch_count(n) + 15) + 1);
+    sum2 == at(byte_15, sum2 + (adler + buf[15] as uint32 as uint64));
+    at(byte_15, to_integer(sum2 + (adler + buf[15] as uint32 as uint64))) <= 1415761 * to_integer((zlib_batch_count(n) + 15) + 1);
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), (zlib_batch_count(n) + 16)) by solve();
    have to_integer(sum2) == to_integer((zlib_batch_count(n) + 16)) + adler_weighted_sum(old(buf), (zlib_batch_count(n) + 16), (zlib_batch_count(n) + 16)) by solve();
@@ -716,8 +716,8 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
       have old(len) == 5552u64 by assumption();
       apply(zlib_batch_remaining_limit(n));
       unfold(zlib_batch_remaining(n));
-      have 16u64 * (uint64)n <= 5552u64 by assumption();
-      have 16u64 * (uint64)n <= 9223372036854775807u64 by solve() using { 16u64 * (uint64)n <= 5552u64; };
+      have 16u64 * n as uint64 <= 5552u64 by assumption();
+      have 16u64 * n as uint64 <= 9223372036854775807u64 by solve() using { 16u64 * n as uint64 <= 5552u64; };
       apply(zlib_batch_cursor(old(buf), n));
       have buf == old(buf) + (5552u64 - zlib_batch_remaining(n)) by solve() using {
        buf == old(buf) + zlib_batch_count(n);
@@ -725,22 +725,22 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
       };
       apply(zlib_batch_capacity_step(at(before_advance, n)));
       have n == at(before_advance, n) - 1u32 by solve();
-      have 16u64 * (uint64)n == at(before_advance, 16u64 * (uint64)n) - 16u64 by solve() using {
+      have 16u64 * n as uint64 == at(before_advance, 16u64 * n as uint64) - 16u64 by solve() using {
        n == at(before_advance, n) - 1u32;
-       at(before_advance, 16u64 * (uint64)(n - 1u32)) == at(before_advance, 16u64 * (uint64)n - 16u64);
+       at(before_advance, 16u64 * (n - 1u32) as uint64) == at(before_advance, 16u64 * n as uint64 - 16u64);
       };
-      have 16u64 * (uint64)n <= at(before_block, 16u64 * (uint64)n) - 16u64 by solve() using {
-       16u64 * (uint64)n == at(before_advance, 16u64 * (uint64)n) - 16u64;
+      have 16u64 * n as uint64 <= at(before_block, 16u64 * n as uint64) - 16u64 by solve() using {
+       16u64 * n as uint64 == at(before_advance, 16u64 * n as uint64) - 16u64;
       };
       have buf == at(before_block, buf) + 16 by solve();
-      have viewable(buf[0u64..16u64 * (uint64)n]) by {
-       transport(at(before_block, viewable(buf[0u64..16u64 * (uint64)n])), viewable(buf[0u64..16u64 * (uint64)n])) using {
+      have viewable(buf[0u64..16u64 * n as uint64]) by {
+       transport(at(before_block, viewable(buf[0u64..16u64 * n as uint64])), viewable(buf[0u64..16u64 * n as uint64])) using {
         buf == at(before_block, buf) + 16;
-        at(before_block, viewable(buf[0u64..16u64 * (uint64)n]));
-        16u64 <= at(before_advance, 16u64 * (uint64)n);
-        16u64 * (uint64)n <= at(before_block, 16u64 * (uint64)n) - 16u64;
-        16u64 * (uint64)n <= 5552u64;
-        16u64 * (uint64)n <= 9223372036854775807u64;
+        at(before_block, viewable(buf[0u64..16u64 * n as uint64]));
+        16u64 <= at(before_advance, 16u64 * n as uint64);
+        16u64 * n as uint64 <= at(before_block, 16u64 * n as uint64) - 16u64;
+        16u64 * n as uint64 <= 5552u64;
+        16u64 * n as uint64 <= 9223372036854775807u64;
        };
       }
       have zlib_batch_count(n) == at(before_advance, zlib_batch_count(n) + 16) by solve() using {

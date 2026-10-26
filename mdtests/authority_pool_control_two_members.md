@@ -521,7 +521,7 @@ void give_back(struct pool* pool, struct payload* p) {
                 interval_from_affine 0 (at(function.entry, pool->checked_out)) (1) (2147483647);
                 interval_atom (1) (1) (1);
                 interval_subtract 1, 2 1 (0) (2147483646);
-                affine_conclusion 0 3 => ((int32)0) <= ((int32)pool->checked_out);
+                affine_conclusion 0 3 => (0 as int32) <= (pool->checked_out as int32);
                 conclusion 4;
             }
         }

@@ -47,7 +47,7 @@ int read_unsigned() { ensures result == 200; }
 int read_signed() { ensures result == -56; }
 int read_inline_result() { ensures result == 200; }
 int same(char *p, unsigned char *q) {
-    requires (uint8*)p == q;
+    requires p as (uint8 *) == q;
     ensures result == 1;
 }
 ```

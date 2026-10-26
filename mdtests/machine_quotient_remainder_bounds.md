@@ -14,12 +14,12 @@ theorem signed_bounds(n: int32, d: int32) {
     ensures n % d <= n by { normalize() using { 0 <= n; 0 < d; }; }
 }
 theorem unsigned_bounds(n: uint32, d: uint32) {
-    requires 0 <= (int32)n;
-    requires 0 < (int32)d;
-    ensures 0 <= (int32)(n / d) by { normalize() using { 0 <= (int32)n; 0 < (int32)d; }; }
-    ensures ((int32)(n / d)) <= (int32)n by { normalize() using { 0 <= (int32)n; 0 < (int32)d; }; }
-    ensures 0 <= (int32)(n % d) by { normalize() using { 0 <= (int32)n; 0 < (int32)d; }; }
-    ensures ((int32)(n % d)) <= (int32)n by { normalize() using { 0 <= (int32)n; 0 < (int32)d; }; }
+    requires 0 <= n as int32;
+    requires 0 < d as int32;
+    ensures 0 <= (n / d) as int32 by { normalize() using { 0 <= n as int32; 0 < d as int32; }; }
+    ensures ((n / d) as int32) <= n as int32 by { normalize() using { 0 <= n as int32; 0 < d as int32; }; }
+    ensures 0 <= (n % d) as int32 by { normalize() using { 0 <= n as int32; 0 < d as int32; }; }
+    ensures ((n % d) as int32) <= n as int32 by { normalize() using { 0 <= n as int32; 0 < d as int32; }; }
 }
 ```
 

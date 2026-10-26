@@ -182,7 +182,7 @@ with each read of a stored cell replaced by the value stored there.
 Code does not resolve reads anywhere else. A comparison form is a fact like
 any other: a smart step that cites one spells it, and its spelling must lower
 back to it. The printer casts C arithmetic read at a snapshot,
-`(int32)at(p, a - 1)`, because the parser reads arithmetic inside `at(...)`
+`at(p, a - 1) as int32`, because the parser reads arithmetic inside `at(...)`
 and `old(...)` as Integer arithmetic.
 
 A read is named by its cell's version: the point the assumption-free version

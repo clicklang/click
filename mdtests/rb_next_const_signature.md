@@ -1,7 +1,7 @@
 # `rb_next`'s `const` parameter and the cast that returns it
 
 Linux declares `rb_next(const struct rb_node *node)` and returns the node its
-descent reached as `(struct rb_node *)node`. The cast is how C says the caller
+descent reached as `node as (struct rb_node *)`. The cast is how C says the caller
 may write through a pointer the function itself only read through.
 
 As in C, the result of an explicit cast has exactly the destination's pointee

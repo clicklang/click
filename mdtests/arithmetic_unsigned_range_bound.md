@@ -8,7 +8,7 @@ the byte-count obligation, without search or an extra unsigned assumption.
 theorem allocation_range_fits(length: int32) {
     requires 0 <= length;
     requires length <= 536870911;
-    ensures ((uint32)length) <= 1073741823u32 by {
+    ensures (length as uint32) <= 1073741823u32 by {
         solve() using {
             0 <= length;
             length <= 536870911;

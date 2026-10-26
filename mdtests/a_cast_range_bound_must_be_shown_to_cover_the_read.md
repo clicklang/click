@@ -17,7 +17,7 @@ unsigned char read(const unsigned char *bytes, unsigned long length, unsigned lo
 verifying "a_cast_range_bound_must_be_shown_to_cover_the_read.c";
 uint8 read(const uint8* bytes, uint64 length, uint64 index) {
     requires index < length;
-    views bytes[0..(int32)length];
+    views bytes[0..length as int32];
     ensures result == bytes[index];
 }
 ```

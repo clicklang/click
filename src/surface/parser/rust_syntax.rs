@@ -1391,17 +1391,53 @@ impl Parser {
     /// Rust. `as` followed by anything but a scalar type is left for the
     /// clause that owns it (`intro() as name`).
     #[inline(never)]
-    pub(super) fn parse_rust_casts(
+    /// The casts after a unary operand, `e as T`, left to right. Click's
+    /// cast is written after its operand: an integer target bare,
+    /// `x as uint32`, a pointer target parenthesized, `p as (uint8 *)` or
+    /// `p as (struct node *)`. A Rust source's sidecar also writes Rust's
+    /// scalar names, `x as u32`. An `as` followed by anything else is left
+    /// for the clause that owns it (`induct(x) as ih`).
+    pub(super) fn parse_casts(
         &mut self,
         mut operand: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
-        while self.verifies_rust()
-            && self.peek_ident() == Some("as")
-            && matches!(
-                self.peek_next(),
-                Some(Token::Ident(name)) if rust_scalar_type(name).is_some()
-            )
-        {
+        loop {
+            if self.peek_ident() != Some("as") {
+                return Ok(operand);
+            }
+            match self.peek_next() {
+                Some(Token::Ident(name)) if click_integer_cast_type(name).is_some() => {
+                    let target_type = click_integer_cast_type(name).expect("checked above");
+                    self.position += 2;
+                    operand = self.lower_click_cast(target_type, operand)?;
+                    continue;
+                }
+                Some(Token::LParen) => {
+                    self.position += 1;
+                    if let Some(cast) = self.peek_struct_pointer_cast() {
+                        self.consume_struct_pointer_cast(&cast)?;
+                        operand = self.lower_struct_pointer_cast(cast, operand)?;
+                        continue;
+                    }
+                    if self.starts_contract_scalar_cast() {
+                        self.position += 1;
+                        let target_type = self.parse_click_cast_type()?;
+                        if !target_type.is_pointer() {
+                            return Err(self.error(
+                                "an integer cast target is written without parentheses: `e as uint32`; only a pointer target is parenthesized, `e as (uint8 *)`",
+                            ));
+                        }
+                        self.expect(Token::RParen)?;
+                        operand = self.lower_click_cast(target_type, operand)?;
+                        continue;
+                    }
+                    self.position -= 1;
+                    return Ok(operand);
+                }
+                Some(Token::Ident(name))
+                    if self.verifies_rust() && rust_scalar_type(name).is_some() => {}
+                _ => return Ok(operand),
+            }
             self.position += 1;
             let target = self.expect_ident("type")?;
             if target == "bool" {
@@ -1449,14 +1485,30 @@ impl Parser {
                 },
             };
         }
-        Ok(operand)
     }
+}
+
+/// The integer type a bare Click cast target names, `x as uint32`.
+pub(super) fn click_integer_cast_type(name: &str) -> Option<CType> {
+    Some(match name {
+        "int8" => CType::Int8,
+        "uint8" => CType::UInt8,
+        "int16" => CType::Int16,
+        "uint16" => CType::UInt16,
+        "int32" => CType::Int32,
+        "uint32" => CType::UInt32,
+        "int64" => CType::Int64,
+        "uint64" => CType::UInt64,
+        "int128" => CType::Int128,
+        "uint128" => CType::UInt128,
+        _ => return None,
+    })
 }
 
 /// The C0 type a Rust scalar type name denotes.
 impl Parser {}
 
-fn rust_scalar_type(name: &str) -> Option<C0Type> {
+pub(super) fn rust_scalar_type(name: &str) -> Option<C0Type> {
     Some(match name {
         "bool" => C0Type::Bool,
         "i8" => C0Type::Int8,

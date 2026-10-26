@@ -78,9 +78,9 @@ int32 vector_copy(
     requires length <= src_capacity;
     requires 1 <= dst_capacity;
     requires 1 <= src_capacity;
-    requires ((uint32)length) <= 1073741823u32;
-    requires ((uint32)dst_capacity) <= 1073741823u32;
-    requires ((uint32)src_capacity) <= 1073741823u32;
+    requires (length as uint32) <= 1073741823u32;
+    requires (dst_capacity as uint32) <= 1073741823u32;
+    requires (src_capacity as uint32) <= 1073741823u32;
     owns dst[0..dst_capacity];
     views src[0..src_capacity];
     requires separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]));
@@ -272,13 +272,13 @@ int32 vector_grow(struct vector* owner) {
         };
         assumption();
     }
-    have ((uint32)new_capacity) <= 1073741823u32 by {
+    have (new_capacity as uint32) <= 1073741823u32 by {
         solve() using {
             0 <= new_capacity;
             new_capacity <= 536870911;
         };
     }
-    have ((uint32)old_capacity) <= 1073741823u32 by {
+    have (old_capacity as uint32) <= 1073741823u32 by {
         have old_capacity == owner->cap by {
             normalize();
         }
@@ -295,7 +295,7 @@ int32 vector_grow(struct vector* owner) {
         };
         assumption();
     }
-    have ((uint32)owner->len) <= 1073741823u32 by {
+    have (owner->len as uint32) <= 1073741823u32 by {
         solve() using {
             0 <= owner->len;
             owner->len <= 536870910;
@@ -907,10 +907,10 @@ resource log_state(log: struct shared_log*) {
 
 void* producer(void* argument) {
     owns access: mutex_use(
-        &((struct shared_log*)argument)->mu,
-        log_state((struct shared_log*)argument)
+        &(argument as (struct shared_log *))->mu,
+        log_state(argument as (struct shared_log *))
     );
-    consumes credit((struct shared_log*)argument);
+    consumes credit(argument as (struct shared_log *));
     ensures result == 0;
 } by {
     step();

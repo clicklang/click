@@ -37,7 +37,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                     conclusion 0;
                 }
             }
-            have ((struct rb_node*)(rb->__rb_parent_color & ~3)) == p by {
+            have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by {
                 assumption();
             }
             have (rb->__rb_parent_color & 1) == 1 by {

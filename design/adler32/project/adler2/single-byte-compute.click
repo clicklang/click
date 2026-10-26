@@ -215,7 +215,7 @@ impl adler2::Adler32 {
      have to_integer(__rust_mir_144) <= to_integer(255u32);
      have to_integer(a) == 1 by solve() using { a == 1u32; };
      have to_integer(a) + to_integer(__rust_mir_144) <= 4294967295 by solve() using { to_integer(a) == 1; to_integer(__rust_mir_144) <= 255; };
-     have to_integer((int64)a + (int64)__rust_mir_144) <= 4294967295;
+     have to_integer(a as int64 + __rust_mir_144 as int64) <= 4294967295;
      have a <= 4294967295u32 - __rust_mir_144;
      step_until(assignment(__rust_mir_146, 0));
      mark tail_a;
@@ -248,7 +248,7 @@ impl adler2::Adler32 {
      }
      have to_integer(b) == 393126 by solve() using { b == 393126u32; };
      have to_integer(b) + to_integer(a) <= 4294967295 by solve() using { to_integer(b) == 393126; to_integer(a) <= 256; };
-     have to_integer((int64)b + (int64)a) <= 4294967295;
+     have to_integer(b as int64 + a as int64) <= 4294967295;
      have b <= 4294967295u32 - a;
      step_until(assignment(__rust_mir_148, 0));
      mark tail_b;

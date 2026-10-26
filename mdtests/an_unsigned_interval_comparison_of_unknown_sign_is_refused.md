@@ -9,12 +9,12 @@ the step.
 ```click
 theorem allocation_range_fits(length: int32) {
     requires length <= 536870911;
-    ensures ((uint32)length) <= 1073741823u32 by {
+    ensures (length as uint32) <= 1073741823u32 by {
         arithmetic_certificate signed_int32 {
             premise 0: length <= 536870911 => length <= 536870911;
             interval_from_affine 0 (length) (-2147483648) (536870911);
             interval_atom (1073741823) (1073741823) (1073741823);
-            interval_compare 1, 2 ule => ((uint32)length) <= 1073741823u32;
+            interval_compare 1, 2 ule => (length as uint32) <= 1073741823u32;
             conclusion 3;
         }
     }

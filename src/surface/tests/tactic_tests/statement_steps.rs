@@ -1295,10 +1295,10 @@ resource child(p: struct node*) {
 void change(struct node *g, struct node *source, struct node *t) {
     owns g->right;
     owns source->tag;
-    owns ((struct node *)(source->tag & ~3))->tag;
+    owns ((source->tag & ~3) as (struct node *))->tag;
     owns c: child(t);
     ensures c.model == old(c.model);
-    ensures g->right == old((struct node *)(source->tag & ~3));
+    ensures g->right == old((source->tag & ~3) as (struct node *));
 } by {
     step(); step();
     match c.model ensuring { owns c: child(t); fact c.model == old(c.model); fact g->right == p; } {

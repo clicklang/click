@@ -2,7 +2,7 @@
 
 Two nonvolatile pointer fields are read before the C branch establishes a
 three-link chain between their source addresses. A C pointer comparison
-states only that the addresses are equal (`(uint64)a == (uint64)b`), not that
+states only that the addresses are equal (`a as uint64 == b as uint64`), not that
 the pointers are. The trusted equality graph keys a read by its snapshot and
 numeric address, so the already-read values still have one `solve()` proof of
 equality: two reads of one snapshot at equal addresses read the same bytes.

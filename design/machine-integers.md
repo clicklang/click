@@ -552,9 +552,9 @@ Progress:
   mask `x & m` or the sign extension `((x & m) ^ s) - s`, and C++ and Rust
   file its range facts as C does. Rule K7 ([Decisions](#decisions),
   2026-10-26) relates the cast to the mask. The cross-language fixture's
-  two narrowing gaps closed: C `narrow_u8` (`(uint8)x == (x & 255u32)`) and
+  two narrowing gaps closed: C `narrow_u8` (`x as uint8 == (x & 255u32)`) and
   Rust `narrow_i8` (`integer_cast_identity` reads the cast). Printed output
-  changed only as approved: C++ and Rust print `(uint8)x` and `(int8)x`
+  changed only as approved: C++ and Rust print `x as uint8` and `x as int8`
   where they printed the mask arithmetic, and their traces show the narrow
   range facts C's do. Widening of narrow values still reuses the word
   (rule K8, next), and the C matrices (`coerce_c_value_to_type_as`'s
@@ -585,8 +585,8 @@ Progress:
   `narrow_widening`'s canonical-carrier check, never by the bare word
   comparison σ uses. A widening into 64 bits keeps its legacy extension
   node over the word. Printed output changed only as approved: a promoted
-  narrow value at rest (stored, returned, passed) prints `(int32)c` or
-  `(uint32)c`. C's widening between narrow formats (`int8` or `uint8` to
+  narrow value at rest (stored, returned, passed) prints `c as int32` or
+  `c as uint32`. C's widening between narrow formats (`int8` or `uint8` to
   `int16`, `uint8` to `uint16`) still reuses the word: K8 covers 32-bit
   destinations only, and C++ and Rust build the K7 cast there.
   Diagnostics that recognize a value as exactly one read or one named
@@ -746,7 +746,7 @@ Maintainer direction, 2026-10-25:
   `uint32` format is kept for presentation. Soundness: word equality does
   not depend on the reading of the bits.
 - **Printing shows σ where the signedness changes.** A value, fact or step
-  holding σ prints it as `(uint32)x` or `(int32)x`; nothing else changes.
+  holding σ prints it as `x as uint32` or `x as int32`; nothing else changes.
 
 Maintainer direction, 2026-10-26:
 
@@ -771,8 +771,34 @@ Maintainer direction, 2026-10-26:
   as σ is; a 64-bit `F` keeps the legacy extension over that word.
   Soundness: by the Stage 0 invariant `v`'s word is `n`'s 32-bit sign or
   zero extension, which is `n`'s word in `F`.
-- **Printing.** C++ and Rust print a narrow conversion as `(uint8)x` or
-  `(int8)x` where they printed its mask arithmetic, and show the narrow
+- **Printing.** C++ and Rust print a narrow conversion as `x as uint8` or
+  `x as int8` where they printed its mask arithmetic, and show the narrow
   range facts C shows. After K8 a promoted narrow value prints as
-  `(int32)c` where it is at rest, as σ does; it is shown, not hidden.
+  `c as int32` where it is at rest, as σ does; it is shown, not hidden.
+
+Maintainer direction, 2026-10-26 (syntax):
+
+- **Click casts are written `e as T`.** An integer target is bare,
+  `x as uint32`; a pointer target is parenthesized, `p as (uint8 *)`,
+  `p as (struct node *)`. A Rust source's sidecar also writes Rust's scalar
+  names. The C form `(T) e` is refused in Click text ("write `e as T`");
+  C source keeps C's casts. Reasons:
+  - it reads in order: the operand, then what it becomes, so a chain
+    `x as int32 as uint64` reads left to right;
+  - no precedence trap: `as` binds looser than every unary operator and
+    tighter than every binary one, so `-(x as int32)` and `-x as int32` are
+    visibly different, where the C form hid which one was meant;
+  - it is distinct from C: a Click cast is a specification's conversion,
+    with Click's rules (a checked conversion is `to_int32(e)`), and a
+    spelling of its own keeps it from reading as the C conversion of the
+    program's source;
+  - pointer targets are parenthesized because `p as uint8 * q` would leave
+    the `*` ambiguous between the type and a multiplication.
+
+  The migration was mechanical: the parser recorded every C-form cast it
+  read, a rewrite applied each as `e as T`, and every rewritten source
+  parsed back to the same file (its position-free form compared by hash). The
+  hash-pinned historical Rust proofs (`design/charon-trial/parity.json`) keep
+  their bytes; the fixture adapter in `tests/rust_import/parity.rs` reads
+  their casts as `e as T`, as it reads their old tactic spellings.
 

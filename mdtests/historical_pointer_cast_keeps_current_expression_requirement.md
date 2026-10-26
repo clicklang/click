@@ -10,7 +10,7 @@ int *identity(int *p) { return p; }
 ```click
 verifying "historical_pointer.c";
 int32* identity(int32* p) {
-    ensures result == ((int32*)old(p));
+    ensures result == (old(p) as (int32 *));
 }
 ```
 

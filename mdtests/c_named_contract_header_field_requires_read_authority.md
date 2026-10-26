@@ -13,8 +13,8 @@ verifying "frame.c";
 resource child_value(p: struct base*) {
     field number: int32;
     if p != 0 {
-        owns ((struct cell*)(void*)p)->value;
-        fact ((struct cell*)(void*)p)->value == number;
+        owns (p as (void *) as (struct cell *))->value;
+        fact (p as (void *) as (struct cell *))->value == number;
     }
 }
 contract int32 Linked(struct cell* root) {

@@ -37,7 +37,7 @@ runtime "modeled-pthread";
 verifying "modeled_pthread_shared_local_reader_scope_exit.c";
 
 void *reader(void *p) {
-    views ((struct cell *)p)->value;
+    views (p as (struct cell *))->value;
 }
 
 int32 run() {

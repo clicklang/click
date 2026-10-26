@@ -36,7 +36,7 @@ runtime "modeled-pthread";
 verifying "modeled_pthread_second_failure_requires_join.c";
 
 void *worker(void *p) {
-    owns ((struct cell *)p)->value;
+    owns (p as (struct cell *))->value;
 }
 
 int32 run(struct cell *first_task, struct cell *second_task) {

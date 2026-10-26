@@ -8,7 +8,7 @@ int32 run(int32 x) { return x; }
 ```click
 verifying "integer.c";
 int32 run(int32 x) {
-    views ((struct item*)(void*)x)->value;
+    views (x as (void *) as (struct item *))->value;
     ensures result == x;
 } by { step_until(function.exit); normalize(); }
 ```

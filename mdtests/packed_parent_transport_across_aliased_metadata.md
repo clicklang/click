@@ -20,14 +20,14 @@ struct node *caller(struct node *p, struct node *q, struct node *parent) {
 ```click
 resource metadata(p: struct node*) {
     field value: int32;
-    owns ((struct sized*)(void*)p)->size;
-    fact ((struct sized*)(void*)p)->size == value;
+    owns (p as (void *) as (struct sized *))->size;
+    fact (p as (void *) as (struct sized *))->size == value;
 }
 resource packed(p: struct node*, parent: struct node*) {
     field bits: uint64;
     owns p->word;
     fact p->word == bits;
-    fact ((struct node*)(p->word & ~3)) == parent;
+    fact ((p->word & ~3) as (struct node *)) == parent;
 }
 resource framed(p: struct node*, q: struct node*, parent: struct node*) {
     field bits: uint64;
@@ -46,8 +46,8 @@ tactic word_metadata_separation(p: struct node*, q: struct node*) {
     owns p->word;
     owns b: metadata(q);
     ensures b.value == old(b.value);
-    ensures separate(memory(p->word), memory(((struct sized*)(void*)q)->size));
-} by { unfold(b); have separate(memory(p->word), memory(((struct sized*)(void*)q)->size)) by assumption(); fold(b); }
+    ensures separate(memory(p->word), memory((q as (void *) as (struct sized *))->size));
+} by { unfold(b); have separate(memory(p->word), memory((q as (void *) as (struct sized *))->size)) by assumption(); fold(b); }
 verifying "frame.c";
 void update(struct node* p, struct node* q) {
     owns a: metadata(p);
@@ -61,13 +61,13 @@ struct node* caller(struct node* p, struct node* q, struct node* parent) {
 } by {
     let { child: child, a: a, b: b } = unfold(f);
     unfold(child);
-    have separate(memory(p->word), memory(((struct sized*)(void*)p)->size));
+    have separate(memory(p->word), memory((p as (void *) as (struct sized *))->size));
     word_metadata_separation(p, q, { b: b });
     mark before_update;
-    have ((struct node*)(p->word & ~3)) == parent by solve();
+    have ((p->word & ~3) as (struct node *)) == parent by solve();
     step(update, { a: a, b: b });
     have p->word == at(before_update, p->word) by { transport(at(before_update, p->word) == at(before_update, p->word), p->word == at(before_update, p->word)); }
-    have ((struct node*)(p->word & ~3)) == parent by { transport(at(before_update, ((struct node*)(p->word & ~3))) == parent, ((struct node*)(p->word & ~3)) == parent) using { at(before_update, ((struct node*)(p->word & ~3))) == parent; p == at(before_update, q->left); separate(memory(p->word), memory(((struct sized*)(void*)p)->size)); separate(memory(p->word), memory(((struct sized*)(void*)q)->size)); }; }
+    have ((p->word & ~3) as (struct node *)) == parent by { transport(at(before_update, ((p->word & ~3) as (struct node *))) == parent, ((p->word & ~3) as (struct node *)) == parent) using { at(before_update, ((p->word & ~3) as (struct node *))) == parent; p == at(before_update, q->left); separate(memory(p->word), memory((p as (void *) as (struct sized *))->size)); separate(memory(p->word), memory((q as (void *) as (struct sized *))->size)); }; }
 }
 ```
 

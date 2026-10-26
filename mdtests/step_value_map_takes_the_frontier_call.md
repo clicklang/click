@@ -30,7 +30,7 @@ verifying "step_value_map_takes_the_frontier_call.c";
 
 int32 f(char buf[], int32 len, uint32 flags) {
     requires 9 <= len;
-    owns buf[0..(uint64) len];
+    owns buf[0..len as uint64];
     ensures result <= 1;
 } by {
     step();

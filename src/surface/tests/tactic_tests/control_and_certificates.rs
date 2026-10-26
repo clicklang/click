@@ -214,19 +214,19 @@ fn relation_transport_certificate_matches_its_native_cast_conclusion() {
         theorem cast_bound(a: int128) {
             requires -99 <= to_integer(a);
             requires to_integer(a) <= 99;
-            ensures -99 <= to_integer((int64)a) by {
-                have to_integer((int64)a) == to_integer(a) by {
+            ensures -99 <= to_integer(a as int64) by {
+                have to_integer(a as int64) == to_integer(a) by {
                     arithmetic_certificate rules {
                         premise 0: -99 <= to_integer(a) => -99 <= to_integer(a);
                         premise 1: to_integer(a) <= 99 => to_integer(a) <= 99;
-                        integer_cast_identity bounds [0, 1] => to_integer((int64)a) == to_integer(a);
+                        integer_cast_identity bounds [0, 1] => to_integer(a as int64) == to_integer(a);
                         conclusion 0;
                     }
                 }
                 arithmetic_certificate rules {
-                    premise 0: to_integer((int64)a) == to_integer(a) => to_integer((int64)a) == to_integer(a);
+                    premise 0: to_integer(a as int64) == to_integer(a) => to_integer(a as int64) == to_integer(a);
                     premise 1: -99 <= to_integer(a) => -99 <= to_integer(a);
-                    integer_relation_transport bounds [0, 1] => -99 <= to_integer((int64)a);
+                    integer_relation_transport bounds [0, 1] => -99 <= to_integer(a as int64);
                     conclusion 0;
                 }
             }

@@ -21,7 +21,7 @@ extern void unlend(const struct S* p) {
     consumes Lent(p);
 }
 void keep(struct S* p) {
-    requires ((uint64)p & 7u64) == 0u64;
+    requires (p as uint64 & 7u64) == 0u64;
     owns p->x;
     owns p->b;
     ensures p->b == old(p->b);

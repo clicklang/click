@@ -7,7 +7,7 @@ The range is spelled from the written operand, whether a variable or a call.
 
 ```click
 function tmp_len(j: int32) -> uint64 {
-    if j == 0 { 0u64 } else { (uint64) j + 1u64 }
+    if j == 0 { 0u64 } else { j as uint64 + 1u64 }
 }
 
 theorem below_zero_is_false(k: uint64, x: uint64) {

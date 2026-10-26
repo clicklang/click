@@ -100,7 +100,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                             interval_atom (1) (1) (1);
                             interval_add_bounded 4, 5 (1) (3);
                             trivial => -1 <= 0;
-                            add 0, 7 => ((int32)(at(region(3).entry, 0) + -1)) <= ((int32)(at(region(3).entry, i) + 0));
+                            add 0, 7 => ((at(region(3).entry, 0) + -1) as int32) <= ((at(region(3).entry, i) + 0) as int32);
                             affine_conclusion 8 6 => i >= 0;
                             conclusion 9;
                         }
@@ -138,7 +138,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                                     interval_subtract 2, 5 2 (-2) (0);
                                     interval_atom (2) (2) (2);
                                     interval_add_bounded 6, 7 (0) (2);
-                                    affine_conclusion 1 8 => 0 <= ((int32)((0 - at(region(3).entry, i)) + 2));
+                                    affine_conclusion 1 8 => 0 <= (((0 - at(region(3).entry, i)) + 2) as int32);
                                     conclusion 9;
                                 }
                             } and {
@@ -155,7 +155,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                                     interval_atom (3) (3) (3);
                                     interval_add_bounded 6, 9 (1) (3);
                                     trivial => 0 <= 0;
-                                    affine_conclusion_pair 11 8 10 => ((int32)((0 - at(region(3).entry, i)) + 2)) < ((int32)((0 - at(region(3).entry, i)) + 3));
+                                    affine_conclusion_pair 11 8 10 => (((0 - at(region(3).entry, i)) + 2) as int32) < (((0 - at(region(3).entry, i)) + 3) as int32);
                                     conclusion 12;
                                 }
                             }

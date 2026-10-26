@@ -1,6 +1,6 @@
 # `rewrite` by a null pointer equality reaches an address
 
-A pointer converted to an integer, `(uint64)p`, keeps the pointer inside an
+A pointer converted to an integer, `p as uint64`, keeps the pointer inside an
 address term. Once a proof has `p == 0`, `rewrite(p == 0)` substitutes null for
 `p` there as it does in any pointer position, including in a 64-bit
 comparison, and null's address is the integer zero, exactly as evaluating the

@@ -165,7 +165,7 @@ and types. Rust now uses `fn` signatures and
 
 **Slices carried a separate length.** Rust `bytes: &[u8]` was restated as
 `const uint8* bytes, uint64 bytes_len`, and the clause is
-`views bytes[0..(int32)(uint32)bytes_len];` (`examples/rust-byte-sum`). A
+`views bytes[0..bytes_len as uint32 as int32];` (`examples/rust-byte-sum`). A
 slice is one place whose length the reference carries. Rust now writes
 `bytes.len()` for that length and can say `views *bytes;` or `views bytes[..];`
 for the whole slice and keep the explicit range for a part of it. This is an addition, not a change to an

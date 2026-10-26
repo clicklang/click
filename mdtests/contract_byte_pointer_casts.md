@@ -12,8 +12,8 @@ verifying "contract_byte_pointer_casts.c";
 
 uint32* next(uint32* p) {
     views p[0..1];
-    ensures (uint8*)result == old((uint8*)(p + 1));
-    ensures (uint8*)result == (uint8*)p + 4;
+    ensures result as (uint8 *) == old((p + 1) as (uint8 *));
+    ensures result as (uint8 *) == p as (uint8 *) + 4;
 }
 ```
 

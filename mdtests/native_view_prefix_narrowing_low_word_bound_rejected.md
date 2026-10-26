@@ -8,7 +8,7 @@ void prefix(const unsigned char *p, const unsigned char *q, unsigned long held, 
 target "x86_64-unknown-linux-gnu";
 verifying "native_prefix.c";
 void prefix(const uint8* p, const uint8* q, uint64 held, uint64 requested) {
-    requires (uint32)requested <= (uint32)held;
+    requires requested as uint32 <= held as uint32;
     views p[0u64..held];
     ensures viewable(p[0u64..requested]);
 }

@@ -2,7 +2,7 @@
 
 Not every `int64` is an `int32`, so `y: int64` does not convert to
 `Seq<int32>`'s field implicitly: the narrowing can change the value, and is
-written, as `(int32) y` or the checked `to_int32(y)`.
+written, as `y as int32` or the checked `to_int32(y)`.
 
 ```click
 spec enum Seq<T> {

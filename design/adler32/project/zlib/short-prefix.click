@@ -4,7 +4,7 @@ import click::integer;
 import "../adler2/count-bridge.click";
 import "../adler32-spec-bridge.click";
 function zlib_prefix_count(total: uint64, remaining: uint64) -> int32 {
- (int32)(uint32)(total - remaining)
+ (total - remaining) as uint32 as int32
 }
 theorem zlib_prefix_observation(total: uint64, remaining: uint64) {
  requires to_integer(total - remaining) <= 22208;
@@ -32,10 +32,10 @@ theorem zlib_prefix_pointer(base: const uint8*, total: uint64, remaining: uint64
 }
 
 function zlib_byte_integer(value: uint8) -> Integer {
- to_integer((int32)value)
+ to_integer(value as int32)
 }
 theorem zlib_byte_integer_identity(value: uint8) {
- ensures zlib_byte_integer(value) == to_integer((int32)value) by {
+ ensures zlib_byte_integer(value) == to_integer(value as int32) by {
   unfold(zlib_byte_integer(value)); normalize();
  }
 }
@@ -52,7 +52,7 @@ theorem zlib_positive_count(value: int32) {
  ensures 0 < value by { solve() using { 1 <= value; }; }
 }
 theorem zlib_equal_byte_integers(left: uint8, right: uint8) {
- requires (int32)left == (int32)right;
+ requires left as int32 == right as int32;
  ensures zlib_byte_integer(left) == zlib_byte_integer(right) by {
   unfold(zlib_byte_integer(left));
   unfold(zlib_byte_integer(right));

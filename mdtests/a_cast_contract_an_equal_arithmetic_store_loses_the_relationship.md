@@ -13,7 +13,7 @@ int32 read_packed(unsigned long* slot, struct node* p) {
 verifying "packed.c";
 int32 read_packed(unsigned long* slot, struct node* p) {
     requires p != 0;
-    requires ((struct node*)(*slot & ~1)) == p;
+    requires ((*slot & ~1) as (struct node *)) == p;
     owns *slot;
     views p->value;
 }

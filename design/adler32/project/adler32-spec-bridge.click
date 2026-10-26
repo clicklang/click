@@ -7,13 +7,13 @@ import "adler32-spec-u64.click";
 // the same sums and the same checksum, byte for byte.
 
 theorem adler_byte_widen(value: uint8) {
- ensures to_integer((int32)value) == to_integer(value) by {
-  have 0 <= (int32)value by solve();
-  have (int32)value <= 255 by solve();
+ ensures to_integer(value as int32) == to_integer(value) by {
+  have 0 <= value as int32 by solve();
+  have value as int32 <= 255 by solve();
   arithmetic_certificate rules {
-   premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
-   premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
-   integer_cast_identity bounds [0, 1] => to_integer((int32)value) == to_integer(value);
+   premise 0: 0 <= to_integer(value as int32) => 0 <= to_integer(value as int32);
+   premise 1: to_integer(value as int32) <= 255 => to_integer(value as int32) <= 255;
+   integer_cast_identity bounds [0, 1] => to_integer(value as int32) == to_integer(value);
    conclusion 0;
   }
  }
@@ -46,15 +46,15 @@ theorem adler_byte_sum_bridge(bytes: uint8[], m: uint64) {
    apply(adler_sum_append(bytes, n)) using { 0 < n; };
    apply(adler_sum_append_u64(bytes, m)) using { 0u64 < m; };
    have bytes + (n - 1) == bytes + (m - 1u64) by normalize() using { to_integer(n - 1) == to_integer(m - 1u64); };
-   have to_integer((int32)bytes[n - 1]) == to_integer(bytes[m - 1u64]) by {
+   have to_integer(bytes[n - 1] as int32) == to_integer(bytes[m - 1u64]) by {
     rewrite(bytes + (n - 1) == bytes + (m - 1u64));
     apply(adler_byte_widen(bytes[m - 1u64]));
    }
    solve() using {
-    adler_byte_sum(bytes, n) == adler_byte_sum(bytes, n - 1) + to_integer((int32)bytes[n - 1]);
+    adler_byte_sum(bytes, n) == adler_byte_sum(bytes, n - 1) + to_integer(bytes[n - 1] as int32);
     adler_byte_sum_u64(bytes, m) == adler_byte_sum_u64(bytes, m - 1u64) + to_integer(bytes[m - 1u64]);
     adler_byte_sum(bytes, n - 1) == adler_byte_sum_u64(bytes, m - 1u64);
-    to_integer((int32)bytes[n - 1]) == to_integer(bytes[m - 1u64]);
+    to_integer(bytes[n - 1] as int32) == to_integer(bytes[m - 1u64]);
    };
   }
  }
@@ -87,15 +87,15 @@ theorem adler_weighted_sum_bridge(bytes: uint8[], m: uint64, w: int32) {
    apply(adler_weighted_append(bytes, n, w)) using { 0 < n; };
    apply(adler_weighted_append_u64(bytes, m, to_integer(w))) using { 0u64 < m; };
    have bytes + (n - 1) == bytes + (m - 1u64) by normalize() using { to_integer(n - 1) == to_integer(m - 1u64); };
-   have to_integer((int32)bytes[n - 1]) == to_integer(bytes[m - 1u64]) by {
+   have to_integer(bytes[n - 1] as int32) == to_integer(bytes[m - 1u64]) by {
     rewrite(bytes + (n - 1) == bytes + (m - 1u64));
     apply(adler_byte_widen(bytes[m - 1u64]));
    }
-   rewrite(adler_weighted_sum(bytes, n, w) == adler_weighted_sum(bytes, n - 1, w) + (to_integer(w) - to_integer(n - 1)) * to_integer((int32)bytes[n - 1]));
+   rewrite(adler_weighted_sum(bytes, n, w) == adler_weighted_sum(bytes, n - 1, w) + (to_integer(w) - to_integer(n - 1)) * to_integer(bytes[n - 1] as int32));
    rewrite(adler_weighted_sum_u64(bytes, m, to_integer(w)) == adler_weighted_sum_u64(bytes, m - 1u64, to_integer(w)) + (to_integer(w) - to_integer(m - 1u64)) * to_integer(bytes[m - 1u64]));
    rewrite(adler_weighted_sum(bytes, n - 1, w) == adler_weighted_sum_u64(bytes, m - 1u64, to_integer(w)));
    rewrite(to_integer(n - 1) == to_integer(m - 1u64));
-   rewrite(to_integer((int32)bytes[n - 1]) == to_integer(bytes[m - 1u64]));
+   rewrite(to_integer(bytes[n - 1] as int32) == to_integer(bytes[m - 1u64]));
    normalize();
   }
  }

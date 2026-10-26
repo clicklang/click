@@ -28,7 +28,7 @@ int32 clipped(char buf[]) {
             apply(format::decimal_length_3(123u64));
         }
         have result == 3 by {
-            solve() using { result == (int32) format::decimal_length(123u64); format::decimal_length(123u64) == 3u64; };
+            solve() using { result == format::decimal_length(123u64) as int32; format::decimal_length(123u64) == 3u64; };
         }
     }
     ensures buf[1] == 0 by {

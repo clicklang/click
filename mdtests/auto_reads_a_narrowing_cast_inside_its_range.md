@@ -2,10 +2,10 @@
 
 `sf_cap = size` in Linux's `string_get_size` narrows a `u64` to a `u32`. With
 `1u64 <= size` and `size < 1000u64`, the cast keeps the value, so
-`1u32 <= sf_cap` holds. The linear solver sees `(uint32)size` as an atom of
+`1u32 <= sf_cap` holds. The linear solver sees `size as uint32` as an atom of
 its own, bounded only by its type, and cannot connect it to `size`.
 
-The implicit closer assumes `to_integer((uint32)x) == to_integer(x)` for each cast among
+The implicit closer assumes `to_integer(x as uint32) == to_integer(x)` for each cast among
 the observations, exactly as it assumes an in-range `+` or `-` identity. When
 the refutation cites one, it proves the cast's operand inside the
 destination's range by the solver, the identity by `integer_cast_identity`,
@@ -59,7 +59,7 @@ uint32 narrow_by_arithmetic(uint64 x) {
     step();
     have 0 <= to_integer(x);
     have to_integer(x) <= 4294967295;
-    have to_integer((uint32) x) == to_integer(x) by {
+    have to_integer(x as uint32) == to_integer(x) by {
         solve() using { 0 <= to_integer(x); to_integer(x) <= 4294967295; }
     }
     have 1u32 <= y;

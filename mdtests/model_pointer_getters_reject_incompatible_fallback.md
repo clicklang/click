@@ -22,7 +22,7 @@ void wrong(struct other_node* p) {
 } by {
     step_until(function.exit);
     let held = fold(token(), {
-        model: NodeRef::At(selected(src.model, (struct model_node*)(void*)p))
+        model: NodeRef::At(selected(src.model, p as (void *) as (struct model_node *)))
     });
 }
 ```

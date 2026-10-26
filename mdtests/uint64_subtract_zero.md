@@ -6,7 +6,7 @@ its high bits. Rewriting a proven zero remainder uses the same checked identity.
 ```click
 theorem subtract_zero(n: uint64) {
     ensures to_integer(n - 0u64) == to_integer(n) by normalize();
-    ensures (int32)(uint32)(n - 0u64) == (int32)(uint32)n by normalize();
+    ensures (n - 0u64) as uint32 as int32 == n as uint32 as int32 by normalize();
 }
 
 theorem subtract_zero_after_rewrite(n: uint64) {
@@ -18,7 +18,7 @@ theorem subtract_zero_after_rewrite(n: uint64) {
 
 theorem subtract_self(n: uint64) {
     ensures to_integer(n - n) == to_integer(0u64) by normalize();
-    ensures (int32)(uint32)(n - n) == 0 by normalize();
+    ensures (n - n) as uint32 as int32 == 0 by normalize();
 }
 
 theorem subtract_self_compound(n: uint64) {

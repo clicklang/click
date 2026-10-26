@@ -11,7 +11,7 @@ rbtree fixup loop climbs this way, so the boundary the walk ends at is the one
 The parent is a *payload*, not a resource parameter: `rb_at`'s `Node` arm owns
 the packed parent word and states both its numeric value (the payload's address
 plus the color bit) and its full decoded pointer relationship. The explicit
-`((struct rb_node*)(word & ~3)) == parent` fact preserves designation and
+`((word & ~3) as (struct rb_node *)) == parent` fact preserves designation and
 selected extent; numeric address equality alone does not grant those bounds.
 `ctx_at`'s `Left` frame owns the cells of the node its own
 `identity` payload carries. Nothing in the C program is written through
@@ -179,7 +179,7 @@ resource rb_at(p: struct rb_node*) {
             fact aligned(p, 8);
             fact aligned(parent, 8);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
-            fact ((struct rb_node*)(p->__rb_parent_color & ~3)) == parent;
+            fact ((p->__rb_parent_color & ~3) as (struct rb_node *)) == parent;
             fact (p->__rb_parent_color & 1) == color_bit(color);
             fact left.model == left_model;
             fact right.model == right_model;
@@ -209,7 +209,7 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
             fact identity->rb_left == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
-            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
+            fact ((identity->__rb_parent_color & ~3) as (struct rb_node *)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -229,7 +229,7 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
             fact identity->rb_right == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
-            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
+            fact ((identity->__rb_parent_color & ~3) as (struct rb_node *)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;

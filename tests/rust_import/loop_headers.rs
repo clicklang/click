@@ -101,8 +101,8 @@ fn charon_loop_headers_check_real_guards_final_assignments_and_false_claims() {
             ("ensures result == n;", "ensures result == 0;"),
             ("ensures result == bytes.len();", "ensures result == 0u64;"),
             (
-                "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes.len()));",
-                "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes.len())) + 1;",
+                "ensures to_integer(result) == old(prefix(bytes, bytes.len() as uint32 as int32));",
+                "ensures to_integer(result) == old(prefix(bytes, bytes.len() as uint32 as int32)) + 1;",
             ),
         ] {
             let invalid = sidecar.replace(before, after);

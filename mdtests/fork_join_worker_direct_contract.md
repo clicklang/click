@@ -36,18 +36,18 @@ predicate range_filled(job: struct range_job*) {
 }
 
 void *fill_range(void *argument) {
-    views ((struct range_job *)argument)->output;
-    views ((struct range_job *)argument)->begin;
-    views ((struct range_job *)argument)->end;
-    views ((struct range_job *)argument)->value;
-    owns ((struct range_job *)argument)->output[((struct range_job *)argument)->begin..((struct range_job *)argument)->end];
-    requires 0 <= ((struct range_job *)argument)->begin;
-    requires ((struct range_job *)argument)->begin <= ((struct range_job *)argument)->end;
-    requires 0 <= to_integer(((struct range_job *)argument)->end - ((struct range_job *)argument)->begin);
-    requires to_integer(((struct range_job *)argument)->end - ((struct range_job *)argument)->begin) <= 1073741823;
-    requires separate(memory(*((struct range_job *)argument)), memory(((struct range_job *)argument)->output[((struct range_job *)argument)->begin..((struct range_job *)argument)->end]));
+    views (argument as (struct range_job *))->output;
+    views (argument as (struct range_job *))->begin;
+    views (argument as (struct range_job *))->end;
+    views (argument as (struct range_job *))->value;
+    owns (argument as (struct range_job *))->output[(argument as (struct range_job *))->begin..(argument as (struct range_job *))->end];
+    requires 0 <= (argument as (struct range_job *))->begin;
+    requires (argument as (struct range_job *))->begin <= (argument as (struct range_job *))->end;
+    requires 0 <= to_integer((argument as (struct range_job *))->end - (argument as (struct range_job *))->begin);
+    requires to_integer((argument as (struct range_job *))->end - (argument as (struct range_job *))->begin) <= 1073741823;
+    requires separate(memory(*(argument as (struct range_job *))), memory((argument as (struct range_job *))->output[(argument as (struct range_job *))->begin..(argument as (struct range_job *))->end]));
     ensures result == 0;
-    ensures range_filled((struct range_job *)argument);
+    ensures range_filled(argument as (struct range_job *));
 } by {
     step();
     step();

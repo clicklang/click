@@ -188,16 +188,16 @@ theorem adler_native_deferred_b_prefix_step(bytes: uint8[], n: int32, pos: int32
  requires 0 <= adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3));
  requires truncating_remainder(adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)), 65521) == adler_spec_a(bytes, n, a_seed);
  requires truncating_remainder(adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)), 65521) == adler_spec_b(bytes, n, a_seed, b_seed);
- requires to_integer(v0) == to_integer((int32)bytes[n]);
+ requires to_integer(v0) == to_integer(bytes[n] as int32);
  requires to_integer(a0) + to_integer(v0) <= 4294967295;
  requires to_integer(b0) + (to_integer(a0) + to_integer(v0)) <= 4294967295;
- requires to_integer(v1) == to_integer((int32)bytes[n + 1]);
+ requires to_integer(v1) == to_integer(bytes[n + 1] as int32);
  requires to_integer(a1) + to_integer(v1) <= 4294967295;
  requires to_integer(b1) + (to_integer(a1) + to_integer(v1)) <= 4294967295;
- requires to_integer(v2) == to_integer((int32)bytes[n + 2]);
+ requires to_integer(v2) == to_integer(bytes[n + 2] as int32);
  requires to_integer(a2) + to_integer(v2) <= 4294967295;
  requires to_integer(b2) + (to_integer(a2) + to_integer(v2)) <= 4294967295;
- requires to_integer(v3) == to_integer((int32)bytes[n + 3]);
+ requires to_integer(v3) == to_integer(bytes[n + 3] as int32);
  requires to_integer(a3) + to_integer(v3) <= 4294967295;
  requires to_integer(b3) + (to_integer(a3) + to_integer(v3)) <= 4294967295;
  ensures truncating_remainder(adler_lane_b(to_integer(b) + to_integer(pos + 4) * to_integer(a), to_integer(a1 + v1), to_integer(a2 + v2), to_integer(a3 + v3), to_integer(b0 + (a0 + v0)), to_integer(b1 + (a1 + v1)), to_integer(b2 + (a2 + v2)), to_integer(b3 + (a3 + v3))), 65521) == adler_spec_b(bytes, n + 4, a_seed, b_seed) by {

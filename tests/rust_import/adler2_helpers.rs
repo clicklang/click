@@ -1898,8 +1898,8 @@ fn charon_adler2_small_partition_rejects_false_metadata() {
             "ensures truncating_remainder(n, 4) <= 2",
         ),
         (
-            "ensures (int32)(uint32)(n - n % 4u64) % 4 == 0",
-            "ensures (int32)(uint32)(n - n % 4u64) % 4 == 1",
+            "ensures (n - n % 4u64) as uint32 as int32 % 4 == 0",
+            "ensures (n - n % 4u64) as uint32 as int32 % 4 == 1",
         ),
         (
             "ensures to_integer(n - (n - n % 4u64)) == to_integer(n % 4u64)",
@@ -1978,8 +1978,8 @@ fn adler_four_byte_recombination_rejects_reversed_byte_weights() {
         .find(|line| line.starts_with("     and to_integer("))
         .unwrap();
     let incorrect = statement
-        .replace("3 * to_integer((int32)x1)", "2 * to_integer((int32)x1)")
-        .replace("2 * to_integer((int32)x2)", "3 * to_integer((int32)x2)");
+        .replace("3 * to_integer(x1 as int32)", "2 * to_integer(x1 as int32)")
+        .replace("2 * to_integer(x2 as int32)", "3 * to_integer(x2 as int32)");
     assert_ne!(incorrect, statement);
     let source = source.replacen(statement, &incorrect, 1);
     let offset = source
@@ -2155,8 +2155,8 @@ fn adler_common_spec_expands_and_rejects_false_results() {
         ),
         (
             "adler_weighted_append_four",
-            "+ 3 * to_integer((int32)bytes[n + 1]) + 2 * to_integer((int32)bytes[n + 2])",
-            "+ 2 * to_integer((int32)bytes[n + 1]) + 3 * to_integer((int32)bytes[n + 2])",
+            "+ 3 * to_integer(bytes[n + 1] as int32) + 2 * to_integer(bytes[n + 2] as int32)",
+            "+ 2 * to_integer(bytes[n + 1] as int32) + 3 * to_integer(bytes[n + 2] as int32)",
         ),
         (
             "adler_residue_congruent",
@@ -2282,19 +2282,19 @@ theorem adler_outer_exhausted_remaining(remaining: int32, size: uint64) {
  requires 0 <= remaining;
  requires remaining % 22208 == 0;
  requires size == 22208u64;
- requires not (0 < remaining) or not ((int32)(uint32)size <= remaining);
+ requires not (0 < remaining) or not (size as uint32 as int32 <= remaining);
  ensures remaining == 0 by {
   cases {
    not (0 < remaining) => {
     have remaining <= 0;
     solve() using { 0 <= remaining; remaining <= 0; };
    }
-   not ((int32)(uint32)size <= remaining) => {
+   not (size as uint32 as int32 <= remaining) => {
     if 0 < remaining {
      apply(adler_outer_nonempty_remaining(remaining)) using { 0 < remaining; remaining % 22208 == 0; };
-     have (int32)(uint32)size == 22208 by { rewrite(size == 22208u64); normalize(); }
-     have (int32)(uint32)size <= remaining by { rewrite((int32)(uint32)size == 22208); assumption(); }
-     contradiction((int32)(uint32)size <= remaining);
+     have size as uint32 as int32 == 22208 by { rewrite(size == 22208u64); normalize(); }
+     have size as uint32 as int32 <= remaining by { rewrite(size as uint32 as int32 == 22208); assumption(); }
+     contradiction(size as uint32 as int32 <= remaining);
     } else {
      have remaining <= 0;
      solve() using { 0 <= remaining; remaining <= 0; };
@@ -2330,8 +2330,8 @@ const STORED_GUARD_PROOF: &str = r#"int adler_stored_guard(int remaining, uint64
    close_invariants() by solve();
   }
  }
- have not (0 < remaining) or not ((int32)(uint32)size <= remaining) by assumption();
- apply(adler_outer_exhausted_remaining(remaining, size)) using { 0 <= remaining; remaining % 22208 == 0; size == 22208u64; not (0 < remaining) or not ((int32)(uint32)size <= remaining); }
+ have not (0 < remaining) or not (size as uint32 as int32 <= remaining) by assumption();
+ apply(adler_outer_exhausted_remaining(remaining, size)) using { 0 <= remaining; remaining % 22208 == 0; size == 22208u64; not (0 < remaining) or not (size as uint32 as int32 <= remaining); }
  step_until(function.exit); solve();
 }
 "#;
@@ -2511,8 +2511,8 @@ fn adler_lane_state_expands_and_rejects_false_relations() {
         ),
         (
             "adler_prefix_b_step_four",
-            "+ 3 * to_integer((int32)bytes[n + 1]) + 2 * to_integer((int32)bytes[n + 2])",
-            "+ 2 * to_integer((int32)bytes[n + 1]) + 3 * to_integer((int32)bytes[n + 2])",
+            "+ 3 * to_integer(bytes[n + 1] as int32) + 2 * to_integer(bytes[n + 2] as int32)",
+            "+ 2 * to_integer(bytes[n + 1] as int32) + 3 * to_integer(bytes[n + 2] as int32)",
         ),
         (
             "adler_prefix_b_step_four",
@@ -3133,8 +3133,8 @@ fn adler_incremental_bridges_expand_and_reject_false_observations() {
     );
     assert_cli(&p, &["verify"]);
     let invalid = PACKING.replacen(
-        "ensures (uint32)value <= 65520u32",
-        "ensures (uint32)value <= 65519u32",
+        "ensures value as uint32 <= 65520u32",
+        "ensures value as uint32 <= 65519u32",
         1,
     );
     assert_ne!(invalid, PACKING);
@@ -3553,13 +3553,13 @@ fn adler_serial_tail_spec_expands_and_rejects_false_weights() {
     for (owner, before, after) in [
         (
             "adler_serial_two_native_result",
-            "2 + 2 * to_integer((int32)x0) + to_integer((int32)x1), 65521) by",
-            "2 + to_integer((int32)x0) + 2 * to_integer((int32)x1), 65521) by",
+            "2 + 2 * to_integer(x0 as int32) + to_integer(x1 as int32), 65521) by",
+            "2 + to_integer(x0 as int32) + 2 * to_integer(x1 as int32), 65521) by",
         ),
         (
             "adler_serial_three_native_result",
-            "3 + 3 * to_integer((int32)x0) + 2 * to_integer((int32)x1) + to_integer((int32)x2), 65521) by",
-            "3 + to_integer((int32)x0) + 2 * to_integer((int32)x1) + 3 * to_integer((int32)x2), 65521) by",
+            "3 + 3 * to_integer(x0 as int32) + 2 * to_integer(x1 as int32) + to_integer(x2 as int32), 65521) by",
+            "3 + to_integer(x0 as int32) + 2 * to_integer(x1 as int32) + 3 * to_integer(x2 as int32), 65521) by",
         ),
         (
             "adler_serial_two_native_result",
@@ -3761,8 +3761,8 @@ fn adler_deferred_batch_b_rejects_false_transitions() {
         ),
         (
             "adler_native_deferred_b_prefix_step",
-            "requires to_integer(v1) == to_integer((int32)bytes[n + 1]);",
-            "requires to_integer(v1) == to_integer((int32)bytes[n]);",
+            "requires to_integer(v1) == to_integer(bytes[n + 1] as int32);",
+            "requires to_integer(v1) == to_integer(bytes[n] as int32);",
         ),
         (
             "adler_empty_full_batch_position",
@@ -3866,8 +3866,8 @@ fn adler_native_vector_prefix_rejects_false_transitions() {
     for (owner, before, after) in [
         (
             "adler_native_four_lane_a_prefix_step",
-            "requires to_integer(v0) == to_integer((int32)bytes[n]);",
-            "requires to_integer(v0) == to_integer((int32)bytes[n + 1]);",
+            "requires to_integer(v0) == to_integer(bytes[n] as int32);",
+            "requires to_integer(v0) == to_integer(bytes[n + 1] as int32);",
         ),
         (
             "adler_native_four_lane_a_prefix_step",
@@ -3940,16 +3940,16 @@ fn adler_small_native_count_byte_addresses_and_observations_verify() {
 fn adler_count_byte_observations_reject_wrong_positions_and_missing_guards() {
     for (before, after) in [
         (
-            "== to_integer((int32)bytes[(int32)(uint32)count]) by",
-            "== to_integer((int32)bytes[(int32)(uint32)count + 1]) by",
+            "== to_integer(bytes[count as uint32 as int32] as int32) by",
+            "== to_integer(bytes[count as uint32 as int32 + 1] as int32) by",
         ),
         (
-            "== to_integer((int32)bytes[(int32)(uint32)count + lane]) by",
-            "== to_integer((int32)bytes[(int32)(uint32)count + lane + 1]) by",
+            "== to_integer(bytes[count as uint32 as int32 + lane] as int32) by",
+            "== to_integer(bytes[count as uint32 as int32 + lane + 1] as int32) by",
         ),
         (
-            "bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 1]) by",
-            "bytes[((int32)(uint32)total - (int32)(uint32)remaining)]) by",
+            "bytes[(total as uint32 as int32 - remaining as uint32 as int32) - 1]) by",
+            "bytes[(total as uint32 as int32 - remaining as uint32 as int32)]) by",
         ),
         ("requires count <= 22204u64;", ""),
         ("requires lane <= 3;", ""),
@@ -3971,12 +3971,12 @@ fn adler_count_byte_observations_reject_wrong_positions_and_missing_guards() {
 fn adler_remaining_count_byte_observations_reject_wrong_positions_and_missing_guards() {
     for (before, after) in [
         (
-            "bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 4 + lane]) by",
-            "bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 4 + lane + 1]) by",
+            "bytes[(total as uint32 as int32 - remaining as uint32 as int32) - 4 + lane]) by",
+            "bytes[(total as uint32 as int32 - remaining as uint32 as int32) - 4 + lane + 1]) by",
         ),
         (
-            "ensures to_integer((int32)(bytes + (total - remaining - 4u64))[lane])",
-            "ensures to_integer((int32)(bytes + (total - remaining - 3u64))[lane])",
+            "ensures to_integer((bytes + (total - remaining - 4u64))[lane] as int32)",
+            "ensures to_integer((bytes + (total - remaining - 3u64))[lane] as int32)",
         ),
         // `0 <= (int32)(uint32)remaining` is not among these: it follows
         // from the two guards below, which bound `remaining` by 22204, and

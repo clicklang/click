@@ -19,7 +19,7 @@ void wrong(struct other_node* p) {
     ensures true;
 } by {
     step_until(function.exit);
-    let held = fold(token(), { model: NodeRef::At((struct model_node*)(void*)p) });
+    let held = fold(token(), { model: NodeRef::At(p as (void *) as (struct model_node *)) });
 }
 ```
 

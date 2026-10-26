@@ -1682,8 +1682,8 @@ impl<'a> Proof<'a> {
 
     /// Whether `candidate` reads `term` as an `int32`, so a certificate node
     /// that names the signed atom re-lowers to that atom. Equality cannot
-    /// tell: `(uint32) n == 0` lowers to the same raw bitvector equality as
-    /// `n == 0`, while `(uint32) n <= 2147483647` is an unsigned comparison of
+    /// tell: `n as uint32 == 0` lowers to the same raw bitvector equality as
+    /// `n == 0`, while `n as uint32 <= 2147483647` is an unsigned comparison of
     /// another typed value. A signed order does tell, since only an `int32`
     /// operand lowers `candidate < 0` to a signed comparison of that term.
     fn signed_surface_term_is_int32(
@@ -2006,7 +2006,7 @@ impl<'a> Proof<'a> {
                 right,
             } if !claim.terms.is_empty() => {
                 // An exact observation's native operand is the value it
-                // observes: `(int32)x`, not `(int32)to_integer(x)`.
+                // observes: `x as int32`, not `to_integer(x) as int32`.
                 let native = |operand| ContractExpression::CUnary {
                     operand: Box::new(match operand {
                         ContractExpression::Call {
@@ -3461,7 +3461,7 @@ impl<'a> Proof<'a> {
             };
             // A widened narrow binder is a carrier only through the range
             // its introduction filed, so the certificate cites those facts
-            // as filed, `(int32)x >= lo` and `(int32)x <= hi`, which need
+            // as filed, `x as int32 >= lo` and `x as int32 <= hi`, which need
             // no proof of their own.
             let binder = if cast {
                 crate::kernel::machine_integer::conversion::narrow_binder_word(observed, value)

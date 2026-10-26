@@ -18,7 +18,7 @@ int32 read_packed(unsigned long word, struct node* p, int32 count) {
     requires p != 0;
     requires 0 <= count;
     requires count <= 4;
-    requires ((struct node*)(word & ~1)) == p;
+    requires ((word & ~1) as (struct node *)) == p;
     views p->value;
 } by {
     step(); step();
@@ -26,7 +26,7 @@ int32 read_packed(unsigned long word, struct node* p, int32 count) {
         decreases count - i;
         invariant 0 <= i;
         invariant i <= count;
-        invariant ((struct node*)(word & ~1)) == p;
+        invariant ((word & ~1) as (struct node *)) == p;
         initialize by { solve(); }
         preserve by { step(); step(); solve(); }
     }

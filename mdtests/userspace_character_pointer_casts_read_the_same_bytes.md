@@ -36,7 +36,7 @@ int32 as_signed(char* p) {
 
 int32 as_unsigned(char* p) {
     views p[0..1];
-    requires ((uint8*)p)[0] == 200;
+    requires (p as (uint8 *))[0] == 200;
     ensures result == 200;
 }
 

@@ -16,8 +16,8 @@ cast at each use and state the bound that makes the cast exact:
 
 ```click
 requires length <= 2147483647u64;
-views bytes[0..(int32)length];
-ensures result == bytes[(int32)index];
+views bytes[0..length as int32];
+ensures result == bytes[index as int32];
 ```
 
 That is not C's rule. In C, `p[i]` converts `i` to a pointer-sized offset:
@@ -103,7 +103,7 @@ disappear from C and Rust contracts alike. Contracts still state
 
 Built 2026-10-08, by a smaller route than the `kind` field above. A 64-bit
 bound or index is converted where it meets the place, as the cast
-`(int32)n` converts it, so every term downstream is the one an explicit cast
+`n as int32` converts it, so every term downstream is the one an explicit cast
 gives and no reader of a range changes:
 
 - a range bound of any form, where the surface lowers a segment
@@ -159,7 +159,7 @@ out; a signed access index is read the same way, and an unsigned order
 between sign extensions of values known nonnegative is decided by the
 signed order. Step 9 is done the same day: a range with any 64-bit bound,
 a constant included, is wide, and the 32-bit conversion of a bound is gone;
-only a cast the contract writes, `bytes[0..(int32)length]`, makes a 64-bit
+only a cast the contract writes, `bytes[0..length as int32]`, makes a 64-bit
 bound a 32-bit one. Step 6 followed: an owned window `(bytes + index)[0..4]`
 or suffix `bytes[i..length]` is split from an owned wide range and rejoins it
 when the call returns. A window is restated at its root base,
@@ -190,7 +190,7 @@ learned along the way:
 
 Keeping 32-bit ranges and letting the memory model discharge the bound is
 a dead end: the object limit gives `length <= isize::MAX / width`, far
-above `INT_MAX`, so `(int32)length` is still inexact.
+above `INT_MAX`, so `length as int32` is still inexact.
 
 **The representation.** `CMemoryRange` (`src/kernel/primitives.rs`) gets a
 last field, `kind: RangeIndexKind { Int32, UInt64 }`, part of its `Hash`,
@@ -270,12 +270,12 @@ Four more, the same day:
 - An index in a model function has the type the code has:
   `prefix(bytes, end: usize)`, not `int32` and not `Integer`. Folds and
   `forall` range over 64-bit values for that.
-- A cast written inside a place, `bytes[(int32)index]`, stays legal and
+- A cast written inside a place, `bytes[index as int32]`, stays legal and
   means what it says, the element at the truncated index. With an index
   never narrowed it names another address than the body's `bytes[index]`
   unless the index is known to fit, and the two are not equated
   automatically. The mismatch says to drop the cast.
-- A cast written in a range bound, `bytes[0..(int32)length]`, means what
+- A cast written in a range bound, `bytes[0..length as int32]`, means what
   it says in the same way (decided 2026-10-09): the range up to the
   truncated length, a 32-bit range whose bound has to be shown to fit.
   The kernel used to drop one such cast and read the range as 64-bit.
@@ -312,7 +312,7 @@ The kernel half was built on 2026-10-08, in
   a step, so a question costs work in its own chain and not in the facts
   that share a constant with it; the scaling test holds both.
 - The rule that lifts a truncated comparison to its 64-bit form reads
-  `(int32)a + c` as the truncation of `a + c`. Truncation commutes with
+  `a as int32 + c` as the truncation of `a + c`. Truncation commutes with
   addition, so this is exact, and the range check is made on the sum.
 - A signed 64-bit index is admitted where its value is proved to lie in
   `0..=INT_MAX` (`int64_index_fits_int32`). It was refused outright.

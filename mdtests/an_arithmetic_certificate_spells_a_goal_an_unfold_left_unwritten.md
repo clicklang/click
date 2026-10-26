@@ -1,6 +1,6 @@
 # An arithmetic certificate spells a goal an unfold left unwritten
 
-The first `unfold` spells `wrap`'s `int32` argument as `((int32)v)` in the
+The first `unfold` spells `wrap`'s `int32` argument as `(v as int32)` in the
 goal it rewrites, so the second, written with `v`, no longer finds its call in
 that spelling and the goal keeps only its checked form. The goal mentions an
 Integer spec call on the match arm's algebraic binder (`chain_size(rest)`) and

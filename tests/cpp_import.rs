@@ -8975,10 +8975,10 @@ fn cpp20_modular_conversion_contract_preserves_bits_and_frames_memory() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "conversion.cpp";
-int64 explicit_cast(uint64 value) { ensures ((uint64)result) == value; }
+int64 explicit_cast(uint64 value) { ensures (result as uint64) == value; }
 int64 relay(uint64 value, int32* untouched) {
  owns untouched[0..1];
- ensures ((uint64)result) == value;
+ ensures (result as uint64) == value;
  ensures untouched[0] == old(untouched[0]);
 }
 "#;

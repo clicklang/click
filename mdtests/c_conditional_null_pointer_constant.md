@@ -1,7 +1,7 @@
 # A conditional with a null pointer constant has the pointer's type
 
 When one arm of `?:` is a pointer and the other is a null pointer constant,
-`0` or `((void *)0)`, the result has the pointer's type, as in C. The Linux
+`0` or `(0 as (void *))`, the result has the pointer's type, as in C. The Linux
 rbtree erase code writes `rebalance = (pc & 1) ? parent : ((void *)0);`.
 
 ```c filename=c_conditional_null_pointer_constant.c
