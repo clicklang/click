@@ -718,6 +718,12 @@ four times the work at a quarter of it.
     fact. They are not keyed by block pair: across the gate, 2 of 1,329
     range-separation hits came from a fact between other blocks, matched
     through memory resolution, and at most 7 separation facts were held.
+    Range separation's two scans are now a lookup: the separations filed
+    under the blocks related to either queried base by proven equality
+    (`related_pointer_root_blocks`), the blocks memory resolution can
+    reach, and those with a wide side, which still share one bucket. Debug
+    builds compare every answer with the scan
+    (`explicit_separation_lookup_reads_only_related_blocks`).
     Still listed: all compositions at `4280` and `4563` (index:
     `composition_members`).
 22. **Left as is:** the load's unresolved-cell scan

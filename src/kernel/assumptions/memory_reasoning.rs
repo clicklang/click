@@ -2632,13 +2632,13 @@ impl PureFactContext {
                 .into_iter()
                 .any(directed)
         } else {
-            self.separation_facts.scan_unindexed().any(directed)
+            self.separation_facts_related_to(left, right, directed)
         } {
             return true;
         }
         // Both sides by memory resolution, which can cross blocks through
         // any proven base equality.
-        self.separation_facts.scan_unindexed().any(|proposition| {
+        self.separation_facts_related_to(left, right, |proposition| {
             let Some((fact_left, fact_right)) = proposition.memory_separation() else {
                 return false;
             };
@@ -2648,6 +2648,40 @@ impl PureFactContext {
                     && memory_range_contained_for_memory_resolution(left, fact_right, self))
                 && !self.memory_ranges_overlap_after_base_equality(fact_left, fact_right)
         }) || self.composition_separates_owned_ranges(left, right)
+    }
+
+    /// Whether `certifies` holds of a stated memory separation that can
+    /// contain `left` and `right`. A side contains a queried range only up
+    /// to memory resolution, which reaches a block through a proven base
+    /// equality, so the candidates are the separations filed under the
+    /// blocks related to either queried base, and those with a wide side
+    /// (`memory_separations_near`). Debug builds compare every answer with
+    /// the scan of every separation.
+    fn separation_facts_related_to(
+        &self,
+        left: &CMemoryRange,
+        right: &CMemoryRange,
+        certifies: impl Fn(&Proposition) -> bool,
+    ) -> bool {
+        let blocks = [left.base(), right.base()]
+            .into_iter()
+            .flat_map(|base| crate::kernel::primitives::related_pointer_root_blocks(base, self))
+            .collect::<BTreeSet<_>>();
+        let indexed = self
+            .memory_separations_near(blocks.iter())
+            .into_iter()
+            .any(&certifies);
+        #[cfg(debug_assertions)]
+        if !crate::instrumentation::in_uncharged_debug_check() {
+            crate::instrumentation::uncharged_debug_check(|| {
+                let scanned = self.separation_facts.scan_for_upkeep().any(&certifies);
+                assert_eq!(
+                    indexed, scanned,
+                    "the related blocks' separations differ from every separation"
+                );
+            });
+        }
+        indexed
     }
 
     /// Two ranges are separate as distinct owned members of one held
@@ -5437,6 +5471,9 @@ mod seeded_interval_adjacency_tests {
     mod scaling_tests {
         include!(
             "../../scaling_tests/kernel/assumptions/memory_reasoning/seeded_interval_adjacency_tests.rs"
+        );
+        include!(
+            "../../scaling_tests/kernel/assumptions/memory_reasoning/explicit_separation_lookup_tests.rs"
         );
     }
 }
