@@ -2,7 +2,7 @@
 
 After `i = i + 1` no local holds the value `i` had when the iteration began.
 That value is the loop head's, and a proof spells it
-`at(region(3).entry, i)`, so a refusal inside the body names it that way
+`at(statement(2).statement(0).entry, i)`, so a refusal inside the body names it that way
 too, rather than as a report-local `<unnamed A>`. Here the `have` cites
 nothing, so the bound it claims stays open, and the goal reads in the
 spelling the next attempt can cite:
@@ -43,5 +43,5 @@ int32 walk(int32 n) {
 ```
 
 ```expect
-fail: goal: at(region(3).entry, i) + 1 <= n
+fail: goal: at(statement(2).statement(0).entry, i) + 1 <= n
 ```

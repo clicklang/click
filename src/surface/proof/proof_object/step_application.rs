@@ -1022,6 +1022,7 @@ impl<'a> Proof<'a> {
                     break;
                 }
             }
+            let reached_state = after.core.reached_state();
             let before = before.core.reached_state().resources();
             let after = after.core.reached_state().resources();
             if let Some(changed) = after.changed_facts_since(before) {
@@ -1030,7 +1031,9 @@ impl<'a> Proof<'a> {
                     let new = after.exact_count(fact);
                     if old != new {
                         let description = match self.context.as_ref() {
-                            ProofContext::Execution(context) => trace_resource_fact(fact, context),
+                            ProofContext::Execution(context) => {
+                                trace_resource_fact(fact, context, reached_state)
+                            }
                             _ => crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
                                 fact,
                                 ParameterBinding::default(),
@@ -4050,7 +4053,11 @@ fn trace_statement_head(statement: &CStatement) -> String {
 /// Prefer an exact parameter base for a trace. The general diagnostic range
 /// printer accepts an offset from any parameter, which can turn a `visited`
 /// view into `left[(v100002-v100000)..]` even though `visited` is available.
-fn trace_resource_fact(fact: &CResourceFact, context: &ExecutionProofContext<'_>) -> String {
+fn trace_resource_fact(
+    fact: &CResourceFact,
+    context: &ExecutionProofContext<'_>,
+    reached: &CState,
+) -> String {
     if let Some(range) = fact.memory_range() {
         for (parameter, argument) in context
             .parsed_function
@@ -4071,10 +4078,16 @@ fn trace_resource_fact(fact: &CResourceFact, context: &ExecutionProofContext<'_>
             }
         }
     }
-    crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
-        fact,
+    // The reached state's locals name what the step introduced, a call's
+    // result temporary as `<region>.result` among them.
+    let mut labels = crate::surface::proof_diagnostics::render::SnapshotLabels::with_state(
         context.parameter_binding(),
-    )
+        reached,
+    );
+    let mut text =
+        crate::surface::proof_diagnostics::render::render_resource_fact_spelled(fact, &mut labels);
+    text.push_str(&labels.trace_legend());
+    text
 }
 
 fn describe_assumption_goal(goal: &Proposition) -> &'static str {

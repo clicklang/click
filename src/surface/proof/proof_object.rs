@@ -1251,6 +1251,9 @@ struct ProofDiagnosticProofState(
     // The recorded snapshots an outcome goal's `at(...)` cites. A shared
     // handle; the citable ones are selected only when a report is rendered.
     Option<crate::surface::RecordedSnapshots>,
+    // The function's source layout, so names registered after the proof has
+    // unwound still spell a call's result as `<region>.result`.
+    Option<crate::surface::lowering::SourceExecutionLayout>,
 );
 
 /// The names a captured diagnostic gives the proof's values: the naming
@@ -1469,7 +1472,8 @@ fn register_snapshot_names(
                         labels.fallback_source_name(*variable, spelling, value.c_type());
                     }
                     CValue::Pointer(pointer) => {
-                        labels.fallback_pointer_name(pointer.pointer(), spelling);
+                        labels.fallback_pointer_name(pointer.pointer(), spelling.clone());
+                        labels.fallback_value_name(spelling, value.clone());
                     }
                     _ => {}
                 }
@@ -1521,6 +1525,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         &self,
         labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
     ) {
+        let _spelling = self
+            .15
+            .as_ref()
+            .map(crate::surface::diagnostics::SourcePathSpellingScope::enter);
         self.13.register(labels);
         for (variable, name) in &self.2 {
             labels.source_name(*variable, name.clone());
@@ -2148,6 +2156,7 @@ impl Proof<'_> {
                     .outcome_fixed_state_view()
                     .map(|view| view.fixed_state.recorded_snapshots.clone()),
             },
+            crate::surface::diagnostics::spelling_layout(),
         )
     }
 }
