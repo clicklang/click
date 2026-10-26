@@ -1918,7 +1918,6 @@ fn fold_produced_resources<'a>(
     outcome: &mut CFunctionOutcome,
     outcome_proof: &mut Option<Proof<'a>>,
     capturing_this_tactic: bool,
-    grouped_contract: bool,
     path_grouped_surface_closers: &mut Vec<ProofTactic>,
     path_deferred_capture_tactics: &mut Vec<ProofTactic>,
 ) -> Result<(), ClickError> {
@@ -1944,9 +1943,9 @@ fn fold_produced_resources<'a>(
         if capturing_this_tactic {
             path_deferred_capture_tactics.extend(added.iter().cloned());
         }
-        if grouped_contract {
-            path_grouped_surface_closers.extend(added);
-        }
+        // Folding changes the shared outcome before any claim closes. Its
+        // checked steps belong to the path prefix for individual claims too.
+        path_grouped_surface_closers.extend(added);
         *outcome_proof = Some(folded);
     }
     Ok(())
@@ -2037,7 +2036,6 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
             outcome,
             outcome_proof,
             capturing_this_tactic,
-            proof_context.constants.grouped_contract,
             path_grouped_surface_closers,
             path_deferred_capture_tactics,
         )?;

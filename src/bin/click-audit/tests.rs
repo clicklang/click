@@ -1909,6 +1909,39 @@ fn expanded_loop_claims_stay_within_checking_work_bounds() {
     }
 }
 
+#[test]
+#[ignore = "nightly: resource output expansion and retained/cold rechecks"]
+fn single_resource_claims_retain_their_implicit_return_folds() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for (fixture, claim) in [
+        ("cstr_at_folds_at_a_constant_length", "empty.produces_0"),
+        (
+            "fold_symbolic_quantity_without_search",
+            "mint_positive.produces_0",
+        ),
+        ("conditional_allocated_record_output", "create.produces_0"),
+        (
+            "a_borrowed_composite_quantified_defined_fact_opens_and_folds",
+            "mark.produces_0",
+        ),
+        ("calloc_zeroed_int32", "calloc_zeroed_int32.produces_0"),
+        (
+            "fresh_allocation_writes_are_internal_effects",
+            "fresh_allocation_writes_are_internal_effects.produces_0",
+        ),
+        ("malloc_sizeof_scalar", "malloc_sizeof_scalar.produces_0"),
+    ] {
+        let path = root.join("mdtests").join(format!("{fixture}.md"));
+        let arguments = parse_arguments([
+            "--claim".to_string(),
+            claim.to_string(),
+            path.display().to_string(),
+        ])
+        .unwrap();
+        run_audit(arguments).unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    }
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/bin/click-audit/tests.rs");
