@@ -577,7 +577,7 @@ branch the facts do not decide it names the split to write
 
 ### Goals after execution
 
-When execution reaches function exit, each path's open goals are the
+When execution reaches function exit, the path's open goals are the
 contract's claims in the order the contract writes them: every `ensures`, and
 every `owns` and `produces` clause, whose goal is that the path still holds the
 instance. `views` and `consumes` clauses make no claim. A closer (`assumption`,
@@ -2562,24 +2562,23 @@ execute one complete iteration on its own path — restoring the loop binder,
 closing the invariants and satisfying the structural descent at the body's end
 or at a `continue`, or leaving through a `break`, which owes none of those.
 
-After execution the `match` is decided on each outcome path, as a proof `if`
-or `cases` is there: each path takes only the arm its own constructor case
-selects, and a path on which more than one constructor is live forks into
-one path per live arm. Each live arm finishes its own path
+At function exit, after `step_until(function.exit)`, the `match` is decided
+on the one path there, as a proof `if` or `cases` is: when the path's facts
+select one constructor only that arm runs, and otherwise the path splits into
+one case per live arm. Each live arm finishes its own case
 (`mdtests/match_after_execution_finishes_each_arm.md`), and with more than one
 live arm, tactics written after the `match` are refused, since they would be
 checked once per arm (`mdtests/match_after_execution_that_would_fork_is_refused.md`).
-A `match` written inside an arm of a post-execution `if` or `cases` is
-decided per outcome path in the same way, with the arm's field bindings
+A `match` written inside an arm of an `if` or `cases` at function exit is
+decided the same way, with the arm's field bindings
 (`mdtests/a_match_in_a_post_execution_if_arm_takes_each_paths_arm.md`,
 `mdtests/a_match_in_a_post_execution_cases_arm_takes_each_paths_arm.md`).
 Tactics written after it in the same arm are part of that arm, so they
-continue each path, as after a nested `if`
+continue each of its cases, as after a nested `if`
 (`mdtests/tactics_after_a_nested_post_execution_match_continue_each_path.md`).
 A `match` with `ensuring`, or with an arm that is a lone `contradiction`,
-splits once at the exit frontier instead, on the facts every outcome path
-shares, and so does a `match` whose scrutinee has no checked value on some
-path.
+splits once at the exit frontier instead, on the path's facts, and so does a
+`match` whose scrutinee has no checked value there.
 
 Tactics written after a `match` in a `preserve` body are checked once:
 straight-line arms that end in one state rejoin as in a function body, and two
@@ -2888,11 +2887,10 @@ In a loop's `preserve` body the rule is the same, except that arms reaching
 those tactics at different program points are different paths of the C and each
 is finished its own way.
 
-After execution the C state is fixed and each outcome path is finished on its
-own. On a path where `P` is already decided, only the matching arm runs. When
-`P` is open on some outcome path and tactics follow the `if`, the `if` is
-refused, because its arms would not rejoin and what follows would be checked
-once per arm (`mdtests/a_proof_if_after_execution_that_would_fork_is_refused.md`).
+At function exit the C state is fixed. When the path's facts already decide
+`P`, only the matching arm runs. When `P` is open and tactics follow the `if`,
+the `if` is refused, because its arms would not rejoin and what follows would
+be checked once per arm (`mdtests/a_proof_if_after_execution_that_would_fork_is_refused.md`).
 Write those tactics inside the arms instead
 (`mdtests/a_proof_if_after_execution_closes_its_claims_in_each_arm.md`).
 
@@ -2928,10 +2926,10 @@ rejoined path's back edge is then closed again with only the facts every arm
 proved, so an arm that needs its own fact there proves the invariants at the
 next iteration, the same proposition in every arm
 (`mdtests/a_preserve_cases_rejoin_keeps_only_the_facts_every_arm_proved.md`,
-`mdtests/a_preserve_cases_arm_keeps_a_fact_every_arm_proves.md`). After execution it splits each outcome path as a
-proof `if` does: on a path whose facts decide a disjunct only that arm runs;
-elsewhere the path forks into one path per arm, which needs the disjunction as an
-exact fact on that path (`mdtests/cases_after_execution_splits_each_outcome_path.md`,
+`mdtests/a_preserve_cases_arm_keeps_a_fact_every_arm_proves.md`). At function exit it splits the path there as a
+proof `if` does: when the path's facts decide a disjunct only that arm runs;
+otherwise the path splits into one case per arm, which needs the disjunction as
+an exact fact on the path (`mdtests/cases_after_execution_splits_each_outcome_path.md`,
 `mdtests/cases_after_execution_takes_the_decided_arm.md`), and tactics written
 after a `cases` that forks are refused
 (`mdtests/cases_after_execution_that_would_fork_is_refused.md`).

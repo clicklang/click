@@ -15,7 +15,7 @@ signed under the shared memory model's checked length limit.
 
 The sidecar uses Integer specification arithmetic,
 so it imports no library bridge: the contract and invariants compare exact
-Integers, and the body's arithmetic is `have P by auto();`. The prefix length
+Integers, and the body's arithmetic is `have P;`. The prefix length
 `bytes.len() - iter_remaining` is also a `usize` value, used as a fold
 endpoint and a cursor offset. Facts about that machine value are written as
 Integer observations, `to_integer(bytes.len() - iter_remaining) < 18446744073709551615`,

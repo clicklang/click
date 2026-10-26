@@ -51,6 +51,6 @@ object survive calls that update others, and each callee's postconditions
 carry the updated values to the next call's preconditions.
 
 One step, `have counters[0].value == 11;` after the first `record_alpha()`,
-restates a fact the call already established; `simp` does not yet derive
+restates a fact the call already established; `solve` does not yet derive
 the following bound from it on its own
 (`bugs/a-bound-after-a-call-ignores-the-calls-equality.md`).

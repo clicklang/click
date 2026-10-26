@@ -1330,10 +1330,22 @@ mdtests and examples.
     declined inside a `branch` arm
     (`mdtests/step_until_runs_inside_a_branch_arm.md`), and two refusals
     told a written closer at a live frontier, or an undecided Rust `match`
-    or throwing call, to use `execute()` or `auto();`. Left for step 24: the
+    or throwing call, to use `execute()` or `auto();`. Step 24 then took the
     examples whose fixtures tests compare by text, the prose of mdtests that
-    test `execute()` itself, and the trace and profile labels, which still
-    print `simp`, `execute` and `auto`.
+    tested `execute()` itself, and the trace and profile labels.
+
+    Done: a last read found the tactic reference still describing a `match`,
+    proof `if` or `cases` at function exit as deciding "each outcome path";
+    one path reaches function exit now, so those sections describe that
+    path and its cases. `click docs auto` listed `auto()` as a smart form;
+    the implicit tail's entry is now `click docs implicit`, and `auto`,
+    `execute`, `simp`, `arithmetic` and `execute_until` print their
+    replacement's entry. Example READMEs that still wrote `by auto()`,
+    `simp` or `simp() using`, and the tracing skill's `(from `execute`)`
+    origin, describe today's forms. The review found one tooling defect,
+    `bugs/the-implicit-tail-of-a-written-script-is-not-an-expansion-site.md`:
+    the tail of a written script that stops with C left is neither
+    selectable nor audited.
 
 Out of scope: a default join at C branches. The implicit tail splits each
 branch to exit as `execute` does today, so `n` sequential undecided `if`s

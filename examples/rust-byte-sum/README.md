@@ -13,7 +13,7 @@ so the function has no authority to modify it.
 
 The sidecar uses Integer specification arithmetic:
 the contract and invariants compare exact Integers, so it imports no library
-bridge. The loop body's arithmetic is `have P by auto();`: the solver reads
+bridge. The loop body's arithmetic is `have P;`: the solver reads
 the `uint64` and `int32` facts as Integer facts, proves the addition defined,
 relates each machine sum to its Integer sum, and closes each bound by a
 checked certificate. What remains explicit is memory transport for the read

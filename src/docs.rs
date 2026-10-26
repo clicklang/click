@@ -197,16 +197,17 @@ fn tactic_entries() -> Vec<TacticEntry> {
             entries[index].sections.push(text);
         }
     }
-    // `auto` is the default proof rather than a form in the table; its
-    // reference is the automation section.
+    // The implicit tail ends every script and is written as nothing, so it
+    // is not a form in the table; its reference is the automation section.
     if let Some(start) = lines
         .iter()
         .position(|line| *line == "## Automation and search")
     {
-        let index = entry(&mut entries, "auto");
-        entries[index]
-            .forms
-            .push(("`auto()`".to_owned(), TacticClass::Smart));
+        let index = entry(&mut entries, "implicit");
+        entries[index].forms.push((
+            "the implicit tail, written as nothing at the end of a script".to_owned(),
+            TacticClass::Smart,
+        ));
         entries[index].sections.push(section(&lines, start));
     }
     entries
@@ -285,10 +286,12 @@ pub fn index() -> String {
 
 /// The documentation for `name`, or a message naming close matches.
 pub fn lookup(name: &str) -> Result<String, String> {
-    // `simp` and `execute_until` are older spellings.
+    // The parser refuses these older spellings; their docs are the
+    // replacement's.
     let name = match name {
-        "simp" => "solve",
+        "simp" | "arithmetic" => "solve",
         "execute_until" => "step_until",
+        "auto" | "execute" => "implicit",
         name => name,
     };
     let pages = pages();
