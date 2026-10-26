@@ -300,9 +300,11 @@ mod tests {
         for source in types {
             for destination in types {
                 let original = IntegerTerm::from_machine(source, value.clone()).unwrap();
-                let converted = destination
-                    .convert_modulo_value(source.value_from_term(value.clone()))
-                    .unwrap();
+                let converted = crate::kernel::machine_integer::conversion::convert_value(
+                    source.value_from_term(value.clone()),
+                    destination,
+                )
+                .unwrap();
                 let converted = match converted {
                     crate::kernel::integer64_c_value!(v) => v,
                     _ => panic!("wrong carrier"),

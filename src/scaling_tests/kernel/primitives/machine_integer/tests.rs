@@ -19,7 +19,10 @@ fn wide_cast_construction_and_validation_do_constant_work_on_large_operands() {
             };
         }
         let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {
-            MachineIntegerType::Int128.convert_modulo_value(CValue::Int64(operand))
+            crate::kernel::machine_integer::conversion::convert_value(
+                CValue::Int64(operand),
+                MachineIntegerType::Int128,
+            )
         });
         let CValue::Int128(term) = converted.unwrap() else {
             unreachable!()
@@ -58,7 +61,10 @@ fn symbolic_modulo_conversion_work_is_independent_of_operand_depth() {
                 };
             }
             let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {
-                MachineIntegerType::Int16.convert_modulo_value(CValue::UInt64(term))
+                crate::kernel::machine_integer::conversion::convert_value(
+                    CValue::UInt64(term),
+                    MachineIntegerType::Int16,
+                )
             });
             assert_eq!(
                 converted.unwrap().c_type(),

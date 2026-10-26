@@ -741,6 +741,7 @@ the widths a rule supports; it asks the module
 | Modular equality | `modular::wrapped_equality_at`, `wrapped_equality_of_integer_equality` | an `Integer` equality over `+ - *` of observations of width `w` implies the word equality modulo `2^w` |
 | Conversion | `conversion::cast` and the narrow-widening helpers | a cast preserves a value its destination holds; a widening needs no premise |
 | Conversion table | `conversion::lower`, `convert_term`, `convert_value` | the node a conversion from `S` to `F` builds in every language, and whether a specification's conversion owes the range |
+| Usual arithmetic conversions | `conversion::usual_arithmetic_format` | C11 6.3.1.8 in LP64: the format two integer operands are converted to, after promoting narrow formats to `int32` |
 | Narrow-widening word (K8) | `primitives::is_word_cast32`, `Bitvector32Term::word32`, `word_cast32_operand` | the word of `Cast(S -> F, v)` for a narrow `S` and a 32-bit `F` is `v`'s |
 | Narrow-cast word (K7) | `representation::narrow_carrier_mask`; the e-graph's `narrow_cast_node` | the word of `Cast(S -> F, x)` into an 8- or 16-bit `F` is `w & m`, or `((w & m) ^ s) - s` for a signed `F`, with `w` the operand's word or low word |
 

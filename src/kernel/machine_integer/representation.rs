@@ -393,7 +393,7 @@ pub(crate) fn word_division(
 
 /// Whether `ty` is one of the 32- and 64-bit formats whose conversions
 /// among themselves the legacy conversion nodes (`Int64From32`,
-/// `UInt32From64`, ...) spell, as `MachineIntegerType::convert_modulo_value`
+/// `UInt32From64`, ...) spell, as `conversion::convert_value`
 /// builds them.
 pub(crate) fn has_legacy_conversions(ty: MachineIntegerType) -> bool {
     matches!(word(ty), Word::Bits32 | Word::Signed64 | Word::Unsigned64) && ty.format().bits() >= 32

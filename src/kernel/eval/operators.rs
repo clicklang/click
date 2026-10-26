@@ -68,11 +68,7 @@ fn pointer_types_compatible(left: &CPointerValue, right: &CPointerValue) -> bool
     left.c_type().pointer_types_compatible(right.c_type()) || left.is_null() || right.is_null()
 }
 
-fn scalar_uses_uint32(left: &CValue, right: &CValue) -> bool {
-    matches!(left, CValue::UInt32(_)) || matches!(right, CValue::UInt32(_))
-}
-
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum ScalarWidth {
     Int32,
     UInt32,
@@ -87,32 +83,39 @@ pub(in crate::kernel) enum CBitwiseOperation {
     Xor,
 }
 
+/// The format of a C integer operation on `left` and `right`: the usual
+/// arithmetic conversions (`conversion::usual_arithmetic_format`), a
+/// `_Bool` operand read as its 0-or-1 `uint8` value. `None` unless both are
+/// integers of at most 64 bits.
 fn scalar_width(left: &CValue, right: &CValue) -> Option<ScalarWidth> {
-    let is_scalar = |value: &CValue| {
-        matches!(
-            value,
-            CValue::Bool(_)
-                | CValue::Int8(_)
-                | CValue::Int16(_)
-                | CValue::Int32(_)
-                | CValue::UInt8(_)
-                | CValue::UInt16(_)
-                | CValue::UInt32(_)
-                | CValue::Int64(_)
-                | CValue::UInt64(_)
-        )
+    let format = |value: &CValue| match value {
+        CValue::Bool(_) => Some(MachineIntegerType::UInt8),
+        crate::kernel::integer64_c_value!(_) => MachineIntegerType::from_c_type(value.c_type()),
+        _ => None,
     };
-    if !is_scalar(left) || !is_scalar(right) {
-        return None;
-    }
-    if matches!(left, CValue::UInt64(_)) || matches!(right, CValue::UInt64(_)) {
-        Some(ScalarWidth::UInt64)
-    } else if matches!(left, CValue::Int64(_)) || matches!(right, CValue::Int64(_)) {
-        Some(ScalarWidth::Int64)
-    } else if scalar_uses_uint32(left, right) {
-        Some(ScalarWidth::UInt32)
-    } else {
-        Some(ScalarWidth::Int32)
+    Some(
+        match crate::kernel::machine_integer::conversion::usual_arithmetic_format(
+            format(left)?,
+            format(right)?,
+        )? {
+            MachineIntegerType::Int32 => ScalarWidth::Int32,
+            MachineIntegerType::UInt32 => ScalarWidth::UInt32,
+            MachineIntegerType::Int64 => ScalarWidth::Int64,
+            MachineIntegerType::UInt64 => ScalarWidth::UInt64,
+            _ => unreachable!("the usual arithmetic conversions give a 32- or 64-bit format"),
+        },
+    )
+}
+
+impl ScalarWidth {
+    /// The format an operation at this width converts its operands to.
+    fn format(self) -> MachineIntegerType {
+        match self {
+            Self::Int32 => MachineIntegerType::Int32,
+            Self::UInt32 => MachineIntegerType::UInt32,
+            Self::Int64 => MachineIntegerType::Int64,
+            Self::UInt64 => MachineIntegerType::UInt64,
+        }
     }
 }
 
@@ -397,13 +400,16 @@ pub(in crate::kernel) fn apply_c_add(
     // additions and arithmetic with an unproved carry still lose the carrier.
     let tag_source = match (&left, &right) {
         (CValue::PointerInteger(record), tag) | (tag, CValue::PointerInteger(record)) => {
-            promote_c_uint64_path_value(tag.clone())
+            promote_c_path_value(tag.clone(), MachineIntegerType::UInt64)
                 .and_then(|bits| bits.uint64_as_const())
                 .filter(|tag| *tag > 0 && *tag < 8)
                 .and_then(|tag| {
                     let mut retained = record.clone();
                     if let PointerIntegerKind::Word { changed_bits } = &mut retained.kind {
-                        let word = promote_c_uint64_path_value(record.numeric.as_ref().clone())?;
+                        let word = promote_c_path_value(
+                            record.numeric.as_ref().clone(),
+                            MachineIntegerType::UInt64,
+                        )?;
                         let mask = (tag + 1).next_power_of_two() - 1;
                         if !word_low_bits_clear(&word, mask, assumptions) {
                             return None;
@@ -427,12 +433,12 @@ pub(in crate::kernel) fn apply_c_add(
         (
             left @ (crate::kernel::integer32_c_value!(_)),
             right @ (crate::kernel::integer32_c_value!(_)),
-        ) if scalar_uses_uint32(&left, &right) => {
+        ) if scalar_width(&left, &right) == Some(ScalarWidth::UInt32) => {
             let facts = facts;
-            let Some(left) = promote_c_uint32_path_value(left) else {
+            let Some(left) = promote_c_path_value(left, MachineIntegerType::UInt32) else {
                 return Vec::new();
             };
-            let Some(right) = promote_c_uint32_path_value(right) else {
+            let Some(right) = promote_c_path_value(right, MachineIntegerType::UInt32) else {
                 return Vec::new();
             };
             vec![CExpressionPath {
@@ -446,10 +452,10 @@ pub(in crate::kernel) fn apply_c_add(
             right @ (crate::kernel::int_promoted_c_value!(_)),
         ) => {
             let facts = facts;
-            let Some(left) = promote_c_int32_path_value(left) else {
+            let Some(left) = promote_c_path_value(left, MachineIntegerType::Int32) else {
                 return Vec::new();
             };
-            let Some(right) = promote_c_int32_path_value(right) else {
+            let Some(right) = promote_c_path_value(right, MachineIntegerType::Int32) else {
                 return Vec::new();
             };
             apply_c_int32_add(left, right, facts, obligations, assumptions)
@@ -669,18 +675,8 @@ fn apply_c_scalar_terms(
     right: CValue,
 ) -> Option<(Bitvector32Term, Bitvector32Term, ScalarWidth)> {
     let width = scalar_width(&left, &right)?;
-    let left_term = match width {
-        ScalarWidth::Int32 => promote_c_int32_path_value(left)?,
-        ScalarWidth::UInt32 => promote_c_uint32_path_value(left)?,
-        ScalarWidth::Int64 => promote_c_int64_path_value(left)?,
-        ScalarWidth::UInt64 => promote_c_uint64_path_value(left)?,
-    };
-    let right_term = match width {
-        ScalarWidth::Int32 => promote_c_int32_path_value(right)?,
-        ScalarWidth::UInt32 => promote_c_uint32_path_value(right)?,
-        ScalarWidth::Int64 => promote_c_int64_path_value(right)?,
-        ScalarWidth::UInt64 => promote_c_uint64_path_value(right)?,
-    };
+    let left_term = promote_c_path_value(left, width.format())?;
+    let right_term = promote_c_path_value(right, width.format())?;
     Some((left_term, right_term, width))
 }
 
@@ -1510,19 +1506,20 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
 ) -> Vec<CExpressionPath> {
     let tag_source = |value: &CValue, mask: &CValue| match value {
         CValue::PointerInteger(record) => {
-            let mask = promote_c_uint64_path_value(mask.clone()).and_then(|bits| {
-                bits.uint64_as_const().or_else(|| {
-                    matches!(operation, CBitwiseOperation::Or)
-                        .then(|| {
-                            super::pointer_tags::tag_bound_citing(
-                                &bits,
-                                assumptions,
-                                &mut super::pointer_tags::UsedFacts::new(),
-                            )
-                        })
-                        .flatten()
-                })
-            });
+            let mask =
+                promote_c_path_value(mask.clone(), MachineIntegerType::UInt64).and_then(|bits| {
+                    bits.uint64_as_const().or_else(|| {
+                        matches!(operation, CBitwiseOperation::Or)
+                            .then(|| {
+                                super::pointer_tags::tag_bound_citing(
+                                    &bits,
+                                    assumptions,
+                                    &mut super::pointer_tags::UsedFacts::new(),
+                                )
+                            })
+                            .flatten()
+                    })
+                });
             let supported = match (operation, mask) {
                 (CBitwiseOperation::And, Some(mask)) => {
                     (!mask).checked_add(1).is_some_and(u64::is_power_of_two)
@@ -2099,12 +2096,12 @@ fn apply_c_comparison(
         (
             left @ (crate::kernel::integer32_c_value!(_)),
             right @ (crate::kernel::integer32_c_value!(_)),
-        ) if scalar_uses_uint32(&left, &right) => {
+        ) if scalar_width(&left, &right) == Some(ScalarWidth::UInt32) => {
             let facts = facts;
-            let Some(left) = promote_c_uint32_path_value(left) else {
+            let Some(left) = promote_c_path_value(left, MachineIntegerType::UInt32) else {
                 return Vec::new();
             };
-            let Some(right) = promote_c_uint32_path_value(right) else {
+            let Some(right) = promote_c_path_value(right, MachineIntegerType::UInt32) else {
                 return Vec::new();
             };
             condition_as_c_int32_paths(
@@ -2119,10 +2116,10 @@ fn apply_c_comparison(
             right @ (crate::kernel::int_promoted_c_value!(_)),
         ) => {
             let facts = facts;
-            let Some(left) = promote_c_int32_path_value(left) else {
+            let Some(left) = promote_c_path_value(left, MachineIntegerType::Int32) else {
                 return Vec::new();
             };
-            let Some(right) = promote_c_int32_path_value(right) else {
+            let Some(right) = promote_c_path_value(right, MachineIntegerType::Int32) else {
                 return Vec::new();
             };
             condition_as_c_int32_paths(
@@ -2180,10 +2177,10 @@ pub(in crate::kernel) fn apply_c_subtract(
             right @ (crate::kernel::int_promoted_c_value!(_)),
         ) => {
             let facts = facts;
-            let Some(left) = promote_c_int32_path_value(left) else {
+            let Some(left) = promote_c_path_value(left, MachineIntegerType::Int32) else {
                 return Vec::new();
             };
-            let Some(right) = promote_c_int32_path_value(right) else {
+            let Some(right) = promote_c_path_value(right, MachineIntegerType::Int32) else {
                 return Vec::new();
             };
             apply_c_int32_subtract(left, right, facts, obligations, assumptions)
@@ -2191,12 +2188,12 @@ pub(in crate::kernel) fn apply_c_subtract(
         (
             left @ (crate::kernel::integer32_c_value!(_)),
             right @ (crate::kernel::integer32_c_value!(_)),
-        ) if scalar_uses_uint32(&left, &right) => {
+        ) if scalar_width(&left, &right) == Some(ScalarWidth::UInt32) => {
             let facts = facts;
-            let Some(left) = promote_c_uint32_path_value(left) else {
+            let Some(left) = promote_c_path_value(left, MachineIntegerType::UInt32) else {
                 return Vec::new();
             };
-            let Some(right) = promote_c_uint32_path_value(right) else {
+            let Some(right) = promote_c_path_value(right, MachineIntegerType::UInt32) else {
                 return Vec::new();
             };
             vec![CExpressionPath {
@@ -2207,7 +2204,7 @@ pub(in crate::kernel) fn apply_c_subtract(
         }
         (CValue::Pointer(pointer), right @ (crate::kernel::int_promoted_c_value!(_))) => {
             let facts = facts;
-            let Some(right) = promote_c_int32_path_value(right) else {
+            let Some(right) = promote_c_path_value(right, MachineIntegerType::Int32) else {
                 return Vec::new();
             };
             let Some(byte_width) = pointer_operation_step_width(
@@ -2357,7 +2354,11 @@ pub(in crate::kernel) fn pointer_index_term(
         | CValue::Int16(_)
         | CValue::Int32(_)
         | CValue::UInt8(_)
-        | CValue::UInt16(_)) => Some((promote_c_int32_path_value(value)?, false, false)),
+        | CValue::UInt16(_)) => Some((
+            promote_c_path_value(value, MachineIntegerType::Int32)?,
+            false,
+            false,
+        )),
         // An unsigned word whose sign bit the path has cleared (`x < 4u`
         // leaves `0 <= x` beside it) names the same element index read as
         // signed: zero- and sign-extension agree on it. Indexing by its
@@ -4780,12 +4781,12 @@ fn apply_c_equality(
         (
             left @ (crate::kernel::integer32_c_value!(_)),
             right @ (crate::kernel::integer32_c_value!(_)),
-        ) if scalar_uses_uint32(&left, &right) => {
+        ) if scalar_width(&left, &right) == Some(ScalarWidth::UInt32) => {
             let facts = facts;
-            let Some(left) = promote_c_uint32_path_value(left) else {
+            let Some(left) = promote_c_path_value(left, MachineIntegerType::UInt32) else {
                 return Vec::new();
             };
-            let Some(right) = promote_c_uint32_path_value(right) else {
+            let Some(right) = promote_c_path_value(right, MachineIntegerType::UInt32) else {
                 return Vec::new();
             };
             condition_as_c_int32_paths_valued(
@@ -4801,10 +4802,10 @@ fn apply_c_equality(
             right @ (crate::kernel::int_promoted_c_value!(_)),
         ) => {
             let facts = facts;
-            let Some(left) = promote_c_int32_path_value(left) else {
+            let Some(left) = promote_c_path_value(left, MachineIntegerType::Int32) else {
                 return Vec::new();
             };
-            let Some(right) = promote_c_int32_path_value(right) else {
+            let Some(right) = promote_c_path_value(right, MachineIntegerType::Int32) else {
                 return Vec::new();
             };
             condition_as_c_int32_paths_valued(

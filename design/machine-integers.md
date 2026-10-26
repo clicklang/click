@@ -546,7 +546,7 @@ Progress:
   policy of a specification's cast, whether it owes the destination range;
   `convert_term` builds the node and `convert_value` converts an evaluated
   value. C's conversions (`narrow_integer`, the 128-bit boundary), C++20
-  integral conversions and Rust `as` (`convert_modulo_value`) take their
+  integral conversions and Rust `as` (`convert_value`) take their
   terms from it. Every conversion into an 8- or 16-bit format is now the
   `MachineIntegerCast` C builds, in C++ and Rust too, where they built the
   mask `x & m` or the sign extension `((x & m) ^ s) - s`, and C++ and Rust
@@ -593,6 +593,26 @@ Progress:
   local (the read-kind explanation, the history notes, the renderer's
   local names and source types) read through a narrow widening, not
   through σ, so they say what they said when the word was reused.
+- The front-end width matrices are gone (2026-10-26). C's promotions and
+  usual arithmetic conversions are one function,
+  `promote_c_path_value(value, format)`, in place of the four
+  `promote_c_{int32,uint32,int64,uint64}_path_value`; the integer arms of
+  `coerce_c_value_to_type_as` are one arm, `convert_c_integer`, which
+  routes a conversion that may owe its range (into a signed type other
+  than by σ, or into a narrow type) to `narrow_integer` and builds every
+  other from the table; `MachineIntegerType::convert_modulo_value` is gone
+  and C++ and Rust call `conversion::convert_value`. The operation's
+  format is C11 6.3.1.8's rank rule stated once over formats
+  (`conversion::usual_arithmetic_format`), which `scalar_width` asks.
+  What stays outside the table: `_Bool` (no machine format until Stage 5),
+  C's word reuse between narrow formats (`int8`/`uint8` to `int16`,
+  `uint8` to `uint16`; K8 covers 32-bit destinations only), and the
+  legacy mask readers of `integer_cast_identity`, since a byte stored into
+  a wider cell still builds `b & 0xFF` (`byte_view::integer_cell_with_byte`).
+  Remaining for Stage 4: Rust narrow checked arithmetic as `Binary` in the
+  operand's format with `not Overflows` panic checks, in place of its
+  `int32` computation and width-specific checks, once Stage 3 gives the
+  narrow formats operator nodes; and the library families.
 
 ### Stage 5. A logical `bool`
 
