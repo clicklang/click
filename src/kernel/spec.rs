@@ -2302,18 +2302,11 @@ fn evaluate_spec_integer_expression_paths_in(
                                 )
                             },
                         )?;
+                        // The fold of an empty range is its initial value
+                        // whatever the body is, so the body's facts never
+                        // decide the spelling.
                         let body_value = match body_paths.as_slice() {
-                            [body_path]
-                                if !body_path.facts.iter().any(|fact| {
-                                    !fact.is_logical_read_equation()
-                                        && !assumptions.proves_exact(fact.proposition())
-                                        && !is_verified_load_variable_defining_fact(
-                                            fact.proposition(),
-                                        )
-                                }) =>
-                            {
-                                Some(body_path.value.clone())
-                            }
+                            [body_path] => Some(body_path.value.clone()),
                             _ => None,
                         };
                         if let Some(body_value) = body_value {
