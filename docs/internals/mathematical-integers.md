@@ -509,8 +509,8 @@ conversions build it, the usual arithmetic conversions build it for an
 above (Rust `as`, C++ conversions, specification casts). A sign-cleared
 `unsigned` array index is σ to `int32` (`pointer_index_term`). The
 constructor folds a constant and undoes a σ, so `σ(σ(x))` is `x`.
-Narrow promotions still reuse their canonical carrier (Stage 4 of
-`design/machine-integers.md`, rule K8, makes them casts).
+The widening of an 8- or 16-bit value into `int32` or `uint32` is also
+a `MachineIntegerCast`, read as its operand's word by rule K8 (below).
 
 σ keeps every bit, so the kernel reads σ(x) as `x`'s 32-bit word
 (decision of 2026-10-25):
@@ -619,6 +619,33 @@ cast. Inside the destination range the cast also equals its operand
 (`narrowed_cast_identity`), and `integer_cast_identity` reads it as a cast,
 so `x as i8` in Rust verifies the in-range identity as C's
 `(signed char)x` does.
+
+## The widening of a narrow value
+
+Integer promotion, the usual arithmetic conversions, and every widening
+assignment, return, argument or cast of an 8- or 16-bit value into `int32`
+or `uint32` build the conversion table's `Cast` in C, C++ and Rust (Rust's
+`From` included). Rule K8 (decision of 2026-10-26): the 32-bit word of
+`Cast(S -> F, v)`, `S` narrow and `F` of 32 bits, is `v`'s word.
+`Bitvector32Term::word32` and `into_word32` peel it as they peel σ
+(`is_word_cast32`, one match on the root), so the 32-bit operators,
+comparisons, overflow tests and extensions, Integer observations, the
+e-graph, the difference graph and element indices read `v`. A widening
+into 64 bits is the legacy extension of that word.
+
+Soundness: by the narrow-value invariant `v`'s word is the sign or zero
+extension of its value `n` to 32 bits, and `n` fits `F` (or, for a signed
+`n` into `uint32`, `n mod 2^32` has the same 32 bits), so the conversion's
+word is `v`'s.
+
+`integer_cast_identity` reads a widening by that word only through its
+narrow-widening check, which requires a canonical carrier or a binder's
+stated range (`conversion::narrow_widening`), never by the bare word
+comparison it uses for σ: a word merely tagged narrow is not promoted. A
+checked narrowing of a widened value is the narrowing of `v` from `v`'s
+format, and files its identity as before. A promoted narrow value at rest
+prints as `(int32)c` or `(uint32)c`, as σ does; inside an operation it
+prints as `c`.
 
 ## Wide runtime scalars
 

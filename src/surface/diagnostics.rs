@@ -3130,7 +3130,7 @@ fn unresolved_load_kind(value: &CValue) -> Option<crate::kernel::LoadKind> {
         | CValue::UInt64(term) => term,
         _ => return None,
     };
-    match term {
+    match widened_word(term) {
         Bitvector32Term::MemoryLoad(_, _, kind) => Some(*kind),
         Bitvector32Term::Variable(variable) => {
             crate::kernel::registered_load_kind_for_variable(variable)
@@ -3156,6 +3156,16 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
     }
 }
 
+/// The word a narrow value widened into 32 bits names (rule K8): a promoted
+/// read is still that read. Only the widening is read through; a σ keeps
+/// its own node here, as a reinterpretation of the read.
+fn widened_word(term: &Bitvector32Term) -> &Bitvector32Term {
+    match term.word_cast32_operand() {
+        Some((source, word)) if source.format().bits() < 32 => word,
+        _ => term,
+    }
+}
+
 pub(super) fn unresolved_load(value: &CValue) -> Option<(SharedCMemory, Pointer)> {
     let term = match value.numeric_value() {
         // A signed byte read is the conversion of the byte's unsigned read,
@@ -3171,7 +3181,7 @@ pub(super) fn unresolved_load(value: &CValue) -> Option<(SharedCMemory, Pointer)
         | CValue::UInt64(term) => term,
         _ => return None,
     };
-    match term {
+    match widened_word(term) {
         Bitvector32Term::MemoryLoad(memory, pointer, _) => {
             Some((memory.clone(), pointer.as_ref().clone()))
         }

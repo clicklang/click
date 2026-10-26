@@ -600,6 +600,21 @@ pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
     }
 }
 
+/// The widening of a narrow C value into `int32` or `uint32`: the
+/// conversion table's cast, whose word is the value's (rule K8).
+fn widen_narrow_c_value(value: CValue, destination: MachineIntegerType) -> Option<Bitvector32Term> {
+    let source = MachineIntegerType::from_c_type(value.c_type())?;
+    let term = match value {
+        crate::kernel::integer_c_value!(term) => term,
+        _ => return None,
+    };
+    Some(crate::kernel::machine_integer::conversion::convert_term(
+        source,
+        destination,
+        term,
+    ))
+}
+
 pub(in crate::kernel) fn promote_c_int32_path_value(value: CValue) -> Option<Bitvector32Term> {
     match value.numeric_value().clone() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
@@ -608,10 +623,10 @@ pub(in crate::kernel) fn promote_c_int32_path_value(value: CValue) -> Option<Bit
         CValue::Void => None,
         CValue::Bool(value) => Some(value),
         CValue::Int32(value) => Some(value),
-        CValue::Int8(value) => Some(value),
-        CValue::Int16(value) => Some(value),
-        CValue::UInt8(value) => Some(value),
-        CValue::UInt16(value) => Some(value),
+        // Integer promotion of a narrow value (rule K8).
+        value @ (CValue::Int8(_) | CValue::Int16(_) | CValue::UInt8(_) | CValue::UInt16(_)) => {
+            widen_narrow_c_value(value, MachineIntegerType::Int32)
+        }
         CValue::UInt32(_) | CValue::Int64(_) | CValue::UInt64(_) => None,
         CValue::Pointer(_) | CValue::Parameter(_) | CValue::Float32(_) | CValue::Float64(_) => None,
     }
@@ -627,10 +642,11 @@ pub(in crate::kernel) fn promote_c_uint32_path_value(value: CValue) -> Option<Bi
             MachineIntegerType::UInt32,
             value,
         )),
-        CValue::Int8(value) => Some(value),
-        CValue::Int16(value) => Some(value),
-        CValue::UInt8(value) => Some(value),
-        CValue::UInt16(value) => Some(value),
+        // The usual arithmetic conversions read a narrow value as
+        // `unsigned int` (rule K8).
+        value @ (CValue::Int8(_) | CValue::Int16(_) | CValue::UInt8(_) | CValue::UInt16(_)) => {
+            widen_narrow_c_value(value, MachineIntegerType::UInt32)
+        }
         CValue::Int128(_)
         | CValue::UInt128(_)
         | CValue::Void
@@ -860,11 +876,8 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
         }
         (
             CType::Int32,
-            CValue::Int8(value)
-            | CValue::Int16(value)
-            | CValue::UInt8(value)
-            | CValue::UInt16(value),
-        ) => Some(CValue::Int32(value)),
+            value @ (CValue::Int8(_) | CValue::Int16(_) | CValue::UInt8(_) | CValue::UInt16(_)),
+        ) => widen_narrow_c_value(value, MachineIntegerType::Int32).map(CValue::Int32),
         (CType::Int32, CValue::UInt32(value)) => Some(CValue::Int32(Bitvector32Term::sign_cast32(
             MachineIntegerType::UInt32,
             MachineIntegerType::Int32,
@@ -886,11 +899,8 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
         }
         (
             CType::UInt32,
-            CValue::Int8(value)
-            | CValue::Int16(value)
-            | CValue::UInt8(value)
-            | CValue::UInt16(value),
-        ) => Some(crate::kernel::uint32(value)),
+            value @ (CValue::Int8(_) | CValue::Int16(_) | CValue::UInt8(_) | CValue::UInt16(_)),
+        ) => widen_narrow_c_value(value, MachineIntegerType::UInt32).map(crate::kernel::uint32),
 
         (CType::Int16, CValue::Int8(value) | CValue::UInt8(value)) => Some(CValue::Int16(value)),
         (CType::UInt16, CValue::UInt8(value)) => Some(CValue::UInt16(value)),
@@ -1171,10 +1181,11 @@ fn checked_narrowing_identity_readings(
     else {
         return None;
     };
-    // A σ operand's word is its operand (rule K1): the conversion of
-    // σ(w) is built as the conversion of `w` from `w`'s format.
+    // A σ operand's word is its operand (rule K1), as is a widened narrow
+    // value's (rule K8): the conversion of either is built as the
+    // conversion of `w` from `w`'s format.
     let (word_source, word) = operand
-        .sign_cast32_operand()
+        .word_cast32_operand()
         .unwrap_or((source_type, operand));
     if *cast_source != word_source || value.as_ref() != word {
         return None;

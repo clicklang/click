@@ -10574,20 +10574,26 @@ mod integer_observation_tests {
     fn a_definedness_bound_over_a_promoted_byte_reads_back_to_its_fact() {
         // `total + (int32)byte`: the byte's `int32` observation is the
         // byte's own, and the bound still names the `int32` overflow fact.
+        // The byte is a C narrowing; its promotion names its word (rule K8),
+        // so the overflow test reads the byte's word.
         let byte = Bitvector32Term::MachineIntegerCast {
             value: Box::new(Bitvector32Term::Variable(Variable(821))),
-            source: MachineIntegerType::UInt8,
-            destination: MachineIntegerType::Int32,
+            source: MachineIntegerType::Int32,
+            destination: MachineIntegerType::UInt8,
         };
-        let fact = Proposition::ConditionIs(
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Add,
-                left: Box::new(Bitvector32Term::Variable(Variable(822))),
-                right: Box::new(byte),
-            },
-            false,
+        let promoted = Bitvector32Term::machine_integer_cast(
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int32,
+            byte.clone(),
         );
+        let condition = ConditionTerm::machine_overflows(
+            MachineIntegerType::Int32,
+            OverflowOperation::Add,
+            Bitvector32Term::Variable(Variable(822)),
+            promoted,
+        );
+        assert!(matches!(&condition, ConditionTerm::Overflows { right, .. } if **right == byte));
+        let fact = Proposition::ConditionIs(condition, false);
         let bounds = integer_bounds_of_definedness(&fact);
         assert_eq!(bounds.len(), 2);
         for bound in &bounds {

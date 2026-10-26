@@ -608,8 +608,10 @@ rely on it:
   it is introduced, below; that range makes its word the canonical carrier.
 
 A word canonical for a narrow format is canonical for every format of at
-most 32 bits that contains it, so widening needs no premise: C promotion
-reuses the word, and a 64-bit widening extends it. `integer_cast_identity`
+most 32 bits that contains it, so widening needs no premise: a promotion
+into `int32` or `uint32` is a `MachineIntegerCast` whose word is its
+operand's (rule K8, peeled by `word32` as σ is), and a 64-bit widening
+extends the word. `integer_cast_identity`
 accepts `to_integer(widened) == to_integer(x)` for a narrow `x` read at a
 containing format through the same word or its 32-to-64-bit extension,
 when that word is built as one of the forms above, so a term that merely
@@ -739,6 +741,7 @@ the widths a rule supports; it asks the module
 | Modular equality | `modular::wrapped_equality_at`, `wrapped_equality_of_integer_equality` | an `Integer` equality over `+ - *` of observations of width `w` implies the word equality modulo `2^w` |
 | Conversion | `conversion::cast` and the narrow-widening helpers | a cast preserves a value its destination holds; a widening needs no premise |
 | Conversion table | `conversion::lower`, `convert_term`, `convert_value` | the node a conversion from `S` to `F` builds in every language, and whether a specification's conversion owes the range |
+| Narrow-widening word (K8) | `primitives::is_word_cast32`, `Bitvector32Term::word32`, `word_cast32_operand` | the word of `Cast(S -> F, v)` for a narrow `S` and a 32-bit `F` is `v`'s |
 | Narrow-cast word (K7) | `representation::narrow_carrier_mask`; the e-graph's `narrow_cast_node` | the word of `Cast(S -> F, x)` into an 8- or 16-bit `F` is `w & m`, or `((w & m) ^ s) - s` for a signed `F`, with `w` the operand's word or low word |
 
 Rule K7 (decision of 2026-10-26, `design/machine-integers.md`). For `F` of

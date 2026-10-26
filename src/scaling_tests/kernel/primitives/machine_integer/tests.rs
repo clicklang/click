@@ -179,3 +179,51 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
         );
     }
 }
+
+/// The widening of a narrow value into 32 bits (rule K8) is built and read
+/// as σ is: building it, and reading its word through `word32`, inspect
+/// only the operand's root, so the work is the same for operands of 16 to
+/// 1,024 nodes, and a 32-bit operator over the widening is the operator
+/// over its operand.
+#[test]
+fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands() {
+    use crate::kernel::Variable;
+    for size in [16, 64, 256, 1024] {
+        let mut sum = Bitvector32Term::Variable(Variable(149_005));
+        for _ in 0..size {
+            sum = Bitvector32Term::Add(
+                Box::new(sum),
+                Box::new(Bitvector32Term::Variable(Variable(149_006))),
+            );
+        }
+        // A narrow value over a deep word: the C narrowing of the sum.
+        let operand = Bitvector32Term::machine_integer_cast(
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt8,
+            sum,
+        );
+        for destination in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+            let (cast, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::machine_integer::conversion::convert_term(
+                    MachineIntegerType::UInt8,
+                    destination,
+                    operand.clone(),
+                )
+            });
+            assert_eq!(work, 1, "size {size}");
+            let ((), read_work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert!(std::ptr::eq(
+                    cast.word32(),
+                    cast.word_cast32_operand().unwrap().1
+                ));
+            });
+            assert_eq!(read_work, 0, "size {size}");
+            assert_eq!(cast.word32(), &operand, "size {size}");
+            assert_eq!(
+                Bitvector32Term::add(cast.clone(), Bitvector32Term::Constant(1)),
+                Bitvector32Term::add(operand.clone(), Bitvector32Term::Constant(1)),
+                "size {size}"
+            );
+        }
+    }
+}

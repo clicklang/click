@@ -42,14 +42,12 @@ pub(crate) enum ConversionPolicy {
 pub(crate) enum ConversionLowering {
     /// The same format: the operand itself.
     Identity,
-    /// An 8- or 16-bit value into a 32-bit format: its own word, which is
-    /// its canonical carrier (Stage 4 of `design/machine-integers.md` makes
-    /// this a `Cast` under rule K8).
-    Word,
     /// `int32` to `uint32` or back: the sign cast σ (rules K1 to K4).
     SignCast,
     /// `MachineIntegerCast`: every conversion into an 8- or 16-bit format
-    /// (its word is rule K7's), and every conversion involving 128 bits.
+    /// (its word is rule K7's), every widening of an 8- or 16-bit value into
+    /// a 32-bit format (whose word is its operand's, rule K8), and every
+    /// conversion involving 128 bits.
     Cast,
     /// A 64-bit value into a 32-bit format: its low word, `UInt32From64`.
     LowWord,
@@ -89,7 +87,7 @@ pub(crate) fn lower(
         match from.bits() {
             64 => L::LowWord,
             32 => L::SignCast,
-            _ => L::Word,
+            _ => L::Cast,
         }
     } else if from.bits() == 64 {
         L::Reinterpret64
@@ -119,7 +117,7 @@ pub(crate) fn convert_term(
     use ConversionLowering as L;
     let (from, to) = (source.format(), destination.format());
     match lower(source, destination, ConversionPolicy::Modular).lowering {
-        L::Identity | L::Word => value,
+        L::Identity => value,
         L::SignCast => Bitvector32Term::sign_cast32(source, destination, value),
         L::Cast => Bitvector32Term::machine_integer_cast(source, destination, value),
         L::LowWord => Bitvector32Term::uint32_from_64(value),
@@ -211,7 +209,8 @@ pub(crate) fn widened_narrow_word(observed: &IntegerTerm) -> Option<&Bitvector32
         return None;
     };
     match machine.ty().format().bits() {
-        16 | 32 => Some(machine.value()),
+        // A 32-bit widening of a narrow value names its word (rule K8).
+        16 | 32 => Some(machine.value().word32()),
         64 => match machine.value() {
             Bitvector32Term::Int64From32(word)
             | Bitvector32Term::UInt64FromInt32(word)
@@ -254,7 +253,8 @@ pub(crate) fn narrow_widening(observed: &IntegerTerm, original: &IntegerTerm) ->
         return false;
     }
     match machine.value() {
-        value if destination.bits() <= 32 => value == word,
+        // The widening node, or the bare word, names the word (rule K8).
+        value if destination.bits() <= 32 => value.word32() == word,
         Bitvector32Term::Int64From32(inner) | Bitvector32Term::UInt64FromInt32(inner) => {
             inner.as_ref() == word
         }
@@ -366,9 +366,14 @@ pub(crate) fn cast(
     let converted =
         Bitvector32Term::machine_integer_cast(operand.ty(), machine.ty(), operand.value().clone());
     // An `int32` or `uint32` observation reads σ(x) as `x` (rule K2), so
-    // the canonical conversion is compared by its word.
+    // the canonical conversion is compared by its word. Only σ: a narrow
+    // widening's word (rule K8) is its operand only for a canonical
+    // carrier, which `narrow_widening` above establishes; comparing by that
+    // word here would accept any word merely tagged narrow.
     if machine.value() == &converted
-        || machine.value() == converted.word32()
+        || converted
+            .sign_cast32_operand()
+            .is_some_and(|(_, word)| machine.value() == word)
         || machine
             .value()
             .constant32()

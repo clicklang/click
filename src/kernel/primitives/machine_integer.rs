@@ -528,8 +528,9 @@ impl Bitvector32Term {
         Self::machine_integer_cast(source, destination, value)
     }
 
-    /// The 32-bit word this term names. σ(x) names `x`'s word (rule K1), so
-    /// σ is peeled; every other term is its own word. One match on the
+    /// The 32-bit word this term names. σ(x) names `x`'s word (rule K1), and
+    /// so does the widening of a narrow `x` into `int32` or `uint32` (rule
+    /// K8), so both are peeled; every other term is its own word. One match on the
     /// root: no scan, no clone. Nodes that read a 32-bit word (the 32-bit
     /// operators, comparisons and extensions, Integer observations, the
     /// e-graph and the difference graph) read their operands through it.
@@ -539,8 +540,34 @@ impl Bitvector32Term {
                 value,
                 source,
                 destination,
-            } if is_sign_cast32(*source, *destination) => value,
+            } if is_word_cast32(*source, *destination) => value,
             term => term,
+        }
+    }
+
+    /// The source format and operand of a conversion whose 32-bit word is
+    /// its operand's (σ, rule K1, or a narrow widening, rule K8), if this
+    /// term is one: the conversion [`Self::word32`] peels.
+    pub(crate) fn word_cast32_operand(&self) -> Option<(MachineIntegerType, &Self)> {
+        match self {
+            Self::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } if is_word_cast32(*source, *destination) => Some((*source, value)),
+            _ => None,
+        }
+    }
+
+    /// The source format and operand of a σ, if this term is one.
+    pub(crate) fn sign_cast32_operand(&self) -> Option<(MachineIntegerType, &Self)> {
+        match self {
+            Self::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } if is_sign_cast32(*source, *destination) => Some((*source, value)),
+            _ => None,
         }
     }
 
@@ -575,18 +602,6 @@ impl Bitvector32Term {
         }
     }
 
-    /// The source format and operand of a σ, if this term is one.
-    pub(crate) fn sign_cast32_operand(&self) -> Option<(MachineIntegerType, &Self)> {
-        match self {
-            Self::MachineIntegerCast {
-                value,
-                source,
-                destination,
-            } if is_sign_cast32(*source, *destination) => Some((*source, value)),
-            _ => None,
-        }
-    }
-
     /// [`Self::word32`] of an owned term.
     pub(crate) fn into_word32(self) -> Self {
         match self {
@@ -594,7 +609,7 @@ impl Bitvector32Term {
                 value,
                 source,
                 destination,
-            } if is_sign_cast32(source, destination) => *value,
+            } if is_word_cast32(source, destination) => *value,
             // A `uint32` constant's word is the `Constant` of its bits (K1).
             Self::UInt32Constant(value) => Self::Constant(value),
             term => term,
@@ -657,6 +672,21 @@ impl Bitvector32Term {
             destination,
         }
     }
+}
+
+/// Whether a conversion from `source` to `destination` names its operand's
+/// 32-bit word: the sign cast σ (rule K1), or the widening of an 8- or
+/// 16-bit value into `int32` or `uint32` (rule K8,
+/// `design/machine-integers.md`, Decisions, 2026-10-26).
+///
+/// K8's soundness: a narrow value's word is the canonical carrier of its
+/// value `n`, the sign or zero extension to 32 bits (the narrow-value
+/// invariant, `docs/internals/kernel.md`), and `n` fits the 32-bit format,
+/// whose word for `n` is `n mod 2^32`: the same 32 bits. A widening into 64
+/// bits keeps its legacy extension node over that word.
+pub(crate) fn is_word_cast32(source: MachineIntegerType, destination: MachineIntegerType) -> bool {
+    is_sign_cast32(source, destination)
+        || (source.format().bits() < 32 && destination.format().bits() == 32)
 }
 
 /// Whether a conversion from `source` to `destination` is the 32-bit sign
