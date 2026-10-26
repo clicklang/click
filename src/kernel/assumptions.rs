@@ -5730,9 +5730,9 @@ impl PureFactContext {
     /// `separation_facts` order, so a `find` chooses the fact a scan of every
     /// separation would. A wide queried range can be covered from another
     /// block, so a caller with one scans `separation_facts` instead.
-    pub(in crate::kernel) fn memory_separations_near<'a>(
+    pub(in crate::kernel) fn memory_separations_near<'a, 'b>(
         &'a self,
-        blocks: impl IntoIterator<Item = &'a PointerBlock>,
+        blocks: impl IntoIterator<Item = &'b PointerBlock>,
     ) -> std::collections::BTreeSet<&'a Proposition> {
         let mut candidates = std::collections::BTreeSet::new();
         let mut visit = |key: Option<PointerBlock>| {
@@ -5877,17 +5877,20 @@ impl PureFactContext {
     }
 
     /// The separation facts with a side that may contain `resource`, a
-    /// non-memory resource, or `None` when that needs every separation.
-    /// Containment of a non-memory resource is identity or a chain of
-    /// containment facts down to it (`proves_resource_contains_inner`), so
-    /// its containers are walked upward through the facts filed under each
-    /// child. A memory parent on the way contains by range, which no key
-    /// spells, and gives up. The facts come in `separation_facts` order.
+    /// non-memory resource. Containment of a non-memory resource is identity
+    /// or a chain of containment facts down to it
+    /// (`proves_resource_contains_inner`), so its containers are walked
+    /// upward through the facts filed under each child. A memory parent on
+    /// the way is contained by range, up to memory resolution: by a stated
+    /// separation's memory side filed under a block related to its base
+    /// (`memory_separations_near`), or by a non-memory side, which the
+    /// residual list holds (`nonmemory_separation_facts`).
     pub(in crate::kernel) fn separations_with_side_containing(
         &self,
         resource: &CResource,
-    ) -> Option<BTreeSet<&Proposition>> {
+    ) -> BTreeSet<&Proposition> {
         let mut containers = BTreeSet::from([resource]);
+        let mut memory_parents = Vec::new();
         let mut pending = vec![resource];
         while let Some(current) = pending.pop() {
             for fact in self
@@ -5900,8 +5903,9 @@ impl PureFactContext {
                 let Proposition::CResourceContains { parent, .. } = fact else {
                     continue;
                 };
-                if matches!(**parent, CResource::Memory(_)) {
-                    return None;
+                if let CResource::Memory(range) = &**parent {
+                    memory_parents.push(range);
+                    continue;
                 }
                 if containers.insert(parent) {
                     pending.push(parent);
@@ -5921,7 +5925,19 @@ impl PureFactContext {
                 separations.insert(fact);
             }
         }
-        Some(separations)
+        if !memory_parents.is_empty() {
+            let blocks = memory_parents
+                .iter()
+                .flat_map(|range| {
+                    crate::kernel::primitives::related_pointer_root_blocks(range.base(), self)
+                })
+                .collect::<BTreeSet<_>>();
+            separations.extend(self.memory_separations_near(blocks.iter()));
+            separations.extend(self.nonmemory_separation_facts.iter().inspect(|_| {
+                crate::instrumentation::record_deterministic_work(1);
+            }));
+        }
+        separations
     }
 
     /// The `CResourceContains` facts whose parent `current` may contain by
