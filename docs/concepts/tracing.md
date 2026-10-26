@@ -24,9 +24,10 @@ A proof error names its **goal**: the proposition that had to be true at a
 program point and was not proved there. A goal can come from an `ensures`
 clause, a written `have`, a call's precondition, a definedness requirement such
 as the absence of signed overflow, or a memory access. The report prints it on
-a `goal:` line. Whatever its source, a goal is proved the same way: by `auto`
-when the proof is omitted, by an implicit `auto` when `step()` or `execute()`
-leaves a requirement open, or by explicit tactics you write.
+a `goal:` line. Whatever its source, a goal is proved the same way: by the implicit tail when
+the proof is omitted or the script leaves the goal open, by the implicit closer
+(reported as `implicit auto`) when a `step()` or `fold` leaves a requirement
+open, or by explicit tactics you write.
 
 A goal is read in the state where it is required. A requirement of a C
 statement is a goal at that statement's pre-state, so an explicit proof can
@@ -95,7 +96,7 @@ explanation.
 4. **Run it.** The first link that fails is the new `G`. Return to step 1 with
    it.
 5. **Refine a link that does not close.** A link `A implies B` that a smart
-   tactic such as `auto` does not prove is too big. Split it into smaller
+   tactic such as `solve` or the implicit tail does not prove is too big. Split it into smaller
    links, `A implies C`, `C implies D`, `D implies B`, and run again. Stop
    splitting when a link is a single simple tactic: one `apply ... using`,
    `unfold`, `step()`, `rewrite`, `normalize()`, or arithmetic certificate.
@@ -108,9 +109,9 @@ explanation.
    **Accepts** list), stop at `failing-tactic`.
 
    To split a link that a smart tactic proved part of, read its trace: a step
-   marked ``(from `execute`)``, ``(from `auto`)`` or ``(from `implicit auto`)``
-   is one that tactic took, and a `chosen:` line is the written form
-   of an argument its search chose ([Reading trace
+   marked ``(from `execute`)``, ``(from `auto`)``, ``(from `simp`)`` or
+   ``(from `implicit auto`)`` is one that smart work took, and a `chosen:`
+   line is the written form of an argument its search chose ([Reading trace
    output](#reading-trace-output)). Writing those out leaves only the
    unproved part of the link.
 6. **On a search miss, write the argument.** An elided form, such as
@@ -123,8 +124,8 @@ explanation.
 
 Before each run, say in one line which link is new and why it should hold.
 Changing a tactic, its spelling, or its position without changing the chain is
-not a new attempt. Do not edit `auto`, raise a budget, or change the C to get
-past a link.
+not a new attempt. Do not edit `solve` or the implicit closer, raise a budget, or change the C
+to get past a link.
 
 Before reporting a refused simple link, shrink the link itself, not only the
 program around it. Drop each `using` premise, alias, and earlier `have` it does
@@ -142,7 +143,7 @@ The procedure ends at exactly one of these:
 
 | Outcome | Meaning |
 | --- | --- |
-| `success` | The proof verifies. Keep the explicit links that `auto` needed; they document the argument. |
+| `success` | The proof verifies. Keep the explicit links that the default automation needed; they document the argument. |
 | `false-goal` | `G` does not hold on some execution the contract admits. Give the counterexample: the claim, the contract, or the C is wrong, not the proof. |
 | `unclear-goal` | You cannot say why `G` holds. Give `G`, the premises, and what you tried. |
 | `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory spelling, or resource form. Report a bug. |
@@ -203,9 +204,11 @@ int32 frame(int32 w, int32 h) {
 ```
 
 With `area`'s contract stating `to_integer(result) == to_integer(w * h)`
-under the same bounds, the
-omitted proof's `auto` is refused. The report ends with the goal and how to
-prove it (abbreviated):
+under the same bounds, the omitted proof is refused: its implicit tail steps to
+the `return`, where the closer of the statement's requirements cannot prove
+that the addition does not overflow. The report still names the tail's
+execution `execute()`. It ends with the goal and how to prove it
+(abbreviated):
 
 ```text
 proof error:
@@ -226,8 +229,8 @@ help: to prove the goal explicitly, step to this statement and prove it there wi
    `inner == w * h`.
 2. **True?** Yes: `w * h` is at most `1000 * 1000`.
 3. **Argument.** `inner == w * h`, `w * h <= 1000000`, and `1000000 <=
-   2147483646`. The middle link is the one `auto` did not derive, because it
-   is nonlinear.
+   2147483646`. The middle link is the one the implicit closer did not
+   derive, because it is nonlinear.
 4. **Write it.** Step through the declaration and the call, then state the
    link:
 
@@ -235,12 +238,12 @@ help: to prove the goal explicitly, step to this statement and prove it there wi
 ```click
     ensures to_integer(result) == to_integer(w * h + 1) by {
         step(); step();
-        have to_integer(w * h) <= 1000000 by auto();
+        have to_integer(w * h) <= 1000000 by solve();
     }
 ```
 
-The proof verifies: `success`. Had `have to_integer(w * h) <= 1000000 by auto();` been
-refused, it would be the new goal, to split further, for example through
+The implicit tail runs the `return` and closes the claim. The proof verifies:
+`success`. Had `have to_integer(w * h) <= 1000000 by solve();` been refused, it would be the new goal, to split further, for example through
 `w * h <= 1000 * h`.
 
 ## Reading trace output
@@ -302,11 +305,11 @@ access, not an equality about the current memory contents.
 
 Only the new facts at each checked step are printed, not the accumulated set.
 
-A step that a search produced says which one. A step that a smart tactic
-checked ends its header with ``(from `auto`)``, naming the tactic: `execute`
-for the steps `execute()` took, `auto` for the closer of an omitted proof or a
-contract, and `implicit auto` for an obligation a `step()` or `fold` left
-open. A step whose `using` list a search chose, under a smart tactic or in an
+A step that a search produced says which one. A step that smart work checked
+ends its header with ``(from `auto`)`` or the like, naming it by its older
+name: `execute` for the steps the implicit tail's execution took, `auto` for
+the tail's closer, `simp` for a written `solve()`, and `implicit auto` for an
+obligation a `step()` or `fold` left open. A step whose `using` list a search chose, under a smart tactic or in an
 elided form such as `apply(t(x))` or a bare `transport(P, Q)`, has a `chosen:`
 line with the step written out in full, as `click expand` writes it:
 
@@ -332,7 +335,7 @@ checked prefix and the remaining goal and premises after those steps, rather
 than the state at script entry. This includes execution `have` bodies and pure
 theorem scripts.
 
-Written `simp` failures retain a bounded sample of the read-value queries and
+Written `solve` failures retain a bounded sample of the read-value queries and
 cell walks actually performed during that attempt. Ordinary errors summarize
 up to two observations of each kind and eight available premises; traces show
 up to sixteen observations of each kind, with shared

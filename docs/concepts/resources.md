@@ -90,7 +90,7 @@ For an external read, `views` is normally enough:
 int32 first(int32 p[]) {
     views p[0..1];
 
-    ensures result == p[0] by auto();
+    ensures result == p[0];
 }
 ```
 
@@ -117,7 +117,7 @@ the same symbolic value: nothing that could change the cell is allowed to run.
 int32 peek(int32 p[]) {
     views p[0..1];
     ensures reads_agree: result == 1;
-} by { execute(); solve(); }
+}
 ```
 
 Here the C body reads `p[0]` twice and returns `a == b`; the two loads are one
@@ -168,8 +168,8 @@ changes it again.
 <!-- verified-example: mdtests/resource_summary_splits_write_range.md -->
 ```click
 int32 write_first(int32 p[]) {
-    owns p[0..1] by auto();
-    ensures writes_first: p[0] == 1 by auto();
+    owns p[0..1];
+    ensures writes_first: p[0] == 1;
 }
 ```
 
@@ -188,12 +188,12 @@ Function calls use the callee's verified contract as an opaque summary:
 <!-- verified-example: mdtests/permission_call_returns_write.md -->
 ```click
 int32 write_and_return_permission(int32 p[]) {
-    owns p[0..1] by auto();
+    owns p[0..1];
     ...
 }
 
 int32 call_write_and_keep_permission(int32 p[]) {
-    owns p[0..1] by auto();
+    owns p[0..1];
 }
 ```
 
@@ -350,7 +350,7 @@ Then a contract can require and return instances of that resource:
 <!-- verified-example: mdtests/token_resource_borrow_return.md -->
 ```click
 int32 borrow_fd(int32 fd) {
-    owns open_fd(fd) by auto();
+    owns open_fd(fd);
 }
 ```
 
@@ -956,7 +956,7 @@ non-consuming view step:
 <!-- verified-example: mdtests/composite_resource_observe_nested_fact.md -->
 ```click
 int32 return_fd(int32 fd) {
-    owns live_fd(fd) by auto();
+    owns live_fd(fd);
 
     ensures result >= 0 by {
         observe(live_fd(fd));
@@ -1022,26 +1022,26 @@ int32 complete_once(int32 flag[]) {
 
     produces called(flag) by {
         unfold(uncalled(flag));
-        execute();
+        step_until(function.exit);
         fold(called(flag));
     }
 
     ensures result == 1 by {
         unfold(uncalled(flag));
-        execute();
+        step_until(function.exit);
         fold(called(flag));
-        solve();
     }
 }
 ```
 
 `unfold(uncalled(flag))` consumes the folded `uncalled(flag)` resource and adds
 the contained owned memory resource for `flag[0..1]` to the proof state. The C
-execution can then mutate the flag. The execution establishes the `called`
-body's exact fact; `fold(called(flag))` checks it, consumes the contained owned
-resource, and adds the folded `called(flag)` resource. If a body fact needs
-derivation, state it first with `have ... by { ... }`; `fold` itself does not
-invoke `simp`. The end of the `by { ... }` block checks the overall claim.
+execution can then mutate the flag. `step_until(function.exit)` runs it to the
+function exit, which establishes the `called` body's exact fact;
+`fold(called(flag))` checks it, consumes the contained owned resource, and adds
+the folded `called(flag)` resource. If a body fact needs derivation, state it
+first with `have ... by { ... }`; `fold` itself does not invoke `solve`. The
+implicit tail at the end of the `by { ... }` block closes the overall claim.
 
 `fold` also builds a composite resource from lower-level resources at a
 function boundary:
@@ -1052,7 +1052,7 @@ int32 init_once(int32 flag[]) {
     consumes flag[0..1];
 
     produces uncalled(flag) by {
-        execute();
+        step_until(function.exit);
         fold(uncalled(flag));
     }
 }
@@ -1068,7 +1068,7 @@ Together, the three resource tactics are deliberately local:
 
 These steps are bounded by design. A proof that needs facts inside a nested
 composite resource should name the path with repeated `observe(...)` steps
-instead of relying on `auto` to search through every possible nested body.
+instead of relying on proof search through every possible nested body.
 
 A function that returns a composite (`produces` it, or keeps it under `owns`)
 may reach its exit holding the body's pieces instead of the folded head, and
@@ -1560,7 +1560,7 @@ function it calls -- reads no C memory, its result is a function of its argument
 *values* and the snapshot in that triple is dead weight. Such a function's
 pointer arguments are therefore anchored to one canonical snapshot instead of
 the ambient one. Without that, the same proposition would be two different terms
-on either side of any C write, and a fact proved before `execute()` would not
+on either side of any C write, and a fact proved before the C runs would not
 discharge the identical body fact demanded by the `fold` after it. The
 classification is syntactic and conservative: a field place, an index, a
 qualified global, a snapshot selector such as `old(...)`, a resource field or
@@ -1676,8 +1676,10 @@ This slice supports viewed and owned memory elements plus declared token and
 composite resources inside composite bodies. Duplicate contained owned
 resources are rejected, including resources whose arguments are provably
 equal. General composite-resource cycles are rejected; guarded direct
-self-recursion is the deliberate exception. Resource unfolding is explicit;
-`auto` does not yet choose unfold/fold steps on its own.
+self-recursion is the deliberate exception. Resource unfolding is explicit.
+The one fold made without being written is the implicit closer's fold of the
+resource the contract `produces`, on a returned path that holds its body
+(`mdtests/an_omitted_proof_folds_the_resource_its_contract_produces.md`).
 
 The smallest ownership-shaped pattern is a composite resource that bundles
 several concrete memory resource facts. For example, `first_cell_copy_access(dst, src)`
@@ -1727,12 +1729,12 @@ A caller can pass a subrange of a larger owned memory resource:
 <!-- verified-example: mdtests/resource_summary_splits_write_range.md -->
 ```click
 int32 write_first(int32 p[]) {
-    owns p[0..1] by auto();
+    owns p[0..1];
     ...
 }
 
 int32 write_first_then_second(int32 p[]) {
-    owns p[0..2] by auto();
+    owns p[0..2];
     ...
 }
 ```
@@ -1802,7 +1804,8 @@ Not implemented yet:
 - general C allocation APIs beyond the modeled struct, scalar-buffer, and
   pointer-array forms, plus other unsupported allocator forms,
 - custom resource-family algebra,
-- implicit resource unfold/fold search in `auto`,
+- implicit resource unfold/fold search beyond the implicit closer's fold of a
+  produced resource,
 - persistent token resources,
 - ownership predicates,
 - explicit resource algebra tactics,

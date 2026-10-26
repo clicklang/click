@@ -30,9 +30,9 @@ locations and other explicitly documented string positions; Click doesn't
 have a first-class string type.
 
 Call-style proof tactics require parentheses, including the no-argument
-calls `simp()` and `auto()`. A single tactic call can follow `by` directly;
-braces enclose a sequence and may also enclose one call. `auto()` is
-whole-proof automation, written `by auto();` or `by { auto(); }`.
+call `solve()`. A single tactic call can follow `by` directly; braces enclose
+a sequence and may also enclose one call. An omitted proof runs the whole
+proof by automation; `by auto();` is its older spelling.
 
 ## Word index
 
@@ -69,19 +69,19 @@ documentation inventory keep the following accepted words synchronized.
 | `old`, `at`, `c` | Snapshot selection and embedded C-fragment forms. |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
 | `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source spelling is available. |
-| `by`, `auto`, `using` | Proof introduction, default smart proof, and exact-premise syntax. |
-| `mark`, `step`, `step_until`, `execute`, `execute_until` | Execution tactics; `execute_until` is the older spelling of `step_until`. |
+| `by`, `auto`, `using` | Proof introduction, the older spelling of the omitted proof, and exact-premise syntax. |
+| `mark`, `step`, `step_until`, `execute`, `execute_until` | Execution tactics; `execute` is the older written form of the implicit tail, and `execute_until` the older spelling of `step_until`. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
 | `peel` | Range-fold tactic: `peel(f(args)) using { ... }` opens the range-fold law of an `Integer`-valued pure function whose body is a range fold, selected by the listed guards. |
 | `take`, `give`, `gather`, `scatter` | Iterated guarded-ownership tactics: move one element out of or into an iterated fact, and form or dissolve the whole fact. `forall` inside a resource body starts the iterated clause itself. |
 | `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `assumption`, `extract`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
-| `arithmetic` | Smart arithmetic tactic: `arithmetic()` and `arithmetic() using { ... }` plan and check a bounded arithmetic certificate. |
+| `arithmetic` | Older spelling of `solve() using`: `arithmetic()` and `arithmetic() using { ... }` plan and check a bounded arithmetic certificate. |
 | `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |
 | `split`, `left`, `right` | Retired tactic spellings. Unless a user-defined tactic has the name, the parser rejects each with a diagnostic that names `assumption()`. |
 | `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate rules { ... }`. Its step words are listed under [Arithmetic-certificate words](#arithmetic-certificate-words). |
-| `rewrite`, `transport`, `instantiate`, `simp`, `induct`, `close_invariants` | Equality, snapshot, quantifier, simplification, induction, and loop-proof tactics. |
+| `rewrite`, `transport`, `instantiate`, `solve`, `simp`, `induct`, `close_invariants` | Equality, snapshot, quantifier, closing, induction, and loop-proof tactics; `simp` is the older spelling of `solve`. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
 | `function`, `loop`, `region`, `statement`, `call`, `assignment`, `read`, `back_edge`, `entry`, `exit` | Program-region and program-point selectors. Each names a region. `region(N)` is the `N`th atomic region, one `step()` crosses; `statement(i)` is a statement as written, and a chain continues it with `.statement(j)` and ends it with `.region(j)`, `.call(f, j)`, `.assignment(x, j)` or `.read(j)`. Unchained `assignment(local, N)` and `read(N)`, and `back_edge()` or `loop(i).back_edge()`, are execution targets only. |
 
@@ -426,7 +426,7 @@ schema. Different variants are disjoint; an assumed equality between them is
 a contradiction. Equality of every corresponding field proves equality of
 two applications of one constructor (congruence), and an exact equality of
 such applications exposes equality only at the same field position
-(injectivity). `simp` can select these rules, expanding congruence to explicit
+(injectivity). `solve` can select these rules, expanding congruence to explicit
 `rewrite` steps and injectivity to checked `extract` steps.
 
 Pattern arms must name every variant exactly once, use the declared field
@@ -579,8 +579,8 @@ Binary proof splits follow one rule: `then` appears exactly when there is an
 `if P ensuring { ... } then { ... } else { ... }` or
 `branch ensuring { ... } then { ... } else { ... }` with one.
 
-A proof is omitted, written as a single tactic call such as `by auto();` or
-`by simp();`, or written as a `by { ... }` block of tactic statements. Tactic
+A proof is omitted, written as a single tactic call such as `by solve();`, or
+written as a `by { ... }` block of tactic statements. Tactic
 arguments use the expression and proposition forms documented for that tactic. The exhaustive surface-spelling inventory is in
 [Tactics](../tactics/index.md).
 
@@ -601,7 +601,8 @@ requires-entry := "requires" (identifier ":")? proposition "by" proof-body
 proof-body     := tactic-call ";" | "{" tactic-statement+ "}"
 ```
 
-Omitting a proof and writing `by auto()` request smart proof construction. Smart
+Omitting a proof requests smart proof construction, and so does the implicit
+tail that ends every written script. Smart
 search can advance proof state only through checked operations. Use
 [`click expand`](../cli/expand.md) to replace expandable smart proof sites with
 the corresponding explicit proof steps; Click verifies the complete rewritten

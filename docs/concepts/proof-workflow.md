@@ -47,52 +47,77 @@ int32 set_first(int32 p[], int32 value) {
 ```
 
 Click checks the C region once. Every postcondition is then checked against the
-resulting shared proof state. Goal-specific closing steps still have their
-normal roles: `simp()` or resource reasoning closes postconditions. A claim
-with its own `by` keeps that independent proof, and the grouped proof covers
-the claims without one. When two or more claims omit their proofs, they share
-an implicit `} by auto();`.
+resulting shared proof state. A claim with its own `by` keeps that independent
+proof, and the grouped proof covers the claims without one. When two or more
+claims omit their proofs, they share one omitted grouped proof.
 
-The shorthand `} by auto();` builds one deterministic grouped script:
-`execute()`, which also checks declared loops, then the `auto` closer, which
-tries `simp()` on each open postcondition. Composite-resource folds and theorem applications
-remain explicit.
+## The implicit tail
 
-After execution reaches the return frontier, grouped tactics retain source
-order. Each path's open goals are the contract's claims in contract order,
-resource claims included. `fold`, `apply`, and `have` transform the current
-finalized path. A closer such as `simp()`, `assumption()`, `normalize() using`
-or `arithmetic() using` acts on the first open goal, the last two from exactly
-their listed premises when the explicit closer is preferable to search; `auto`
-closes every goal still open. A later fact or fold does not retroactively affect
-an earlier closing step. Each symbolic path is finalized once, and every
-contract proof is packaged from that same finalized specification.
+Every proof script ends with an implicit tail, and an omitted proof is that
+tail alone. The tail runs the C that is left from where the script stopped,
+checking declared loops as it reaches them. At each C branch the facts do not
+decide, it splits into paths that each run to function exit. It then closes
+every open goal on every path with the implicit closer, which tries direct
+closure and then `solve`'s search. On a returned path that holds the body of a
+resource the contract `produces`, the closer also folds that resource. Folds
+of other resources and theorem applications stay written.
+
+A script therefore needs no final closer and no step to function exit. A
+script may stop after any statement, before a C branch included
+(`mdtests/a_script_that_stops_with_c_left_is_finished.md`):
+
+<!-- verified-example: mdtests/a_script_that_stops_with_c_left_is_finished.md -->
+```click
+int32 magnitude(int32 x) {
+    requires x > -100 and x < 100;
+    ensures result >= 0;
+} by {
+    step();
+}
+```
+
+Here the script steps over `int32 y = 0;`, and the tail runs the C `if`, one
+path per arm, and closes `result >= 0` on each. A script that ends in a split
+whose arms each reach their own end, such as `match` or `outcomes`, ends in
+those arms, and each arm has its own tail. The tail's execution and closing are
+charged to the smart budget at the site after the script's last tactic.
+`} by auto();` is the older spelling of the omitted proof, still accepted.
+
+A proof is at one program point at a time. Once a script reaches function exit
+on its path, with `step_until(function.exit)` or inside one arm of a proof
+`if`, the tactics that follow act on that path. Its open goals are the
+contract's claims in contract order, resource claims included. `fold`,
+`apply`, and `have` transform the current path. A closer such as `solve()`,
+`assumption()`, `normalize() using` or `solve() using` acts on the first open
+goal, the last two from exactly their listed premises when the explicit closer
+is preferable to search, and the implicit tail closes every goal still open.
+A later fact or fold does not retroactively affect an earlier closing step.
 
 ## Tactics
 
-Currently accepted tactics:
+A one-tactic proof needs no braces:
 
 <!-- verified-example: mdtests/algebraic_maybe.md -->
 ```click
-by auto();
 by solve();
 ```
 
-Omitting a proof clause uses `auto`. `by simp();` means the same operation as
-`by { simp(); }`. All three forms act at the current execution frontier; `simp`
-does not implicitly execute C. See the
+`by solve();` means the same as `by { solve(); }`. `solve()` closes the first
+open goal at the current frontier and runs no C; the implicit tail then runs
+any C that is left and closes the rest. On a `have` or a pure theorem's
+`ensures`, `by solve();` restates what the omitted proof does. On a C
+function's `ensures` it is refused, because execution has not reached function
+exit there; omit the proof instead. `simp()` and a written `auto();` are older
+spellings of `solve()`, still accepted. See the
 [proof tactics reference](../reference/tactics/index.md).
 
-For an individual claim, `auto` is the broad orchestration tactic. It runs
-the smart `execute()`, then closes each open claim: by direct logical closure,
-then `simp`. Expansion records the
-tactics that succeeded. Grouped `auto` has the fixed expansion described
-above, so grouped proofs do not depend on proof search. The
+Expansion records the steps, splits and closers the implicit tail took, so an
+expanded proof does not depend on proof search. The
 [tactic reference](../reference/tactics/index.md#automation-and-search) gives
-the order of `auto`'s searches.
+the order of the implicit closer's searches.
 
-`simp` is a smart contextual simplifier. It is useful for straight-line
-postconditions and unfolded predicate goals. It simplifies logical connectives,
+`solve` is the written smart tactic: a contextual simplifier. It is useful for
+straight-line postconditions and unfolded predicate goals. It simplifies logical connectives,
 constant/reflexive integer comparisons, small arithmetic forms, concrete folds,
 and several kernel equality patterns. For order goals, it also rewrites through
 known equalities, evaluates equality-linked constant arithmetic, and uses the
@@ -105,14 +130,17 @@ The exhaustive simple/smart classification is in the
 
 Explicit proof scripts use function-call-shaped tactics:
 
-<!-- verified-example: mdtests/sorted_predicate.md -->
+<!-- verified-example: mdtests/step_until_steps_to_function_exit.md -->
 ```click
-by {
-    execute();
-    unfold(sorted);
-    solve();
+} by {
+    step_until(function.exit);
+    have result == x + 1;
 }
 ```
+
+`step_until(function.exit)` steps to function exit, where `result` names the
+returned value, and the `have` proves a fact there; the implicit tail closes
+the contract's claims.
 
 Current tactics. The [proof tactics reference](../reference/tactics/index.md) is the
 authoritative inventory and classifies each spelling as simple, smart, or
@@ -129,20 +157,14 @@ expansion output.
   available condition fact selects and enters one arm. At a loop head, it
   evaluates the condition once and enters one iteration or advances past the
   loop.
-- `execute()`: build symbolic verification paths from the current execution
-  frontier to function exit. From function entry, this executes the
-  whole C function. It applies verified abstract loop rules where available.
-  Requirements of opaque calls may be routine consequences of current facts;
-  smart execution retains a checked proposition derivation for each such
-  premise, and expansion emits the corresponding exact source-level facts.
-  Reads of an unchanged cell use the same load variable across snapshots, so
-  premise matching does not need hidden frame reasoning.
-- `execute_until(region(N))`: execute the current deterministic prefix up
-  to the entry of statement region `N`. It can cross verified loops, but an
-  unresolved `if` still requires explicit branch entry. It composes with prior
-  execution steps and joined branches. The target must be
-  forward and reachable on the current execution path, and each source step
-  must produce exactly one normal successor.
+- `step_until(target)`: repeat `step()` up to a target. It walks a loop the
+  facts decide and never splits: at a C branch the facts do not decide it is
+  refused, and names the proof `if` or `branch` to write there. The targets
+  are `statement(i)` and its chains such as `statement(i).statement(j)` and
+  `statement(i).call(f, j)`, `region(N)`, `loop(N)`, `assignment(x, N)`,
+  `read(N)`, `back_edge()`, `loop(i).back_edge()`, and `function.exit`. The
+  target must be forward and reachable on the current execution path.
+  `execute_until` is its older spelling, still accepted.
 - `loop { ... }`: verify the loop exactly at the current frontier and advance
   to its checked abstract exit. Its nested `initialize`, `preserve`, invariant,
   invariant, and resource clauses construct the kernel rule; it never seeks to a
@@ -159,7 +181,8 @@ expansion output.
   step's fast path makes), consume one immediate composite body, and rebuild
   the owned composite resource fact. A body fact these miss is a requirement:
   prove it in `fold(resource) by { ... }` or
-  `fold(resource) { requires P by ...; }`, or leave it to the implicit `auto`.
+  `fold(resource) { requires P by ...; }`, or leave it to the implicit closer
+  that proves a step's open requirements.
 - `apply(theorem_name(args...));`: instantiate one verified pure theorem from
   the standard library or current file. It looks each requirement up among
   the current facts and proves none: a requirement it cannot find is a search
@@ -171,16 +194,23 @@ expansion output.
   into this form.
 - `have proposition by { ... }`: run a scoped fixed-state proof and add its proposition
   to the current pure facts. The nested proof accepts
-  `unfold`, `apply`, `obtain`, `witness`, `simp`, nested `have`, and proof-level
+  `unfold`, `apply`, `obtain`, `witness`, `solve`, nested `have`, and proof-level
   `if` case analysis; it cannot execute C or transform resources. Both `if`
   branches prove the local proposition, after which the surrounding proof
-  continues. After execution reaches function exit, Click proves the `have`
-  proposition independently on every completed execution path and adds the
-  resulting fact to that path's pure facts.
+  continues. At function exit, the `have` is proved on the current path, where
+  `result` names that path's returned value.
 - `if proposition { ... } else { ... }`: prove the current claim twice, once
   with the proposition added to the pure facts and once with its negation
-  added. Each branch has its own proof script; the common continuation then
-  runs in every feasible case. It does not execute a C `if` statement.
+  added. Each arm has its own proof script and its own path. Tactics written
+  after the `if` run once, where the arms rejoin, so both arms must end at
+  the same program point in the same state;
+  `if P ensuring { ... } then { ... } else { ... }` states what they agree on
+  when they do not. An arm that
+  reaches function exit ends there instead, and the tactics after the `if`
+  belong to the arm that continues. Placed before the C, a proof `if` tells
+  apart paths that the C would split: each arm steps to exit with
+  `step_until(function.exit)` and does its own exit work. It does not execute
+  a C `if` statement.
 - `observe(resource);`: project one view step from a held composite resource
   fact. This exposes immediate pure facts and viewed immediate contained
   resource facts without exposing owned contained resource facts.
@@ -203,8 +233,11 @@ expansion output.
   this bare spelling is smart.
 - `transport(source, target) using { P; ... }`: the simple, exact-premise
   spelling of the same rule.
-- `simp() using { Q; ... }`: smart simplification restricted to exactly the
-  listed proposition facts. Expansion must produce named simple rules; if no
+- `solve() using { Q; ... }`: smart simplification restricted to exactly the
+  listed proposition facts. It tries arithmetic over them last, and a miss
+  adds arithmetic's reason. `simp() using` and `arithmetic() using` are older
+  spellings, and bare `arithmetic()` is the older spelling of
+  `solve() using {}`. Expansion must produce named simple rules; if no
   explicit tactic vocabulary covers the selected proof, expansion fails
   locally instead of retaining a hidden search step.
 
@@ -213,17 +246,17 @@ expansion output.
   `not P` or the exact opposite polarity of the same lowered C condition. They are
   accepted only while a pure goal is active, typically inside `have ... by` or
   a theorem proof.
-- `simp();`: request smart contextual simplification when the proof block is
-  checked.
+- `solve();`: close the first open goal by smart contextual simplification.
+  It runs no C. `simp();` and a written `auto();` are older spellings.
 
 An opaque predicate does not expose the memory footprint needed for framing.
 When a predicate fact must cross execution, unfold it before those execution
 steps and transport the unfolded definition; smart `transport` diagnoses this
 case directly.
 
-The end of a per-claim `by { ... }` block checks that claim. The end of a
-trailing grouped function block checks every effect and postcondition in the
-contract.
+The implicit tail at the end of a per-claim `by { ... }` block closes that
+claim. The tail of a trailing grouped function block closes every effect and
+postcondition in the contract.
 
 When the execution frontier is a C `if`, use `branch`:
 
@@ -304,16 +337,18 @@ fact or resource fact required by the following `step()` or `fold(resource)`.
 Applications after function exit remain path-local, so `result` and post-state
 expressions are interpreted separately for each completed path.
 
-Successful `auto` proofs retain surface-expressible transition provenance when
-the current tactic language can express the argument. Expansion can render
-that provenance as an explicit proof.
+A successful implicit tail retains surface-expressible transition provenance
+when the current tactic language can express the argument. Expansion can
+render that provenance as an explicit proof.
 
 An execution proof tracks an execution frontier: the current program point,
 symbolic state, and enclosing continuation stack. Proof scripts can start at
 function entry, advance by one statement with `step();`, unpack a C `if` at the
 current frontier with `branch`, replace scoped paths with an explicit abstract
 interface using `branch ensuring`, pause at a statement entry with
-`execute_until(region(N));`, and execute to function exit with `execute();`.
+`step_until(region(N));`, and step to function exit with
+`step_until(function.exit);`. The implicit tail runs whatever C the script
+leaves.
 Resource steps such as `observe`, `unfold`, and `fold` can happen between those
 execution steps.
 
@@ -328,8 +363,8 @@ arms to reach the same state. `branch ensuring` checks each listed fact and
 resource independently in both concrete arms, then publishes one checked
 abstract successor. A condition with only one kernel-feasible arm selects that
 concrete path rather than merging it, while a terminal branch retains separate
-return paths. `execute()` is the batch form that continues from the same
-frontier to function exit.
+return paths: each arm that returns is its own path, and its proof ends in
+that arm.
 
 A statement or condition can also have several checked paths that only their
 facts tell apart: a load that may read the cell an earlier store wrote has one
@@ -337,10 +372,10 @@ successor where the addresses are equal and one where they differ, and
 `x > 0 && y > 0` is false along two paths. `step()` and `branch` never split
 the proof on such cases. They refuse at that statement, list the condition
 each case assumes, and name the proof `if` that separates them; inside each
-arm of that `if` the statement has one successor. `execute()` makes the same
-split itself, one condition at a time before the statement, and continues each
-case with the rest of the block. Its expansion prints the split as nested
-proof `if`s.
+arm of that `if` the statement has one successor. The implicit tail makes the
+same split itself, one condition at a time before the statement, and runs each
+case to function exit as its own path. Its expansion prints the split as
+nested proof `if`s.
 
 A resource listed by `branch ensuring` remains in the representation named by
 the interface. In particular, exporting a folded composite does not project
@@ -359,7 +394,7 @@ typical existential-introduction proof names a witness:
 <!-- verified-example: mdtests/witness_and_choose.md -->
 ```click
 ensures found_zero: (0..n).any(|k| { k == result }) by {
-    execute();
+    step_until(function.exit);
     witness { k: 0 };
     solve();
 }
@@ -387,7 +422,7 @@ first:
 ```click
 requires bytes::contains(p, 0, (uint64) n, 'x');
 ensures opened_contains: bytes::contains(p, 0, (uint64) n, 'x') by {
-    execute();
+    step_until(function.exit);
     unfold(bytes::contains);
     obtain (found: uint64) {
         0u64 <= found and found < (uint64) n and p[found] == 'x'
@@ -421,10 +456,10 @@ by {
 
 `have` does not re-execute the function prefix. It sees the exact facts and
 resources established by preceding `step()`, `unfold`, `fold`, and other
-ordinary proof tactics. It proves its proposition on every active proof path
-and adds the resulting fact to the following context.
+ordinary proof tactics. It proves its proposition on the current path and
+adds the resulting fact to the following context.
 
-`execute_until(assignment(local, N))` selects the zero-based static occurrence
+`step_until(assignment(local, N))` selects the zero-based static occurrence
 of an ordinary local assignment, local compound update, or call-result assignment in the executable
 layout. It pauses before that store. Declarations and stores to other locals
 do not count, so unrelated compiler temporaries do not shift the selection.
@@ -434,9 +469,9 @@ not execute an unreachable arm or move backward. A frontend may evaluate a
 right-hand side in earlier helper statements: selecting the final local store
 does not move the frontier before those helpers. Use `loop(N)` to stop before
 a loop's header/body work and `mark` to name a reached state. Assignment
-selectors currently serve `execute_until`, not `at(...)` snapshot expressions.
+selectors currently serve `step_until`, not `at(...)` snapshot expressions.
 
-`execute_until(read(N))` stops before the zero-based Nth statement containing
+`step_until(read(N))` stops before the zero-based Nth statement containing
 an explicit scalar memory load, in executable preorder. A statement counts
 once even when its expression contains several loads; repeated iterations
 reuse the same static occurrence. This selects the whole statement, so a
@@ -452,7 +487,7 @@ order for execution targets and snapshots:
 
 <!-- verified-example: mdtests/frontier_have_execute_until_and_mark.md -->
 ```click
-execute_until(region(4));
+step_until(region(4));
 have y >= 0 by {
     solve();
 }
@@ -491,18 +526,18 @@ semantic proof-local name over repeating a numeric statement coordinate:
 ```click
 mark before_write;
 step();
-have p[0] == at(before_write, p[0]) + 1 by auto();
+have p[0] == at(before_write, p[0]) + 1 by solve();
 ```
 
 The mark names the current state only. It does not advance or rewind the
-frontier and cannot be passed to `execute_until`.
+frontier and cannot be passed to `step_until`.
 
 `loop_name.entry` is available in invariants on that loop and in its explicit
 `preserve` proof. Once the loop tactic succeeds, `loop_name.exit` is available
 to the enclosing proof.
 
 Statement entry and exit snapshots are currently recorded by deterministic
-proof execution. `step()`, `execute_until(...)`, and `execute()`
+proof execution. `step()`, `step_until(...)`, and the implicit tail
 record each deterministic boundary they cross. An `at(...)` expression reads
 memory, reassigned parameters, and declared scalar, pointer, or array locals
 from the selected state. `at(selector, proposition)` instead snapshots the
@@ -526,7 +561,6 @@ loop {
     invariant i >= 0;
     invariant i <= n;
 
-    initialize by auto();
     preserve by {
         step();
         solve();
@@ -534,14 +568,14 @@ loop {
 }
 ```
 
-Either phase may be omitted. Bounded automation attributed to the `loop`
-keyword supplies an omitted phase. An explicit preservation proof
+Either phase may be omitted, as `initialize` is here. Bounded automation
+attributed to the `loop` keyword supplies an omitted phase. An explicit preservation proof
 runs in a fresh arbitrary-iteration context and must reach the loop back edge
 on every proof branch. It can use ordinary tactics, including `have`,
 resource operations, proof-level `if`, and branch execution.
 
 An explicit initialization proof is an ordinary pure proof at the actual loop
-entry. It can use `apply`, nested `have`, proof-level `if`, `unfold`, and `simp`,
+entry. It can use `apply`, nested `have`, proof-level `if`, `unfold`, and `solve`,
 but it cannot execute C or transform resources. A named loop's entry snapshot
 is bound while this proof runs. The facts it proves are checked against the
 kernel invariant instances before rule construction.
@@ -587,8 +621,8 @@ the store, and a cell outside them holds its entry value after the loop with no
 invariant.
 
 The resulting frame is reusable. For example, if a loop owns only `dst[0..n]`
-and requirements prove `separate(memory(dst[0..n]), memory(src[0..n]))`, `auto`
-can prove source-memory postconditions without a handwritten source-invariance
+and requirements prove `separate(memory(dst[0..n]), memory(src[0..n]))`, an
+omitted proof can prove source-memory postconditions without a handwritten source-invariance
 invariant.
 
 ## Debugging failed proofs
@@ -603,7 +637,7 @@ Failure messages usually include:
 - pure facts
 - resource facts, when the failing tactic has a current resource context
 - remaining proof obligations
-- the goal a failed `simp` could not establish, in source spelling
+- the goal a failed `solve` could not establish, in source spelling
 
 Practical approach:
 

@@ -46,11 +46,13 @@ Read each `ensures` clause as a separate promised fact:
 
 <!-- verified-example: mdtests/max_symbolic.md -->
 ```click
-ensures result >= a by auto();
-ensures result >= b by auto();
+ensures result >= a;
+ensures result >= b;
 ```
 
-The guarantee says what Click is proving. The `by` clause says how.
+The guarantee says what Click is proving. A `by` clause, when there is one,
+says how; without one, Click runs the C and closes the claim by its default
+automation.
 
 ## 5. memory ownership
 
@@ -71,13 +73,13 @@ Only after you understand the claim should you read the proof script:
 <!-- verified-example: mdtests/sorted_predicate.md -->
 ```click
 by {
-    execute();
     unfold(sorted);
-    solve();
 }
 ```
 
-Most simple proofs use `auto`. A script usually means the proof needs a named
+This script makes the predicate `sorted` transparent, and the implicit tail
+that ends every script runs the C and closes the claim. Most simple proofs
+omit the proof clause. A script usually means the proof needs a named
 predicate unfolded, an existential witness, a loop VC, or explicit frame
 reasoning.
 

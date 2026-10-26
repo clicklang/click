@@ -40,7 +40,7 @@ int32 init_once(int32 flag[]) {
     consumes flag[0..1];
 
     produces uncalled(flag) by {
-        execute();
+        step_until(function.exit);
         fold(uncalled(flag));
     }
 }
@@ -50,15 +50,14 @@ int32 complete_once(int32 flag[]) {
 
     produces called(flag) by {
         unfold(uncalled(flag));
-        execute();
+        step_until(function.exit);
         fold(called(flag));
     }
 
     ensures result == 1 by {
         unfold(uncalled(flag));
-        execute();
+        step_until(function.exit);
         fold(called(flag));
-        solve();
     }
 }
 ```

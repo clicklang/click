@@ -23,9 +23,7 @@ verifying "compare_swap2_permutation.c";
 int32 compare_swap2_permutation(int32 p[2]) {
     consumes p[0..2];
     ensures pair_permutation: permutation::permutation(p, old(p), 0, 2) by {
-        execute();
         unfold(permutation::permutation);
-        solve();
     }
 }
 ```

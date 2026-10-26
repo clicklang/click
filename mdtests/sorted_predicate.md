@@ -26,9 +26,7 @@ int32 sorted_predicate(int32 p[], int32 n) {
     requires viewable(p[0..n]);
     requires sorted(p, n);
     ensures still_sorted: sorted(p, n) by {
-        execute();
         unfold(sorted);
-        solve();
     }
 }
 ```

@@ -27,7 +27,7 @@ verifying "increment.c";
 
 int32 increment(int32 x) {
     requires x < 2147483647;
-    ensures increments: result == x + 1 by auto();
+    ensures increments: result == x + 1;
 }
 ```
 
@@ -57,7 +57,7 @@ verifying "first.c" as first;
 verifying "second.c" as second;
 int32 first::helper() {
     ensures result == 1;
-} by { execute(); solve(); }
+}
 ```
 
 `first::helper` selects `helper` from `first.c`; calls in that translation unit
@@ -163,7 +163,7 @@ either, so a file may declare its own declaration with that name
 `mdtests/an_unimported_library_resource_name_is_free_for_a_user_definition.md`).
 A resource named in a contract without its module's import is refused with
 the import to add (`mdtests/a_library_resource_needs_its_module_import.md`).
-Built-in tactics such as `simp`, `arithmetic` and loop-invariant closing
+Built-in closers such as `solve`, its arithmetic, and loop-invariant closing
 apply library theorems as part of their own reasoning, whatever the file
 imports. They name a library theorem by its qualified identity, such as
 `click::integer::int32_less_equal_transitive`, so a file may declare
@@ -248,7 +248,7 @@ Each function block in a sidecar describes one C function:
 ```click
 int32 increment(int32 x) {
     requires x < 2147483647;
-    ensures increments: result == x + 1 by auto();
+    ensures increments: result == x + 1;
 }
 ```
 

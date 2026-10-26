@@ -17,7 +17,7 @@ The claim about it goes in a Click sidecar, `zero.click`, next to the C:
 verifying "zero.c";
 
 int32 zero() {
-    ensures result == 0 by auto();
+    ensures result == 0;
 }
 ```
 
@@ -34,11 +34,12 @@ The claim is small, but it contains the whole Click shape:
 - `int32 zero()` identifies the C function being specified. Click spells C
   types by their width, so C's `int`, `signed int` and `int32_t` are all
   `int32` (see [Supported types](../reference/language/c.md#supported-types)).
-- `ensures result == 0` states the fact to prove.
-- `by auto()` asks Click's default automation to prove it.
+- `ensures result == 0;` states the fact to prove. It has no proof clause, so
+  Click proves it with its default automation.
 
-Click symbolically executes the C function, sees that every path returns `0`,
-and proves the postcondition. `click verify` exits with status 0 when every
+The omitted proof runs the C function symbolically, one path per C branch the
+facts do not decide, sees that every path returns `0`, and closes the
+postcondition on each path. `click verify` exits with status 0 when every
 claim is proved and 1 otherwise.
 
 ## A proof that needs a requirement
@@ -57,7 +58,7 @@ The natural postcondition is:
 verifying "increment.c";
 
 int32 increment(int32 x) {
-    ensures result == x + 1 by auto();
+    ensures result == x + 1;
 }
 ```
 
@@ -74,18 +75,22 @@ proof error:
   C statement at increment.c:2:5
   `return x + 1;`
 
-tactic@4:
-  auto();
+tactic: step
+  --> increment.click:4:5
+  4 |     ensures result == x + 1;
+    |     ^^^^^^^
 goal: x <= 2147483646
 help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`
-refused by: `auto` (smart: it may miss; if the goal holds, prove it through smaller steps)
-see: click docs auto
+refused by: the implicit `auto` that proves this statement's requirements (smart: it may miss; if the goal holds, prove it through smaller steps)
+see: click docs tracing
 
 To get a trace:
   click verify --trace-proof increment increment.click
 ```
 
-In C, signed overflow is undefined behavior, and `x + 1` overflows when `x` is
+The omitted proof's execution is still named `execute()` in the report, and
+the closer that proves a statement's requirements is named the implicit
+`auto`. In C, signed overflow is undefined behavior, and `x + 1` overflows when `x` is
 the largest `int`: the goal `x <= 2147483646` is false there, so no proof can
 close it. Click proves the absence of undefined behavior along with
 every claim, so the call is safe only when `x + 1` fits. The contract needs a
@@ -96,7 +101,7 @@ verifying "increment.c";
 
 int32 increment(int32 x) {
     requires x < 2147483647;
-    ensures result == x + 1 by auto();
+    ensures result == x + 1;
 }
 ```
 

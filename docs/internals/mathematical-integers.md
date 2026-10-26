@@ -104,12 +104,12 @@ comparison the filed fact makes.
   is the antecedent's conjuncts.
 - A signed `int32`/`int64` definedness fact is filed when this fact is one of
   the two Integer bounds of its exact result (`integer_bounds_of_definedness`)
-  and the other is already known, so `execute` steps over C `a - b` under the
+  and the other is already known, so execution steps over C `a - b` under the
   two `requires` bounds.
 
 The reading is exact, not arithmetic: `to_integer(a) + to_integer(b) <=
 4294967295` does not file the guard; state the guard with `have a <=
-4294967295u32 - b by auto();`
+4294967295u32 - b;`
 (`mdtests/a_built_in_check_accepts_the_integer_reading_of_its_condition.md`,
 `charon_refused_panic_check_names_its_condition` in `tests/rust_import.rs`).
 
@@ -134,7 +134,7 @@ comparison of its operands' observations (`integer_affine_claims`). A 64-bit or
 32-bit equality records no signedness, so it has both readings and a
 certificate may use either; an order names its signedness, so a `uint32`
 order reads as the `uint32` observations of its operands. The
-special Integer rules read only the premises a node cites. `auto` refutes a
+special Integer rules read only the premises a node cites. `solve` refutes a
 native goal as its Integer reading and spells each cited native fact through
 its written operands, so an expanded certificate cites the facts as written
 (`mdtests/auto_observes_an_operation_term_by_term.md`,
@@ -725,7 +725,7 @@ interning key is its condition and its arms' ids. Substitution, variable
 collectors, alpha keys, memory-load and resource-read collectors, narrow
 carrier and fold-read checks, and both printers walk the condition and the
 arms; the Surface spelling is `if c { a } else { b }`. A rewrite that decides
-the condition (a substitution, `normalize() using`, or `simp`'s known
+the condition (a substitution, `normalize() using`, or `solve`'s known
 conditions) leaves the selected arm, and arms a rewrite makes equal leave one,
 also under an exact Integer substitution, since that only deletes a node:
 `rewrite(x == y); normalize();` closes `(if c { x } else { y }) == x`, as for
@@ -942,11 +942,11 @@ Modular machine terms alone do not establish mathematical subtraction, and an
 overflow case cannot discharge the guard. Declaration checks retain the signed
 width, operation, guard polarity and exact conclusion. The in-range addition
 identity `to_integer(left + right) == to_integer(left) + to_integer(right)`
-needs no library law: `auto()` proves it from `defined(left + right)`.
+needs no library law: `solve()` proves it from `defined(left + right)`.
 
 The unchanged Bitcoin division sidecar states that addition identity by
-`auto()` for the three possible correction values after proving each native sum
-is defined. Explicit Integer arithmetic then bounds those corrected observations
+`auto()`, the older spelling of `solve()`, for the three possible correction
+values after proving each native sum is defined. Explicit Integer arithmetic then bounds those corrected observations
 before the original short-circuit expression executes. Signed order reflection
 restores native bounds on the actual returned value. This proves output bounds
 for both rounding branches; identifying the result as a mathematical
@@ -1136,7 +1136,7 @@ machine type, such as `1 <= to_integer(x)`, is also available when its native
 comparison (`1u32 <= x`) is: the two hold together, which is the converse of
 filing the native comparison beside an Integer fact.
 
-`simp`'s selected-premise arithmetic uses all three. When the Integer facts
+`solve`'s selected-premise arithmetic uses all three. When the Integer facts
 leave its refutation a
 counterexample, it retries with the facts' native comparisons read as
 Integer ones and with the type range of each machine observation, the
@@ -1172,10 +1172,10 @@ observation, such as the signed reading of an unsigned narrowing's word, which
 spells as the unsigned cast, is dropped and the refutation planned again
 (`mdtests/auto_reads_a_narrowing_cast_inside_its_range.md`,
 `mdtests/auto_does_not_read_a_narrowing_cast_outside_its_range.md`).
-`arithmetic() using` plans `integer_cast_identity` for an identity goal from two
+`solve() using` plans `integer_cast_identity` for an identity goal from two
 listed constant bounds on the operand.
 
-These are the shapes `simp`'s selected-premise arithmetic reads: linear claims over observations, the
+These are the shapes `solve`'s selected-premise arithmetic reads: linear claims over observations, the
 facts' native comparisons, type ranges, operation and excluded bounds, and the identities of the in-range
 `+` and `-` the goal and facts observe, nested or not. A miss on a claim of
 that shape is a defect. A step that needs a choice is not in it: a cast that
@@ -1183,10 +1183,10 @@ keeps its value only under a range condition (`int32` to `uint32`), a
 nonlinear fact, or a lemma to apply is written explicitly, as with
 `integer_cast_identity`.
 
-After its other searches, `auto` also closes a native comparison of exact
+After its other searches, `solve` also closes a native comparison of exact
 observations, such as a machine `result <= 50`, by proving its Integer
 reading `to_integer(result) <= 50` this way; the Integer fact then supplies
-the native one. To cite a fact, `auto` needs a source spelling for it. A
+the native one. To cite a fact, `solve` needs a source spelling for it. A
 callee's Integer postcondition at the call site is spelled from the current
 state, an observation of a value the proof has since replaced is spelled at
 function entry (`old(*p)` for a written `*p`), and a native fact read as an
@@ -1289,7 +1289,7 @@ theorem observed_quotient_correction(q: int64, quotient: Integer) {
     requires defined(q + 1i64);
     requires to_integer(q) == quotient;
     ensures to_integer(q + 1i64) == quotient + 1 by {
-        have to_integer(q + 1i64) == to_integer(q) + to_integer(1i64) by auto();
+        have to_integer(q + 1i64) == to_integer(q) + to_integer(1i64);
         rewrite(to_integer(q + 1i64) == to_integer(q) + 1);
         rewrite(to_integer(q) == quotient);
         solve();

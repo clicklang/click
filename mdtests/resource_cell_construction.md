@@ -22,7 +22,7 @@ void init(int32* p, int32 value) {
     produces c: cell(p);
     ensures c.value == value;
 } by {
-    execute();
+    step_until(function.exit);
     let c = fold(cell(p), { value: value });
     solve();
 }
@@ -32,7 +32,7 @@ void set(int32* p, int32 value) {
     ensures c.value == value;
 } by {
     unfold(c);
-    execute();
+    step_until(function.exit);
     let c = fold(cell(p), { value: value });
     solve();
 }

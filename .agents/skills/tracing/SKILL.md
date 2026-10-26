@@ -1,6 +1,6 @@
 ---
 name: tracing
-description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` reports a proof error, or `auto`, `execute()`, `step()`, or `simp()` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
+description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` reports a proof error, or an omitted proof, `solve()`, `step()`, or `step_until(...)` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
 ---
 
 # Tracing a failed proof
@@ -78,14 +78,16 @@ The first link that fails becomes the new `G`; go back to step 2.
 
 A refusal ends with `refused by:`, naming the tactic and its class, when
 Click can tell. `refused by: nothing` means the proof ended with that goal
-still open: no tactic failed, and the next link is missing. A link that a smart tactic such as `auto` does not prove is too
-big. Split it (`A` implies `C` implies `D` implies `B`) and run again. Stop splitting only
+still open: no tactic failed, and the next link is missing. A link that a smart tactic such as `solve` or the implicit tail
+does not prove is too big. Split it (`A` implies `C` implies `D` implies `B`) and run again. Stop splitting only
 when a link is one simple tactic: one `apply ... using`, `unfold`, `step()`,
 `rewrite`, `normalize()`, or arithmetic certificate.
 
 To split a link a smart tactic proved part of, read its trace. A step marked
-``(from `execute`)``, ``(from `auto`)`` or ``(from `implicit auto`)`` is one
-that tactic took, and a `chosen:` line is the written form of an argument its
+``(from `execute`)``, ``(from `auto`)``, ``(from `simp`)`` or
+``(from `implicit auto`)`` is one that smart work took (the implicit tail's
+execution, its closer, a written `solve()`, or the closer of a step's
+requirement), and a `chosen:` line is the written form of an argument its
 search chose. Writing those steps and forms out turns the searched part of
 the link into simple tactics, so the remaining gap is the link to split.
 
@@ -97,7 +99,8 @@ or write the `using` form it names. Only the written form's refusal can be
 
 Before each run, state in one line which link is new and why it holds. A new
 tactic, spelling, or position for the same link is not a new attempt. Never
-edit `auto`, raise a budget, or change the C to get past a link.
+edit `solve` or the implicit closer, raise a budget, or change the C to get
+past a link.
 
 ## 6. Shrink a refused simple link
 
@@ -120,7 +123,8 @@ carry, which fact it did not read.
 
 Stop at exactly one, and say which:
 
-- `success`: the proof verifies. Keep the explicit links `auto` needed.
+- `success`: the proof verifies. Keep the explicit links the default
+  automation needed.
 - `false-goal`: `G` does not hold on some execution the contract admits. Give
   the counterexample.
 - `unclear-goal`: you cannot say why `G` holds. Give `G`, the premises, and
@@ -129,7 +133,7 @@ Stop at exactly one, and say which:
   cannot write. Report a bug (below).
 - `failing-tactic`: a link that is a single simple tactic, within what that
   tactic is documented to do (the **Accepts** list in `click docs NAME`), is
-  refused, still in its smallest form after step 6. Report a bug (below). A smart tactic such as `auto` that does not prove a
+  refused, still in its smallest form after step 6. Report a bug (below). A smart tactic such as `solve` that does not prove a
   link is never `failing-tactic`: the link is too big. A search miss is
   never `failing-tactic` either: write the argument and run again.
 - `unclear-trace`: there is no `goal:` line, the goal cannot be read, or the

@@ -76,13 +76,15 @@ authorities.
 - `mdtests/scalar.md`: simplest scalar postcondition.
 - `mdtests/argument_result.md`: relates argument and result.
 - `mdtests/result_expression.md`: result expression support.
-- `mdtests/default_prover.md`: omitted proof clauses use `auto`.
-- `mdtests/simp_postconditions.md`: deterministic `simp` postconditions.
+- `mdtests/default_prover.md`: an omitted proof clause is the implicit tail
+  alone.
+- `mdtests/simp_postconditions.md`: straight-line postconditions closed by
+  deterministic normalization in an omitted proof.
 - `mdtests/simp_equality_order_transport.md`: deterministic equality rewriting,
   discrete integer-bound normalization, and equality-linked arithmetic.
-- `mdtests/tactic_execute.md`: explicit execution tactic `execute()`,
-  the clearer name for whole-function symbolic execution from the current
-  execution frontier.
+- `mdtests/tactic_execute.md`: the older written `execute()`, which runs from
+  the current execution frontier to function exit; it is still accepted but
+  is being removed, since the implicit tail does this work.
 
 ## Pure theorems
 
@@ -90,7 +92,7 @@ authorities.
 - `mdtests/pure_theorem_apply.md`: pure theorem proof script applying an
   earlier theorem.
 - `mdtests/condition_search_explicit_decomposition.md`: an explicit
-  `simp() using` proof constrains smart condition search to named premises and
+  `solve() using` proof constrains smart condition search to named premises and
   expands to explicit rewrites.
 - `mdtests/pure_theorem_rejects_observe_tactic.md`: theorem proofs reject
   resource fact-observation tactics.
@@ -433,7 +435,7 @@ sequence:
   `contains(...)`, and `viewable(...)` cross an opaque call as ordinary
   state-indexed propositions.
 - `mdtests/composite_resource_nested_observe_not_automatic.md`: expected-fail
-  coverage for the deliberate boundary where `auto` does not recursively
+  coverage for the deliberate boundary where the implicit closer does not recursively
   observe nested composite resources.
 - `mdtests/composite_resource_owner_buffer_hidden_separate_projection.md`:
   hidden contained writes imply folded-resource `separate(...)` facts without

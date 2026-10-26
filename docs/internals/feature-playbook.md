@@ -88,7 +88,8 @@ Prefer deterministic, narrow rules. Good examples:
 - expose one loop effect summary
 - instantiate one finite quantified pattern
 
-Avoid broad heuristic search unless it lives behind `auto`, advances proof
+Avoid broad heuristic search unless it lives behind `solve` or the implicit
+closer, advances proof
 state only through checked operations, and retains surface-expressible
 provenance when possible.
 

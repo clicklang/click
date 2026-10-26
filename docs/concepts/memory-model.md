@@ -363,7 +363,7 @@ selected source; it does not scan other ranges in the block.
 
 See [the native prefix fixtures](https://github.com/clicklang/click/blob/master/mdtests/native_view_prefix_narrowing.md)
 and [native byte-window fixtures](https://github.com/clicklang/click/blob/master/mdtests/native_view_window.md)
-for explicit proofs with `simp() using { ... }`.
+for explicit proofs with `solve() using { ... }`.
 
 Symbolic memory access usually needs:
 
@@ -409,7 +409,7 @@ the current memory.
 
 <!-- verified-example: mdtests/c_fragments_in_contracts.md -->
 ```click
-ensures p[0] == old(p[0]) by auto();
+ensures p[0] == old(p[0]);
 ```
 
 For quantified old-memory postconditions:
@@ -418,7 +418,7 @@ For quantified old-memory postconditions:
 ```click
 ensures segment_unchanged: forall (k: int32) {
     0 <= k and k < n implies p[k] == old(p[k])
-} by auto();
+};
 ```
 
 Pointer-writing loops do not implicitly preserve old memory. Use explicit loop
@@ -430,9 +430,7 @@ When an array parameter is passed to a pure Click function or predicate,
 <!-- verified-example: mdtests/compare_swap2_permutation.md -->
 ```click
 ensures pair_permutation: permutation::permutation(p, old(p), 0, 2) by {
-    execute();
     unfold(permutation::permutation);
-    solve();
 }
 ```
 

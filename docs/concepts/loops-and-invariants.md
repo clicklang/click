@@ -181,10 +181,10 @@ established from the arm's own state, with the arm's path condition available
 as a premise, and the arm owes the whole bundle: a `decreases` the enclosing
 function's termination judgment still requires, and an invariant the body does
 not preserve is refused exactly as at the top level
-(`mdtests/loop_inside_a_branch_arm_rejects_a_false_invariant.md`). Smart
-execution is not an alternative here: `execute()` reaches the guarded loop and
-stops, because the loop condition has two feasible paths and the tactic
-invents no invariants.
+(`mdtests/loop_inside_a_branch_arm_rejects_a_false_invariant.md`). The
+implicit tail is not an alternative here: it reaches the guarded loop and
+stops, because the loop condition has two feasible paths and the tail invents
+no invariants. `step_until` stops sooner, at the `if` it never splits.
 
 A labeled loop can also expose its entry visit to the invariant:
 
@@ -250,7 +250,7 @@ loop {
 
 `initialize` is a pure proof of all invariants at the actual loop entry. Its
 script may use exactly `unfold(predicate)`, `apply(theorem(args))`, `have`,
-`assumption()`, `normalize()`, `rewrite(...)`, `simp()`, `both`, `cases`, and
+`assumption()`, `normalize()`, `rewrite(...)`, `solve()`, `both`, `cases`, and
 proof-level `if`;
 anything else is rejected with `` `initialize` is a pure proof and cannot use
 `<tactic>` ``. `preserve` assumes all invariants and the loop condition,
@@ -299,19 +299,19 @@ read as three parts, in this order:
 - one `have` per declared invariant, in declaration order, naming the
   invariant exactly as the `loop` head spells it. Such a `have` is that
   invariant's own proof, and no other invariant reads it.
-- an optional trailing `assumption()` or `simp()`.
+- an optional trailing `assumption()` or `solve()`.
 
 A script that does not name the invariants individually — `initialize by
-simp();`, or a helper prefix followed by `simp()` — is one shared proof: every
+solve();`, or a helper prefix followed by `solve()` — is one shared proof: every
 invariant's entry goal is proved by the same remaining steps, with the helper
 facts already available.
 
 That division is what expansion prints. A smart tactic inside an invariant's
 own `have` expands to the same `have` with a checked body, left where it was
-written; a trailing `simp()` that stands for the rest of the phase expands to
+written; a trailing `solve()` that stands for the rest of the phase expands to
 one `have` per invariant, and the helpers above it are not copied into them. A
-`simp()` written after the invariants are already named contributes nothing,
-so expanding it removes it. `preserve by simp();` is the same whole-phase shape
+`solve()` written after the invariants are already named contributes nothing,
+so expanding it removes it. `preserve by solve();` is the same whole-phase shape
 one phase over, and expands to the planned preservation proof.
 
 ## What invariants do
@@ -452,8 +452,9 @@ than vacuously
 (`mdtests/a_natural_goto_cycle_return_exit_is_a_function_exit.md`). A checked
 forward `goto` out of a natural cycle similarly exports its target and exit
 state. Execution resumes at the label, where returns, postconditions, and
-undefined behavior are checked. Use `execute()` after `loop` to execute the
-code at that label before closing the contract. Several checked edges to the same label retain
+undefined behavior are checked. The implicit tail after `loop` runs the code at
+that label and closes the contract, so the script needs nothing after `loop`
+unless the label's code needs proof work of its own. Several checked edges to the same label retain
 the disjunction of their exit facts rather than discarding an edge
 (`mdtests/natural_goto_forward_exit_state.md` and
 `mdtests/natural_goto_forward_exit_multiple_edges_state.md`). A natural
@@ -894,7 +895,7 @@ strictly less than the value at this head. Both are ordinary goals. The kernel
 does not unfold the function or search for a proof. The usual route is to match
 on the model so that its parts have names. State each side with `have`, by
 `unfold` and `rewrite`. Apply a lemma for nonnegativity, typically one proved
-once by structural `induct`. Then let `arithmetic` close the comparison before
+once by structural `induct`. Then let `solve` close the comparison before
 `close_invariants()`.
 
 A `Nat`-valued function of the model ranks by its Integer image `to_integer`,
@@ -1162,10 +1163,10 @@ or a function `return`.
 
 A body path that reaches `return` closes the function contract in that
 `preserve` arm. Tactics written after the returning step, such as
-`have result == 7 by simp(); simp();`, apply only to that returned outcome.
+`have result == 7 by solve();`, apply only to that returned outcome.
 The tactics after `loop` apply only to the continuing exit. A returning arm
-with no closing tactics gets an implicit `simp` owned by `loop`, including
-when preservation is automatically generated. Every returned outcome still
+is finished by the implicit closer, owned by `loop`, including when
+preservation is automatically generated. Every returned outcome still
 owes the function's postcondition and resource obligations. Expansion writes
 its checked closing steps into the returning `preserve` arm, including for
 natural cycles and nested loops.
@@ -1195,7 +1196,7 @@ body: straight-line statements are stepped, a C `if` with more of the body
 after it whose arms both fall through is run and joined, and any other `if`
 splits into separate paths. A statement whose successors are path cases,
 such as a comparison stored in a local, splits on their condition as
-`execute()` does
+the implicit tail does
 (`mdtests/an_omitted_preserve_splits_a_comparison_assigned_to_a_local.md`).
 Each path that reaches the body's end, a
 `continue` or a `break` closes as a written one does, so a script holds only
@@ -1204,15 +1205,15 @@ the steps that need proof work and ends where that work ends
 that ran.
 
 A bare `close_invariants()` closes the bundle as `close_invariants() by { ... }`
-with `simp()` on each member: it descends the bundle's conjunctions and each
-member's guards with `both` and `intro`, and closes every member with `simp()`
-alone, which reads the facts in scope like any other `simp()`. A member
-`simp()` does not close as spelled over the back edge is stated once more at
+with `solve()` on each member: it descends the bundle's conjunctions and each
+member's guards with `both` and `intro`, and closes every member with `solve()`
+alone, which reads the facts in scope like any other `solve()`. A member
+`solve()` does not close as spelled over the back edge is stated once more at
 the iteration entry, `at(<entry>, 0 <= i - 1)`, so the step sees the
-difference the body took, and closed by `simp()` there. That closes an
+difference the body took, and closed by `solve()` there. That closes an
 unsigned or 64-bit bound such as `i <= n` after `i += 1` from the guard
 `i < n` (`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`,
-`mdtests/a_64_bit_countdown_closes_its_back_edge.md`). A member `simp()`
+`mdtests/a_64_bit_countdown_closes_its_back_edge.md`). A member `solve()`
 misses is named in the refusal; prove it by hand in a
 `close_invariants() by { ... }` body.
 

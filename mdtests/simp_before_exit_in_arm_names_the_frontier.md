@@ -49,5 +49,5 @@ void bump(struct cell* node) {
 ```
 
 ```expect
-fail: the frontier is at statement 2, `return void`. Step to the exit first with `step()`
+fail: the frontier is at statement 2, `return void`. Step to the exit first with `step_until(function.exit)`
 ```

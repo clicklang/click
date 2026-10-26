@@ -197,8 +197,9 @@ implementation has these frontier positions:
 
 - function entry, before C execution has started,
 - statement entry after `step()`, explicit entry into a selected `if`
-  arm, or a straight-line `execute_until(region(N))` pause,
-- function exit, after `execute()` has executed the rest of the function.
+  arm, or a straight-line `step_until(region(N))` pause,
+- function exit, after `step_until(function.exit)` or the implicit tail has
+  executed the rest of the function on the current path.
 
 Condition edges and statement execution produce shared certified transitions.
 The ordinary execution tactics and region execution-proof traversal consume
@@ -282,7 +283,9 @@ backing range. This is an observation supported by the owner the same context
 holds, not a borrow: it is one step, it does not unfold or consume the owned
 composite, and it cannot satisfy another contract's `views` clause.
 
-`execute()` advances the current execution frontier to function exit.
+`step_until(function.exit)` advances the current execution frontier to
+function exit without splitting; the implicit tail does the same and splits at
+each C branch the facts do not decide, each path running to exit on its own.
 
 ## Observable facts
 
@@ -317,7 +320,7 @@ that adds observable pure facts and viewed immediate contained resource facts.
 It should not unfold hidden owned resource facts, and it should not consume the
 observed resource fact. It should also stay one-step: recursive expansion of
 large composite resources belongs behind an explicit bounded tactic or
-future summary mechanism, not in default `auto` behavior.
+future summary mechanism, not in the implicit closer.
 
 `ResourceContext::observable_facts(...)` implements the pure-fact side of this
 interface. It validates the concrete resource state and exposes a compact

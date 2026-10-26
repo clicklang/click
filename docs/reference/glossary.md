@@ -476,6 +476,16 @@ chooses one random concrete mutation.
 A proposition of the form `P implies Q`. It states that the consequent `Q`
 holds whenever the antecedent `P` holds; it doesn't assert `P` by itself.
 
+### Implicit tail
+
+The work that ends every proof script, including an omitted one. It runs the
+remaining C, splitting at each C branch the facts do not decide into execution
+paths that each run to function exit, then closes every open goal on every path
+with the implicit closer: direct closure, `solve`'s search, and, on a returned
+path holding the body of a resource the contract produces, a fold of that
+resource. An omitted proof is the implicit tail alone. See [Smart and simple
+tactics](../concepts/smart-and-simple-tactics.md).
+
 ### Induction
 
 Proof by a base case and a step that assumes the proposition for a smaller
@@ -765,7 +775,7 @@ Attribution of verifier work and elapsed time to proof sites. See
 ### Program point
 
 A static selectable location in C, such as function entry, statement entry or
-exit, and function exit. `at(...)` and `execute_until` can name program points;
+exit, and function exit. `at(...)` and `step_until` can name program points;
 an execution frontier also carries state and continuations. `mark` instead
 creates a proof-local name for a snapshot and does not create a C location.
 
@@ -783,8 +793,8 @@ sibling branches; completing or joining them retires those branch identities.
 ### Proof clause
 
 The `by ...` source attached to a theorem, contract claim, effect, or loop
-phase. A clause can request a default smart tactic, one tactic, or an explicit
-proof script.
+phase. A clause can name one tactic or an explicit proof script; an omitted
+clause is the [implicit tail](#implicit-tail) alone.
 
 ### Proof context
 
@@ -820,7 +830,8 @@ checked transition lineage but is not semantic state or proof authority.
 ### Proof script
 
 An ordered Surface Click tactic block inside a proof clause. A script can mix
-simple, smart, and control tactics. An expanded script containing only
+simple, smart, and control tactics, and it ends with the [implicit
+tail](#implicit-tail), so it needs no final closer. An expanded script containing only
 surface-expressible checked operations can serve as a certificate.
 
 ### Proof site
@@ -981,10 +992,12 @@ tactics](../concepts/smart-and-simple-tactics.md).
 ### Smart tactic
 
 A tactic that searches by trying checked simple or structural operations on
-persistent proof states: one of the four smart tactics `simp`, `arithmetic`,
-`execute` (with `execute_until`), and `auto`, or a simple tactic written with
-an elided argument that a search fills. Search is untrusted and can succeed
-only with a completed checked state. See [Smart and simple
+persistent proof states. The written smart tactics are `solve` (with
+`solve() using`) and `step_until`; the [implicit tail](#implicit-tail), a
+simple tactic written with an elided argument that a search fills, and bare
+`close_invariants()` are smart sites too. `simp`, `auto`, `arithmetic`,
+`execute`, and `execute_until` are older spellings that are still accepted.
+Search is untrusted and can succeed only with a completed checked state. See [Smart and simple
 tactics](../concepts/smart-and-simple-tactics.md).
 
 ### Snapshot

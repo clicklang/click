@@ -25,7 +25,7 @@ int32 byte_slice_range_predicates(uint8 p[], int32 n) {
     requires bytes::all_not_equal(p, 0, 3, 'y');
 
     ensures opened_contains: bytes::contains(p, 0, (uint64) n, 'x') by {
-        execute();
+        step_until(function.exit);
         unfold(bytes::contains);
         obtain (found: uint64) {
             0u64 <= found and found < (uint64) n and p[found] == 'x'
@@ -35,7 +35,7 @@ int32 byte_slice_range_predicates(uint8 p[], int32 n) {
     }
 
     ensures second_prefix_byte_is_not_y: p[1] != 'y' by {
-        execute();
+        step_until(function.exit);
         unfold(bytes::all_not_equal);
         solve();
     }

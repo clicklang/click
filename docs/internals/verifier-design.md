@@ -14,9 +14,12 @@ of the current path, decides conditions, reads memory, tracks resources, and
 applies simple tactics and certificates. Every proof pays its cost on every
 step, and nothing can remove that cost later.
 
-The **slow part** searches. It is the four smart tactics, `arithmetic`, `simp`,
-`execute` (with its variant `execute_until`), and `auto`, and the search
-helpers that fill an argument a tactic leaves out. Its cost is optional:
+The **slow part** searches. It is the smart tactics, whose kinds in
+`SmartTacticKind` are `Solve` (written `solve()` and `solve() using`),
+`Arithmetic` (the older `arithmetic() using`), and `Execute` (`step_until`, and
+the stepping and splitting of the implicit tail that ends every proof script);
+the implicit closer, `SmartSite::Implicit`; and the search helpers that fill an
+argument a tactic leaves out. Its cost is optional:
 `click expand` replaces a slow-part tactic with the fast-part steps it chose,
 and the expanded proof runs no search.
 
@@ -37,7 +40,7 @@ removed, so it has to stay small.
 | Simple tactics | Apply one checked step to a persistent proof state | fast | `src/kernel/proof/object.rs`, `src/surface/proof/proof_object/`, `src/surface/proof/checked_drivers/` |
 | Certificates | Check explicit arithmetic certificates and contract claims | fast | `src/kernel/proof/{integer_arithmetic,signed_arithmetic,arithmetic_special}.rs`, `src/surface/proof_certificate.rs` |
 | Termination | Plan recursion heights over the call graph, then check them | fast | `src/kernel/termination.rs` |
-| Smart tactics | `arithmetic`, `simp`, `execute`, `auto` | slow | `src/surface/checking/{arithmetic_engine,simp,simplex}.rs`, `src/surface/proof/{smart_closures,smart_execution,selected_arithmetic}.rs` |
+| Smart tactics | `solve`, `step_until`, the implicit tail and its closer | slow | `src/surface/checking/{arithmetic_engine,simp,simplex}.rs`, `src/surface/proof/{smart_closures,smart_execution,selected_arithmetic}.rs` |
 | Search helpers | Fill an elided premise, fact, resource instance, or guard | slow | `src/surface/planning/proposition_search.rs`, `src/surface/proof/fixed_state_proofs/` |
 | Expansion and printing | Write a slow-part result as fast-part tactics, and print source | tools | `src/surface/expansion.rs`, `src/surface/printing.rs` |
 | Tools and budgets | `profile`, `audit`, traces, work accounting, and budgets | tools | `src/bin/`, `src/instrumentation.rs` |
@@ -114,8 +117,8 @@ Answer these before proposing a verifier change that adds work.
 
 1. **Which part does it change?** Name it from the table above.
 2. **Fast or slow?** If it adds reasoning to a fast part, ask first whether
-   it could be a slow-part search instead: a new strategy in `simp` or
-   `auto`, or a helper for an argument a tactic already takes. Put it there
+   it could be a slow-part search instead: a new strategy in `solve` or
+   the implicit closer, or a helper for an argument a tactic already takes. Put it there
    unless every proof needs it on every step.
 3. **If fast:** which index serves each read, and what is the key? Which
    scaling test grows both unrelated and related input (more facts about
@@ -156,8 +159,8 @@ common mechanism names belong to.
 | proof object, proof step | The persistent proof state and one checked change to it | Simple tactics (fast) |
 | certificate | An explicit derivation the kernel checks without search | Certificates (fast) |
 | planner (signed, `Integer` affine, special, simplex refutation) | Chooses an arithmetic certificate | Smart tactics (slow) |
-| selected-premise arithmetic | `simp`'s choice of the facts and type ranges `arithmetic` refutes an arithmetic goal from | Smart tactics (slow) |
-| rewrite search, equality chain | `simp`'s search for rewrites that close a goal | Smart tactics (slow) |
+| selected-premise arithmetic | `solve`'s choice of the facts and type ranges `arithmetic` refutes an arithmetic goal from | Smart tactics (slow) |
+| rewrite search, equality chain | `solve`'s search for rewrites that close a goal | Smart tactics (slow) |
 | premise selection, connected premises | Choosing which facts a tactic uses | Search helpers (slow) |
 | transport planner | Choosing the facts a bare `transport` carries | Search helpers (slow) |
 | theorem premise cascade | Finding the premises of a bare `apply` | Search helpers (slow) |

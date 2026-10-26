@@ -367,8 +367,17 @@ fn checked_execution_arm_tactics_end(
             ProofTactic::StepProved { step, .. } => step.as_ref(),
             tactic => tactic,
         };
-        if matches!(tactic, ProofTactic::SmartExecute) {
+        if matches!(
+            tactic,
+            ProofTactic::SmartExecute | ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit)
+        ) {
             at_function_exit = true;
+            continue;
+        }
+        // `step_until` to a statement stops before it, or at the exit a
+        // `return` on the way reaches, so it classifies like a `step()`.
+        if matches!(tactic, ProofTactic::ExecuteUntil(_)) {
+            may_exit = true;
             continue;
         }
         // A `loop` summarizes the C loop at the frontier and lands on its exit
@@ -5433,7 +5442,7 @@ pub(in crate::surface::proof) fn add_proof_branch_path(
 /// function exit: what still lies ahead, and the two ways to get there.
 fn simp_before_exit_reason(proof: &Proof<'_>) -> String {
     format!(
-        "`simp` closes the outcome claims at function exit and does not execute: {}. Step to the exit first with `step()` (the end of the body is one step) or `execute()`, or prove the claim `by auto();`.",
+        "`solve` closes the outcome claims at function exit and does not execute: {}. Step to the exit first with `step_until(function.exit)` or `step()` (the end of the body is one step), or omit the proof, whose implicit tail runs the C and closes the claims.",
         frontier_ahead_of_exit(proof)
     )
 }
@@ -5515,7 +5524,7 @@ fn pre_exit_outcome_tactic_error(proof: &Proof<'_>, tactic: &ProofTactic) -> Opt
         // closer: execution has to reach function exit before it has a goal.
         _ if flat_post_execution_tactic(tactic).is_some() => {
             return Some(format!(
-                "`{}` works on the outcome claims at function exit and does not execute: {}. Step to the exit first with `step()` (the end of the body is one step) or `execute()`, or end the script with `auto();`.",
+                "`{}` works on the outcome claims at function exit and does not execute: {}. Step to the exit first with `step_until(function.exit)` or `step()` (the end of the body is one step), or end the script there, so that its implicit tail runs the C and closes the claims.",
                 tactic_name(tactic),
                 frontier_ahead_of_exit(proof)
             ));

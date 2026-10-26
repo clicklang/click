@@ -1161,9 +1161,12 @@ mdtests and examples.
       the same work. `step_until` first learns to target function exit; it
       never forks, so it is refused where the C would split;
     - followed by exit work on several paths (263): each path-selecting
-      proof `if` moves before the C, and each of its arms starts with
-      `step_until(function.exit)`; the 26 that repeat work repeat it in each
-      arm. `branch` serves only where the C arms rejoin.
+      proof `if` becomes a `branch` at the C `if`, or moves before the C,
+      and each arm steps to exit with `step_until(function.exit)`; the 26
+      that repeat work repeat it in each arm. (An earlier note here said
+      `branch` serves only where the arms rejoin; that was a defect, fixed
+      in step 25: an arm refused `step_until` of any target,
+      `mdtests/step_until_runs_inside_a_branch_arm.md`.)
 
     Done in part: `step_until(function.exit)` steps to function exit and
     never splits; at a branch the facts do not decide it is refused, naming
@@ -1261,6 +1264,19 @@ mdtests and examples.
     this roadmap. No page may still describe `simp`, `auto`, `execute` or
     `execute_until` as tactics to write, an omitted proof as `execute();
     auto();`, or a proof that holds several exit paths.
+    Done in part: the concept pages, the tactic and language references,
+    the CLI and internals pages, the glossary, the style guide, `README.md`
+    and the tracing skill describe the omitted proof as the implicit tail,
+    write `solve`, `solve() using` and `step_until`, and name the older
+    spellings only as such. `solve` joins the word registry. The review
+    found and fixed three code issues: `step_until` of any target was
+    declined inside a `branch` arm
+    (`mdtests/step_until_runs_inside_a_branch_arm.md`), and two refusals
+    told a written closer at a live frontier, or an undecided Rust `match`
+    or throwing call, to use `execute()` or `auto();`. Left for step 24: the
+    examples whose fixtures tests compare by text, the prose of mdtests that
+    test `execute()` itself, and the trace and profile labels, which still
+    print `simp`, `execute` and `auto`.
 
 Out of scope: a default join at C branches. The implicit tail splits each
 branch to exit as `execute` does today, so `n` sequential undecided `if`s
