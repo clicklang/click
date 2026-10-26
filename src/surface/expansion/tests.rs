@@ -3841,3 +3841,40 @@ int64 inc(int64 q) {
     );
     verify_c0_sources(&expanded, &sources).expect("the expansion verifies");
 }
+
+/// A written script that stops with C left ends in the implicit tail, which
+/// is selected at the script's closing brace: expanding it writes the tail's
+/// steps and splits after the last written tactic. It is not in the static
+/// inventory, since whether it has work is known only once the proof runs.
+/// With the implicit closer off, as an expansion is checked cold, the tail
+/// runs no C, so the original script is refused.
+#[test]
+fn a_written_scripts_implicit_tail_is_an_expansion_site() {
+    let c_source = "int32 f(int32 x) { int32 y = x; if (x < 0) { return 0; } return y; }";
+    let sources = [("f.c", c_source)];
+    let click_source = r#"verifying "f.c";
+int32 f(int32 x) {
+    ensures result >= 0 or x < 0;
+} by {
+    step();
+}
+"#;
+    assert!(
+        c0_smart_tactic_source_sites(click_source, &sources)
+            .unwrap()
+            .is_empty()
+    );
+    let expanded = expand_c0_tactic_source_at(click_source, &sources, 6, 1).unwrap();
+    assert!(
+        expanded.contains("    step();\n    step();\n    if "),
+        "{expanded}"
+    );
+    verify_c0_sources(&expanded, &sources).expect("the expanded tail should verify");
+    let refused = without_implicit_auto(|| verify_c0_sources(click_source, &sources))
+        .expect_err("with the implicit closer off the tail runs no C");
+    assert!(
+        refused.message().contains("the implicit tail is off"),
+        "{}",
+        refused.message()
+    );
+}

@@ -1409,9 +1409,10 @@ fn inventory_sites(sources: &[PathBuf]) -> Result<Vec<AuditSite>, String> {
     Ok(sites.into_values().collect())
 }
 
-/// One site per claim whose bare simple tactics the implicit `auto` proves
-/// and which holds no smart site: its whole expansion must verify without
-/// the implicit `auto`, so the audit expands it
+/// One site per claim whose bare simple tactics the implicit `auto` proves,
+/// or whose script's implicit tail runs C or closes a goal, and which holds
+/// no smart site: its whole expansion must verify without the implicit
+/// `auto`, so the audit expands it
 /// as it does a claim of smart sites. Finding them verifies each source once;
 /// a source with no smart site that does not verify is returned as a failure.
 fn implicit_auto_sites(
@@ -1451,7 +1452,9 @@ fn implicit_auto_sites(
                                 click::instrumentation::VerificationEvent::TacticStarted(
                                     tactic,
                                 ) if tactic.tactic_name
-                                    == click::instrumentation::IMPLICIT_AUTO_TACTIC =>
+                                    == click::instrumentation::IMPLICIT_AUTO_TACTIC
+                                    || tactic.tactic_name
+                                        == click::instrumentation::IMPLICIT_TAIL_TACTIC =>
                                 {
                                     Some(tactic.claim)
                                 }
@@ -1974,13 +1977,17 @@ fn audit_claim_rewrite(
         .map_err(|error| format!("expanded proof container did not parse: {error}"))?;
     claim_source_position_for_source(&worker.source, &expanded_click_source, &site.claim)?;
 
-    // The fixed point: an expanded claim holds simple tactics only.
-    let remaining = claim_smart_sites(
+    // The fixed point: an expanded claim holds simple tactics only. Every
+    // script still ends with the implicit tail, which has nothing left to
+    // do; the cold check below runs with it off and refuses any C or goal
+    // it would have taken.
+    let mut remaining = claim_smart_sites(
         &expanded_click_source,
         &worker.source.inputs,
         worker.source.project.as_ref(),
         &site.claim,
     )?;
+    remaining.retain(|name| name != click::instrumentation::IMPLICIT_TAIL_TACTIC);
     if !remaining.is_empty() {
         return Err(format!(
             "the expanded claim `{}` still holds {} smart tactic(s): {}",

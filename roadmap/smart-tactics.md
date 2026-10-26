@@ -1342,10 +1342,13 @@ mdtests and examples.
     `execute`, `simp`, `arithmetic` and `execute_until` print their
     replacement's entry. Example READMEs that still wrote `by auto()`,
     `simp` or `simp() using`, and the tracing skill's `(from `execute`)`
-    origin, describe today's forms. The review found one tooling defect,
-    `bugs/the-implicit-tail-of-a-written-script-is-not-an-expansion-site.md`:
-    the tail of a written script that stops with C left is neither
-    selectable nor audited.
+    origin, describe today's forms. The review found one tooling defect, now
+    fixed: the tail of a written script that stopped with C left was neither
+    selectable nor audited. `click expand` selects it at the script's
+    closing brace (`a_written_scripts_implicit_tail_is_an_expansion_site`).
+    `click audit` finds the claims whose tail ran, from their verification,
+    and expands them whole; with the implicit closer off, as that expansion
+    is checked cold, the tail runs no C.
 
 Out of scope: a default join at C branches. The implicit tail splits each
 branch to exit as `execute` does today, so `n` sequential undecided `if`s
