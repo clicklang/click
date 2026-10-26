@@ -625,6 +625,40 @@ Progress:
 - Update the language reference's Booleans section, which today defines
   `bool` as the C values `0` and `1`.
 
+The plan was revised on review: there is one logical sort, `Bool`, for
+every language, and no {0, 1} integer format ([Decisions](#decisions),
+2026-10-26, Stage 5).
+
+Progress:
+
+- The kernel sort (2026-10-26). Click `Bool` is the kernel's condition
+  sort: a `Bool` term is a `ConditionTerm`, whose `Constant` and
+  `Variable` are its literals and binders and whose comparisons are `Bool`
+  values. Four value forms that are not comparisons join it, after every
+  other variant so the derived order of the existing conditions is
+  unchanged (`src/kernel/primitives/bool_sort.rs`): `BoolApplication`, a
+  `-> Bool` function's application; `BoolIf`; `BoolEqual`, logical
+  equality; and `BoolLoad`, a `bool` cell's read. Every traversal reads
+  them (substitution, rewriting, variable, memory and read collection,
+  keys, the havoc identity, the width check, canonicalization, which keeps
+  them as built), and the printers give each its Surface spelling: `f(x)`,
+  `if c { a } else { b }`, `a == b`, the place a read reads. The decision
+  and the e-graph apply the logic rules L-If, L-Eq and L-Unfold
+  ([Decisions](#decisions)): a conditional is opened only when it is
+  itself decided (`PureFactContext::decide_bool_value`); a true equality
+  merges its operands' classes, which then share their truth, and a false
+  one contradicts the merge; applications of one function to equal
+  arguments are congruent; an unfolding files `application == body`
+  (`ConditionTerm::bool_unfold_equation`). A binder's truth reaches its
+  class whichever was filed first (`bool_binder_truth`). Nothing outside
+  the kernel's tests builds the new forms yet, so no verdict, output or
+  work unit changed: every mdtest and example gives the same `click
+  verify` output and the same `click audit --verbose` rows, work units
+  included, except the cold-comparison units, which already vary between
+  runs of one binary. Kernel tests are in `src/kernel/assumptions/bool_sort_tests.rs`,
+  with scaling regressions at 4, 8, 16 and 32 for nested conditionals and
+  equality chains.
+
 ## Risks
 
 - **Canonical order.** Merging nodes changes the derived order that
@@ -649,7 +683,9 @@ Maintainer direction, 2026-10-21:
   under [Library](#library)), not a template expanded per format. If the
   generic machinery cannot yet state one, extend it rather than generate
   copies.
-- **`bool` is logical; C's `_Bool` is an integer.**
+- **`bool` is logical; C's `_Bool` is an integer.** Superseded on
+  2026-10-26 (Stage 5): C's `_Bool` and C++'s `bool` denote the logical
+  `Bool`, and there is no {0, 1} integer format; see that entry below.
   - Click's `bool` becomes its own logical sort. Its values are `true` and
     `false`. It has no arithmetic and no integer reading. Today the
     reference defines it as "the C `bool` values, exactly `0` and `1`" with
@@ -803,3 +839,38 @@ Maintainer direction, 2026-10-26 (syntax):
   re-pinned; each is byte-identical to what the retired reading adapter
   produced from its original.
 
+Maintainer direction, 2026-10-26 (Stage 5), superseding the 2026-10-21
+entry "`bool` is logical; C's `_Bool` is an integer":
+
+- **One logical sort, `Bool`, for every language.** Click writes it
+  `Bool`, as it writes `Integer`. C `_Bool` and `bool` (C99 to C23), C++
+  `bool` and Rust `bool` all denote it; there is no {0, 1} integer format.
+  Function heads keep their language's names (`bool` or `_Bool` in C,
+  interchangeably; `bool` in C++ and Rust); in Click's own code a lowercase
+  `bool` is an error that suggests `Bool`.
+- **`Bool` to integer is a cast.** C and C++ promotion, arithmetic, a
+  comparison with an integer and indexing, and Rust `b as i32`, build the
+  conversion-table node `Cast(Bool -> F, b)` (`BoolCast`, merged into
+  `Cast` in Stage 3), printed `b as int32`. Rule C1: its value is 1 when `b`
+  holds and 0 otherwise, so `b as F == 1` exactly when `b`, `b as F == 0`
+  exactly when `not b`, and `0 <= b as F <= 1` with
+  `b as F == 0 or b as F == 1`; the e-graph keeps the cast linked with `b`.
+- **Integer to `Bool` is the comparison** `x != 0` (a null test for a
+  pointer), with no node. C `if (n)` is unchanged.
+- **The byte rule.** A `bool` cell is one byte: a store writes 1 or 0, a
+  read of byte `b` is `b != 0` and requires `b` to be 0 or 1. A value this
+  session stored meets it by construction, a read through a reference
+  meets it by the type's validity invariant, and a byte view of a `bool`
+  cell or a write at another kind is refused.
+- **Logic rules.** L-If: `if c { a } else { b }` is the case split
+  `(c and a) or (not c and b)`, opened only on demand. L-Eq: a true
+  `a == b` merges the two values' classes; a false one contradicts the
+  merge. L-Unfold: unfolding a `-> Bool` function's application files
+  `application == body`.
+- **Refusals.** A `Bool` compared with an integer, ordered, or used in
+  arithmetic, implicit promotion in a contract included, is an error that
+  suggests `b as int32` or `true`/`false`. A census of the corpus comes
+  before the switch.
+- **Rust** comparisons and connectives are `Bool` values with no path
+  split. Generic instantiation at `Bool` is supported only if the census
+  needs it. Teaching `solve` that `b or not b` is a separate proposal.
