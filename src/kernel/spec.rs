@@ -5309,7 +5309,12 @@ fn lower_spec_predicate_proposition_at_state_in(
                 {
                     let guard = super::mutexes::guard_resource(state, mutex.pointer(), true)
                         .expect("abstract guard description");
-                    if state.resources.satisfies_fact(&guard, assumptions) {
+                    // The guard is matched as written: the facts never make
+                    // an aliased mutex held.
+                    if state
+                        .resources
+                        .satisfies_fact(&guard, &PureFactContext::new())
+                    {
                         return SpecPropositionPath {
                             introductions: Vec::new(),
                             proposition: Proposition::ConditionIs(
