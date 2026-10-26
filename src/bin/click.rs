@@ -2169,10 +2169,10 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         );
     }
 
-    /// A proof failure with no site of its own is located by what was being
-    /// verified: the written tactic being checked, or else the declaration.
+    /// A failure at a C operation names that statement. A proof failure with
+    /// no site of its own is located at the declaration being verified.
     #[test]
-    fn a_proof_failure_without_a_site_shows_the_tactic_or_the_declaration() {
+    fn proof_failures_show_the_c_statement_or_the_declaration() {
         let directory = std::env::temp_dir().join(format!(
             "click-ambient-failure-location-{}",
             std::process::id()
@@ -2194,7 +2194,10 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         .unwrap();
         let leak = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(leak.contains("neither returned nor freed"), "{leak}");
-        assert!(leak.contains("\n\ntactic@7:\n  simp();"), "{leak}");
+        assert!(
+            leak.contains("\n  C statement at f.c:6:5\n  `return 0;`"),
+            "{leak}"
+        );
 
         fs::write(
             &sidecar,
