@@ -59,31 +59,20 @@ checking to scale with the relevant state delta; with four walk modes that
 is hard to state, let alone test. No deterministic curve has been measured
 yet: there is no failing scaling regression, only this structural evidence.
 
-## Why it blocks pointer reads named by version
+## Relation to pointer reads named by version
 
 [Spellability](../docs/internals/spellability.md) requires a logical pointer
 read to lower to the read at its version, never to the pointer a cell
-stores. On master, logical lowering instead folds a pointer read to its
-stored pointer through `complete_pointer_read_value`, which consults facts:
-a known violation. An attempt to name pointer reads by version (parked,
-not landed) showed what the fold was hiding. When the fact-free version walk
-cannot cross a store, two reads of one unchanged cell get two versions, and
-only a frame fact relates them. The fold made them one term, so no check
-had to compare them.
-
-The reproduction is the `pop` of a recursive stack. `unfold` reads
-`node->next`, a store through `self.head` follows, and `fold` reads
-`node->next` again. The store is separate from the cell only by ownership,
-so the two reads are two versions. With the fold removed, the fold's checks
-(child instance arguments, body facts, memory candidates, designations)
-compare the two reads exactly and refuse. Affected regressions:
-`charon_recursive_drop_frees_every_node`,
-`charon_generic_stack_verifies_once_for_every_type`,
-`charon_generic_container_verifies_through_a_dyn_container` and their
-refusal counterparts in `tests/rust_import.rs`, and
-`mdtests/cpp_generic_class_state_in_a_resource.md`. The parked attempt
-passed some of these only by adding fact-aware walks inside individual
-checks, which is the scattering this item removes; it must not be repeated.
+stores. On master, logical lowering folds a pointer read to its stored
+pointer through `complete_pointer_read_value`, which consults facts: a known
+violation. Removing the fold does not depend on this item. Where the
+fact-free version walk cannot cross a store, two reads of one unchanged cell
+are two versions, and the proof states the frame that relates them (for
+example, the `pop` of a recursive stack needs `node->next` related across a
+store through `self.head` before its `fold`). Proofs change; the kernel does
+not search for the frame on their behalf. Adding fact-aware walks inside
+individual checks to keep the old proof text working is the scattering this
+item removes, and must not be done.
 
 ## Intended regression and acceptance criteria
 
@@ -96,6 +85,4 @@ checks, which is the scattering this item removes; it must not be repeated.
 - A deterministic scaling regression in `src/scaling_tests/` measures the
   function across history lengths and unrelated state sizes, and shows work
   bounded by the steps where the version walk stops, not by history length.
-- With the fold removed from logical lowering, the regressions listed above
-  verify, and no check calls a fact-aware walk except through the one
-  function.
+- No check calls a fact-aware walk except through the one function.
