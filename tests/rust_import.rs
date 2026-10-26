@@ -2190,6 +2190,7 @@ fn rust_a_u32_cell_read_as_i32_is_its_sign_cast() {
 /// unsigned order, which is false, and `execute` could not advance. Both
 /// cases verify, and a claim of the wrong case is refused.
 #[test]
+#[ignore = "nightly: 1.3s in the parallel gate (2026-10-26); the C mdtest and the integer fixture's Rust `sign_bit_set` cover it in the gate"]
 fn rust_execute_splits_a_sign_cast_order_as_a_signed_comparison() {
     let p = Project::new("pub fn sign_bit_set(u: u32) -> bool { (u as i32) < 0 }\n");
     p.refresh().unwrap();
