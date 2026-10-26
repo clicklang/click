@@ -145,7 +145,7 @@ turns the C test into the model's in the branch where it held with
 have address(node) == address(target);
 ```
 
-`auto` rewrites `node` to `root` and closes on the branch condition.
+Its omitted proof rewrites `node` to `root` and closes on the branch condition.
 
 A pointer payload is an ordinary pointer in a proposition, so this compares a
 `struct tree_node*` payload with a C pointer directly, with no conversion and

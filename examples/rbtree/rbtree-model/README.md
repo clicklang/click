@@ -375,7 +375,7 @@ no simple tactic derives that step: with `a == b` and `b == c` as premises,
 not normalize to true using the listed conditions" over the kernel goal
 `v100000*4 = v100002*4`, `rewrite` refuses a bare pointer variable with
 "`rewrite` equality does not occur in the current goal", and only the smart
-`simp()` closes it. Carrying the subtree avoids the step entirely, and it is
+`solve()` closes it. Carrying the subtree avoids the step entirely, and it is
 also the shape a C loop invariant wants, since the loop already holds both the
 frame and the focused subtree while no C local names the focus's parent.
 

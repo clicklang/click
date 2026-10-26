@@ -84,10 +84,10 @@ when a link is one simple tactic: one `apply ... using`, `unfold`, `step()`,
 `rewrite`, `normalize()`, or arithmetic certificate.
 
 To split a link a smart tactic proved part of, read its trace. A step marked
-``(from `execute`)``, ``(from `implicit tail`)``, ``(from `solve`)`` or
+``(from `implicit tail`)``, ``(from `step_until`)``, ``(from `solve`)`` or
 ``(from `implicit closer`)`` is one that smart work took (the implicit tail's
-execution, its closer, a written `solve()`, or the closer of a step's
-requirement), and a `chosen:` line is the written form of an argument its
+execution or its closer, a written `step_until`, a written `solve()`, or the
+closer of a step's requirement), and a `chosen:` line is the written form of an argument its
 search chose. Writing those steps and forms out turns the searched part of
 the link into simple tactics, so the remaining gap is the link to split.
 

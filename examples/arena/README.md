@@ -126,13 +126,13 @@ the state's fields, one `have` per carried fact across each call.
 
 The value written through `first` is carried across the write through
 `second` with an explicit `transport` whose frame evidence is the kept range;
-`simp` does not find that step. The combined region's index `3` is in range by its
+`solve` does not find that step. The combined region's index `3` is in range by its
 fields: `r3.end == r3.start + 4` follows from the allocation's postcondition
 once `defined(r3.start + 4)` is proved on the field, and the cell written and
 read back is named through `r3.start`.
 
-Where `simp` was slow or did not close, the proof uses explicit steps and
-`simp() using` with listed premises. Already-instantiated facts close with
+Where `solve` was slow or did not close, the proof uses explicit steps and
+`solve() using` with listed premises. Already-instantiated facts close with
 `assumption`; equality chains normalize with their two stated equations.
 `arena_write` transports the unchanged occupancy read across the separated
 data store explicitly. `click expand --claim arena_pipeline.contract`
@@ -148,7 +148,7 @@ the new region is one of the freed cells. The proof shows that after the free
 the only free cells are `2` and `3`, and `arena_alloc`'s postcondition that
 the allocated cells were free before the call places the new region among
 them. With the allocation's length that is the freed interval itself, but the
-contract states only the containment: `simp` did not use a definedness fact
+contract states only the containment: `solve` did not use a definedness fact
 proved about the loaded `reused->start` to discharge the guard of the
 allocation's `reused->end == reused->start + 2`, as it does for one proved
 about a region field in the pipeline, and this fixture does not pin that.
@@ -182,6 +182,6 @@ holds an occupied cell).
   the cells it keeps owning.
 
 A guarded equality over `int64` terms no longer needs its bounds restated in
-the guard's own spelling: `simp` discharges an `int64` sum's or difference's
+the guard's own spelling: `solve` discharges an `int64` sum's or difference's
 definedness guard from the bounds in scope
 (`mdtests/guarded_postcondition_int64_bounds.md`).
