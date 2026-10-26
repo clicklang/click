@@ -2,7 +2,7 @@
 
 This checks the frontier proof shapes from the proof-workflow concept page:
 `have` before a loop sees the facts the preceding steps established,
-`execute_until` pauses at a statement whose entry snapshot a later `have`
+`step_until` (older spelling `execute_until`) pauses at a statement whose entry snapshot a later `have`
 reads, and `mark` names the reached state for a later comparison.
 
 ```c filename=fill_zero.c
@@ -64,7 +64,7 @@ int32 fill_zero(int32 p[], int32 n) {
 int32 snapshot_y(int32 x) {
     ensures result >= 0;
 } by {
-    execute_until(region(4));
+    step_until(region(4));
     have y >= 0 by {
         solve();
     }
@@ -72,8 +72,6 @@ int32 snapshot_y(int32 x) {
     have at(region(4).entry, y) >= 0 by {
         assumption();
     }
-    execute();
-    solve();
 }
 
 int32 bump_first(int32 p[]) {
@@ -83,9 +81,7 @@ int32 bump_first(int32 p[]) {
 } by {
     mark before_write;
     step();
-    have p[0] == at(before_write, p[0]) + 1 by auto();
-    execute();
-    solve();
+    have p[0] == at(before_write, p[0]) + 1 by solve();
 }
 ```
 

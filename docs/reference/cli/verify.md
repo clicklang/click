@@ -82,7 +82,7 @@ the exhausted budget and phase in its message. It does not report a syntax
 error in otherwise valid C. The structured error kind used by audit reports
 is also `limit error`.
 
-A `simp` work-budget failure retains its already-checked prefix, including
+A `solve` work-budget failure retains its already-checked prefix, including
 accepted steps inside nested `have` blocks and loop bodies. An unfinished
 claim contributes no accepted fact to that trace.
 

@@ -16,9 +16,7 @@ Then a contract can use:
 <!-- verified-example: mdtests/compare_swap2_sorted_predicate.md -->
 ```click
 ensures sorted: sorted_pair(p) by {
-    execute();
     unfold(sorted_pair);
-    solve();
 }
 ```
 

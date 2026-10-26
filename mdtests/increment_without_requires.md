@@ -1,6 +1,6 @@
 # increment without an overflow precondition
 
-This checks that `auto` refuses to prove `x + 1` for an unconstrained `int32 x`,
+This checks that an omitted proof refuses to prove `x + 1` for an unconstrained `int32 x`,
 because signed overflow is possible in C.
 
 ```c filename=increment.c
@@ -13,7 +13,7 @@ int32 increment(int32 x) {
 verifying "increment.c";
 
 int32 increment(int32 x) {
-    ensures increments: result == x + 1 by auto();
+    ensures increments: result == x + 1;
 }
 ```
 

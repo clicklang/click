@@ -286,9 +286,11 @@ $ click verify label.click
 1 selected proof verified
 ```
 
-The implicit proof closes both claims. On the branch with `length >= 32`,
+The omitted proof closes both claims: it runs the C, one path per arm of its
+`if`, and closes each claim on each path. On the path with `length >= 32`,
 the returned `31` is at most `length`. To make this arithmetic step explicit,
-state it as a separate `have` proved by `auto()`:
+split the proof on that condition before the C runs, step each arm to
+function exit, and state the step as a `have` on the path that needs it:
 
 ```click filename=label.click
 verifying "label_fit.c";
@@ -297,9 +299,12 @@ uint64 label_fit(uint64 length) {
     ensures result < 32;
     ensures result <= length;
 } by {
-    execute();
-    have result <= length by auto();
-    solve();
+    if length >= 32u64 {
+        step_until(function.exit);
+        have result <= length by solve();
+    } else {
+        step_until(function.exit);
+    }
 }
 ```
 
@@ -346,9 +351,12 @@ uint64 label_fit(uint64 length) {
     ensures result < 32;
     ensures result <= length;
 } by {
-    execute();
-    have result <= length by auto();
-    solve();
+    if length >= 32u64 {
+        step_until(function.exit);
+        have result <= length by solve();
+    } else {
+        step_until(function.exit);
+    }
 }
 
 uint64 label_measure(const char* src) {
@@ -473,9 +481,10 @@ uint64 label_copy(char* dst, const char* src) {
 
 `label_fit` now states exactly what it returns, and `label_measure` and
 `label_copy` state exactly which length they keep: the whole string when it
-fits, 31 bytes otherwise. `by auto()` proves the two new `label_fit` claims:
-on each path of the C branch it refutes the claim's other hypothesis, such as
-`length < 32u64` where `length >= 32`. The sidecar imports `click::cstr` for
+fits, 31 bytes otherwise. `} by auto();` is the older spelling of the
+omitted proof, which proves the two new `label_fit` claims: on each path of
+the C branch it refutes the claim's other hypothesis, such as `length < 32u64`
+where `length >= 32`. The sidecar imports `click::cstr` for
 `cstr_at`; see [Click library imports](sidecars.md#click-library-imports).
 `label_copy` opens the string it views to lend a prefix of its bytes to
 `memcpy`. `memcpy` owns its destination and views its source, and a call
@@ -494,8 +503,11 @@ proof marks that point `copied`, steps over the terminator store, and
 `transport`s the unfolded fact to the current memory as a `have` over `n`.
 The frame check assumes the fact's guard `k < n` for each read: `dst[k]` is
 below the store at `dst[n]`, and `src[k]` is kept apart from `dst` by the
-`separate` requirement. `execute()` then closes the postcondition, where
-`result` is `n`. The casts to `uint8*` read the bytes as `bytes::equal` does.
+`separate` requirement. The final `execute();` runs the return while the
+string is still open, so the scope's closing fold uses the returned state;
+`execute()` is being removed as a written tactic, and
+`step_until(function.exit);` does the same here. The implicit tail then closes
+the postconditions, where `result` is `n`. The casts to `uint8*` read the bytes as `bytes::equal` does.
 Verify this complete sidecar with `click verify label.click`.
 
 Three kinds of report look different:
@@ -504,11 +516,12 @@ Three kinds of report look different:
   runs, naming a file and line: an unsupported system header, `failed to parse
   C source`, or `failed to process C source includes`. A compiler import that
   hits it fails at `click import lock` or when the locked source is loaded.
-- **Click can't apply its model to an operation.** `execute()` reports that it
-  `could not verify C operation` and names the C statement. No contract change
+- **Click can't apply its model to an operation.** The proof's execution,
+  named `execute()` in the report, says it `could not verify C operation` and
+  names the C statement. No contract change
   helps when the operation itself is outside the modeled subset.
-- **A proof failure.** An `unclosed goal`, or `execute()` reporting a `missing
-  prerequisite` or `undefined behavior`, names a claim or requirement that the
+- **A proof failure.** An `unclosed goal`, or the execution reporting a
+  `missing prerequisite` or `undefined behavior`, names a claim or requirement that the
   facts did not establish. Change the contract or the proof.
 
 For the first two, look the construct up in
@@ -527,7 +540,7 @@ names common gaps. Then:
 - **Verify what you can.** Leave the refused function out of the sidecar,
   and keep the supported functions verified.
 - **Report the gap with the original source.** A construct the documentation
-  says is supported, or an `execute()` refusal like this one for a modeled
+  says is supported, or an execution refusal like this one for a modeled
   function, is a Click bug. An unsupported construct outside the documented
   subset is missing
   functionality. Either way, include the smallest C that shows it, unchanged

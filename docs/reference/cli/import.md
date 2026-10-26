@@ -434,7 +434,8 @@ nodes(this->head); }`). A class template's destructor is verified once for
 every `T` as its methods are, `template<class T> Stack<T>::~Stack() { ... }`,
 each instance's destructor taking that contract. A call made while such an
 object lives runs inside its unwind cleanup; a `noexcept` callee's call still
-has one successor, so `execute()` and `step()` pass it as any call.
+has one successor, so `step()`, `step_until`, and the implicit tail pass it
+as any call.
 A scalar local may be passed for a native reference parameter, `int out = 0;
 stack.pop(out);`: the callee receives its address. These and record pointers
 and `new` verify the class template `Stack<T>` at its `int` instance
@@ -1141,7 +1142,7 @@ matching-width call captures. Contracts spell these types `int128` and
 these proof conversions remain distinct from C++ modulo casts. Identities,
 cast round trips, full signed/unsigned endpoints, modular calls with framed
 narrow memory, expansion, and retained audit have regression coverage.
-Bounded `simp` recognizes direct observer equalities; it does not currently
+Bounded `solve` recognizes direct observer equalities; it does not currently
 chain two Integer observer equalities through nested calls.
 
 The `wide-division` fixture adds signed and unsigned 128-bit `/` and `%`.
@@ -1299,7 +1300,7 @@ once, with `T` an abstract type in its head, contract and proof:
 template<class T> void Cell<T>::set(T v) {
     owns *this;
     ensures this->value == v;
-} by { execute(); simp(); }
+}
 ```
 
 Each instance has that contract at its types, written out from the generic
@@ -2316,7 +2317,7 @@ dynamic-extent span's `size`, `size_bytes`, `data`, `front`, `back`,
 `operator[]`, `first`, `last` and `subspan(offset, count)`:
 
 A dynamic-extent `subspan` retains the catalog's implication-shaped count
-precondition. Before recovering its returned view, implicit `auto` proves
+precondition. Before recovering its returned view, the implicit closer proves
 any pending call requirement at the caller's pre-state, including a count
 implication with a false antecedent. Expansion retains that proof as an
 explicit step requirement; recovery still refuses unproved requirements.

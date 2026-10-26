@@ -32,8 +32,9 @@ nested bodies and checked proof arms. A smart container owns its body: its
 inner aliases count as one site. Audit and profile use the same source table
 as location-based expansion.
 
-A claim with no smart site can still rely on the implicit `auto`, which
-proves a bare simple tactic's open requirement, such as a `step()`'s
+A claim with no smart site can still rely on the implicit closer, which
+diagnostics name the implicit `auto`. It proves a bare simple tactic's open
+requirement, such as a `step()`'s
 precondition or a `fold`'s body fact. The inventory finds these claims by
 verifying each source once and lists each as one `implicit auto` site, so
 they are audited too. A source with no smart site that fails this verification

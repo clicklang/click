@@ -19,7 +19,7 @@ verifying "viewed_cell_reads_stay_equal.c";
 int32 peek(int32 p[]) {
     views p[0..1];
     ensures reads_agree: result == 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

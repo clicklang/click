@@ -2328,7 +2328,7 @@ fn simp_rejects_loop_backed_claims() {
     assert!(
         error
             .message()
-            .contains("`simp` closes the outcome claims at function exit and does not execute"),
+            .contains("`solve` closes the outcome claims at function exit and does not execute"),
         "{}",
         error.message()
     );

@@ -36,7 +36,7 @@ the contract needs:
 ```click
 int32 first(int32 p[]) {
     views p[0..1];
-    ensures result == p[0] by auto();
+    ensures result == p[0];
 }
 ```
 
@@ -207,7 +207,7 @@ requires 0 <= k;
 requires k < n;
 requires viewable(p[0..n]);
 views p[0..n];
-ensures result == p[k] by auto();
+ensures result == p[k];
 ```
 
 Loops usually need invariants to preserve these bounds at every iteration.
@@ -219,8 +219,8 @@ see a range on its own, state it first and the step that needs it goes through:
 
 <!-- verified-example: mdtests/have_viewable_prefix_of_a_range.md -->
 ```click
-have to_integer(lo) <= to_integer(hi - 1) by { arithmetic() using { lo < hi; 0 < hi; }; }
-have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 < hi; }; }
+have to_integer(lo) <= to_integer(hi - 1) by { solve() using { lo < hi; 0 < hi; }; }
+have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 < hi; }; }
 ```
 
 <!-- verified-example: mdtests/have_viewable_single_cell.md -->
@@ -269,7 +269,7 @@ can be applied; see
 
 <!-- verified-example: mdtests/opaque_call_old_entry_state.md -->
 ```click
-ensures result == old(p[0]) by auto();
+ensures result == old(p[0]);
 ```
 
 This is how postconditions talk about preservation or change. The expression

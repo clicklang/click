@@ -81,7 +81,8 @@ $ click verify clamp.click
 
 The sidecar says that whenever `lo <= hi`, `clamp` returns a value in
 `[lo, hi]`, and returns `x` unchanged when it is already in range. Click also
-proves that the call has no undefined behavior. `by auto()` finds the proof.
+proves that the call has no undefined behavior. `by auto();`, the older
+spelling of an omitted proof, runs the function and closes both claims.
 Delete the `requires` line and verification fails: Click reports the
 `x < lo` path, where `lo` is returned even though it can exceed `hi`.
 

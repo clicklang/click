@@ -520,7 +520,7 @@ contract, which Click checks at the call from `twice`'s own contract. When
 the two contracts agree only by a proof, a refinement theorem shows it,
 naming the crate function as a value by its path, as Rust passes it:
 `theorem twice_is_doubling() { ensures Doubling(function_pointers::twice) by
-{ unfold(Doubling); simp(); } }`, and the caller's proof applies it,
+{ unfold(Doubling); solve(); } }`, and the caller's proof applies it,
 `apply(twice_is_doubling());`. The diagnostic that refuses the call suggests
 that theorem. The importer reads Charon's `CastKind::FnPtr` of a
 crate function item and its `FnOperand::Dynamic` call through a local, and
@@ -616,7 +616,7 @@ a call through the trait has no contract.
 A default method, `fn twice(&self, scale: i32) -> i32 { self.area(scale) +
 self.area(scale) }` in the trait, has its interface written in the `trait`
 block with the proof of its default body: `fn twice(&self, scale: i32) ->
-i32 { requires ...; ensures result <= 6002; } by { execute(); simp(); }`.
+i32 { requires ...; ensures result <= 6002; }`, with the proof omitted.
 The body is verified once, for every type: a call of `area` in it is a call
 through the trait, under `area`'s interface, and with object state it holds
 the object as any method of the trait does. A call of `twice` through a
@@ -743,7 +743,7 @@ out at its types; a use in a body is at the instance's arguments. A call to
 a generic function consumes and produces the instance at the call's types,
 so `fn set_and_get(cell: &mut generic_resources::Cell<u32>, x: u32) -> u32 {
 consumes before: cell<u32>(cell); produces after: cell<u32>(cell); ensures
-result == x; } by { execute(); simp(); }` proves through `write<u32>` and
+result == x; }`, with the proof omitted, proves through `write<u32>` and
 `read<u32>`, holding the produced instance under `after` at the exit
 ([language reference](language/index.md)). A `step` names a generic callee
 with its arguments, `let { after: c } = step(generic_resources::write<u32>(cell,
@@ -1322,8 +1322,8 @@ pub fn boxed(x: u32) -> u32 {
 }
 ```
 
-against `requires x < 100; ensures result == x + 1;` with
-`execute(); simp();`.
+against `requires x < 100; ensures result == x + 1;` by running the body
+and closing the goal.
 
 An `Option<Box<R>>` is the box's address, or null for `None`. `Some(b)` and
 `None` make one, a `match` tests it for null and moves the box out of `Some`,
@@ -1369,7 +1369,8 @@ frees them; a recursive glue ranks its recursion by the resource it consumes.
 [`design/charon-trial/recursive-drop`](https://github.com/clicklang/click/blob/master/design/charon-trial/recursive-drop/list.click)
 verifies `impl Destruct for recursive_drop::Node`'s `drop_glue` with `owns
 self.value; owns self.next; consumes rest: nodes(self.next); decreases rest;`,
-proved by splitting on `rest.values`, unfolding `rest`, and `execute()`,
+proved by splitting on `rest.values`, unfolding `rest`, and running the rest
+of the body,
 over a resource `nodes(p)` whose `List<u32>` field holds the values, owning
 each node's allocation, the node, and `nodes(p.next)`. With it, a stack's
 `push`, which takes the head and assigns `Some(Box::new(Node { value, next
@@ -1381,8 +1382,8 @@ fields: the call binds the one instance of that resource the caller owns, so
 the compiler-placed drop needs no proof step. The caller comes to hold it as
 any resource, from a contract: `Stack::new() -> Stack` states `produces after:
 nodes(result.head);`, a resource over the returned struct's field, and in the
-fixture's `pushed`, `let mut s = Stack::new(); s.push(x); x` verifies with
-`execute()`, `push` taking and returning the list and the drop of `s` freeing
+fixture's `pushed`, `let mut s = Stack::new(); s.push(x); x` verifies by
+running its body, `push` taking and returning the list and the drop of `s` freeing
 it. A drop whose caller holds no such resource is refused at the glue call.
 
 `?` reads an option of a box as it does one of a scalar, and moving a field
@@ -1394,7 +1395,7 @@ Some(node.value)`, verifies `ensures result == first(old(before.values));`
 and `ensures after.values == rest(old(before.values));`, splitting on the
 list and refolding the tail, and `round_trip`, `let mut stack = Stack::new();
 stack.push(x); stack.pop()`, verifies `ensures result ==
-Option<u32>::Some(x);` with `execute()` and one unfold of `first`.
+Option<u32>::Some(x);` by running its body and one unfold of `first`.
 
 A box, or an option of one, also moves into a function and out of one by
 value, with its allocation and its struct: a sidecar writes the type as Rust
@@ -1405,8 +1406,8 @@ of produces it, and states its alignment, which a caller passing it on needs.
 In the fixture, `make(x) -> Box<Cell>` states `produces allocation(result,
 sizeof(boxed::Cell)); produces *result; ensures aligned(result, 4); ensures
 result.value == x;`, `read(b: Box<Cell>) -> u32` consumes them, and
-`through(x)`, `read(make(x))`, verifies `ensures result == x;` by `execute();
-simp();`. An option of a box crosses a call under a resource that owns the
+`through(x)`, `read(make(x))`, verifies `ensures result == x;` by running
+its body and closing the goal. An option of a box crosses a call under a resource that owns the
 cell only for `Some`, `resource cell_box(p: *mut boxed::Cell) { field value:
 Option<u32>; match value { Option::None => { fact p == 0; }, Option::Some(v)
 => { owns allocation(p, sizeof(boxed::Cell)); owns *p; ... } } }`: `maybe`
@@ -1433,9 +1434,10 @@ a constructor, or `match` on it.
 verifies `some_if`, whose contract is `ensures make implies result ==
 Option<u32>::Some(x);` and `ensures make == false implies result ==
 Option<u32>::None;`, and `or_zero`, whose contract is `ensures result ==
-(match o { Option::Some(v) => v, Option::None => 0u32 });`, each by
-`execute(); simp();`, and a caller, `round(x) = or_zero(some_if(x, true))`,
-whose `ensures result == x` follows from the two contracts by `simp`. A fact
+(match o { Option::Some(v) => v, Option::None => 0u32 });`, each by running
+its body and closing the goal, and a caller, `round(x) = or_zero(some_if(x,
+true))`, whose `ensures result == x` follows from the two contracts by
+`solve`. A fact
 the caller learns that matches on a value it already knows is a constructor,
 `result == match o { .. }` after `o == Option::Some(x)`, is also kept reduced
 at that constructor, `result == x`. In the same fixture `flag(o: Option<bool>)`
@@ -1527,17 +1529,18 @@ variant, with each field bound as `<local>_<variant>_<index>` (variant in
 snake case, made fresh against the function's locals):
 
 ```text
-`step` reached a Rust `match` of `s`, whose variant is not known here; each variant is its own proof arm. Write `match s { Shape::Circle(s_circle_0) => { ... }, Shape::Rect(s_rect_0, s_rect_1) => { ... }, Shape::Empty => { ... } }` here, or let `execute()` split it
+`step` reached a Rust `match` of `s`, whose variant is not known here; each variant is its own proof arm. Write `match s { Shape::Circle(s_circle_0) => { ... }, Shape::Rect(s_rect_0, s_rect_1) => { ... }, Shape::Empty => { ... } }` here, or end the script here and let its implicit tail split it
 ```
 
-`execute()` inserts that proof `match` and executes each arm to the function
-exit, as it inserts a proof `if` at an undecided C condition; expansion shows
-it. An arm that learns `s == Shape::Circle(s_circle_0)` also gets every fact
+Leaving the split to the implicit tail that ends every proof script means the
+tail inserts that proof
+`match` and runs each arm to the function exit, as it splits at an undecided
+C condition; expansion shows it. An arm that learns `s == Shape::Circle(s_circle_0)` also gets every fact
 that matches on `s`, reduced at that constructor, so a requirement
 `match s { Shape::Circle(r) => r, ... } < 4294967295u32` becomes the citable
 `s_circle_0 < 4294967295u32` for the `+ 1` panic check. A written proof
-`match s { Shape::Circle(r) => { execute(); simp(); }, ... }` does the same
-with its own binders.
+`match s { Shape::Circle(r) => { ... }, ... }` placed before the C does the
+same with its own binders.
 
 Not yet supported: generic crate enums and options other than the
 [scalar options](#option-values) and the `Option<Box<R>>` above, enums declared in

@@ -68,13 +68,21 @@ diagnostic.
 
 ## Proof example conventions
 
-For a function whose proof needs only the default automation, omit the proof
-clause. Use `by auto();` when an example is explaining that automation explicitly.
-For a one-tactic proof, use `by T(args);`, such as `by simp();` or
-`by assumption();`. Braces are optional around that single tactic. Use
-`by { ... }` for a sequence of tactics. Call-style tactics always take
-parentheses, including `simp()` and `auto()`. Structural forms such as `if`,
-`match`, and `have` retain their own grammar. For binary proof splits
+For a function whose proof needs only the implicit tail, which runs the
+remaining C and closes every open goal, omit the proof clause; never write
+`execute();` followed only by closers. A script needs no final closer. Where
+work follows at function exit, step there with
+`step_until(function.exit);`, and where paths need different work, write
+`branch` at the C `if`, or a proof `if` before the C, with each arm stepping
+to exit. For a one-tactic
+proof, use `by T(args);`, such as `by assumption();`, or `by solve();` for a
+claim with no C left, such as a `have` or a pure theorem. Braces
+are optional around that single tactic. Use `by { ... }` for a sequence of
+tactics. Call-style tactics always take parentheses, including `solve()`.
+Write `solve`, `solve() using`, and `step_until`, not their older spellings
+`simp`, `auto`, `arithmetic`, and `execute_until`, and don't write
+`execute()`. Structural forms such as `if`, `match`, and `have` retain their
+own grammar. For binary proof splits
 (`if` and `branch`), write `then` exactly when an `ensuring` interface precedes
 the arms. Call modifiers follow the
 parenthesized head, as in `close_invariants() by { ... }`.

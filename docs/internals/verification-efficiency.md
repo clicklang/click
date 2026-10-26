@@ -101,7 +101,7 @@ Current instances of the rule:
 - A narrow integer read constructs its certified type-range facts directly
   rather than re-proving them by order reasoning.
 - An explicit outcome closer searches once; its failure explanation does not
-  rerun `simp` or `auto`. Failed condition-target questions use the
+  rerun `solve` or the implicit closer. Failed condition-target questions use the
   closure-scoped failure memo.
 - Explicit return closers lower the folded claim goal once, and the unfolded
   form only when the proof unfolded a predicate. Consecutive exact return
@@ -606,7 +606,7 @@ earlier increment (`signed_increment_overflow_checks_stay_flat_per_assignment`).
 The graph decides difference constraints only. Non-linear arithmetic,
 relations between sums of variables, and an overflow bound resting on a guard
 over a sum (`a <= INT_MAX - b`) are out of its reach. Simple checking does not
-rediscover such a bound; a proof states it with a lemma. Implicit `auto` is not
+rediscover such a bound; a proof states it with a lemma. The implicit closer is not
 promised to close what the fast path leaves open.
 
 ## Termination heights and local descent
@@ -721,7 +721,7 @@ goal and source. Wider smart fallbacks belong to the slow part and are charged
 to its budget; every successful selection still establishes the goal in the
 restricted kernel context.
 
-Before spelling a typed equality, `simp` retains only the sources its
+Before spelling a typed equality, `solve` retains only the sources its
 evidence named, and the kernel rebuilds the selected context from them.
 Compatibility evidence that retains a whole connected component can be
 reduced by bounded chunk-deletion trials (at most 255 restricted queries,
