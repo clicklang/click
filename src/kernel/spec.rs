@@ -4300,33 +4300,13 @@ fn lower_spec_sequence_membership_at_state_in(
                     )
                 })
                 .collect::<Vec<_>>();
-            let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
-            let comparison_truth = |comparison: &Proposition| {
-                proposition_as_single_condition(comparison).and_then(|(condition, expected)| {
-                    path_assumptions
-                        .decide(&condition)
-                        .map(|actual| actual == expected)
-                })
-            };
-            let proposition = if comparisons
-                .iter()
-                .any(|comparison| comparison_truth(comparison) == Some(true))
-            {
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-            } else if comparisons
-                .iter()
-                .all(|comparison| comparison_truth(comparison) == Some(false))
-            {
-                Proposition::ConditionIs(ConditionTerm::Constant(false), true)
-            } else {
-                comparisons
-                    .into_iter()
-                    .reduce(|left, right| Proposition::Or(Box::new(left), Box::new(right)))
-                    .unwrap_or(Proposition::ConditionIs(
-                        ConditionTerm::Constant(false),
-                        true,
-                    ))
-            };
+            let proposition = comparisons
+                .into_iter()
+                .reduce(|left, right| Proposition::Or(Box::new(left), Box::new(right)))
+                .unwrap_or(Proposition::ConditionIs(
+                    ConditionTerm::Constant(false),
+                    true,
+                ));
             paths.push(SpecPropositionPath {
                 introductions: Vec::new(),
                 proposition,
