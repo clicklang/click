@@ -3582,6 +3582,7 @@ pub(super) fn contract_expression_mentions_c_local(
     parameter_names: &BTreeSet<&str>,
 ) -> bool {
     match expression {
+        ContractExpression::RegionResult(_) => false,
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             contract_expression_mentions_c_local(inner, parameter_names)

@@ -56,6 +56,7 @@ pub(in crate::surface) fn c_expression_uses_variable(
 
 pub(in crate::surface) fn contains_old_expression(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::RegionResult(_) => false,
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             contains_old_expression(inner)
@@ -124,6 +125,7 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
 
 pub(in crate::surface) fn contains_resource_count(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::RegionResult(_) => false,
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             contains_resource_count(inner)
@@ -308,6 +310,7 @@ pub(in crate::surface) fn collect_resource_count_families(
 ) {
     fn collect_expression(expression: &ContractExpression, families: &mut BTreeSet<String>) {
         match expression {
+            ContractExpression::RegionResult(_) => {}
             ContractExpression::IntegerLiteral(_) => {}
             ContractExpression::CUnary { operand: inner, .. }
             | ContractExpression::Negate(inner) => collect_expression(inner, families),
@@ -541,6 +544,7 @@ pub(in crate::surface) fn proposition_contains_old_expression(
 
 pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::RegionResult(_) => true,
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             contains_at_expression(inner)
@@ -699,6 +703,7 @@ pub(in crate::surface) fn collect_click_function_calls(
 
 fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut BTreeSet<String>) {
     match expression {
+        ContractExpression::RegionResult(_) => {}
         ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             collect_click_function_calls(inner, calls)
@@ -1172,6 +1177,7 @@ fn validate_recursive_calls_in_expression(
         )
     };
     match expression {
+        ContractExpression::RegionResult(_) => Ok(()),
         ContractExpression::IntegerLiteral(_) => Ok(()),
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             recurse(inner, lower_bounds, structural_subterms)

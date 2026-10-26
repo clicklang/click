@@ -1461,6 +1461,20 @@ fn register_snapshot_names(
     }
     for (point, state) in citable {
         for (name, value) in state.locals().object_values() {
+            // A call's result temporary is spelled by its call,
+            // `<region>.result`, at any point that holds it.
+            if let Some(spelling) = crate::surface::diagnostics::call_result_spelling(name) {
+                match value.numeric_value() {
+                    crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) => {
+                        labels.fallback_source_name(*variable, spelling, value.c_type());
+                    }
+                    CValue::Pointer(pointer) => {
+                        labels.fallback_pointer_name(pointer.pointer(), spelling);
+                    }
+                    _ => {}
+                }
+                continue;
+            }
             // A pointer's offset variable is not the pointer; a scalar
             // local's value, or a pointer local's whole address, is exactly
             // the local.

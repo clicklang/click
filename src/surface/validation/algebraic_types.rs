@@ -1941,6 +1941,7 @@ fn validate_algebraic_expression_node(
     context: &str,
 ) -> Result<Option<AlgebraicTypeApplication>, ClickError> {
     match expression {
+        ContractExpression::RegionResult(_) => Ok(None),
         ContractExpression::IntegerLiteral(_) => Ok(None),
         ContractExpression::Negate(inner) => validate_algebraic_expression(
             inner,
@@ -3177,6 +3178,7 @@ fn infer_generic_expression_type(
         return Ok(Some(cast_type));
     }
     match expression {
+        ContractExpression::RegionResult(_) => Ok(None),
         ContractExpression::IntegerLiteral(_) => {
             Ok(generics::default_numeral_click_type(expression))
         }
