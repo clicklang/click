@@ -4220,17 +4220,22 @@ impl<'a> Proof<'a> {
         let Some(parent_execution) = self.execution().cloned() else {
             return Ok(None);
         };
-        let available_facts = PureFactList::from(self.facts().to_vec());
+        // The call runs in the whole proof context, as a `step()` does: the
+        // list holds only what the call and the handler entry add, and each
+        // arm is the proof's facts with those, not a copy of every fact.
+        let root_facts = self.facts().clone();
+        let fact_context = root_facts.assumptions().clone();
+        let available_facts = PureFactList::default();
         let Some(prepared) = crate::surface::proof::cursor_execution::prepare_call_outcome_split(
             &parent_execution,
             context,
             &available_facts,
+            Some(&fact_context),
             "outcomes",
         )?
         else {
             return Ok(None);
         };
-        let root_facts = self.facts().clone();
         let normal_index = prepared
             .transitions
             .iter()
@@ -4253,6 +4258,7 @@ impl<'a> Proof<'a> {
             &mut returned_introduced_facts,
             &prepared,
             normal,
+            Some(&fact_context),
         )?;
         let mut threw_execution = prepared.execution.clone();
         let mut threw_available_facts = available_facts.clone();
@@ -4264,8 +4270,9 @@ impl<'a> Proof<'a> {
             &mut threw_introduced_facts,
             &prepared,
             thrown,
+            Some(&fact_context),
         )?;
-        let facts_descending_from_root = |facts: &[Proposition]| {
+        let facts_descending_from_root = |facts: &PureFactList| {
             facts.iter().fold(root_facts.clone(), |current, fact| {
                 if current.contains(fact) {
                     current
@@ -4541,6 +4548,11 @@ mod scaling_tests {
     include!(
         "../../../scaling_tests/surface/proof/proof_object/execution_joins/deep_execute_tests.rs"
     );
+    mod call_outcome_split {
+        include!(
+            "../../../scaling_tests/surface/proof/proof_object/execution_joins/call_outcome_split_tests.rs"
+        );
+    }
 }
 
 /// Where `step_until` stops: the entry of a statement region, in

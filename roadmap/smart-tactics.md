@@ -752,8 +752,16 @@ four times the work at a quarter of it.
     adding each incoming composition the exit lacks;
     `set_diff_names_each_side_and_walks_the_changed_paths` covers the
     diff.
-24. `split_focused_call_outcomes` copies all facts on every caught-throw
-    split (`execution_joins.rs:4215`).
+24. **Fixed:** `split_focused_call_outcomes` copied all facts on every
+    caught-throw split, the `outcomes` tactic's and the implicit tail's: it
+    ran the call over a flat copy of every proof fact, then folded each fact
+    of each arm's copy back into the root. It now runs the call as `step()`
+    does, in the proof's own context with a list of only what the call and
+    the handler entry add, and each arm is the proof's facts with those, as
+    a C `if` arm is. Across the suite the 96 arms it split gave the same
+    facts and the same next statement either way.
+    `call_outcome_split_does_not_copy_the_proofs_facts` covers it (the old
+    split's work grew from 600 to 7,296 units at 16 to 256 facts).
 
 **Already described in the efficiency guide as accepted:** loan havoc costs
 cells times symbolic loans; direct and explicit transport contexts are
