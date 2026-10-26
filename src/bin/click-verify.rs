@@ -1041,12 +1041,16 @@ impl<'a> ProofSourceLocations<'a> {
             .as_ref()?
             .get(source_index)?
             .clone();
-        if path.len() == 1 {
-            Some(outer)
-        } else {
-            self.with_index(|index| index.nested_position(&outer, &path[1..]).ok())
-                .flatten()
-        }
+        // A nested tactic that is not written (the omitted body of
+        // `have P;`) has no source; its failure is located at the nearest
+        // enclosing tactic that is.
+        (2..=path.len())
+            .rev()
+            .find_map(|end| {
+                self.with_index(|index| index.nested_position(&outer, &path[1..end]).ok())
+                    .flatten()
+            })
+            .or(Some(outer))
     }
 }
 
@@ -1793,6 +1797,23 @@ mod tests {
         assert!(report.contains("invariant i == 1"), "{report}");
         assert!(report.contains("source lines omitted"), "{report}");
         assert!(report.lines().count() <= 40, "{report}");
+    }
+
+    /// `have P;` has no written proof, so its search's site, the `have`'s
+    /// body, is not in the source; the miss is located at the `have`, not
+    /// at the function.
+    #[test]
+    fn an_omitted_have_proof_miss_is_located_at_the_have() {
+        let (root, path) = temporary_project(
+            "omitted-have-location",
+            "int helper(void) { return 1; }\nint f(void) { int x; x = helper(); return x; }",
+            "verifying \"program.c\";\nint32 helper() { ensures result == 1; }\nint32 f() { ensures result == 1; } by {\n    step();\n    step();\n    have x == 2;\n}",
+        );
+        let report = entry_with([path.display().to_string()]).expect_err("x is 1, not 2");
+        fs::remove_dir_all(root).unwrap();
+        assert!(report.contains("could not establish `x == 2`"), "{report}");
+        assert!(report.contains("tactic@6:\n  have x == 2;"), "{report}");
+        assert!(!report.contains("int32 f() { ensures"), "{report}");
     }
 
     fn assert_source_diagnostic(report: &str) {

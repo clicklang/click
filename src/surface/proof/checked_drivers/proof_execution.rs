@@ -1197,9 +1197,17 @@ fn apply_frontier_source_tactic<'a>(
         match proof.try_execute_until(region)? {
             Some(executed) => executed,
             None => {
-                return Err(
-                    proof.step_error("`step_until` found no checked step from this frontier")
-                );
+                // An arm of `branch` that does not return ends at the C
+                // `if`'s shared continuation; the code after the `if` runs
+                // after the arms join, so no target past it is in reach.
+                let message = if proof.execution().is_some_and(|execution| {
+                    execution.core.frontier.region == ExecutionRegionKind::BranchArm
+                }) {
+                    "`step_until` cannot step past the end of this `branch` arm: an arm that does not return stops at the C `if`'s shared continuation; write the steps after the `branch`, or split with a proof `if` before the C when each path needs its own work"
+                } else {
+                    "`step_until` found no checked step from this frontier"
+                };
+                return Err(proof.step_error(message));
             }
         }
     } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
