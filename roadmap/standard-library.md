@@ -422,6 +422,42 @@ native, as the `uint64` order is; the sign-flip encoding and its
 `interval_sign_bit_flip` certificate step are gone
 ([design](../design/machine-integers.md#stage-2-one-condition-family)).
 
+### Fact-dependent integer lowerings
+
+Found while making lowering structural (every fact must be spellable:
+lowering a raised fact gives the fact back, so lowering never consults the
+facts to choose a term). These three sites are integer design questions,
+so they wait for this work rather than being fixed one by one.
+
+- **Specification `/` and `%`.** The kernel quotient is total: a zero
+  divisor leaves an opaque term (`Bitvector32Term::divide`, the Integer
+  `TruncatingQuotient`), so `x / 0` is a fixed but unspecified value and
+  `P(x / 0) or not P(x / 0)` holds. A specification `/` nevertheless owes
+  C's definedness obligation (`b != 0`), so Click `/` behaves like the C
+  operation rather than the total one. C and Rust `/` are only executed,
+  and execution already refuses the undefined case, so the specification
+  operator need not copy it. Maintainer direction (2026-10-26): consider
+  making Click `/` total by returning an option (`None` for a zero divisor
+  and, signed, `MIN / -1`), with options made convenient to handle, while
+  C and Rust `/` keep their undefined behavior in execution. Lowering then
+  produces one term with no side obligation, and a defined C division
+  relates to it as `checked_div(a, b) == Some(result)`.
+- **Byte offset restrided to an element index**
+  (`byte_stride_index`, `src/kernel/eval/operators.rs`). A `char`-width
+  displacement `i * K` becomes element index `i` with stride `K` only when
+  the facts decide `signed_multiply_overflows(i, K)` false, so the pointer
+  term's shape depends on the facts. Choosing one spelling needs a rule for
+  when a `Multiply` term may be read as an exact product: always (sound
+  only if every such term is a C signed multiply whose overflow is already
+  undefined), never, or with an explicit no-overflow obligation.
+- **Unsigned index spelling** (`pointer_index_term`, same file). A `uint32`
+  index whose facts prove `0 <= (int32)x` becomes the `int32` index
+  `sign_cast32(x)`; otherwise it becomes the 64-bit `uint64_from_32(x)`. The
+  offset term and its width both depend on the facts. Choosing one
+  spelling (for example, always zero-extending) needs a normalization step
+  proofs can invoke, and many unsigned loop specifications likely rely on
+  the signed form.
+
 ### Naming decisions (maintainer, 2026-10-15)
 
 - The predicate that was `cstr` stays `cstr::cstr`.
