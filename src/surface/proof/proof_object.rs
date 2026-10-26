@@ -3494,6 +3494,7 @@ mod execution_entry;
 mod execution_joins;
 pub(in crate::surface::proof) use execution_joins::StepUntilTarget;
 mod execution_statements;
+pub(in crate::surface::proof) use execution_statements::implicit_auto_disabled;
 pub use execution_statements::without_implicit_auto;
 mod fact_index;
 mod fixed_state_steps;

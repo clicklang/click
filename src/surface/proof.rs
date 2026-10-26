@@ -941,6 +941,11 @@ pub(super) enum ProofTacticSource {
     GeneratedBy { source_index: usize },
 }
 
+/// Whether the script runner appends the implicit tail to `tactics`.
+pub(in crate::surface) fn script_ends_with_implicit_tail(tactics: &[ProofTactic]) -> bool {
+    claim_proofs::with_implicit_tail(tactics).1
+}
+
 fn build_internal_proof_with_source(
     tactics: &[ProofTactic],
     claim_label: &str,

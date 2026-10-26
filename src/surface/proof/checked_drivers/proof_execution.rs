@@ -1262,6 +1262,17 @@ fn apply_frontier_source_tactic<'a>(
     Ok(Ok(next))
 }
 
+/// With the implicit closer off, as an expanded proof is checked cold, the
+/// implicit tail runs no C: a script that stops with C left is refused.
+fn refuse_implicit_tail_when_disabled(proof: &Proof<'_>) -> Result<(), ClickError> {
+    if crate::surface::proof::proof_object::implicit_auto_disabled() {
+        return Err(proof.step_error(
+            "the script stops with C left to run, and the implicit tail is off: write the remaining steps",
+        ));
+    }
+    Ok(())
+}
+
 /// Advances the checked linear prefix following a structural branch. Every
 /// accepted explicit or smart operation returns the next Proof directly; the
 /// first unsupported tactic and its suffix remain untouched for the
@@ -1285,6 +1296,7 @@ fn advance_checked_linear_continuation<'a>(
         if matches!(indexed.tactic, ProofTactic::AutoClose) && !proof.is_at_function_exit() {
             check_verification_deadline()?;
             proof = proof.start_source_tactic(indexed.source_index)?;
+            refuse_implicit_tail_when_disabled(&proof)?;
             let execute = IndexedTactic {
                 index: indexed.index,
                 source_index: indexed.source_index,
@@ -3388,6 +3400,7 @@ fn advance_focused_execution_arm<'a>(
         // The implicit closer at a live frontier first runs the C that
         // remains, as in a linear continuation, then closes at exit.
         if matches!(indexed.tactic, ProofTactic::AutoClose) && !proof.is_at_function_exit() {
+            refuse_implicit_tail_when_disabled(&proof)?;
             let execute = IndexedTactic {
                 index: indexed.index,
                 source_index: indexed.source_index,

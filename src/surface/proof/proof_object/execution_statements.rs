@@ -2753,13 +2753,15 @@ thread_local! {
     static IMPLICIT_AUTO_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-pub(super) fn implicit_auto_disabled() -> bool {
+pub(in crate::surface::proof) fn implicit_auto_disabled() -> bool {
     IMPLICIT_AUTO_DISABLED.with(std::cell::Cell::get)
 }
 
 /// Runs `operation` with the implicit `auto` off: a step gets only its fast
 /// path and its written obligation proofs, with no search, so an obligation
 /// nothing written proves is refused with its structured requirement. This
+/// The implicit tail is off with it: a script that leaves C to run, or a
+/// goal open, at its end is refused instead of finished by search. This
 /// is how an expanded proof is checked cold:
 /// `click expand --claim` and `click audit`'s whole-claim expansion check their
 /// output this way.

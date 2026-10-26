@@ -1150,6 +1150,12 @@ fn c0_smart_tactic_source_sites_file(
         let EntrySelection::Located(located) = entry.selection else {
             continue;
         };
+        // A written script's implicit tail is selectable by location, but
+        // whether it has work is known only once the proof runs; `click
+        // audit` finds the claims whose tail ran from their verification.
+        if matches!(located.edit, TacticSourceEdit::Append(_)) {
+            continue;
+        }
         // A smart container owns its body's expansion. Its written child
         // aliases select that same site and must not be counted again.
         if seen.insert((
@@ -1557,7 +1563,9 @@ fn expand_c0_tactic_source_at_context(
         .as_ref()
         .map(super::diagnostics::ParameterPlaceScope::enter);
     let replacement_tactics = match &selected.edit {
-        TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
+        TacticSourceEdit::Partial(_)
+        | TacticSourceEdit::Append(_)
+        | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
                 super::proof::capture_project_tactic_expansion(
                     project,
@@ -1739,7 +1747,9 @@ fn expand_program_prepared_tactic_source_at_context(
     );
     let _parameter_places = block.map(super::diagnostics::ParameterPlaceScope::enter);
     let replacement_tactics = match &selected.edit {
-        TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
+        TacticSourceEdit::Partial(_)
+        | TacticSourceEdit::Append(_)
+        | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
                 super::proof::capture_project_tactic_expansion(
                     project,
@@ -1839,7 +1849,9 @@ fn expand_c0_prepared_tactic_source_at_context(
         .as_ref()
         .map(super::diagnostics::ParameterPlaceScope::enter);
     let replacement_tactics = match &selected.edit {
-        TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
+        TacticSourceEdit::Partial(_)
+        | TacticSourceEdit::Append(_)
+        | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
                 super::proof::capture_project_tactic_expansion(
                     project,
@@ -3096,6 +3108,9 @@ impl ProofSite {
 #[derive(Clone, Debug)]
 enum TacticSourceEdit {
     Partial(Range<usize>),
+    /// The implicit tail of a written script, written in after the script's
+    /// last written tactic, which ends at this offset.
+    Append(usize),
     PartialProofClause(Range<usize>),
     WholeProof(ProofSourceEdit),
 }
@@ -3359,6 +3374,7 @@ fn expand_selected_tactics_context(
             TacticSourceEdit::Partial(span) | TacticSourceEdit::PartialProofClause(span) => {
                 span.clone()
             }
+            TacticSourceEdit::Append(at) => *at..*at,
             TacticSourceEdit::WholeProof(edit) => edit.span().clone(),
         };
         if let Some(from) = capture
@@ -3422,6 +3438,7 @@ fn expand_selected_tactics_context(
                 span,
                 super::printing::format_partial_tactic_sequence(&tactics),
             ),
+            TacticSourceEdit::Append(at) => (at..at, appended_tail(&tactics)),
             TacticSourceEdit::PartialProofClause(span) if tactics.is_empty() => {
                 (span, "by { assumption(); }".to_string())
             }
@@ -3564,6 +3581,7 @@ impl LocatedSourceTactic {
                 self.replaced_span(span),
                 super::printing::format_partial_tactic_sequence(replacement_tactics),
             ),
+            TacticSourceEdit::Append(at) => (at..at, appended_tail(replacement_tactics)),
             // A whole phase can contribute no steps, but its written block
             // must still contain a checked tactic.
             TacticSourceEdit::PartialProofClause(span) if replacement_tactics.is_empty() => {
@@ -4421,6 +4439,13 @@ fn proof_tactic_entries(
                 ));
             };
             let flat = collect_source_tactics(tokens, source_proof_span, tactics)?;
+            // The implicit tail follows the last written tactic and numbers
+            // after it, as the script runner appends it. Its site is the
+            // script's closing brace.
+            let tail = (super::proof::script_ends_with_implicit_tail(tactics)
+                && source_proof_span.end > source_proof_span.start)
+                .then(|| flat.last().map(|item| (flat.len(), item.span.end)))
+                .flatten();
             for (source_index, item) in flat.into_iter().enumerate() {
                 let (tactic_name, smart, edit) = match item.tactic {
                     FlatTactic::Written(tactic) => (
@@ -4510,6 +4535,25 @@ fn proof_tactic_entries(
                         )?;
                     }
                 }
+            }
+            if let Some((source_index, at)) = tail {
+                let close = source_proof_span.end - 1;
+                entries.push(SourceTacticEntry {
+                    span: close..source_proof_span.end,
+                    anchor: close,
+                    claim_label: claim_label.to_string(),
+                    tactic_name: "implicit tail".to_string(),
+                    smart: true,
+                    selection: EntrySelection::Located(LocatedSourceTactic {
+                        site: site.clone(),
+                        source_index,
+                        nested: Vec::new(),
+                        edit: TacticSourceEdit::Append(at),
+                        sibling_starts: Vec::new(),
+                        function_block: None,
+                        source_spans: tokens.spans.clone(),
+                    }),
+                });
             }
             Ok(())
         }
@@ -5470,6 +5514,18 @@ fn find_tactic_span(
     Err(ClickError::new(format!(
         "selected source proof has no tactic {wanted}"
     )))
+}
+
+/// The steps of a written script's implicit tail, on the lines after the
+/// script's last written tactic; nothing when the tail had nothing to do.
+fn appended_tail(tactics: &[ProofTactic]) -> String {
+    if tactics.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n{}",
+        super::printing::format_partial_tactic_sequence(tactics)
+    )
 }
 
 fn indent_replacement(source: &str, start: usize, replacement: &str) -> String {

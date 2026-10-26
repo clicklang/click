@@ -51,6 +51,15 @@ extracted Click block.
 - `PATH:LINE` selects the one smart tactic that starts on that line. When the
   line starts several, the command fails and lists each candidate as a
   `PATH:LINE:COLUMN` location to rerun with.
+- The implicit tail is written as nothing, so it is selected where it would
+  be written: at the claim of an omitted proof, at the closing brace of a
+  grouped contract whose proof is omitted, and at the closing brace of a
+  written `by { ... }` script, whose tail runs the C the script leaves and
+  closes what is still open. Expanding a script's tail writes what it did
+  after the script's last written tactic: the steps and splits that run the
+  C it left, or, where the script already reaches function exit, the
+  closers. Closers after a split stay with the rewritten script's own tail,
+  which `--claim` writes out.
 - A location outside every smart tactic, such as a blank column or the brace
   that closes a non-smart `have`, fails with a diagnostic instead of selecting
   a neighbor.
