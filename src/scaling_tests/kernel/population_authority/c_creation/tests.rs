@@ -1066,17 +1066,14 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
                     Some((false, Bitvector32Term::Constant(2)))
                 );
                 if wildcard {
-                    let exact_count = spent
-                        .observe_exact_member(&exact, &PureFactContext::new())
-                        .unwrap();
+                    let exact_count = spent.observe_exact_member(&exact).unwrap();
                     assert_eq!(exact_count.delta, -2);
                     assert_eq!(exact_count.entry_owned_members, 2);
                     assert_eq!(
                         spent
-                            .observe_exact_member(
-                                &ResourceDescription::from_instance(&member(997_004, 8)),
-                                &PureFactContext::new()
-                            )
+                            .observe_exact_member(&ResourceDescription::from_instance(&member(
+                                997_004, 8
+                            )))
                             .unwrap()
                             .delta,
                         0

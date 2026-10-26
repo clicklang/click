@@ -237,6 +237,18 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             spec_definitions,
         );
     }
+    if application.name == "population_member_count_zero" {
+        return instantiate_population_member_count_zero(
+            application,
+            claim_label,
+            path_index,
+            tactic_index,
+            available,
+            lowering_assumptions,
+            context,
+            spec_definitions,
+        );
+    }
     let theorem = theorem_environment.get(&application.name).ok_or_else(|| {
         theorem_application_error(
             claim_label,
@@ -642,6 +654,126 @@ fn instantiate_integer_range_fold_theorem_application(
                 describe_pure_fact(premise, ParameterBinding::default())
             )));
         }
+    }
+    Ok(vec![conclusion.as_ref().clone()])
+}
+
+/// The checked step a bare `apply(population_member_count_zero(count(R(a, k))))`
+/// stands for: its one premise is the written population count,
+/// `count(R(a, _)) == 0`. `None` for any other application.
+pub(in crate::surface::proof) fn population_member_count_zero_step(
+    application: &TheoremApplication,
+) -> Option<ProofStep> {
+    if application.name != "population_member_count_zero" {
+        return None;
+    }
+    let premises = match application.arguments.as_slice() {
+        [ContractExpression::ResourceCount(resource)] => {
+            let mut population = resource.as_ref().clone();
+            if let ResourceClause::Declared { arguments, .. } = &mut population {
+                for argument in arguments.iter_mut().skip(1) {
+                    *argument = ContractExpression::ResourceWildcard;
+                }
+            }
+            vec![ClickProposition::Comparison {
+                left: ContractExpression::ResourceCount(Box::new(population)),
+                operator: ComparisonOperator::Equal,
+                right: ContractExpression::IntegerLiteral("0".to_string()),
+            }]
+        }
+        // The checked application names the expected shape.
+        _ => Vec::new(),
+    };
+    Some(ProofStep::ApplyTheoremUsing {
+        application: application.clone(),
+        premises,
+    })
+}
+
+/// Apply the kernel's empty-population law to one written exact-member count,
+/// `population_member_count_zero(count(R(anchor, k, ...)))`. The kernel
+/// evaluates the member's and the population's counts itself; the written
+/// population count `count(R(anchor, _, ...)) == 0` must be an available fact,
+/// and the member's count `== 0` is added.
+#[allow(clippy::too_many_arguments)]
+fn instantiate_population_member_count_zero(
+    application: &TheoremApplication,
+    claim_label: &str,
+    path_index: Option<usize>,
+    tactic_index: usize,
+    available: &[Proposition],
+    assumptions: &PureFactContext,
+    context: &TheoremApplicationContext<'_>,
+    spec_definitions: SpecDefinitions<'_>,
+) -> Result<Vec<Proposition>, ClickError> {
+    let error =
+        |message: String| theorem_application_error(claim_label, path_index, tactic_index, message);
+    let shape = || {
+        error(format!(
+            "theorem `{}` expects one exact member count, `count(R(anchor, k, ...))`",
+            application.name
+        ))
+    };
+    let [ContractExpression::ResourceCount(resource)] = application.arguments.as_slice() else {
+        return Err(shape());
+    };
+    let ResourceClause::Declared {
+        name, arguments, ..
+    } = resource.as_ref()
+    else {
+        return Err(shape());
+    };
+    if arguments.len() < 2
+        || arguments
+            .iter()
+            .any(|argument| matches!(argument, ContractExpression::ResourceWildcard))
+    {
+        return Err(shape());
+    }
+    let values = arguments
+        .iter()
+        .map(|argument| {
+            crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
+                argument,
+                assumptions,
+                ContractEnvironment::new(context.values, context.array_refs),
+                FixedStateFrame::new(
+                    context.pre_state,
+                    context.post_state,
+                    context.result,
+                    context.recorded_snapshots,
+                ),
+                spec_definitions,
+                &BTreeSet::new(),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|message| {
+            error(format!(
+                "could not evaluate the member's arguments: {message}"
+            ))
+        })?;
+    let theorem = crate::kernel::prove_population_member_count_zero(
+        context.post_state,
+        name,
+        &values,
+        assumptions,
+    )
+    .ok_or_else(|| {
+        error(format!(
+            "`count({name}(...))` and its population's count must each be one defined count at this state"
+        ))
+    })?;
+    let crate::kernel::Proposition::Implies(guard, conclusion) = theorem.proposition() else {
+        return Err(error(
+            "the population law did not produce a guarded theorem".to_string(),
+        ));
+    };
+    if !exact_fact_is_available(guard, available) {
+        return Err(error(format!(
+            "required exact fact is unavailable: the population's count is zero ({})",
+            describe_pure_fact(guard, ParameterBinding::default())
+        )));
     }
     Ok(vec![conclusion.as_ref().clone()])
 }

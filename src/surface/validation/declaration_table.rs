@@ -128,7 +128,9 @@ fn refuse_reserved_name(kind: DeclarationKind, name: &str) -> Result<(), ClickEr
         DeclarationKind::Theorem => {
             if matches!(
                 name,
-                "integer_range_fold_empty" | "integer_range_fold_append"
+                "integer_range_fold_empty"
+                    | "integer_range_fold_append"
+                    | "population_member_count_zero"
             ) {
                 return Err(ClickError::new(format!(
                     "`{name}` names a law the kernel supplies, and a citation of it applies that law; rename the theorem"

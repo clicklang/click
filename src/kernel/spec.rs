@@ -5887,7 +5887,7 @@ fn evaluate_resource_count_paths(
                     );
                     Some(
                         creation
-                            .observe_exact_member(&member, &path_assumptions)
+                            .observe_exact_member(&member)
                             .map_err(|_| ExecutionLimit::AuthorityCountNeedsResolvedMember)?,
                     )
                 } else {
