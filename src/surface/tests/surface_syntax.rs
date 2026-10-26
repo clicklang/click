@@ -3716,8 +3716,7 @@ fn an_embedded_struct_is_viewed_as_a_place() {
         }
     "#;
     // An embedded struct is viewed like any other place.
-    let viewed = format!("{click_source}");
-    verify_c0_sources(&viewed, &[("aggregate_resource_places.c", c_source)]).unwrap();
+    verify_c0_sources(click_source, &[("aggregate_resource_places.c", c_source)]).unwrap();
 }
 
 #[test]
