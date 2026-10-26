@@ -29,7 +29,7 @@ int32 count_evens(int32 n) {
     requires n >= 0;
     ensures 0 <= result and result <= n;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n and 0 <= evens and evens <= i;

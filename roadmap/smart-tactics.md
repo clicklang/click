@@ -1230,6 +1230,9 @@ mdtests and examples.
     were: refusal mdtests that name arithmetic's message, files Rust tests
     name, Rust and C++ imports, the standard library, and the mdtests the
     documentation and the tactic inventory quote.
+    Written `execute_until(…)` is now `step_until(…)`, 97 uses in 66 files;
+    the files Rust tests name and the mdtests named for `execute_until` keep
+    the older spelling.
 
     Measured 2026-10-25, with every `arithmetic()` read as `solve() using {}`
     and every `arithmetic() using { … }` as `solve() using { … }`. At first

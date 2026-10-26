@@ -31,7 +31,7 @@ uint8 last(const uint8* bytes, uint64 length) {
     views bytes[0..length];
     ensures result == result;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         decreases length - i;
         views bytes[0..length];

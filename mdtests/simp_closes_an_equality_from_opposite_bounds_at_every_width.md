@@ -55,7 +55,7 @@ uint64 picku64(uint64 a, uint64 b) {
 uint32 count(uint32 n) {
     ensures result == n;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         decreases n - i;
         invariant i <= n;

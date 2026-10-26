@@ -32,7 +32,7 @@ int32 first_stop(int32 n, int32 limit) {
     requires 0 <= n and 0 <= limit;
     ensures result <= n and result <= limit;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n and i <= limit;

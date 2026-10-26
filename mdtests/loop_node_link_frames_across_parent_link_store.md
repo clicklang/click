@@ -52,7 +52,7 @@ void rotate(struct node* parent) {
     requires parent->right != 0;
     requires parent->right->left != 0;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         owns t: tree(parent);
         invariant t.model != Tree::Empty;

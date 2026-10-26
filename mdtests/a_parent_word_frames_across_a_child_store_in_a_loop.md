@@ -44,7 +44,7 @@ resource left_child(g: struct rb_node*) {
 void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
     owns s: left_child(gparent);
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         owns s: left_child(gparent);
         invariant parent == gparent->rb_left;

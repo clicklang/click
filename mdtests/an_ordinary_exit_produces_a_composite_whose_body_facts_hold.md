@@ -71,7 +71,7 @@ void spin(uint8* p, int32 n) {
     requires n < 100;
     owns zt(p);
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         owns zt(p);
         invariant i >= 0;
