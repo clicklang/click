@@ -99,7 +99,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
         let kernel = match kernel {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -504,7 +504,7 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
             Some(left.as_const()? >= right.as_const()?)
         }
         ConditionTerm::Constant(value) => Some(*value),
-        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right } => {
+        ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } => {
             let left = simp_bitvector(left);
             let right = simp_bitvector(right);
             if left == right {

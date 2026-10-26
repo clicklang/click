@@ -512,6 +512,20 @@ Progress:
   on a value at rest, as σ does, and a load at the other signedness of a
   stored constant folds through σ to the other format (K5). The hash and
   the derived order include the format. No verdict changed.
+- A `uint32` equality is filed at `uint32` (2026-10-25, rule K6,
+  [Decisions](#decisions)). C `==` on `unsigned` operands, a specification
+  `==` of `uint32` values and `machine_compare(UInt32, Equal)` build
+  `Compare { UInt32, Equal }` (`ConditionTerm::uint32_equal`); every other
+  equality stays at `int32`. The operands are words, as for any 32-bit
+  comparison. `ConditionTerm` and `BitvectorComparisonOp` compare, hash
+  and order by an identity that reads a 32-bit equality's format as
+  `int32` (`ConditionTerm::fact_format`), one match on the root, so the
+  fact indexes, fact and alpha keys and every equality lookup see one fact;
+  the patterns that read a 32-bit equality accept either format, and those
+  that read a `uint32` order exclude equality. Diagnostics and traces print
+  a `uint32` equality in its own type (`old(u[0]) == 4294967295u32`,
+  `uint32 =(…, 4294967295)`), where they printed its `int32` reading
+  (`== -1`). No verdict changed.
 
 
 ### Stage 4. Front ends and library
@@ -646,6 +660,13 @@ Maintainer direction, 2026-10-25:
   the same word, so it compares word kinds. Soundness: the read returns the
   same four bytes interpreted in F, which is C's modular conversion between
   `int` and `unsigned int`. Loads come before formatted constants.
+- **K6 (equality), 2026-10-25.** A 32-bit equality is the same fact
+  whichever signedness it is filed at: `Compare { UInt32, Equal }` and
+  `Compare { Int32, Equal }` over the same words are one fact, so the
+  e-graph, the difference graph, the fact keys and indexes, and every
+  equality lookup treat them as one (`ConditionTerm::fact_format`), and the
+  `uint32` format is kept for presentation. Soundness: word equality does
+  not depend on the reading of the bits.
 - **Printing shows σ where the signedness changes.** A value, fact or step
   holding σ prints it as `(uint32)x` or `(int32)x`; nothing else changes.
 

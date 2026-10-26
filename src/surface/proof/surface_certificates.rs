@@ -576,7 +576,7 @@ fn plan_explicit_signed_antisymmetry(
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -650,7 +650,7 @@ pub(super) fn plan_explicit_le_and_neq_implies_lt(
             let matches_neq = match neq_kernel {
                 Proposition::ConditionIs(
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left: neq_left,
                         right: neq_right,
@@ -660,7 +660,7 @@ pub(super) fn plan_explicit_le_and_neq_implies_lt(
                 Proposition::Not(body) => matches!(
                     body.as_ref(),
                     Proposition::ConditionIs(
-                        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: neq_left, right: neq_right },
+                        ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left: neq_left, right: neq_right },
                         true,
                     ) if neq_left.as_ref() == left && neq_right.as_ref() == right
                 ),
@@ -985,7 +985,7 @@ pub(super) fn spell_signed_goal(
                 right,
             } => compare(left, ComparisonOperator::GreaterEqual, right),
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -1346,7 +1346,7 @@ fn orient_surface_bitvector_equality(
 ) -> Option<ClickProposition> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: premise_left,
             right: premise_right,
@@ -2932,7 +2932,7 @@ pub(super) fn plan_explicit_le_and_not_lt_implies_eq(
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -2996,7 +2996,7 @@ pub(super) fn plan_pointer_advanced_load_equality(
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -3118,7 +3118,7 @@ pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,

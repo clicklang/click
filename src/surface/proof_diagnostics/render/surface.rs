@@ -873,7 +873,9 @@ impl Printer<'_> {
             if operand_type == "bits64" {
                 return None;
             }
-            let signed = if is_equality {
+            let signed = if is_equality && operand_type == "uint32" {
+                Some(false)
+            } else if is_equality {
                 [left, right].iter().find_map(|term| {
                     let Bitvector32Term::Variable(variable) = term else {
                         return None;
@@ -910,10 +912,12 @@ impl Printer<'_> {
                 // An equality reads its operands in whichever type one of
                 // them shows, signed by default.
                 let hint = self.hint_of(left).or_else(|| self.hint_of(right));
-                let hint = if operand_type == "int32" {
-                    hint.or(Some(Hint::Signed32))
-                } else {
-                    hint
+                let hint = match operand_type {
+                    "int32" => hint.or(Some(Hint::Signed32)),
+                    // A `uint32` equality reads its operands as `uint32`
+                    // (rule K6).
+                    "uint32" => hint.or(Some(Hint::Unsigned32)),
+                    _ => hint,
                 };
                 (
                     self.bitvector(left, hint, depth)?,

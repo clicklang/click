@@ -2123,7 +2123,7 @@ fn affine_claim_from_interval_evidence_refs(
         ) => (SignedArithmeticRelation::LessEqual, left, right, true),
         (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -2146,7 +2146,7 @@ fn affine_claim_from_interval_evidence_refs(
         }
         (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -2698,7 +2698,7 @@ fn comparison_proposition_matches(
         | (
             SignedArithmeticComparison::Equal,
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -2708,7 +2708,7 @@ fn comparison_proposition_matches(
         | (
             SignedArithmeticComparison::Disequal,
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -2934,7 +2934,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         ) => (SignedArithmeticRelation::LessEqual, left, right, true),
         (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -2951,7 +2951,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         }
         (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,

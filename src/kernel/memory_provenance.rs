@@ -2016,7 +2016,7 @@ impl AtomicMemoryLoadEqualityEvidence {
         // carrier decides.
         let Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -4605,7 +4605,7 @@ pub(crate) fn rewrite_condition_through_certified_stores(
             }
         }
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -5643,13 +5643,13 @@ pub(crate) fn c_condition_facts_equivalent_for_memory_resolution(
         )
         | (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: a,
                 right: b,
             },
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: c,
                 right: d,
@@ -6951,7 +6951,7 @@ pub(super) fn condition_with_canonicalized_loads(
             }
         }
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,

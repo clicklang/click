@@ -379,11 +379,57 @@ impl BitvectorUnaryOp {
 
 /// A comparison or overflow test of two machine-integer operands, at the
 /// format that reads them: the shape of [`ConditionTerm::Compare`] and
-/// [`ConditionTerm::Overflows`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+/// [`ConditionTerm::Overflows`]. Equality, hashing and order read a 32-bit
+/// equality's format as `int32` (rule K6, [`ConditionTerm::fact_format`]),
+/// as [`ConditionTerm`]'s do; the format itself is kept for presentation.
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum BitvectorComparisonOp {
     Compare(MachineIntegerType, CompareRelation),
     Overflows(MachineIntegerType, OverflowOperation),
+}
+
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum BitvectorComparisonIdentity {
+    Compare(MachineIntegerType, CompareRelation),
+    Overflows(MachineIntegerType, OverflowOperation),
+}
+
+impl BitvectorComparisonOp {
+    fn identity(self) -> BitvectorComparisonIdentity {
+        match self {
+            Self::Compare(format, relation) => BitvectorComparisonIdentity::Compare(
+                ConditionTerm::fact_format(format, relation),
+                relation,
+            ),
+            Self::Overflows(format, op) => BitvectorComparisonIdentity::Overflows(format, op),
+        }
+    }
+}
+
+impl PartialEq for BitvectorComparisonOp {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity() == other.identity()
+    }
+}
+
+impl Eq for BitvectorComparisonOp {}
+
+impl std::hash::Hash for BitvectorComparisonOp {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.identity().hash(state)
+    }
+}
+
+impl PartialOrd for BitvectorComparisonOp {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BitvectorComparisonOp {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.identity().cmp(&other.identity())
+    }
 }
 
 impl ConditionTerm {

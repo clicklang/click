@@ -402,7 +402,7 @@ impl ProofDiagnosticState for CertificationTraceState {
         let mut different_snapshots = false;
         if let Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: needed_left,
                 right: needed_right,
@@ -415,7 +415,7 @@ impl ProofDiagnosticState for CertificationTraceState {
             for fact in &self.available {
                 let Proposition::ConditionIs(
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,

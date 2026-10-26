@@ -107,3 +107,68 @@ fn stated_index_keys_each_fact_once_and_only_when_asked() {
     assert_eq!(again, 0, "a built index is not rebuilt");
     assert!(left.states_required_goal(&goal) && right.states_required_goal(&goal));
 }
+
+/// Rule K6: a 32-bit equality filed at `uint32` and the same equality at
+/// `int32` are one fact. A lookup at either signedness finds a fact filed
+/// at the other, at the work of a lookup at its own, however many unrelated
+/// equalities the context holds; nothing is filed twice.
+#[test]
+fn a_32_bit_equality_is_one_fact_at_either_signedness() {
+    let x = Bitvector32Term::Variable(Variable(31_000));
+    let equality = |format, right: u32| ConditionTerm::Compare {
+        format,
+        relation: CompareRelation::Equal,
+        left: Box::new(x.clone()),
+        right: Box::new(Bitvector32Term::Constant(right)),
+    };
+    let mut samples = Vec::new();
+    for size in [16u32, 64, 256, 1024] {
+        for (filed, queried) in [
+            (MachineIntegerType::UInt32, MachineIntegerType::Int32),
+            (MachineIntegerType::Int32, MachineIntegerType::UInt32),
+        ] {
+            let mut context = PureFactContext::new();
+            for index in 0..size {
+                context = context.assume_condition(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(Bitvector32Term::Variable(Variable(
+                            32_000 + u64::from(index),
+                        ))),
+                        right: Box::new(Bitvector32Term::Constant(index)),
+                    },
+                    true,
+                );
+            }
+            let context = context.assume_condition(equality(filed, u32::MAX), true);
+            let twice = context
+                .clone()
+                .assume_condition(equality(queried, u32::MAX), true);
+            assert_eq!(
+                twice.fact_counts().0,
+                context.fact_counts().0,
+                "the other signedness files no second fact, size {size}"
+            );
+            let (own, own_work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.exact_condition_value(&equality(filed, u32::MAX))
+            });
+            let (other, other_work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.exact_condition_value(&equality(queried, u32::MAX))
+            });
+            assert_eq!(own, Some(true), "size {size}");
+            assert_eq!(other, own, "{filed:?} found at {queried:?}, size {size}");
+            assert_eq!(other_work, own_work, "size {size}");
+            assert_eq!(
+                context.exact_condition_value(&equality(queried, 7)),
+                context.exact_condition_value(&equality(filed, 7)),
+                "size {size}"
+            );
+            samples.push(other_work);
+        }
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "lookup work grew with unrelated equalities: {samples:?}"
+    );
+}

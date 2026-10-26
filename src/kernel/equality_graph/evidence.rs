@@ -18,7 +18,7 @@ pub(in crate::kernel) fn scalar_evidence_pair(
     }
     let (a, b) = match condition {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: a,
             right: b,
@@ -44,7 +44,7 @@ impl EqualityGraph {
         if !matches!(
             condition,
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 ..
             }
@@ -272,7 +272,7 @@ impl EqualityGraph {
                 let Some(premise) = sources.iter().find_map(|(_, premise)| {
                     let Proposition::ConditionIs(
                         ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
                             left: a,
                             right: b,
@@ -327,7 +327,7 @@ impl EqualityGraph {
                 for (_, premises) in neighbors.iter() {
                     for (condition, _) in premises.iter() {
                         let ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
                             left: a,
                             right: b,

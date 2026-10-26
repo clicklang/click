@@ -87,7 +87,7 @@ pub(super) fn canonical_contradiction_condition(condition: &ConditionTerm) -> Co
 
     match condition {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -323,7 +323,7 @@ impl PureFactContext {
                     || *value
                         && matches!(
                             condition,
-                            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }
+                            ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }
                                 if crate::kernel::api::atomic_loads_equal_along_memory_derivations(
                                     left, right, self,
                                 )
@@ -342,7 +342,7 @@ impl PureFactContext {
                     || *value
                         && matches!(
                             condition,
-                            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }
+                            ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }
                                 if crate::kernel::api::canonicalize_atomic_loads(left)
                                         == crate::kernel::api::canonicalize_atomic_loads(right)
                                     && !crate::kernel::reasoning::load_equality_refuted_by_history(
@@ -639,7 +639,7 @@ impl PureFactContext {
                     ),
                     Proposition::ConditionIs(
                         ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
                             left,
                             right,
@@ -854,13 +854,13 @@ impl PureFactContext {
             )
             | (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: a,
                     right: b,
                 },
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: c,
                     right: d,
@@ -939,7 +939,7 @@ impl PureFactContext {
             // nor refuted by the recorded history.
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -965,7 +965,7 @@ impl PureFactContext {
         let load_address_congruence_evidence = match proposition {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -1006,7 +1006,7 @@ impl PureFactContext {
         let equality_path_evidence = match proposition {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -1020,7 +1020,7 @@ impl PureFactContext {
         let pinned_constant_equality_evidence = match proposition {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -1044,7 +1044,7 @@ impl PureFactContext {
         let le_and_not_lt_equality_evidence = match proposition {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -1073,7 +1073,7 @@ impl PureFactContext {
         let ge_and_not_gt_equality_evidence = match proposition {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -1628,7 +1628,7 @@ impl PureFactContext {
         let equal_one_predecessor_is_zero_evidence = match proposition {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -1845,7 +1845,7 @@ impl PureFactContext {
         if let AtomicPropositionDerivationEvidence::BitvectorEqualityPath(path) = evidence {
             let Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -2528,7 +2528,7 @@ impl PureFactContext {
         {
             let Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -2551,7 +2551,7 @@ impl PureFactContext {
         {
             let Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -2568,7 +2568,7 @@ impl PureFactContext {
         {
             let Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -2592,7 +2592,7 @@ impl PureFactContext {
         {
             let Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -2834,7 +2834,7 @@ impl PureFactContext {
         for step in path {
             let Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: premise_left,
                     right: premise_right,
@@ -3498,13 +3498,13 @@ impl PureFactContext {
                 }
                 (
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left: pattern_left,
                         right: pattern_right,
                     },
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left: target_left,
                         right: target_right,
@@ -3561,7 +3561,7 @@ impl PureFactContext {
         if !matches!(
             condition,
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 ..
             }
@@ -3594,13 +3594,13 @@ impl PureFactContext {
             ) => fact_left == target_right && fact_right == target_left,
             (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: fact_left,
                     right: fact_right,
                 },
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: target_left,
                     right: target_right,
@@ -3817,13 +3817,21 @@ impl PureFactContext {
             (
                 ConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
-                    relation: fact_relation,
+                    relation:
+                        fact_relation @ (crate::kernel::CompareRelation::LessThan
+                        | crate::kernel::CompareRelation::LessEqual
+                        | crate::kernel::CompareRelation::GreaterThan
+                        | crate::kernel::CompareRelation::GreaterEqual),
                     left: fact_left,
                     right: fact_right,
                 },
                 ConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
-                    relation: target_relation,
+                    relation:
+                        target_relation @ (crate::kernel::CompareRelation::LessThan
+                        | crate::kernel::CompareRelation::LessEqual
+                        | crate::kernel::CompareRelation::GreaterThan
+                        | crate::kernel::CompareRelation::GreaterEqual),
                     left: target_left,
                     right: target_right,
                 },
@@ -4287,7 +4295,7 @@ impl PureFactContext {
                 (ConditionTerm::Constant(actual), expected) if actual != expected => return true,
                 (
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,
@@ -4304,7 +4312,7 @@ impl PureFactContext {
                 }
                 (
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,

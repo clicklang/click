@@ -1189,7 +1189,7 @@ pub(in crate::kernel) fn call_input_fact_is_already_known(
             || matches!(side, Proposition::ConditionIs(condition, value)
                 if PureFactContext::decide_intrinsically(condition) == Some(*value)
                     || !matches!(condition,
-                        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, .. }
+                        ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. }
                         | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, .. }
                         | ConditionTerm::PointerValueEqual(..)
                     | ConditionTerm::PointerEqual(..)

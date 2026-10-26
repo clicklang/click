@@ -94,7 +94,7 @@ impl ProofFacts {
                 let (from, to, wide) = match equality {
                     Proposition::ConditionIs(
                         ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
                             left: a,
                             right: b,
@@ -115,7 +115,7 @@ impl ProofFacts {
                 let (left, right) = match goal {
                     Proposition::ConditionIs(
                         ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
                             left: a,
                             right: b,
@@ -171,7 +171,7 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
         }
         Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: a,
                 right: b,
@@ -518,7 +518,7 @@ fn rewrite_with_admitted_equality_as_written(
 fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Proposition> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: from,
             right: to,
@@ -564,7 +564,7 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => left == right,
         Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -772,7 +772,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         Proposition::ConditionIs(ConditionTerm::PointerValueEqual(..), _)
     ) && let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -1207,7 +1207,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         right: Box::new(rewrite_term(right)),
                     },
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,
@@ -1558,7 +1558,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         right: Box::new(rewrite_term(goal_right)),
                     },
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left: goal_left,
                         right: goal_right,
@@ -1610,7 +1610,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         return Ok(rewritten);
     }
     let (left, right) = match equality {
-        Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }, true) => {
+        Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }, true) => {
             (left, right)
         }
         Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, true) => {

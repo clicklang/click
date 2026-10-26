@@ -474,13 +474,13 @@ fn condition_identity(left: &ConditionTerm, right: &ConditionTerm) -> bool {
         }
         (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: left_first,
                 right: left_second,
             },
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: right_first,
                 right: right_second,
@@ -580,13 +580,21 @@ fn condition_identity(left: &ConditionTerm, right: &ConditionTerm) -> bool {
         (
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
-                relation: left_relation,
+                relation:
+                    left_relation @ (crate::kernel::CompareRelation::LessThan
+                    | crate::kernel::CompareRelation::LessEqual
+                    | crate::kernel::CompareRelation::GreaterThan
+                    | crate::kernel::CompareRelation::GreaterEqual),
                 left: left_first,
                 right: left_second,
             },
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
-                relation: right_relation,
+                relation:
+                    right_relation @ (crate::kernel::CompareRelation::LessThan
+                    | crate::kernel::CompareRelation::LessEqual
+                    | crate::kernel::CompareRelation::GreaterThan
+                    | crate::kernel::CompareRelation::GreaterEqual),
                 left: right_first,
                 right: right_second,
             },
@@ -1253,7 +1261,7 @@ fn signed_width_equality(
         (
             SignedDefinedWidth::Int32,
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -1581,6 +1589,11 @@ fn scalar_bounds(premises: &[&Proposition]) -> Option<BTreeMap<Bitvector32Term, 
             // A `uint32` order bounds no signed word.
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
+                relation:
+                    CompareRelation::LessThan
+                    | CompareRelation::LessEqual
+                    | CompareRelation::GreaterThan
+                    | CompareRelation::GreaterEqual,
                 ..
             } => continue,
             _ => return None,

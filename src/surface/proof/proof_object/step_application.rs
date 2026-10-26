@@ -262,13 +262,17 @@ fn signed_scaled_surface_shape(
             )
             | (
                 crate::kernel::ConditionTerm::Compare {
-                    format: crate::kernel::MachineIntegerType::Int32,
+                    format:
+                        crate::kernel::MachineIntegerType::Int32
+                        | crate::kernel::MachineIntegerType::UInt32,
                     relation: crate::kernel::CompareRelation::Equal,
                     left: source_left,
                     right: source_right,
                 },
                 crate::kernel::ConditionTerm::Compare {
-                    format: crate::kernel::MachineIntegerType::Int32,
+                    format:
+                        crate::kernel::MachineIntegerType::Int32
+                        | crate::kernel::MachineIntegerType::UInt32,
                     relation: crate::kernel::CompareRelation::Equal,
                     left: target_left,
                     right: target_right,
@@ -545,7 +549,8 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
             right,
         }
         | crate::kernel::ConditionTerm::Compare {
-            format: crate::kernel::MachineIntegerType::Int32,
+            format:
+                crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32,
             relation: crate::kernel::CompareRelation::Equal,
             left,
             right,
@@ -575,14 +580,19 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
             right,
         }
         | crate::kernel::ConditionTerm::Compare {
-            format: crate::kernel::MachineIntegerType::Int32,
+            format:
+                crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32,
             relation: crate::kernel::CompareRelation::Equal,
             left,
             right,
         } => (left.as_ref(), right.as_ref()),
         crate::kernel::ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::UInt32,
-            relation,
+            relation:
+                relation @ (crate::kernel::CompareRelation::LessThan
+                | crate::kernel::CompareRelation::LessEqual
+                | crate::kernel::CompareRelation::GreaterThan
+                | crate::kernel::CompareRelation::GreaterEqual),
             left,
             right,
         } if *relation != crate::kernel::CompareRelation::Equal => (left.as_ref(), right.as_ref()),
@@ -2296,7 +2306,9 @@ impl<'a> Proof<'a> {
             };
             let term = match condition {
                 crate::kernel::ConditionTerm::Compare {
-                    format: crate::kernel::MachineIntegerType::Int32,
+                    format:
+                        crate::kernel::MachineIntegerType::Int32
+                        | crate::kernel::MachineIntegerType::UInt32,
                     relation: crate::kernel::CompareRelation::Equal,
                     left,
                     right,
@@ -2309,7 +2321,9 @@ impl<'a> Proof<'a> {
                     left.as_ref().clone()
                 }
                 crate::kernel::ConditionTerm::Compare {
-                    format: crate::kernel::MachineIntegerType::Int32,
+                    format:
+                        crate::kernel::MachineIntegerType::Int32
+                        | crate::kernel::MachineIntegerType::UInt32,
                     relation: crate::kernel::CompareRelation::Equal,
                     left,
                     right,

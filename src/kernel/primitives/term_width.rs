@@ -432,7 +432,7 @@ pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<Widt
     // 32-bit equality whatever the load's width, so its two sides need only
     // agree with each other.
     if let C::Compare {
-        format: MachineIntegerType::Int32,
+        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
         relation: CompareRelation::Equal,
         left,
         right,

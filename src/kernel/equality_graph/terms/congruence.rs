@@ -1070,7 +1070,7 @@ impl TermClasses {
                 (AlgebraicEq, a, b)
             }
             C::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: a,
                 right: b,
@@ -1107,7 +1107,11 @@ impl TermClasses {
             } => (Int32Ge, self.intern_int32(a), self.intern_int32(b)),
             C::Compare {
                 format: MachineIntegerType::UInt32,
-                relation,
+                relation:
+                    relation @ (crate::kernel::CompareRelation::LessThan
+                    | crate::kernel::CompareRelation::LessEqual
+                    | crate::kernel::CompareRelation::GreaterThan
+                    | crate::kernel::CompareRelation::GreaterEqual),
                 left: a,
                 right: b,
             } if *relation != CompareRelation::Equal => (
@@ -1219,7 +1223,7 @@ impl TermClasses {
             C::IntegerGreaterEqual(..) => ConditionKind::IntegerGe,
             C::AlgebraicEqual(..) => ConditionKind::AlgebraicEq,
             C::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 ..
             } => ConditionKind::Int32Eq,

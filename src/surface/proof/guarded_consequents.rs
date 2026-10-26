@@ -100,7 +100,7 @@ impl<'a> Proof<'a> {
                 consequent.as_ref(),
                 Proposition::ConditionIs(
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         ..
                     } | ConditionTerm::Compare {
@@ -446,7 +446,7 @@ impl GuardedTermSpeller<'_, '_> {
         }
         let (left, right, operator) = match condition {
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,

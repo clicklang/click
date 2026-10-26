@@ -3050,7 +3050,7 @@ fn indexed_loop_exit_load_equality(
     }
     match &condition {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -3067,7 +3067,7 @@ fn indexed_loop_exit_load_equality(
                         .find_map(|condition| {
                             crate::instrumentation::record_deterministic_work(1);
                             let ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
+                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                                 relation: CompareRelation::Equal,
                                 left: a,
                                 right: b,

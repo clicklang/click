@@ -439,7 +439,7 @@ fn proposition_mentions_pointer(
                 let mut terms = Vec::new();
                 match condition {
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,
@@ -790,7 +790,7 @@ fn charge_proposition(proposition: &Proposition) -> bool {
     };
     match condition {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,

@@ -1,0 +1,460 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 62,
+            "end_line": 1,
+            "file": "equality.cpp",
+            "start_column": 39,
+            "start_line": 1
+          },
+          "value": {
+            "kind": "integral_cast",
+            "span": {
+              "end_column": 62,
+              "end_line": 1,
+              "file": "equality.cpp",
+              "start_column": 46,
+              "start_line": 1
+            },
+            "value": {
+              "kind": "binary",
+              "left": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:equality.cpp@11@F@is_max#i#@u",
+                  "name": "u",
+                  "span": {
+                    "end_column": 47,
+                    "end_line": 1,
+                    "file": "equality.cpp",
+                    "start_column": 46,
+                    "start_line": 1
+                  }
+                },
+                "span": {
+                  "end_column": 47,
+                  "end_line": 1,
+                  "file": "equality.cpp",
+                  "start_column": 46,
+                  "start_line": 1
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": false,
+                  "source_aliases": []
+                }
+              },
+              "operator": "equal",
+              "right": {
+                "kind": "integer_literal",
+                "span": {
+                  "end_column": 62,
+                  "end_line": 1,
+                  "file": "equality.cpp",
+                  "start_column": 51,
+                  "start_line": 1
+                },
+                "value": "4294967295",
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": false,
+                  "source_aliases": []
+                }
+              },
+              "span": {
+                "end_column": 62,
+                "end_line": 1,
+                "file": "equality.cpp",
+                "start_column": 46,
+                "start_line": 1
+              },
+              "value_type": {
+                "bits": 8,
+                "is_const": false,
+                "kind": "boolean"
+              }
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@is_max#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "is_max",
+      "parameters": [
+        {
+          "declaration_id": "c:equality.cpp@11@F@is_max#i#@u",
+          "name": "u",
+          "span": {
+            "end_column": 26,
+            "end_line": 1,
+            "file": "equality.cpp",
+            "start_column": 12,
+            "start_line": 1
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "is_max"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 65,
+        "end_line": 1,
+        "file": "equality.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 76,
+            "end_line": 2,
+            "file": "equality.cpp",
+            "start_column": 44,
+            "start_line": 2
+          },
+          "value": {
+            "kind": "integral_cast",
+            "span": {
+              "end_column": 76,
+              "end_line": 2,
+              "file": "equality.cpp",
+              "start_column": 51,
+              "start_line": 2
+            },
+            "value": {
+              "kind": "binary",
+              "left": {
+                "kind": "integral_cast",
+                "span": {
+                  "end_column": 69,
+                  "end_line": 2,
+                  "file": "equality.cpp",
+                  "start_column": 68,
+                  "start_line": 2
+                },
+                "value": {
+                  "kind": "load",
+                  "place": {
+                    "declaration_id": "c:equality.cpp@81@F@signed_view#i#@u",
+                    "name": "u",
+                    "span": {
+                      "end_column": 69,
+                      "end_line": 2,
+                      "file": "equality.cpp",
+                      "start_column": 68,
+                      "start_line": 2
+                    }
+                  },
+                  "span": {
+                    "end_column": 69,
+                    "end_line": 2,
+                    "file": "equality.cpp",
+                    "start_column": 68,
+                    "start_line": 2
+                  },
+                  "value_type": {
+                    "bits": 32,
+                    "is_const": false,
+                    "kind": "integer",
+                    "signed": false,
+                    "source_aliases": []
+                  }
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              },
+              "operator": "equal",
+              "right": {
+                "kind": "binary",
+                "left": {
+                  "kind": "integer_literal",
+                  "span": {
+                    "end_column": 76,
+                    "end_line": 2,
+                    "file": "equality.cpp",
+                    "start_column": 74,
+                    "start_line": 2
+                  },
+                  "value": "0",
+                  "value_type": {
+                    "bits": 32,
+                    "is_const": false,
+                    "kind": "integer",
+                    "signed": true,
+                    "source_aliases": []
+                  }
+                },
+                "operator": "subtract",
+                "right": {
+                  "kind": "integer_literal",
+                  "span": {
+                    "end_column": 76,
+                    "end_line": 2,
+                    "file": "equality.cpp",
+                    "start_column": 75,
+                    "start_line": 2
+                  },
+                  "value": "1",
+                  "value_type": {
+                    "bits": 32,
+                    "is_const": false,
+                    "kind": "integer",
+                    "signed": true,
+                    "source_aliases": []
+                  }
+                },
+                "span": {
+                  "end_column": 76,
+                  "end_line": 2,
+                  "file": "equality.cpp",
+                  "start_column": 74,
+                  "start_line": 2
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              },
+              "span": {
+                "end_column": 76,
+                "end_line": 2,
+                "file": "equality.cpp",
+                "start_column": 51,
+                "start_line": 2
+              },
+              "value_type": {
+                "bits": 8,
+                "is_const": false,
+                "kind": "boolean"
+              }
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@signed_view#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "signed_view",
+      "parameters": [
+        {
+          "declaration_id": "c:equality.cpp@81@F@signed_view#i#@u",
+          "name": "u",
+          "span": {
+            "end_column": 31,
+            "end_line": 2,
+            "file": "equality.cpp",
+            "start_column": 17,
+            "start_line": 2
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "signed_view"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 79,
+        "end_line": 2,
+        "file": "equality.cpp",
+        "start_column": 1,
+        "start_line": 2
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 56,
+            "end_line": 3,
+            "file": "equality.cpp",
+            "start_column": 48,
+            "start_line": 3
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:equality.cpp@164@F@stated#i#@u",
+              "name": "u",
+              "span": {
+                "end_column": 56,
+                "end_line": 3,
+                "file": "equality.cpp",
+                "start_column": 55,
+                "start_line": 3
+              }
+            },
+            "span": {
+              "end_column": 56,
+              "end_line": 3,
+              "file": "equality.cpp",
+              "start_column": 55,
+              "start_line": 3
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@stated#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "stated",
+      "parameters": [
+        {
+          "declaration_id": "c:equality.cpp@164@F@stated#i#@u",
+          "name": "u",
+          "span": {
+            "end_column": 35,
+            "end_line": 3,
+            "file": "equality.cpp",
+            "start_column": 21,
+            "start_line": 3
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "stated"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 59,
+        "end_line": 3,
+        "file": "equality.cpp",
+        "start_column": 1,
+        "start_line": 3
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "equality.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/equality.cpp",
+      "canonical_path": "$unit/equality.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "equality.cpp",
+      "-o",
+      "equality.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "equality.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [],
+  "records": [],
+  "schema": 60
+}

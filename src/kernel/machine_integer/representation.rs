@@ -221,7 +221,7 @@ pub(crate) fn comparison_readings(
     let equality = *relation == CompareRelation::Equal;
     let types: &'static [MachineIntegerType] = match (format, equality) {
         (Ty::Int32, false) => &[Ty::Int32],
-        (Ty::Int32, true) => &[Ty::Int32, Ty::UInt32],
+        (Ty::Int32 | Ty::UInt32, true) => &[Ty::Int32, Ty::UInt32],
         (Ty::UInt32, false) => &[Ty::UInt32],
         (Ty::Int64, false) => &[Ty::Int64],
         (Ty::Int64, true) => &[Ty::Int64, Ty::UInt64],

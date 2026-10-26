@@ -4778,7 +4778,7 @@ fn apply_c_equality(
                 return Vec::new();
             };
             condition_as_c_int32_paths_valued(
-                ConditionTerm::equal(left, right),
+                ConditionTerm::uint32_equal(left, right),
                 facts,
                 obligations,
                 assumptions,

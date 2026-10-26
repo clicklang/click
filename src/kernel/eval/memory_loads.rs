@@ -2130,7 +2130,7 @@ pub(crate) fn is_load_variable(variable: &Variable) -> bool {
 pub(crate) fn is_load_variable_defining_fact(proposition: &Proposition) -> bool {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -3229,7 +3229,7 @@ pub(crate) fn is_store_fact(condition: &ConditionTerm, value: bool) -> bool {
         return false;
     }
     let ConditionTerm::Compare {
-        format: MachineIntegerType::Int32,
+        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
         relation: CompareRelation::Equal,
         left,
         right,

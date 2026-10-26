@@ -2387,9 +2387,10 @@ impl ConditionTerm {
             (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16, R::GreaterEqual) => {
                 Self::signed_greater_equal(left, right)
             }
-            (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16 | Ty::UInt32, R::Equal) => {
+            (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16, R::Equal) => {
                 Self::equal(left, right)
             }
+            (Ty::UInt32, R::Equal) => Self::uint32_equal(left, right),
             (Ty::UInt32, R::LessThan) => Self::unsigned_less_than(left, right),
             (Ty::UInt32, R::LessEqual) => Self::unsigned_less_equal(left, right),
             (Ty::UInt32, R::GreaterThan) => Self::unsigned_greater_than(left, right),
@@ -3405,6 +3406,26 @@ impl ConditionTerm {
                 left: Box::new(left),
                 right: Box::new(right),
             },
+        }
+    }
+
+    /// The equality of two `uint32` words: [`Self::equal`] filed at
+    /// `uint32`, which is the same fact as at `int32` (rule K6;
+    /// [`ConditionTerm::fact_format`]) and prints its operands as `uint32`.
+    pub(crate) fn uint32_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
+        match Self::equal(left, right) {
+            Self::Compare {
+                format: _,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } => Self::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            condition => condition,
         }
     }
 
@@ -5458,7 +5479,7 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
             ConditionTerm::AlgebraicEqual(right.clone(), left.clone())
         }
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,

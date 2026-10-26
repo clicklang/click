@@ -82,7 +82,7 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
 fn machine_affine_equality(condition: &ConditionTerm) -> Option<bool> {
     let (left, right, wide) = match condition {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -522,7 +522,7 @@ pub(crate) fn normalize_using_conditions(
     }
     if let Some((
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -728,7 +728,7 @@ fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComp
     };
     match condition {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -2376,7 +2376,7 @@ impl LoadVariableBridgeSide for Bitvector32Term {
     fn equality_sides(proposition: &Proposition) -> Option<(Self, Self)> {
         let Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -2578,7 +2578,7 @@ pub(crate) fn premise_bridged_by_load_variable_chain(
         }
         Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: _,
                 right: _,
@@ -2610,7 +2610,7 @@ pub(crate) fn premise_bridged_by_load_variable_chain_with_origins(
         }
         Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: _,
                 right: _,
