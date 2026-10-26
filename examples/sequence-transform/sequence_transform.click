@@ -37,4 +37,12 @@ int32 sequence_contains3(int32 values[], int32 target) {
 
     ensures result != 0 implies target in old([values[0], values[1], values[2]]);
     ensures target in old([values[0], values[1], values[2]]) implies result != 0;
+} by {
+    if target in [values[0], values[1], values[2]] {
+        execute();
+        solve();
+    } else {
+        execute();
+        solve();
+    }
 }
