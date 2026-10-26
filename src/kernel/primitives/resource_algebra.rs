@@ -198,13 +198,7 @@ pub(crate) fn memory_interval_ancestors(
 /// goes; only a fact can relate them (an exact alias, or a recorded
 /// equality between the roots' index terms), and
 /// [`related_memory_base_roots`] adds the roots such facts select.
-///
-/// A base through a pointer read is rooted at the pointer the read's snapshot
-/// stores (the read-over-write authority, `eval::read_over_write_address`):
-/// one object, whichever spelling holds or asks for it.
 pub(in crate::kernel) fn memory_base_root(base: &Pointer) -> MemoryBaseRoot {
-    let resolved = crate::kernel::eval::read_over_write_address(base);
-    let base = resolved.as_ref().unwrap_or(base);
     (base.block.clone(), offset_root_atom(&base.offset))
 }
 

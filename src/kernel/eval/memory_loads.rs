@@ -1856,9 +1856,7 @@ fn canonicalized_symbolic_load_value_with_identity(
     // alias; only the symbolic value's coordinates change, and C access
     // validity still checks the original pointer and its provenance.
     let address = if purpose == LoadPurpose::Logical {
-        // An address through a stored pointer read is the address through
-        // the stored pointer: one place, found from memory alone.
-        read_over_write_address(pointer).unwrap_or_else(|| pointer.clone())
+        pointer.clone()
     } else {
         logical_memory_load_address(memory, pointer.clone(), value_type, assumptions)
     };
@@ -2479,46 +2477,6 @@ pub(crate) fn pointer_read_over_write_value(pointer: &Pointer) -> Option<Pointer
     pointer_read_over_write_c_value(pointer).map(|stored| stored.pointer().clone())
 }
 
-/// `address` with a pointer read at its base replaced by the pointer the
-/// read's snapshot stores there, through stored reads in turn: one address,
-/// spelled by the stored pointer. `None` when the base is no stored read.
-pub(crate) fn read_over_write_address(address: &Pointer) -> Option<Pointer> {
-    // A load variable's pointer value is the named read of its cell: one
-    // read, spelled the way a named read is.
-    let named = |pointer: Pointer| match &pointer.block {
-        PointerBlock::Symbolic(variable) => {
-            match crate::kernel::primitives::pointer_read_of_load_variable(*variable) {
-                Some(read) => Pointer {
-                    block: read.block,
-                    offset: PointerOffsetTerm::add(read.offset, pointer.offset),
-                },
-                None => pointer,
-            }
-        }
-        _ => pointer,
-    };
-    let mut current = named(address.clone());
-    // A stored read was read before the store holding it, so the chain runs
-    // back through history; the bound only stops a pathological one.
-    for _ in 0..16 {
-        if !matches!(current.block, PointerBlock::LoadedPointer(_)) {
-            break;
-        }
-        let read = Pointer {
-            block: current.block.clone(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let Some(stored) = pointer_read_over_write_value(&read) else {
-            break;
-        };
-        current = named(Pointer {
-            block: stored.block,
-            offset: PointerOffsetTerm::add(stored.offset, current.offset),
-        });
-    }
-    (current != *address).then_some(current)
-}
-
 /// [`pointer_read_over_write_value`] with the stored pointer's type and
 /// designation.
 pub(crate) fn pointer_read_over_write_c_value(pointer: &Pointer) -> Option<CPointerValue> {
@@ -2744,10 +2702,8 @@ pub(crate) fn registered_pointer_load(identity: PointerLoadId) -> Option<(Shared
 }
 
 /// The block a pointer read's value lies in by the read-over-write authority:
-/// the block of the pointer its snapshot stores at the read's address. It
-/// reads the memory, never facts. `None` when the snapshot records no pointer
-/// there. A stored read was read before the store that holds it, so a caller
-/// following the result back through further reads reaches older history.
+/// the block of the pointer memory alone shows stored at the read's address
+/// (`memory_shown_cell_value`). `None` when memory shows no pointer there.
 pub(crate) fn loaded_pointer_stored_block(identity: PointerLoadId) -> Option<PointerBlock> {
     let (memory, address) = registered_pointer_load(identity)?;
     if !holds_pointer_cell(memory.memory(), &address) {
@@ -4380,18 +4336,6 @@ pub(crate) fn load_variable_for_term(
             memory.clone(),
             pointer.clone(),
             LoadKind::Int32,
-        ));
-    }
-    // One place, one name: an address through a pointer read is the address
-    // through the pointer the read's snapshot stores there (the
-    // read-over-write authority, which reads memory, never facts).
-    if let Bitvector32Term::MemoryLoad(memory, pointer, kind) = bits
-        && let Some(resolved) = read_over_write_address(pointer)
-    {
-        return load_variable_for_term(&Bitvector32Term::MemoryLoad(
-            memory.clone(),
-            Box::new(resolved),
-            *kind,
         ));
     }
     // Naming is deterministic per term, and callers ask per fact atom per

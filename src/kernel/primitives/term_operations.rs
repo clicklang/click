@@ -4763,11 +4763,6 @@ impl Pointer {
         memory: &SharedCMemory,
         address: &Pointer,
     ) -> Result<CPointerValue, Self> {
-        // An address through a stored read is the address through the
-        // stored pointer: one place (`eval::read_over_write_address`).
-        let address = crate::kernel::eval::read_over_write_address(address)
-            .unwrap_or_else(|| address.clone());
-        let address = &address;
         let source = memory.unchanged_bytes_source();
         let canonical = crate::kernel::memory_provenance::canonical_value_load_memory(
             &source,
@@ -5850,20 +5845,6 @@ fn canonical_pointer_read(
     // A snapshot that left these bytes unchanged reads them from its source.
     crate::kernel::registered_load_for_variable(&variable)
         .map(|(memory, address)| (memory.unchanged_bytes_source(), address, Some(variable)))
-}
-
-/// The pointer read a load variable's pointer value names: `Pointer::symbolic`
-/// of a load variable and the named read of its cell are one read spelled
-/// two ways. `None` for a variable that names no load, or a load narrower
-/// than a pointer, which reads a prefix of a pointer, not the pointer.
-pub(crate) fn pointer_read_of_load_variable(variable: Variable) -> Option<Pointer> {
-    if !crate::kernel::is_load_variable(&variable)
-        || crate::kernel::registered_load_bytes_for_variable(&variable)
-            .is_none_or(|bytes| bytes < crate::kernel::C_POINTER_BYTE_WIDTH)
-    {
-        return None;
-    }
-    canonical_pointer_read(&Bitvector32Term::Variable(variable)).map(named_pointer_read)
 }
 
 /// The pointer a canonical read names, recording the load variable it came

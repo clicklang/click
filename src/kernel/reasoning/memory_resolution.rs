@@ -1100,36 +1100,19 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
     };
     // The shared graph answers known equality first. Offset reasoning below
     // is a stronger, separately guarded judgment, not another alias walk.
-    // Equality is symmetric; the read-to-read alignment compares snapshots in
-    // the order it is given, so either pointer may be aligned to the other's
-    // block.
-    let aligned = |from: &Pointer, to: &Pointer| {
-        pointer_in_block_for_memory_resolution(from, &to.block, assumptions).is_some_and(|from| {
-            pointer_offsets_proven_equal_for_memory_resolution(
-                &to.offset,
-                &from.offset,
-                assumptions,
-            )
-        })
-    };
     let candidate = assumptions.pointers_known_equal(left, right)
-        || aligned(right, left)
-        || (matches!(left.block, PointerBlock::LoadedPointer(_)) && aligned(left, right));
-    if candidate {
-        return !assumptions
-            .pointers_proven_disjoint_by_explicit_range_for_memory_resolution(left, right);
-    }
-    // A pointer read the path's facts show still holds a stored pointer (a
-    // frame the memory alone does not show) is that pointer here.
-    let checked_stored = |pointer: &Pointer| {
-        crate::kernel::memory_provenance::fact_shown_pointer_read_value(pointer, assumptions)
-            .map(|stored| stored.pointer().clone())
-    };
-    checked_stored(left)
-        .is_some_and(|left| pointers_proven_equal_for_memory_resolution(&left, right, assumptions))
-        || checked_stored(right).is_some_and(|right| {
-            pointers_proven_equal_for_memory_resolution(left, &right, assumptions)
-        })
+        || pointer_in_block_for_memory_resolution(right, &left.block, assumptions).is_some_and(
+            |right| {
+                pointer_offsets_proven_equal_for_memory_resolution(
+                    &left.offset,
+                    &right.offset,
+                    assumptions,
+                )
+            },
+        );
+    candidate
+        && !assumptions
+            .pointers_proven_disjoint_by_explicit_range_for_memory_resolution(left, right)
 }
 
 /// `pointer` spelled as an address in `block`, when the two name one

@@ -123,8 +123,7 @@ pub(crate) use memory_loads::{
     record_pointer_load_source, registered_pointer_load, typed_pointer_read_variable,
 };
 pub(crate) use memory_loads::{
-    loaded_pointer_read_origin, loaded_pointer_stored_block, pointer_read_over_write_c_value,
-    pointer_read_over_write_value, read_over_write_address,
+    loaded_pointer_read_origin, loaded_pointer_stored_block, pointer_read_over_write_value,
 };
 pub(crate) use memory_loads::{
     registered_load_kind_for_variable, registered_load_origin_term_for_variable,

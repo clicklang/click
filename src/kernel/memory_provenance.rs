@@ -2987,47 +2987,6 @@ fn pointer_read_domains_equal(
         (Some(CValue::Pointer(a)), Some(CValue::Pointer(b))) if a == b)
 }
 
-/// The pointer the path's facts show stored where `pointer`'s read reads, as
-/// [`complete_pointer_read_value`] finds it, at `pointer`'s displacement. A
-/// read through another read is asked at the address that read's own stored
-/// pointer gives, so a chain of reads resolves link by link. The term is
-/// still the read; this is what a check consults to relate it.
-pub(in crate::kernel) fn fact_shown_pointer_read_value(
-    pointer: &Pointer,
-    assumptions: &PureFactContext,
-) -> Option<CPointerValue> {
-    fn resolve(
-        pointer: &Pointer,
-        assumptions: &PureFactContext,
-        depth: usize,
-    ) -> Option<CPointerValue> {
-        let PointerBlock::LoadedPointer(_) = &pointer.block else {
-            return None;
-        };
-        let read = Pointer {
-            block: pointer.block.clone(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let stored = complete_pointer_read_value(&read, assumptions).or_else(|| {
-            let loaded = read.as_loaded_value()?;
-            if depth == 0 {
-                return None;
-            }
-            let address = resolve(&loaded.defining_address, assumptions, depth - 1)?;
-            complete_pointer_read_value(
-                &Pointer::loaded_value(&loaded.defining_memory, address.pointer()),
-                assumptions,
-            )
-        })?;
-        let address = Pointer {
-            block: stored.pointer().block.clone(),
-            offset: PointerOffsetTerm::add(stored.pointer().offset.clone(), pointer.offset.clone()),
-        };
-        Some(stored.with_address(address))
-    }
-    resolve(pointer, assumptions, 8)
-}
-
 /// Recover only an actual complete pointer stored at this read's source.
 /// Numeric scalar values and address equalities supply no pointer metadata.
 pub(in crate::kernel) fn complete_pointer_read_value(
