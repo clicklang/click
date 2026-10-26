@@ -187,6 +187,9 @@ pub(crate) struct PopulationEntryCount {
     pub(crate) family: Arc<str>,
     pub(crate) anchor: crate::kernel::Pointer,
     pub(crate) wildcards: usize,
+    /// An exact member's arguments, anchor first, for the entry count of
+    /// one member, `old(count(R(a, k)))`; `None` for a population's total.
+    pub(crate) member: Option<Arc<[crate::kernel::AlgebraicValue]>>,
 }
 
 /// Records that `variable` is the function-entry count of a population.
