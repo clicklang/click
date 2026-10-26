@@ -889,7 +889,7 @@ impl SurfacePropositionMap {
                     let resolved = crate::kernel::resolve_load_variables_from_registry(kernel);
                     if let Proposition::ConditionIs(
                         ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
                             left: a,
                             right: b,

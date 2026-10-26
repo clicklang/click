@@ -86,7 +86,7 @@ impl PureFactContext {
                 }
             }
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -267,7 +267,7 @@ impl PureFactContext {
                         return false;
                     }
                     let ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left: fact_left,
                         right: fact_right,
@@ -420,7 +420,7 @@ impl PureFactContext {
         };
         let (left, right) = match condition {
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -553,7 +553,7 @@ impl PureFactContext {
         candidates.into_iter().any(|(fact, value)| {
             let (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: fact_left,
                     right: fact_right,
@@ -638,13 +638,13 @@ impl PureFactContext {
         match (fact, target) {
             (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: fact_left,
                     right: fact_right,
                 },
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: target_left,
                     right: target_right,
@@ -926,7 +926,7 @@ impl PureFactContext {
             .any(|(condition, value)| {
                 let (
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left: fact_left,
                         right: fact_right,

@@ -951,7 +951,7 @@ impl SignedConstantEvidence {
     ) -> Option<i64> {
         let Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -1157,7 +1157,7 @@ impl LoadAddressCongruenceEvidence {
     ) -> bool {
         let Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,

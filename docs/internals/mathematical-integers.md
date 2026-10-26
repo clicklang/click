@@ -568,6 +568,18 @@ wherever a renderer reaches it
 `rust_a_u32_constant_above_i32_max_is_stated_stored_and_read_as_itself` in
 `tests/rust_import.rs`).
 
+A 32-bit equality is one fact at either signedness (rule K6, 2026-10-25).
+An equality of `uint32` values is filed as `Compare { UInt32, Equal }`
+(`ConditionTerm::uint32_equal`), with word operands as every 32-bit
+comparison has, and prints in its own type (`old(u[0]) == 4294967295u32`,
+not `== -1`). `ConditionTerm` and `BitvectorComparisonOp` compare, hash and
+order it as the `int32` equality of the same words
+(`ConditionTerm::fact_format`, one match on the root), so every fact index,
+key and lookup finds it at either format, and it is never filed twice
+(`mdtests/a_uint32_equality_above_int32_max_is_one_fact_with_its_int32_word.md`,
+`a_32_bit_equality_is_one_fact_at_either_signedness`,
+`rust_a_u32_equality_above_i32_max_is_stated_used_and_printed_as_itself`).
+
 ## Wide runtime scalars
 
 

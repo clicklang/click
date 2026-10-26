@@ -159,7 +159,7 @@ fn push_havoc_comparison(
         BitvectorComparisonOp::Compare(Ty::Int32, R::LessEqual) => "cle",
         BitvectorComparisonOp::Compare(Ty::Int32, R::GreaterThan) => "cgt",
         BitvectorComparisonOp::Compare(Ty::Int32, R::GreaterEqual) => "cge",
-        BitvectorComparisonOp::Compare(Ty::Int32, R::Equal) => "ceq",
+        BitvectorComparisonOp::Compare(Ty::Int32 | Ty::UInt32, R::Equal) => "ceq",
         BitvectorComparisonOp::Overflows(Ty::Int32, O::Add) => "cao",
         BitvectorComparisonOp::Overflows(Ty::Int32, O::Subtract) => "cso",
         BitvectorComparisonOp::Overflows(Ty::Int32, O::Multiply) => "cmo",

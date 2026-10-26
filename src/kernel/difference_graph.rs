@@ -226,7 +226,7 @@ impl DifferenceGraph {
         }
         if value
             && let ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: a,
                 right: b,
@@ -254,7 +254,7 @@ impl DifferenceGraph {
         }
         if !value
             && let ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: a,
                 right: b,
@@ -287,7 +287,7 @@ impl DifferenceGraph {
         let domains: &[Domain] = if matches!(
             condition,
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 ..
             }
@@ -336,7 +336,7 @@ impl DifferenceGraph {
         let domains: &[Domain] = if matches!(
             condition,
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 ..
             }
@@ -1094,7 +1094,7 @@ impl DifferenceGraph {
             return (no_pair && (!int64 || nonzero)).then_some(false);
         }
         if let C::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: a,
             right: b,
@@ -1109,7 +1109,7 @@ impl DifferenceGraph {
             let domains: &[Domain] = if matches!(
                 condition,
                 C::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     ..
                 }
@@ -1767,7 +1767,7 @@ fn expresses(condition: &ConditionTerm) -> bool {
                 relation: CompareRelation::GreaterEqual,
                 ..
             } | C::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 ..
             } | C::Compare {
@@ -2770,7 +2770,7 @@ fn condition_orders(
             right: b,
         } => (Domain::UInt32, b, a, false),
         C::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: a,
             right: b,
@@ -2784,7 +2784,7 @@ fn condition_orders(
             let domains: &[Domain] = if matches!(
                 condition,
                 C::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     ..
                 }

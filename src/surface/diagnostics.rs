@@ -740,7 +740,7 @@ pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
             right: _,
         } => "signed greater-or-equal",
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: _,
             right: _,
@@ -7504,7 +7504,7 @@ pub(super) fn describe_condition_with_context(
     }
     match condition {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -7605,7 +7605,11 @@ fn describe_unsigned_comparison(
 ) -> Option<String> {
     let ConditionTerm::Compare {
         format: MachineIntegerType::UInt32,
-        relation,
+        relation:
+            relation @ (crate::kernel::CompareRelation::LessThan
+            | crate::kernel::CompareRelation::LessEqual
+            | crate::kernel::CompareRelation::GreaterThan
+            | crate::kernel::CompareRelation::GreaterEqual),
         left,
         right,
     } = condition
@@ -7617,7 +7621,15 @@ fn describe_unsigned_comparison(
         CompareRelation::LessEqual => "<=",
         CompareRelation::GreaterThan => ">",
         CompareRelation::GreaterEqual => ">=",
-        CompareRelation::Equal => return None,
+        // A `uint32` equality spells a constant operand in its own type
+        // (rule K6).
+        CompareRelation::Equal => {
+            let operand = |term: &Bitvector32Term| match term.as_const() {
+                Some(value) => format!("{value}u32"),
+                None => describe_bitvector_with_context(term, parameter_binding),
+            };
+            return Some(format!("{} == {}", operand(left), operand(right)));
+        }
     };
     let operand = |term: &Bitvector32Term| match term.as_const() {
         Some(value) => value.to_string(),

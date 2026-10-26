@@ -645,7 +645,7 @@ fn store_cell_effect(
         } else if assumptions.exact_condition_value(&condition) == Some(false) {
             hop(MemoryDagHopJustification::StoreCommonBaseExactInequality { condition })
         } else if let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -658,7 +658,7 @@ fn store_cell_effect(
                 reversed: false,
             })
         } else if let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,

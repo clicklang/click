@@ -5453,7 +5453,8 @@ impl CheckedInterfaceLoadDefinition {
     fn check(proposition: &Proposition) -> Option<Self> {
         let Proposition::ConditionIs(
             crate::kernel::ConditionTerm::Compare {
-                format: crate::kernel::MachineIntegerType::Int32,
+                format:
+                    crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32,
                 relation: crate::kernel::CompareRelation::Equal,
                 left,
                 right,
@@ -6281,7 +6282,7 @@ fn ground_comparison_premise_holds(premise: &Proposition) -> bool {
             right,
         }
         | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -6314,7 +6315,7 @@ fn ground_comparison_premise_holds(premise: &Proposition) -> bool {
             ..
         } => left >= right,
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             ..
         } => left == right,
@@ -6332,7 +6333,7 @@ pub(crate) fn checked_branch_fact_is_available(facts: &ProofFacts, fact: &Propos
         || facts.assumptions().proves_exact(fact)
         || ground_comparison_premise_holds(fact)
         || matches!(fact,
-            Proposition::ConditionIs(crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32, relation: crate::kernel::CompareRelation::Equal, left, right }, true)
+            Proposition::ConditionIs(crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, true)
                 if left == right)
 }
 

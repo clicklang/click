@@ -2436,7 +2436,7 @@ fn evaluate_spec_integer_expression_paths_in(
 pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition) -> bool {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -8526,8 +8526,14 @@ pub(super) fn c_value_comparison_proposition(
     let left = c_value_int32_term(left)?;
     let right = c_value_int32_term(right)?;
     let (condition, value) = match operator {
-        CComparisonOperator::Equal => (ConditionTerm::equal(left, right), true),
-        CComparisonOperator::NotEqual => (ConditionTerm::equal(left, right), false),
+        CComparisonOperator::Equal | CComparisonOperator::NotEqual => (
+            if unsigned {
+                ConditionTerm::uint32_equal(left, right)
+            } else {
+                ConditionTerm::equal(left, right)
+            },
+            matches!(operator, CComparisonOperator::Equal),
+        ),
         CComparisonOperator::LessThan => (
             if unsigned {
                 ConditionTerm::unsigned_less_than(left, right)

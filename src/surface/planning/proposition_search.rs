@@ -362,7 +362,7 @@ impl PropositionSearch for PureFactContext {
                     || *value
                         && matches!(
                             condition,
-                            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }
+                            ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }
                                 if atomic_loads_equal_along_memory_derivations(
                                     left, right, self,
                                 )
@@ -375,7 +375,7 @@ impl PropositionSearch for PureFactContext {
                     || *value
                         && matches!(
                             condition,
-                            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }
+                            ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }
                                 if canonicalize_atomic_loads(left)
                                         == canonicalize_atomic_loads(right)
                         )
@@ -843,7 +843,7 @@ impl PropositionSearch for PureFactContext {
                     proposition,
                     Proposition::ConditionIs(
                         ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
                             ..
                         } | ConditionTerm::Compare {
@@ -1929,7 +1929,7 @@ pub(crate) fn connected_equalities(
             fact,
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     ..
                 } | ConditionTerm::Compare {
@@ -2188,7 +2188,7 @@ fn reduce_simp_atomic_premises(
     let query = match proposition {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,

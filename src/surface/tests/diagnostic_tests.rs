@@ -4000,3 +4000,19 @@ fn failed_branch_interface_retains_its_arm_and_written_requirement() {
         });
     }
 }
+
+/// Rule K6: a `uint32` equality is filed at `uint32`, so a refusal that
+/// lists it prints its constant in its own type, `4294967295u32`, not as the
+/// `int32` reading `-1`.
+#[test]
+fn a_uint32_equality_above_int32_max_prints_in_its_own_type() {
+    let source = "verifying \"t.c\";\nunsigned read(unsigned *u) {\n    requires u[0] == 4294967295u32;\n    ensures result == 4294967295u32;\n} by { execute(); simp(); }\n";
+    let error = verify_c0_sources(
+        source,
+        &[("t.c", "unsigned read(unsigned *u) { return *u; }")],
+    )
+    .unwrap_err();
+    let message = error.message();
+    assert!(message.contains("old(u[0]) == 4294967295u32"), "{message}");
+    assert!(!message.contains("== -1"), "{message}");
+}

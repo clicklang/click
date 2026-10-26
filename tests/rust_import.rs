@@ -2215,6 +2215,35 @@ fn rust_a_u32_constant_above_i32_max_is_stated_stored_and_read_as_itself() {
     assert!(!message.contains("-294967296"), "{message}");
 }
 
+/// A Rust `u32` equality is filed at `uint32` and is the same fact as the
+/// `int32` equality of its word (rule K6): `*value == 4294967295u32` is
+/// stated, used to prove the `u32` result and its `i32` reading, and a
+/// refusal prints it in its own type, not as `== -1`.
+#[test]
+fn rust_a_u32_equality_above_i32_max_is_stated_used_and_printed_as_itself() {
+    let p = Project::new(
+        "pub fn read(value: &u32) -> u32 { *value }\n\
+         pub fn view(value: &u32) -> i32 { *value as i32 }\n",
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let claim = "verifying \"borrow.rs\";\n\
+        fn read(value: &u32) -> u32 { views *value; requires *value == 4294967295u32; ensures result == 4294967295u32; } by { execute(); simp(); }\n\
+        fn view(value: &u32) -> i32 { views *value; requires *value == 4294967295u32; ensures result == -1; } by { execute(); simp(); }\n";
+    C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
+    let wrong = claim.replace(
+        "views *value; requires *value == 4294967295u32; ensures result == 4294967295u32; } by { execute(); simp(); }",
+        "requires *value == 4294967295u32; ensures result == 1u32; } by { execute(); simp(); }",
+    );
+    assert_ne!(wrong, claim);
+    let Err(error) = C0VerificationSession::new_program_prepared(&wrong, &prepared) else {
+        panic!("the claim is wrong and the read is not viewed");
+    };
+    let message = error.message();
+    assert!(message.contains("== 4294967295u32"), "{message}");
+    assert!(!message.contains("== -1"), "{message}");
+}
+
 const MOVE_SOURCE: &str = include_str!("../examples/rust-move-drop/guard.rs");
 const MOVE_SIDECAR: &str = include_str!("../examples/rust-move-drop/guard.click");
 fn moves_project(source: &str) -> (Project, String) {

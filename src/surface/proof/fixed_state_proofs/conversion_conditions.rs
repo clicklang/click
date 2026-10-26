@@ -419,7 +419,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<Bitvector32Term> {
 fn load_definition_cell(condition: &Proposition) -> Option<&Pointer> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,

@@ -526,13 +526,13 @@ impl ProofFacts {
                         )
                         | (
                             ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
+                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                                 relation: CompareRelation::Equal,
                                 left: a,
                                 right: b,
                             },
                             ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
+                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                                 relation: CompareRelation::Equal,
                                 left: c,
                                 right: d,
@@ -1368,7 +1368,7 @@ impl ProofFacts {
     pub(crate) fn with_selected_load_equality_bridge(&self, goal: &Proposition) -> Self {
         if self.pure_assumption_available(goal)
             || !matches!(goal, Proposition::ConditionIs(condition, true)
-                if matches!(condition, ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, .. })
+                if matches!(condition, ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. })
                     || condition.pointer_offset_sides().is_some())
         {
             return self.clone();
@@ -1926,7 +1926,7 @@ impl ProofFacts {
                     equality,
                     Proposition::ConditionIs(
                         ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
                             left: _,
                             right: _
@@ -2447,7 +2447,7 @@ fn index_bitvector_equality_fact(
     let (left, right) = match fact.as_ref() {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -2569,7 +2569,7 @@ fn index_guarded_implication_fact(
     };
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -2712,7 +2712,7 @@ fn collect_proposition_algebraic_terms(
         }
         Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,

@@ -381,7 +381,7 @@ fn signed_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         ) => (SignedArithmeticRelation::LessEqual, left, right, true),
         (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -398,7 +398,7 @@ fn signed_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         }
         (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -527,7 +527,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
         ) => (SignedArithmeticRelation::LessEqual, left, right, true),
         (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -544,7 +544,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
         }
         (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -2931,7 +2931,11 @@ fn unsigned_order_terms(goal: &Proposition) -> Option<(&Bitvector32Term, &Bitvec
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
-            relation,
+            relation:
+                relation @ (crate::kernel::CompareRelation::LessThan
+                | crate::kernel::CompareRelation::LessEqual
+                | crate::kernel::CompareRelation::GreaterThan
+                | crate::kernel::CompareRelation::GreaterEqual),
             left,
             right,
         },
@@ -3070,7 +3074,7 @@ fn comparison_terms(
         ) => Some((left.as_ref(), right.as_ref(), Comparison::LessEqual)),
         (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -3079,7 +3083,7 @@ fn comparison_terms(
         ) => Some((left.as_ref(), right.as_ref(), Comparison::Equal)),
         (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,

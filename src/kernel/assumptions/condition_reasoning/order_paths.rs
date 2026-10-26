@@ -288,13 +288,13 @@ impl PureFactContext {
                 }
             }
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
             } if left == right => Some(true),
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -400,7 +400,11 @@ impl PureFactContext {
             }
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
-                relation,
+                relation:
+                    relation @ (crate::kernel::CompareRelation::LessThan
+                    | crate::kernel::CompareRelation::LessEqual
+                    | crate::kernel::CompareRelation::GreaterThan
+                    | crate::kernel::CompareRelation::GreaterEqual),
                 ..
             } if *relation != CompareRelation::Equal => self.decide_unsigned32_order(condition),
             ConditionTerm::Compare {

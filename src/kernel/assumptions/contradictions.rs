@@ -154,7 +154,7 @@ impl Contradictions {
             self.adjust_polarity(canonical_contradiction_condition(&address), true, insert);
         }
         if let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,

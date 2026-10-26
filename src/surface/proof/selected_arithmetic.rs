@@ -120,7 +120,7 @@ impl MachineOrder {
             // bridges and left out.
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     ..
                 },
@@ -429,7 +429,9 @@ fn is_rewrite_equality(kernel: &Proposition) -> bool {
         kernel,
         Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::Int64,
+                format: MachineIntegerType::Int32
+                    | MachineIntegerType::UInt32
+                    | MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 ..
             },
@@ -603,7 +605,7 @@ impl<'a> Proof<'a> {
             Proposition::ConditionIs(
                 condition @ (ConditionTerm::IntegerEqual(..)
                 | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     ..
                 }
@@ -927,7 +929,7 @@ impl<'a> Proof<'a> {
             && let (
                 Proposition::ConditionIs(
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         ..
                     },
@@ -954,7 +956,7 @@ impl<'a> Proof<'a> {
             goal,
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     ..
                 },
@@ -1996,7 +1998,7 @@ impl<'a> Proof<'a> {
             goal,
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     ..
                 },

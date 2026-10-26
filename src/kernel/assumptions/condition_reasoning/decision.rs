@@ -11,7 +11,7 @@ impl PureFactContext {
     ) -> Option<Vec<Proposition>> {
         let Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -634,7 +634,7 @@ impl PureFactContext {
                 if let Some(value) = self.decide_reflexive_float_comparison(condition) {
                     return Some(value);
                 }
-                if let ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right } = condition
+                if let ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } = condition
                     && (self.int32_values_known_equal(left, right)
                         || super::super::super::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
                             left,
@@ -1126,7 +1126,7 @@ impl PureFactContext {
     /// is one memoized class lookup, not a walk over the facts.
     fn decide_byte_equality_from_constant_class(&self, condition: &ConditionTerm) -> Option<bool> {
         let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -1161,7 +1161,7 @@ impl PureFactContext {
         condition: &ConditionTerm,
     ) -> Option<bool> {
         let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -1260,7 +1260,11 @@ impl PureFactContext {
     ) -> Option<bool> {
         let ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
-            relation,
+            relation:
+                relation @ (crate::kernel::CompareRelation::LessThan
+                | crate::kernel::CompareRelation::LessEqual
+                | crate::kernel::CompareRelation::GreaterThan
+                | crate::kernel::CompareRelation::GreaterEqual),
             left,
             right,
         } = condition
@@ -1524,7 +1528,7 @@ impl PureFactContext {
             .copied()
             .or_else(|| match condition {
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -1639,7 +1643,11 @@ impl PureFactContext {
                 // A `uint32` order's mirrored spelling, and its converse.
                 ConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
-                    relation,
+                    relation:
+                        relation @ (crate::kernel::CompareRelation::LessThan
+                        | crate::kernel::CompareRelation::LessEqual
+                        | crate::kernel::CompareRelation::GreaterThan
+                        | crate::kernel::CompareRelation::GreaterEqual),
                     left,
                     right,
                 } => {
@@ -2184,7 +2192,7 @@ impl PureFactContext {
         {
             if let (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: fact_left,
                     right: fact_right,
@@ -2258,7 +2266,7 @@ impl PureFactContext {
         for (condition, value) in self.condition_facts_with_side(term) {
             let (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,

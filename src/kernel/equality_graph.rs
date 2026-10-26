@@ -1814,7 +1814,7 @@ impl EqualityGraph {
             && matches!(
                 condition,
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     ..
                 } | ConditionTerm::Compare {
@@ -1856,7 +1856,7 @@ impl EqualityGraph {
                 ConditionTerm::IntegerEqual(a, b) => return self.are_integer_equal(a, b),
                 ConditionTerm::AlgebraicEqual(a, b) => return self.are_algebraic_equal(a, b),
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: a,
                     right: b,

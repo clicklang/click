@@ -391,7 +391,7 @@ pub(in crate::kernel) fn condition_match_key(
     };
     Some(match condition {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -481,7 +481,7 @@ fn condition_has_an_open_side(condition: &ConditionTerm) -> bool {
     };
     match condition {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -2697,7 +2697,7 @@ fn is_algebraic_constructor_conflict(proposition: &Proposition) -> bool {
 /// `b == 1 - k`, which holds exactly when the first does not.
 fn spec_bool_complement_equation(condition: &ConditionTerm) -> Option<ConditionTerm> {
     let ConditionTerm::Compare {
-        format: MachineIntegerType::Int32,
+        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
         relation: CompareRelation::Equal,
         left,
         right,
@@ -3632,7 +3632,7 @@ impl PureFactContext {
         let derived;
         let (left, right) = match condition {
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -3921,7 +3921,7 @@ impl PureFactContext {
             return;
         }
         let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -4456,7 +4456,7 @@ impl PureFactContext {
                 continue;
             }
             let ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -4711,7 +4711,7 @@ impl PureFactContext {
         insert: bool,
     ) {
         let (ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -6979,7 +6979,7 @@ impl PureFactContext {
             );
         }
         if let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -6996,7 +6996,7 @@ impl PureFactContext {
         // in the context is visited.
         if value
             && let ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -10049,7 +10049,7 @@ fn generated_load_binding_matches_proposition(
     };
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -11610,6 +11610,11 @@ impl UniversalConclusionKey {
     /// The shape `condition_matches` relates `condition` within.
     pub(in crate::kernel) fn of_condition(condition: &ConditionTerm) -> Self {
         match condition {
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::Equal,
+                ..
+            } => Self::Equal,
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,

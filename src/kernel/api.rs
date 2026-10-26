@@ -165,7 +165,7 @@ pub(crate) fn spec_bool_term(term: &Bitvector32Term) -> Option<&Bitvector32Term>
     }
     match condition.as_ref() {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: zero,
             right: inner,
@@ -8698,7 +8698,7 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
         crate::kernel::proof::fact_reasoning::exactly_available_fact(&rewrite, &requirements)?;
         let Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: from,
                 right: to,
@@ -8710,7 +8710,7 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
         };
         let Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,

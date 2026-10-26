@@ -988,7 +988,12 @@ pub enum OverflowOperation {
     ShiftLeft,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+/// Equality, hashing and order compare a condition's identity
+/// ([`ConditionIdentity`]): a 32-bit equality is one fact whichever
+/// signedness it is filed at (rule K6), so `Compare { UInt32, Equal }` and
+/// `Compare { Int32, Equal }` over the same words are equal, hash alike and
+/// order as equal. The `uint32` format is kept for presentation.
+#[derive(Clone, Debug)]
 pub enum ConditionTerm {
     Constant(bool),
     Variable(Variable),
@@ -997,7 +1002,9 @@ pub enum ConditionTerm {
     /// `left REL right`, both operands read at `format`. A format of 8 to 32
     /// bits compares 32-bit words, 64 bits 64-bit words and 128 bits 128-bit
     /// words. Equality reads no sign, so an equality is filed at the signed
-    /// format of its width. A narrow value's word is its canonical extension,
+    /// format of its width, except that an equality of `uint32` values is
+    /// filed at `uint32` for presentation; it is the same fact as at `int32`
+    /// (rule K6, [`ConditionTerm::fact_format`]). A narrow value's word is its canonical extension,
     /// which the `int32` order compares exactly, so a narrow comparison is
     /// filed at `int32` (`design/machine-integers.md`, "One condition
     /// family").
@@ -1029,6 +1036,124 @@ pub enum ConditionTerm {
     IntegerGreaterEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerNotEqual(SharedIntegerTerm, SharedIntegerTerm),
+}
+
+/// A condition's identity: the condition itself, with a 32-bit equality's
+/// format read as `int32` (rule K6). Borrowed, so building it is one match
+/// on the root: no scan, no clone. The variants follow [`ConditionTerm`]'s
+/// order, so hashes and the derived order are unchanged elsewhere.
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum ConditionIdentity<'a> {
+    Constant(bool),
+    Variable(&'a Variable),
+    AlgebraicEqual(&'a AlgebraicTerm, &'a AlgebraicTerm),
+    Compare {
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        left: &'a Bitvector32Term,
+        right: &'a Bitvector32Term,
+    },
+    Overflows {
+        format: MachineIntegerType,
+        op: OverflowOperation,
+        left: &'a Bitvector32Term,
+        right: &'a Bitvector32Term,
+    },
+    Float32(&'a CFloatCondition),
+    Float64(&'a CFloatCondition),
+    PointerOffsetEqual(&'a PointerOffsetTerm, &'a PointerOffsetTerm),
+    PointerEqual(&'a Pointer, &'a Pointer),
+    PointerValueEqual(&'a CPointerValue, &'a CPointerValue),
+    IntegerLessThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
+    IntegerLessEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
+    IntegerGreaterThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
+    IntegerGreaterEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
+    IntegerEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
+    IntegerNotEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
+}
+
+impl ConditionTerm {
+    /// The format a comparison is filed at as a fact: a 32-bit equality is
+    /// filed at `int32` whichever signedness reads it (rule K6); every other
+    /// comparison at its own format.
+    pub(crate) fn fact_format(
+        format: MachineIntegerType,
+        relation: CompareRelation,
+    ) -> MachineIntegerType {
+        if relation == CompareRelation::Equal && format == MachineIntegerType::UInt32 {
+            MachineIntegerType::Int32
+        } else {
+            format
+        }
+    }
+
+    fn identity(&self) -> ConditionIdentity<'_> {
+        use ConditionIdentity as I;
+        match self {
+            Self::Constant(value) => I::Constant(*value),
+            Self::Variable(variable) => I::Variable(variable),
+            Self::AlgebraicEqual(left, right) => I::AlgebraicEqual(left, right),
+            Self::Compare {
+                format,
+                relation,
+                left,
+                right,
+            } => I::Compare {
+                format: Self::fact_format(*format, *relation),
+                relation: *relation,
+                left,
+                right,
+            },
+            Self::Overflows {
+                format,
+                op,
+                left,
+                right,
+            } => I::Overflows {
+                format: *format,
+                op: *op,
+                left,
+                right,
+            },
+            Self::Float32(condition) => I::Float32(condition),
+            Self::Float64(condition) => I::Float64(condition),
+            Self::PointerOffsetEqual(left, right) => I::PointerOffsetEqual(left, right),
+            Self::PointerEqual(left, right) => I::PointerEqual(left, right),
+            Self::PointerValueEqual(left, right) => I::PointerValueEqual(left, right),
+            Self::IntegerLessThan(left, right) => I::IntegerLessThan(left, right),
+            Self::IntegerLessEqual(left, right) => I::IntegerLessEqual(left, right),
+            Self::IntegerGreaterThan(left, right) => I::IntegerGreaterThan(left, right),
+            Self::IntegerGreaterEqual(left, right) => I::IntegerGreaterEqual(left, right),
+            Self::IntegerEqual(left, right) => I::IntegerEqual(left, right),
+            Self::IntegerNotEqual(left, right) => I::IntegerNotEqual(left, right),
+        }
+    }
+}
+
+impl PartialEq for ConditionTerm {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity() == other.identity()
+    }
+}
+
+impl Eq for ConditionTerm {}
+
+impl std::hash::Hash for ConditionTerm {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.identity().hash(state)
+    }
+}
+
+impl PartialOrd for ConditionTerm {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ConditionTerm {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.identity().cmp(&other.identity())
+    }
 }
 
 /// Matches every machine comparison and overflow test, at any format.

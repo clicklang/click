@@ -680,7 +680,9 @@ pointer read is `Int32`), and a typed read of a cell stored at the other
 signedness returns σ of the stored word (rule K5); both reads name one word
 and one load variable. A `uint32` constant is `UInt32Constant`, an `int32`
 or kernel-internal one `Constant`; both name one word, so the format
-survives only on a value at rest. Unsigned division and
+survives only on a value at rest. An equality of `uint32` values is filed
+at `uint32` and is the same fact as the `int32` equality of its words
+(rule K6, `ConditionTerm::fact_format`). Unsigned division and
 remainder have distinct term nodes so high-bit operands do not inherit signed
 division, and unsigned right shift has a distinct logical-shift node. Equality
 and ordered comparisons select the unsigned conditions. Stores and function

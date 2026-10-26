@@ -2853,7 +2853,7 @@ pub(crate) fn condition_holds_by_memory_resolution(
     value: bool,
 ) -> bool {
     match (condition, value) {
-        (ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }, true) => {
+        (ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }, true) => {
             names_of_one_cell_framed(left, right, assumptions)
                 || int32_values_proven_equal_for_memory_resolution(left, right, assumptions)
                 || assumptions
@@ -3037,13 +3037,13 @@ pub(super) fn certification_proves_condition_from_verified_pure_implication(
     let matched = match (pattern, target) {
         (
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: pattern_left,
                 right: pattern_right,
             },
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: target_left,
                 right: target_right,

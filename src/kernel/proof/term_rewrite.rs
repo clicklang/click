@@ -234,7 +234,7 @@ fn bool_operand(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
         return None;
     };
     let ConditionTerm::Compare {
-        format: MachineIntegerType::Int32,
+        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
         relation: CompareRelation::Equal,
         left: operand,
         right: zero,
@@ -906,7 +906,7 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
                 .unwrap_or(condition)
         }
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -4901,7 +4901,7 @@ impl<'a> TermRewrite<'a> {
             ConditionTerm::PointerEqual(left, right) => graph.are_equal(left, right),
             ConditionTerm::PointerOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,

@@ -1657,7 +1657,9 @@ impl<'a> Proof<'a> {
             };
             let Proposition::ConditionIs(
                 crate::kernel::ConditionTerm::Compare {
-                    format: crate::kernel::MachineIntegerType::Int32,
+                    format:
+                        crate::kernel::MachineIntegerType::Int32
+                        | crate::kernel::MachineIntegerType::UInt32,
                     relation: crate::kernel::CompareRelation::Equal,
                     left,
                     right,
@@ -2828,7 +2830,7 @@ impl<'a> Proof<'a> {
         }
         let (left, right) = match condition {
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -2845,7 +2847,7 @@ impl<'a> Proof<'a> {
             && matches!(
                 condition,
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     ..
                 }
@@ -2903,7 +2905,7 @@ impl<'a> Proof<'a> {
         };
         let (left, right) = match condition {
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -2957,7 +2959,7 @@ impl<'a> Proof<'a> {
             goal,
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     ..
                 },
@@ -4691,7 +4693,7 @@ impl<'a> Proof<'a> {
         let pairs = match self.goal()? {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -4893,7 +4895,7 @@ impl<'a> Proof<'a> {
                         && matches!(
                             condition,
                             ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
+                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                                 relation: CompareRelation::Equal,
                                 ..
                             }
@@ -6049,7 +6051,7 @@ impl<'a> Proof<'a> {
     ) -> Result<Option<Self>, ClickError> {
         let Some(Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -7594,7 +7596,7 @@ impl<'a> Proof<'a> {
             ) => true,
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -7689,7 +7691,7 @@ impl<'a> Proof<'a> {
         };
         let Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: a,
                 right: b,
@@ -7872,7 +7874,7 @@ impl<'a> Proof<'a> {
                 let equality_has_literal_endpoint = matches!(
                     &equality,
                     Proposition::ConditionIs(
-                        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right },
+                        ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right },
                         true
                     ) if matches!(left.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
                         || matches!(right.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
@@ -7915,7 +7917,7 @@ impl<'a> Proof<'a> {
                     if equality_has_literal_endpoint {
                         let literal_endpoint = |kernel: &Proposition, source: bool| {
                             matches!(kernel, Proposition::ConditionIs(
-                                ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, true
+                                ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, true
                             ) if matches!(if source { left.as_ref() } else { right.as_ref() },
                                 Bitvector32Term::Constant(_)
                                 | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_)))
@@ -8640,7 +8642,7 @@ impl<'a> Proof<'a> {
         for (kernel, surface) in premise_pairs {
             let Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -12691,7 +12693,7 @@ fn checked_fact_spells_the_goal(proof: &Proof<'_>) -> bool {
 fn swapped_bitvector_equality(fact: &Proposition) -> Option<Proposition> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -12859,7 +12861,11 @@ fn unsigned_order_parts(
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
-            relation,
+            relation:
+                relation @ (crate::kernel::CompareRelation::LessThan
+                | crate::kernel::CompareRelation::LessEqual
+                | crate::kernel::CompareRelation::GreaterThan
+                | crate::kernel::CompareRelation::GreaterEqual),
             left,
             right,
         },

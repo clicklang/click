@@ -1977,7 +1977,7 @@ fn synthesize_surface_atomic_proposition(
 ) -> Option<ClickProposition> {
     if let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -2444,7 +2444,7 @@ fn synthesize_surface_atomic_proposition(
             right,
         } => (left, ComparisonOperator::GreaterEqual, right),
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -2563,7 +2563,11 @@ fn synthesize_unsigned_comparison(
 ) -> Option<ClickProposition> {
     let ConditionTerm::Compare {
         format: MachineIntegerType::UInt32,
-        relation,
+        relation:
+            relation @ (crate::kernel::CompareRelation::LessThan
+            | crate::kernel::CompareRelation::LessEqual
+            | crate::kernel::CompareRelation::GreaterThan
+            | crate::kernel::CompareRelation::GreaterEqual),
         left,
         right,
     } = condition
@@ -2692,7 +2696,7 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
     };
     let (left, right) = match condition {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,

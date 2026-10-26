@@ -573,7 +573,7 @@ impl MemoryDagHopJustification {
                     return false;
                 };
                 let Some(ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,

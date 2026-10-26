@@ -1071,13 +1071,13 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
         match (left_condition, right_condition) {
             (
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
                 },
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: other_left,
                     right: other_right,
@@ -1320,8 +1320,8 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     if matches!(
         (source, target),
         (
-            Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }, true),
-            Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, .. }, true)
+            Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }, true),
+            Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. }, true)
         ) if left == right
     ) {
         return crate::kernel::api::c_condition_fact_target_reaches_in_context(

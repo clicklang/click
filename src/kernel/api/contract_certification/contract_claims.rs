@@ -2487,7 +2487,7 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
     fn reflexive(condition: &ConditionTerm) -> bool {
         match condition {
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
