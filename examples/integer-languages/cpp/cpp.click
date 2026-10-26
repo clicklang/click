@@ -149,7 +149,4 @@ bool below_u32(uint32 a, uint32 b) {
 bool sign_bit_set(uint32 u) {
     ensures result implies u > 2147483647u32;
     ensures u > 2147483647u32 implies result;
-} by {
-    if u > 2147483647u32 { execute(); auto(); }
-    else { execute(); auto(); }
-}
+} by { execute(); auto(); }

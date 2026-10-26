@@ -2457,10 +2457,35 @@ fn synthesize_surface_atomic_proposition(
         } => (left, ComparisonOperator::Equal, right),
         _ => return None,
     };
-    let surface_left =
-        synthesize_surface_bitvector(left, parameter_binding, state, bound_variables);
-    let surface_right =
-        synthesize_surface_bitvector(right, parameter_binding, state, bound_variables);
+    // An `int32` order reads its operands' words as `int32`. An operand
+    // spelled in `uint32` (a `uint32` local or parameter whose word a sign
+    // cast compared signed) would make the spelled comparison unsigned, a
+    // different fact, so it is written converted, as `(int32)u < 0`.
+    let signed_order = matches!(
+        condition,
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan
+                | CompareRelation::LessEqual
+                | CompareRelation::GreaterThan
+                | CompareRelation::GreaterEqual,
+            ..
+        }
+    );
+    let operand = |term: &Bitvector32Term| {
+        let expression =
+            synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?;
+        if signed_order && bitvector_spells_uint32(term, parameter_binding, state, bound_variables)
+        {
+            synthesize_int32_operand(expression)
+        } else {
+            Some(expression)
+        }
+    };
+    // Both operands are synthesized before either refusal is read, as
+    // they were before the conversion: synthesis charges work.
+    let surface_left = operand(left);
+    let surface_right = operand(right);
     let comparison = ClickProposition::Comparison {
         left: surface_left?,
         operator,
@@ -3012,6 +3037,75 @@ fn synthesize_uint32_operand(expression: ContractExpression) -> Option<ContractE
             pointee_constant: false,
             explicit_qualification: false,
         })),
+    }
+}
+
+/// `expression` converted to `int32`, inside its snapshot selector: the
+/// signed counterpart of [`synthesize_uint32_operand`].
+fn synthesize_int32_operand(expression: ContractExpression) -> Option<ContractExpression> {
+    match expression {
+        ContractExpression::At {
+            selector,
+            expression,
+        } => Some(ContractExpression::At {
+            selector,
+            expression: Box::new(synthesize_int32_operand(*expression)?),
+        }),
+        ContractExpression::Old(expression) => Some(ContractExpression::Old(Box::new(
+            synthesize_int32_operand(*expression)?,
+        ))),
+        expression => Some(ContractExpression::CFragment(CExpression::Cast {
+            expression: Box::new(contract_expression_to_c_fragment(&expression)?),
+            target_type: CType::Int32,
+            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        })),
+    }
+}
+
+/// Whether [`synthesize_surface_bitvector`] spells `term` as a `uint32`
+/// expression: by the name of a `uint32` local or parameter, or as
+/// arithmetic the usual conversions make `uint32` because one operand is.
+/// It follows that function's choice of name, so it reads one local or
+/// parameter per name in the term.
+fn bitvector_spells_uint32(
+    term: &Bitvector32Term,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> bool {
+    if let Bitvector32Term::Variable(variable) = term
+        && bound_variables.contains_key(variable)
+    {
+        return false;
+    }
+    if term.as_const().is_some() {
+        return false;
+    }
+    if let Some(name) = state.locals().names_holding_integer(term).next() {
+        return matches!(state.locals().get(name), Some(CValue::UInt32(_)));
+    }
+    if let Some(name) = describe_parameter_bitvector(term, parameter_binding) {
+        return parameter_binding
+            .parameters
+            .iter()
+            .any(|parameter| parameter.name() == name && parameter.c_type() == C0Type::UInt32);
+    }
+    let either = |left: &Bitvector32Term, right: &Bitvector32Term| {
+        bitvector_spells_uint32(left, parameter_binding, state, bound_variables)
+            || bitvector_spells_uint32(right, parameter_binding, state, bound_variables)
+    };
+    match term {
+        Bitvector32Term::Add(left, right)
+        | Bitvector32Term::Subtract(left, right)
+        | Bitvector32Term::Multiply(left, right)
+        | Bitvector32Term::Divide(left, right)
+        | Bitvector32Term::Remainder(left, right) => either(left, right),
+        Bitvector32Term::UnsignedDivide(..) | Bitvector32Term::UnsignedRemainder(..) => true,
+        _ => false,
     }
 }
 
