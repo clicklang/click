@@ -589,6 +589,10 @@ Progress:
   `(uint32)c`. C's widening between narrow formats (`int8` or `uint8` to
   `int16`, `uint8` to `uint16`) still reuses the word: K8 covers 32-bit
   destinations only, and C++ and Rust build the K7 cast there.
+  Diagnostics that recognize a value as exactly one read or one named
+  local (the read-kind explanation, the history notes, the renderer's
+  local names and source types) read through a narrow widening, not
+  through σ, so they say what they said when the word was reused.
 
 ### Stage 5. A logical `bool`
 
