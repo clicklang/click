@@ -3225,6 +3225,18 @@ exists (k: int32) { 0 <= k and k < n and p[k] == x }
 Do not use C logical operators such as `&&`, `||`, or `!` in Click
 propositions. Those remain C-fragment syntax.
 
+The right side of `implies` is read only where its left side holds, and the
+right side of `or` only where its left side fails, so a right side's
+definedness is owed only there: `b == 0u32 or a <= 4294967295u32 / b` owes
+nothing for the division, and lowers as written whatever the facts say.
+A right side that is undefined wherever it is read, such as
+`x != 0u32 or 5u32 / x == 1u32`, is refused
+(`mdtests/false_disjunction_requires_defined_right_requirement.md`). A
+literally true left side, as in `0u32 == 0u32 or 5u32 / 0u32 == 1u32`,
+lowers to the left side alone
+(`mdtests/true_disjunction_skips_undefined_right_requirement.md`). Both
+sides of `and` are read.
+
 A comparison binds looser than every expression operator, which differs from C
 for `&`, `^` and `|`. Parenthesize a comparison operand whose outermost
 operator is one of those three: `(x & 1) == 0`, not `x & 1 == 0`, which is

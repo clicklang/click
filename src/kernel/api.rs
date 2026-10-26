@@ -3232,6 +3232,9 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
             "count(...) requires owning authority for that population, which an outstanding worker holds until its pthread_join".to_string()
         }
         ExecutionLimit::AuthorityCountOverflows => "the population count exceeds int32".to_string(),
+        ExecutionLimit::DisjunctionRightUndefined => {
+            "the right side of `or` is undefined wherever its left side is false, the only case in which it is read".to_string()
+        }
         // The kernel knows the identity is absent; it does not know the name
         // the reader wrote for it. A caller that has the source expression
         // says which field and which repair instead of printing this.
