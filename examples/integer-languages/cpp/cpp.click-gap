@@ -1,0 +1,46 @@
+// Cases of the cross-language integer fixture that C++ does not verify
+// yet, with the claims and proof the other languages verify. This is not a
+// `.click` file, so the corpus tools leave it alone;
+// `tests/examples/integer_languages.rs` checks that each gap remains one.
+//
+// `shr_u32`, `shr_i32`: the exporter refuses `>>` ("unsupported binary
+// operator"). `narrow_i8`: it refuses a `signed char` result.
+// These stay in `integers.cpp`, unselected in `click.project.json`.
+
+verifying "integers.cpp";
+
+uint32 shr_u32(uint32 a, uint32 n) {
+    requires n < 32u32;
+    ensures result == a >> n;
+    ensures (a == 2147483648u32 and n == 1u32) implies result == 1073741824u32;
+} by { execute(); auto(); }
+
+int32 shr_i32(int32 a, uint32 n) {
+    requires n < 32u32;
+    ensures result == a >> n;
+    ensures (a == -8 and n == 1u32) implies result == -4;
+} by { execute(); auto(); }
+
+int8 narrow_i8(int32 x) {
+    ensures (-128 <= x and x <= 127) implies to_integer(result) == to_integer(x);
+    ensures x == 200 implies to_integer(result) == -56;
+    ensures x == -129 implies to_integer(result) == 127;
+} by {
+    if -128 <= x and x <= 127 {
+        execute();
+        have -128 <= to_integer(x) by auto();
+        have to_integer(x) <= 127 by auto();
+        have to_integer(result) == to_integer(x) by {
+            arithmetic_certificate rules {
+                premise 0: -128 <= to_integer(x) => -128 <= to_integer(x);
+                premise 1: to_integer(x) <= 127 => to_integer(x) <= 127;
+                integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(x);
+                conclusion 0;
+            }
+        };
+        auto();
+    } else {
+        execute();
+        auto();
+    }
+}

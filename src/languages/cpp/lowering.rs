@@ -1841,10 +1841,21 @@ impl LoweringContext<'_> {
                 };
                 (input.prefix, value, input.may_throw)
             }
-            CppExpression::Dereference { pointer, .. } => {
+            // The load has the pointee's type, as `lower_expression`'s
+            // dereference has: `*pick(p)` through `unsigned char*` reads one
+            // byte, not an `int`.
+            CppExpression::Dereference {
+                pointer,
+                value_type,
+                ..
+            } if is_native_object_pointer(pointer.value_type()) => {
                 let input = self.normalize_expression(pointer)?;
-                let value = self.lower_typed_load(input.value, CType::Int32)?;
+                let value =
+                    self.lower_typed_load(input.value, cpp_scalar_kernel_type(value_type)?)?;
                 (input.prefix, value, input.may_throw)
+            }
+            CppExpression::Dereference { .. } => {
+                return Err("C++ dereference is outside mutable `int*` lowering".into());
             }
             CppExpression::Binary {
                 operator,

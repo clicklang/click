@@ -1,0 +1,40 @@
+{
+  "units": {
+    "integers_cpp": {
+      "language": "c++",
+      "args": [
+        "-funsigned-char",
+        "-ffreestanding",
+        "-nostdinc",
+        "-nostdinc++"
+      ],
+      "sources": {
+        "integers.cpp": {
+          "functions": [
+            "add_i32",
+            "sub_i32",
+            "mul_i32",
+            "wrapping_add_u32",
+            "wrapping_sub_u32",
+            "wrapping_mul_u32",
+            "above_int32_max",
+            "keep_above_int32_max",
+            "to_signed_i32",
+            "to_unsigned_u32",
+            "div_u32",
+            "rem_u32",
+            "div_i32",
+            "rem_i32",
+            "narrow_u8",
+            "narrow_u8_in_range",
+            "add_i64",
+            "wrapping_add_u64",
+            "below_i32",
+            "below_u32",
+            "sign_bit_set"
+          ]
+        }
+      }
+    }
+  }
+}

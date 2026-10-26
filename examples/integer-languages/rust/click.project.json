@@ -1,0 +1,10 @@
+{
+  "units": {
+    "integers_rust": {
+      "language": "rust",
+      "sources": {
+        "integers.rs": {}
+      }
+    }
+  }
+}

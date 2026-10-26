@@ -1,0 +1,16 @@
+// Cases of the cross-language integer fixture that C does not verify
+// yet, with the claims and proof the other languages verify. This is not a
+// `.click` file, so the corpus tools leave it alone;
+// `tests/examples/integer_languages.rs` checks that each gap remains one.
+//
+// `narrow_u8`: C lowers `(unsigned char)x` to a modular `MachineIntegerCast`,
+// and no rule relates it to `x & 255u32`, which C++ and Rust lower the
+// conversion to (`design/machine-integers.md`, Stage 4).
+
+verifying "integers.c";
+
+uint8 narrow_u8(uint32 x) {
+    ensures (uint32) result == (x & 255u32);
+    ensures x == 4000000000u32 implies result == 0u8;
+    ensures x == 300u32 implies result == 44u8;
+} by { execute(); auto(); }
