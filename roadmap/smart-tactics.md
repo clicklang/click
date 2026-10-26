@@ -836,6 +836,152 @@ Decided by the maintainer on 2026-10-20.
      copied onto several paths: the only split a script sees is one it
      writes (`branch`, `if`, `cases`, `match`) or the implicit tail's.
 
+## Status and handoff (2026-10-26)
+
+Phases A, B, C, D and F are done; each step below says what was done and
+what was measured. What remains:
+
+### 1. In progress: `decreases` is an Integer position
+
+Maintainer decision, 2026-10-26: a `decreases` measure is an Integer
+position, as ACSL's `loop variant` and Dafny's `decreases` are
+mathematical. `decreases a + b;` on `int32` values ranks by
+`to_integer(a) + to_integer(b)` and owes no overflow obligation. Today the
+reference's "Integer specification arithmetic" table lists "a `decreases`
+measure" among the machine positions, so the measure is the C sum.
+
+This fixes
+`bugs/close-invariants-under-a-disjunctive-guard-certifies-each-entry-path-differently.md`:
+the proof's `have 0 < a + b` is an Integer comparison, which did not state
+the int32 measure's positivity `0 < (int32)(a + b)`, so each C entry path of
+`a > 0 || b > 0` closed the measure member from its own path facts and the
+two certificates differed. With the measure Integer, the bug's sidecar
+verifies as written.
+
+The change was made and gated locally, not pushed. To redo it:
+
+- `src/surface/parser.rs`: add
+  `fn parse_measure_component(&mut self)`, which parses a contract
+  expression and returns `self.at_integer_position(component)`. Call it
+  instead of `parse_contract_expression` for every measure component: the
+  pure Click function's `decreases` (near the `let decreases = if
+  self.peek_ident() == Some("decreases")` in the function-declaration
+  parser), both the lexicographic and the single-expression forms of a C
+  contract's `Some("decreases")` arm, and both forms in
+  `parse_termination_measure` (loops). A resource-application measure does
+  no arithmetic, so it passes through unchanged.
+- `docs/reference/language/index.md`: move "a `decreases` measure" from
+  the machine row of the position table to a new Integer row ("a
+  `decreases` measure, and each component of a lexicographic one"), and add
+  a sentence to "C termination" saying measure arithmetic is exact.
+- `design/machine-integers.md`: record the direction above.
+- `src/surface/parser/spec_arithmetic.rs`: name measure components in the
+  module comment's list of Integer positions.
+- New mdtest `a_decreases_measure_sum_is_an_integer.md`: the bug's sidecar,
+  expecting `pass`. Delete the bug's three files.
+- `smart_ranking_closure_expands_to_explicit_bundle_members`
+  (`src/surface/tests/loop_tests.rs`): the two ranking members of
+  `c_decreases_count_up` are now Integer goals closed by Integer
+  certificates through `integer_operation_identity`, so assert 2 signed
+  certificates (the invariants) and the two Integer ranking goals; the
+  expansion still reverifies with no replanning.
+
+With that change the unit tests pass and 22 of 4,844 mdtests fail. Each
+back-edge measure goal is now Integer over a C operation, such as
+`0 <= 3 - to_integer(at(iteration, i) + 1)`. Closing it needs
+`to_integer(i + 1) == to_integer(i) + 1`, which holds in range (the guard
+`i < 3` excludes overflow). Bare `solve()` proves that identity; the other
+closers do not:
+
+- `solve() using { … }` never applies the identity from its listed
+  premises: `loop_invariant_body`, `loop_old_count_invariant`,
+  `loop_stdlib_permutation_invariant`, `loop_binder_counter_model`,
+  `loop_binder_rebinds_by_arguments`, `loop_clause_reads_arm_bindings`,
+  `loop_bundle_names_a_quantified_invariant_binder_as_written`,
+  `iterated_give_preserves_descriptor_loop_ownership`,
+  `a_uint8_loop_counter_ranks_as_a_promoted_int32`, and the
+  `loop_body_proof_match*` family (`loop_body_proof_match`, `_two_live_arms`,
+  `_ensuring_inside_a_proof_if`, `_ensuring_old_fact`, `_ensuring_rejoins`,
+  `_shared_continuation`).
+- Unsigned counters need a no-wrap bound for `to_integer(i + 1u64)`:
+  `a_fill_loop_over_a_size_t_range_needs_no_bound`,
+  `a_fill_loop_claiming_one_more_byte_is_refused`,
+  `back_edge_closes_an_unsigned_bound_from_the_guard`.
+- Hand-written int32 measure certificates no longer match the Integer goal
+  and need re-expanding: `copy3_array_demo`.
+- Refusals whose expected message changes:
+  `c_decreases_rejects_negative_ranking_component` (now reads
+  `0 <= to_integer(n) - 6`), `loop_decreases_rejects_a_field_that_moves`
+  (now `to_integer(...) - to_integer(...)`), and
+  `an_unsigned_measure_that_wraps_upward_is_refused`, which loses its
+  point: an Integer measure cannot wrap. Delete it or rewrite it with a
+  machine measure written explicitly.
+
+Next: make `solve() using`, and the closers inside `close_invariants`,
+prove an in-range machine `+`/`-` identity from the listed premises and the
+type's range, as bare `solve()` does (unsigned types need the no-wrap
+bound). That is a gap for any Integer goal over C arithmetic, not only
+measures. Then reapply the change above and migrate the 22 fixtures.
+
+Open with the maintainer: whether to go further and adopt the 2026-10-15
+rule from `roadmap/standard-library.md` ("narrowing stays explicit")
+everywhere, as Frama-C and Verus do: specification arithmetic on machine
+values is always Integer, and a machine position refuses it until the
+author writes a narrowing (`to_int32(…)`) or `defined(…)`. The 2026-10-24
+type-directed rule instead gives machine positions (typed `let`, machine
+parameters and fields, indices, fold accumulators) C's operation silently.
+Measure, before deciding, how many corpus sites do arithmetic in each
+machine position.
+
+### 2. Phase E leftovers, measured and deferred
+
+The remaining `scan_unindexed` sites run rarely and stay small across the
+whole suite (counted 2026-10-26):
+
+- `scanned_matching_condition_fact_for_memory_resolution` (`simp.rs`), the
+  fallback when the condition-match index cannot answer: 234 calls, at most
+  60 facts, 15 hits. Its query shapes are load variables, sums,
+  `IntegerEqual`, pointer equalities and pure function applications; an
+  index needs keys for those.
+- `store_compositions` with no store owners (`assumptions.rs`): 1,435
+  calls, at most 2 compositions. `composition_members` lists candidates
+  only for pairs, and the store footprint is built before the second
+  access is known, so the member lookup must move to the pair question.
+- `frame_frontier_compositions` (`memory_reasoning.rs`): 328 calls, at most
+  7 composite-owning compositions. Needs a by-block index of them.
+- Item 21's wide-separation bucket (separations with a wide side share one
+  bucket every query reads).
+
+Fix each with a scaling test that shows it growing.
+
+### 3. Step 7, partial
+
+`simp`'s indexed goal-local equality search is still separate from the
+connected rewrite chain; switched off alone it costs a step of
+`examples/modeled-binary-tree` and
+`mdtests/loop_old_parameter_resource_argument.md`. Merging it means
+extending the chain to cover that case first.
+
+### 4. Noted, not filed
+
+- The kernel call rule's constant normalization
+  (`add_normalized_verified_ensure_facts`, `src/kernel/functions.rs`)
+  bridges loads across snapshots through `loads_bridge`
+  (`src/kernel/assumptions/condition_reasoning/decision.rs`). On
+  2026-10-24 it cost about 119,000 of the 140,820 work units of the second
+  `give_back` call in `pipeline` of
+  `mdtests/authority_pool_control_two_members.md`: a cross-snapshot search
+  inside a simple `step`. It was left to the snapshot/spellability work.
+  That mdtest is nightly-only and currently fails in `checkout` (an
+  arithmetic certificate over `old(count(item(pool, _)))`), so it could not
+  be remeasured.
+- `step()` decides a function exit's outcome
+  (`c_function_outcomes_from_statement_outcome_with_resource_cases`) under
+  the step's own small fact list, not the full proof context; the
+  call-outcome split now passes the full context. Across 9,153 exits in
+  the suite and three targeted probes the two never gave different
+  outcomes, so it was left as is.
+
 ## Plan
 
 The principle describes an end state. The work below reaches it in small
