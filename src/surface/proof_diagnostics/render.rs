@@ -69,12 +69,25 @@ pub(crate) struct SnapshotLabels {
     naming: Option<std::sync::Arc<NamingTables>>,
 }
 
+/// The word a narrow value widened into 32 bits names (rule K8): a local
+/// or parameter holding a promoted value is named, and typed, as the word
+/// it holds, as it was when promotion reused the word. Only the widening is
+/// read through; a σ keeps its own node.
+fn widened_word(term: &Bitvector32Term) -> &Bitvector32Term {
+    match term.word_cast32_operand() {
+        Some((source, word)) if source.format().bits() < 32 => word,
+        _ => term,
+    }
+}
+
 impl SnapshotLabels {
     pub(crate) fn source_type(&mut self, variable: Variable, c_type: crate::kernel::CType) {
         self.source_types.insert(variable, c_type);
     }
     pub(crate) fn source_value_type(&mut self, value: &crate::kernel::CValue) {
-        if let crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) = value {
+        if let crate::kernel::arithmetic_c_value!(term) = value
+            && let Bitvector32Term::Variable(variable) = widened_word(term)
+        {
             self.source_type(*variable, value.c_type());
         }
     }
@@ -148,7 +161,7 @@ impl SnapshotLabels {
                 | crate::kernel::CValue::Float64(term) => term,
                 _ => continue,
             };
-            if let Bitvector32Term::Variable(variable) = term {
+            if let Bitvector32Term::Variable(variable) = widened_word(term) {
                 labels.source_name(
                     *variable,
                     crate::surface::diagnostics::rust_variable_spelling(parameter.name())
