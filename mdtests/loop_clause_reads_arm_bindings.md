@@ -64,26 +64,26 @@ int spin(struct node* p, int n) {
                 invariant i <= n;
                 invariant t.model == Tree::Node(id, value, left_model);
 
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     step();
                     close_invariants() by {
                         both {
-                            arithmetic() using {
+                            solve() using {
                                 at(region(3).entry, i) >= at(region(3).entry, 0);
                                 at(region(3).entry, i) < at(region(3).entry, n);
                             };
                         } and {
                             both {
                                 intro();
-                                arithmetic() using {
+                                solve() using {
                                     at(region(3).entry, i) < at(region(3).entry, n);
                                 };
                             } and {
                                 both {
                                     intro();
                                     intro();
-                                    simp();
+                                    solve();
                                 } and {
                                     both {
                                         arithmetic_certificate signed_int32 {
@@ -119,7 +119,7 @@ int spin(struct node* p, int n) {
                 }
             }
             step();
-            simp();
+            solve();
         },
     }
 }

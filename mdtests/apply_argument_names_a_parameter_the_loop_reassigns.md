@@ -62,7 +62,7 @@ struct node* skip(struct node* p, struct node* q, int32 n) {
         decreases n;
         invariant n >= 0;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             have holds(Box::Box(p), p) == 1 by {
                 unfold(holds(Box::Box(p), p));
@@ -80,7 +80,7 @@ struct node* skip(struct node* p, struct node* q, int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

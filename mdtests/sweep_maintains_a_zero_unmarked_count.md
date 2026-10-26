@@ -50,11 +50,11 @@ void sweep(int32 visited[], int32 n) {
         invariant i <= n;
         invariant unmarked(visited, 0, i) == 0;
         owns visited[0..n];
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             mark iter;
             have i < 2147483647 by {
-                arithmetic() using { i < n; n <= 1073741823; };
+                solve() using { i < n; n <= 1073741823; };
             }
             step();
             have unmarked(visited, 0, i) == 0 by {
@@ -71,7 +71,7 @@ void sweep(int32 visited[], int32 n) {
                     0 <= to_integer((i + 1) - 1);
                     to_integer((i + 1) - 1) < 2147483647;
                 };
-                simp();
+                solve();
             }
             step();
             close_invariants();

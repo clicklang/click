@@ -68,7 +68,7 @@ int chain_has_next(struct node* p) {
         Chain::End => { contradiction(c.model == Chain::End); },
         Chain::Link(identity, rest_model) => {
             let { rest: n } = unfold(c);
-            branch { step(); simp(); } else {}
+            branch { step(); solve(); } else {}
             branch {
                 step();
                 let c = fold(chain_at(p), { model: old(c.model) }, { rest: n });
@@ -80,9 +80,9 @@ int chain_has_next(struct node* p) {
                 have c.model == Chain::Link(p, chain_rest(old(c.model))) by {
                     rewrite(chain_rest(old(c.model)) == rest_model);
                     rewrite(p == identity);
-                    simp();
+                    solve();
                 }
-                simp();
+                solve();
             } else {}
             step();
             let c = fold(chain_at(p), { model: old(c.model) }, { rest: n });
@@ -94,9 +94,9 @@ int chain_has_next(struct node* p) {
             have c.model == Chain::Link(p, chain_rest(old(c.model))) by {
                 rewrite(chain_rest(old(c.model)) == rest_model);
                 rewrite(p == identity);
-                simp();
+                solve();
             }
-            simp();
+            solve();
         },
     }
 }

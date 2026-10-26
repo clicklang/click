@@ -24,27 +24,27 @@ uint8 second(const uint8* bytes, uint64 length) {
     requires 1u64 < length;
     views bytes[1..length];
     ensures result == bytes[1];
-} by { execute(); simp(); }
+}
 uint8 at(const uint8* bytes, uint64 start, uint64 length) {
     requires start < length;
     views bytes[start..length];
     ensures result == bytes[start];
-} by { execute(); simp(); }
+}
 uint8 in_four(const uint8* bytes, uint64 index) {
     requires index < 4u64;
     views bytes[index..4];
     ensures result == bytes[index];
-} by { execute(); simp(); }
+}
 uint8 next(const uint8* bytes, uint64 index, uint64 length) {
     requires to_integer(index + 1u64) < to_integer(length);
     views bytes[index + 1u64..length];
     ensures result == bytes[index + 1u64];
-} by { execute(); simp(); }
+}
 uint8 whole(const uint8* bytes, uint64 length) {
     requires 1u64 < length;
     views bytes[0..length];
     ensures result == bytes[1];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

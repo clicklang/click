@@ -57,12 +57,12 @@ void *fill_range(void *argument) {
                     instantiate(at(region(5).entry, forall (k: int32) {
                         job->begin <= k and k < index implies job->output[k] == job->value
                     }), k) using { job->begin <= k; k < index; };
-                    simp();
+                    solve();
                 } else {
                     extract(k <= index);
                     have k == index by auto();
                     rewrite(k == index);
-                    simp();
+                    solve();
                 }
             }
             step();
@@ -70,7 +70,7 @@ void *fill_range(void *argument) {
             have 0 <= job->end by auto();
             have 0 - at(iteration, index) + job->end - 1
                 < 0 - at(iteration, index) + job->end by {
-                arithmetic() using {
+                solve() using {
                     0 <= at(iteration, index);
                     0 <= job->end;
                     at(iteration, index) < at(iteration, job->end);
@@ -88,13 +88,13 @@ void *fill_range(void *argument) {
                 instantiate(at(region(6).entry, forall (k: int32) {
                     job->begin <= k and k <= index implies job->output[k] == job->value
                 }), k) using { job->begin <= k; k <= at(iteration, index); };
-                simp();
+                solve();
             }
-            simp();
+            solve();
         }
     }
     step();
-    simp();
+    solve();
 }
 
 int fill_parallel(int output[4]) {

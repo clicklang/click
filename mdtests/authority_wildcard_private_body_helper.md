@@ -25,10 +25,10 @@ int32 update(int32* pool, int32* p) {
     owns slot(pool, p);
     ensures result == 7;
     ensures p[0] == 7;
-} by { open(slot(pool, p)) { step(); } execute(); simp(); }
+} by { open(slot(pool, p)) { step(); } }
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { execute(); simp(); } else {}
+    branch { execute(); solve(); } else {}
     step(); step();
     fold(authority(slot(&pool, _)));
     fold(slot(&pool, p));
@@ -41,7 +41,6 @@ int32 lifecycle() { ensures result == 0 or result == 9; } by {
     unfold(slot(&pool, p));
     unfold(slot(&pool, p + 1));
     unfold(authority(slot(&pool, _)));
-    execute(); simp();
 }
 ```
 

@@ -52,10 +52,10 @@ int32 apply_guarded_effect(
 } by {
     if active != 0 {
         execute();
-        simp();
+        solve();
     } else {
         execute();
-        simp();
+        solve();
     }
 }
 

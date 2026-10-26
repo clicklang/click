@@ -27,7 +27,6 @@ int32 fill_heap_second_fields(struct point* p) {
 } by {
     step(); step();
     loop { decreases 4 - i; invariant i >= 0; invariant i <= 4; }
-    execute(); simp();
 }
 ```
 

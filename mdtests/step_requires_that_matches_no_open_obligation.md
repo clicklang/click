@@ -26,10 +26,10 @@ int32 caller(int32 a, int32 b) {
     requires a > 0;
     ensures 1 == 1 by {
         step() {
-            requires b > 0 by simp();
+            requires b > 0 by solve();
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

@@ -28,7 +28,7 @@ int32 free_then_read(int32 data[], int32 count) {
 } by {
     unfold(allocated_int32s(data, count));
     execute();
-    simp();
+    solve();
 }
 ```
 

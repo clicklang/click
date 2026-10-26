@@ -22,7 +22,6 @@ void retarget(int32* p, int32* q, int32* anchor) {
 } by {
     unfold(a);
     let b = fold(cursor(q, anchor), { tag: old(a.tag) });
-    execute(); simp();
 }
 void call(int32* p, int32* q, int32* anchor) {
     consumes c: cursor(p, anchor);
@@ -31,7 +30,6 @@ void call(int32* p, int32* q, int32* anchor) {
     let { b: c } = step(retarget, { a: c });
     have c.tag == old(c.tag);
     unfold(c);
-    execute(); simp();
 }
 ```
 

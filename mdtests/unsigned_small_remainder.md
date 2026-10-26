@@ -14,14 +14,14 @@ verifying "test.c";
 theorem byte_lane(value: uint32) {
     requires value <= 255u32;
     ensures value % 65521u32 == value by {
-        have value < 65521u32 by { arithmetic() using { value <= 255u32; }; }
+        have value < 65521u32 by { solve() using { value <= 255u32; }; }
         apply(integer::uint32_less_than_divisor_implies_remainder_is_value(value, 65521u32));
     }
     ensures to_integer(value % 65521u32) == to_integer(value) by {
-        have value < 65521u32 by { arithmetic() using { value <= 255u32; }; }
+        have value < 65521u32 by { solve() using { value <= 255u32; }; }
         apply(integer::uint32_less_than_divisor_implies_remainder_is_value(value, 65521u32));
         rewrite(value % 65521u32 == value);
-        simp() using {};
+        solve() using {};
     }
 }
 theorem full_width(value: uint32) {
@@ -36,7 +36,7 @@ uint32 reduce_lane(uint32 value) {
 } by {
     step_until(function.exit);
     apply(byte_lane(value));
-    simp();
+    solve();
 }
 ```
 

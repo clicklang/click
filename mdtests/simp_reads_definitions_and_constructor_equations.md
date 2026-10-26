@@ -29,7 +29,7 @@ function balanced(tree: Tree) -> int
 
 theorem left_balanced(value: int, left: Tree, right: Tree) {
     requires balanced(Tree::Node(value, left, right)) == 1;
-    ensures balanced(left) == 1 by simp();
+    ensures balanced(left) == 1 by solve();
 }
 
 spec enum Color { Red, Black }
@@ -38,13 +38,13 @@ spec enum Pair { Empty, Node(Color, Pair) }
 theorem first_field(t: Pair, c: Color, r: Pair) {
     requires t == Pair::Node(c, r);
     requires t == Pair::Node(Color::Black, Pair::Empty);
-    ensures c == Color::Black by simp();
+    ensures c == Color::Black by solve();
 }
 
 theorem different_constructors(t: Pair, c: Color, r: Pair) {
     requires t == Pair::Node(c, r);
     requires t == Pair::Empty;
-    ensures c == Color::Red by simp();
+    ensures c == Color::Red by solve();
 }
 ```
 

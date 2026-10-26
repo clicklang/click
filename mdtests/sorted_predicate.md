@@ -28,7 +28,7 @@ int32 sorted_predicate(int32 p[], int32 n) {
     ensures still_sorted: sorted(p, n) by {
         execute();
         unfold(sorted);
-        simp();
+        solve();
     }
 }
 ```

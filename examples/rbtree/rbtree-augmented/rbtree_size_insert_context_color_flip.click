@@ -157,7 +157,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.grand_value == old(state.grand_value);
                 invariant node == sized_context_flip_focus(state.phase, old(node));
                 invariant parent == sized_context_flip_parent(state.phase, state.outer);
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     mark iteration;
                     match state.phase {
@@ -225,7 +225,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                     }
                                     let { whole: whole } = restore_sized_context(x,root->rb_node,0,cached_total, { path: path, sub: focus });
                                     have whole.model == sized_plug(SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model), sized_context_flip_subtree(SizedContextFlipPhase::Done(x,y,z), old(node), SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle))) by {
-                                        unfold(sized_context_flip_subtree(SizedContextFlipPhase::Done(x,y,z), old(node), SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle))); simp();
+                                        unfold(sized_context_flip_subtree(SizedContextFlipPhase::Done(x,y,z), old(node), SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle))); solve();
                                     }
                                     have whole.model == sized_plug(old(state.outer), sized_context_flip_subtree(sized_context_flip_finish(old(state.phase)), old(node), old(state.outer), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle))) by {
                                         rewrite(sized_context_flip_finish(old(state.phase)) == SizedContextFlipPhase::Done(x,y,z));
@@ -267,7 +267,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                     }
                                     let { whole: whole } = restore_sized_context(x,root->rb_node,0,cached_total, { path: path, sub: focus });
                                     have whole.model == sized_plug(SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model), sized_context_flip_subtree(SizedContextFlipPhase::Done(x,y,z), old(node), SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle))) by {
-                                        unfold(sized_context_flip_subtree(SizedContextFlipPhase::Done(x,y,z), old(node), SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle))); simp();
+                                        unfold(sized_context_flip_subtree(SizedContextFlipPhase::Done(x,y,z), old(node), SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle))); solve();
                                     }
                                     have whole.model == sized_plug(old(state.outer), sized_context_flip_subtree(sized_context_flip_finish(old(state.phase)), old(node), old(state.outer), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle))) by {
                                         rewrite(sized_context_flip_finish(old(state.phase)) == SizedContextFlipPhase::Done(x,y,z));
@@ -368,7 +368,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(at(iteration,state.context) == SizedContext::Left(y, x, Color::Red, old(state.parent_value), old(state.other), SizedContext::Left(x, sized_context_parent(at(iteration,state.outer),0), Color::Black, old(state.grand_value), old(state.uncle), at(iteration,state.outer))));
                                 unfold(sized_context_depth(SizedContext::Left(y, x, Color::Red, old(state.parent_value), old(state.other), SizedContext::Left(x, sized_context_parent(at(iteration,state.outer),0), Color::Black, old(state.grand_value), old(state.uncle), at(iteration,state.outer)))));
                                 unfold(sized_context_depth(SizedContext::Left(x, sized_context_parent(at(iteration,state.outer),0), Color::Black, old(state.grand_value), old(state.uncle), at(iteration,state.outer))));
-                                arithmetic();
+                                solve() using {};
                             }
                             unfold(sized_context_flip_focus(SizedContextFlipPhase::After(x, y, z),old(node)));
                             unfold(sized_context_flip_parent(SizedContextFlipPhase::After(x, y, z),state.outer));
@@ -384,12 +384,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 unfold(sized_context_flip_running(SizedContextFlipPhase::After(x, y, z))); normalize();
                             }
                             step();
-                            close_invariants() by simp();
+                            close_invariants() by solve();
                         },
                     }
                 }
             }
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -407,7 +407,6 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.model == sized_plug(old(state.outer), sized_context_flip_subtree(sized_context_flip_finish(old(state.phase)), node, old(state.outer), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle)));
 } by {
     step(__rb_insert, { state: state });
-    execute(); simp();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -424,5 +423,4 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.model == sized_plug(old(state.outer), sized_context_flip_subtree(sized_context_flip_finish(old(state.phase)), node, old(state.outer), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle)));
 } by {
     step(__rb_insert_augmented, { state: state });
-    execute(); simp();
 }

@@ -7,7 +7,7 @@ shows `a <= c`, not `a < c`, and `simp` refuses the strict goal.
 theorem not_strict(a: uint64, b: uint64, c: uint64) {
     requires a <= b;
     requires b <= c;
-    ensures a < c by { simp(); }
+    ensures a < c by { solve(); }
 }
 ```
 

@@ -17,7 +17,7 @@ int32 keep(int32 x) {
 } by {
     execute();
     intro() as below;
-    simp();
+    solve();
 }
 
 int32 keep_again(int32 x) {
@@ -29,8 +29,6 @@ int32 keep_again(int32 x) {
         intro();
         assumption();
     }
-    execute();
-    simp();
 }
 ```
 

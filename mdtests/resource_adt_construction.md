@@ -26,7 +26,7 @@ void init(int32* p, int32 value) {
 } by {
     step_until(function.exit);
     let c = fold(cell(p), { model: Mark::Set(value) });
-    simp();
+    solve();
 }
 
 void set(int32* p, int32 value) {
@@ -36,7 +36,7 @@ void set(int32* p, int32 value) {
     unfold(c);
     step_until(function.exit);
     let c = fold(cell(p), { model: Mark::Set(value) });
-    simp();
+    solve();
 }
 
 void preserve(int32* p) {

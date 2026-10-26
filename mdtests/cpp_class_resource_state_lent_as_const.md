@@ -57,13 +57,13 @@ int Boxed::get() const {
 }
 int read(const Store& store) {
     ensures result == held(store);
-} by { execute(); simp(); }
+}
 int peek(const Boxed& boxed) {
     owns boxed;
     owns state: cell(boxed.slot);
     ensures result == state.value;
     ensures state.value == old(state.value);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

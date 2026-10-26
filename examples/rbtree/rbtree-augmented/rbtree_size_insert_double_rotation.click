@@ -129,7 +129,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.phase == SizedInsertDoublePhase::Before(g, p);
                 invariant old(state.phase) == SizedInsertDoublePhase::Before(g, p);
                 invariant state.model == sized_double_before(g, p, node);
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     let { tree: loop_tree } = unfold(state);
                     unfold(sized_double_before(g, p, node));
@@ -191,14 +191,14 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->__rb_parent_color == address(node) by { normalize() using { parent == p; at(before_inner_rotation, old(root->rb_node)->rb_left) == parent; }; }
                     have (address(node) & 7) == 0 by { assumption(); }
                     have (p->__rb_parent_color & 1) == 0 by {
-                        rewrite(p->__rb_parent_color == address(node)); arithmetic() using { aligned(node, 8); };
+                        rewrite(p->__rb_parent_color == address(node)); solve() using { aligned(node, 8); };
                     }
                     have p->__rb_parent_color == address(node) + (p->__rb_parent_color & 1) by {
                         rewrite((p->__rb_parent_color & 1) == 0);
                         rewrite(p->__rb_parent_color == address(node)); normalize();
                     }
                     let demoted = fold(sized_recompute_at(p), { model: SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty) }, { metadata: p_size, left: p_left, right: p_right });
-                    have node->rb_right == 0 by { simp(); }
+                    have node->rb_right == 0 by { solve(); }
                     let other = fold(sized_at(node->rb_right), { model: SizedTree::Empty });
                     have sized_parent_is(SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), node) == 1 by { unfold(sized_parent_is(SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), node)); normalize(); }
                     have sized_parent_is(SizedTree::Empty, node) == 1 by { unfold(sized_parent_is(SizedTree::Empty, node)); normalize(); }
@@ -225,7 +225,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(sized_counts_valid(SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)));
                         unfold(sized_counts_valid(SizedTree::Empty));
                         unfold(sized_value(SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)));
-                        unfold(sized_value(SizedTree::Empty)); simp();
+                        unfold(sized_value(SizedTree::Empty)); solve();
                     }
                     have sized_shape(first.model) == sized_shape(SizedTree::Node(node, p, Color::Red, 2, SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty)) by {
                         rewrite(sized_shape(first.model) == sized_shape(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty)));
@@ -274,7 +274,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     have gparent == g by { assumption(); }
                     have gparent->__rb_parent_color == 1 by { assumption(); }
                     step();
-                    have g->rb_left == 0 by { simp(); }
+                    have g->rb_left == 0 by { solve(); }
                     let g_left = fold(sized_at(g->rb_left), { model: SizedTree::Empty });
                     transport(at(before_inner_rotation, old(root->rb_node)->rb_right == 0), old(root->rb_node)->rb_right == 0) using {
                         at(before_inner_rotation, old(root->rb_node)->rb_right == 0);
@@ -296,7 +296,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, node, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)
                     }, { metadata: g_size, left: g_left, right: g_right });
-                    have node->rb_left == p by { simp(); }
+                    have node->rb_left == p by { solve(); }
                     transport(at(region(37).exit, parent->rb_right == gparent), parent->rb_right == gparent) using {
                         at(region(37).exit, parent->rb_right == gparent);
                         separate(memory(parent->rb_right), memory(root->rb_node));
@@ -309,8 +309,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         assumption();
                     }
                     have parent == node by { assumption(); }
-                    have parent->__rb_parent_color == at(region(37).exit, gparent->__rb_parent_color) by { simp(); }
-                    have parent->__rb_parent_color == 1 by { simp(); }
+                    have parent->__rb_parent_color == at(region(37).exit, gparent->__rb_parent_color) by { solve(); }
+                    have parent->__rb_parent_color == 1 by { solve(); }
                     transport(parent->__rb_parent_color == 1, node->__rb_parent_color == 1);
                     have node->__rb_parent_color == (node->__rb_parent_color & 1) by {
                         rewrite(node->__rb_parent_color == 1); normalize();
@@ -375,11 +375,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         phase: SizedInsertDoublePhase::After(g, p), model: second.model
                     }, { tree: second });
                     have state.phase == sized_double_finish(old(state.phase)) by {
-                        unfold(sized_double_finish(SizedInsertDoublePhase::Before(g, p))); simp();
+                        unfold(sized_double_finish(SizedInsertDoublePhase::Before(g, p))); solve();
                     }
                     have sized_shape(state.model) == sized_double_expected(old(state.phase), node) by {
                         rewrite(old(state.phase) == SizedInsertDoublePhase::Before(g, p));
-                        unfold(sized_double_expected(SizedInsertDoublePhase::Before(g, p), node)); simp();
+                        unfold(sized_double_expected(SizedInsertDoublePhase::Before(g, p), node)); solve();
                     }
                     step();
 
@@ -387,7 +387,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 }
             }
             have node == old(node) by { assumption(); }
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -402,7 +402,7 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_double_expected(old(state.phase), node);
 } by {
     step(__rb_insert, { state: state });
-    execute(); simp();
+    execute(); solve();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -416,5 +416,5 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_double_expected(old(state.phase), node);
 } by {
     step(__rb_insert_augmented, { state: state });
-    execute(); simp();
+    execute(); solve();
 }

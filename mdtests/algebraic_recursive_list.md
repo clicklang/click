@@ -54,28 +54,28 @@ function rebuild_odd(xs: OddList<int32>) -> OddList<int32> {
 theorem recursive_constructor_reduces(head: int32, tail: TestList<int32>) {
     ensures tail_or_nil(TestList<int32>::Cons(head, tail)) == tail by {
         unfold(tail_or_nil(TestList<int32>::Cons(head, tail)));
-        simp();
+        solve();
     }
 }
 
 theorem recursive_symbolic_reconstruction(xs: TestList<int32>) {
     ensures rebuild_list(xs) == xs by {
         unfold(rebuild_list(xs));
-        simp();
+        solve();
     }
 }
 
 theorem two_recursive_fields_reconstruct(tree: Tree<int32>) {
     ensures rebuild_tree(tree) == tree by {
         unfold(rebuild_tree(tree));
-        simp();
+        solve();
     }
 }
 
 theorem mutually_recursive_fields_reconstruct(xs: OddList<int32>) {
     ensures rebuild_odd(xs) == xs by {
         unfold(rebuild_odd(xs));
-        simp();
+        solve();
     }
 }
 
@@ -85,7 +85,7 @@ theorem recursive_constructor_injectivity(
     right: TestList<int32>
 ) {
     requires TestList<int32>::Cons(head, left) == TestList<int32>::Cons(head, right);
-    ensures left == right by simp();
+    ensures left == right by solve();
 }
 ```
 

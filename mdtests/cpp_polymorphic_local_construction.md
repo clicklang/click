@@ -41,18 +41,18 @@ class Square : Shape {
 Square::Square(int32 s) {
     owns this->side;
     ensures this->side == s;
-} by { execute(); simp(); }
+}
 int Square::area(int scale) const {
-} by { execute(); simp(); }
+}
 int total(const Shape& shape, int scale) {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(shape) and size(shape) <= 100;
     ensures to_integer(result) == to_integer(size(shape) + scale);
-} by { execute(); simp(); }
+}
 int caller(int scale) {
     requires 0 <= scale and scale <= 100;
     ensures result == 3;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

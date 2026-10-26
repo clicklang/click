@@ -17,13 +17,13 @@ int32 second_of(struct Pair* p, int32* q) {
     views p->second;
     views q[0..1];
     ensures result == p->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 probe(struct Pair* p) {
     views p->first;
     views p->second;
     ensures result == p->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

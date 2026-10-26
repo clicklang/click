@@ -16,7 +16,7 @@ int32 terminator(const char* src, uint64 n) {
 } by {
     open(cstr_at(src, n)) {
         execute();
-        simp();
+        solve();
     }
 }
 ```

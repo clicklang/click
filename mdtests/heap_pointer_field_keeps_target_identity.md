@@ -26,10 +26,10 @@ void put(struct holder* h, int32* p) {
     owns uninitialized(h->target);
     ensures h->target == p;
     ensures defined(h->target);
-} by { execute(); simp(); }
+}
 int32 run() {
     ensures result == -1 or result == 1;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

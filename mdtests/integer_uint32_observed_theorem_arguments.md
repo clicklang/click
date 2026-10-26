@@ -7,7 +7,7 @@ machine expressions preserve wrapping semantics.
 ```click
 theorem zero_difference(a: Integer, b: Integer) {
     requires a == b;
-    ensures a - b == 0 by { arithmetic() using { a == b; }; }
+    ensures a - b == 0 by { solve() using { a == b; }; }
 }
 
 theorem native_observations(a: uint32, b: uint32) {

@@ -8,7 +8,7 @@ verifying "slots.c";
 struct pt* first(struct pt** link) {
     views link[0..1];
     ensures result == link[0];
-} by { execute(); simp(); }
+}
 ```
 ```expect
 pass

@@ -40,24 +40,24 @@ theorem lift(callback: int32 (*)(int32*, int32))
             have cell[0] == item by { extract(cell[0] == item); assumption(); }
             if item == 0 {
                 if item != 0 {
-                    have cell[0] == 123 by simp();
+                    have cell[0] == 123 by solve();
                 } else {
-                    have cell[0] != 0 by simp();
+                    have cell[0] != 0 by solve();
                 }
             } else {
-                have cell[0] != 0 by simp();
+                have cell[0] != 0 by solve();
             }
             if item == 1 {
-                have cell[0] == 1 by simp();
+                have cell[0] == 1 by solve();
             } else {
-                have cell[0] != 1 by simp();
+                have cell[0] != 1 by solve();
             }
-            fold(Cell(cell)); simp();
+            fold(Cell(cell)); solve();
         } else {
             have cell[0] == old(cell[0]) by {
                 extract(cell[0] == old(cell[0])); assumption();
             }
-            fold(Cell(cell)); simp();
+            fold(Cell(cell)); solve();
         }
     }
 }
@@ -75,10 +75,10 @@ int32 check_update(int32 (*callback)(int32*, int32), int32* cell, int32 value) {
     unfold(Cell(cell));
     if c(status) != 0 {
         have cell[0] == value by { extract(cell[0] == value); assumption(); }
-        execute(); fold(Cell(cell)); simp();
+        execute(); fold(Cell(cell)); solve();
     } else {
-        have cell[0] == c(before) by simp();
-        execute(); fold(Cell(cell)); simp();
+        have cell[0] == c(before) by solve();
+        execute(); fold(Cell(cell)); solve();
     }
 }
 ```

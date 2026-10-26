@@ -23,7 +23,7 @@ int32 found(int32 from) {
         unfold(endpoint(from, Path::Here));
         normalize();
     }
-    step(); simp();
+    step(); solve();
 }
 ```
 

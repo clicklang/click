@@ -26,13 +26,12 @@ unsigned long first::helper(struct box* p) {
     ensures result == old(p->wide);
 } by {
     step(); step();
-    have q->wide == old(p->wide) by { simp(); }
-    execute(); simp();
+    have q->wide == old(p->wide) by { solve(); }
 }
 unsigned long run(struct box* p) {
     owns p->wide;
     ensures result == old(p->wide);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

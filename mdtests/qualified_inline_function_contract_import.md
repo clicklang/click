@@ -16,9 +16,9 @@ verifying "qualified_inline_function_first.c";
 verifying "second.c" as selected;
 int32 first_use() { ensures result == 1; } by {
     let { result: answer } = step(selected::helper, {});
-    execute(); simp();
+    execute(); solve();
 }
-int32 second_use() { ensures result == 2; } by { execute(); simp(); }
+int32 second_use() { ensures result == 2; } by { execute(); solve(); }
 ```
 
 ```expect

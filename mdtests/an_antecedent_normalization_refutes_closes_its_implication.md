@@ -30,7 +30,7 @@ int32 r(int32 i, uint64 n) {
         intro();
         contradiction(to_integer(i) + 1 == to_integer(i));
     }
-    have i == i + 1 implies n <= 5u64 by { simp(); }
+    have i == i + 1 implies n <= 5u64 by { solve(); }
     have i <= i + 4 implies i == i + 1 implies n <= 5u64 by { auto(); }
 }
 ```

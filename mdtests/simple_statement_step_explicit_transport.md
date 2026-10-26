@@ -30,7 +30,7 @@ int32 set_second_return_first(int32 p[2]) {
     step();
     transport(old(p[0]) == 7, p[0] == 7);
     step();
-    simp();
+    solve();
 }
 ```
 

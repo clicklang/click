@@ -32,12 +32,12 @@ void touch(int32 n) {
             have black(Walk::At(wd, rest)) == 0 by auto();
             step();
             step();
-            simp();
+            solve();
         },
         Walk::Done => {
             step();
             step();
-            simp();
+            solve();
         },
     }
 }

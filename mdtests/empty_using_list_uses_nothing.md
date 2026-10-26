@@ -8,11 +8,11 @@ precondition below in the context, while `simp() using { }` may not use it.
 theorem empty_using_uses_nothing(x: int32) {
     requires 0 <= x;
     ensures 0 <= x by {
-        simp() using { };
+        solve() using { };
     }
 }
 ```
 
 ```expect
-fail: `simp() using` could not prove the current goal from only its listed premises
+fail: `solve() using` could not prove the current goal from only its listed premises
 ```

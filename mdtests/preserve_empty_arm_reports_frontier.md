@@ -63,7 +63,7 @@ int spin(struct node* p, int n) {
                 invariant i <= n;
                 invariant t.model == Tree::Node(id, value, left_model);
 
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     match t.model {
                         Tree::Empty => { },
@@ -72,7 +72,7 @@ int spin(struct node* p, int n) {
                 }
             }
             step();
-            simp();
+            solve();
         },
     }
 }

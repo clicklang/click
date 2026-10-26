@@ -19,7 +19,7 @@ void move(int32* source, int32* destination, int32* p) {
 } by {
     unfold(slot(source, p));
     fold(slot(destination, p));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

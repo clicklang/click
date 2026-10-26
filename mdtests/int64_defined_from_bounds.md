@@ -82,7 +82,7 @@ int64 sum_by_simp(int64 a, int64 b) {
     ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
-        simp();
+        solve();
     }
 }
 
@@ -92,7 +92,7 @@ int64 sum_by_listed_simp(int64 a, int64 b) {
     ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
-        simp() using {
+        solve() using {
             a < 100;
             b == 1;
         };

@@ -40,7 +40,7 @@ int32 swap_pair(int32 data[]) {
     ensures data[1] == old(data[0]);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 get_first(int32 data[]) {
@@ -48,7 +48,7 @@ int32 get_first(int32 data[]) {
     ensures result == data[0];
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 swap_get(int32 data[]) {
@@ -56,7 +56,7 @@ int32 swap_get(int32 data[]) {
     ensures result == old(data[1]);
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

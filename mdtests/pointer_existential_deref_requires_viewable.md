@@ -19,7 +19,7 @@ int32 pointer_existential_deref_requires_loadable(int32* p) {
         execute();
         obtain (q: int32*) { q == 0 }
         witness { r: q };
-        simp();
+        solve();
     }
 }
 ```

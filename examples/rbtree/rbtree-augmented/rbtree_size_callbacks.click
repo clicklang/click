@@ -30,7 +30,7 @@ void sized_copy_from_table(struct rb_node* old, struct rb_node* new,
         step(CopySizedStructure, {
             source_tree: source_tree, target_tree: target_tree, source: source, target: target
         });
-        execute(); simp();
+        execute(); solve();
     }
 }
 
@@ -55,7 +55,6 @@ void sized_copy_from_generated_table(struct rb_node* old, struct rb_node* new) {
     step(sized_copy_from_table, {
         source_tree: source_tree, target_tree: target_tree, source: source, target: target
     });
-    execute(); simp();
 }
 
 spec enum SizedRotationInput { Left(SizedTree), Right(SizedTree) }
@@ -111,7 +110,7 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                     unfold(sized_rotation_input_tree(SizedRotationInput::Left(tree_model)));
                     normalize();
                 }
-                execute(); simp();
+                execute(); solve();
             },
             SizedRotationInput::Right(tree_model) => {
                 let { tree: tree } = unfold(input);
@@ -122,7 +121,7 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                     unfold(sized_rotation_input_tree(SizedRotationInput::Right(tree_model)));
                     normalize();
                 }
-                execute(); simp();
+                execute(); solve();
             },
         }
     }
@@ -154,7 +153,7 @@ executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
             unfold(sized_rotation_input_tree(SizedRotationInput::Left(old(tree.model))));
             normalize();
         }
-        simp();
+        solve();
     }
 }
 
@@ -184,7 +183,7 @@ executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
             unfold(sized_rotation_input_tree(SizedRotationInput::Right(old(tree.model))));
             normalize();
         }
-        simp();
+        solve();
     }
 }
 
@@ -202,6 +201,6 @@ void sized_propagate_from_table(struct rb_node* rb, struct rb_node* stop,
     open(sized_callback_table(augment)) {
         step(); step();
         let { whole: whole } = step(PropagateTree, { walk: walk });
-        execute(); simp();
+        execute(); solve();
     }
 }

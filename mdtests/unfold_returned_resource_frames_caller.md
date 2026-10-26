@@ -17,7 +17,6 @@ void keep(int32* anchor) {
 } by {
     unfold(a);
     let b = fold(cell(anchor), { tag: old(a.tag) });
-    execute(); simp();
 }
 void call(int32* anchor, int32* other) {
     consumes c: cell(anchor);
@@ -28,7 +27,6 @@ void call(int32* anchor, int32* other) {
     let { b: d } = step(keep, { a: c });
     unfold(d);
     have *other == old(*other);
-    execute(); simp();
 }
 ```
 

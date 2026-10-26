@@ -23,7 +23,7 @@ verifying "simp_reads_a_bound_inside_a_requires_conjunction.c";
 int32 inc(int32 x) {
     requires x >= 0 and x <= 100;
     ensures result >= 0;
-} by { execute(); simp(); }
+}
 
 int32 inc_extracted(int32 x) {
     requires x >= 0 and x <= 100;
@@ -31,7 +31,7 @@ int32 inc_extracted(int32 x) {
 } by {
     step_until(function.exit);
     extract(x <= 100);
-    simp();
+    solve();
 }
 ```
 

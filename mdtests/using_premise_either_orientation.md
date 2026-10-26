@@ -27,13 +27,13 @@ verifying "using_premise_either_orientation.c";
 theorem value_symmetric(a: int32, b: int32) {
     requires a == b;
 
-    ensures b == a by simp();
+    ensures b == a by solve();
 }
 
 theorem cell_symmetric(a: void*, b: void*) {
     requires a == b;
 
-    ensures b == a by simp();
+    ensures b == a by solve();
 }
 
 int32 same_value(int32 x, int32 y) {

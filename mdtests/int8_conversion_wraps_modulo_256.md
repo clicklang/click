@@ -20,22 +20,22 @@ verifying "int8_conversion_wraps_modulo_256.c";
 signed char cast(int32 x) {
     requires x == 200;
     ensures result == -56;
-} by { execute(); simp(); }
+}
 
 signed char returned(int32 x) {
     requires x == -129;
     ensures result == 127;
-} by { execute(); simp(); }
+}
 
 int32 initialized(int32 x) {
     requires x == 383;
     ensures result == 127;
-} by { execute(); simp(); }
+}
 
 int32 assigned(int32 x) {
     requires x == 129;
     ensures result == -128;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

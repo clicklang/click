@@ -25,7 +25,7 @@ theorem lift(callback: int32 (*)()) executes callback() {
         step(Exact, { cell: k });
         have k.revision == old(k.revision) + 1 by assumption();
         have old(k.revision) < old(k.revision) + 1 by auto();
-        simp();
+        solve();
     }
 }
 verifying "counter.c";
@@ -42,7 +42,7 @@ int32 invoke(int32 (*callback)()) {
     apply(lift(callback));
     step(Progress, { cell: first });
     execute();
-    simp();
+    solve();
 }
 ```
 

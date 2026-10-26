@@ -12,7 +12,7 @@ int32 read() {
     views current;
     views current[0..1];
     ensures result == current[0];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

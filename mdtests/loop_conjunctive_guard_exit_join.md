@@ -46,7 +46,7 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
         invariant a >= 0;
         invariant a <= 10;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             have a > 0 by {
                 if a > 0 {
@@ -58,7 +58,7 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
             }
             step();
             close_invariants() by {
-                simp();
+                solve();
             }
         }
     }
@@ -77,10 +77,10 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
             }
         }
         step();
-        simp();
+        solve();
     } else {}
     step();
-    simp();
+    solve();
 }
 ```
 

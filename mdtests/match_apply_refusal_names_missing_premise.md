@@ -20,8 +20,8 @@ void put(int32* p, int32 x) {
     ensures 1 == 1;
 } by {
     match b.model {
-        Model::One => { apply(zero(x)); unfold(b); execute(); simp(); },
-        Model::Two => { unfold(b); execute(); simp(); },
+        Model::One => { apply(zero(x)); unfold(b); execute(); solve(); },
+        Model::Two => { unfold(b); execute(); solve(); },
     }
 }
 ```

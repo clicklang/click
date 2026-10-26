@@ -35,7 +35,7 @@ int32 peek(struct node* p) {
     match x.model {
         Cell::Missing => {
             execute();
-            simp();
+            solve();
         },
         Cell::Present(identity) => {
             contradiction(x.model == Cell::Present(identity));

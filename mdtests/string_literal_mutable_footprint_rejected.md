@@ -29,11 +29,11 @@ verifying "string_literal_mutable_footprint_rejected.c";
 void overwrite(uint8* p) {
     owns p[0..1];
     ensures p[0] == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 string_literal_mutable_footprint_rejected() {
     ensures result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

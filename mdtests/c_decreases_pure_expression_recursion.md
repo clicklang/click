@@ -39,23 +39,23 @@ int32 drain(int32 n) {
     branch {
         have 0 <= level(n - 1) by {
             unfold(level(n - 1));
-            arithmetic() using {
+            solve() using {
                 n > 0;
             };
         }
         have level(n - 1) < level(n) by {
             unfold(level(n - 1));
             unfold(level(n));
-            arithmetic() using {
+            solve() using {
                 n > 0;
             };
         }
         step();
         step();
-        simp();
+        solve();
     } else {}
     step();
-    simp();
+    solve();
 }
 ```
 

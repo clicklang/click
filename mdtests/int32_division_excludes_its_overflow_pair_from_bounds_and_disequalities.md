@@ -31,35 +31,35 @@ int32 positive_divisor(int32 x, int32 y) {
     requires y > 0;
     requires x >= 0;
     ensures result >= 0;
-} by { execute(); simp(); }
+}
 
 int32 negative_divisor(int32 x, int32 y) {
     requires y < -1;
     ensures result == x / y;
-} by { execute(); simp(); }
+}
 
 int32 divisor_not_minus_one(int32 x, int32 y) {
     requires y != 0;
     requires y != -1;
     ensures result == x / y;
-} by { execute(); simp(); }
+}
 
 int32 dividend_not_int_min(int32 x, int32 y) {
     requires y != 0;
     requires x != -2147483647 - 1;
     ensures result == x / y;
-} by { execute(); simp(); }
+}
 
 int32 bounded_operands(int32 x, int32 y) {
     requires 0 <= x and x <= 100;
     requires 1 <= y and y <= 100;
     ensures result == x / y;
-} by { execute(); simp(); }
+}
 
 int32 remainder(int32 x, int32 y) {
     requires y > 0;
     ensures result == x % y;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

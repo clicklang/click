@@ -15,7 +15,7 @@ struct node *clear_tag(unsigned long word, struct node *p) {
 verifying "cast_masked_word_requires_pointer_origin.c";
 struct node* clear_tag(unsigned long word, struct node* p) {
     ensures result == p;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

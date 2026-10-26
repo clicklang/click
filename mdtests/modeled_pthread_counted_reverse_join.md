@@ -26,7 +26,7 @@ authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns authority(ticket(argument));
     consumes ticket(argument);
-} by { unfold(ticket(argument)); execute(); simp(); }
+} by { unfold(ticket(argument)); }
 int32 run(void* p, void* q) {
     owns authority(ticket(p));
     owns authority(ticket(q));
@@ -44,7 +44,7 @@ int32 run(void* p, void* q) {
         have count(ticket(p)) == 1;
         unfold(ticket(p));
         unfold(ticket(q));
-        step(); simp();
+        step(); solve();
     } else {}
     step();
     branch {
@@ -52,14 +52,14 @@ int32 run(void* p, void* q) {
         have count(ticket(p)) == 0;
         have count(ticket(q)) == 1;
         unfold(ticket(q));
-        step(); simp();
+        step(); solve();
     } else {}
     step();
     have count(ticket(q)) == 0;
     step();
     have count(ticket(p)) == 0;
     have count(ticket(q)) == 0;
-    step(); simp();
+    step(); solve();
 }
 ```
 

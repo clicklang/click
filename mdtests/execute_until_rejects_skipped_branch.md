@@ -21,7 +21,7 @@ int32 execute_until_skipped_branch(int32 flag) {
         step();
         execute_until(region(2));
         execute();
-        simp();
+        solve();
     }
 }
 ```

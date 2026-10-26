@@ -23,10 +23,10 @@ int id(int x) {
 } by {
     execute();
     match r.model ensuring { fact result == x; } {
-        Tag::A => { have x == x + 1 by simp(); contradiction(r.model == Tag::A); },
+        Tag::A => { have x == x + 1 by solve(); contradiction(r.model == Tag::A); },
         Tag::B => { },
     }
-    simp();
+    solve();
 }
 ```
 

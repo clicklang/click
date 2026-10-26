@@ -45,9 +45,9 @@ int32 count_up(int32 *a, int32 n) {
                 intro();
                 extract(0 <= k);
                 extract(k <= n);
-                simp();
+                solve();
             }
-            simp();
+            solve();
         }
         preserve by {
             step();
@@ -57,17 +57,17 @@ int32 count_up(int32 *a, int32 n) {
                 intro();
                 extract(0 <= k);
                 extract(k <= n);
-                simp();
+                solve();
             }
             close_invariants() by {
-                both { simp(); } and {
-                    both { simp(); } and {
+                both { solve(); } and {
+                    both { solve(); } and {
                         both {
                             intro();
                             intro();
                             extract(0 <= k);
                             extract(k <= n);
-                            arithmetic() using { 0 <= k; k <= n; n <= 1073741823; };
+                            solve() using { 0 <= k; k <= n; n <= 1073741823; };
                         } and {
                             both {
                                 intro();
@@ -76,12 +76,12 @@ int32 count_up(int32 *a, int32 n) {
                                 assumption();
                             } and {
                                 both {
-                                    arithmetic() using {
+                                    solve() using {
                                         at(region(5).entry, 0) <= at(region(5).entry, i);
                                         at(region(5).entry, i) < at(region(5).entry, n);
                                     };
                                 } and {
-                                    arithmetic() using {
+                                    solve() using {
                                         at(region(5).entry, 0) <= at(region(5).entry, i);
                                         at(region(5).entry, i) < at(region(5).entry, n);
                                     };

@@ -47,12 +47,12 @@ int32 loop_old_count_invariant(int32 p[3]) {
             step();
             have i >= 0 and i <= 3 by {
                 both {
-                    arithmetic() using {
+                    solve() using {
                         at(region(3).entry, i) >= at(region(3).entry, 0);
                         at(region(3).entry, i) < at(region(3).entry, 3);
                     };
                 } and {
-                    arithmetic() using {
+                    solve() using {
                         at(region(3).entry, i) < at(region(3).entry, 3);
                     };
                 }
@@ -99,7 +99,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
     }
     step();
     have result == 3 by {
-        arithmetic() using {
+        solve() using {
             at(loop(0).exit, i) <= at(loop(0).exit, 3);
             not at(loop(0).exit, i) < at(loop(0).exit, 3);
         };

@@ -16,8 +16,8 @@ verifying "second.c" as second;
 int32 first::helper(int32 x) {
     requires x >= 0;
     ensures result == x;
-} by { execute(); simp(); }
-int32 run() { ensures result == -1; } by { execute(); simp(); }
+} by { execute(); solve(); }
+int32 run() { ensures result == -1; } by { execute(); solve(); }
 ```
 
 ```expect

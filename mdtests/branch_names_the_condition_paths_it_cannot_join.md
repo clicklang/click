@@ -29,7 +29,7 @@ int32 both_positive(int32 x, int32 y) {
     step();
     branch { step(); } else { step(); }
     step();
-    simp();
+    solve();
 }
 ```
 

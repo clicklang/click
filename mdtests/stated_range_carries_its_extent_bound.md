@@ -22,7 +22,7 @@ theorem a_prefix_of_a_stated_range(v: int32[], lo: int32, hi: int32) {
         have 0 < hi by { arithmetic() using { 0 <= lo; lo < hi; }; }
         have to_integer(lo) <= to_integer(hi - 1) by { arithmetic() using { lo < hi; 0 < hi; }; }
         have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 < hi; }; }
-        simp();
+        solve();
     }
 }
 

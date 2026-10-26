@@ -11,7 +11,7 @@ theorem t(y: int32) {
     ensures forall (y: int32) { y == y } by {
         intro();
         have outer.y == 7 by { assumption(); }
-        simp();
+        solve();
     }
 }
 ```

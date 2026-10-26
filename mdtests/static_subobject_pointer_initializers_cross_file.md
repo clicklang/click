@@ -67,7 +67,7 @@ int32 run() {
     have storage_file::byte_pointer[0] == 0;
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

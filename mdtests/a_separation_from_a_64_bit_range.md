@@ -29,7 +29,7 @@ uint8 set_and_read(int32* value, const uint8* bytes, uint64 length, uint64 index
     views bytes[0..length];
     ensures result == old(bytes[index]);
     ensures value[0] == 7;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

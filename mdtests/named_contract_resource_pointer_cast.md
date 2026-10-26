@@ -24,7 +24,7 @@ int32 read_size(struct sized_node* node) {
     views node->size;
     owns parent: size_metadata((struct rb_node*)(void*)node);
     ensures result == old(parent.value);
-} by { unfold(parent); execute(); fold(parent); simp(); }
+} by { unfold(parent); execute(); fold(parent); solve(); }
 
 contract int32 ReadSize(struct sized_node* node) {
     requires node != 0;

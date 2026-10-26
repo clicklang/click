@@ -50,7 +50,7 @@ void countdown(int32 n) {
         decreases chain_len(c.model) + to_integer(n);
         invariant n >= 0;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             step();
             close_invariants();
@@ -59,7 +59,7 @@ void countdown(int32 n) {
     have n == 0;
     unfold(c);
     step();
-    simp();
+    solve();
 }
 ```
 

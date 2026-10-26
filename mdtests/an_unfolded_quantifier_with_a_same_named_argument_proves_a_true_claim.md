@@ -34,7 +34,7 @@ int32 f(int32 p[2], int32 m) {
     step_until(function.exit);
     unfold(allpos);
     unfold(allpos_range);
-    simp();
+    solve();
 }
 ```
 

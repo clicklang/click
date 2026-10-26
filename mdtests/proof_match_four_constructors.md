@@ -47,7 +47,7 @@ int read(int* p) {
                 unfold(quad_code(Quad::Zero));
                 normalize();
             }
-            simp();
+            solve();
         },
         Quad::One => {
             unfold(c);
@@ -58,7 +58,7 @@ int read(int* p) {
                 unfold(quad_code(Quad::One));
                 normalize();
             }
-            simp();
+            solve();
         },
         Quad::Two => {
             unfold(c);
@@ -69,7 +69,7 @@ int read(int* p) {
                 unfold(quad_code(Quad::Two));
                 normalize();
             }
-            simp();
+            solve();
         },
         Quad::Other(value) => {
             unfold(c);
@@ -80,7 +80,7 @@ int read(int* p) {
                 unfold(quad_code(Quad::Other(value)));
                 normalize();
             }
-            simp();
+            solve();
         },
     }
 }

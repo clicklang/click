@@ -24,7 +24,7 @@ theorem head_below_one_is_below_two(a: int32[], seed: int32) {
     requires a[0] < 1;
 
     ensures a[0] < 2 by {
-        simp();
+        solve();
     }
 }
 

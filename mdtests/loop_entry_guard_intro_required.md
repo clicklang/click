@@ -42,10 +42,10 @@ int32 loop_entry_guard_intro_required(int32 p[3]) {
                 normalize();
             }
         }
-        preserve by simp();
+        preserve by solve();
     }
     step();
-    simp();
+    solve();
 }
 ```
 

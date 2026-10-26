@@ -21,10 +21,9 @@ int32 walk(int32 n) { requires n >= 0; ensures result == 7; } by {
     loop {
         decreases n - i;
         invariant i == 0;
-        initialize by simp();
+        initialize by solve();
         preserve by { step(); step(); }
     }
-    execute(); simp();
 }
 ```
 

@@ -27,7 +27,7 @@ void write_value(struct holder *holder, struct holder *other, int *data) {
     owns mutex_live(&holder->mu);
     owns data[0..1];
     requires separate(memory(data[0..1]), memory(other->mu));
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

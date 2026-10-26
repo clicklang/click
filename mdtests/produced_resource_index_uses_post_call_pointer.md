@@ -41,7 +41,7 @@ void release(struct root* root, struct node* replacement) {
             unfold(incoming);
             step();
             let leaf = fold(cell(root->node), { tag: old(incoming.tag) });
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -53,7 +53,6 @@ void caller(struct root* root, struct node* replacement) {
     ensures root->node == replacement;
 } by {
     let { leaf: leaf } = step(release, { state: state, incoming: incoming });
-    execute(); simp();
 }
 ```
 

@@ -40,16 +40,16 @@ void touch(int32 n) {
                 normalize();
             }
             have wd == 3 by {
-                arithmetic() using { depth(c.model) == wd; depth(c.model) == 3; };
+                solve() using { depth(c.model) == wd; depth(c.model) == 3; };
             }
             step();
             step();
-            simp();
+            solve();
         },
         Walk::Done => {
             step();
             step();
-            simp();
+            solve();
         },
     }
 }

@@ -19,13 +19,13 @@ unsigned long bump(struct counter *p) {
     owns p->value;
     owns library::state.value;
     ensures result == library::state.value;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 unsigned long next() {
     requires library::state.value < 100u64;
     owns library::state.value;
     ensures result == library::state.value;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

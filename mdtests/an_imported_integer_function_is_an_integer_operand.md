@@ -22,7 +22,7 @@ theorem doubled_beside_an_observation(x: int32) {
     ensures to_integer(x) * 2 == doubled(x) by {
         have to_integer(x) == 3 by assumption();
         unfold(doubled(x));
-        arithmetic() using { to_integer(x) == 3; };
+        solve() using { to_integer(x) == 3; };
     }
 }
 ```

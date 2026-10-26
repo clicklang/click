@@ -13,7 +13,7 @@ verifying "sep.c";
 int32 apart_c(struct node* a, struct node* b) {
     requires separate(memory(a->word), memory(b->word));
     ensures result == 0;
-} by { execute(); simp(); }
+}
 
 theorem apart(a: struct node*, b: struct node*) {
     requires separate(memory(a->word), memory(b->word));

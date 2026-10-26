@@ -48,7 +48,7 @@ void walk(struct Node* p, int32* marker) {
         owns c: path(p);
         decreases t;
         invariant p != 0;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match t.model {
                 Chain::Empty => { unfold(t); contradiction(p == 0); },
@@ -62,7 +62,6 @@ void walk(struct Node* p, int32* marker) {
         }
     }
     have c.model != Path::Top by normalize();
-    execute(); simp();
 }
 ```
 ```expect

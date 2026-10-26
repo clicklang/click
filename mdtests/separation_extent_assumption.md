@@ -12,7 +12,7 @@ int32 identity(int32 n) {
     requires separate(memory(a[0..n]), memory(b[0..1]));
     ensures result >= 0;
     ensures result <= 1073741823;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -70,7 +70,7 @@ void paint(struct node* p, int32 flag) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

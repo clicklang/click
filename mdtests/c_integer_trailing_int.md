@@ -27,16 +27,16 @@ int widths(void) {
 verifying "integer_spellings.c";
 int promote(uint16 value) {
     ensures result == value;
-} by { execute(); simp(); }
+}
 int signed_promote(int16 value) {
     ensures result == value;
-} by { execute(); simp(); }
+}
 unsigned long long int preserve_wide(unsigned long long int value) {
     ensures result == value;
-} by { execute(); simp(); }
+}
 int widths() {
     ensures result == 20;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -32,17 +32,17 @@ extern int32 read_cell(int32* p) {
 
 int32 run() { ensures result == 0; } by {
     step(); step();
-    branch { execute(); simp(); } else {}
+    branch { execute(); solve(); } else {}
     step();
     fold(authority(cell(p)));
     let first = fold(cell(p), { model: List<int32>::Cons(7, List<int32>::Nil) });
     fold(control(p));
     step(read_cell, { member: first });
-    have first.model == List<int32>::Cons(7, List<int32>::Nil) by simp();
-    have count(cell(p)) == 1 by simp();
+    have first.model == List<int32>::Cons(7, List<int32>::Nil) by solve();
+    have count(cell(p)) == 1 by solve();
     unfold(first);
     unfold(authority(cell(p)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

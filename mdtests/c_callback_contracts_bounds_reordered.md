@@ -23,7 +23,7 @@ int32 invoke(int32 (*callback)(int32), int32 x) {
  have result <= x by assumption();
  have x <= result;
  apply(int32_le_antisymmetric(result, x));
- simp();
+ solve();
 }
 ```
 

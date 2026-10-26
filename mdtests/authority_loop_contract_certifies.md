@@ -24,7 +24,7 @@ int32 count_to_three() {
     step();
     step();
     have i == 0 by {
-        simp();
+        solve();
     }
     loop {
         decreases 3 - i;
@@ -32,7 +32,7 @@ int32 count_to_three() {
         invariant i <= 3;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

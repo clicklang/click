@@ -23,10 +23,10 @@ int32 f(int32 x, int32 y, int32 z) {
 } by {
     if y > 3 {
         execute();
-        simp();
+        solve();
     } else {
         execute();
-        simp();
+        solve();
     }
 }
 ```

@@ -75,7 +75,7 @@ Currently accepted tactics:
 <!-- verified-example: mdtests/algebraic_maybe.md -->
 ```click
 by auto();
-by simp();
+by solve();
 ```
 
 Omitting a proof clause uses `auto`. `by simp();` means the same operation as
@@ -110,7 +110,7 @@ Explicit proof scripts use function-call-shaped tactics:
 by {
     execute();
     unfold(sorted);
-    simp();
+    solve();
 }
 ```
 
@@ -361,7 +361,7 @@ typical existential-introduction proof names a witness:
 ensures found_zero: (0..n).any(|k| { k == result }) by {
     execute();
     witness { k: 0 };
-    simp();
+    solve();
 }
 ```
 
@@ -393,7 +393,7 @@ ensures opened_contains: bytes::contains(p, 0, (uint64) n, 'x') by {
         0u64 <= found and found < (uint64) n and p[found] == 'x'
     }
     witness { k: found };
-    simp();
+    solve();
 }
 ```
 
@@ -408,7 +408,7 @@ by {
     step();
     step();
     have i == 0 by {
-        simp();
+        solve();
     }
     loop as fill {
         decreases n - i;
@@ -454,7 +454,7 @@ order for execution targets and snapshots:
 ```click
 execute_until(region(4));
 have y >= 0 by {
-    simp();
+    solve();
 }
 step();
 have at(region(4).entry, y) >= 0 by {
@@ -529,7 +529,7 @@ loop {
     initialize by auto();
     preserve by {
         step();
-        simp();
+        solve();
     }
 }
 ```

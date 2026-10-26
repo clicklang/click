@@ -56,7 +56,7 @@ int32 inspect_cell(int32 p[]) {
 } by {
     open(initialized_cell(p)) {
         execute();
-        simp();
+        solve();
     }
 }
 ```

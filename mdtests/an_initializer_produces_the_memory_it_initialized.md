@@ -28,17 +28,17 @@ void init(int32* p) {
     consumes uninitialized(p[0..1]);
     produces p[0..1];
     ensures p[0] == 1;
-} by { execute(); simp(); }
+}
 
 void bump(int32* p) {
     owns p[0..1];
     requires p[0] < 2147483647;
     ensures p[0] == old(p[0]) + 1;
-} by { execute(); simp(); }
+}
 
 int32 caller() {
     ensures result == 2;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

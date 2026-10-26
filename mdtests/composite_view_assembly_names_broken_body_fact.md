@@ -41,7 +41,7 @@ int32 make_zero(struct box* box) {
 } by {
     execute();
     fold(zero_box(box));
-    simp();
+    solve();
 }
 
 int32 read_zero(struct box* box) {

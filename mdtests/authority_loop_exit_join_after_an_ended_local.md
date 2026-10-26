@@ -54,7 +54,7 @@ int32 inner_addr(int32 flag) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

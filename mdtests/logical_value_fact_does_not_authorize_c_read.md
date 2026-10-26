@@ -14,7 +14,7 @@ verifying "logical_value_fact_does_not_authorize_c_read.c";
 int32 read_cell(int32 *p) {
     requires p[0] == 7;
     ensures result == 7;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

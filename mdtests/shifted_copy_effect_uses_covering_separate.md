@@ -40,7 +40,7 @@ int32 shifted_copy_effect_uses_covering_separate(int32 dst[], int32 src[], int32
         owns (dst + 1)[0..n - 1];
     }
     step();
-    simp();
+    solve();
 }
 ```
 

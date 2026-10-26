@@ -67,7 +67,7 @@ int32 pick(struct cell* p, struct cell* q, int32 x) {
     }
     let d = fold(cell(q), { model: q->value });
     step();
-    simp();
+    solve();
 }
 ```
 

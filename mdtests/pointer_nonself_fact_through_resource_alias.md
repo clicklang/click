@@ -29,15 +29,15 @@ void keep(struct item* root) {
     ensures 1 == 1;
 } by {
     match state.model {
-        Tree::Leaf(identity) => { unfold(state); execute(); simp(); },
+        Tree::Leaf(identity) => { unfold(state); execute(); solve(); },
         Tree::Parent(identity, rest) => {
             let { child: inner } = unfold(state);
             match inner.model {
-                Tree::Leaf(parent) => { unfold(inner); execute(); simp(); },
+                Tree::Leaf(parent) => { unfold(inner); execute(); solve(); },
                 Tree::Parent(parent, tail) => {
                     let { child: leaf } = unfold(inner);
                     have parent->child != parent by { assumption(); }
-                    execute(); simp();
+                    execute(); solve();
                 },
             }
         },

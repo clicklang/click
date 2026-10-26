@@ -34,7 +34,7 @@ void walk(int32 n) {
         decreases n;
         invariant n >= 0;
         invariant state.model == Walk::Active;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             let { done: state } = stop({ dirty: state });
             step();
@@ -45,13 +45,13 @@ void walk(int32 n) {
     have n == 0 or pending(state.model) == 0 by {
         cases {
             not (n > 0) => {
-                have n == 0 by { simp(); }
+                have n == 0 by { solve(); }
                 assumption();
             }
             pending(state.model) == 0 => { assumption(); }
         }
     }
-    simp();
+    solve();
 }
 ```
 

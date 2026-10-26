@@ -27,7 +27,6 @@ int32 fill_diagonal() {
 } by {
     step(); step(); step();
     loop { decreases 3 - i; invariant i >= 0; invariant i <= 3; }
-    execute(); simp();
 }
 ```
 

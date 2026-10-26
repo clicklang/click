@@ -26,7 +26,7 @@ int32 xor_swap(int32 x, int32 y) {
             normalize();
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

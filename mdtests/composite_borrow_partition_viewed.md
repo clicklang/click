@@ -22,7 +22,7 @@ void update(struct node* p, const struct callbacks* cb) {
     ensures p->value == 1;
 } by {
     open(callback_table(cb)) { execute(); }
-    simp();
+    solve();
 }
 ```
 ```expect

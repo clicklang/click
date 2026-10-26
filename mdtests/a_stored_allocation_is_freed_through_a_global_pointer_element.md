@@ -23,7 +23,7 @@ int32 store_then_free(int32 *q) {
     consumes q[0..1];
     owns ptrs[0..100];
     ensures result == 0;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

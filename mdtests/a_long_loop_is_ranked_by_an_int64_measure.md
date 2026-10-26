@@ -43,28 +43,27 @@ uint8 last(const uint8* bytes, int64 length) {
         invariant i <= 2147483647i64;
         preserve by {
             have to_integer(i + 2i64) <= to_integer(length) by {
-                arithmetic() using { 0i64 <= i; i <= length; to_integer(i + 1i64) < to_integer(length); length <= 2147483647i64; };
+                solve() using { 0i64 <= i; i <= length; to_integer(i + 1i64) < to_integer(length); length <= 2147483647i64; };
             }
             have to_integer(length - (i + 2i64)) < to_integer(length - i) by {
-                arithmetic() using { 0i64 <= i; i <= length; to_integer(i + 2i64) <= to_integer(length); length <= 2147483647i64; };
+                solve() using { 0i64 <= i; i <= length; to_integer(i + 2i64) <= to_integer(length); length <= 2147483647i64; };
             }
             have to_integer(0i64) <= to_integer(i + 2i64) by {
-                arithmetic() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
+                solve() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
             }
             have to_integer(i + 2i64) <= to_integer(2147483647i64) by {
-                arithmetic() using { to_integer(i + 2i64) <= to_integer(length); length <= 2147483647i64; 0i64 <= i; i <= length; };
+                solve() using { to_integer(i + 2i64) <= to_integer(length); length <= 2147483647i64; 0i64 <= i; i <= length; };
             }
             have to_integer(0i64) <= to_integer(length - (i + 2i64)) by {
-                arithmetic() using { to_integer(i + 2i64) <= to_integer(length); length <= 2147483647i64; 0i64 <= i; i <= length; };
+                solve() using { to_integer(i + 2i64) <= to_integer(length); length <= 2147483647i64; 0i64 <= i; i <= length; };
             }
             have to_integer(0i64) <= to_integer(i + 1i64) by {
-                arithmetic() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
+                solve() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
             }
             step(); step();
-            simp();
+            solve();
         }
     }
-    execute(); simp();
 }
 ```
 

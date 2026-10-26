@@ -29,7 +29,7 @@ int32 count_to(int32 n) {
         decreases n - i;
         invariant 0 <= i;
         invariant i <= n;
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             have to_integer(i + 1) <= 101;
             step();

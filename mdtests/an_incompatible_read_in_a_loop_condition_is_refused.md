@@ -41,7 +41,7 @@ int32 uprec(int32 a, int64* p) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

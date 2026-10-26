@@ -37,14 +37,14 @@ int32 peek(struct node* p) {
     step();
     loop {
         invariant i >= 0 and i <= 1;
-        initialize by simp();
+        initialize by solve();
         preserve by { step(); close_invariants(); }
     }
     have p == p by normalize();
     match x.model {
         Cell::Missing => {
             execute();
-            simp();
+            solve();
         },
         Cell::Present(identity) => {
             contradiction(x.model == Cell::Present(identity));

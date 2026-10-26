@@ -17,12 +17,12 @@ verifying "library.c" as library;
 void reset(struct counter *p) {
     owns p->value;
     ensures p->value == 0u64;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 void reset_limit() {
     owns library::limit.value;
     ensures library::limit.value == 0u64;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

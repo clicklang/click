@@ -17,12 +17,12 @@ verifying "a_long_pointer_is_not_passed_as_a_long_long_pointer.c";
 int64 read(int64 *p) {
     views p[0];
     ensures result == p[0];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int64 view(int64 *p) {
     views p[0];
     ensures result == p[0];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

@@ -27,7 +27,7 @@ void update(struct node* p, const struct callbacks* cb) {
         execute();
     }
     fold(node_cell(p));
-    simp();
+    solve();
 }
 ```
 ```expect

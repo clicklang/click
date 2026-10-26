@@ -28,9 +28,9 @@ int32 s(int32 j) {
         step();
         have defined(t[2u64]) by { normalize() using { j == 2; }; }
         execute();
-        simp();
+        solve();
     } else {
-        if j == 1 { execute(); simp(); } else { execute(); simp(); }
+        if j == 1 { execute(); solve(); } else { execute(); solve(); }
     }
 }
 ```

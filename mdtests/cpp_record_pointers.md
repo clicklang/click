@@ -75,24 +75,24 @@ function head_or(xs: List<int32>, fallback: int32) -> int32 {
 int head(Node* node) {
     views *node;
     ensures result == node->value;
-} by { execute(); simp(); }
+}
 
 Node* rest(Node* node) {
     views *node;
     ensures result == node->next;
-} by { execute(); simp(); }
+}
 
 Node* link(Node* node, Node* next) {
     owns *node;
     ensures result == node;
     ensures node->next == next;
     ensures node->value == old(node->value);
-} by { execute(); simp(); }
+}
 
 bool is_empty(Node* node) {
     ensures result implies node == 0;
     ensures node == 0 implies result;
-} by { execute(); simp(); }
+}
 
 int first_or(Node* node, int fallback) {
     consumes nodes: list_at(node);

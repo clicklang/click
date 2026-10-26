@@ -25,27 +25,27 @@ verifying "widen.c";
 
 short s8_16(signed char x) {
     ensures to_integer(result) == to_integer(x);
-} by { execute(); auto(); }
+}
 
 int s8_32(signed char x) {
     ensures to_integer(result) == to_integer(x);
-} by { execute(); auto(); }
+}
 
 unsigned short u8_u16(unsigned char x) {
     ensures to_integer(result) == to_integer(x);
-} by { execute(); auto(); }
+}
 
 short u8_s16(unsigned char x) {
     ensures to_integer(result) == to_integer(x);
-} by { execute(); auto(); }
+}
 
 int u16_s32(unsigned short x) {
     ensures to_integer(result) == to_integer(x);
-} by { execute(); auto(); }
+}
 
 unsigned int u16_u32(unsigned short x) {
     ensures to_integer(result) == to_integer(x);
-} by { execute(); auto(); }
+}
 ```
 
 ```expect

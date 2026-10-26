@@ -20,9 +20,9 @@ int32 sharpen(int32 n) {
     requires n != 0;
     ensures result == 0;
 } by {
-    have 0 < n by { arithmetic() using { n >= 0; n != 0; }; }
+    have 0 < n by { solve() using { n >= 0; n != 0; }; }
     step();
-    simp();
+    solve();
 }
 ```
 

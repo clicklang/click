@@ -37,7 +37,7 @@ int32 set_second_return_first(int32 p[2]) {
         assumption();
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -26,7 +26,7 @@ void helper(struct Node* p, struct Node* q, struct Root* root) {
     ensures p->tag == old(p->tag);
 } by {
     unfold(before); execute();
-    let after = fold(link(q, root), { model: Tag::Here }); simp();
+    let after = fold(link(q, root), { model: Tag::Here }); solve();
 }
 void caller(struct Node* p, struct Node* q, struct Root* root) {
     consumes before: link(p, root);
@@ -44,7 +44,7 @@ void caller(struct Node* p, struct Node* q, struct Root* root) {
     step();
     have q->tag == at(call_entry, q->tag) by normalize();
     have (q->tag & 1) == 1;
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

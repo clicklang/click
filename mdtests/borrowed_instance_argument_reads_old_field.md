@@ -58,7 +58,7 @@ void use(struct region* region) {
     let { start: s } = unfold(r);
     step_until(function.exit);
     let r = fold(reg(region), { start: s });
-    simp();
+    solve();
 }
 
 int32 caller(struct arena* arena, struct region* a) {
@@ -70,7 +70,7 @@ int32 caller(struct arena* arena, struct region* a) {
     let r = fold(reg(a), { start: a->start });
     step(use, { r: r, st: st });
     have a->arena == arena by {
-        simp();
+        solve();
     }
     step(use, { r: r, st: st });
     unfold(r);

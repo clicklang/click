@@ -18,10 +18,10 @@ verifying "scalar.c";
 void fill(uint32* p, uint32 value) {
     owns p[0..1];
     ensures p[0] == value;
-} by { execute(); simp(); }
+}
 uint32 probe(uint32 value) {
     ensures result == value;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

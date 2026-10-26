@@ -30,7 +30,7 @@ int32 bump(int32 x) {
     }
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

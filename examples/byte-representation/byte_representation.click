@@ -43,7 +43,7 @@ int use_copy() {
     step();
     if copied == 18 {
         execute();
-        simp();
+        solve();
     } else {
         have copied == -1 by {
             cases {
@@ -56,6 +56,6 @@ int use_copy() {
             }
         }
         execute();
-        simp();
+        solve();
     }
 }

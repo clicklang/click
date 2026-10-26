@@ -24,7 +24,6 @@ void issue(int32* pool, int32* member) {
     ensures count(slot(pool, _)) == old(count(slot(pool, _))) + 1;
 } by {
     fold(slot(pool, member));
-    execute(); simp();
 }
 void lifecycle() { ensures 1 == 1; } by {
     step(); step(); step(); step(); step(); step(); step(); step();
@@ -37,7 +36,6 @@ void lifecycle() { ensures 1 == 1; } by {
     unfold(slot(&pool, &second));
     unfold(slot(&pool, &third));
     unfold(authority(slot(&pool, _)));
-    execute(); simp();
 }
 ```
 

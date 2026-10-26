@@ -14,7 +14,7 @@ verifying "explicit_read_validity_does_not_authorize_c_read.c";
 int32 read_cell(int32 *p) {
     requires defined(p[0]);
     ensures result == p[0];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

@@ -23,7 +23,6 @@ void release(int32* pool, int32* member) {
     ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
 } by {
     unfold(slot(pool, member));
-    execute(); simp();
 }
 void lifecycle() { ensures 1 == 1; } by {
     step(); step(); step(); step(); step(); step(); step(); step();
@@ -36,7 +35,6 @@ void lifecycle() { ensures 1 == 1; } by {
     unfold(slot(&pool, &first));
     unfold(slot(&pool, &second));
     unfold(authority(slot(&pool, _)));
-    execute(); simp();
 }
 ```
 

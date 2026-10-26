@@ -28,7 +28,7 @@ void helper(struct holder *holder) {
     step();
     step();
     step();
-    simp();
+    solve();
 }
 int32 run(struct holder *holder) {
     owns holder->mu;
@@ -41,7 +41,7 @@ int32 run(struct holder *holder) {
     step();
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

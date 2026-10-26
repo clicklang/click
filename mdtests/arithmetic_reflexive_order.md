@@ -30,12 +30,12 @@ int32 lower(int32 p) {
         normalize();
     }
     have i >= p by {
-        arithmetic() using {
+        solve() using {
             i == p;
         };
     }
     step();
-    simp();
+    solve();
 }
 
 int32 upper(int32 p) {
@@ -47,12 +47,12 @@ int32 upper(int32 p) {
         normalize();
     }
     have i <= p by {
-        arithmetic() using {
+        solve() using {
             i == p;
         };
     }
     step();
-    simp();
+    solve();
 }
 ```
 

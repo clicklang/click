@@ -37,7 +37,6 @@ void checkout(int32* pool, struct payload* p) {
 } by {
     unfold(capacity(pool));
     fold(item(pool, p));
-    execute(); simp();
 }
 int32 lifecycle() { ensures result == 3; } by {
     step(); step(); step(); step(); step(); step();
@@ -47,17 +46,16 @@ int32 lifecycle() { ensures result == 3; } by {
     fold(capacity(&pool));
     fold(item(&pool, &second));
     step();
-    have count(capacity(&pool)) == 1 by simp();
-    have count(item(&pool, _)) == 2 by simp();
-    have count(item(&pool, &first)) == 1 by simp();
-    have count(item(&pool, &second)) == 1 by simp();
+    have count(capacity(&pool)) == 1 by solve();
+    have count(item(&pool, _)) == 2 by solve();
+    have count(item(&pool, &first)) == 1 by solve();
+    have count(item(&pool, &second)) == 1 by solve();
     open(item(&pool, &first)) { open(item(&pool, &second)) { step(); step(); } }
     unfold(capacity(&pool));
     unfold(item(&pool, &first));
     unfold(item(&pool, &second));
     unfold(authority(capacity(&pool)));
     unfold(authority(item(&pool, _)));
-    execute(); simp();
 }
 ```
 

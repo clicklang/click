@@ -56,7 +56,7 @@ int32 peek(struct slot* s) {
     execute();
     let r = fold(pool_slot(s), { at: a, end: e });
     let st = fold(pool_state(s->pool), { live: n });
-    simp();
+    solve();
 }
 ```
 

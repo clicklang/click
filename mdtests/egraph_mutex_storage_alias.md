@@ -25,7 +25,7 @@ int32 run(struct holder *first, struct holder *middle, struct holder *last) {
     requires aligned(&last->mu, 8);
     owns first->mu;
     ensures result == 0;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

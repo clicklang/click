@@ -13,7 +13,7 @@ int32 invoke(int32 (*callback)(int32), int32 x) {
  requires APositive(callback);
  requires x == 0;
  ensures result == 0;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

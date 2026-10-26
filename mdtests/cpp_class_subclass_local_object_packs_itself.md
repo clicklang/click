@@ -47,23 +47,23 @@ Square::Square(int32 s) {
     owns this->color;
     ensures this->side == s;
     ensures this->color == 0;
-} by { execute(); simp(); }
+}
 int Square::area(int scale) const {
-} by { execute(); simp(); }
+}
 class BigSquare : Square {
     function size(this) -> int32 { this->base.side + this->extra }
 }
 int BigSquare::area(int scale) const {
-} by { execute(); simp(); }
+}
 int through_square(const Square& square, int scale) {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(square) and size(square) <= 100;
     ensures to_integer(result) == to_integer(size(square) + scale);
-} by { execute(); simp(); }
+}
 int caller(int scale) {
     requires 0 <= scale and scale <= 100;
     ensures to_integer(result) == to_integer(3 + scale);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

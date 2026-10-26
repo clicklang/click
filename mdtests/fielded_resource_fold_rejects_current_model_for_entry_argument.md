@@ -18,7 +18,7 @@ void probe(int32* p, int32* q) {
     unfold(saved);
     step();
     let saved = fold(saved_at(old(p)), { model: SavedPointer::At(q) });
-    execute(); simp();
+    execute(); solve();
 }
 ```
 ```expect

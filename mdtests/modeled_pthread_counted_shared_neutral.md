@@ -25,7 +25,7 @@ verifying "modeled_pthread_counted_shared_neutral.c";
 authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns ticket(argument);
-} by { execute(); simp(); }
+}
 int32 run(void* p, void* q) {
     owns authority(ticket(p));
     owns authority(ticket(q));
@@ -41,20 +41,20 @@ int32 run(void* p, void* q) {
     step();
     branch {
         have count(ticket(p)) == 2;
-        step(); simp();
+        step(); solve();
     } else {}
     step();
     branch {
         step();
         have count(ticket(q)) == 1;
-        step(); simp();
+        step(); solve();
     } else {}
     step();
     have count(ticket(p)) == 2;
     step();
     have count(ticket(p)) == 2;
     have count(ticket(q)) == 1;
-    step(); simp();
+    step(); solve();
 }
 ```
 

@@ -59,7 +59,7 @@ int32 keep(int32* p, int32* q, int32 flag) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

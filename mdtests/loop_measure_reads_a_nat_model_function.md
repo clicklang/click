@@ -55,7 +55,7 @@ void countdown(int32 n) {
         decreases chain_nat(c.model);
         invariant n >= 0;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },
@@ -71,7 +71,7 @@ void countdown(int32 n) {
                         assumption();
                     }
                     have to_integer(chain_nat(rest_model)) < to_integer(chain_nat(c.model)) by {
-                        arithmetic() using {
+                        solve() using {
                             to_integer(chain_nat(c.model)) == to_integer(chain_nat(rest_model)) + 1;
                         };
                     }
@@ -85,7 +85,7 @@ void countdown(int32 n) {
     have n == 0;
     unfold(c);
     step();
-    simp();
+    solve();
 }
 ```
 

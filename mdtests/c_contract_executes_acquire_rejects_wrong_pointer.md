@@ -26,11 +26,11 @@ int32* read_wrong(int32* (*acquire)(), int32* value, int32* other) {
         unfold(MaybeCell(c(cell)));
         unfold(Cell(c(cell)));
         execute();
-        fold(Cell(result)); fold(MaybeCell(result)); simp();
+        fold(Cell(result)); fold(MaybeCell(result)); solve();
     } else {
         unfold(MaybeCell(c(cell)));
         execute();
-        fold(MaybeCell(result)); simp();
+        fold(MaybeCell(result)); solve();
     }
 }
 ```

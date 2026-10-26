@@ -6,7 +6,7 @@ int32 f() { int32* q; int32 i; i = 0; while (i < 1) { int32 a[2]; a[0] = 5; q = 
 
 ```click
 verifying "automatic_scope_exit_loop_end.c";
-int32 f() { ensures 0 <= result; } by { execute(); simp(); }
+int32 f() { ensures 0 <= result; } by { execute(); solve(); }
 ```
 
 ```expect

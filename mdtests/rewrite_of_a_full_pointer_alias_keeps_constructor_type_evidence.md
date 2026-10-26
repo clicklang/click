@@ -37,7 +37,7 @@ int parent(struct node* node) {
         Wrapped::Node(id, unp, left, right) => {
             unfold(t);
             step(); step();
-            have unp == gparent by { simp(); }
+            have unp == gparent by { solve(); }
             have Wrapped::Node(id, unp, left, right) == Wrapped::Node(id, gparent, left, right) by {
                 rewrite(unp == gparent);
                 normalize();
@@ -46,7 +46,7 @@ int parent(struct node* node) {
             execute();
         },
     }
-    simp();
+    solve();
 }
 ```
 

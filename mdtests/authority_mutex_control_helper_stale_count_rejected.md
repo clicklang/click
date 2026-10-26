@@ -47,7 +47,7 @@ void acquire(struct object *obj) {
 } by {
     let { guard: acquired, state: state } = step(pthread_mutex_lock, { access: access });
     step();
-    simp();
+    solve();
 }
 
 void release(struct object *obj) {
@@ -57,7 +57,7 @@ void release(struct object *obj) {
 } by {
     step(pthread_mutex_unlock, { access: access, guard: guard, state: state });
     step();
-    simp();
+    solve();
 }
 
 int32 run() {
@@ -65,7 +65,7 @@ int32 run() {
 } by {
     step();
     step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     step();
     fold(authority(reference(obj)));
     let control = fold(control(obj), { refs: 0 });
@@ -78,8 +78,8 @@ int32 run() {
     step(release, { access: lifetime, guard: first, state: retained });
     let { guard: second, state: reentered } = step(acquire, { access: lifetime });
     unfold(reentered);
-    have count(reference(obj)) == 0 by simp();
-    have count(reference(obj)) == 1 by simp();
+    have count(reference(obj)) == 0 by solve();
+    have count(reference(obj)) == 1 by solve();
     unfold(reference(obj));
     step();
     let released = fold(control(obj), { refs: 0 });
@@ -89,7 +89,7 @@ int32 run() {
     unfold(authority(reference(obj)));
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

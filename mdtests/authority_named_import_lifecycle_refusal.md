@@ -12,17 +12,17 @@ void preserve(int32* pool) {
     owns authority(ticket(pool));
     consumes member: ticket(pool);
     ensures to_integer(count(ticket(pool))) == to_integer(old(count(ticket(pool))) - 1);
-} by { unfold(member); execute(); simp(); }
+} by { unfold(member); execute(); solve(); }
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool)));
     let first = fold(ticket(&pool), { serial: 1 });
     step(preserve, { member: first });
-    have first.serial == 1 by simp();
-    have to_integer(count(ticket(&pool))) == 1 by simp();
+    have first.serial == 1 by solve();
+    have to_integer(count(ticket(&pool))) == 1 by solve();
     unfold(first);
     unfold(authority(ticket(&pool)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

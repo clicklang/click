@@ -10,10 +10,10 @@ theorem rejected(xs: TestList<int32>) {
     ensures xs == xs by {
         induct(xs) as ih {
             TestList::Nil => {
-                simp();
+                solve();
             }
             TestList::Cons(tail) => {
-                simp();
+                solve();
             }
         }
     }

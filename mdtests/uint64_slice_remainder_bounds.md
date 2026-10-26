@@ -18,7 +18,6 @@ uint64 remainder(uint64 length, uint64 mid) {
 } by {
     have to_integer(0u64) < to_integer(length - mid) by { normalize() using { mid < length; }; }
     have to_integer(length - mid) <= to_integer(length) by { normalize() using { mid <= length; }; }
-    execute(); simp();
 }
 ```
 

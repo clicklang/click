@@ -37,26 +37,26 @@ verifying "c_pointer_null_order_has_no_object_provenance.c";
 int32 compare_lt(int32* left, int32* right) {
     requires same_object(left, right);
     ensures result == 0 or result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 compare_le(int32* left, int32* right) {
     requires same_object(left, right);
     ensures result == 0 or result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 compare_gt(int32* left, int32* right) {
     requires same_object(left, right);
     ensures result == 0 or result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 compare_ge(int32* left, int32* right) {
     requires same_object(left, right);
     ensures result == 0 or result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int32 compare_nulls() {
     ensures result >= 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

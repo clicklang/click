@@ -24,7 +24,7 @@ int32 f(struct cell* p, struct cell* q) {
 } by {
     unfold(left); unfold(right);
     step_until(function.exit);
-    fold(left); fold(right); simp();
+    fold(left); fold(right); solve();
 }
 ```
 ```expect

@@ -132,7 +132,7 @@ void overwrite(struct node* p) {
     let c7 = fold(layer7(p), { tag: t7 }, { child: c6 });
     let c8 = fold(layer8(p), { tag: t8 }, { child: c7 });
     let w = fold(layer9(p), { tag: t9 }, { child: c8 });
-    simp();
+    solve();
 }
 
 int32 caller(struct node* p) {

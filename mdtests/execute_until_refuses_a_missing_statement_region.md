@@ -18,7 +18,7 @@ int32 probe(int32 x) {
 } by {
     execute_until(statement(0).region(3));
     execute();
-    simp();
+    solve();
 }
 ```
 

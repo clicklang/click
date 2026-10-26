@@ -31,7 +31,7 @@ int32 count(uint32 n) {
     step();
     loop {
         decreases n - x;
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             step();
             close_invariants();

@@ -24,7 +24,7 @@ int32 bad_spin() {
     loop {
         invariant x == 1;
     }
-    simp();
+    solve();
 }
 ```
 

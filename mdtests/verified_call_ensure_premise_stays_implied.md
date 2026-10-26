@@ -30,10 +30,10 @@ int32 set_when_positive(int32 flag, int32* cell) {
 } by {
     if flag > 0 {
         execute();
-        simp();
+        solve();
     } else {
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -46,7 +46,7 @@ int32 ensure_premise_caller(int32 count, int32* cell) {
     step();
     have cell[0] == 1 by {
         have count > 0 by {
-            arithmetic() using {
+            solve() using {
                 1 <= count;
             };
         }

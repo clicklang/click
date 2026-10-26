@@ -42,7 +42,7 @@ int32 stop_at_zero(int32 n) {
         invariant i >= 0;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

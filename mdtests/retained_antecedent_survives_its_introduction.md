@@ -37,7 +37,7 @@ int32 retained_antecedent(int32 n) {
         extract(n / k == n);
         normalize();
     }
-    simp();
+    solve();
 }
 ```
 

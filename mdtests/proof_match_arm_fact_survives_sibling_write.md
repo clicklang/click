@@ -80,13 +80,13 @@ void change_child_match(struct rb_node* old_child, struct rb_node* new_child,
             unfold(c);
             execute();
             let d = fold(ctx_at(new_child, parent, root), { model: Ctx::Top }, {});
-            simp();
+            solve();
         },
         Ctx::Left => {
             unfold(c);
             execute();
             let d = fold(ctx_at(new_child, parent, root), { model: Ctx::Left }, {});
-            simp();
+            solve();
         },
     }
 }
@@ -101,7 +101,7 @@ void change_child_requires(struct rb_node* old_child, struct rb_node* new_child,
     unfold(c);
     step_until(function.exit);
     let d = fold(ctx_at(new_child, parent, root), { model: Ctx::Left }, {});
-    simp();
+    solve();
 }
 ```
 

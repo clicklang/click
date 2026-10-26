@@ -39,7 +39,7 @@ int32 set_then_read(int32 p[], int32 value) {
         step();
         step();
         step();
-        simp();
+        solve();
     }
 }
 ```

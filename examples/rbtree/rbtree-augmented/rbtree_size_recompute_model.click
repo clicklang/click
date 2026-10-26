@@ -170,13 +170,13 @@ theorem compute_size_restores_subtree_size()
                                     unfold(sized_value(SizedTree::Node(identity, parent, color, 1, left_model, right_model)));
                                     unfold(sized_shape(SizedTree::Node(identity, parent, color, 1, left_model, right_model)));
                                     unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                                    arithmetic() using {
+                                    solve() using {
                                         to_integer(1) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                         to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                         to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
                                     };
                                 }
-                                simp();
+                                solve();
                             },
                             SizedTree::Node(rid, rp, rc, rv, rl, rr) => {
                                 let { metadata: rm, left: rleft, right: rright } = unfold(right);
@@ -248,13 +248,13 @@ theorem compute_size_restores_subtree_size()
                                     unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)));
                                     unfold(sized_shape(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)));
                                     unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                                    arithmetic() using {
+                                    solve() using {
                                         to_integer(1 + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                         to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                         to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
                                     };
                                 }
-                                simp();
+                                solve();
                             },
                         }
                     },
@@ -263,7 +263,7 @@ theorem compute_size_restores_subtree_size()
                         unfold(lm);
                         unfold(sized_value(SizedTree::Node(lid, lp, lc, lv, ll, lr)));
                         have sized_value(left_model) == lv by {
-                            have left_model == SizedTree::Node(lid, lp, lc, lv, ll, lr) by { simp(); }
+                            have left_model == SizedTree::Node(lid, lp, lc, lv, ll, lr) by { solve(); }
                             rewrite(left_model == SizedTree::Node(lid, lp, lc, lv, ll, lr));
                             unfold(sized_value(SizedTree::Node(lid, lp, lc, lv, ll, lr)));
                             normalize();
@@ -274,9 +274,9 @@ theorem compute_size_restores_subtree_size()
                                 unfold(right);
                                 unfold(sized_value(SizedTree::Empty));
                                 let r = fold(optional_size(node->rb.rb_right), { value: 0 });
-                                have 0 <= l.value by { simp(); }
-                                have 0 <= r.value by { simp(); }
-                                have r.value <= 2147483646 by { simp(); }
+                                have 0 <= l.value by { solve(); }
+                                have 0 <= r.value by { solve(); }
+                                have r.value <= 2147483646 by { solve(); }
                                 have sized_value(right_model) == r.value by { assumption(); }
                                 have sized_value(left_model) == l.value by { assumption(); }
                                 have 2147483646 - sized_value(right_model) == 2147483646 - r.value by {
@@ -344,20 +344,20 @@ theorem compute_size_restores_subtree_size()
                                     unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)));
                                     unfold(sized_shape(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)));
                                     unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                                    arithmetic() using {
+                                    solve() using {
                                         to_integer(1 + lv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                         to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                         to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
                                     };
                                 }
-                                simp();
+                                solve();
                             },
                             SizedTree::Node(rid, rp, rc, rv, rl, rr) => {
                                 let { metadata: rm, left: rleft, right: rright } = unfold(right);
                                 unfold(rm);
                                 unfold(sized_value(SizedTree::Node(rid, rp, rc, rv, rl, rr)));
                                 have sized_value(right_model) == rv by {
-                                    have right_model == SizedTree::Node(rid, rp, rc, rv, rl, rr) by { simp(); }
+                                    have right_model == SizedTree::Node(rid, rp, rc, rv, rl, rr) by { solve(); }
                                     rewrite(right_model == SizedTree::Node(rid, rp, rc, rv, rl, rr));
                                     unfold(sized_value(SizedTree::Node(rid, rp, rc, rv, rl, rr)));
                                     normalize();
@@ -432,13 +432,13 @@ theorem compute_size_restores_subtree_size()
                                     unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)));
                                     unfold(sized_shape(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)));
                                     unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                                    arithmetic() using {
+                                    solve() using {
                                         to_integer(1 + lv + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                         to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                         to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
                                     };
                                 }
-                                simp();
+                                solve();
                             },
                         }
                     },

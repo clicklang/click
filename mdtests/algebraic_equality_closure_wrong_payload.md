@@ -39,8 +39,8 @@ void user(int32* p) {
 } by {
     let { y: y } = identity(p, { x: x });
     match y.model {
-        Model::Empty => { have old(x.model) == Model::Empty by { simp(); } execute(); simp(); },
-        Model::Node(v) => { have old(x.model) == Model::Node(0) by { assumption(); } execute(); simp(); },
+        Model::Empty => { have old(x.model) == Model::Empty by { solve(); } execute(); solve(); },
+        Model::Node(v) => { have old(x.model) == Model::Node(0) by { assumption(); } execute(); solve(); },
     }
 }
 ```

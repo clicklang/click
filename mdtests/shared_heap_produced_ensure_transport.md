@@ -59,7 +59,7 @@ void parent_attach(struct parent* p, struct child* kid) {
 } by {
     step_until(function.exit);
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
-    simp();
+    solve();
 }
 
 void parent_detach(struct parent* p) {
@@ -73,7 +73,7 @@ void parent_detach(struct parent* p) {
         ParentLink::Linked(kid) => {
             unfold(link);
             execute();
-            simp();
+            solve();
         },
     }
 }
@@ -85,7 +85,7 @@ void caller(struct parent* p, struct child* kid) {
     let { link: link } = step(parent_attach, {});
     step(parent_detach, { link: link });
     step();
-    simp();
+    solve();
 }
 ```
 

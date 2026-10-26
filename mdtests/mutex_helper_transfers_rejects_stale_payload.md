@@ -38,7 +38,7 @@ void acquire(struct counter *p) {
 } by {
     let { guard: acquired, state: state } = step(pthread_mutex_lock, { access: access });
     step();
-    simp();
+    solve();
 }
 void reset_release(struct counter *p) {
     owns access: mutex_use(&p->mu, counter_state(p));
@@ -50,7 +50,7 @@ void reset_release(struct counter *p) {
     let restored = fold(counter_state(p), { value: p->value });
     step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
-    simp();
+    solve();
 }
 int32 compare(struct counter *p) {
     owns access: mutex_use(&p->mu, counter_state(p));
@@ -69,7 +69,7 @@ int32 compare(struct counter *p) {
     let restored_second = fold(counter_state(p), { value: p->value });
     step(reset_release, { access: access, guard: second_guard, state: restored_second });
     step();
-    simp();
+    solve();
 }
 ```
 

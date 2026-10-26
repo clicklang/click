@@ -17,11 +17,11 @@ verifying "mutex_helper_reserved_storage.c";
 void reset(struct holder* p) {
     consumes p->mu;
     requires aligned(&p->mu, 8);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void run(struct holder* p) {
     owns p->mu;
     requires aligned(&p->mu, 8);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

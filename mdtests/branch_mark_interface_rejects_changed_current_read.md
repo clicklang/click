@@ -31,7 +31,7 @@ void put(struct pair *p, struct pair *q, int32 x) {
     } else {
         step();
     }
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

@@ -43,7 +43,7 @@ int32 f() {
         fact 1 == 1;
     } then {
         step();
-        simp();
+        solve();
     } else {
     }
     step();

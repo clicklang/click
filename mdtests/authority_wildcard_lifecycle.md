@@ -27,7 +27,6 @@ void lifecycle() { ensures 1 == 1; } by {
     unfold(slot(&pool, &second));
     have count(slot(&pool, _)) == 0;
     unfold(authority(slot(&pool, _)));
-    execute(); simp();
 }
 ```
 

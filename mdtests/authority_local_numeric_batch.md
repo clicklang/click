@@ -19,7 +19,6 @@ int32 run() { ensures result == 0; } by {
     unfold(2 of token(&pool));
     have count(token(&pool)) == 0;
     unfold(authority(token(&pool)));
-    execute(); simp();
 }
 ```
 

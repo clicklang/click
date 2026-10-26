@@ -15,7 +15,7 @@ void update(int* p, int* q) {
     unfold(cell(p));
     open(cell(q)) { execute(); }
     fold(cell(p));
-    simp();
+    solve();
 }
 ```
 ```expect

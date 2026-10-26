@@ -18,7 +18,7 @@ verifying "a_stored_pointer_normalizes_to_its_value_after_a_call.c";
 void touch(struct node *p) {
     owns p->tag;
     ensures p->tag == 1;
-} by { execute(); simp(); }
+}
 void link(struct node *p, struct node *q) {
     owns p->tag; owns q->left;
     ensures q->left == p;
@@ -26,7 +26,6 @@ void link(struct node *p, struct node *q) {
     step();
     step(touch, {});
     have q->left == p by { normalize() using { }; }
-    execute(); simp();
 }
 ```
 

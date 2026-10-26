@@ -22,7 +22,7 @@ verifying "execute_nested_while_break_certificate.c";
 int32 stop_at_three() {
     ensures result == 2 by {
         execute();
-        simp();
+        solve();
     }
 }
 ```

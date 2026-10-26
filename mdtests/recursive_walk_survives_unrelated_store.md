@@ -31,7 +31,7 @@ theorem walk_in_range(next: int32[], n: int32, from: int32, fuel: Nat) {
         induct(fuel) as ih {
             Nat::Zero => {
                 unfold(walk(next, from, Nat::Zero));
-                simp();
+                solve();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
@@ -93,7 +93,7 @@ theorem walk_frame(a: int32[], b: int32[], n: int32, from: int32, fuel: Nat) {
                 }
                 unfold(walk(a, from, Nat::Succ(previous)));
                 unfold(walk(b, from, Nat::Succ(previous)));
-                simp() using {
+                solve() using {
                     walk(a, from, previous) == walk(b, from, previous);
                     a[walk(a, from, previous)] == b[walk(a, from, previous)];
                 };
@@ -129,8 +129,8 @@ void mark(int32 *next, int32 *visited) {
     } by {
         intro();
         intro();
-        have k == 0 by { arithmetic() using { 0 <= k; k < 1; }; }
-        simp() using { k == 0; at(entry, next[0]) == next[0]; };
+        have k == 0 by { solve() using { 0 <= k; k < 1; }; }
+        solve() using { k == 0; at(entry, next[0]) == next[0]; };
     }
     have forall (k: int32) {
         0 <= k and k < 1 implies
@@ -138,16 +138,16 @@ void mark(int32 *next, int32 *visited) {
     } by {
         intro();
         intro();
-        have k == 0 by { arithmetic() using { 0 <= k; k < 1; }; }
+        have k == 0 by { solve() using { 0 <= k; k < 1; }; }
         have at(entry, next[k]) == 0 by {
             rewrite(k == 0);
             assumption();
         }
         have 0 <= at(entry, next[k]) by {
-            arithmetic() using { at(entry, next[k]) == 0; };
+            solve() using { at(entry, next[k]) == 0; };
         }
         have at(entry, next[k]) < 1 by {
-            arithmetic() using { at(entry, next[k]) == 0; };
+            solve() using { at(entry, next[k]) == 0; };
         }
         assumption();
     }
@@ -176,7 +176,7 @@ void mark(int32 *next, int32 *visited) {
     };
     have at(entry, walk(next, 0, Nat::Succ(Nat::Zero))) == 0;
     have walk(next, 0, Nat::Succ(Nat::Zero)) == 0 by {
-        simp() using {
+        solve() using {
             at(entry, walk(next, 0, Nat::Succ(Nat::Zero))) == 0;
             walk(at(entry, next), 0, Nat::Succ(Nat::Zero))
                 == walk(next, 0, Nat::Succ(Nat::Zero));

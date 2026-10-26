@@ -32,7 +32,7 @@ int32 write_nested(struct outer* packet) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

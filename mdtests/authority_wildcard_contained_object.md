@@ -12,7 +12,7 @@ int32 update(int32* pool, struct payload* p) {
     owns slot(pool, p);
     ensures result == 7;
     ensures p->value == 7;
-} by { open(slot(pool, p)) { step(); } execute(); simp(); }
+} by { open(slot(pool, p)) { step(); } }
 ```
 
 ```expect

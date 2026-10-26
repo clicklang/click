@@ -38,7 +38,7 @@ int32 f(int32 c) {
         fact 1 == 1;
     } then {
         step();
-        simp();
+        solve();
     } else {
     }
     branch ensuring {
@@ -48,7 +48,7 @@ int32 f(int32 c) {
     } else {
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

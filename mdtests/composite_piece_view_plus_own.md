@@ -31,7 +31,7 @@ void set_value(struct node* n, int32 v) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

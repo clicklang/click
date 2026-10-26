@@ -29,7 +29,7 @@ void bump(int32* value) {
     requires 0 <= value[0];
     requires value[0] <= 10;
     ensures value[0] == old(value[0]) + 1;
-} by { execute(); simp(); }
+}
 
 void caller(struct State* state) {
     owns state->size;
@@ -38,7 +38,7 @@ void caller(struct State* state) {
     requires state->size <= 10;
     ensures state->size == old(state->size) + 1;
     ensures state->fee == old(state->fee);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

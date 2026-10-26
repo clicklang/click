@@ -46,15 +46,12 @@ int32 get(struct pair* p) {
     execute();
     have result == c.v;
     fold(pair(p), { first: c });
-    simp();
+    solve();
 }
 
 int32 twice(struct pair* p) {
     owns pair(p);
     ensures result >= 0;
-} by {
-    execute();
-    simp();
 }
 ```
 

@@ -47,7 +47,7 @@ int32 walk(struct cell* p, struct cell* q, int32 x) {
         let d = fold(slot(p), { model: p->value });
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -32,7 +32,7 @@ int32 write_point(struct packet* packet) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

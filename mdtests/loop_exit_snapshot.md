@@ -30,7 +30,7 @@ int32 count_from_to(int32 i, int32 n) {
         invariant 0 <= i and i <= n;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

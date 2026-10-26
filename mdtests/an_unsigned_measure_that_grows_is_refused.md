@@ -23,7 +23,7 @@ int32 fill(uint32 x) {
 } by {
     loop {
         decreases x;
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             step();
             close_invariants();

@@ -25,7 +25,7 @@ int32 get(int32* p) {
     let { v: pv } = unfold(p);
     execute();
     let p = fold(cell(p), { v: pv });
-    simp();
+    solve();
 }
 ```
 

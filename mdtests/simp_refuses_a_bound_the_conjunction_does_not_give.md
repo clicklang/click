@@ -17,7 +17,7 @@ verifying "simp_refuses_a_bound_the_conjunction_does_not_give.c";
 int32 inc(int32 x) {
     requires x >= 0 and x <= 100;
     ensures result >= 2;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

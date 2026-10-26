@@ -41,7 +41,7 @@ resource cell(p: struct node*) {
 void set_count(struct node *p) {
     owns p->count;
     ensures p->count == 1;
-} by { execute(); simp(); }
+}
 
 void tag_then_count(struct node *p) {
     consumes c: cell(p);
@@ -51,14 +51,14 @@ void tag_then_count(struct node *p) {
     loop {
         owns c: cell(p);
         decreases 0;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match c.model {
                 Identity::At(identity) => {
                     unfold(c);
                     step();
                     have identity->tag == (address(identity) | 1) by {
-                        simp() using { p->tag == (address(p) | 1); p == identity; };
+                        solve() using { p->tag == (address(p) | 1); p == identity; };
                     }
                     mark before_call;
                     step(set_count, {});
@@ -73,7 +73,6 @@ void tag_then_count(struct node *p) {
             }
         }
     }
-    execute(); simp();
 }
 ```
 

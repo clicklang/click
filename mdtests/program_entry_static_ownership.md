@@ -13,7 +13,7 @@ unsigned int bump(unsigned int *p) {
     ensures to_integer(p[0]) == to_integer(old(p[0]) + 1u32);
     ensures result == p[0];
     ensures to_integer(result) == to_integer(old(p[0]) + 1u32);
-} by { execute(); simp(); }
+}
 int main() {
     ensures result == 9;
 } by {
@@ -24,7 +24,7 @@ int main() {
     have to_integer(result) == to_integer(at(first, counter) + 1u32);
     rewrite(to_integer(result) == to_integer(at(first, counter) + 1u32));
     rewrite(at(first, counter) == 8u32);
-    simp();
+    solve();
 }
 ```
 

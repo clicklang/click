@@ -31,7 +31,7 @@ int32 maybe(int32 x) {
     } else {
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -11,7 +11,6 @@ void hold(const uint32* values, uint64 length) {
  ensures 1 == 1;
 } by {
  have length <= 2305843009213693951u64 by assumption();
- execute(); simp();
 }
 ```
 

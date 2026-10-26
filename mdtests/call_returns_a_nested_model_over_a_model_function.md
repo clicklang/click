@@ -69,7 +69,7 @@ void graft(int32* p) {
                 model: Shape::Node(Shape::Node(shape_left(old(t.model)), Shape::Empty), Shape::Empty)
             });
             execute();
-            simp();
+            solve();
         },
     }
 }

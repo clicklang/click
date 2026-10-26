@@ -26,7 +26,7 @@ int32 identity(int32 x) {
     fold(marker(x));
     unfold(marker(x));
     fold(marker(x));
-    simp();
+    solve();
 }
 ```
 

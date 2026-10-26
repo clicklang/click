@@ -21,7 +21,7 @@ verifying "guard_inputs.c";
 void inner(struct holder *left, struct holder *right) {
     owns mutex_guard(&left->mu);
     owns mutex_guard(&right->mu);
-} by { execute(); simp(); }
+}
 
 void outer(struct holder *left, struct holder *right) {
     owns mutex_guard(&left->mu);
@@ -30,7 +30,7 @@ void outer(struct holder *left, struct holder *right) {
     step(inner, {});
     step(inner, {});
     step();
-    simp();
+    solve();
 }
 ```
 

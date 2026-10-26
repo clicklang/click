@@ -66,7 +66,7 @@ struct child* parent_detach(struct parent* p) {
         ParentLink::Linked(linked) => {
             unfold(link);
             execute();
-            simp();
+            solve();
         },
     }
 }
@@ -77,13 +77,13 @@ int32 adopt(struct child* kid) {
     step();
     branch {
         step();
-        simp();
+        solve();
     } else {}
     let { link: link } = step(parent_attach, {});
-    have link.link != ParentLink::Empty by simp();
+    have link.link != ParentLink::Empty by solve();
     step(parent_detach, { link: link });
     step();
-    simp();
+    solve();
 }
 ```
 

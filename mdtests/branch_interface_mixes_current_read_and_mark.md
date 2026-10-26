@@ -32,7 +32,6 @@ void put(struct pair *p, struct pair *q, int32 x) {
         step();
         have child->tag == at(before, child->tag);
     }
-    execute(); simp();
 }
 ```
 

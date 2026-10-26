@@ -85,14 +85,14 @@ function odd_length(xs: OddList<int32>) -> Integer
 theorem empty_length_is_zero() {
     ensures example_list_length(TestList<int32>::Nil) == 0 by {
         unfold(example_list_length(TestList<int32>::Nil));
-        simp();
+        solve();
     }
 }
 
 theorem cons_length_opens_one_layer(head: int32, tail: TestList<int32>) {
     ensures example_list_length(TestList<int32>::Cons(head, tail)) == 1 + example_list_length(tail) by {
         unfold(example_list_length(TestList<int32>::Cons(head, tail)));
-        simp();
+        solve();
     }
 }
 
@@ -104,7 +104,7 @@ theorem append_cons_opens_one_layer(
     ensures append(TestList<int32>::Cons(head, tail), ys)
         == TestList<int32>::Cons(head, append(tail, ys)) by {
         unfold(append(TestList<int32>::Cons(head, tail), ys));
-        simp();
+        solve();
     }
 }
 
@@ -119,7 +119,7 @@ theorem nested_descent_opens_one_layer(
         unfold(drop_pairs(
             TestList<int32>::Cons(first, TestList<int32>::Cons(second, rest))
         ));
-        simp();
+        solve();
     }
 }
 
@@ -131,7 +131,7 @@ theorem tree_recursion_opens_both_children(
     ensures tree_size(Tree<int32>::Node(left, value, right))
         == 1 + tree_size(left) + tree_size(right) by {
         unfold(tree_size(Tree<int32>::Node(left, value, right)));
-        simp();
+        solve();
     }
 }
 
@@ -142,7 +142,7 @@ theorem mutual_recursion_opens_one_layer(
     ensures even_length(EvenList<int32>::EvenCons(head, tail))
         == 1 + odd_length(tail) by {
         unfold(even_length(EvenList<int32>::EvenCons(head, tail)));
-        simp();
+        solve();
     }
 }
 ```

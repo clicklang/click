@@ -23,13 +23,13 @@ verifying "a_callee_takes_a_window_of_a_64_bit_range.c";
 uint8 first_of_four(const uint8* chunk) {
     views chunk[0..4];
     ensures result == chunk[0];
-} by { execute(); simp(); }
+}
 uint8 read(const uint8* bytes, uint64 length, uint64 index) {
     requires index <= length;
     requires to_integer(4u64) <= to_integer(length - index);
     views bytes[0..length];
     ensures result == bytes[index];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

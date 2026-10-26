@@ -74,7 +74,7 @@ int32 bad(int32 x) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

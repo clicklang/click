@@ -30,7 +30,7 @@ theorem zero_is_nonnegative(callback: void (*)(int32*)) {
         unfold(ProducesNonnegative);
         unfold(IsZero);
         unfold(IsNonnegative);
-        simp();
+        solve();
     }
 }
 ```

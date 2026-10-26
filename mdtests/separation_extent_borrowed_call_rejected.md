@@ -13,12 +13,12 @@ int32 read(int32 n) {
     views a[0..1];
     requires separate(memory(a[0..n]), memory(b[0..1]));
     ensures result == a[0];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 caller(int32 n) {
     views a[0..1];
     requires 0 <= n;
     ensures result == a[0];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

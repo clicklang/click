@@ -36,7 +36,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             execute();
             let frames = fold(sized_context_at(new,root->rb_node,0,((struct sized_node*)(void*)old)->size), { model: SizedContext::Top });
             let after = fold(sized_link_at(new,root,((struct sized_node*)(void*)old)->size), { model: SizedContext::Top }, { frames: frames });
-            simp();
+            solve();
         },
         SizedContext::Left(a, above, shade, value, sibling_model, up_model) => {
             have parent == a by {
@@ -57,7 +57,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             execute();
             let frames = fold(sized_context_at(new,root->rb_node,0,((struct sized_node*)(void*)old)->size), { model: SizedContext::Left(a, above, shade, value, sibling_model, up_model) }, { metadata: a_size, sibling: sibling, up: up });
             let after = fold(sized_link_at(new,root,((struct sized_node*)(void*)old)->size), { model: SizedContext::Left(a, above, shade, value, sibling_model, up_model) }, { frames: frames });
-            simp();
+            solve();
         },
         SizedContext::Right(a, above, shade, value, sibling_model, up_model) => {
             have parent == a by {
@@ -86,7 +86,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                     let sibling = fold(sized_at(parent->rb_left), { model: SizedTree::Empty });
                     let frames = fold(sized_context_at(new,root->rb_node,0,((struct sized_node*)(void*)old)->size), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model) }, { metadata: a_size, sibling: sibling, up: up });
                     let after = fold(sized_link_at(new,root,((struct sized_node*)(void*)old)->size), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model) }, { frames: frames });
-                    simp();
+                    solve();
                 },
                 SizedTree::Node(identity, sp, sc, size, sl, sr) => {
                     let { metadata: s_size, left: s_left, right: s_right } = unfold(sibling);
@@ -105,7 +105,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                     let sibling = fold(sized_at(parent->rb_left), { model: SizedTree::Node(identity,sp,sc,size,sl,sr) }, { metadata: s_size, left: s_left, right: s_right });
                     let frames = fold(sized_context_at(new,root->rb_node,0,((struct sized_node*)(void*)old)->size), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model) }, { metadata: a_size, sibling: sibling, up: up });
                     let after = fold(sized_link_at(new,root,((struct sized_node*)(void*)old)->size), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model) }, { frames: frames });
-                    simp();
+                    solve();
                 },
             }
         },

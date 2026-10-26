@@ -20,7 +20,7 @@ int32 inspect(const uint8* p, int32 n) {
   invariant 0 <= n and n <= old(n);
   invariant viewable(p[0..n]);
  }
- execute(); simp();
+ execute(); solve();
 }
 ```
 

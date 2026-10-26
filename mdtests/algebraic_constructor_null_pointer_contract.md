@@ -24,16 +24,12 @@ void keep(int32* p) {
     owns state: pair_at(p);
     requires state.model == PointerPair::Pair(p, 0);
     ensures state.model == PointerPair::Pair(p, 0);
-} by {
-    execute(); simp();
 }
 
 void generic_keep(int32* p) {
     owns state: pair_at(p);
     requires state.model == identity(PointerPair::Pair(p, 0));
     ensures state.model == identity(PointerPair::Pair(p, 0));
-} by {
-    execute(); simp();
 }
 ```
 

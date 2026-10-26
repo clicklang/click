@@ -30,10 +30,10 @@ void make(int32* pool, int32* p) {
     ensures member.serial == 1;
     ensures p[0] == old(p[0]);
     ensures count(ticket(pool, _)) == old(count(ticket(pool, _))) + 1;
-} by { let member = fold(ticket(pool, p), { serial: 1 }); execute(); simp(); }
+} by { let member = fold(ticket(pool, p), { serial: 1 }); }
 int32 run() { ensures result == 0 or result == 3; } by {
     step(); step(); step(); step();
-    branch { execute(); simp(); } else {}
+    branch { execute(); solve(); } else {}
     step(); step();
     fold(authority(ticket(&pool, _)));
     let second = fold(ticket(&pool, p + 1), { serial: 2 });
@@ -45,7 +45,6 @@ int32 run() { ensures result == 0 or result == 3; } by {
     have count(ticket(&pool, _)) == 2;
     unfold(first); unfold(second);
     unfold(authority(ticket(&pool, _)));
-    execute(); simp();
 }
 ```
 

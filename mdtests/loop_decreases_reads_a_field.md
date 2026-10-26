@@ -36,7 +36,7 @@ int32 count_to_len(struct box* box) {
         invariant 0 <= i and i <= box->len;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

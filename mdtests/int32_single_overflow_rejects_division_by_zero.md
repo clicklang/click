@@ -9,7 +9,7 @@ verifying "unsafe.c";
 int32 f(int32 x, int32 y) {
     requires y == 0; requires x != -2147483647 - 1;
     ensures 0 == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

@@ -13,14 +13,14 @@ runtime "modeled-pthread";
 verifying "named_guard.c";
 void inner(struct counter *counter) {
     owns guard: mutex_guard(&counter->mu);
-} by { execute(); simp(); }
+}
 void outer(struct counter *counter) {
     owns g: mutex_guard(&counter->mu);
 } by {
     step(inner, { guard: g });
     step(inner, { guard: g });
     step();
-    simp();
+    solve();
 }
 ```
 

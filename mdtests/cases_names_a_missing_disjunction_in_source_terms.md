@@ -8,7 +8,7 @@ proposition.
 ```click
 theorem reflexive(x: int32) {
     ensures x == x by {
-        cases { x > 0 => { simp(); } x < 0 => { simp(); } }
+        cases { x > 0 => { solve(); } x < 0 => { solve(); } }
     }
 }
 ```

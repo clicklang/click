@@ -41,7 +41,6 @@ void tag(struct node* n, struct node* p, int32 color) {
     have ((struct node*)(n->word & ~3)) == p by {
         assumption();
     }
-    execute(); simp();
 }
 ```
 

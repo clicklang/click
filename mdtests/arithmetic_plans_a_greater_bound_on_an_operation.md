@@ -20,10 +20,10 @@ int32 predecessor(int32 n) {
     requires n >= 1;
     ensures result == 0;
 } by {
-    have n - 1 >= 0 by { arithmetic() using { n >= 1; }; }
-    have n > n - 1 by { arithmetic() using { n >= 1; }; }
+    have n - 1 >= 0 by { solve() using { n >= 1; }; }
+    have n > n - 1 by { solve() using { n >= 1; }; }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -12,7 +12,7 @@ int h(int x) { x = 5; return x; }
 verifying "old_result.c";
 
 int h(int x) {
-    ensures old(result) == 5 by { execute(); simp(); }
+    ensures old(result) == 5 by { execute(); solve(); }
 }
 ```
 

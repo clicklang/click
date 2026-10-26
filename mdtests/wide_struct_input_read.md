@@ -11,7 +11,7 @@ verifying "read.c";
 unsigned long read_state(struct state *p) {
     owns p->value;
     ensures result == old(p->value);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

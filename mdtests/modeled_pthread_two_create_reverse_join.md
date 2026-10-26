@@ -51,18 +51,18 @@ int32 run(struct cell *first_task, struct cell *second_task) {
     step();
     branch {
         step();
-        simp();
+        solve();
     } else {}
     step();
     branch {
         step();
         step();
-        simp();
+        solve();
     } else {}
     step();
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

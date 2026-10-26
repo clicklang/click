@@ -16,7 +16,7 @@ int32 child_value(struct node* node) {
     requires node->left != 0;
     views node->left->value;
     ensures result == node->left[0];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

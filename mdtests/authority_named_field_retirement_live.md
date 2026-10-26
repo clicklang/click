@@ -12,7 +12,7 @@ int32 run() { ensures result == 0; } by {
     fold(authority(ticket(&pool)));
     let first = fold(ticket(&pool), { serial: 1 });
     unfold(authority(ticket(&pool)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

@@ -27,7 +27,7 @@ void probe(struct holder* h, int32 n) {
         decreases n - i;
         invariant 0 <= i;
         invariant i <= n;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             unfold(cells(h->data, n));
             step(); step(); step();
@@ -35,7 +35,7 @@ void probe(struct holder* h, int32 n) {
             close_invariants();
         }
     }
-    execute(); simp();
+    execute(); solve();
 }
 ```
 ```expect

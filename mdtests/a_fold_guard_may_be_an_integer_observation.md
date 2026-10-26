@@ -22,7 +22,7 @@ theorem step(n: uint64, k: uint64) {
             0 <= to_integer(n - k);
             to_integer(n - k) < 18446744073709551615;
         };
-        simp();
+        solve();
     }
 }
 ```

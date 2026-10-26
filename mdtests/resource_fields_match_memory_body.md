@@ -33,7 +33,7 @@ int32 read_some(int32* p, int32 expected) {
     unfold(c);
     step_until(function.exit);
     fold(c);
-    simp();
+    solve();
 }
 
 int32 read_none(int32* p) {
@@ -46,7 +46,7 @@ int32 read_none(int32* p) {
     unfold(c);
     step_until(function.exit);
     fold(c);
-    simp();
+    solve();
 }
 ```
 

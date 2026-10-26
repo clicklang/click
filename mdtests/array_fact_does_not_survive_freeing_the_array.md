@@ -38,7 +38,7 @@ int32 discard(int32 a[], int32 n) {
     }
     execute();
     have icount(a, 0, 0) == 0;
-    simp();
+    solve();
 }
 ```
 

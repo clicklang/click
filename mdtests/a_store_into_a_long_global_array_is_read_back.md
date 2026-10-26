@@ -21,7 +21,7 @@ int32 overwrite_then_read() {
     requires buf[2] == 5;
     owns buf[2..3];
     ensures result == 5;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

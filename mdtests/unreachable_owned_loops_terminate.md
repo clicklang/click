@@ -21,12 +21,12 @@ int32 skip_while(int32 flag, int32* p) {
     requires flag == 0;
     owns p[0..1];
     ensures result == 0;
-} by { execute(); simp(); }
+}
 int32 skip_do_while(int32 flag, int32* p) {
     requires flag == 0;
     owns p[0..1];
     ensures result == 0;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -24,7 +24,7 @@ void keep(int32* p) {
     requires state.model == PointerPair::Pair(p, 1);
     ensures state.model == PointerPair::Pair(p, 1);
 } by {
-    execute(); simp();
+    execute(); solve();
 }
 
 void generic_keep(int32* p) {
@@ -32,7 +32,7 @@ void generic_keep(int32* p) {
     requires state.model == identity(PointerPair::Pair(p, 1));
     ensures state.model == identity(PointerPair::Pair(p, 1));
 } by {
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

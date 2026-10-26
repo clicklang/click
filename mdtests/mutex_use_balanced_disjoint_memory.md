@@ -21,7 +21,7 @@ runtime "modeled-pthread";
 verifying "mutex_use_balanced_disjoint_memory.c";
 void helper(struct holder *holder) {
     owns mutex_use(&holder->mu);
-} by { execute(); simp(); }
+}
 int32 run(struct holder *holder) {
     owns holder->mu;
     owns holder->value;
@@ -32,7 +32,7 @@ int32 run(struct holder *holder) {
     step(helper, {});
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

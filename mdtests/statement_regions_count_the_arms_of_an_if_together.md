@@ -28,7 +28,7 @@ verifying "statement_paths_if.c";
 int32 f(int32 v) {
     requires v < 1000;
     ensures result == v + 1;
-} by { execute(); simp(); }
+}
 
 int32 probe(int32 x) {
     requires x < 10;
@@ -37,12 +37,12 @@ int32 probe(int32 x) {
     step();
     if x > 0 {
         step(); step(); step();
-        have at(statement(1).statement(0).call(f, 0).entry, y) == x by simp();
-        have at(statement(1).statement(0).exit, y) == x + 1 by simp();
-        have at(statement(1).statement(1).entry, y) == x + 1 by simp();
-        execute(); simp();
+        have at(statement(1).statement(0).call(f, 0).entry, y) == x by solve();
+        have at(statement(1).statement(0).exit, y) == x + 1 by solve();
+        have at(statement(1).statement(1).entry, y) == x + 1 by solve();
+        execute(); solve();
     } else {
-        execute(); simp();
+        execute(); solve();
     }
 }
 ```

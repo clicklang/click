@@ -75,7 +75,7 @@ int32 read_back_stepped(int32 u) {
     step();
     if buf == 0 {
         execute();
-        simp();
+        solve();
     } else {
         step();
         step();
@@ -85,12 +85,12 @@ int32 read_back_stepped(int32 u) {
             step();
             step();
             step();
-            simp();
+            solve();
         } else {
             step();
             step();
             step();
-            simp();
+            solve();
         }
     }
 }

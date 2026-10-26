@@ -37,14 +37,14 @@ int32 f(int32 u, int32 v) {
     step();
     if buf == 0 {
         execute();
-        simp();
+        solve();
     } else {
         step();
         step();
         step();
         step();
         execute();
-        simp();
+        solve();
     }
 }
 ```

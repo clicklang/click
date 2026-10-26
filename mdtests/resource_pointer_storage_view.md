@@ -10,7 +10,7 @@ verifying "pointer_storage.c";
 int32 read(struct packet* p) {
     views p->data;
     ensures result == p->data[0];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

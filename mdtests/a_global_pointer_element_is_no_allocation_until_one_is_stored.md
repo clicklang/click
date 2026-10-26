@@ -21,7 +21,7 @@ verifying "a_global_pointer_element_is_no_allocation_until_one_is_stored.c";
 int32 free_unknown() {
     owns ptrs[0..100];
     ensures result == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

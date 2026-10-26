@@ -54,33 +54,33 @@ void spin(struct cell* node, int32 n) {
         invariant i <= n;
         invariant c.model == old(c.model);
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match c.model {
                 Sign::Neg(value) => {
                     have Sign::Neg(value) == old(c.model) by {
-                        simp() using { c.model == Sign::Neg(value); c.model == old(c.model); };
+                        solve() using { c.model == Sign::Neg(value); c.model == old(c.model); };
                     }
                     unfold(c);
                     step();
                     let c = fold(cell(node), { model: Sign::Neg(value) });
                     close_invariants() by {
                         both {
-                            arithmetic() using {
+                            solve() using {
                                 at(region(3).entry, i) >= at(region(3).entry, 0);
                                 at(region(3).entry, i) < at(region(3).entry, n);
                             };
                         } and {
                             both {
                                 intro();
-                                arithmetic() using {
+                                solve() using {
                                     at(region(3).entry, i) < at(region(3).entry, n);
                                 };
                             } and {
                                 both {
                                     intro();
                                     intro();
-                                    simp();
+                                    solve();
                                 } and {
                                     both {
                                         arithmetic_certificate signed_int32 {
@@ -116,28 +116,28 @@ void spin(struct cell* node, int32 n) {
                 },
                 Sign::Pos(value) => {
                     have Sign::Pos(value) == old(c.model) by {
-                        simp() using { c.model == Sign::Pos(value); c.model == old(c.model); };
+                        solve() using { c.model == Sign::Pos(value); c.model == old(c.model); };
                     }
                     unfold(c);
                     step();
                     let c = fold(cell(node), { model: Sign::Pos(value) });
                     close_invariants() by {
                         both {
-                            arithmetic() using {
+                            solve() using {
                                 at(region(3).entry, i) >= at(region(3).entry, 0);
                                 at(region(3).entry, i) < at(region(3).entry, n);
                             };
                         } and {
                             both {
                                 intro();
-                                arithmetic() using {
+                                solve() using {
                                     at(region(3).entry, i) < at(region(3).entry, n);
                                 };
                             } and {
                                 both {
                                     intro();
                                     intro();
-                                    simp();
+                                    solve();
                                 } and {
                                     both {
                                         arithmetic_certificate signed_int32 {
@@ -175,7 +175,7 @@ void spin(struct cell* node, int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

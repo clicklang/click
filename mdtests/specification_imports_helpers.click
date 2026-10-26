@@ -5,7 +5,7 @@ contract int32 ImportedIdentity(int32 x) {
 }
 
 int32 imported_helper(int32 x) {
-    ensures result == x by { execute(); simp(); }
+    ensures result == x;
 }
 
 tactic retain_equal(x: int32, y: int32) {
@@ -27,7 +27,7 @@ void imported_keep(int32* p) {
     unfold(before);
     step_until(function.exit);
     let after = fold(imported_cell(p), { value: *p });
-    simp();
+    solve();
 }
 
 tactic imported_rename(p: int32*) {

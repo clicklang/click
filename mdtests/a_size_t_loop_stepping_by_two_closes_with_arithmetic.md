@@ -39,16 +39,15 @@ uint8 last(const uint8* bytes, uint64 length) {
         invariant i <= length;
         preserve by {
             have to_integer(i + 2u64) <= to_integer(length) by {
-                arithmetic() using { i <= length; to_integer(i + 1u64) < to_integer(length); length <= 2147483647u64; };
+                solve() using { i <= length; to_integer(i + 1u64) < to_integer(length); length <= 2147483647u64; };
             }
             have to_integer(length - (i + 2u64)) < to_integer(length - i) by {
-                arithmetic() using { i <= length; to_integer(i + 2u64) <= to_integer(length); length <= 2147483647u64; };
+                solve() using { i <= length; to_integer(i + 2u64) <= to_integer(length); length <= 2147483647u64; };
             }
             step(); step();
-            simp();
+            solve();
         }
     }
-    execute(); simp();
 }
 ```
 

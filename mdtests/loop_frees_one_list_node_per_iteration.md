@@ -46,7 +46,7 @@ theorem links_len_is_nonnegative(m: Links) {
             Links::Cons(rest) => {
                 apply(ih(rest));
                 unfold(links_len(Links::Cons(rest)));
-                arithmetic() using { 0 <= links_len(rest); };
+                solve() using { 0 <= links_len(rest); };
             }
         }
     }
@@ -73,7 +73,7 @@ void release(struct node* p) {
         owns x: list_at(p);
         decreases links_len(x.model);
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match x.model {
                 Links::Nil => { contradiction(x.model == Links::Nil); },
@@ -85,7 +85,7 @@ void release(struct node* p) {
                         normalize();
                     }
                     have links_len(rest_model) < links_len(x.model) by {
-                        arithmetic() using { links_len(x.model) == links_len(rest_model) + 1; };
+                        solve() using { links_len(x.model) == links_len(rest_model) + 1; };
                     }
                     let { rest: r } = unfold(x);
                     have 0 <= links_len(r.model) by {
@@ -103,7 +103,7 @@ void release(struct node* p) {
     }
     unfold(x);
     step();
-    simp();
+    solve();
 }
 ```
 

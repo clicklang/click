@@ -21,7 +21,7 @@ void increment(int32* state) {
     unfold(first);
     execute();
     let first = fold(Counter(), { revision: 1, created: old(first.created) });
-    simp();
+    solve();
 }
 
 void caller(int32* state) {

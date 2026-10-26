@@ -19,7 +19,7 @@ int64 next(uint8 byte) {
 } by {
     step_until(function.exit);
     have result <= 255i64 by {
-        simp() using { ((uint32)byte) <= 255u32; byte < 255; };
+        solve() using { ((uint32)byte) <= 255u32; byte < 255; };
     }
     have result <= 255i64 by {
         arithmetic_certificate rules {
@@ -29,7 +29,7 @@ int64 next(uint8 byte) {
             conclusion 0;
         }
     }
-    simp();
+    solve();
 }
 ```
 

@@ -96,9 +96,9 @@ void set_parent_red(struct rb_node* node, struct rb_node* parent) {
                 unfold(rb_reparent_color(
                     RbTree::Node(identity, old_parent, color, left_model, right_model),
                     parent, Color::Red));
-                simp();
+                solve();
             }
-            simp();
+            solve();
         },
     }
 }

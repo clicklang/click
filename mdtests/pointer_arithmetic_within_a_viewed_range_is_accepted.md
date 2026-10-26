@@ -20,18 +20,18 @@ verifying "pointer_arithmetic_within_a_viewed_range_is_accepted.c";
 int32 one_past_end(int32 *p) {
     views p[0..4];
     ensures result == 1;
-} by { execute(); simp(); }
+}
 
 int32 displaced_by_zero(int32 *p) {
     views p[0..4];
     ensures result == 1;
-} by { execute(); simp(); }
+}
 
 int32 inside_by_facts(int32 *p, int32 i) {
     requires 0 <= i and i <= 4;
     views p[0..4];
     ensures result == 1;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

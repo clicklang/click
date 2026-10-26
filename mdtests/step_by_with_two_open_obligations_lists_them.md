@@ -28,9 +28,9 @@ int32 first(int32 x, int32 y) {
 int32 caller(int32 a, int32 b) {
     requires a > 0;
     ensures 1 == 1 by {
-        step() by { simp(); }
+        step() by { solve(); }
         step();
-        simp();
+        solve();
     }
 }
 ```

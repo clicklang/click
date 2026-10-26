@@ -47,7 +47,6 @@ uint64 lowbit(struct item* root, struct item* parent, struct item* node) {
         rewrite(color_bit(Color::Red) == 0);
         normalize();
     }
-    execute(); simp();
 }
 ```
 ```expect

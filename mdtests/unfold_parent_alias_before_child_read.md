@@ -26,7 +26,7 @@ resource frame(p: struct node*) {
         },
     }
 }
-void helper(struct node *q) { owns q->tag; } by { execute(); simp(); }
+void helper(struct node *q) { owns q->tag; } by { execute(); solve(); }
 void probe(struct node *p, struct node *q) {
     owns q->tag; owns q->next; owns q->other;
     consumes a: frame(p);
@@ -39,7 +39,7 @@ void probe(struct node *p, struct node *q) {
             have p == id by assumption();
             step(); step(); step();
             let b = fold(frame(p), {model: Tag::At(id, cm)}, {kid: kid});
-            execute(); simp();
+            execute(); solve();
         },
     }
 }

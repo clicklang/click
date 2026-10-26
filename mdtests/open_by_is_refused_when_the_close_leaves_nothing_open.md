@@ -14,8 +14,8 @@ void set(int32* p, int32 x) {
     requires x > 0;
     owns cell(p);
 } by {
-    open(cell(p)) { execute(); } by { simp(); }
-    simp();
+    open(cell(p)) { execute(); } by { solve(); }
+    solve();
 }
 ```
 

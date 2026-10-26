@@ -16,7 +16,7 @@ int32 read_sibling(struct pair* p, int32 tag) {
     requires aligned(&p->first, 8);
     requires 0 <= tag;
     requires tag <= 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

@@ -9,7 +9,7 @@ theorem omitted_fact_is_not_ambient(x: int32, y: int32, z: int32) {
     requires x == z;
 
     ensures x == z by {
-        simp() using {
+        solve() using {
             x == y;
         };
     }
@@ -17,5 +17,5 @@ theorem omitted_fact_is_not_ambient(x: int32, y: int32, z: int32) {
 ```
 
 ```expect
-fail: `simp() using` could not prove the current goal from only its listed premises
+fail: `solve() using` could not prove the current goal from only its listed premises
 ```

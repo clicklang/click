@@ -30,24 +30,24 @@ void clear(int32* values) {
         decreases 4 - x;
         invariant x <= 4;
         owns values[0..4];
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             step();
             step();
             close_invariants() by {
                 both {
-                    arithmetic() using {
+                    solve() using {
                         0 <= at(region(3).entry, x);
                         at(region(3).entry, x) < 4;
                     };
                 } and {
                     both {
-                        arithmetic() using {
+                        solve() using {
                             0 <= at(region(3).entry, x);
                             at(region(3).entry, x) < 4;
                         };
                     } and {
-                        arithmetic() using {
+                        solve() using {
                             0 <= at(region(3).entry, x);
                             at(region(3).entry, x) < 4;
                         };

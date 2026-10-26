@@ -50,7 +50,7 @@ void acquire(struct counter *p) {
 } by {
     let { guard: acquired, state: state } = step(pthread_mutex_lock, { access: access });
     step();
-    simp();
+    solve();
 }
 
 void release(struct counter *p) {
@@ -60,7 +60,7 @@ void release(struct counter *p) {
 } by {
     step(pthread_mutex_unlock, { access: access, guard: guard, state: state });
     step();
-    simp();
+    solve();
 }
 
 void acquire_nested(struct counter *p) {
@@ -70,7 +70,7 @@ void acquire_nested(struct counter *p) {
 } by {
     let { guard: acquired, state: contents } = step(acquire, { access: permission });
     step();
-    simp();
+    solve();
 }
 
 void release_nested(struct counter *p) {
@@ -80,7 +80,7 @@ void release_nested(struct counter *p) {
 } by {
     step(release, { access: permission, guard: locked, state: contents });
     step();
-    simp();
+    solve();
 }
 
 void increment(struct counter *p) {
@@ -92,7 +92,7 @@ void increment(struct counter *p) {
     let restored = fold(counter_state(p), { value: p->value });
     step(release_nested, { permission: access, locked: acquired, contents: restored });
     step();
-    simp();
+    solve();
 }
 
 void run(struct counter *p) {
@@ -104,7 +104,7 @@ void run(struct counter *p) {
     step(increment, { access: lifetime });
     step(pthread_mutex_destroy, { lifetime: lifetime });
     step();
-    simp();
+    solve();
 }
 
 void run_direct(struct counter *p) {
@@ -121,7 +121,7 @@ void run_direct(struct counter *p) {
     step(release_nested, { permission: lifetime, locked: acquired, contents: restored });
     step(pthread_mutex_destroy, { lifetime: lifetime });
     step();
-    simp();
+    solve();
 }
 ```
 

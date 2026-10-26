@@ -36,7 +36,7 @@ int32 first(int32 *a, int32 n) {
     execute();
     have n >= 0;
     apply(head_nonnegative(a, n));
-    simp();
+    solve();
 }
 ```
 

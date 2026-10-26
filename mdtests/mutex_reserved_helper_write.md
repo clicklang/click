@@ -24,13 +24,13 @@ verifying "mutex_reserved_helper_write.c";
 void overwrite(struct holder *holder) {
     owns mutex_live(&holder->mu);
     owns holder->mu;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 run(struct holder *holder) {
     owns holder->mu;
     owns holder->value;
     requires aligned(&holder->mu, 8);
     ensures result == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

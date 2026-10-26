@@ -21,7 +21,7 @@ int32 invoke(int32 (*callback)(int32*), int32* cell) {
     owns Cell(cell);
     ensures result == 7;
     ensures cell[0] == 7;
-} by { step(Buffered); execute(); simp(); }
+} by { step(Buffered); }
 ```
 
 ```expect

@@ -24,22 +24,22 @@ const int *view(int *p) {
     requires viewable(p[0..1]);
     ensures result == p;
     ensures viewable(result[0..1]);
-} by { execute(); simp(); }
+}
 
 const int *relay(int *p) {
     requires viewable(p[0..1]);
     ensures result == p;
-} by { execute(); simp(); }
+}
 
 const int *assigned(int *p) {
     requires viewable(p[0..1]);
     ensures result == p;
-} by { execute(); simp(); }
+}
 
 int read_view(int *p) {
     views p[0..1];
     ensures result == p[0];
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

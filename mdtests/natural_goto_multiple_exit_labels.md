@@ -28,8 +28,6 @@ int32 count_down_or_stop(int32 n) {
         invariant n >= 0;
         decreases n;
     }
-    execute();
-    simp();
 }
 ```
 

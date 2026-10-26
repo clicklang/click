@@ -17,8 +17,8 @@ int32 f(int32 x) {
 } by {
     execute();
     cases {
-        x == 1 => { simp(); }
-        x == 2 => { simp(); }
+        x == 1 => { solve(); }
+        x == 2 => { solve(); }
     }
 }
 ```

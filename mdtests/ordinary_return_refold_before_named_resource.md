@@ -28,7 +28,7 @@ void inspect(int32* p, int32* occupied) {
     step_until(function.exit);
     fold(cell(p, occupied));
     let tag = fold(marker(), { value: 1 });
-    simp();
+    solve();
 }
 ```
 

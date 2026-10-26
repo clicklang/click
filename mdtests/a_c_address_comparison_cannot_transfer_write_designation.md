@@ -15,11 +15,11 @@ int32 probe(struct Pair* pair) {
 verifying "probe.c";
 int32 write_equal(int32* q, int32* p) {
     consumes p[0..1];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 probe(struct Pair* pair) {
     consumes pair->first;
     consumes pair->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

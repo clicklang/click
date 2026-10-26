@@ -22,11 +22,11 @@ void init(struct pool* pool, int32 capacity) {
     consumes *pool;
     produces control(pool);
     ensures pool->capacity == capacity;
-} by { step(); fold(control(pool)); execute(); }
+} by { step(); fold(control(pool)); }
 void f(struct pool* pool) {
     consumes *pool;
     produces control(pool);
-} by { step(); have defined(pool->capacity - 1) by simp(); execute(); }
+} by { step(); have defined(pool->capacity - 1) by solve(); }
 ```
 
 ```expect

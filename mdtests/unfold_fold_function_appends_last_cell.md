@@ -36,7 +36,7 @@ int32 prefix_sum_equation(int32 a[], int32 n) {
             0 <= to_integer(n - 1);
             to_integer(n - 1) < 2147483647;
         };
-        simp();
+        solve();
     }
 }
 ```

@@ -31,7 +31,7 @@ theorem one_argument_says_nothing_about_another(b: Box, p: int32, q: int32) {
     requires holds(b, p) == 1;
 
     ensures holds(b, q) == 1 by {
-        simp();
+        solve();
     }
 }
 ```

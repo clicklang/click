@@ -28,10 +28,10 @@ int32 walk(int32 n) {
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;
-        initialize by { simp(); }
+        initialize by { solve(); }
         preserve by {
             step();
-            have i <= n by { arithmetic() using { at(region(3).entry, i) < n; }; }
+            have i <= n by { solve() using { at(region(3).entry, i) < n; }; }
             close_invariants();
         }
     }

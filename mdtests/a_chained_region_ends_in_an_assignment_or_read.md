@@ -30,8 +30,7 @@ int32 loaded(const uint8* p) {
     step();
     have 0 <= x and x <= 255;
     execute_until(statement(2).statement(2).assignment(y, 0));
-    have at(statement(2).statement(1).read(0).entry, y) == 1 by simp();
-    execute(); simp();
+    have at(statement(2).statement(1).read(0).entry, y) == 1 by solve();
 }
 ```
 

@@ -149,7 +149,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.phase == SizedInsertMirroredContextDoubleFarPhase::Before(g, p, above, pv, gv, far);
                 invariant old(state.phase) == SizedInsertMirroredContextDoubleFarPhase::Before(g, p, above, pv, gv, far);
                 invariant state.model == sized_mirrored_context_double_far_before(g, p, node, above, pv, gv, far);
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     let { tree: loop_tree, link: link } = unfold(state);
                     unfold(sized_mirrored_context_double_far_before(g, p, node, above, pv, gv, far));
@@ -166,13 +166,13 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), far)));
                     unfold(sized_value(SizedTree::Empty));
                     have to_integer(pv) == 2 + to_integer(sized_value(far)) by {
-                        arithmetic() using {
+                        solve() using {
                             to_integer(pv) == 1 + to_integer(sized_value(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))) + to_integer(sized_value(far));
                             to_integer(sized_value(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))) == 1;
                         };
                     }
                     have to_integer(gv) == 1 + to_integer(pv) by {
-                        arithmetic() using {
+                        solve() using {
                             to_integer(gv) == 1 + to_integer(sized_value(SizedTree::Empty)) + to_integer(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), far)));
                             to_integer(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), far))) == to_integer(pv);
                             to_integer(sized_value(SizedTree::Empty)) == 0;
@@ -180,19 +180,19 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     have -2147483648 <= to_integer(pv) by auto();
                     have to_integer(pv) <= 2147483647 by auto();
-                    have to_integer(pv) - to_integer(1) >= -2147483648 by { arithmetic() using {
+                    have to_integer(pv) - to_integer(1) >= -2147483648 by { solve() using {
                         to_integer(pv) == 2 + to_integer(sized_value(far));
                         0 <= to_integer(sized_value(far));
                     }; }
-                    have to_integer(pv) - to_integer(1) <= 2147483647 by { arithmetic() using { to_integer(pv) <= 2147483647; }; }
+                    have to_integer(pv) - to_integer(1) <= 2147483647 by { solve() using { to_integer(pv) <= 2147483647; }; }
                     have defined(pv - 1) by auto();
                     have to_integer(pv - 1) == to_integer(pv) - to_integer(1) by auto();
-                    have to_integer(pv - 1) == 1 + to_integer(sized_value(SizedTree::Empty)) + to_integer(sized_value(far)) by { arithmetic() using {
+                    have to_integer(pv - 1) == 1 + to_integer(sized_value(SizedTree::Empty)) + to_integer(sized_value(far)) by { solve() using {
                         to_integer(pv - 1) == to_integer(pv) - to_integer(1);
                         to_integer(pv) == 2 + to_integer(sized_value(far));
                         to_integer(sized_value(SizedTree::Empty)) == 0;
                     }; }
-                    have 1 + to_integer(0) + to_integer(sized_value(far)) <= 2147483647 by { arithmetic() using {
+                    have 1 + to_integer(0) + to_integer(sized_value(far)) <= 2147483647 by { solve() using {
                         to_integer(pv) == 2 + to_integer(sized_value(far));
                         to_integer(pv) <= 2147483647;
                     }; }
@@ -253,7 +253,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->__rb_parent_color == address(node) by { normalize() using { parent == p; at(before_inner_rotation, g->rb_right) == parent; }; }
                     have (address(node) & 7) == 0 by { assumption(); }
                     have (p->__rb_parent_color & 1) == 0 by {
-                        rewrite(p->__rb_parent_color == address(node)); arithmetic() using { aligned(node, 8); };
+                        rewrite(p->__rb_parent_color == address(node)); solve() using { aligned(node, 8); };
                     }
                     have p->__rb_parent_color == address(node) + (p->__rb_parent_color & 1) by {
                         rewrite((p->__rb_parent_color & 1) == 0);
@@ -263,7 +263,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(sized_parent_is(SizedTree::Empty, p)); normalize();
                     }
                     let demoted = fold(sized_recompute_at(p), { model: SizedTree::Node(p, node, Color::Red, pv, SizedTree::Empty, far) }, { metadata: p_size, right: p_right, left: p_left });
-                    have node->rb_left == 0 by { simp(); }
+                    have node->rb_left == 0 by { solve(); }
                     let other = fold(sized_at(node->rb_left), { model: SizedTree::Empty });
                     have sized_parent_is(SizedTree::Node(p, node, Color::Red, pv, SizedTree::Empty, far), node) == 1 by { unfold(sized_parent_is(SizedTree::Node(p, node, Color::Red, pv, SizedTree::Empty, far), node)); normalize(); }
                     have sized_parent_is(SizedTree::Empty, node) == 1 by { unfold(sized_parent_is(SizedTree::Empty, node)); normalize(); }
@@ -287,7 +287,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have to_integer(pv) == 1 + to_integer(sized_value(SizedTree::Empty)) + to_integer(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1, SizedTree::Empty, far))) by {
                         rewrite(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1, SizedTree::Empty, far)) == pv - 1);
                         rewrite(sized_value(SizedTree::Empty) == 0);
-                        arithmetic() using { to_integer(pv - 1) == to_integer(pv) - to_integer(1); };
+                        solve() using { to_integer(pv - 1) == to_integer(pv) - to_integer(1); };
                     }
                     apply(sized_valid_node(node, p, Color::Red, pv, SizedTree::Empty, SizedTree::Node(p, node, Color::Red, pv - 1, SizedTree::Empty, far)));
                     have sized_shape(first.model) == sized_shape(SizedTree::Node(node, p, Color::Red, pv, SizedTree::Empty, SizedTree::Node(p, node, Color::Red, pv - 1, SizedTree::Empty, far))) by {
@@ -359,7 +359,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         at(before_parent_update, g->rb_right == 0);
                     };
                     let g_right = fold(sized_at(g->rb_right), { model: SizedTree::Empty });
-                    have g->rb_left == 0 by { simp(); }
+                    have g->rb_left == 0 by { solve(); }
                     let g_left = fold(sized_at(g->rb_left), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, node, Color::Red, gv, SizedTree::Empty, SizedTree::Empty)
@@ -374,14 +374,14 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         p == old(g->rb_right);
                         at(before_parent_update, node->rb_right == p);
                     };
-                    have parent->rb_left == gparent by { simp(); }
+                    have parent->rb_left == gparent by { solve(); }
                     have node->rb_left == g by {
                         rewrite(node == parent);
                         rewrite(g == gparent);
                         assumption();
                     }
                     have parent == node by { assumption(); }
-                    have node->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { simp(); }
+                    have node->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { solve(); }
                     have node->__rb_parent_color == address(above) + (node->__rb_parent_color & 1) by {
                         rewrite(node->__rb_parent_color == at(before_parent_update, g->__rb_parent_color));
                         assumption();
@@ -406,7 +406,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(sized_left(SizedTree::Node(g, node, Color::Red, gv, SizedTree::Empty, SizedTree::Empty)) == SizedTree::Empty);
                         rewrite(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1, SizedTree::Empty, far)) == pv - 1);
                         rewrite(sized_value(SizedTree::Empty) == 0);
-                        arithmetic() using {
+                        solve() using {
                             to_integer(gv) == 1 + to_integer(pv);
                             to_integer(pv - 1) == to_integer(pv) - to_integer(1);
                         };
@@ -454,7 +454,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(rb_subtree_size(RbTree::Node(p, node, Color::Red, RbTree::Empty, sized_shape(far)))); unfold(rb_subtree_size(RbTree::Node(g, node, Color::Red, RbTree::Empty, RbTree::Empty)));
                         unfold(rb_subtree_size(RbTree::Empty));
                         apply(sized_valid_value_matches_size(far));
-                        arithmetic() using {
+                        solve() using {
                             to_integer(gv) == 1 + to_integer(pv);
                             to_integer(pv) == 2 + to_integer(sized_value(far));
                             to_integer(sized_value(far)) == rb_subtree_size(sized_shape(far));
@@ -489,11 +489,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have state.context == old(state.context) by { assumption(); }
                     have state.whole_model == sized_plug(old(state.context), state.model) by { assumption(); }
                     have state.phase == sized_mirrored_context_double_far_finish(old(state.phase)) by {
-                        unfold(sized_mirrored_context_double_far_finish(SizedInsertMirroredContextDoubleFarPhase::Before(g, p, above, pv, gv, far))); simp();
+                        unfold(sized_mirrored_context_double_far_finish(SizedInsertMirroredContextDoubleFarPhase::Before(g, p, above, pv, gv, far))); solve();
                     }
                     have sized_shape(state.model) == sized_mirrored_context_double_far_expected(old(state.phase), node) by {
                         rewrite(old(state.phase) == SizedInsertMirroredContextDoubleFarPhase::Before(g, p, above, pv, gv, far));
-                        unfold(sized_mirrored_context_double_far_expected(SizedInsertMirroredContextDoubleFarPhase::Before(g, p, above, pv, gv, far), node)); simp();
+                        unfold(sized_mirrored_context_double_far_expected(SizedInsertMirroredContextDoubleFarPhase::Before(g, p, above, pv, gv, far), node)); solve();
                     }
                     step();
 
@@ -501,7 +501,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 }
             }
             have node == old(node) by { assumption(); }
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -518,7 +518,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_mirrored_context_double_far_expected(old(state.phase), node);
 } by {
     step(insert::__rb_insert, { state: state });
-    execute(); simp();
+    execute(); solve();
 }
 
 void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -534,5 +534,5 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_mirrored_context_double_far_expected(old(state.phase), node);
 } by {
     step(insert::__rb_insert_augmented, { state: state });
-    execute(); simp();
+    execute(); solve();
 }

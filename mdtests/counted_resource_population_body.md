@@ -34,7 +34,7 @@ int32 object_refcount(struct object* obj) {
     open(object_control(obj)) {
         execute();
     }
-    simp();
+    solve();
 }
 ```
 

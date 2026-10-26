@@ -41,7 +41,7 @@ int32 count_down(int32 n) {
         decreases i;
         invariant i >= 0;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             have 0 <= to_integer(i - 1) by auto();
             step();
@@ -50,7 +50,7 @@ int32 count_down(int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

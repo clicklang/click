@@ -28,7 +28,7 @@ verifying "an_outer_body_reads_the_inner_counter_after_an_inner_break.c";
 
 int32 f(int32 x) {
     ensures result == 6;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

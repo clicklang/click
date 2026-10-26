@@ -27,7 +27,7 @@ void* worker(void* argument) {
     owns authority(ticket(argument));
     owns ticket(argument);
     ensures count(ticket(argument)) >= 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 run(void* p, void* q) {
     owns authority(ticket(p));
     owns authority(ticket(q));
@@ -41,20 +41,20 @@ int32 run(void* p, void* q) {
     step();
     step();
     step();
-    branch { have count(ticket(p)) == 2; step(); simp(); } else {}
+    branch { have count(ticket(p)) == 2; step(); solve(); } else {}
     step();
     branch {
         step();
         have count(ticket(p)) == 0;
         have count(ticket(q)) == 1;
-        step(); simp();
+        step(); solve();
     } else {}
     step();
     have count(ticket(q)) == 0;
     step();
     have count(ticket(p)) == 0;
     have count(ticket(q)) == 0;
-    step(); simp();
+    step(); solve();
 }
 ```
 

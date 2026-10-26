@@ -19,7 +19,7 @@ int32 last_of_view(int32 *p, int32 lo, int32 hi) {
     ensures result == hi by {
         have to_integer(p[hi - 1]) == to_integer(p[hi - 1]);
         step();
-        simp();
+        solve();
     }
 }
 ```

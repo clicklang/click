@@ -30,7 +30,7 @@ int32 ack(int32 m, int32 n) {
 } by {
     branch {
         step();
-        simp();
+        solve();
     } else {}
     have m > 0 by {
         arithmetic() using {
@@ -43,7 +43,7 @@ int32 ack(int32 m, int32 n) {
     branch {
         step();
         step();
-        simp();
+        solve();
     } else {}
     have n > 0 by {
         arithmetic() using {

@@ -50,7 +50,7 @@ void set_up_word(struct node* c) {
             step();
             have other->word == 5;
             execute();
-            simp();
+            solve();
         },
     }
 }

@@ -21,8 +21,6 @@ void inspect(int32* pool, int32* member) {
     owns authority(slot(pool, _));
     owns slot(pool, member);
     ensures count(slot(pool, _)) == old(count(slot(pool, _)));
-} by {
-    execute(); simp();
 }
 void lifecycle() { ensures 1 == 1; } by {
     step(); step(); step(); step(); step(); step();
@@ -34,7 +32,6 @@ void lifecycle() { ensures 1 == 1; } by {
     unfold(slot(&pool, &first));
     unfold(slot(&pool, &second));
     unfold(authority(slot(&pool, _)));
-    execute(); simp();
 }
 ```
 

@@ -15,7 +15,7 @@ void repair() {
 } by {
     execute();
     let tag = fold(marker(), { value: 1 });
-    simp();
+    solve();
 }
 void finish(int32* p) {
     views viewed(p);
@@ -24,7 +24,7 @@ void finish(int32* p) {
 } by {
     open(viewed(p)) {
         let { tag: tag } = step(repair, {});
-        execute(); simp();
+        execute(); solve();
     }
 }
 ```

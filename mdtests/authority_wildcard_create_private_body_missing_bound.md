@@ -30,23 +30,23 @@ void issue(int32* pool, int32* p) {
 } by {
     step();
     fold(slot(pool, p));
-    execute(); simp();
+    execute(); solve();
 }
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { execute(); simp(); } else {}
+    branch { execute(); solve(); } else {}
     step(); step();
     fold(authority(slot(&pool, _)));
     fold(slot(&pool, p + 1));
     step();
-    have count(slot(&pool, _)) == 2 by simp();
+    have count(slot(&pool, _)) == 2 by solve();
     open(slot(&pool, p)) {
         open(slot(&pool, p + 1)) { step(); step(); }
     }
     unfold(slot(&pool, p));
     unfold(slot(&pool, p + 1));
     unfold(authority(slot(&pool, _)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

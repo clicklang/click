@@ -48,7 +48,7 @@ int32 pool_used(struct pool* pool) {
     owns control(pool);
 } by {
     open(control(pool)) { execute(); }
-    simp();
+    solve();
 }
 int32 forward(struct pool* pool) {
     owns control(pool);
@@ -59,7 +59,6 @@ int32 forward(struct pool* pool) {
         have 0 <= pool->used by auto();
         have defined(pool->used + count(slot(pool))) by { assumption(); }
     }
-    execute(); simp();
 }
 ```
 

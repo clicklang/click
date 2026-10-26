@@ -20,7 +20,7 @@ verifying "main.c";
 int64 read_wide(int64 *p) {
     views p[0];
     ensures result == p[0];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

@@ -18,7 +18,7 @@ int32 pick(bool early) {
     ensures not early implies result == 7;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

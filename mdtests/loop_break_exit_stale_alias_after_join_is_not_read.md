@@ -53,7 +53,7 @@ int32 stale(int32 flag) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

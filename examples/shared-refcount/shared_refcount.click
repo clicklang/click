@@ -24,14 +24,14 @@ void object_retain(struct object *obj) {
     have count(permit(obj)) >= 1;
     have slack == count(permit(obj));
     have to_integer(1) <= to_integer(slack) by auto();
-    have to_integer(refs) <= to_integer(2) by arithmetic() using {
+    have to_integer(refs) <= to_integer(2) by solve() using {
         to_integer(refs) + to_integer(slack) == 3;
         to_integer(1) <= to_integer(slack);
     };
     have refs <= 2 by auto();
     have to_integer(refs + 1) == to_integer(refs) + to_integer(1) by auto();
     have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by auto();
-    have to_integer(refs + 1) + to_integer(slack - 1) == 3 by arithmetic() using {
+    have to_integer(refs + 1) + to_integer(slack - 1) == 3 by solve() using {
         to_integer(refs + 1) == to_integer(refs) + to_integer(1);
         to_integer(slack - 1) == to_integer(slack) - to_integer(1);
         to_integer(refs) + to_integer(slack) == 3;
@@ -42,7 +42,7 @@ void object_retain(struct object *obj) {
     let restored = fold(control(obj), { refs: refs + 1, slack: slack - 1 });
     step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
-    simp();
+    solve();
 }
 void object_release(struct object *obj) {
     owns access: mutex_use(&obj->mu, control(obj));
@@ -54,14 +54,14 @@ void object_release(struct object *obj) {
     have count(reference(obj)) >= 1;
     have refs == count(reference(obj));
     have to_integer(1) <= to_integer(refs) by auto();
-    have to_integer(slack) <= to_integer(2) by arithmetic() using {
+    have to_integer(slack) <= to_integer(2) by solve() using {
         to_integer(refs) + to_integer(slack) == 3;
         to_integer(1) <= to_integer(refs);
     };
     have slack <= 2 by auto();
     have to_integer(refs - 1) == to_integer(refs) - to_integer(1) by auto();
     have to_integer(slack + 1) == to_integer(slack) + to_integer(1) by auto();
-    have to_integer(refs - 1) + to_integer(slack + 1) == 3 by arithmetic() using {
+    have to_integer(refs - 1) + to_integer(slack + 1) == 3 by solve() using {
         to_integer(refs - 1) == to_integer(refs) - to_integer(1);
         to_integer(slack + 1) == to_integer(slack) + to_integer(1);
         to_integer(refs) + to_integer(slack) == 3;
@@ -72,7 +72,7 @@ void object_release(struct object *obj) {
     let restored = fold(control(obj), { refs: refs - 1, slack: slack + 1 });
     step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
-    simp();
+    solve();
 }
 void* user(void* argument) {
     owns access: mutex_use(&((struct object*)argument)->mu, control((struct object*)argument));
@@ -83,7 +83,7 @@ void* user(void* argument) {
     step();
     step(object_release, { access: access });
     step();
-    simp();
+    solve();
 }
 int32 run() {
     ensures result == -1 or result == 0 or result == 1;
@@ -92,7 +92,7 @@ int32 run() {
     step();
     step();
     step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     step();
     fold(authority(reference(obj)));
     fold(authority(permit(obj)));
@@ -115,7 +115,7 @@ int32 run() {
         unfold(authority(permit(obj)));
         step();
         step();
-        simp();
+        solve();
     } else {}
     step(object_retain, { access: lifetime });
     step();
@@ -132,7 +132,7 @@ int32 run() {
         unfold(authority(permit(obj)));
         step();
         step();
-        simp();
+        solve();
     } else {}
     step();
     step();
@@ -146,7 +146,7 @@ int32 run() {
     unfold(authority(permit(obj)));
     step();
     step();
-    simp();
+    solve();
 }
 
 int32 run_reverse_join() {
@@ -156,7 +156,7 @@ int32 run_reverse_join() {
     step();
     step();
     step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     step();
     fold(authority(reference(obj)));
     fold(authority(permit(obj)));
@@ -179,7 +179,7 @@ int32 run_reverse_join() {
         unfold(authority(permit(obj)));
         step();
         step();
-        simp();
+        solve();
     } else {}
     step(object_retain, { access: lifetime });
     step();
@@ -196,7 +196,7 @@ int32 run_reverse_join() {
         unfold(authority(permit(obj)));
         step();
         step();
-        simp();
+        solve();
     } else {}
     step();
     step();
@@ -210,5 +210,5 @@ int32 run_reverse_join() {
     unfold(authority(permit(obj)));
     step();
     step();
-    simp();
+    solve();
 }

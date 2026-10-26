@@ -59,7 +59,7 @@ int32 after_loop() {
         invariant i <= 2;
     }
     step();
-    simp();
+    solve();
 }
 
 int32 after_struct_loop() {
@@ -76,7 +76,7 @@ int32 after_struct_loop() {
         invariant i <= 2;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -13,7 +13,7 @@ int32 probe() {
 verifying "probe.c";
 int32 probe() {
     ensures result == 11;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

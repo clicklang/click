@@ -16,7 +16,7 @@ theorem bounded(i: uint64, n: uint64) {
     requires to_integer(n) <= 100;
     requires to_integer(i + 5u64) == to_integer(i) + 5;
     ensures to_integer(i + 5u64) < 200 by {
-        arithmetic() using {
+        solve() using {
             to_integer(i) < to_integer(n);
             to_integer(n) <= 100;
             to_integer(i + 5u64) == to_integer(i) + 5;

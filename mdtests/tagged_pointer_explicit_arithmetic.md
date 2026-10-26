@@ -31,7 +31,7 @@ unsigned long set_black(unsigned long word, struct node* next) {
             conclusion 0;
         }
     }
-    simp();
+    solve();
 }
 ```
 

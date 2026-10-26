@@ -71,7 +71,7 @@ int32 caller(int32 a[], int32 n) {
     step();
     branch {
         execute();
-        simp();
+        solve();
     } else {
     }
     have icount(a, 0, 0) == 0;

@@ -26,7 +26,7 @@ int32 maybe_stop(int32 flag) {
         invariant flag >= 0;
         decreases flag;
     }
-    simp();
+    solve();
 }
 ```
 

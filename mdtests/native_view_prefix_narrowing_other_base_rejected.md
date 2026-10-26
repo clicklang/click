@@ -11,7 +11,7 @@ void prefix(const uint8* p, const uint8* q, uint64 held, uint64 requested) {
     requires requested <= held;
     views p[0u64..held];
     ensures viewable(q[0u64..requested]);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

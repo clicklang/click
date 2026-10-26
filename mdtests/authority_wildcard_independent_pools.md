@@ -25,7 +25,6 @@ void independent() { ensures 1 == 1; } by {
     unfold(authority(slot(&left, _)));
     unfold(slot(&right, &member));
     unfold(authority(slot(&right, _)));
-    execute(); simp();
 }
 ```
 

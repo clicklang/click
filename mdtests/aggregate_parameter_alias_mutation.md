@@ -13,7 +13,7 @@ int32 change(struct packet input) {
 verifying "parameter_alias_mutation.c";
 int32 change(struct packet input) {
     ensures input.value == 5;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

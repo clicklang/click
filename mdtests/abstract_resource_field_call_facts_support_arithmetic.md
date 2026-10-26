@@ -27,7 +27,7 @@ void bump(int32* s) {
     ensures o.size == old(o.size) + 2;
     ensures o.size - 2 == old(o.size);
     ensures o.size <= 502;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -42,14 +42,14 @@ int32 alias_value(
     unfold(valued_array(original, length, value));
     step();
     have alias[index] == value by {
-        simp() using {
+        solve() using {
             original[0] == value;
             alias == original;
             index == 0;
         };
     }
     fold(valued_array(original, length, value));
-    simp();
+    solve();
 }
 ```
 

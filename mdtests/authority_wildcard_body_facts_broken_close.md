@@ -25,23 +25,23 @@ authorized resource slot(pool: int32*, p: int32*) {
 verifying "wildcard_body_facts.c";
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { execute(); simp(); } else {}
+    branch { execute(); solve(); } else {}
     step(); step();
     fold(authority(slot(&pool, _)));
-    have 0 <= p[0] by simp();
-    have 0 <= p[1] by simp();
+    have 0 <= p[0] by solve();
+    have 0 <= p[1] by solve();
     fold(slot(&pool, p));
     fold(slot(&pool, p + 1));
-    have count(slot(&pool, _)) == 2 by simp();
+    have count(slot(&pool, _)) == 2 by solve();
     open(slot(&pool, p)) { step(); }
-    have count(slot(&pool, _)) == 2 by simp();
+    have count(slot(&pool, _)) == 2 by solve();
     open(slot(&pool, p)) {
         open(slot(&pool, p + 1)) { step(); step(); }
     }
     unfold(slot(&pool, p));
     unfold(slot(&pool, p + 1));
     unfold(authority(slot(&pool, _)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

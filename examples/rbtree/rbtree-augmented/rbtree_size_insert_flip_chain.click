@@ -55,7 +55,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant sized_flip_color(state.model) == 0;
                 invariant parent == sized_flip_parent(state.chain);
                 invariant sized_flip_result(state.chain, state.model) == sized_flip_result(old(state.chain), old(state.model));
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     mark iteration;
                     match state.model {
@@ -215,12 +215,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have sized_flip_depth(state.chain) < sized_flip_depth(at(iteration,state.chain)) by {
                                                         rewrite(state.chain == up);
                                                         rewrite(at(iteration,state.chain) == SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
-                                                        unfold(sized_flip_depth(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); arithmetic();
+                                                        unfold(sized_flip_depth(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); solve() using {};
                                                     }
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
                                                     unfold(sized_flip_color(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
                                                     step();
-                                                    close_invariants() by simp();
+                                                    close_invariants() by solve();
                                                 },
                                             }
                                         },
@@ -359,12 +359,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have sized_flip_depth(state.chain) < sized_flip_depth(at(iteration,state.chain)) by {
                                                         rewrite(state.chain == up);
                                                         rewrite(at(iteration,state.chain) == SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
-                                                        unfold(sized_flip_depth(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); arithmetic();
+                                                        unfold(sized_flip_depth(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); solve() using {};
                                                     }
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
                                                     unfold(sized_flip_color(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
                                                     step();
-                                                    close_invariants() by simp();
+                                                    close_invariants() by solve();
                                                 },
                                             }
                                         },
@@ -504,12 +504,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have sized_flip_depth(state.chain) < sized_flip_depth(at(iteration,state.chain)) by {
                                                         rewrite(state.chain == up);
                                                         rewrite(at(iteration,state.chain) == SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
-                                                        unfold(sized_flip_depth(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); arithmetic();
+                                                        unfold(sized_flip_depth(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); solve() using {};
                                                     }
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other))));
                                                     unfold(sized_flip_color(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other))));
                                                     step();
-                                                    close_invariants() by simp();
+                                                    close_invariants() by solve();
                                                 },
                                             }
                                         },
@@ -649,12 +649,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have sized_flip_depth(state.chain) < sized_flip_depth(at(iteration,state.chain)) by {
                                                         rewrite(state.chain == up);
                                                         rewrite(at(iteration,state.chain) == SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
-                                                        unfold(sized_flip_depth(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); arithmetic();
+                                                        unfold(sized_flip_depth(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); solve() using {};
                                                     }
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)))));
                                                     unfold(sized_flip_color(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)))));
                                                     step();
-                                                    close_invariants() by simp();
+                                                    close_invariants() by solve();
                                                 },
                                             }
                                         },
@@ -817,7 +817,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 }
             }
             let { whole: whole } = restore_sized_flip_state(root, { state: state });
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -835,7 +835,7 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
     let { whole: whole } = step(__rb_insert, { state: state });
-    execute(); simp();
+    execute(); solve();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -852,5 +852,5 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
     let { whole: whole } = step(__rb_insert_augmented, { state: state });
-    execute(); simp();
+    execute(); solve();
 }

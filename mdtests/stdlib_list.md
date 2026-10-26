@@ -23,7 +23,7 @@ theorem list_laws(xs: List<int32>, ys: List<int32>, zs: List<int32>, value: int3
     }
     ensures list::contains(List<int32>::Cons(value, xs), value) by {
         apply(list::contains_cons(value, xs, value));
-        simp();
+        solve();
     }
 }
 

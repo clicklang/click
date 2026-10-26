@@ -20,13 +20,13 @@ predicate small(x: int32) {
 
 theorem two_bounds(x: int32) {
     requires small(x);
-    ensures x >= 0 by { unfold(small); simp(); }
-    ensures x <= 10 by { unfold(small); simp(); }
+    ensures x >= 0 by { unfold(small); solve(); }
+    ensures x <= 10 by { unfold(small); solve(); }
 }
 
 theorem needs_upper(x: int32) {
     requires x <= 10;
-    ensures x <= 20 by simp();
+    ensures x <= 20 by solve();
 }
 
 int32 ident(int32 x) {

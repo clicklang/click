@@ -79,7 +79,7 @@ int peek(struct node* p) {
             }
             let u = fold(tree_at(p), { model: Tree::Node(id, value, left_model) },
                          { left: l });
-            simp();
+            solve();
         },
     }
 }

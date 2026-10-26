@@ -19,9 +19,9 @@ int32 pick(int32 x, int32 y) {
     requires x >= 0 and y >= 0 and y <= 2147483647;
     ensures result == y;
 } by {
-    have x < 0 implies to_integer(y) < to_integer(y - x) by { intro(); arithmetic() using { x < 0; x >= 0; }; }
+    have x < 0 implies to_integer(y) < to_integer(y - x) by { intro(); solve() using { x < 0; x >= 0; }; }
     step();
-    simp();
+    solve();
 }
 ```
 

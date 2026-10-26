@@ -14,18 +14,18 @@ void preserve(int32* pool) {
     owns member: ticket(pool);
     ensures member.serial == old(member.serial);
     ensures count(ticket(pool)) == old(count(ticket(pool)));
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool)));
     let first = fold(ticket(&pool), { serial: 1 });
     fold(control(&pool));
     step(preserve, { member: first });
-    have first.serial == 1 by simp();
-    have count(ticket(&pool)) == 1 by simp();
+    have first.serial == 1 by solve();
+    have count(ticket(&pool)) == 1 by solve();
     unfold(first);
     unfold(authority(ticket(&pool)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

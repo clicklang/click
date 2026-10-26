@@ -19,10 +19,10 @@ long signed_updates(void) {
 verifying "updates.c";
 unsigned long unsigned_updates() {
     ensures result == 11u64;
-} by { execute(); simp(); }
+}
 long signed_updates() {
     ensures result == 9i64;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

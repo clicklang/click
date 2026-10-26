@@ -11,11 +11,11 @@ with `simp`, as it would a machine conditional
 theorem successor_or_self_exceeds_predecessor(n: Integer, k: int32) {
     ensures (if k > 0 { n + 1 } else { n }) > n - 1 by {
         if k > 0 {
-            have (if k > 0 { n + 1 } else { n }) == n + 1 by simp();
-            simp();
+            have (if k > 0 { n + 1 } else { n }) == n + 1 by solve();
+            solve();
         } else {
-            have (if k > 0 { n + 1 } else { n }) == n by simp();
-            simp();
+            have (if k > 0 { n + 1 } else { n }) == n by solve();
+            solve();
         }
     }
 }

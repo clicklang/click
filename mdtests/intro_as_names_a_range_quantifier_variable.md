@@ -29,8 +29,8 @@ theorem range_variable_is_read_under_its_new_name(n: int32) {
 theorem enum_binder() {
     ensures forall (s: Shade) { s == s } by {
         intro() as t;
-        have t == t by simp();
-        simp();
+        have t == t by solve();
+        solve();
     }
 }
 ```

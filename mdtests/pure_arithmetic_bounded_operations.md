@@ -12,7 +12,7 @@ theorem bounded_product(x: int32, y: int32) {
     requires y <= 10;
 
     ensures to_integer(x * y) <= 100 by {
-        arithmetic() using {
+        solve() using {
             0 <= x;
             x <= 10;
             0 <= y;
@@ -25,12 +25,12 @@ theorem bounded_remainder(x: int32) {
     requires 0 <= x;
 
     ensures 0 <= x % 4 by {
-        arithmetic() using {
+        solve() using {
             0 <= x;
         };
     }
     ensures x % 4 < 4 by {
-        arithmetic() using {
+        solve() using {
             0 <= x;
         };
     }
@@ -38,7 +38,7 @@ theorem bounded_remainder(x: int32) {
 
 theorem bounded_mask(x: int32) {
     ensures (x & 255) <= 255 by {
-        arithmetic();
+        solve() using {};
     }
 }
 
@@ -46,7 +46,7 @@ theorem nonnegative_right_shift(x: int32) {
     requires 0 <= x;
 
     ensures (x >> 1) <= x by {
-        arithmetic() using {
+        solve() using {
             0 <= x;
         };
     }
@@ -57,7 +57,7 @@ theorem bounded_left_shift(x: int32) {
     requires x <= 10;
 
     ensures (x << 2) <= 40 by {
-        arithmetic() using {
+        solve() using {
             0 <= x;
             x <= 10;
         };

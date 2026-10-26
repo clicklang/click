@@ -22,7 +22,7 @@ int32 passthrough(int32 value) {
 } by {
     step_until(function.exit);
     apply(symmetric(result, value));
-    simp();
+    solve();
 }
 ```
 

@@ -9,7 +9,7 @@ theorem equality_transitive_with_exact_premises(x: int32, y: int32, z: int32) {
     requires x == y;
     requires y == z;
     ensures x == z by {
-        simp() using {
+        solve() using {
             x == y;
             y == z;
         };

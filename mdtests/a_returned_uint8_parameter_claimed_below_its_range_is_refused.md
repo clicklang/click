@@ -14,7 +14,7 @@ verifying "a_returned_uint8_parameter_claimed_below_its_range_is_refused.c";
 
 int32 widen_u8(uint8 x) {
     ensures result <= 254;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

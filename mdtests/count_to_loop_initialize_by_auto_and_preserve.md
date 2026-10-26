@@ -31,11 +31,11 @@ int32 count_to(int32 n) {
         initialize by auto();
         preserve by {
             step();
-            simp();
+            solve();
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

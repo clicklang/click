@@ -18,19 +18,19 @@ verifying "widen64.c";
 
 long s8_64(signed char x) {
     ensures to_integer(result) == to_integer(x);
-} by { execute(); auto(); }
+}
 
 long s16_64(short x) {
     ensures to_integer(result) == to_integer(x);
-} by { execute(); auto(); }
+}
 
 unsigned long u8_u64(unsigned char x) {
     ensures to_integer(result) == to_integer(x);
-} by { execute(); auto(); }
+}
 
 long u16_s64(unsigned short x) {
     ensures to_integer(result) == to_integer(x);
-} by { execute(); auto(); }
+}
 ```
 
 ```expect

@@ -35,7 +35,7 @@ int32 shifted_loop_effect_preserves_prefix(int32 p[], int32 n) {
         owns (p + 1)[0..n - 1];
     }
     step();
-    simp();
+    solve();
 }
 ```
 

@@ -54,7 +54,7 @@ void update(struct node* p, struct node* q) {
     owns b: metadata(q);
     ensures a.value == 1;
     ensures b.value == 2;
-} by { unfold(a); unfold(b); execute(); let a = fold(metadata(p), { value: 1 }); let b = fold(metadata(q), { value: 2 }); simp(); }
+} by { unfold(a); unfold(b); execute(); let a = fold(metadata(p), { value: 1 }); let b = fold(metadata(q), { value: 2 }); solve(); }
 struct node* caller(struct node* p, struct node* q, struct node* parent) {
     consumes f: framed(p, q, parent);
     ensures result == parent;
@@ -64,7 +64,7 @@ struct node* caller(struct node* p, struct node* q, struct node* parent) {
     have separate(memory(p->word), memory(((struct sized*)(void*)p)->size)) by auto();
     word_metadata_separation(p, q, { b: b });
     mark before_update;
-    have ((struct node*)(p->word & ~3)) == parent by simp();
+    have ((struct node*)(p->word & ~3)) == parent by solve();
     step(update, { a: a, b: b });
     have p->word == at(before_update, p->word) by { transport(at(before_update, p->word) == at(before_update, p->word), p->word == at(before_update, p->word)); }
     have ((struct node*)(p->word & ~3)) == parent by { transport(at(before_update, ((struct node*)(p->word & ~3))) == parent, ((struct node*)(p->word & ~3)) == parent) using { at(before_update, ((struct node*)(p->word & ~3))) == parent; p == at(before_update, q->left); separate(memory(p->word), memory(((struct sized*)(void*)p)->size)); separate(memory(p->word), memory(((struct sized*)(void*)q)->size)); }; }

@@ -53,7 +53,7 @@ void join(int32* data, int32 cap) {
         assumption();
     }
     have h <= cap by {
-        simp() using {
+        solve() using {
             h == t;
             t <= cap;
         };

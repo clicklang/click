@@ -37,7 +37,7 @@ void keep(struct S* p) {
     ensures p->a == 9;
     ensures p->b == old(p->b);
     ensures p->x == old(p->x);
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

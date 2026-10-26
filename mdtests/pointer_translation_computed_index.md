@@ -9,7 +9,7 @@ theorem advance(p: const uint8*, bytes: const uint8*, n: uint64, remaining: int3
     requires to_integer(((int32)(uint32)n - remaining)) < 2147483647;
     requires p == bytes + ((int32)(uint32)n - remaining);
     ensures p + 1 == bytes + ((int32)(uint32)n - remaining + 1) by {
-        arithmetic() using {
+        solve() using {
             p == bytes + ((int32)(uint32)n - remaining);
             to_integer(((int32)(uint32)n - remaining)) < 2147483647;
         };

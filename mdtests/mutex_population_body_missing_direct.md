@@ -20,7 +20,7 @@ resource counter_state(p: struct counter*) {
 uint32 read_value(struct counter* p) {
     owns contribution(p);
     owns access: mutex_use(&p->mutex, counter_state(p));
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

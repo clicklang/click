@@ -17,13 +17,13 @@ void lifecycle() { ensures 1 == 1; } by {
     fold(authority(slot(&pool, _)));
     fold(slot(&pool, &first));
     fold(slot(&pool, &second));
-    have count(slot(&pool, _)) == 2 by simp();
+    have count(slot(&pool, _)) == 2 by solve();
     unfold(slot(&pool, &first));
-    have count(slot(&pool, _)) == 1 by simp();
+    have count(slot(&pool, _)) == 1 by solve();
     unfold(slot(&pool, &second));
-    have count(slot(&pool, _)) == 0 by simp();
+    have count(slot(&pool, _)) == 0 by solve();
     unfold(authority(slot(&pool, _)));
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

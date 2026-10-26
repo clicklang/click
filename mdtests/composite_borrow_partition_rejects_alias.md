@@ -19,12 +19,12 @@ void update(int* p, int* q) {
     unfold(cell(p));
     open(cell(q)) { execute(); }
     fold(cell(p));
-    simp();
+    solve();
 }
 void caller(int* p) {
     owns cell(p);
     ensures 1 == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 ```expect
 fail:stable-view a required resource overlaps a live borrowed footprint refused during planning

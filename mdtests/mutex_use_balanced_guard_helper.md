@@ -17,7 +17,7 @@ runtime "modeled-pthread";
 verifying "mutex_use_balanced_guard_helper.c";
 void keep_guard(struct holder *holder) {
     owns mutex_guard(&holder->mu);
-} by { execute(); simp(); }
+}
 void helper(struct holder *holder) {
     owns mutex_use(&holder->mu);
 } by {
@@ -25,7 +25,7 @@ void helper(struct holder *holder) {
     step(keep_guard, {});
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

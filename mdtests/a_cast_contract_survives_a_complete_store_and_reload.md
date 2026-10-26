@@ -17,7 +17,7 @@ int32 read_packed(unsigned long word, unsigned long* slot, struct node* p) {
     owns *slot;
     views p->value;
     ensures result == p->value;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

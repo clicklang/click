@@ -21,7 +21,7 @@ int32 add_one(int32 x) {
     requires x >= 0;
     ensures result >= 0;
     ensures result <= 101;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

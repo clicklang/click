@@ -30,12 +30,12 @@ int32 read_nullable(int32* p) {
         unfold(c);
         execute();
         fold(c);
-        simp();
+        solve();
     } else {
         unfold(c);
         execute();
         fold(c);
-        simp();
+        solve();
     }
 }
 ```

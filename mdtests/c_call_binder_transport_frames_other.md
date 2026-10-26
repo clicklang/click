@@ -23,7 +23,7 @@ void increment(int32* state) {
     unfold(first);
     step_until(function.exit);
     let first = fold(Counter(), { model: Mark::Set, revision: 1 });
-    simp();
+    solve();
 }
 
 void frames(int32* state) {

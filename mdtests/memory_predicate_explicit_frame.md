@@ -44,11 +44,11 @@ int32 set_before_terminator(
     have data[length] == 0;
     have terminated(data, length) by {
         unfold(terminated);
-        simp();
+        solve();
     }
     step();
     have index < index + 1;
-    simp();
+    solve();
 }
 ```
 

@@ -77,8 +77,6 @@ int32 caller() {
     ensures result == 35;
 } by {
     fold(callbacks_storage(&suite));
-    execute();
-    simp();
 }
 ```
 

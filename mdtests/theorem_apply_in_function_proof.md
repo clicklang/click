@@ -21,7 +21,7 @@ theorem nonnegative_body(x: int32) {
 
     ensures x >= 0 by {
         unfold(nonnegative);
-        simp();
+        solve();
     }
 }
 
@@ -31,7 +31,7 @@ int32 theorem_apply_identity(int32 x) {
     ensures result >= 0 by {
         step_until(function.exit);
         apply(nonnegative_body(result));
-        simp();
+        solve();
     }
 }
 ```

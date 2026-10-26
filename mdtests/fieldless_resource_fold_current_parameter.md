@@ -18,7 +18,6 @@ void pack(struct node* p, struct node* q) {
     fold(tag_at(p));
     unfold(tag_at(p));
     step();
-    execute(); simp();
 }
 void open(struct node* p, struct node* q) {
     consumes tag_at(q);
@@ -27,7 +26,6 @@ void open(struct node* p, struct node* q) {
     step();
     unfold(tag_at(p));
     step();
-    execute(); simp();
 }
 struct node* finish(struct node* p, struct node* q) {
     consumes q->tag;
@@ -36,7 +34,7 @@ struct node* finish(struct node* p, struct node* q) {
     step_until(function.exit);
     fold(tag_at(result));
     unfold(tag_at(result));
-    simp();
+    solve();
 }
 ```
 

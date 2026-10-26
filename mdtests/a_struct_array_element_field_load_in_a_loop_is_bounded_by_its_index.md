@@ -28,7 +28,6 @@ int32 read_second_fields() {
 } by {
     step(); step(); step(); step(); step();
     loop { decreases 4 - i; invariant i >= 0; invariant i <= 4; invariant v >= 0; }
-    execute(); simp();
 }
 ```
 

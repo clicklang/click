@@ -22,7 +22,7 @@ int32 pick(int32 x) {
     ensures result >= 0 and result <= 5;
 } by {
     step();
-    both { simp(); } and { simp(); }
+    both { solve(); } and { solve(); }
 }
 ```
 

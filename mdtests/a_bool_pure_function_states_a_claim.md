@@ -57,7 +57,7 @@ theorem chosen_positive(flag: bool, x: int32) {
     ensures choose(flag, x) by {
         unfold(choose(flag, x));
         unfold(positive(x));
-        simp();
+        solve();
     }
 }
 

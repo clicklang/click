@@ -30,7 +30,6 @@ void use_models() {
     ensures 0 == 0;
 } by {
     apply(same_shape(x.model, z.model));
-    execute(); simp();
 }
 ```
 

@@ -16,12 +16,12 @@ verifying "int64_conversion_from_an_unsigned_long_wraps_modulo_2_to_the_64.c";
 int64 cast(uint64 x) {
     requires x == 18446744073709551615u64;
     ensures result == -1;
-} by { execute(); simp(); }
+}
 
 int64 returned(uint64 x) {
     requires x == 9223372036854775808u64;
     ensures result == -9223372036854775808;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -19,7 +19,7 @@ verifying "flat.c";
 spec enum Tag { Here }
 resource tag(p: struct Node*) { field model: Tag; owns p->tag; fact model == Tag::Here; }
 void helper(struct Node *p) { consumes before: tag(p); produces after: tag(p); }
-by { unfold(before); execute(); let after = fold(tag(p), {model: Tag::Here}); simp(); }
+by { unfold(before); execute(); let after = fold(tag(p), {model: Tag::Here}); solve(); }
 void caller(struct Node *p, struct Node *q) {
     consumes before: tag(p); produces after: tag(p);
     owns p->next; owns q->tag;
@@ -32,7 +32,6 @@ void caller(struct Node *p, struct Node *q) {
     let {after: after} = step(helper, {before: before});
     have r == q;
     have r->tag == 7 by { normalize() using { r == q; }; }
-    execute(); simp();
 }
 ```
 

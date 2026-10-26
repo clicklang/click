@@ -42,11 +42,11 @@ void drop_next(struct node* self) {
     if self->next == 0 {
         unfold(nodes(self->next));
         execute();
-        simp();
+        solve();
     } else {
         unfold(nodes(self->next));
         execute();
-        simp();
+        solve();
     }
 }
 ```

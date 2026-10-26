@@ -25,7 +25,7 @@ int32 struct_array_parameter_fields(struct item items[2]) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

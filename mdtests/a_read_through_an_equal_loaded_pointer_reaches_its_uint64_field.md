@@ -21,7 +21,6 @@ void check(struct Node* p, struct Node* q) {
     step(); step();
     have r == q;
     have (r->tag & 1) == 1 by assumption();
-    execute(); simp();
 }
 ```
 

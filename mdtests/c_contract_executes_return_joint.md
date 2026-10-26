@@ -15,9 +15,9 @@ theorem lift(callback: int32 (*)(int32*)) executes callback(int32* cell) {
         have cell[0] == 0 by {
             rewrite(cell[0] == result);
             rewrite(result == 0);
-            simp();
+            solve();
         }
-        fold(Cell(cell)); simp();
+        fold(Cell(cell)); solve();
     }
 }
 ```

@@ -45,7 +45,7 @@ void keep(int32* p) {
             unfold(child); execute();
             let child = fold(cell(p), { value: first });
             let state = fold(holder(p), { phase: Phase::Before, first: first, second: second }, { child: child });
-            simp();
+            solve();
         },
         Phase::After => {
             let { first: first, second: second, child: child } = unfold(state);
@@ -53,7 +53,7 @@ void keep(int32* p) {
             unfold(child); execute();
             let child = fold(cell(p), { value: second });
             let state = fold(holder(p), { phase: Phase::After, first: first, second: second }, { child: child });
-            simp();
+            solve();
         },
     }
 }

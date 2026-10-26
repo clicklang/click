@@ -1195,6 +1195,14 @@ mdtests and examples.
     (`mdtests/an_omitted_proof_folds_the_resource_its_contract_produces.md`);
     39 files drop `execute(); fold(…);` for it. Folds of other resources
     stay written.
+    The one-line forms followed: a function's `} by { execute(); simp(); }`
+    and a claim's `ensures P by { execute(); simp(); }` become the omitted
+    proof, 462 uses in 257 files. As before, only files that still verify
+    change, and files Rust tests name, by path or by file name, and the
+    mdtests documentation examples quote keep theirs.
+    Then `execute();` and its closers at the end of a longer `by { … }`
+    block, on one line with other tactics or not, were dropped the same way:
+    234 uses in 182 files.
 
     `execute` then names only the tail's stepping and splitting. *Verdicts*
     only where a migration misses; each is explained in the PR.
@@ -1207,6 +1215,21 @@ mdtests and examples.
     `arithmetic` from the parser, with a refusal that names the
     replacement. Printing, expansion and diagnostics spell `solve` and
     `step_until`.
+    Done in part: written `simp()` is now `solve()` in mdtests, examples, the
+    standard library and documentation examples, 4846 uses in
+    2165 files. Left as `simp()`: files imported from Rust or C++,
+    files Rust tests name, the fixtures that check the older spelling, and
+    documentation examples that quote one of them; documentation prose,
+    which names `simp` as the older spelling, changes in step 25.
+    A `solve() using` miss now adds arithmetic's own reason, without its
+    location and except where the goal is outside arithmetic's fragment
+    (`mdtests/a_solve_using_miss_reports_arithmetic_s_reason.md`).
+    Written `arithmetic()` is now `solve() using {}`, and
+    `arithmetic() using { … }` is `solve() using { … }`: 547 uses in 174
+    mdtests and examples, kept wherever they still verify. Left as they
+    were: refusal mdtests that name arithmetic's message, files Rust tests
+    name, Rust and C++ imports, the standard library, and the mdtests the
+    documentation and the tactic inventory quote.
 
     Measured 2026-10-25, with every `arithmetic()` read as `solve() using {}`
     and every `arithmetic() using { … }` as `solve() using { … }`. At first

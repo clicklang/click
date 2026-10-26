@@ -48,11 +48,11 @@ int32 even(struct node* node) {
 } by {
     if node == 0 {
         execute();
-        simp();
+        solve();
     } else {
         observe(list(node));
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -63,11 +63,11 @@ int32 odd(struct node* node) {
 } by {
     if node == 0 {
         execute();
-        simp();
+        solve();
     } else {
         observe(list(node));
         execute();
-        simp();
+        solve();
     }
 }
 ```

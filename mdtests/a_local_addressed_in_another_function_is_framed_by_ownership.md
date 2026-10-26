@@ -50,7 +50,7 @@ verifying "a_local_addressed_in_another_function_is_framed_by_ownership.c";
 int32* echo(int32* p) {
     views p[0..1];
     ensures result == p;
-} by { execute(); simp(); }
+}
 
 uint8* literal_source() {
     produces result[0..3];
@@ -61,7 +61,7 @@ uint8* literal_source() {
 
 void taker() {
     ensures 1 == 1;
-} by { execute(); simp(); }
+}
 
 int32 read_literal() {
     ensures result == 'k' + 3;

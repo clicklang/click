@@ -14,7 +14,7 @@ verifying "uninitialized_view.c";
 int32 get(const int32* p) {
     views uninitialized(p[0..1]);
     ensures true;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

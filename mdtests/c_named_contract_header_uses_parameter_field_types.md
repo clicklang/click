@@ -37,7 +37,7 @@ void f(struct cell* root) {
     requires root->base.left != (struct base*)(void*)root;
     ensures child.number == old(child.number);
     ensures root->value == old(child.number);
-} by { unfold(child); execute(); fold(child); simp(); }
+} by { unfold(child); execute(); fold(child); solve(); }
 ```
 ```expect
 pass

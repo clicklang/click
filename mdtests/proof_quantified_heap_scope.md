@@ -26,9 +26,9 @@ int32 proof_quantified_heap_scope(int32 p[2]) {
     } by {
         intro();
         intro();
-        simp();
+        solve();
     }
-    simp();
+    solve();
 }
 ```
 

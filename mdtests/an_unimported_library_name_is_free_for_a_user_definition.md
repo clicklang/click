@@ -12,7 +12,7 @@ predicate permutation(x: int32) {
 theorem one_is_a_permutation() {
     ensures permutation(1) by {
         unfold(permutation);
-        simp();
+        solve();
     }
 }
 ```

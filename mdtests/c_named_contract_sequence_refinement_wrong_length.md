@@ -18,7 +18,7 @@ theorem transport(callback: void (*)(int32*)) {
     ensures Target(callback) by {
         unfold(Source);
         unfold(Target);
-        simp();
+        solve();
     }
 }
 ```

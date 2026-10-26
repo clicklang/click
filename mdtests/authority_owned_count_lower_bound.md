@@ -9,12 +9,12 @@ void inspect(int32* p) {
     owns authority(token(p));
     owns token(p);
     ensures 1 <= count(token(p));
-} by { execute(); simp(); }
+}
 void wrapper(int32* p) {
     owns authority(token(p));
     owns token(p);
     ensures 1 <= count(token(p));
-} by { execute(); simp(); }
+}
 ```
 ```expect
 pass

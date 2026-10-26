@@ -92,7 +92,7 @@ int32 refcount_pipeline(int32 amount) {
     step();
     branch {
         step();
-        simp();
+        solve();
     } else {}
     step();
     have defined(obj->refs + amount) by auto();
@@ -108,5 +108,5 @@ int32 refcount_pipeline(int32 amount) {
     }
     step();
     step();
-    simp();
+    solve();
 }

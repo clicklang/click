@@ -87,14 +87,14 @@ void paint(struct node* p, int32 flag) {
     have c.color == Color::Red or c.color == Color::Black by {
         cases {
             (flag == 0 and c.color == Color::Red and p->shade == 0) => {
-                simp();
+                solve();
             }
             (c.color == Color::Black and p->shade == 1) => {
-                simp();
+                solve();
             }
         }
     }
-    simp();
+    solve();
 }
 ```
 

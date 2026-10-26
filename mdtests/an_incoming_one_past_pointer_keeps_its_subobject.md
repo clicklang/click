@@ -13,12 +13,12 @@ int32 probe(int32* q, struct Pair* p) {
     views p->second;
     requires q == &p->first + 1;
     ensures result == p->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 caller(struct Pair* p) {
     views p->first;
     views p->second;
     ensures result == p->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

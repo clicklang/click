@@ -50,7 +50,7 @@ int32 scale(uint64 size, int32 i) {
 } by {
     if size == 0 {
         execute();
-        simp();
+        solve();
     } else {
         step();
         step();
@@ -60,7 +60,7 @@ int32 scale(uint64 size, int32 i) {
             invariant i >= 0 and i <= 3;
         }
         execute();
-        simp();
+        solve();
     }
 }
 ```

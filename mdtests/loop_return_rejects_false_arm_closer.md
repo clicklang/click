@@ -33,8 +33,8 @@ int32 f(int32 n) {
             if i == 2 {
                 step();
                 step();
-                have result == 5 by simp();
-                simp();
+                have result == 5 by solve();
+                solve();
             } else {
                 step();
                 step();
@@ -43,8 +43,8 @@ int32 f(int32 n) {
         }
     }
     step();
-    have result == 5 by simp();
-    simp();
+    have result == 5 by solve();
+    solve();
 }
 ```
 

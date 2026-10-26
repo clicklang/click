@@ -20,15 +20,15 @@ verifying "pointers_into_distinct_objects_compare_unequal.c";
 
 int32 starts(int32 x) {
     ensures result == 0;
-} by { execute(); simp(); }
+}
 
 int32 interior(int32 x) {
     ensures result == 0;
-} by { execute(); simp(); }
+}
 
 int32 same_end(int32 x) {
     ensures result == 1;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -20,9 +20,9 @@ theorem observed_range(value: uint32) {
     ensures to_integer(value) <= 4294967295 by auto();
 }
 theorem full_width() {
-    ensures to_integer(2147483648u32) == 2147483648 by simp();
-    ensures to_integer(4294967295u32) == 4294967295 by simp();
-    ensures to_integer(4294967295u32 + 1u32) == 0 by simp();
+    ensures to_integer(2147483648u32) == 2147483648 by solve();
+    ensures to_integer(4294967295u32) == 4294967295 by solve();
+    ensures to_integer(4294967295u32 + 1u32) == 0 by solve();
 }
 ```
 

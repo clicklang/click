@@ -27,15 +27,15 @@ verifying "c_pointer_distance_requirement.c";
 int32 distance(int32* left, int32* right) {
     requires defined(right - left);
     ensures result == (right - left);
-} by { execute(); simp(); }
+}
 
 int32 distance_array() {
     ensures result == 2;
-} by { execute(); simp(); }
+}
 
 int32 distance_one_past() {
     ensures result == 2;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -77,7 +77,7 @@ void keep(struct cell* c) {
                 normalize();
             }
             execute();
-            simp();
+            solve();
         },
     }
 }

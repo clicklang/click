@@ -10,7 +10,7 @@ theorem lift(callback: int32 (*)(int32)) {
         unfold(Source);
         unfold(Target);
         execute();
-        simp();
+        solve();
     }
 }
 ```

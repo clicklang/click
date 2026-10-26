@@ -44,7 +44,7 @@ int32 caller(int32 a, int32 b) {
             }
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

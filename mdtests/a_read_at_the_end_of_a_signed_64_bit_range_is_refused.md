@@ -12,7 +12,7 @@ verifying "a_read_at_the_end_of_a_signed_64_bit_range_is_refused.c";
 uint8 past(const uint8* bytes, int64 n) {
     requires 0i64 < n;
     views bytes[0..n];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

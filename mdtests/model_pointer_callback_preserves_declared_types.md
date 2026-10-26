@@ -24,13 +24,13 @@ void wrapped(struct model_node* p) {
 theorem wrapped_is_callback() executes wrapped(struct model_node* p) {
     ensures Callback(&wrapped) as { held: r } by {
         let { held: r } = step(wrapped, {});
-        simp();
+        solve();
     }
 }
 int32 accept(void (*f)(struct model_node*)) {
     requires Callback(f); ensures result == 0;
 } by { execute(); normalize(); }
-int32 caller() { ensures result == 0; } by { apply(wrapped_is_callback()); execute(); }
+int32 caller() { ensures result == 0; } by { apply(wrapped_is_callback()); }
 ```
 
 ```expect

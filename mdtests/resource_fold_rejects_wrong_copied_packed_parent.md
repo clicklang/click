@@ -57,7 +57,7 @@ void copy_tag(struct node* parent, struct node* sibling) {
     owns sibling->tag;
     ensures sibling->tag == old(parent->tag);
     ensures parent->tag == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void inspect(struct node* parent) {
     consumes tree_context: parent_at(parent);
     requires parent == parent_identity(tree_context.model);
@@ -68,12 +68,12 @@ void inspect(struct node* parent) {
         owns tree_context: parent_at(root);
         invariant parent == parent_identity(tree_context.model);
         decreases 0;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match tree_context.model {
                 Parent::At(pid, sm) => {
                     have parent == parent_identity(Parent::At(pid, sm)) by { rewrite(Parent::At(pid, sm) == tree_context.model); assumption(); }
-                    have parent == pid by { unfold(parent_identity(Parent::At(pid, sm))); simp(); }
+                    have parent == pid by { unfold(parent_identity(Parent::At(pid, sm))); solve(); }
                     let { c: c } = unfold(tree_context);
                     have parent->tag == address(pid) + (parent->tag & 1);
                     have (parent->tag & 1) == 1;
@@ -101,7 +101,7 @@ void inspect(struct node* parent) {
             }
         }
     }
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

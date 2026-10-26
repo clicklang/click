@@ -32,7 +32,7 @@ int32 choose_one(int32 flag) {
     ensures result == 1 by {
         step();
         step();
-        simp();
+        solve();
     }
 }
 
@@ -41,7 +41,7 @@ int32 choose_zero(int32 flag) {
     ensures result == 0 by {
         step();
         step();
-        simp();
+        solve();
     }
 }
 ```

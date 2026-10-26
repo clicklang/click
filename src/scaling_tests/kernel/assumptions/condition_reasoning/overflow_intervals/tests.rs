@@ -92,13 +92,13 @@ fn widened_unsigned_sum_bounds_are_sound_and_flat_in_unrelated_facts() {
         );
         let invalid =
             ConditionTerm::unsigned_greater_equal(b.clone(), Bitvector32Term::Constant(256));
-        // The signed byte facts alone do not index the biased operand.
+        // Query the native unsigned order using its indexed unsigned bound.
         let facts = facts.assume_condition(
             ConditionTerm::unsigned_less_than(b.clone(), Bitvector32Term::Constant(8)),
             true,
         );
         let (answer, order_work) = crate::instrumentation::measure_deterministic_work(|| {
-            facts.decide_indexed_greater_equal(&invalid)
+            facts.decide_from_order_facts(&invalid)
         });
         assert_eq!(answer, Some(false));
         works.push(work + order_work);

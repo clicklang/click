@@ -74,7 +74,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             end <= k and k < arena->capacity implies
                 arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k])
         };
-        initialize by simp();
+        initialize by solve();
         preserve by {
             let { next: m } = unfold(w);
             have m == i;
@@ -212,14 +212,14 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             have start <= end by auto();
             close_invariants() by {
                 both { normalize(); } and {
-                    both { simp(); } and {
-                        both { simp(); } and {
-                            both { arithmetic() using {
+                    both { solve(); } and {
+                        both { solve(); } and {
+                            both { solve() using {
                                 at(opened, i) < end;
                                 0 <= at(opened, i);
                                 end <= arena->capacity;
                                 arena->capacity <= 536870911;
-                            }; } and { arithmetic() using {
+                            }; } and { solve() using {
                                 at(opened, i) < end;
                                 0 <= at(opened, i);
                                 end <= arena->capacity;
@@ -241,7 +241,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     have arena->occupied == old(arena->occupied) by auto();
     have arena->capacity == old(arena->capacity) by auto();
     fold(arena_cells(arena->data, arena->occupied, arena->capacity));
-    simp();
+    solve();
 }
 ```
 

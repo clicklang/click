@@ -29,20 +29,20 @@ void push(struct node* node, struct node* tail) {
     consumes chain(tail);
     produces chain(node);
     ensures node->next == tail;
-} by { execute(); fold(chain(node)); simp(); }
+} by { execute(); fold(chain(node)); solve(); }
 void pop(struct node* node) {
     requires node != 0;
     consumes chain(node);
     produces *node;
     produces chain(node->next);
     ensures node->next == old(node->next);
-} by { unfold(chain(node)); execute(); simp(); }
+} by { unfold(chain(node)); }
 int32 roundtrip(struct node* node, struct node* tail) {
     requires node != 0;
     owns *node;
     owns chain(tail);
     ensures result == 0;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

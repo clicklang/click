@@ -25,7 +25,7 @@ int32 count(int32 n) {
   invariant 0 <= i and i <= n;
   preserve by { execute_until(back_edge()); close_invariants(); }
  }
- execute(); simp();
+ execute(); solve();
 }
 ```
 

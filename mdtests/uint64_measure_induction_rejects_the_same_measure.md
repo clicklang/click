@@ -5,7 +5,7 @@ theorem same_measure(n: uint64) {
     ensures n == n by {
         induct(n) as ih;
         apply(ih(n));
-        simp();
+        solve();
     }
 }
 ```

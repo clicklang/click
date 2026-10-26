@@ -83,9 +83,9 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             invariant n < 0;
         }
         execute();
-        simp();
+        solve();
     } else {
-        have n >= 0 by simp();
+        have n >= 0 by solve();
         loop {
             if i % 2 == 1 {
                 owns mutex_guard(&object->mutex);
@@ -93,7 +93,7 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             owns mutex_live(&object->mutex);
             decreases n - i;
             invariant 0 <= i and i <= n;
-            initialize by simp();
+            initialize by solve();
             preserve by {
                 have i < 2147483647 by { arithmetic() using { i < n; }; }
                 if i % 2 == 0 {
@@ -117,14 +117,14 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
         }
         if i % 2 == 0 {
             execute();
-            simp();
+            solve();
         } else {
             have 0 <= i % 2 by { arithmetic() using { 0 <= i; }; }
             have 1 <= i % 2 by apply(nonzero_nonnegative(i % 2));
             have i % 2 <= 1 by { arithmetic() using { 0 <= i; }; }
             have i % 2 == 1 by apply(bounded_one(i % 2));
             execute();
-            simp();
+            solve();
         }
     }
 }

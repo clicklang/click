@@ -46,7 +46,7 @@ int32 nested_loop_preserve() {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

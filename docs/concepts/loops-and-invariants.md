@@ -243,7 +243,7 @@ loop {
     initialize by auto();
     preserve by {
         step();
-        simp();
+        solve();
     }
 }
 ```
@@ -603,10 +603,10 @@ the loop (`mdtests/loop_exit_restates_model_getters.md`):
 have c.color == Color::Red or c.color == Color::Black by {
     cases {
         (flag == 0 and c.color == Color::Red and p->shade == 0) => {
-            simp();
+            solve();
         }
         (c.color == Color::Black and p->shade == 1) => {
-            simp();
+            solve();
         }
     }
 }
@@ -764,9 +764,9 @@ void bump_n(struct cell* p, int32 n) {
         invariant i <= n;
         invariant c.count == old(c.count) + i;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
-            have c.count == i by { simp() using { c.count == old(c.count) + i; old(c.count) == 0; }; }
+            have c.count == i by { solve() using { c.count == old(c.count) + i; old(c.count) == 0; }; }
             unfold(c);
             step();
             step();
@@ -774,7 +774,7 @@ void bump_n(struct cell* p, int32 n) {
             close_invariants();
         }
     }
-    have i == n by simp();
+    have i == n by solve();
 }
 ```
 
@@ -928,7 +928,7 @@ preserve by {
         Maybe::None => { contradiction(c.model == Maybe::None); },
         Maybe::Some(value) => {
             have Maybe::Some(value) == old(c.model) by {
-                simp() using { c.model == Maybe::Some(value); c.model == old(c.model); };
+                solve() using { c.model == Maybe::Some(value); c.model == old(c.model); };
             }
             unfold(c);
             step();

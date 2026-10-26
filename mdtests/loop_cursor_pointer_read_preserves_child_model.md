@@ -43,7 +43,7 @@ void inspect(struct node* root) {
         owns tree: parent_at(root);
         invariant parent == root;
         decreases 0;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match tree.model {
                 Parent::At(pid, child_model) => {
@@ -62,7 +62,6 @@ void inspect(struct node* root) {
             }
         }
     }
-    execute(); simp();
 }
 ```
 

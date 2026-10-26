@@ -65,7 +65,7 @@ void* producer(void* argument) {
     fold(ready_payload(channel));
     step();
     step();
-    simp();
+    solve();
 }
 
 int32 consume(struct channel* channel) diverges {
@@ -79,7 +79,7 @@ int32 consume(struct channel* channel) diverges {
     unfold(ready_payload(channel));
     step();
     fold(ready_payload(channel));
-    simp();
+    solve();
 }
 
 int32 publish_once(struct channel* channel) diverges {
@@ -94,13 +94,13 @@ int32 publish_once(struct channel* channel) diverges {
     step();
     branch {
         step();
-        simp();
+        solve();
     } else {}
     step();
     step();
     unfold(ready_payload(channel));
     step();
-    simp();
+    solve();
 }
 ```
 

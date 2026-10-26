@@ -44,7 +44,7 @@ int32 set_size(struct sized_node* node) {
     unfold(parent);
     execute();
     let parent = fold(size_metadata((struct rb_node*)(void*)node), { value: 1 });
-    simp();
+    solve();
 }
 
 void caller(struct rb_node* rb_old, struct rb_node* rb_other) {

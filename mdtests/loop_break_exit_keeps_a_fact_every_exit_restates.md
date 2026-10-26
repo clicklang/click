@@ -132,7 +132,7 @@ int32 inspect(struct node* p) {
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

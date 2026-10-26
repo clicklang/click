@@ -6,7 +6,7 @@ theorem bad_same(n: int32) {
     ensures n == n by {
         induct(n) as ih;
         apply(ih(n));
-        simp();
+        solve();
     }
 }
 ```

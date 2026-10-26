@@ -30,13 +30,13 @@ verifying "modeled_pthread_retire_after_join.c";
 authorized resource reference(obj: struct object*) {}
 void* worker(void* argument) {
     owns authority(reference((struct object*)argument));
-} by { execute(); simp(); }
+}
 int32 run() {
     ensures result == -1 or result == 0 or result == 1;
 } by {
     step();
     step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     fold(authority(reference(obj)));
     step();
     step();
@@ -44,13 +44,13 @@ int32 run() {
         unfold(authority(reference(obj)));
         step();
         step();
-        simp();
+        solve();
     } else {}
     step();
     unfold(authority(reference(obj)));
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

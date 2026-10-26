@@ -122,7 +122,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant old(state.phase) == SizedFlipPhase::Before(g, p, u);
                 invariant node == sized_flip_focus(state.phase, old(node));
                 invariant parent == sized_flip_parent(state.phase);
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     mark iteration;
                     match state.phase {
@@ -152,7 +152,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             let { focus: focus, path: path } = unfold(state);
                             let { metadata: g_size, left: p_tree, right: u_tree } = unfold(focus);
                             step(); step();
-                            have (x->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); simp(); }
+                            have (x->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); solve(); }
                             let focus = fold(sized_at(x), { model: SizedTree::Node(x, 0, Color::Black, 4, SizedTree::Node(y, x, Color::Black, 2, SizedTree::Node(old(node), y, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty), SizedTree::Node(z, x, Color::Black, 1, SizedTree::Empty, SizedTree::Empty)) }, { metadata: g_size, left: p_tree, right: u_tree });
                             let state = fold(sized_flip_at(old(node),root), { phase: SizedFlipPhase::Done(x, y, z), model: SizedTree::Node(x, 0, Color::Black, 4, SizedTree::Node(y, x, Color::Black, 2, SizedTree::Node(old(node), y, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty), SizedTree::Node(z, x, Color::Black, 1, SizedTree::Empty, SizedTree::Empty)), context: SizedContext::Top }, { focus: focus, path: path });
                             step();
@@ -211,7 +211,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             let focus = fold(sized_at(x), { model: SizedTree::Node(x, 0, Color::Red, 4, SizedTree::Node(y, x, Color::Black, 2, SizedTree::Node(old(node), y, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty), SizedTree::Node(z, x, Color::Black, 1, SizedTree::Empty, SizedTree::Empty)) }, { metadata: g_size, left: p_tree, right: u_tree });
                             let state = fold(sized_flip_at(old(node),root), { phase: SizedFlipPhase::After(x, y, z), model: SizedTree::Node(x, 0, Color::Red, 4, SizedTree::Node(y, x, Color::Black, 2, SizedTree::Node(old(node), y, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty), SizedTree::Node(z, x, Color::Black, 1, SizedTree::Empty, SizedTree::Empty)), context: SizedContext::Top }, { focus: focus, path: top });
                             unfold(sized_context_depth(SizedContext::Top));
-                            have 0 <= sized_context_depth(state.context) by simp();
+                            have 0 <= sized_context_depth(state.context) by solve();
                             have sized_context_depth(state.context) < sized_context_depth(at(iteration,state.context)) by {
                                 rewrite(state.context == SizedContext::Top);
                                 rewrite(at(iteration,state.context) == SizedContext::Left(y, x, Color::Red, 2, SizedTree::Empty, SizedContext::Left(x, 0, Color::Black, 4, SizedTree::Node(z, x, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedContext::Top)));
@@ -233,12 +233,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 unfold(sized_flip_running(SizedFlipPhase::After(x, y, z))); normalize();
                             }
                             step();
-                            close_invariants() by simp();
+                            close_invariants() by solve();
                         },
                     }
                 }
             }
-            execute(); simp();
+            execute(); solve();
         },
     }
 }
@@ -250,7 +250,7 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_flip_finish(old(state.phase));
 } by {
     step(__rb_insert, { state: state });
-    execute(); simp();
+    execute(); solve();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -261,5 +261,5 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_flip_finish(old(state.phase));
 } by {
     step(__rb_insert_augmented, { state: state });
-    execute(); simp();
+    execute(); solve();
 }

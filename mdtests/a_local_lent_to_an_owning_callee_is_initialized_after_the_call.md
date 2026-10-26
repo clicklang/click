@@ -43,21 +43,21 @@ void fill(int32 a[]) {
     owns uninitialized(a[0..1]);
     ensures defined(a[0]);
     ensures a[0] == 1;
-} by { execute(); simp(); }
+}
 
 int32 filled() {
     ensures result == 1;
-} by { execute(); simp(); }
+}
 
 void set(int32* p) {
     owns uninitialized(p[0..1]);
     ensures defined(p[0]);
     ensures p[0] == 1;
-} by { execute(); simp(); }
+}
 
 int32 was_set() {
     ensures result == 1;
-} by { execute(); simp(); }
+}
 ```
 
 ```expect

@@ -41,7 +41,7 @@ uint32 read_member(struct counter* p) {
     requires p->value == count(member(p));
     ensures result == count(member(p));
     ensures p->value == old(p->value);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 uint32 run(struct counter* p) {
     owns authority(member(p));
     requires count(member(p)) == 0;
@@ -52,16 +52,16 @@ uint32 run(struct counter* p) {
 } by {
     step();
     fold(3 of member(p));
-    have count(member(p)) == 3 by simp();
+    have count(member(p)) == 3 by solve();
     let state = fold(control(p), { value: p->value });
     let { lifetime: lifetime } = step(pthread_mutex_init, { state: state });
-    branch { unfold(state); unfold(3 of member(p)); step(); simp(); } else {}
+    branch { unfold(state); unfold(3 of member(p)); step(); solve(); } else {}
     step();
     unfold(state);
     step();
     step();
     fold(holder(p));
-    have count(member(p)) == 2 by simp();
+    have count(member(p)) == 2 by solve();
     let state = fold(control(p), { value: p->value });
     step();
     step(pthread_mutex_destroy, { lifetime: lifetime });
@@ -69,7 +69,7 @@ uint32 run(struct counter* p) {
     unfold(holder(p));
     unfold(3 of member(p));
     step();
-    simp();
+    solve();
 }
 ```
 

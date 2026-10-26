@@ -30,7 +30,7 @@ int32 make(int32* p, int32 i) {
 } by {
     execute();
     fold(bound(p, i));
-    simp();
+    solve();
 }
 ```
 

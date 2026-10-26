@@ -22,7 +22,7 @@ verifying "modeled_pthread_counted_neutral_observed.c";
 authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns ticket(argument);
-} by { execute(); simp(); }
+}
 int32 run(void* p) {
     owns authority(ticket(p));
     owns ticket(p);
@@ -31,11 +31,11 @@ int32 run(void* p) {
 } by {
     step();
     step();
-    branch { step(); simp(); } else {}
+    branch { step(); solve(); } else {}
     have count(ticket(p)) == 1;
     step();
     step();
-    simp();
+    solve();
 }
 ```
 

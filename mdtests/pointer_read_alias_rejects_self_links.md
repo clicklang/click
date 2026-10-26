@@ -17,7 +17,7 @@ void connect(struct node *p, struct node *q) {
  have p->next == p;
  have q->next == q;
  have p == q by normalize();
- execute(); simp();
+ execute(); solve();
 }
 ```
 

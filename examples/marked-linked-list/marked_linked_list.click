@@ -34,10 +34,10 @@ struct node* list_prepend(int32 value, struct node* tail) {
 } by {
     execute();
     if result == tail {
-        simp();
+        solve();
     } else {
         fold(marked_list(result));
-        simp();
+        solve();
     }
 }
 
@@ -69,12 +69,12 @@ struct node* list_next(struct node* node) {
     observe(marked_list(node));
     execute();
     have address(result) == (node->word & ~1) by {
-        arithmetic() using {
+        solve() using {
             aligned(result, 8);
             node->word == address(result) + (node->word & 1);
         }
     }
-    simp();
+    solve();
 }
 
 uint32 list_count_live(struct node* node) {
@@ -83,7 +83,7 @@ uint32 list_count_live(struct node* node) {
 } by {
     if node == 0 {
         execute();
-        simp();
+        solve();
     } else {
         unfold(marked_list(node));
     }
@@ -96,11 +96,11 @@ void list_destroy(struct node* node) {
     if node == 0 {
         unfold(marked_list(node));
         execute();
-        simp();
+        solve();
     } else {
         unfold(marked_list(node));
         execute();
-        simp();
+        solve();
     }
 }
 

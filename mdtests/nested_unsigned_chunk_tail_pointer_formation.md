@@ -23,7 +23,7 @@ int32 chunk_tail(uint8 *bytes, uint64 bytes_len, uint64 chunk_size) {
     requires bytes_len <= 2147483647u64;
     requires 0u64 < chunk_size;
     ensures result == 0;
-} by { execute(); }
+}
 ```
 
 ```expect

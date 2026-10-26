@@ -58,7 +58,7 @@ theorem links_len_is_nonnegative(m: Links) {
             Links::Cons(rest) => {
                 apply(ih(rest));
                 unfold(links_len(Links::Cons(rest)));
-                arithmetic() using { 0 <= links_len(rest); };
+                solve() using { 0 <= links_len(rest); };
             }
         }
     }
@@ -91,7 +91,7 @@ int32 walk_even(struct node* p) {
             let x = fold(list_at(p), { model: Links::Nil });
             step();
             step();
-            simp();
+            solve();
         },
         Links::Cons(rest_model) => {
             let { rest: r } = unfold(x);
@@ -107,13 +107,13 @@ int32 walk_even(struct node* p) {
             }
             have links_len(r.model) < links_len(old(x.model)) by {
                 rewrite(r.model == rest_model);
-                arithmetic() using { links_len(old(x.model)) == links_len(rest_model) + 1; };
+                solve() using { links_len(old(x.model)) == links_len(rest_model) + 1; };
             }
             step();
             step();
             let x = fold(list_at(p), { model: Links::Cons(rest_model) }, { rest: r });
             step();
-            simp();
+            solve();
         },
     }
 }
@@ -132,7 +132,7 @@ int32 walk_odd(struct node* p) {
             let x = fold(list_at(p), { model: Links::Nil });
             step();
             step();
-            simp();
+            solve();
         },
         Links::Cons(rest_model) => {
             let { rest: r } = unfold(x);
@@ -148,13 +148,13 @@ int32 walk_odd(struct node* p) {
             }
             have links_len(r.model) < links_len(old(x.model)) by {
                 rewrite(r.model == rest_model);
-                arithmetic() using { links_len(old(x.model)) == links_len(rest_model) + 1; };
+                solve() using { links_len(old(x.model)) == links_len(rest_model) + 1; };
             }
             step();
             step();
             let x = fold(list_at(p), { model: Links::Cons(rest_model) }, { rest: r });
             step();
-            simp();
+            solve();
         },
     }
 }

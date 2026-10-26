@@ -36,7 +36,7 @@ int32 pick(int32* p, int32 x) {
     step_until(function.exit);
     apply(first_pair(x, 3));
     let c = fold(Cell(p), { model: x });
-    simp();
+    solve();
 }
 ```
 

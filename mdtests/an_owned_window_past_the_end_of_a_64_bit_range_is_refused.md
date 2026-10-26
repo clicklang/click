@@ -15,12 +15,12 @@ void write(unsigned char *bytes, unsigned long length, unsigned long index) {
 verifying "an_owned_window_past_the_end_of_a_64_bit_range_is_refused.c";
 void set_four(uint8* chunk) {
     owns chunk[0..4];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void write(uint8* bytes, uint64 length, uint64 index) {
     requires index <= length;
     requires 3u64 <= length - index;
     owns bytes[0..length];
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

@@ -11,10 +11,10 @@ verifying "wildcard_consume_missing_authority.c";
 void release(int32* pool, int32* member) {
     owns authority(slot(pool, _));
     consumes slot(pool, member);
-} by { unfold(slot(pool, member)); execute(); simp(); }
+} by { unfold(slot(pool, member)); execute(); solve(); }
 void caller(int32* pool, int32* member) {
     consumes slot(pool, member);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

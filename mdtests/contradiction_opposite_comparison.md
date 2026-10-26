@@ -25,7 +25,7 @@ int32 nonnegative_identity(int32 x) {
         contradiction(x < 0);
     }
     step();
-    simp();
+    solve();
 }
 ```
 
