@@ -34,7 +34,7 @@ void choose(int32* p, int32* q, int32* anchor, int32 flag) {
     consumes c: cursor(address(p), anchor);
     produces *anchor;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         owns c: cursor(address(cur), anchor);
         decreases 0;

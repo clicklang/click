@@ -20,7 +20,7 @@ void probe(int32* data, int32 n) {
     requires n <= 536870911;
     owns cells(data, n);
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         owns cells(h->data, n);
         decreases n - i;

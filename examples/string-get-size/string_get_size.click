@@ -91,7 +91,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
 // `size` is zero: both early exits print `0`, an empty fraction, and the
 // unit for `i == 0`.
     if blk_size == 0u64 {
-        execute_until(region(77));
+        step_until(region(77));
         have format::decimal_length((uint64)(uint32) size) <= 20u64 by { unfold(format::decimal_length((uint64)(uint32) size)); solve(); }
         have (uint64) len != 0u64 by { auto(); }
         have forall (k: uint64) { 0u64 <= k and k < 0u64 implies tmp[k] != 0u8 } by {
@@ -153,7 +153,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
         }
     } else {
         if size == 0u64 {
-            execute_until(region(77));
+            step_until(region(77));
             have format::decimal_length((uint64)(uint32) size) <= 20u64 by { unfold(format::decimal_length((uint64)(uint32) size)); solve(); }
             have (uint64) len != 0u64 by { auto(); }
             have forall (k: uint64) { 0u64 <= k and k < 0u64 implies tmp[k] != 0u8 } by {
@@ -216,7 +216,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
         } else {
 // Napier's reduction: each loop divides by `divisor[units_base]`, read once
 // per iteration through a join that keeps only `1000 <= __base <= 1024`.
-            execute_until(loop(0));
+            step_until(loop(0));
             loop {
                 decreases blk_size;
                 invariant 1u64 <= blk_size;
@@ -241,7 +241,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     }
                     mark div;
                     apply(kilo_divide(at(head, blk_size), at(div, __base)));
-                    execute_until(back_edge());
+                    step_until(back_edge());
                     have 4294967296 <= to_integer(at(head, blk_size)) by { auto(); }
                     have 1u64 <= blk_size by { auto(); }
                     have blk_size < at(head, blk_size) by { auto(); }
@@ -292,7 +292,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     close_invariants() by { solve(); }
                 }
             }
-            execute_until(loop(1));
+            step_until(loop(1));
             have blk_size < 4294967296u64 by { auto(); }
             loop {
                 decreases size;
@@ -321,7 +321,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     }
                     mark div;
                     apply(kilo_divide(at(head, size), at(div, __base)));
-                    execute_until(back_edge());
+                    step_until(back_edge());
                     have 4294967296 <= to_integer(at(head, size)) by { auto(); }
                     have 1u64 <= size by { auto(); }
                     have size < at(head, size) by { auto(); }
@@ -388,7 +388,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             have 1u64 <= size * blk_size by { auto(); }
 // `size *= blk_size` cannot wrap: both factors are below 2^32.
             step();
-            execute_until(loop(2));
+            step_until(loop(2));
             loop {
                 decreases size;
                 invariant 1u64 <= size;
@@ -408,7 +408,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     mark head;
                     if (units & 1u32) == 1u32 {
                         if 1024u64 <= size {
-                            execute_until(back_edge());
+                            step_until(back_edge());
                             apply(kilo_divide(at(head, size), 1024u32));
                             have 1024 <= to_integer(at(head, size)) by { auto(); }
                             have 1u64 <= size by { auto(); }
@@ -487,7 +487,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         }
                     } else {
                         if 1000u64 <= size {
-                            execute_until(back_edge());
+                            step_until(back_edge());
                             apply(kilo_divide(at(head, size), 1000u32));
                             have 1000 <= to_integer(at(head, size)) by { auto(); }
                             have 1u64 <= size by { auto(); }
@@ -570,7 +570,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             }
             have size < 1024u64 by { auto(); }
 // The digits of precision: `j` is 0, 1, or 2, and `sf_cap` stays below 1024.
-            execute_until(loop(3));
+            step_until(loop(3));
             loop {
                 decreases 2 - j;
                 invariant 0 <= j and j <= 2;
@@ -580,7 +580,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 initialize by { auto(); }
                 preserve by {
                     mark head;
-                    execute_until(back_edge());
+                    step_until(back_edge());
                     have to_integer(at(head, sf_cap)) * 10 <= 4294967295 by { auto(); }
                     apply(integer::uint32_multiply_guard_by_integer_bound(at(head, sf_cap), 10u32));
                     apply(integer::uint32_multiply_to_integer(at(head, sf_cap), 10u32));

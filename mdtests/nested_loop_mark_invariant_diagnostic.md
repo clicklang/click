@@ -19,25 +19,25 @@ verifying "r.c";
 int32 count() {
     ensures result == result;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         decreases 3 - i;
         invariant i <= 3;
         preserve by {
             mark outer_head;
             have at(outer_head, i) < 3 by { solve(); }
-            execute_until(loop(1));
+            step_until(loop(1));
             loop {
                 decreases 2 - j;
                 invariant j <= 2;
                 invariant at(outer_head, i) < 3;
                 preserve by {
                     have at(outer_head, i) < 3 by { assumption(); }
-                    execute_until(back_edge());
+                    step_until(back_edge());
                     close_invariants();
                 }
             }
-            execute_until(back_edge());
+            step_until(back_edge());
             close_invariants();
         }
     }

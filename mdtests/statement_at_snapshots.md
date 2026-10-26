@@ -58,16 +58,16 @@ int32 set_first_twice(int32* p) {
     consumes p[0..1];
 
     ensures prefix_exit: at(region(0).exit, p[0]) == 3 by {
-        execute_until(region(1));
+        step_until(region(1));
     }
 
     ensures adjacent_boundary:
         at(region(0).exit, p[0]) == at(region(1).entry, p[0]) by {
-        execute_until(region(1));
+        step_until(region(1));
     }
 
     ensures final_exit: at(region(1).exit, p[0]) == 7 by {
-        execute_until(region(1));
+        step_until(region(1));
     }
 }
 

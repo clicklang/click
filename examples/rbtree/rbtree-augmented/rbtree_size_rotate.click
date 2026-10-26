@@ -35,7 +35,7 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
     unfold(source);
     unfold(target);
     // Both container_of expansions and the metadata copy.
-    execute_until(region(15));
+    step_until(region(15));
     fold(source);
     let target = fold(size_metadata(rb_new), { value: old(source.value) });
     apply(size_sum_defined(left.value, right.value));

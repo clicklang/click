@@ -21,7 +21,7 @@ int32 step(int32* a, int32 i) {
     requires 0 <= i and i < 4;
     views a[0..4];
 } by {
-    execute_until(assignment(i, 0));
+    step_until(assignment(i, 0));
     mark start;
     step();
     have at(start, p) == at(start, a + i);

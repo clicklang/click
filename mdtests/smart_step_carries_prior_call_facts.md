@@ -53,7 +53,7 @@ int32 initialize_two_boxes(struct box* left, struct box* right, int32 value) {
     ensures right->value == value;
     ensures result == value;
 } by {
-    execute_until(region(2));
+    step_until(region(2));
     step();
 }
 ```

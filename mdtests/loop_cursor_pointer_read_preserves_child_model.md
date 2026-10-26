@@ -38,7 +38,7 @@ void inspect(struct node* root) {
     owns tree: parent_at(root);
     ensures 1 == 1;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         owns tree: parent_at(root);
         invariant parent == root;

@@ -29,7 +29,7 @@ void fill(int32 *p, int32 n) {
     consumes cell(p, n);
     ensures 1 == 1;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         owns cell(p, n);
         decreases 0;

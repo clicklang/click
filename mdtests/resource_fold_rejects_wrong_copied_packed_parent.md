@@ -63,7 +63,7 @@ void inspect(struct node* parent) {
     requires parent == parent_identity(tree_context.model);
     ensures 1 == 1;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         owns tree_context: parent_at(root);
         invariant parent == parent_identity(tree_context.model);
