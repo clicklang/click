@@ -44,6 +44,9 @@ impl ConditionTerm {
     }
 
     /// The application of the `-> Bool` pure function `name`.
+    // Built by the kernel's tests until the specification `Bool` (Stage 5,
+    // next step) lowers to these forms.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn bool_application(name: &str, arguments: Vec<PureFunctionArgument>) -> Self {
         Self::BoolApplication(SharedPureApplication::intern(name.to_owned(), arguments))
     }
@@ -51,6 +54,9 @@ impl ConditionTerm {
     /// `if condition { then } else { else }` over `Bool`, folded where its
     /// shape decides it: a constant condition selects its branch, and equal
     /// branches are that branch. Neither fold reads a fact.
+    // Built by the kernel's tests until the specification `Bool` (Stage 5,
+    // next step) lowers to these forms.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn bool_if(condition: Self, then_condition: Self, else_condition: Self) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         match condition {
@@ -70,6 +76,9 @@ impl ConditionTerm {
 
     /// The logical equality `left == right` of two `Bool` values. A value
     /// is equal to itself, so equal operands fold to `true`.
+    // Built by the kernel's tests until the specification `Bool` (Stage 5,
+    // next step) lowers to these forms.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn bool_equal(left: Self, right: Self) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         if left == right {
@@ -79,6 +88,9 @@ impl ConditionTerm {
     }
 
     /// The read of the one-byte `bool` cell at `pointer` in `memory`.
+    // Built by the kernel's tests until the specification `Bool` (Stage 5,
+    // next step) lowers to these forms.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn bool_load(memory: SharedCMemory, pointer: Pointer) -> Self {
         Self::BoolLoad(memory, Box::new(pointer))
     }
@@ -89,6 +101,9 @@ impl ConditionTerm {
     /// (ConditionIs(c, false) and ConditionIs(b, value))`.
     /// `None` for every other condition. It opens one level; the branches
     /// stay as they are, so the work is constant.
+    // Built by the kernel's tests until the specification `Bool` (Stage 5,
+    // next step) lowers to these forms.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn open_bool_if(&self, value: bool) -> Option<Proposition> {
         let Self::BoolIf {
             condition,
@@ -116,6 +131,9 @@ impl ConditionTerm {
 
     /// Rule L-Unfold: the defining equation `application == body` of a
     /// `-> Bool` pure function's application, as the fact unfolding files.
+    // Built by the kernel's tests until the specification `Bool` (Stage 5,
+    // next step) lowers to these forms.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn bool_unfold_equation(
         application: SharedPureApplication,
         body: Self,
