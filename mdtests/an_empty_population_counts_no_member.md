@@ -2,7 +2,9 @@
 
 The count of an exact member is its own term; it never folds to `0` because
 the facts prove its population empty. `population_member_count_zero` derives
-`count(R(a, k)) == 0` from an available `count(R(a, _)) == 0`.
+`count(R(a, k)) == 0` from an available `count(R(a, _)) == 0`. The member's
+entry count is spelled `old(count(R(a, k)))`, which lowers to that same
+count, so the derived fact is cited in that spelling too.
 
 ```c filename=pool.c
 struct pool { int checked_out; };
@@ -28,6 +30,9 @@ void caller(struct pool* pool, struct object* object) {
 } by {
     open(control(pool)) {
         apply(population_member_count_zero(count(item(pool, object))));
+        have old(count(item(pool, object))) == 0 by {
+            assumption();
+        }
     }
     step();
     step_until(function.exit);

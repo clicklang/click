@@ -1327,6 +1327,13 @@ impl Printer<'_> {
                 }
                 if let Some(count) =
                     crate::kernel::model_fields::registered_population_entry_count(*variable)
+                    && let Some(member) = &count.member
+                {
+                    let member = self.resource_arguments(&count.family, member);
+                    return Some(atom(format!("old(count({member}))")));
+                }
+                if let Some(count) =
+                    crate::kernel::model_fields::registered_population_entry_count(*variable)
                     && let Some(anchor) = self.pointer(&count.anchor, depth + 1)
                 {
                     let wildcards = ", _".repeat(count.wildcards);
