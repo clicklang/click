@@ -2128,8 +2128,11 @@ impl ResourceContext {
             assumptions,
         )
         .or_else(|| {
-            crate::kernel::memory_provenance::complete_pointer_read_value(range.base(), assumptions)
-                .map(|stored| stored.pointer().clone())
+            crate::kernel::memory_provenance::fact_shown_pointer_read_value(
+                range.base(),
+                assumptions,
+            )
+            .map(|stored| stored.pointer().clone())
         }) {
             graph.add_checked_read_equality(range.base(), &endpoint);
         }

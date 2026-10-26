@@ -3300,7 +3300,7 @@ impl PureFactContext {
         // compares a complete read.
         if required.1.is_none_or(|extent| extent == required.0)
             && let Some(stored) =
-                crate::kernel::memory_provenance::complete_pointer_read_value(required.0, self)
+                crate::kernel::memory_provenance::fact_shown_pointer_read_value(required.0, self)
         {
             return matches(stored.designation(), stored.opaque_extent());
         }

@@ -13975,7 +13975,7 @@ fn resource_body_fact_is_established(
             continue;
         };
         let Some(stored) =
-            crate::kernel::memory_provenance::complete_pointer_read_value(&pointer, established)
+            crate::kernel::memory_provenance::fact_shown_pointer_read_value(&pointer, established)
         else {
             continue;
         };
