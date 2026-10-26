@@ -1276,9 +1276,11 @@ lists every case with each language's gap, if any, and
 as Click's) and contract lines in every language.
 
 A gap is named, not omitted: the case's claims and proof are in that
-language's `.click-gap` file, which the corpus tools do not read. A
+language's `.click-gap` file, which the corpus tools do not read; a language
+with no gap has none (C, since Stage 4 of `design/machine-integers.md` gave
+the three languages one narrowing term). A
 verification gap must still be refused at its recorded goal, checked in the
-nightly; an import gap must still be refused by the front end, checked with
+nightly (`verification_gaps_are_still_refused_in_every_language`); an import gap must still be refused by the front end, checked with
 the pinned exporter in the gate where `CLICK_CPP_EXPORTER` is set, and for
 Rust in the nightly. Closing a gap fails
 these checks until the case moves into the sidecar. The C++ and Rust imports

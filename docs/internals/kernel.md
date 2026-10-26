@@ -591,8 +591,10 @@ rely on it:
 - every conversion into a narrow format is a `MachineIntegerCast` node (or
   `IntegerToMachine` from an Integer), whose word is the extension of the
   converted value. C, a specification's cast, and C++20 or Rust `as`
-  convert modulo 2^N and owe nothing; Rust's `as` spells the extension as
-  `((w & mask) ^ sign) - sign` or `w & mask`. A checked (`Standard`)
+  convert modulo 2^N and owe nothing, and all of them build the same node,
+  from the conversion table (`machine_integer::conversion::lower`,
+  `convert_term`). Its word is the mask of its operand's word (rule K7,
+  below), which the e-graph knows with no fact. A checked (`Standard`)
   narrowing, which Rust's checked narrow arithmetic lowers to, owes the
   destination range as obligations and files, beside them, the certified
   identity `to_integer(conv(w)) == to_integer(w)`, which holds exactly where
@@ -690,7 +692,8 @@ returns preserve the `uint32` type tag. Scalar narrowing in C is GCC's
 modulo 2^N conversion at every boundary and adds no obligation; into a one- or
 two-byte type it yields a `MachineIntegerCast` node, filed with the
 destination's range, which is the operand's carrier once the operand's range
-is known (`narrowed_cast_identity`). A specification's cast is the same
+is known (`narrowed_cast_identity`). C++20 integral conversions and Rust `as`
+build the same node and file the same range. A specification's cast is the same
 modular conversion; a checked conversion is written `to_T(...)` and owes the
 destination range. A checked narrowing cast yields the same node, with the
 identity fact described above. `int8` occupies one byte with
@@ -735,6 +738,21 @@ the widths a rule supports; it asks the module
 | Definedness | `definedness::integer_bounds_of_definedness`, `overflow_fact_of_integer_bound`, `definedness_of_integer_bound`, `defined_formats` | `not overflows(F, op, a, b)` exactly when the exact result lies in `F`; facts are filed at `int32` and `int64` only |
 | Modular equality | `modular::wrapped_equality_at`, `wrapped_equality_of_integer_equality` | an `Integer` equality over `+ - *` of observations of width `w` implies the word equality modulo `2^w` |
 | Conversion | `conversion::cast` and the narrow-widening helpers | a cast preserves a value its destination holds; a widening needs no premise |
+| Conversion table | `conversion::lower`, `convert_term`, `convert_value` | the node a conversion from `S` to `F` builds in every language, and whether a specification's conversion owes the range |
+| Narrow-cast word (K7) | `representation::narrow_carrier_mask`; the e-graph's `narrow_cast_node` | the word of `Cast(S -> F, x)` into an 8- or 16-bit `F` is `w & m`, or `((w & m) ^ s) - s` for a signed `F`, with `w` the operand's word or low word |
+
+Rule K7 (decision of 2026-10-26, `design/machine-integers.md`). For `F` of
+`b` = 8 or 16 bits, `m = 2^b - 1`, `s = 2^(b-1)`, and `S` of at most 64
+bits, with `w = x` up to 32 bits and `w = UInt32From64(x)` at 64: the cast
+denotes `n mod 2^b` read in `F` (`n` the operand's value), whose word is the
+zero or sign extension of those bits (the narrow-value invariant above). `w`
+holds `n mod 2^32`, so its low `b` bits are `n mod 2^b`; `w & m` is their
+zero extension, and `(t ^ s) - s` for `t` those bits is `t` below `s` and
+`t - 2^b` from `s`, with no 32-bit wrap: their sign extension. Interning a
+narrow cast interns this word from the operand's class, at most five nodes
+and one merge, so the work is constant per cast and a nested cast is
+interned once (`equality_graph/narrow_cast_tests.rs` and its scaling test);
+`matrix_tests.rs` checks the word value by value at every narrow format.
 
 Conditions carry their format (`Compare`, `Overflows`), but the term arena
 still spells each width with its own operator nodes, so one file,
