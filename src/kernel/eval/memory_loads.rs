@@ -297,6 +297,15 @@ fn evaluate_logical_memory_load_paths_unbridged(
             memory
                 .known_value(&pointer)
                 .filter(|stored| !named || holds_its_own_read(stored, &pointer))
+                // A value that does not name its version is the stored one,
+                // reached through an address based on a pointer read as
+                // through the pointer memory shows stored there.
+                .or_else(|| {
+                    (!named)
+                        .then(|| stored_pointer_address(&pointer))
+                        .flatten()
+                        .and_then(|address| memory.known_value(&address))
+                })
                 .and_then(|stored| {
                     let complete_pointer = matches!(&stored, CValue::Pointer(_))
                         || matches!(&stored, CValue::Int32(Bitvector32Term::Variable(variable))
@@ -836,10 +845,20 @@ fn evaluate_c_memory_load_case(
     // An exact materialized cell is already the authoritative value for this
     // non-union pointer. Avoid proving every other symbolic cell distinct
     // before the direct map lookup.
-    if let Some(value) = memory.known_value(&pointer).filter(|stored| {
-        !(purpose == LoadPurpose::Logical && logical_read_names_its_version(value_type))
-            || holds_its_own_read(stored, &pointer)
-    }) {
+    let names_version =
+        purpose == LoadPurpose::Logical && logical_read_names_its_version(value_type);
+    // A value that does not name its version is the stored one, reached
+    // through an address based on a pointer read as through the pointer
+    // memory shows stored there.
+    let known = memory.known_value(&pointer).or_else(|| {
+        (!names_version)
+            .then(|| stored_pointer_address(&pointer))
+            .flatten()
+            .and_then(|address| memory.known_value(&address))
+    });
+    if let Some(value) =
+        known.filter(|stored| !names_version || holds_its_own_read(stored, &pointer))
+    {
         if let Some(value) = canonicalized_pointer_value_from_int_cell(
             memory,
             &pointer,
@@ -2375,10 +2394,31 @@ pub(crate) fn read_over_write_value(term: &Bitvector32Term) -> Option<Bitvector3
     else {
         return None;
     };
-    let stored = memory.known_value(&pointer)?;
+    let stored = memory
+        .known_value(&pointer)
+        .or_else(|| memory.known_value(&stored_pointer_address(&pointer)?))?;
     let read = kind.read_cell(&stored)?;
     let value = crate::kernel::spec::c_value_bitvector_term(&read)?;
     (value != *term).then_some(value)
+}
+
+/// `address` with its base read through the pointer read-over-write
+/// authority: an address offset from a pointer read whose snapshot stores a
+/// pointer at the read's address is that pointer, offset alike. Both steps
+/// read memory, never facts.
+fn stored_pointer_address(address: &Pointer) -> Option<Pointer> {
+    let PointerBlock::LoadedPointer(_) = &address.block else {
+        return None;
+    };
+    let read = Pointer {
+        block: address.block.clone(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let stored = pointer_read_over_write_value(&read)?;
+    Some(Pointer {
+        block: stored.block,
+        offset: PointerOffsetTerm::add(stored.offset, address.offset.clone()),
+    })
 }
 
 /// The comparison form of `proposition`: each read of a stored cell
