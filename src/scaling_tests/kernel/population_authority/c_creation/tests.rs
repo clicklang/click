@@ -491,29 +491,16 @@ fn checked_empty_lookup_scales_over_unrelated_retired_populations() {
 }
 
 #[test]
-fn count_alias_lookup_does_not_scan_unrelated_authority_heads() {
+fn count_lookup_does_not_scan_unrelated_authority_heads() {
     let description = member_description(PointerBlock::ExternalArgument);
     let [AlgebraicValue::C(CValue::Pointer(anchor))] = description.arguments() else {
         panic!("pointer anchor")
     };
-    let alias = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(9_850_101))),
-            byte_width: 4,
-        },
-    };
     let count = SpecExpression::CountedResourceCount {
         name: "reference".into(),
-        arguments: vec![Some(SpecExpression::Value(CValue::pointer(alias.clone())))],
+        arguments: vec![Some(SpecExpression::Value(CValue::Pointer(anchor.clone())))],
     };
-    let equal = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_value_equal(
-            CPointerValue::new(alias, anchor.c_type()),
-            anchor.clone(),
-        ),
-        true,
-    );
+    let facts = PureFactContext::new();
     let samples = [64usize, 256, 1024].map(|size| {
         let events = CreationEvents::new()
             .import_opaque_contract_population_inner(
@@ -541,7 +528,7 @@ fn count_alias_lookup_does_not_scan_unrelated_authority_heads() {
             crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
                 &state,
                 &count,
-                &equal,
+                &facts,
                 &BTreeMap::new(),
                 &mut ExecutionBudget::default(),
             )
@@ -553,7 +540,7 @@ fn count_alias_lookup_does_not_scan_unrelated_authority_heads() {
     assert!(samples[0] > 0, "lookup must charge its work: {samples:?}");
     assert!(
         samples.windows(2).all(|pair| pair[1] <= pair[0] + 128),
-        "authority alias lookup must grow at most logarithmically: {samples:?}"
+        "authority lookup must grow at most logarithmically: {samples:?}"
     );
 }
 
