@@ -250,28 +250,23 @@ uint64 label_fit(uint64 length) {
 ```console
 $ click verify label.click
 proof error:
-  `label_fit.contract` path 0, tactic 1
-  checked outcome `simp` search did not retain a complete proof for `label_fit.ensures_0`
-  `label_fit.contract` proof step tactic 1
   `ensures result < 16` failed for `label_fit.ensures_0` path 0
   unclosed goal
   result < 16; left side evaluated to 31u64, right side evaluated to 16
   proof context
   case: [length >= 32u64]
 
-tactic@7:
-  simp();
 goal: false
-refused by: `simp` (smart: it may miss; if the goal holds, prove it through smaller steps)
-see: click docs simp
+  --> label.click:4:5
+  4 |     ensures result < 16;
+    |     ^^^^^^^
 
 To get a trace:
   click verify --trace-proof label_fit label.click
 ```
 
-Read it from the top. `tactic 1` is `simp()`, the second step of the proof, so
-execution succeeded and the C has no undefined behavior on this path. The
-failing claim is `ensures result < 16` on the path whose `case:` is
+Read it from the top. The source excerpt points to the failing claim,
+`ensures result < 16`, on the path whose `case:` is
 `length >= 32`, where the function returned `31`. The claim is false for this
 build; that is ordinary proof development, not a Click problem.
 
@@ -291,9 +286,9 @@ $ click verify label.click
 1 selected proof verified
 ```
 
-`simp()` closes both claims. On the branch with `length >= 32`, the returned
-`31` is at most `length`. To make this arithmetic step explicit, state it as a
-separate `have` proved by `auto()`:
+The implicit proof closes both claims. On the branch with `length >= 32`,
+the returned `31` is at most `length`. To make this arithmetic step explicit,
+state it as a separate `have` proved by `auto()`:
 
 ```click filename=label.click
 verifying "label_fit.c";
@@ -425,7 +420,6 @@ lists it among the external assumptions. See
 Try the remaining function, `label_copy`:
 
 ```click filename=label.click
-
 import click::bytes;
 import click::cstr;
 
