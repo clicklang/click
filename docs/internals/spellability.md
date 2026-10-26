@@ -18,8 +18,8 @@ be writable, or the smart step cannot be expanded.
 When a fact has no spelling, today's code works around it rather than failing:
 
 - a smart tactic declines a route whose premise it cannot cite, even though
-  the kernel holds the premise (`simp`, its arithmetic bridges, the implicit
-  `auto`), so a provable goal fails as a bounded miss;
+  the kernel holds the premise (`solve`, its arithmetic bridges, the implicit
+  closer), so a provable goal fails as a bounded miss;
 - a recorded spelling that does not check is dropped, so later steps cannot
   cite the fact;
 - a diagnostic prints a placeholder (`<unnamed A>`, `<pointer A>`,

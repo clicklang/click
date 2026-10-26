@@ -4,10 +4,11 @@ A Click contract says what must hold, and its proof clause says how Click
 should establish it.
 
 Omit a function's proof clause when the default automation is sufficient.
-`auto` orchestrates execution, effect reasoning, and proposition reasoning
-through checked proof operations; write `by auto();` when you want to name that
-default explicitly. A one-tactic proof can be written as `by simp();` or
-`by { simp(); }`. Use a `by { ... }` block for a sequence of tactics.
+Every proof script, the omitted one included, ends with an implicit tail that
+runs the C left, splitting at each C branch the facts do not decide into paths
+that each run to function exit, and then closes every open goal on every path.
+A one-tactic proof can be written as `by solve();` or `by { solve(); }`. Use a
+`by { ... }` block for a sequence of tactics.
 
 Prefer smart tactics while authoring unless profiling identifies a hotspot.
 Exact `using` blocks are ordinary Click and may be committed after expansion,
@@ -15,50 +16,54 @@ but manually listing every premise is not the normal starting workflow.
 
 An omitted proof closes the statement where it holds:
 
-- `ensures P;` on a C function holds at function exit, so Click executes to
-  it first. That is `by auto();`: execute, then close the claim with `auto`,
-  which is `simp`. A script that ends with the claim still open closes it
-  the same way.
-- `have P;` holds where it is written. It is `have P by simp();` and never
-  executes C.
-- `have P by auto();` also proves `P` where it is written. With no C to run
-  toward the fact, `auto` is `simp`. On a linear `Integer` bound, `simp`
-  refutes its integer negation from the facts connected to it
+- `ensures P;` on a C function holds at function exit, so the implicit tail
+  runs the C to it first, then closes the claim on each path with the
+  implicit closer: direct closure, then `solve`'s search. A script that ends
+  with the claim still open closes it the same way. `by auto();` is the older
+  spelling of this omitted proof.
+- `have P;` holds where it is written. It is `have P by solve();` and never
+  executes C. On a linear `Integer` bound, `solve` refutes its integer
+  negation from the facts connected to it
   (`mdtests/have_by_auto_refutes_a_linear_bound.md`), and its last strategy
   is a short chain of `rewrite` steps by the connected equalities
-  (`mdtests/auto_rewrites_a_constructor_term_to_its_model.md`).
+  (`mdtests/auto_rewrites_a_constructor_term_to_its_model.md`). Those mdtests
+  write `have P by auto();`, an older spelling of the same proof.
 
 A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for
 any tactic written as a call, as in `have 0 <= x by assumption();`. `click
 expand`, `profile` and `audit` read it as that block, and an expansion that
 needs the braces writes them. Tactic calls always require parentheses,
-including `simp()` and `auto()`. `by auto();` and `by { auto(); }` both request
-the same whole-proof automation; `auto()` is not a step in a mixed script.
+including `solve()`.
 
-`by simp();` does not execute C. For a whole-function proof, use `by auto();` or make the
-sequence explicit:
+`solve()` does not execute C, so on a C function's claim `by solve();` is
+refused: execution has not reached function exit. Omit the proof, or step to
+exit first:
 
 <!-- verified-example: mdtests/proof_script_execute_and_simp_using.md -->
 ```click
 ensures result == x by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 ```
 
-A callback statement may lower to several checked operations. If a script
-stops before its remaining callback calls, its diagnostic names a missing
-resource or contract needed to continue, when a short checked continuation
-finds one. The continuation is diagnostic only; the unfinished script is
-still refused. A changed callback cell needs a contract fact for its current
+`step_until(function.exit)` repeats `step()` until the function returns and
+never splits: at a C branch the facts do not decide it is refused, and names
+the split to write there. The closing `solve()` is optional, since the
+implicit tail closes what is open.
+
+A callback statement may lower to several checked operations. When one of its
+callback calls cannot run, whether a written step or the implicit tail runs it,
+the refusal names the missing resource or contract fact it needs. A changed
+callback cell needs a contract fact for its current
 pointer. Consuming the resource that supplied its view first makes the load
 fail for missing read permission
 (`mdtests/rb_augment_callbacks_helper_rejects_changed_cell.md` and
 `mdtests/rb_augment_callbacks_helper_consumes_suite.md`).
 
-Inside an `open(resource)` scope, a named resource fold after `execute()`
-uses each returned path's state before the scope closes, just as a fold after
-execution outside the scope does. A proposed field value must still match
+Inside an `open(resource)` scope, a named resource fold at function exit uses
+the returned path's state before the scope closes, just as a fold at function
+exit outside the scope does. A proposed field value must still match
 that returned state (`mdtests/resource_instance_fold_after_return_in_open.md`).
 
 ## Smart and simple tactics
@@ -66,11 +71,15 @@ that returned state (`mdtests/resource_instance_fold_after_return_in_open.md`).
 [Smart and simple tactics](smart-and-simple-tactics.md) defines the classes;
 this section shows how they appear in scripts.
 
-Smart tactics plan or search. There are four: `execute()` (with
-`execute_until(...)`), `simp()`, `arithmetic()`, and `auto`, which an
-omitted proof uses. An elided form such as bare `apply(...)` or bare
-`transport(...)` is also a smart site: a search looks up the argument its
-`using` form writes, and a fact it does not find is a search miss to write.
+Smart tactics plan or search. The written smart tactic is `solve()`, with
+`solve() using { ... }`. `simp()` and a written `auto();` are older spellings
+of `solve()`, `arithmetic() using { ... }` of `solve() using { ... }`, and bare
+`arithmetic()` of `solve() using {}`. The implicit tail, which runs the C a
+script leaves and closes what is open, is smart work too, as are
+`close_invariants()` and the searches behind elided arguments. An elided form
+such as bare `apply(...)` or bare `transport(...)` is a smart site: a search
+looks up the argument its `using` form writes, and a fact it does not find is a
+search miss to write. `click expand` writes out all of them.
 
 Simple tactics request one deterministic checked operation without planning or
 search, and their checkers must be fast and output-sensitive. Paired operations
@@ -86,13 +95,16 @@ solve() using {
 
 An empty `using {}` block is valid on every tactic that takes a list. It means
 the tactic uses no pure premises, which is not the same as leaving `using`
-off: `simp()` searches the context while `simp() using {}` uses nothing. `step()` is simple and executes the next statement with the whole
-proof context visible to the kernel.
-`execute()` and `execute_until(region(N))` are its repetitions; expansion
-replaces them with the corresponding sequence of `step();` tactics.
+off: `solve()` searches the context while `solve() using {}` uses nothing.
+`step()` is simple and executes the next statement with the whole proof
+context visible to the kernel. `step_until(...)` and the implicit tail's
+execution are its repetitions; expansion replaces them with the corresponding
+sequence of `step();` tactics, with the tail's splits written as `branch` or
+proof `if`.
 
-`simp() using { ... }` is still smart: the listed facts restrict its search,
-and expansion replaces it with named simple rules. Common simple proposition
+`solve() using { ... }` is still smart: the listed facts restrict its search,
+it tries arithmetic over them last, and expansion replaces it with named
+simple rules. A miss adds arithmetic's reason. Common simple proposition
 tactics are `assumption()`, `normalize()`, `rewrite(...)`, `intro()`, and
 `contradiction(...)`. `assumption()` also closes a conjunction whose sides
 are facts and a disjunction with one side a fact. A successful
@@ -157,8 +169,8 @@ An execution proof carries a C frontier. The execution vocabulary is:
 
 - `mark name;` to name the current state for later `at(name, ...)` expressions;
 - `step()` for one simple deterministic transition;
-- `execute_until(region(N))` for a forward prefix;
-- `execute()` for the remainder of the function;
+- `step_until(target)` for a forward prefix, up to a statement, region,
+  loop, assignment, read, back edge, or `function.exit`, never splitting;
 - `branch ensuring { ... } then { ... } else { ... }` for the C `if` at
   the frontier and its single joined continuation; and
 - `loop { ... }` for the C loop exactly at the current frontier.
@@ -166,7 +178,8 @@ An execution proof carries a C frontier. The execution vocabulary is:
 Proof-level `if` splits reasoning; it does not execute a C `if`. Frontier-local
 `branch` temporarily proves both C arms and then restores one current state.
 A mark remembers a state the proof has already reached; it does not move the
-frontier and is not an `execute_until` target.
+frontier and is not a `step_until` target. The implicit tail runs what the
+script leaves.
 
 Sequential early returns can be proved one case after another: in each
 proof `if` the returning arm reaches function exit, and the tactics after the
@@ -200,7 +213,7 @@ at unchanged function entry, after executed statements, and inside a loop's
 
 An arm's bindings are in scope in every term the arm writes: `have` goals,
 theorem arguments and `using` premises, `instantiate`, `extract`, `rewrite`,
-`normalize() using`, the premises of a `simp() using` or `normalize() using`
+`normalize() using`, the premises of a `solve() using` or `normalize() using`
 inside a `have` body (`mdtests/have_body_simp_using_names_an_arm_binding.md`),
 the clauses of a `loop` written inside the arm
 (`mdtests/loop_clause_reads_arm_bindings.md`), and that loop's `initialize` and
@@ -286,7 +299,7 @@ let { result: r } = step(classify, { });
 ```
 
 `r` is then an ordinary value name in `have`, `rewrite`, `normalize() using`,
-and `simp` premises, on both sides of the `branch` that spells the C `if`. It
+and `solve` premises, on both sides of the `branch` that spells the C `if`. It
 denotes the value the call returned, so it keeps its meaning after later
 statements. Naming the result of a call whose result the C discards is an
 error, as is reusing a name that is already a C local or a proof-local
@@ -298,10 +311,10 @@ return expression.
 ## Expansion and diagnosis
 
 `click expand` replaces a selected smart tactic with a checked explicit proof.
-When a post-execution tactic needs different proofs on different paths,
-expansion may also replace the preceding execution script with its explicit
-certificate. Each proof stays in the branch where it was checked, so a loop's
-earlier guards are not evaluated again at function exit.
+When the implicit tail splits into several paths, expansion writes its steps
+and splits, and each path's closing proof in that path's own arm. Each proof
+stays in the branch where it was checked, so a loop's earlier guards are not
+evaluated again at function exit.
 A post-execution `have` retains its established fact for later tactics. Smart
 proofs recheck snapshot-qualified premise spellings, so a statement snapshot
 recorded again by a loop cannot substitute a different fact for an earlier one.
@@ -317,9 +330,9 @@ extract a partial result from a proof whose later tactics fail.
 A `have` whose body neither closes the goal nor reports a failure of its own is
 a declined body, and the message names the goal and what declined: the written
 step, or "its body ran to the end with the goal still open", or that the body's
-shape is not one the checked driver runs. The last case is usually a `simp()`
-with something written after it; `simp()` closes a goal and is checked only as a
-body's last step (`mdtests/have_body_declines_names_the_goal.md`).
+shape is not one the checked driver runs. The last case is usually a `solve()`
+with something written after it; `solve()` closes a goal and is checked only as
+a body's last step (`mdtests/have_body_declines_names_the_goal.md`).
 
 The [proof tactics reference](../reference/tactics/index.md) is the exhaustive inventory
 and compatibility guide; start with its

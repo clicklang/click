@@ -26,7 +26,7 @@ let max: int32 = 2147483647;
 let expected: int32 = x + 1;
 
 requires x < max;
-ensures result_value: result == expected by auto();
+ensures result_value: result == expected;
 ```
 
 These `let` bindings are Click-side abbreviations. They do not add runtime C
@@ -43,9 +43,8 @@ A contract can also bind an immutable witness with `let ... where`:
 let k: int32 where k == x;
 
 ensures result_matches_witness: result == k by {
-    execute();
+    step_until(function.exit);
     witness { k: x };
-    solve();
 }
 ```
 
@@ -102,8 +101,8 @@ An `ensures` clause is a postcondition:
 
 <!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
-ensures result == x + 1 by auto();
-ensures result > x by auto();
+ensures result == x + 1;
+ensures result > x;
 ```
 
 Each `ensures` clause is proved separately. A function can have several
@@ -131,7 +130,7 @@ Guarantees can also be labeled:
 
 <!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
-ensures incremented: result == x + 1 by auto();
+ensures incremented: result == x + 1;
 ```
 
 Guarantee labels identify postcondition claims in diagnostics and proof scripts;
@@ -184,15 +183,16 @@ The `by` clause says how a guarantee is proved:
 
 <!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
-ensures result == 0 by auto();
-ensures result == x by { execute(); solve(); }
+ensures result == 0;
+ensures result == x by { step_until(function.exit); solve(); }
 ```
 
-`auto` runs the function itself. A tactic script such as `simp()` works on
-the state at function exit, so it starts with `execute();` to reach it.
-
-Omitting the proof clause currently uses the default prover, `auto`, but writing
-the proof explicitly is clearer in examples.
+An omitted proof clause runs the function and closes the claim at its exit.
+A tactic script starts at function entry: `step_until(function.exit)` steps
+through the C to the exit, where `solve()` closes the claim. Every script,
+like the omitted one, ends with an implicit tail that runs any C the script
+left and closes each open goal on every path, so a script holds only the
+steps that need proof work and needs no final closer.
 
 A call retains an input proposition for the continuation only when the
 incoming checked facts independently prove it. Call-local assumptions of

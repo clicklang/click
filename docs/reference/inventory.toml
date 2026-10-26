@@ -543,6 +543,10 @@ id = "language.word.scale"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
+id = "language.word.solve"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
 id = "language.word.sorry"
 path = "reference/language/grammar.md#word-index"
 
@@ -2988,6 +2992,10 @@ path = "reference/glossary.md#disjunction"
 [[item]]
 id = "glossary.implication"
 path = "reference/glossary.md#implication"
+
+[[item]]
+id = "glossary.implicit-tail"
+path = "reference/glossary.md#implicit-tail"
 
 [[item]]
 id = "glossary.modus-ponens"

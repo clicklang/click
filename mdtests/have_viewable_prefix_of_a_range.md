@@ -37,9 +37,9 @@ theorem prefix_of_a_viewable_range(v: int32[], lo: int32, hi: int32) {
     requires lo < hi;
     requires hi >= 0 and viewable(v[lo..hi]);
     ensures viewable(v[lo..hi - 1]) by {
-        have 0 < hi by { arithmetic() using { 0 <= lo; lo < hi; }; }
-        have to_integer(lo) <= to_integer(hi - 1) by { arithmetic() using { lo < hi; 0 < hi; }; }
-        have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 < hi; }; }
+        have 0 < hi by { solve() using { 0 <= lo; lo < hi; }; }
+        have to_integer(lo) <= to_integer(hi - 1) by { solve() using { lo < hi; 0 < hi; }; }
+        have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 < hi; }; }
         solve();
     }
 }

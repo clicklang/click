@@ -986,7 +986,7 @@ without one extra fixed `memcpy`, and bounds the extra copy's marginal work by
 an eighth above its smallest value. It guards the collapse of the quadratic
 fact comparison at every free and of the whole-context resource validity
 sweep at every call; it is not the logarithmic contract, which the smart
-`execute` planner does not yet meet (its test comment names the remaining
+execution planner (`SmartExecute`) does not yet meet (its test comment names the remaining
 linear terms).
 
 The contract is measured on the same family under explicit simple tactics.
@@ -1063,7 +1063,7 @@ example, wall time, so its number moves with the corpus.
 `evals/auto.py` measures, for a sample of the hand-written `have`
 statements in the examples, how many `auto` proves where they stand and how
 many can be deleted with the proof still verifying, against a committed
-baseline. A change to `auto`, `simp` or what they rely on quotes its result,
+baseline. A change to the implicit closer, `solve` or what they rely on quotes its result,
 sites gained and lost, in the pull request. `evals/README.md`
 describes the corpus, the sampling and the baseline.
 
@@ -1210,7 +1210,7 @@ int32 example() {
 verifying "example.c";
 
 int32 example() {
-    ensures result == 0 by auto();
+    ensures result == 0;
 }
 ```
 

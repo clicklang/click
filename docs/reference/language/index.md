@@ -31,8 +31,8 @@ this page covers each form's full rules and edge cases.
 | Form | Meaning | Section |
 | --- | --- | --- |
 | `verifying "file.c";` | Names the C source the sidecar's contracts describe | [File shape](#file-shape) |
-| `int32 f(int32 x) { requires P; ensures Q; }` | A C function's contract; omitted proofs use `auto` | [File shape](#file-shape), [Requirements](#requirements) |
-| `} by { step(); simp(); }` | An explicit proof script for the contract | [Tactics](../tactics/index.md) |
+| `int32 f(int32 x) { requires P; ensures Q; }` | A C function's contract; an omitted proof runs the C and closes each claim | [File shape](#file-shape), [Requirements](#requirements) |
+| `} by { step(); solve(); }` | An explicit proof script for the contract | [Tactics](../tactics/index.md) |
 | `views p[0..n];`, `owns p[0..n];` | Read and write resources a call needs and keeps | [Read and write resources](#read-and-write-resources) |
 | `decreases e;` | Termination measure of a recursive function or a loop | [C termination](#c-termination) |
 | `old(e)`, `at(region(N).entry, e)` | A value in the entry state or another recorded state | [`old(...)`](#old), [`at(...)`](#at) |
@@ -53,7 +53,7 @@ writes it, followed by a clause block. A prefix says what it declares:
 
 | Prefix | Declares | Proof |
 | --- | --- | --- |
-| none | a function in the verified sources | `by ...`, default `auto` |
+| none | a function in the verified sources | `by ...`, or omitted |
 | `extern` | a function outside the verified sources, trusted | none allowed |
 | `contract` | a named function type, an interface, not a function | none allowed |
 
@@ -142,7 +142,7 @@ verifying "file.c";
 int32 function_name(int32 p[], int32 n) {
     requires n >= 0;
     requires viewable(p[0..n]);
-    ensures label: result == n by auto();
+    ensures label: result == n;
 }
 ```
 
@@ -215,7 +215,8 @@ passed as `(uint64) n`.
 ### Postconditions
 
 Each `ensures` clause is a separate guarantee. A guarantee may be labeled with
-`label:`. Omitting a proof clause uses the default prover, `auto`.
+`label:`. An omitted proof clause is the implicit tail alone: it runs the C to
+function exit and closes the claim on every path.
 
 An `ensures` clause describes every return state, and a C contract also
 asserts that a return state exists: every verified C function returns unless
@@ -652,10 +653,10 @@ follows the member order above. An explicit closer body written before a
 `decreases` clause existed fails promptly, and the diagnostic names the
 ranking obligations the bundle now carries.
 
-In a written body, a member is closed with `arithmetic() using { ... }` naming
+In a written body, a member is closed with `solve() using { ... }` naming
 the guard, precondition, and invariant facts it needs. The iteration's entry
 values are available as `at(region(N).entry, x)`, the same spelling loop-body
-premises use. A bare `close_invariants()` closes each member with `simp()`,
+premises use. A bare `close_invariants()` closes each member with `solve()`,
 which reads the facts in scope: the loop's declared invariants and guard at
 iteration entry, the function's preconditions, and the C branch conditions
 this path took to reach the back edge are among them.
@@ -812,7 +813,7 @@ contract int32 Spinner(int32 x) diverges {
 
 int32 run(int32 (*step)(int32), int32 x) diverges {
     requires Spinner(step);
-    ensures result == 1 by auto();
+    ensures result == 1;
 }
 ```
 
@@ -839,29 +840,29 @@ int32 set_first(int32 p[], int32 value) {
 
 The trailing block executes the function once and proves, from that shared
 execution, every listed claim that has no `by` of its own. It may also certify
-a resource-only contract with no postcondition clauses. `simp()` and resource
-steps discharge the postconditions. A claim with its own `by` keeps that proof,
+a resource-only contract with no postcondition clauses. Its steps and its
+implicit tail discharge the postconditions. A claim with its own `by` keeps that proof,
 so one hard claim can be proved by hand beside a grouped proof of the rest; a
 grouped proof that would prove no claim is refused. Structural region clauses,
 including loop proofs, retain their own proof blocks.
 
 When two or more claims omit their proofs and no grouped proof is written,
-they share an implicit `} by auto();`, so the default form also executes the
-function once. `click expand` at the contract's closing `}` writes that
-grouped proof out. A single claim without a proof keeps its own default
-`auto`, which is the same proof.
+they share one omitted grouped proof, the implicit tail, so the default form
+also executes the function once. `click expand` at the contract's closing `}`
+writes that grouped proof out. A single claim without a proof has its own
+implicit tail, which is the same proof.
 
-For contracts that need only ordinary execution, loop checks, and
-simplification, the grouped proof can be written `} by auto();`. This is a fixed
-expansion of those steps. It does not search through composite-resource folds
-or theorem applications; use an explicit grouped block for those operations.
+For contracts that need only ordinary execution, loop checks, and closing,
+omit the grouped proof. The implicit tail applies no theorems and folds only
+a resource the contract produces whose body a returned path holds; write an
+explicit grouped block for other folds and theorem applications.
 
 Goal-specific pure reasoning can be isolated with `have`, including after the
 function reaches its return frontier:
 
 <!-- verified-example: mdtests/post_execution_have_witness_closes_exists.md -->
 ```click
-execute();
+step_until(function.exit);
 have exists (k: int32) { k == result } by {
     witness { k: result };
     solve();
@@ -869,29 +870,23 @@ have exists (k: int32) { k == result } by {
 solve();
 ```
 
-The scoped proof may use `obtain` and `witness`. Its established proposition is
-added to every completed execution path, so later `simp()` can use it to close
-the matching postcondition without applying those existential steps to other
-contract claims.
+The scoped proof may use `obtain` and `witness`. Its established proposition
+joins the facts of the one path at function exit, so the later `solve()` can
+use it to close the matching postcondition without applying those existential
+steps to other contract claims.
 
-Post-execution grouped steps run in source order. `fold`, `apply`, and `have`
-update each symbolic path once; `simp()` closes the postconditions currently
-provable. Facts established after a closing
-step do not retroactively affect it. All claim proofs for one symbolic path use
-the same finalized specification.
+Steps after `step_until(function.exit)` run in source order on that path.
+`solve()` closes the first open goal, and the implicit tail closes the rest.
+Facts established after a closing step do not retroactively affect it. All
+claim proofs for one path use the same finalized specification.
 
-A post-execution `if` over a stable program-point condition (`old(x)` or `x@L`)
-selects its arm from the path's checked facts when that `if` is reached. An
-earlier `have` can establish the condition, including inside a selected arm;
-a later `have` cannot justify the selection. An undecided condition is refused
-at the `if`, with the condition and outcome path named.
-
-Inside a proof-level `if`, post-execution tactics apply only to execution paths
-compatible with that branch's checked condition. In particular, a closing step
-does not plan operations for a contradictory sibling outcome and then align
-them by vector position. Branch-local expansion therefore preserves the sibling's
-proof text and reports a compact `pN` path identifier if surface and execution
-coverage ever diverge.
+A proof is at one program point at a time. Where the C splits into paths
+that need different proof work at exit, write `branch` at the C `if`, or a
+proof `if` before the C, each arm stepping to exit on its own path with
+`step_until(function.exit)`. `step_until(function.exit)` never
+splits: at a C branch the facts do not decide it is refused and names that
+split. A proof `if` written after it is an ordinary case split on the one path
+at exit, each arm adding its condition.
 
 ## Mathematical integers
 
@@ -937,7 +932,7 @@ theorem integer_successor(z: Integer) {
 ```
 
 Equality, disequality, and the ordinary order comparisons are supported.
-`simp()` can produce explicit arithmetic evidence for supported linear
+`solve()` can produce explicit arithmetic evidence for supported linear
 comparisons. General multiplication is a valid expression; it does not imply
 a general nonlinear arithmetic solver. Expanded proofs retain the arithmetic
 evidence for ordinary verification to check.
@@ -1084,7 +1079,7 @@ outside the type's range, or observations of two different types, have no
 native form. An equality between a machine value and an Integer sum, such as
 `to_integer(refs) == 1 + to_integer(amount)`, is not the C equality
 `refs == 1 + amount`: the two agree only where the C sum is defined, which
-`auto` proves through the operation identity.
+`solve` proves through the operation identity.
 
 An Integer equality over `+`, `-`, `*` and negation of 32-bit (`int32` or
 `uint32`) observations and constants also establishes the equality of the
@@ -1100,13 +1095,13 @@ orders establish no word fact. A term of more than 64 nodes establishes
 nothing.
 
 A population count is an `int32` value like any other, observed as
-`to_integer(count(R(p)))` whatever expression reaches it; `auto` relates
+`to_integer(count(R(p)))` whatever expression reaches it; `solve` relates
 `to_integer(entry + quantity)` to `to_integer(entry) + to_integer(quantity)`
 by the in-range operation identity. A signed definedness fact
 `defined(a + b)` (or `-`, `*`) is exactly the two bounds
-`to_integer(a) + to_integer(b) <= MAX` and `>= MIN`, and `auto` may cite it as
+`to_integer(a) + to_integer(b) <= MAX` and `>= MIN`, and `solve` may cite it as
 either bound
-(`mdtests/auto_reads_a_definedness_premise_as_integer_bounds.md`). `simp`
+(`mdtests/auto_reads_a_definedness_premise_as_integer_bounds.md`). `solve`
 selects Integer equalities over machine observations as rewrite candidates,
 as it selects native equalities. An Integer count premise at entry serves a
 `fold` over the grown count as its machine form does
@@ -1165,7 +1160,7 @@ to a C function:
 theorem preserves_assumption(x: int32) {
     requires x >= 0;
 
-    ensures x >= 0 by auto();
+    ensures x >= 0;
 }
 ```
 
@@ -1712,11 +1707,11 @@ verifier's resource context rather than copied as pure facts.
 <!-- verified-example: mdtests/resource_context_write.md -->
 ```click
 int32 write_next(int32 p[], int32 x) {
-    owns p[0..1] by auto();
+    owns p[0..1];
     requires x < 2147483647;
 
-    ensures returns_written: result == p[0] by auto();
-    ensures writes_next: p[0] == x + 1 by auto();
+    ensures returns_written: result == p[0];
+    ensures writes_next: p[0] == x + 1;
 }
 ```
 
@@ -1770,7 +1765,7 @@ uint8 read(const uint8* bytes, uint64 length, uint64 index) {
     requires index < length;
     views bytes[0..length];
     ensures result == bytes[index];
-} by { execute(); solve(); }
+}
 ```
 Top-level verification gets its resource context from the function's resource
 verbs, while function calls apply the callee's verified contract as one opaque
@@ -1818,7 +1813,7 @@ int32 set_then_get(int32* p) {
     ensures result == 1;
     ensures p[0] == 1;
     ensures defined(p[0]);
-} by { execute(); solve(); }
+}
 ```
 
 `produces uninitialized(result[0..n])` returns bytes the caller then holds
@@ -2055,7 +2050,7 @@ void init(int32* p, int32 value) {
     produces c: cell(p);
     ensures c.value == value;
 } by {
-    execute();
+    step_until(function.exit);
     let c = fold(cell(p), { value: value });
     solve();
 }
@@ -2327,7 +2322,7 @@ child and why the in-scope one does not fill it
 ```click
 let { left: left, right: right } = unfold(root);
 unfold(left);
-execute();
+step_until(function.exit);
 let left = fold(tree(lp), { model: Tree::Leaf(2) });
 let root = fold(tree(p), { model: old(root.model) });
 ```
@@ -2549,7 +2544,7 @@ names the read of the word at the state where it was stated. The program's
 cast reads the word where it executes, so after a store through another
 pointer the two are different reads, and the cast no longer designates
 `parent` (`mdtests/a_parent_cast_fact_is_not_carried_across_a_store_through_another_node.md`).
-Restate the fact before the cast, with `simp()` across plain stores or with
+Restate the fact before the cast, with `solve()` across plain stores or with
 `transport` and the store's separation, and through a join's `ensuring`
 clause when a branch lies between
 (`mdtests/a_parent_cast_restated_after_a_store_lets_the_parent_be_dereferenced.md`).
@@ -2588,7 +2583,7 @@ declared resources. Declared `fact` clauses are pure facts.
 Before `fold(uncalled(flag));`, the declared pure body facts must be exact facts
 in the current proof context (or normalize to true without context). `fold`
 then consumes the contained resource facts and returns the abstract token
-resource fact. It does not invoke `simp`; use an explicit `have` first when a
+resource fact. It does not invoke `solve`; use an explicit `have` first when a
 body fact needs derivation. The end of the `by { ... }` block checks the overall
 claim.
 
@@ -2880,7 +2875,7 @@ binder takes no map. Duplicate, unknown, wrong-family, and unowned entries
 are rejected where they are written.
 
 A binder the map leaves out, or every binder when the call is run by a bare
-`step()` or `execute()`, is bound when only one binding is possible: the
+`step()` or by the implicit tail, is bound when only one binding is possible: the
 callee declares one binder of that resource family, and the caller owns
 exactly one instance of it. Nothing is matched by name or by position, and
 two candidates are never chosen between; the call is then refused with the
@@ -2915,7 +2910,7 @@ let { after: after } = step(move, { before: before });
 The introduced name is an ordinary owned instance afterwards: it can be folded
 into a parent as a child, or returned by the caller's own `produces` clause.
 
-A call run by `execute()` or a bare `step()` holds what it produces under no
+A call run by the implicit tail or a bare `step()` holds what it produces under no
 name. At the function's exit, a `produces` binder held under no name takes
 the one owned instance of its family that no name holds, by the same rule a
 call binds a binder its map leaves out: the function declares one produced
@@ -3087,8 +3082,8 @@ A `tactic` declaration names a reusable proof step with a contract. Its
 clauses are a function contract's: `consumes`, `produces`, `owns`, `views`,
 `requires`, and `ensures`. Its `by` block proves that contract once, at one
 point of execution: it may unfold, fold, apply theorems and earlier tactics,
-and prove facts, but it runs no C, so `step`, `execute`, `loop`, `branch`, and
-`outcomes` are refused in it. The block ends where its last step leaves the
+and prove facts, but it runs no C, so `step`, `step_until`, `loop`, `branch`,
+and `outcomes` are refused in it. The block ends where its last step leaves the
 proof: every produced instance must be held and every `ensures` an available
 fact.
 
@@ -3271,7 +3266,7 @@ For a symbolic `.any`, the range item name is the existential binder:
 <!-- verified-example: mdtests/range_helpers_over_memory.md -->
 ```click
 ensures found: (lo..hi).any(|k| { p[k] == result }) by {
-    execute();
+    step_until(function.exit);
     witness { k: lo };
     solve();
 }
@@ -3285,8 +3280,8 @@ It is mainly used in postconditions and invariants:
 
 <!-- verified-example: mdtests/proposition_connectives_quantifiers_and_old.md -->
 ```click
-ensures p[0] == old(p[0]) by auto();
-ensures forall (k: int32) { 0 <= k and k < n implies p[k] == old(p[k]) } by auto();
+ensures p[0] == old(p[0]);
+ensures forall (k: int32) { 0 <= k and k < n implies p[k] == old(p[k]) };
 ```
 
 Inside `old(...)`, `result` is unavailable.
@@ -3546,11 +3541,11 @@ that bare name as a selector later:
 ```click
 mark before_write;
 step();
-have p[0] == at(before_write, p[0]) + 1 by auto();
+have p[0] == at(before_write, p[0]) + 1;
 ```
 
 `mark` is a simple tactic and does not move execution. Its name is scoped to
-the proof, cannot be rebound, and is not an `execute_until` target. Bare
+the proof, cannot be rebound, and is not a `step_until` target. Bare
 `at(before_write, ...)` therefore means a proof-local mark, while
 `at(loop_label.entry, ...)` continues to mean the entry of a named source
 region.
@@ -3571,10 +3566,10 @@ is still written `c(result)` inside a snapshot.
 `at(function.exit, ...)` reads the state the function returns in. It is
 available where `result` is: in a postcondition and in a proof step after
 execution has returned, where it is the current path's state. It is refused
-before the return. Because every returned path has its own `result`, one
-`transport(at(function.exit, P), P) using { }` closes a `result` goal on
-each path that the path's own state proves, and expansion writes that step
-for such goals (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
+before the return. Each returned path has its own `result`, so
+`transport(at(function.exit, P), P) using { }` closes a `result` goal on a
+path whose own state proves it, and expansion writes that step on each such
+path (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
 `mdtests/a_function_exit_snapshot_before_the_return_is_refused.md`,
 `mdtests/a_function_exit_transport_of_a_false_result_claim_is_refused.md`).
 
@@ -3592,14 +3587,14 @@ visit is available through the ordinary unwrapped expression.
 
 The expression and proposition forms of `at(region(N).entry, ...)` and
 `at(region(N).exit, ...)` are supported in explicit proof-script claims after deterministic execution records that statement snapshot.
-`step()`, `execute_until(...)`, and `execute()` all record every
+`step()`, `step_until(...)`, and the implicit tail all record every
 deterministic statement boundary they cross. Executing an annotated loop uses
 its verified abstract rule and records both `at(loop_label.entry, expression)`
 and the unique post-loop state `at(loop_label.exit, expression)`. Branches still
 require explicit arm proofs and a checked join before a unique exit snapshot
 exists.
 
-`execute_until(region(N))` starts at the current execution frontier, so it can
+`step_until(region(N))` starts at the current execution frontier, so it can
 follow earlier `step` or joined `branch` steps. The
 target must be forward and reachable on that selected path; it cannot be used
 to rewind execution or enter an unselected branch.
@@ -3695,7 +3690,7 @@ induct(xs) as ih {
 Constructor arities and exhaustiveness are checked, arm bindings are lexical,
 and multiple recursive fields each receive an induction-hypothesis instance.
 Mutual induction across different datatype families is not generated.
-`simp` does not invent induction, and a pure function's `decreases` clause
+`solve` does not invent induction, and a pure function's `decreases` clause
 remains definition-totality evidence rather than a theorem about the result.
 
 Function contracts may also use contract-level `let` bindings:
@@ -3707,7 +3702,7 @@ int32 bounded_increment(int32 x) {
     let expected: int32 = x + 1;
 
     requires x < max;
-    ensures result_value: result == expected by auto();
+    ensures result_value: result == expected;
 }
 ```
 
@@ -3730,9 +3725,8 @@ Proposition clauses may also use witness lets:
 let k: int32 where k == x;
 
 ensures result_matches_witness: result == k by {
-    execute();
+    step_until(function.exit);
     witness { k: x };
-    solve();
 }
 ```
 
@@ -3861,7 +3855,7 @@ when their pointers are distinct and both aligned past the bound. A mask
 must clear the whole tag: `& ~1` on a word tagged with 3 is refuted rather
 than producing a word that still carries bit 1.
 
-Explicit `arithmetic() using { aligned(p, 8); }` can also certify reading low
+Explicit `solve() using { aligned(p, 8); }` can also certify reading low
 tag bits: `((address(p) + word) & 7) == (word & 7)`, including unsigned
 wraparound. The read mask must be contiguous low bits, and the selected
 alignment must cover those bits. This also applies to a bounded tag packed
@@ -3899,9 +3893,7 @@ remain exact. Click does not unfold predicate bodies unless a proof asks for it:
 <!-- verified-example: mdtests/sorted_predicate.md -->
 ```click
 ensures still_sorted: sorted(p, n) by {
-    execute();
     unfold(sorted);
-    solve();
 }
 ```
 

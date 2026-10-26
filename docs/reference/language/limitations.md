@@ -293,7 +293,7 @@ existential goal with `witness { k: expression };`. To open an already establish
 existential fact, write `obtain (k: int32) { ... };`; the same form accepts
 multiple typed bindings. A predicate requirement can be unfolded first.
 
-`auto` does not synthesize witnesses. `obtain` requires the exact
+`solve` and the implicit closer do not synthesize witnesses. `obtain` requires the exact
 existential to be available; use `have` to establish it if necessary. Concrete
 `.any` ranges still unroll to finite disjunctions.
 
@@ -316,12 +316,12 @@ Pointer-writing loops do not implicitly preserve memory. Use invariants and
 proof needs apart. Symbolic loops need invariants
 for arithmetic bounds, memory safety, and postconditions.
 
-## `simp` is not a solver
+## `solve` is a bounded search, not a general solver
 
-`simp` is a smart tactic: a bounded, deterministic search over the ambient pure
-facts and a fixed set of proof rules, including equality rewriting, case splits
-on relevant disjunctions, and evidence for supported linear comparisons. A miss
-means the search found no proof within its budget, not that the claim is false.
+`solve` (older spelling `simp`) is a smart tactic: a bounded, deterministic
+search over the ambient pure facts and a fixed set of proof rules, including
+equality rewriting, case splits on relevant disjunctions, and evidence for
+supported linear comparisons. A miss means the search found no proof within its budget, not that the claim is false.
 
 It never executes C, infers missing loop invariants, invents induction, or
 solves general nonlinear arithmetic. The [tactics reference](../tactics/index.md)

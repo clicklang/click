@@ -757,7 +757,7 @@ Supported C surface includes:
   conversion is the operand. The conversion term itself never depends on what
   the proof knows; the identity is reasoning: `normalize using` the two
   bounds, a decision that decides them, and the `signed_int32` certificate
-  step `interval_narrowed_cast` (planned by `simp` and `arithmetic`) apply
+  step `interval_narrowed_cast` (planned by `solve` and `solve() using`) apply
   it, and the conversion of a known constant folds to its residue. A fact
   equating a value with a conversion whose operand the context already places
   in range, such as a callee's guarantee about a narrowed argument, also
@@ -814,7 +814,7 @@ Supported C surface includes:
 - signed `+`, `-`, `*`, `/`, and `%`; in a proof, `defined(a + b)` or
   `defined(a - b)` over `int32` has the explicit step `int32_defined` of
   `arithmetic_certificate rules`, which checks the exact result range from
-  listed constant `int32` bounds on the operands; `simp` selects it
+  listed constant `int32` bounds on the operands; `solve` selects it
 - `uint32` `+` and `-` with 32-bit modular results
 - `uint32` `*`, `/`, and `%` with modular multiplication, unsigned division
   and remainder, and division-by-zero undefined behavior
@@ -828,7 +828,7 @@ Supported C surface includes:
   facts on the operands discharge the obligation for other operands. In a
   proof, `defined(a + b)` or `defined(a - b)` over `int64` has the explicit
   step `int64_defined` of `arithmetic_certificate rules`, which checks the
-  same ranges from listed constant bounds; `simp` selects it
+  same ranges from listed constant bounds; `solve` selects it
 - a sum of two `uint32` values widened to `int64` can be bounded using
   operand bounds. `arithmetic_certificate rules` exposes
   `unsigned_sum_bound bounds [indices] => proposition;`; it checks only the
@@ -1805,14 +1805,14 @@ function: `requires Adds(f, { amount: k });`. A call through `f` then binds
 with `amount` fixed to `3`. An unknown, missing, or repeated name is refused.
 A refinement theorem may conclude a contract with value parameters, fixing
 them as an attachment does: `ensures Adds(&add3, { amount: 3 }) by {
-unfold(Adds); simp(); }`, whose `unfold(Adds)` opens the obligation with
+unfold(Adds); solve(); }`, whose `unfold(Adds)` opens the obligation with
 `amount` bound to `3`. An abstract refinement fixes the values of both its
 source fact and its conclusion, `requires Adds(f, { amount: 3 }); ensures
 Shifts(f, { offset: 3 })`. See
 `mdtests/named_contract_value_parameter_refinement_theorem.md` and
 `mdtests/named_contract_value_parameter_contract_refinement_theorem.md`. An
 execution theorem fixes them the same way, `theorem t() executes add3(int32
-x) { ensures Adds(&add3, { amount: 3 }) by { step(); simp(); } }` or, from a
+x) { ensures Adds(&add3, { amount: 3 }) by { step(); solve(); } }` or, from a
 source fact, `requires Adds(f, { amount: 3 }); ensures Shifts(f, { offset: 3
 })`: its one checked call is proved with the target's value parameters at
 the conclusion's values
@@ -1839,7 +1839,7 @@ int32 apply(int32 (*callback)(int32, int32), int32 left, int32 right) {
     requires Comparator(callback);
     requires 0 <= right;
     requires right <= left;
-    ensures result == left - right by auto();
+    ensures result == left - right;
 }
 ```
 
@@ -1945,7 +1945,7 @@ interface. After the contract itself is open, `unfold(Predicate)` authorizes
 the registered, checked definition of every occurrence of that predicate in
 the local comparison. This remains an explicit proof step: direct function
 pointer formation does not unfold a predicate whose opaque interface differs,
-and naming an unrelated predicate grants no authority. Ordinary `simp` may
+and naming an unrelated predicate grants no authority. Ordinary `solve` may
 select a needed predicate unfolding and record it in its certificate. The
 unfolded body uses the same symbolic entry and post-call memories as ordinary scalar refinement,
 including `old` arguments. Predicate unfolding composes with written `if`

@@ -416,9 +416,10 @@ from the path's facts. The two sides are compared in one canonical form
 for the folds that remain (a term compared with itself, a constant premise
 or conjunct, a negated condition), and a completion recorded at the
 artifact's own caller state also certifies a path rebased from that state.
-A claim with no `by` block has one implicit closer, `auto`: the direct
+A claim with no `by` block ends, like every script, with the implicit closer
+(`SmartSite::Implicit`, which diagnostics still spell `auto`): the direct
 logical closure of the kernel's claim goal from the outcome Proof or, when
-that does not apply, the smart `simp` search, whose certificates are
+that does not apply, the smart `solve` search, whose certificates are
 checked like explicit ones; each
 records the completion like any other closer. A
 resource ensure is an exact check against the outcome that returns an opaque

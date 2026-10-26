@@ -8,7 +8,8 @@ At a proof site, the state can contain:
 
 - goals that remain to be closed;
 - pure facts and assumptions;
-- one or more symbolic execution paths at a frontier;
+- the symbolic execution path at the current frontier, one program point at a
+  time;
 - path conditions and generated definedness obligations;
 - memory snapshots and resource facts, including derived views;
 - named marks and structural context for branches or loops.
@@ -43,7 +44,8 @@ about the current state. The rule is fixed and cheap:
   across the step when the kernel, executing the statement with the whole
   proof context visible, proves the loaded cell is outside the statement's
   effect: the cell keeps its name, so the fact is literally unchanged. Nothing
-  is carried by list; `execute()` is the repetition of `step()`. That
+  is carried by list; `step_until` and the implicit tail's execution are
+  repetitions of `step()`. That
   disjointness is one bounded, deterministic check against the effect:
   distinct blocks, offset arithmetic, constant ranges, and a direct lookup of
   ownership (two owned resources are disjoint, including memory owned through
@@ -68,7 +70,8 @@ The point of the rule is cost and honesty together: a step's work is
 proportional to the facts it is told to carry, and every frame proof on which
 an explicit proof depends appears as a named transition.
 
-Proof branches create path-specific states. A join is valid only after the
+Proof branches create path-specific states, and after a split each arm is
+its own path. A join is valid only after the
 required facts and resources can be reconciled across all relevant branches.
 Loop invariants play a similar role across an unbounded number of iterations:
 the proof checks initialization, preservation, and the exit consequence rather

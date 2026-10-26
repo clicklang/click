@@ -20,23 +20,37 @@ performance defect, not a candidate for further expansion.
 A smart tactic is a planner. It examines the proof state and tries candidate
 checked operations on persistent alternatives under deterministic work
 budgets, so it can fail to find a proof that exists. That is bounded
-incompleteness, not evidence that the claim is false. Click has four smart
-tactics, and each expands into other tactics:
+incompleteness, not evidence that the claim is false. Every piece of smart
+work expands into simple tactics:
 
-- `arithmetic()` searches for arithmetic evidence for a bound or equality.
-- `simp()` simplifies with the available facts and bounded rules, and hands
-  arithmetic subgoals to `arithmetic`.
-- `execute()` runs C statements to the function's exit, splitting at
-  undecided branches; `execute_until(...)` is its variant that stops at a
-  program point.
-- `auto` runs `execute` and then `simp`. It has no source spelling of its
-  own: an omitted proof uses it, `by auto();` names it, and it closes the
-  claims a script leaves open. The *implicit `auto`* is the same search
-  proving one requirement that a `step()` or `fold` left open.
+- `solve()` is the one written smart tactic. It closes the first open goal
+  with the available facts and bounded rules and runs no C.
+  `solve() using { P; ... }` closes it from only the listed premises, trying
+  arithmetic over them last; a miss adds arithmetic's reason. `simp()` and a
+  written `auto();` are older spellings of `solve()`, `arithmetic() using { ... }` of
+  `solve() using { ... }`, and bare `arithmetic()` of `solve() using {}`.
+  The written simple form of an arithmetic step is `arithmetic_certificate`.
+- The *implicit tail* ends every proof script, including the empty script of
+  an omitted proof. It runs the C that is left, splitting at each C branch the
+  facts do not decide into paths that each run to function exit, then closes
+  every open goal on every path with the implicit closer: direct closure, then
+  `solve`'s search, and on a returned path that holds the body of a resource
+  the contract `produces`, a fold of that resource. It has no spelling of its
+  own; `by auto();` is the older spelling of the omitted proof. The same
+  closer proves a requirement that a bare `step()` or `fold` left open, and is
+  reported as `implicit auto` there.
+- `close_invariants()` is a fixed expansion into
+  `close_invariants() by { ... }` with `solve()` on each invariant member.
+- The searches behind elided arguments, below.
 
-Bare `close_invariants()` is sugar, not a fifth engine: it is a fixed
-expansion into `close_invariants() by { ... }` with `simp()` on each invariant
-member.
+`step_until(target)` repeats `step()` up to its target, and each requirement
+it crosses is proved as a bare `step()`'s is. It walks a loop the facts decide
+and never splits: at a C branch the facts do not decide it is refused, naming
+the proof `if` or `branch` to write there. The tactic reference classifies it
+as smart. `execute_until` is its older spelling. `execute()`
+names the tail's execution; it is still accepted as a written tactic but is
+being removed, so write `step_until(function.exit)` or leave the C to the
+tail.
 
 ## Elided arguments
 
@@ -51,7 +65,7 @@ with the argument written is simple:
 | `transport(P, Q)` | `transport(P, Q) using { R; ... }` | the frame evidence |
 
 The search behind an elided argument only looks facts up: it does not run
-`simp` or `auto` on a missing premise. When it finds nothing, the refusal is a
+`solve` or the implicit closer on a missing premise. When it finds nothing, the refusal is a
 **search miss**: it says "this is a search miss", names the fact it did not
 find, and tells you to write it (with `have P by { ... }` first, or in the
 `using` form). A search miss is never a Click bug; only the written form's
@@ -68,9 +82,11 @@ unrelated facts.
 
 The [tactic reference](../reference/tactics/index.md) gives every form's
 class, and `click docs NAME` prints it. A [proof trace](tracing.md#reading-trace-output)
-marks each step a smart tactic produced with ``(from `execute`)`` and the
-like, and prints a `chosen:` line with the written form of an argument a
-search chose. [`click profile`](../reference/cli/profile.md) reports a smart
+marks each step smart work produced with the older names: ``(from `execute`)``
+for the implicit tail's execution, ``(from `auto`)`` for its closer,
+``(from `simp`)`` for a written `solve`, and ``(from `implicit auto`)`` for the
+closer of a step's requirement. It prints a `chosen:` line with the written
+form of an argument a search chose. [`click profile`](../reference/cli/profile.md) reports a smart
 site, elided forms included, as `SMART`, and a written simple tactic as
 `SIMPLE`.
 

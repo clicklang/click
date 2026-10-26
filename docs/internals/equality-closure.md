@@ -433,7 +433,7 @@ restricts the additional conditions used for reduction. All cited premises must 
 supported. Other ambient facts, quantified bodies, and cross-snapshot frame
 search remain outside this operation. Expansion retains the simple step and
 rechecks it in the same proof context, without an explanation API or a
-per-tactic graph rebuild. Restricted `simp() using` planning checks a
+per-tactic graph rebuild. Restricted `solve() using` planning checks a
 normalization candidate against only its selected context before emitting the
 simple step; omitted ambient equalities do not participate in that search.
 Explicit pointer-offset equalities also enter the
@@ -444,7 +444,7 @@ changing their representation.
 The offset fragment interns whole terms with shallow keys and uses persistent
 union-find weighted by members and parent uses. Its query first recognizes
 exact affine-equivalent byte offsets, including regrouped or reordered sums
-without a premise. `simp` uses that query for same-block pointer conditions,
+without a premise. `solve` uses that query for same-block pointer conditions,
 which lower to offset equality. Addition signatures identify operand classes,
 so equal operands establish equal sums. Indexed parent uses
 propagate late merges through nested additions with an iterative worklist;
@@ -603,7 +603,7 @@ memory arithmetic and framing rules remain in the resolver.
 The simple pointer-equality decision uses typed graph queries only; it does
 not scan ambient condition facts or walk an alias component. Overflow-guarded translation such as
 `p == arr + i` after incrementing `p` and `i` instead uses an explicit
-`arithmetic() using` proof with the entry pointer relation and strict index
+`solve() using` proof with the entry pointer relation and strict index
 bound. A displaced cross-block query uses an exact translated offset edge
 only for a representable constant base displacement. Symbolic displacements
 can remain unknown until a checked proof supplies the translated equality.
@@ -803,7 +803,7 @@ its two operands. A later query can therefore use a read hidden behind another
 class member without first comparing that read directly or searching the
 class for read spellings.
 A registration generation distinguishes reasoning memo entries from earlier
-misses, without scanning or rebuilding the proof environment. `simp` can emit
+misses, without scanning or rebuilding the proof environment. `solve` can emit
 `normalize() using {}` to check an equality against this ambient graph.
 The nonrecursive `mdtests/egraph_resource_pointer_load_alias.md` regression
 checks this after an unfold publishes address equality.

@@ -60,16 +60,20 @@ line of a diagnostic, and the `LINE` of its `tactic@LINE` or
 `tactic@LINE:COLUMN` heading, which carries a column exactly when its line
 starts more than one tactic.
 
-Expansion writes what a site's search found. A smart tactic (`simp`,
-`arithmetic`, `execute`, `execute_until`, or an omitted proof's `auto`) is
-replaced by the simple steps it checked. A simple tactic written with an
-elided argument, such as `apply(t(x))` or a bare `transport(P, Q)`, keeps its
-place, and the argument is written into it: `apply(t(x)) using { P; Q; }`.
-The implicit `auto` that proves a `step()` or `fold` requirement is written
-into that step, as `step() by { ... }` or as its `requires` entries.
+Expansion writes what a site's search found. A smart tactic (`solve`,
+`solve() using`, `step_until`, or the implicit tail that ends every script and
+is all of an omitted proof) is replaced by the simple steps it checked: for the
+tail, the steps, splits, and closers that run the remaining C and close each
+goal. The older spellings `simp`, `arithmetic`, `execute`, and
+`execute_until` select and expand the same way. A simple tactic written with
+an elided argument, such as `apply(t(x))` or a bare `transport(P, Q)`, keeps
+its place, and the argument is written into it: `apply(t(x)) using { P; Q; }`.
+The implicit closer that proves a `step()` or `fold` requirement, which
+diagnostics name the implicit `auto`, is written into that step, as
+`step() by { ... }` or as its `requires` entries.
 
-A smart tactic that owns its body is one site. The `simp` written in a smart
-`have` (`have P by { simp(); }`) or anywhere inside a smart `both` or
+A smart tactic that owns its body is one site. The `solve` written in a smart
+`have` (`have P by { solve(); }`) or anywhere inside a smart `both` or
 `close_invariants() by` bundle selects that enclosing tactic, and expansion
 rewrites the whole site. A `have` whose body mixes several tactics is not a
 site itself; each smart tactic written in its body is, and expanding one

@@ -619,7 +619,7 @@ comparisons `w >= lo` and `w <= hi` (written `(int32)x >= lo`), which the
 checker reads as `lo <= int32(w)` and `int32(w) <= hi` and requires inside
 the source's range; bounds on the narrow observation alone are refused, and
 a variable nested inside another form is not a carrier to this rule
-(`narrow_word_is_syntactic_carrier`, `narrow_binder_range_facts`). `auto`
+(`narrow_word_is_syntactic_carrier`, `narrow_binder_range_facts`). `solve`
 and the planner cite those facts exactly as filed, and plan the identity
 by matching the word
 (`mdtests/auto_widens_a_narrow_value_into_a_containing_type.md`,
