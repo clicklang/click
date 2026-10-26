@@ -153,35 +153,31 @@ fn failed_simp_reports_actual_cell_queries_separately_from_history_explanations(
 #[test]
 fn failed_written_have_keeps_its_goal_and_actual_queries() {
     let c = "void f(int *p, int i) { p[i] = 9; }";
-    for closer in ["solve"] {
-        let source = format!(
-            r#"verifying "f.c"; void f(int32* p, int32 i) {{
+    let source = r#"verifying "f.c"; void f(int32* p, int32 i) {
             owns p[0..2]; requires 0 <= i; requires i < 2;
-        }} by {{ step(); have p[0] == old(p[0]) by {closer}(); step_until(function.exit); }}"#
-        );
-        let ordinary = verify_c0_sources(&source, &[("f.c", c)])
-            .unwrap_err()
-            .concise_report();
+        } by { step(); have p[0] == old(p[0]) by solve(); step_until(function.exit); }"#;
+    let ordinary = verify_c0_sources(source, &[("f.c", c)])
+        .unwrap_err()
+        .concise_report();
+    assert!(
+        ordinary.contains("available premises at the failed check"),
+        "{ordinary}"
+    );
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
         assert!(
-            ordinary.contains("available premises at the failed check"),
-            "{ordinary}"
+            trace.contains("checks observed during the failed attempt"),
+            "{trace}"
         );
-        with_proof_trace("f", || {
-            let error = verify_c0_sources(&source, &[("f.c", c)]).unwrap_err();
-            let trace = error.trace_context_report().unwrap();
-            assert!(
-                trace.contains("checks observed during the failed attempt"),
-                "{trace}"
-            );
-            assert!(
-                trace.contains("available premises at the failed check"),
-                "{trace}"
-            );
-            assert!(trace.contains("goal:"), "{trace}");
-            assert!(trace.contains("cell walk:"), "{trace}");
-            assert!(trace.contains("failed check:"), "{trace}");
-        });
-    }
+        assert!(
+            trace.contains("available premises at the failed check"),
+            "{trace}"
+        );
+        assert!(trace.contains("goal:"), "{trace}");
+        assert!(trace.contains("cell walk:"), "{trace}");
+        assert!(trace.contains("failed check:"), "{trace}");
+    });
 }
 
 #[test]
