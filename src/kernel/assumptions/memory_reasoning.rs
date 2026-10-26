@@ -3460,10 +3460,21 @@ impl PureFactContext {
             } else {
                 left
             };
-            match self.separations_with_side_containing(keyed) {
-                Some(candidates) => candidates.into_iter().any(entails),
-                None => self.separation_facts.scan_unindexed().any(entails),
+            let indexed = self
+                .separations_with_side_containing(keyed)
+                .into_iter()
+                .any(entails);
+            #[cfg(debug_assertions)]
+            if !crate::instrumentation::in_uncharged_debug_check() {
+                crate::instrumentation::uncharged_debug_check(|| {
+                    let scanned = self.separation_facts.scan_for_upkeep().any(entails);
+                    assert_eq!(
+                        indexed, scanned,
+                        "the separations containing a side differ from every separation"
+                    );
+                });
             }
+            indexed
         };
         let residual_hit = crate::instrumentation::measure_operation(
             "kernel",

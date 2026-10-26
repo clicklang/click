@@ -724,6 +724,11 @@ four times the work at a quarter of it.
     reach, and those with a wide side, which still share one bucket. Debug
     builds compare every answer with the scan
     (`explicit_separation_lookup_reads_only_related_blocks`).
+    Non-memory resource separation no longer falls back to every
+    separation when a side sits inside memory: it reads the separations
+    filed under that memory's related blocks, the wide bucket and the
+    residual non-memory list, and debug builds compare it with the scan
+    (`a_token_inside_memory_finds_its_separation_without_scanning`).
     Still listed: all compositions at `4280` and `4563` (index:
     `composition_members`).
 22. **Left as is:** the load's unresolved-cell scan

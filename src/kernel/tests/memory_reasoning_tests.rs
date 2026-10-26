@@ -7687,6 +7687,64 @@ fn unkeyed_range_separation_ignores_unrelated_propositions() {
     );
 }
 
+/// A separation over a token held inside a memory range is found from the
+/// range's related blocks, not by scanning every separation: the token's
+/// containers are walked upward, and a memory container reads the stated
+/// separations filed under its base's blocks. Unrelated separations leave
+/// the work of a hit and of a miss unchanged.
+#[test]
+fn a_token_inside_memory_finds_its_separation_without_scanning() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let home = Pointer {
+        block: "token-home".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let token = |name: &str| CResource::Token {
+        name: name.into(),
+        arguments: Vec::new().into(),
+    };
+    let work = [16_u64, 64, 256]
+        .into_iter()
+        .map(|unrelated| {
+            let mut assumptions = PureFactContext::new()
+                .assume_proposition(Proposition::CResourceContains {
+                    parent: Box::new(CResource::Memory(memory_range(home.clone(), 0, 4))),
+                    child: Box::new(token("held")),
+                })
+                .assume_proposition(Proposition::CResourceSeparate {
+                    left: Box::new(CResource::Memory(memory_range(home.clone(), 0, 8))),
+                    right: Box::new(token("other")),
+                });
+            for index in 0..unrelated {
+                let base = |side| Pointer {
+                    block: format!("unrelated-separation-{index}-{side}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                assumptions = assumptions.assume_proposition(Proposition::CResourceSeparate {
+                    left: Box::new(CResource::Memory(memory_range(base(0), 0, 2))),
+                    right: Box::new(CResource::Memory(memory_range(base(1), 0, 2))),
+                });
+            }
+            let (separate, hit) = crate::instrumentation::measure_deterministic_work(|| {
+                assumptions.proves_resource_separate(&token("held"), &token("other"))
+            });
+            assert!(
+                separate,
+                "the stated separation covers the token's container"
+            );
+            let (separate, miss) = crate::instrumentation::measure_deterministic_work(|| {
+                assumptions.proves_resource_separate(&token("held"), &token("unrelated"))
+            });
+            assert!(!separate);
+            (hit, miss)
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        work.windows(2).all(|pair| pair[0] == pair[1]),
+        "unrelated separations changed the token separation's work: {work:?}"
+    );
+}
+
 /// Snapshot equality for a load matches memories up to the load's pointer,
 /// so every effect fact is a candidate, but no other proposition fact is.
 /// It once scanned every proposition fact; a miss now costs the same
