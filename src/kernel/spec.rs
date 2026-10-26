@@ -5145,31 +5145,59 @@ fn lower_spec_disjunction_at_state_in(
         assumptions,
         budget,
     )? {
+        // The right side matters only where the left fails, as with
+        // `implies`: it is lowered assuming the left's negation and its
+        // obligations are owed only there. A guard such as
+        // `b == 0 or a <= MAX / b` then lowers as written whatever the facts.
+        let negated_left = match &left_path.proposition {
+            Proposition::ConditionIs(condition, value) => {
+                Proposition::ConditionIs(condition.clone(), !value)
+            }
+            Proposition::Not(body) => body.as_ref().clone(),
+            proposition => Proposition::Not(Box::new(proposition.clone())),
+        };
         let right_assumptions =
-            assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
+            assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations)
+                .assume_proposition(negated_left);
         let right_paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
             scope,
             right,
             &right_assumptions,
             budget,
         )?;
-        // Preserve the written disjunction whenever both sides lower, including
-        // the shape used by explicit choice/case certificates. An undefined
-        // unused right expression must not remove an exactly known true left
-        // path (for example a zero-factor quotient guard). Keep that path's
-        // facts/obligations; unknown or false left sides still require the right.
-        if right_paths.is_empty() && assumptions.proves_exact(&left_path.proposition) {
+        // A literally true left side leaves no case for the right, which then
+        // need not denote anything (`0u32 == 0u32 or a <= MAX / 0u32`).
+        if right_paths.is_empty()
+            && matches!(
+                &left_path.proposition,
+                Proposition::ConditionIs(ConditionTerm::Constant(value), expected)
+                    if value == expected
+            )
+        {
             paths.push(left_path);
             continue;
         }
+        if right_paths.is_empty() {
+            return Err(ExecutionLimit::DisjunctionRightUndefined);
+        }
         for right_path in right_paths {
-            if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
+            let guarded_right_obligations = right_path
+                .obligations
+                .iter()
+                .cloned()
+                .map(|obligation| {
+                    let left = left_path.proposition.clone();
+                    obligation.map_proposition(|proposition| {
+                        Proposition::Or(Box::new(left), Box::new(proposition))
+                    })
+                })
+                .collect::<Vec<_>>();
+            if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
-                &right_path.obligations,
+                &guarded_right_obligations,
                 assumptions,
-                &right_assumptions,
             ) {
                 paths.push(SpecPropositionPath {
                     introductions: Vec::new(),

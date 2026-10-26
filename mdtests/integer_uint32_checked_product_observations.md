@@ -20,6 +20,10 @@ theorem zero_factor(a: uint32) {
 theorem known_zero_factor(a: uint32, b: uint32) {
     requires b == 0u32;
     ensures to_integer(a * b) == 0 by {
+        have b == 0u32 or a <= (4294967295u32 / b) by {
+            have b == 0u32;
+            assumption();
+        }
         apply(integer::uint32_multiply_to_integer(a, b));
         rewrite(to_integer(a * b) == to_integer(a) * to_integer(b));
         have to_integer(b) == 0;

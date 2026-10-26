@@ -6644,6 +6644,9 @@ pub enum ExecutionLimit {
     AuthorityCountPendingLockedWorker,
     /// The exact population total cannot be represented as C int32.
     AuthorityCountOverflows,
+    /// The right side of an `or` has no value wherever its left side is
+    /// false, the only case in which it is read.
+    DisjunctionRightUndefined,
 }
 
 /// The stopping point as [`ExecutionLimit::describe`] names it.
@@ -6709,6 +6712,9 @@ impl ExecutionLimit {
                 "count(...) requires owning authority for that population, which an outstanding worker holds until its pthread_join".to_string()
             }
             Self::AuthorityCountOverflows => "the population count exceeds int32".to_string(),
+            Self::DisjunctionRightUndefined => {
+                "an `or` whose right side is undefined wherever its left side is false".to_string()
+            }
             Self::ResourceFieldInstanceUnavailable => {
                 "a model field of a resource instance this state does not hold".to_string()
             }
