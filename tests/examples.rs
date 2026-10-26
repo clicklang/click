@@ -26,6 +26,9 @@ mod limits;
 #[path = "support/tactic_work.rs"]
 mod tactic_work;
 
+#[path = "examples/integer_languages.rs"]
+mod integer_languages;
+
 const RUN_QUARANTINED: &str = "CLICK_RUN_QUARANTINED";
 /// Set by the gate when the pinned C++ exporter is not installed.
 const SOURCE_MANIFEST: &str = "SOURCE.sha256";

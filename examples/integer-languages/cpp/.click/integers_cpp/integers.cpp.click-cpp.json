@@ -1,0 +1,2933 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 50,
+            "end_line": 4,
+            "file": "integers.cpp",
+            "start_column": 38,
+            "start_line": 4
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@169@F@add_i32#I#I#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 46,
+                  "end_line": 4,
+                  "file": "integers.cpp",
+                  "start_column": 45,
+                  "start_line": 4
+                }
+              },
+              "span": {
+                "end_column": 46,
+                "end_line": 4,
+                "file": "integers.cpp",
+                "start_column": 45,
+                "start_line": 4
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@176@F@add_i32#I#I#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 50,
+                  "end_line": 4,
+                  "file": "integers.cpp",
+                  "start_column": 49,
+                  "start_line": 4
+                }
+              },
+              "span": {
+                "end_column": 50,
+                "end_line": 4,
+                "file": "integers.cpp",
+                "start_column": 49,
+                "start_line": 4
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 50,
+              "end_line": 4,
+              "file": "integers.cpp",
+              "start_column": 45,
+              "start_line": 4
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@add_i32#I#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "add_i32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@169@F@add_i32#I#I#@a",
+          "name": "a",
+          "span": {
+            "end_column": 18,
+            "end_line": 4,
+            "file": "integers.cpp",
+            "start_column": 13,
+            "start_line": 4
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@176@F@add_i32#I#I#@b",
+          "name": "b",
+          "span": {
+            "end_column": 25,
+            "end_line": 4,
+            "file": "integers.cpp",
+            "start_column": 20,
+            "start_line": 4
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "add_i32"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 53,
+        "end_line": 4,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 4
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 50,
+            "end_line": 5,
+            "file": "integers.cpp",
+            "start_column": 38,
+            "start_line": 5
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@222@F@sub_i32#I#I#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 46,
+                  "end_line": 5,
+                  "file": "integers.cpp",
+                  "start_column": 45,
+                  "start_line": 5
+                }
+              },
+              "span": {
+                "end_column": 46,
+                "end_line": 5,
+                "file": "integers.cpp",
+                "start_column": 45,
+                "start_line": 5
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "subtract",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@229@F@sub_i32#I#I#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 50,
+                  "end_line": 5,
+                  "file": "integers.cpp",
+                  "start_column": 49,
+                  "start_line": 5
+                }
+              },
+              "span": {
+                "end_column": 50,
+                "end_line": 5,
+                "file": "integers.cpp",
+                "start_column": 49,
+                "start_line": 5
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 50,
+              "end_line": 5,
+              "file": "integers.cpp",
+              "start_column": 45,
+              "start_line": 5
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@sub_i32#I#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "sub_i32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@222@F@sub_i32#I#I#@a",
+          "name": "a",
+          "span": {
+            "end_column": 18,
+            "end_line": 5,
+            "file": "integers.cpp",
+            "start_column": 13,
+            "start_line": 5
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@229@F@sub_i32#I#I#@b",
+          "name": "b",
+          "span": {
+            "end_column": 25,
+            "end_line": 5,
+            "file": "integers.cpp",
+            "start_column": 20,
+            "start_line": 5
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "sub_i32"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 53,
+        "end_line": 5,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 5
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 50,
+            "end_line": 6,
+            "file": "integers.cpp",
+            "start_column": 38,
+            "start_line": 6
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@275@F@mul_i32#I#I#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 46,
+                  "end_line": 6,
+                  "file": "integers.cpp",
+                  "start_column": 45,
+                  "start_line": 6
+                }
+              },
+              "span": {
+                "end_column": 46,
+                "end_line": 6,
+                "file": "integers.cpp",
+                "start_column": 45,
+                "start_line": 6
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "multiply",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@282@F@mul_i32#I#I#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 50,
+                  "end_line": 6,
+                  "file": "integers.cpp",
+                  "start_column": 49,
+                  "start_line": 6
+                }
+              },
+              "span": {
+                "end_column": 50,
+                "end_line": 6,
+                "file": "integers.cpp",
+                "start_column": 49,
+                "start_line": 6
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 50,
+              "end_line": 6,
+              "file": "integers.cpp",
+              "start_column": 45,
+              "start_line": 6
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@mul_i32#I#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "mul_i32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@275@F@mul_i32#I#I#@a",
+          "name": "a",
+          "span": {
+            "end_column": 18,
+            "end_line": 6,
+            "file": "integers.cpp",
+            "start_column": 13,
+            "start_line": 6
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@282@F@mul_i32#I#I#@b",
+          "name": "b",
+          "span": {
+            "end_column": 25,
+            "end_line": 6,
+            "file": "integers.cpp",
+            "start_column": 20,
+            "start_line": 6
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "mul_i32"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 53,
+        "end_line": 6,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 6
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 86,
+            "end_line": 8,
+            "file": "integers.cpp",
+            "start_column": 74,
+            "start_line": 8
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@347@F@wrapping_add_u32#i#i#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 82,
+                  "end_line": 8,
+                  "file": "integers.cpp",
+                  "start_column": 81,
+                  "start_line": 8
+                }
+              },
+              "span": {
+                "end_column": 82,
+                "end_line": 8,
+                "file": "integers.cpp",
+                "start_column": 81,
+                "start_line": 8
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@363@F@wrapping_add_u32#i#i#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 86,
+                  "end_line": 8,
+                  "file": "integers.cpp",
+                  "start_column": 85,
+                  "start_line": 8
+                }
+              },
+              "span": {
+                "end_column": 86,
+                "end_line": 8,
+                "file": "integers.cpp",
+                "start_column": 85,
+                "start_line": 8
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 86,
+              "end_line": 8,
+              "file": "integers.cpp",
+              "start_column": 81,
+              "start_line": 8
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@wrapping_add_u32#i#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "wrapping_add_u32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@347@F@wrapping_add_u32#i#i#@a",
+          "name": "a",
+          "span": {
+            "end_column": 45,
+            "end_line": 8,
+            "file": "integers.cpp",
+            "start_column": 31,
+            "start_line": 8
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@363@F@wrapping_add_u32#i#i#@b",
+          "name": "b",
+          "span": {
+            "end_column": 61,
+            "end_line": 8,
+            "file": "integers.cpp",
+            "start_column": 47,
+            "start_line": 8
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "wrapping_add_u32"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 89,
+        "end_line": 8,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 8
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 86,
+            "end_line": 9,
+            "file": "integers.cpp",
+            "start_column": 74,
+            "start_line": 9
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@436@F@wrapping_sub_u32#i#i#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 82,
+                  "end_line": 9,
+                  "file": "integers.cpp",
+                  "start_column": 81,
+                  "start_line": 9
+                }
+              },
+              "span": {
+                "end_column": 82,
+                "end_line": 9,
+                "file": "integers.cpp",
+                "start_column": 81,
+                "start_line": 9
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "subtract",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@452@F@wrapping_sub_u32#i#i#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 86,
+                  "end_line": 9,
+                  "file": "integers.cpp",
+                  "start_column": 85,
+                  "start_line": 9
+                }
+              },
+              "span": {
+                "end_column": 86,
+                "end_line": 9,
+                "file": "integers.cpp",
+                "start_column": 85,
+                "start_line": 9
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 86,
+              "end_line": 9,
+              "file": "integers.cpp",
+              "start_column": 81,
+              "start_line": 9
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@wrapping_sub_u32#i#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "wrapping_sub_u32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@436@F@wrapping_sub_u32#i#i#@a",
+          "name": "a",
+          "span": {
+            "end_column": 45,
+            "end_line": 9,
+            "file": "integers.cpp",
+            "start_column": 31,
+            "start_line": 9
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@452@F@wrapping_sub_u32#i#i#@b",
+          "name": "b",
+          "span": {
+            "end_column": 61,
+            "end_line": 9,
+            "file": "integers.cpp",
+            "start_column": 47,
+            "start_line": 9
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "wrapping_sub_u32"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 89,
+        "end_line": 9,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 9
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 86,
+            "end_line": 10,
+            "file": "integers.cpp",
+            "start_column": 74,
+            "start_line": 10
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@525@F@wrapping_mul_u32#i#i#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 82,
+                  "end_line": 10,
+                  "file": "integers.cpp",
+                  "start_column": 81,
+                  "start_line": 10
+                }
+              },
+              "span": {
+                "end_column": 82,
+                "end_line": 10,
+                "file": "integers.cpp",
+                "start_column": 81,
+                "start_line": 10
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "multiply",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@541@F@wrapping_mul_u32#i#i#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 86,
+                  "end_line": 10,
+                  "file": "integers.cpp",
+                  "start_column": 85,
+                  "start_line": 10
+                }
+              },
+              "span": {
+                "end_column": 86,
+                "end_line": 10,
+                "file": "integers.cpp",
+                "start_column": 85,
+                "start_line": 10
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 86,
+              "end_line": 10,
+              "file": "integers.cpp",
+              "start_column": 81,
+              "start_line": 10
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@wrapping_mul_u32#i#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "wrapping_mul_u32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@525@F@wrapping_mul_u32#i#i#@a",
+          "name": "a",
+          "span": {
+            "end_column": 45,
+            "end_line": 10,
+            "file": "integers.cpp",
+            "start_column": 31,
+            "start_line": 10
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@541@F@wrapping_mul_u32#i#i#@b",
+          "name": "b",
+          "span": {
+            "end_column": 61,
+            "end_line": 10,
+            "file": "integers.cpp",
+            "start_column": 47,
+            "start_line": 10
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "wrapping_mul_u32"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 89,
+        "end_line": 10,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 10
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 61,
+            "end_line": 12,
+            "file": "integers.cpp",
+            "start_column": 43,
+            "start_line": 12
+          },
+          "value": {
+            "kind": "integer_literal",
+            "span": {
+              "end_column": 61,
+              "end_line": 12,
+              "file": "integers.cpp",
+              "start_column": 50,
+              "start_line": 12
+            },
+            "value": "4000000000",
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@above_int32_max#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "above_int32_max",
+      "parameters": [],
+      "path": [
+        "above_int32_max"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 64,
+        "end_line": 12,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 12
+      }
+    },
+    {
+      "body": [
+        {
+          "condition": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@683@F@keep_above_int32_max#i#@u",
+                "name": "u",
+                "span": {
+                  "end_column": 10,
+                  "end_line": 14,
+                  "file": "integers.cpp",
+                  "start_column": 9,
+                  "start_line": 14
+                }
+              },
+              "span": {
+                "end_column": 10,
+                "end_line": 14,
+                "file": "integers.cpp",
+                "start_column": 9,
+                "start_line": 14
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "greater_than",
+            "right": {
+              "kind": "integer_literal",
+              "span": {
+                "end_column": 24,
+                "end_line": 14,
+                "file": "integers.cpp",
+                "start_column": 13,
+                "start_line": 14
+              },
+              "value": "2147483647",
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 24,
+              "end_line": 14,
+              "file": "integers.cpp",
+              "start_column": 9,
+              "start_line": 14
+            },
+            "value_type": {
+              "bits": 8,
+              "is_const": false,
+              "kind": "boolean"
+            }
+          },
+          "else_branch": [],
+          "kind": "if",
+          "span": {
+            "end_column": 6,
+            "end_line": 16,
+            "file": "integers.cpp",
+            "start_column": 5,
+            "start_line": 14
+          },
+          "then_branch": [
+            {
+              "cleanups": [],
+              "kind": "return",
+              "span": {
+                "end_column": 17,
+                "end_line": 15,
+                "file": "integers.cpp",
+                "start_column": 9,
+                "start_line": 15
+              },
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:integers.cpp@683@F@keep_above_int32_max#i#@u",
+                  "name": "u",
+                  "span": {
+                    "end_column": 17,
+                    "end_line": 15,
+                    "file": "integers.cpp",
+                    "start_column": 16,
+                    "start_line": 15
+                  }
+                },
+                "span": {
+                  "end_column": 17,
+                  "end_line": 15,
+                  "file": "integers.cpp",
+                  "start_column": 16,
+                  "start_line": 15
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": false,
+                  "source_aliases": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 14,
+            "end_line": 17,
+            "file": "integers.cpp",
+            "start_column": 5,
+            "start_line": 17
+          },
+          "value": {
+            "kind": "integer_literal",
+            "span": {
+              "end_column": 14,
+              "end_line": 17,
+              "file": "integers.cpp",
+              "start_column": 12,
+              "start_line": 17
+            },
+            "value": "0",
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@keep_above_int32_max#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "keep_above_int32_max",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@683@F@keep_above_int32_max#i#@u",
+          "name": "u",
+          "span": {
+            "end_column": 49,
+            "end_line": 13,
+            "file": "integers.cpp",
+            "start_column": 35,
+            "start_line": 13
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "keep_above_int32_max"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 18,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 13
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 72,
+            "end_line": 20,
+            "file": "integers.cpp",
+            "start_column": 46,
+            "start_line": 20
+          },
+          "value": {
+            "kind": "integral_cast",
+            "span": {
+              "end_column": 71,
+              "end_line": 20,
+              "file": "integers.cpp",
+              "start_column": 70,
+              "start_line": 20
+            },
+            "value": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@797@F@to_signed_i32#i#@u",
+                "name": "u",
+                "span": {
+                  "end_column": 71,
+                  "end_line": 20,
+                  "file": "integers.cpp",
+                  "start_column": 70,
+                  "start_line": 20
+                }
+              },
+              "span": {
+                "end_column": 71,
+                "end_line": 20,
+                "file": "integers.cpp",
+                "start_column": 70,
+                "start_line": 20
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@to_signed_i32#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "to_signed_i32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@797@F@to_signed_i32#i#@u",
+          "name": "u",
+          "span": {
+            "end_column": 33,
+            "end_line": 20,
+            "file": "integers.cpp",
+            "start_column": 19,
+            "start_line": 20
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "to_signed_i32"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 75,
+        "end_line": 20,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 20
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 83,
+            "end_line": 21,
+            "file": "integers.cpp",
+            "start_column": 48,
+            "start_line": 21
+          },
+          "value": {
+            "kind": "integral_cast",
+            "span": {
+              "end_column": 82,
+              "end_line": 21,
+              "file": "integers.cpp",
+              "start_column": 81,
+              "start_line": 21
+            },
+            "value": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@883@F@to_unsigned_u32#I#@x",
+                "name": "x",
+                "span": {
+                  "end_column": 82,
+                  "end_line": 21,
+                  "file": "integers.cpp",
+                  "start_column": 81,
+                  "start_line": 21
+                }
+              },
+              "span": {
+                "end_column": 82,
+                "end_line": 21,
+                "file": "integers.cpp",
+                "start_column": 81,
+                "start_line": 21
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@to_unsigned_u32#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "to_unsigned_u32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@883@F@to_unsigned_u32#I#@x",
+          "name": "x",
+          "span": {
+            "end_column": 35,
+            "end_line": 21,
+            "file": "integers.cpp",
+            "start_column": 30,
+            "start_line": 21
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "to_unsigned_u32"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 86,
+        "end_line": 21,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 21
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 77,
+            "end_line": 23,
+            "file": "integers.cpp",
+            "start_column": 65,
+            "start_line": 23
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@962@F@div_u32#i#i#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 73,
+                  "end_line": 23,
+                  "file": "integers.cpp",
+                  "start_column": 72,
+                  "start_line": 23
+                }
+              },
+              "span": {
+                "end_column": 73,
+                "end_line": 23,
+                "file": "integers.cpp",
+                "start_column": 72,
+                "start_line": 23
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "divide",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@978@F@div_u32#i#i#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 77,
+                  "end_line": 23,
+                  "file": "integers.cpp",
+                  "start_column": 76,
+                  "start_line": 23
+                }
+              },
+              "span": {
+                "end_column": 77,
+                "end_line": 23,
+                "file": "integers.cpp",
+                "start_column": 76,
+                "start_line": 23
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 77,
+              "end_line": 23,
+              "file": "integers.cpp",
+              "start_column": 72,
+              "start_line": 23
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@div_u32#i#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "div_u32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@962@F@div_u32#i#i#@a",
+          "name": "a",
+          "span": {
+            "end_column": 36,
+            "end_line": 23,
+            "file": "integers.cpp",
+            "start_column": 22,
+            "start_line": 23
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@978@F@div_u32#i#i#@b",
+          "name": "b",
+          "span": {
+            "end_column": 52,
+            "end_line": 23,
+            "file": "integers.cpp",
+            "start_column": 38,
+            "start_line": 23
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "div_u32"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 80,
+        "end_line": 23,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 23
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 77,
+            "end_line": 24,
+            "file": "integers.cpp",
+            "start_column": 65,
+            "start_line": 24
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1042@F@rem_u32#i#i#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 73,
+                  "end_line": 24,
+                  "file": "integers.cpp",
+                  "start_column": 72,
+                  "start_line": 24
+                }
+              },
+              "span": {
+                "end_column": 73,
+                "end_line": 24,
+                "file": "integers.cpp",
+                "start_column": 72,
+                "start_line": 24
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "remainder",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1058@F@rem_u32#i#i#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 77,
+                  "end_line": 24,
+                  "file": "integers.cpp",
+                  "start_column": 76,
+                  "start_line": 24
+                }
+              },
+              "span": {
+                "end_column": 77,
+                "end_line": 24,
+                "file": "integers.cpp",
+                "start_column": 76,
+                "start_line": 24
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 77,
+              "end_line": 24,
+              "file": "integers.cpp",
+              "start_column": 72,
+              "start_line": 24
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@rem_u32#i#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "rem_u32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@1042@F@rem_u32#i#i#@a",
+          "name": "a",
+          "span": {
+            "end_column": 36,
+            "end_line": 24,
+            "file": "integers.cpp",
+            "start_column": 22,
+            "start_line": 24
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@1058@F@rem_u32#i#i#@b",
+          "name": "b",
+          "span": {
+            "end_column": 52,
+            "end_line": 24,
+            "file": "integers.cpp",
+            "start_column": 38,
+            "start_line": 24
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "rem_u32"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 80,
+        "end_line": 24,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 24
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 50,
+            "end_line": 26,
+            "file": "integers.cpp",
+            "start_column": 38,
+            "start_line": 26
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1194@F@div_i32#I#I#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 46,
+                  "end_line": 26,
+                  "file": "integers.cpp",
+                  "start_column": 45,
+                  "start_line": 26
+                }
+              },
+              "span": {
+                "end_column": 46,
+                "end_line": 26,
+                "file": "integers.cpp",
+                "start_column": 45,
+                "start_line": 26
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "divide",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1201@F@div_i32#I#I#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 50,
+                  "end_line": 26,
+                  "file": "integers.cpp",
+                  "start_column": 49,
+                  "start_line": 26
+                }
+              },
+              "span": {
+                "end_column": 50,
+                "end_line": 26,
+                "file": "integers.cpp",
+                "start_column": 49,
+                "start_line": 26
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 50,
+              "end_line": 26,
+              "file": "integers.cpp",
+              "start_column": 45,
+              "start_line": 26
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@div_i32#I#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "div_i32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@1194@F@div_i32#I#I#@a",
+          "name": "a",
+          "span": {
+            "end_column": 18,
+            "end_line": 26,
+            "file": "integers.cpp",
+            "start_column": 13,
+            "start_line": 26
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@1201@F@div_i32#I#I#@b",
+          "name": "b",
+          "span": {
+            "end_column": 25,
+            "end_line": 26,
+            "file": "integers.cpp",
+            "start_column": 20,
+            "start_line": 26
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "div_i32"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 53,
+        "end_line": 26,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 26
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 50,
+            "end_line": 27,
+            "file": "integers.cpp",
+            "start_column": 38,
+            "start_line": 27
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1247@F@rem_i32#I#I#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 46,
+                  "end_line": 27,
+                  "file": "integers.cpp",
+                  "start_column": 45,
+                  "start_line": 27
+                }
+              },
+              "span": {
+                "end_column": 46,
+                "end_line": 27,
+                "file": "integers.cpp",
+                "start_column": 45,
+                "start_line": 27
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "remainder",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1254@F@rem_i32#I#I#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 50,
+                  "end_line": 27,
+                  "file": "integers.cpp",
+                  "start_column": 49,
+                  "start_line": 27
+                }
+              },
+              "span": {
+                "end_column": 50,
+                "end_line": 27,
+                "file": "integers.cpp",
+                "start_column": 49,
+                "start_line": 27
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 50,
+              "end_line": 27,
+              "file": "integers.cpp",
+              "start_column": 45,
+              "start_line": 27
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@rem_i32#I#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "rem_i32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@1247@F@rem_i32#I#I#@a",
+          "name": "a",
+          "span": {
+            "end_column": 18,
+            "end_line": 27,
+            "file": "integers.cpp",
+            "start_column": 13,
+            "start_line": 27
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@1254@F@rem_i32#I#I#@b",
+          "name": "b",
+          "span": {
+            "end_column": 25,
+            "end_line": 27,
+            "file": "integers.cpp",
+            "start_column": 20,
+            "start_line": 27
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "rem_i32"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 53,
+        "end_line": 27,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 27
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 88,
+            "end_line": 30,
+            "file": "integers.cpp",
+            "start_column": 52,
+            "start_line": 30
+          },
+          "value": {
+            "kind": "integral_cast",
+            "span": {
+              "end_column": 87,
+              "end_line": 30,
+              "file": "integers.cpp",
+              "start_column": 86,
+              "start_line": 30
+            },
+            "value": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1376@F@narrow_u8#i#@x",
+                "name": "x",
+                "span": {
+                  "end_column": 87,
+                  "end_line": 30,
+                  "file": "integers.cpp",
+                  "start_column": 86,
+                  "start_line": 30
+                }
+              },
+              "span": {
+                "end_column": 87,
+                "end_line": 30,
+                "file": "integers.cpp",
+                "start_column": 86,
+                "start_line": 30
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "value_type": {
+              "bits": 8,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@narrow_u8#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "narrow_u8",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@1376@F@narrow_u8#i#@x",
+          "name": "x",
+          "span": {
+            "end_column": 39,
+            "end_line": 30,
+            "file": "integers.cpp",
+            "start_column": 25,
+            "start_line": 30
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "narrow_u8"
+      ],
+      "return_type": {
+        "bits": 8,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 91,
+        "end_line": 30,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 30
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 97,
+            "end_line": 32,
+            "file": "integers.cpp",
+            "start_column": 61,
+            "start_line": 32
+          },
+          "value": {
+            "kind": "integral_cast",
+            "span": {
+              "end_column": 96,
+              "end_line": 32,
+              "file": "integers.cpp",
+              "start_column": 95,
+              "start_line": 32
+            },
+            "value": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1554@F@narrow_u8_in_range#i#@x",
+                "name": "x",
+                "span": {
+                  "end_column": 96,
+                  "end_line": 32,
+                  "file": "integers.cpp",
+                  "start_column": 95,
+                  "start_line": 32
+                }
+              },
+              "span": {
+                "end_column": 96,
+                "end_line": 32,
+                "file": "integers.cpp",
+                "start_column": 95,
+                "start_line": 32
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "value_type": {
+              "bits": 8,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@narrow_u8_in_range#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "narrow_u8_in_range",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@1554@F@narrow_u8_in_range#i#@x",
+          "name": "x",
+          "span": {
+            "end_column": 48,
+            "end_line": 32,
+            "file": "integers.cpp",
+            "start_column": 34,
+            "start_line": 32
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "narrow_u8_in_range"
+      ],
+      "return_type": {
+        "bits": 8,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 100,
+        "end_line": 32,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 32
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 53,
+            "end_line": 34,
+            "file": "integers.cpp",
+            "start_column": 41,
+            "start_line": 34
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1635@F@add_i64#L#L#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 49,
+                  "end_line": 34,
+                  "file": "integers.cpp",
+                  "start_column": 48,
+                  "start_line": 34
+                }
+              },
+              "span": {
+                "end_column": 49,
+                "end_line": 34,
+                "file": "integers.cpp",
+                "start_column": 48,
+                "start_line": 34
+              },
+              "value_type": {
+                "bits": 64,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1643@F@add_i64#L#L#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 53,
+                  "end_line": 34,
+                  "file": "integers.cpp",
+                  "start_column": 52,
+                  "start_line": 34
+                }
+              },
+              "span": {
+                "end_column": 53,
+                "end_line": 34,
+                "file": "integers.cpp",
+                "start_column": 52,
+                "start_line": 34
+              },
+              "value_type": {
+                "bits": 64,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 53,
+              "end_line": 34,
+              "file": "integers.cpp",
+              "start_column": 48,
+              "start_line": 34
+            },
+            "value_type": {
+              "bits": 64,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@add_i64#L#L#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "add_i64",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@1635@F@add_i64#L#L#@a",
+          "name": "a",
+          "span": {
+            "end_column": 20,
+            "end_line": 34,
+            "file": "integers.cpp",
+            "start_column": 14,
+            "start_line": 34
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@1643@F@add_i64#L#L#@b",
+          "name": "b",
+          "span": {
+            "end_column": 28,
+            "end_line": 34,
+            "file": "integers.cpp",
+            "start_column": 22,
+            "start_line": 34
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "add_i64"
+      ],
+      "return_type": {
+        "bits": 64,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 56,
+        "end_line": 34,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 34
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 89,
+            "end_line": 35,
+            "file": "integers.cpp",
+            "start_column": 77,
+            "start_line": 35
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1709@F@wrapping_add_u64#l#l#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 85,
+                  "end_line": 35,
+                  "file": "integers.cpp",
+                  "start_column": 84,
+                  "start_line": 35
+                }
+              },
+              "span": {
+                "end_column": 85,
+                "end_line": 35,
+                "file": "integers.cpp",
+                "start_column": 84,
+                "start_line": 35
+              },
+              "value_type": {
+                "bits": 64,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1726@F@wrapping_add_u64#l#l#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 89,
+                  "end_line": 35,
+                  "file": "integers.cpp",
+                  "start_column": 88,
+                  "start_line": 35
+                }
+              },
+              "span": {
+                "end_column": 89,
+                "end_line": 35,
+                "file": "integers.cpp",
+                "start_column": 88,
+                "start_line": 35
+              },
+              "value_type": {
+                "bits": 64,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 89,
+              "end_line": 35,
+              "file": "integers.cpp",
+              "start_column": 84,
+              "start_line": 35
+            },
+            "value_type": {
+              "bits": 64,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@wrapping_add_u64#l#l#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "wrapping_add_u64",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@1709@F@wrapping_add_u64#l#l#@a",
+          "name": "a",
+          "span": {
+            "end_column": 47,
+            "end_line": 35,
+            "file": "integers.cpp",
+            "start_column": 32,
+            "start_line": 35
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@1726@F@wrapping_add_u64#l#l#@b",
+          "name": "b",
+          "span": {
+            "end_column": 64,
+            "end_line": 35,
+            "file": "integers.cpp",
+            "start_column": 49,
+            "start_line": 35
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "wrapping_add_u64"
+      ],
+      "return_type": {
+        "bits": 64,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 92,
+        "end_line": 35,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 35
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 53,
+            "end_line": 37,
+            "file": "integers.cpp",
+            "start_column": 41,
+            "start_line": 37
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1786@F@below_i32#I#I#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 49,
+                  "end_line": 37,
+                  "file": "integers.cpp",
+                  "start_column": 48,
+                  "start_line": 37
+                }
+              },
+              "span": {
+                "end_column": 49,
+                "end_line": 37,
+                "file": "integers.cpp",
+                "start_column": 48,
+                "start_line": 37
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "less_than",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1793@F@below_i32#I#I#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 53,
+                  "end_line": 37,
+                  "file": "integers.cpp",
+                  "start_column": 52,
+                  "start_line": 37
+                }
+              },
+              "span": {
+                "end_column": 53,
+                "end_line": 37,
+                "file": "integers.cpp",
+                "start_column": 52,
+                "start_line": 37
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 53,
+              "end_line": 37,
+              "file": "integers.cpp",
+              "start_column": 48,
+              "start_line": 37
+            },
+            "value_type": {
+              "bits": 8,
+              "is_const": false,
+              "kind": "boolean"
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@below_i32#I#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "below_i32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@1786@F@below_i32#I#I#@a",
+          "name": "a",
+          "span": {
+            "end_column": 21,
+            "end_line": 37,
+            "file": "integers.cpp",
+            "start_column": 16,
+            "start_line": 37
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@1793@F@below_i32#I#I#@b",
+          "name": "b",
+          "span": {
+            "end_column": 28,
+            "end_line": 37,
+            "file": "integers.cpp",
+            "start_column": 23,
+            "start_line": 37
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "below_i32"
+      ],
+      "return_type": {
+        "bits": 8,
+        "is_const": false,
+        "kind": "boolean"
+      },
+      "span": {
+        "end_column": 56,
+        "end_line": 37,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 37
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 71,
+            "end_line": 38,
+            "file": "integers.cpp",
+            "start_column": 59,
+            "start_line": 38
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1842@F@below_u32#i#i#@a",
+                "name": "a",
+                "span": {
+                  "end_column": 67,
+                  "end_line": 38,
+                  "file": "integers.cpp",
+                  "start_column": 66,
+                  "start_line": 38
+                }
+              },
+              "span": {
+                "end_column": 67,
+                "end_line": 38,
+                "file": "integers.cpp",
+                "start_column": 66,
+                "start_line": 38
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "less_than",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:integers.cpp@1858@F@below_u32#i#i#@b",
+                "name": "b",
+                "span": {
+                  "end_column": 71,
+                  "end_line": 38,
+                  "file": "integers.cpp",
+                  "start_column": 70,
+                  "start_line": 38
+                }
+              },
+              "span": {
+                "end_column": 71,
+                "end_line": 38,
+                "file": "integers.cpp",
+                "start_column": 70,
+                "start_line": 38
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 71,
+              "end_line": 38,
+              "file": "integers.cpp",
+              "start_column": 66,
+              "start_line": 38
+            },
+            "value_type": {
+              "bits": 8,
+              "is_const": false,
+              "kind": "boolean"
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@below_u32#i#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "below_u32",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@1842@F@below_u32#i#i#@a",
+          "name": "a",
+          "span": {
+            "end_column": 30,
+            "end_line": 38,
+            "file": "integers.cpp",
+            "start_column": 16,
+            "start_line": 38
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:integers.cpp@1858@F@below_u32#i#i#@b",
+          "name": "b",
+          "span": {
+            "end_column": 46,
+            "end_line": 38,
+            "file": "integers.cpp",
+            "start_column": 32,
+            "start_line": 38
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "below_u32"
+      ],
+      "return_type": {
+        "bits": 8,
+        "is_const": false,
+        "kind": "boolean"
+      },
+      "span": {
+        "end_column": 74,
+        "end_line": 38,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 38
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 76,
+            "end_line": 39,
+            "file": "integers.cpp",
+            "start_column": 46,
+            "start_line": 39
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "integral_cast",
+              "span": {
+                "end_column": 71,
+                "end_line": 39,
+                "file": "integers.cpp",
+                "start_column": 70,
+                "start_line": 39
+              },
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:integers.cpp@1919@F@sign_bit_set#i#@u",
+                  "name": "u",
+                  "span": {
+                    "end_column": 71,
+                    "end_line": 39,
+                    "file": "integers.cpp",
+                    "start_column": 70,
+                    "start_line": 39
+                  }
+                },
+                "span": {
+                  "end_column": 71,
+                  "end_line": 39,
+                  "file": "integers.cpp",
+                  "start_column": 70,
+                  "start_line": 39
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": false,
+                  "source_aliases": []
+                }
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "less_than",
+            "right": {
+              "kind": "integer_literal",
+              "span": {
+                "end_column": 76,
+                "end_line": 39,
+                "file": "integers.cpp",
+                "start_column": 75,
+                "start_line": 39
+              },
+              "value": "0",
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 76,
+              "end_line": 39,
+              "file": "integers.cpp",
+              "start_column": 53,
+              "start_line": 39
+            },
+            "value_type": {
+              "bits": 8,
+              "is_const": false,
+              "kind": "boolean"
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@sign_bit_set#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "sign_bit_set",
+      "parameters": [
+        {
+          "declaration_id": "c:integers.cpp@1919@F@sign_bit_set#i#@u",
+          "name": "u",
+          "span": {
+            "end_column": 33,
+            "end_line": 39,
+            "file": "integers.cpp",
+            "start_column": 19,
+            "start_line": 39
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "sign_bit_set"
+      ],
+      "return_type": {
+        "bits": 8,
+        "is_const": false,
+        "kind": "boolean"
+      },
+      "span": {
+        "end_column": 79,
+        "end_line": 39,
+        "file": "integers.cpp",
+        "start_column": 1,
+        "start_line": 39
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "integers.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/integers.cpp",
+      "canonical_path": "$unit/integers.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "integers.cpp",
+      "-o",
+      "integers.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "integers.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [],
+  "records": [],
+  "schema": 60
+}

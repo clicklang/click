@@ -1258,6 +1258,36 @@ exporter is available, `cpp_mdtest_imports_match_the_pinned_exporter` in
 The C++ and C fences cannot be mixed in one mdtest. See
 `mdtests/cpp_scalar_catch.md` for a real exception path.
 
+## Cross-language integer fixture
+
+`examples/integer-languages/` holds the same small integer programs in C, C++
+and Rust (`c/integers.c`, `cpp/integers.cpp`, `rust/integers.rs`) and one
+sidecar per language (`c/c.click`, `cpp/cpp.click`, `rust/rust.click`) stating
+the same claims: signed arithmetic under an exact overflow precondition,
+unsigned wrapping through `integer::uint32_wrapping_*`, `uint32` values above
+`INT32_MAX`, sign conversions, signed and unsigned division, remainder and
+right shift, narrowing, 64-bit arithmetic and signed against unsigned order.
+It is the language-level counterpart of the kernel's per-format matrix
+(`src/kernel/machine_integer/matrix_tests.rs`). The example harness verifies
+the three parts as separate examples, so a language that falls behind fails
+there, naming its sidecar and function. `tests/examples/integer_languages.rs`
+lists every case with each language's gap, if any, and
+`claims_agree_across_languages` requires the same signature (Rust types read
+as Click's) and contract lines in every language.
+
+A gap is named, not omitted: the case's claims and proof are in that
+language's `.click-gap` file, which the corpus tools do not read. A
+verification gap must still be refused at its recorded goal, checked in the
+nightly; an import gap must still be refused by the front end, checked with
+the pinned exporter in the gate where `CLICK_CPP_EXPORTER` is set, and for
+Rust in the nightly. Closing a gap fails
+these checks until the case moves into the sidecar. The C++ and Rust imports
+are checked in, so the gate loads them offline. The nightly
+`cpp_import_matches_the_pinned_exporter` and
+`rust_import_matches_live_charon_extraction` compare them with a fresh export
+and extraction. After changing a source, run `click import lock` on its
+directory with its toolchain.
+
 ## Example project tests
 
 Example projects live under `examples/`. The integration test in

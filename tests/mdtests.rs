@@ -2,6 +2,8 @@ use click::surface::ProgramInputs;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use cpp_imports::{checked_in_files, first_import_difference, same_import};
+
 use click::cli::{
     CInput, MdTestExpectation, export_cpp_mdtest_import, prepare_mdtest_inputs,
     read_c_inputs_for_project, read_click_project, read_mdtest, read_mdtest_project_if_needed,
@@ -13,6 +15,8 @@ use click::surface::{
     verify_c0_sources, verify_program_prepared_project,
 };
 
+#[path = "support/cpp_imports.rs"]
+mod cpp_imports;
 #[path = "support/limits.rs"]
 mod limits;
 #[path = "support/tactic_work.rs"]
@@ -383,107 +387,6 @@ fn cpp_mdtest_imports_match_the_pinned_exporter() {
         "C++ mdtest imports differ from the pinned exporter's; run scripts/refresh-cpp-imports.sh:\n  {}",
         problems.join("\n  ")
     );
-}
-
-/// Whether two imports hold the same lock and artifacts apart from which
-/// build of the pinned toolchain exported them. Every machine builds its own
-/// exporter, whose digest and the identities derived from it differ, and the
-/// pinned Clang 19.1.7 may be packaged differently (a source build or a
-/// distribution package of the same release), which only its version string
-/// records. The artifacts themselves are compared, so the lock's record of
-/// their digest and size is left out too.
-fn same_import(
-    left: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
-    right: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
-) -> bool {
-    fn without_build_provenance(value: &mut serde_json::Value) {
-        match value {
-            serde_json::Value::Object(fields) => {
-                for (name, field) in fields.iter_mut() {
-                    match (name.as_str(), &*field) {
-                        ("identity" | "unit", serde_json::Value::String(_)) => {
-                            *field = serde_json::Value::Null;
-                        }
-                        ("frontend_version", serde_json::Value::String(version))
-                            if version.contains("clang version 19.1.7 ") =>
-                        {
-                            *field = serde_json::Value::Null;
-                        }
-                        ("artifact", serde_json::Value::Object(record)) => {
-                            let path = record.get("path").cloned();
-                            *field = serde_json::json!({ "path": path });
-                        }
-                        _ => without_build_provenance(field),
-                    }
-                }
-            }
-            serde_json::Value::Array(items) => items.iter_mut().for_each(without_build_provenance),
-            _ => {}
-        }
-    }
-    let normalized = |bytes: &[u8]| {
-        let mut value = serde_json::from_slice::<serde_json::Value>(bytes).ok()?;
-        without_build_provenance(&mut value);
-        Some(value)
-    };
-    left.len() == right.len()
-        && left
-            .iter()
-            .zip(right)
-            .all(|((left_path, left_bytes), (right_path, right_bytes))| {
-                left_path == right_path
-                    && normalized(left_bytes)
-                        .is_some_and(|left| Some(left) == normalized(right_bytes))
-            })
-}
-
-/// Where a checked-in import first differs from a fresh export, for the
-/// freshness failure message.
-fn first_import_difference(
-    checked_in: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
-    exported: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
-) -> String {
-    for path in checked_in.keys().chain(exported.keys()) {
-        let (Some(old), Some(new)) = (checked_in.get(path), exported.get(path)) else {
-            return format!("only one side has `{}`", path.display());
-        };
-        if old == new {
-            continue;
-        }
-        let at = old.iter().zip(new).take_while(|(a, b)| a == b).count();
-        let context = |bytes: &[u8]| {
-            let start = at.saturating_sub(80);
-            String::from_utf8_lossy(&bytes[start..(at + 80).min(bytes.len())]).into_owned()
-        };
-        return format!(
-            "`{}` differs at byte {at}\n    checked in: {}\n    exported:   {}",
-            path.display(),
-            context(old),
-            context(new)
-        );
-    }
-    "the lock differs only in its exporter identity".into()
-}
-
-/// The files under `directory`, by their paths inside it.
-fn checked_in_files(directory: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
-    let mut files = std::collections::BTreeMap::new();
-    let mut pending = vec![PathBuf::new()];
-    while let Some(relative) = pending.pop() {
-        for entry in fs::read_dir(directory.join(&relative))
-            .into_iter()
-            .flatten()
-        {
-            let entry = entry.unwrap();
-            let child = relative.join(entry.file_name());
-            if entry.file_type().unwrap().is_dir() {
-                pending.push(child);
-            } else {
-                files.insert(child.clone(), fs::read(directory.join(&child)).unwrap());
-            }
-        }
-    }
-    files
 }
 
 #[test]
