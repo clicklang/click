@@ -29,7 +29,7 @@ void keep(int32 bound) {
     ensures c.model == old(c.model);
 } by {
     unfold(c);
-    execute();
+    step_until(function.exit);
     fold(c);
     solve();
 }

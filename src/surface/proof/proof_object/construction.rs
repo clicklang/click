@@ -111,8 +111,8 @@ impl<'a> Proof<'a> {
 
     /// Names `step_tactic_name` as the source tactic of the statement steps
     /// checked from this proof, without changing proof state or provenance:
-    /// a smart `execute()` advancing statement by statement is refused as
-    /// `execute()`, the tactic the proof wrote.
+    /// the implicit tail, advancing statement by statement, is refused as
+    /// `step()`, the step that refused.
     pub(in crate::surface::proof) fn with_execution_step_tactic_name(
         &self,
         step_tactic_name: &'static str,

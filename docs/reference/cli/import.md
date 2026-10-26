@@ -385,9 +385,6 @@ int32 increment(int32& value) {
     owns value;
     ensures value == old(value) + 1;
     ensures result == value;
-} by {
-    execute();
-    solve();
 }
 ```
 
@@ -536,10 +533,10 @@ bool money_nonnegative(const int64& nValue) {
     ensures result == (if old(nValue) >= 0i64 { 1 } else { 0 });
 } by {
     if nValue >= 0i64 {
-        execute();
+        step_until(function.exit);
         solve();
     } else {
-        execute();
+        step_until(function.exit);
         solve();
     }
 }
@@ -1633,7 +1630,7 @@ extern int Shape::area(int scale) const {
 }
 int Square::area(int scale) const {
     ensures result == scale + 1;
-} by { execute(); solve(); }
+}
 ```
 
 Without object state the interface reads nothing through `this` and holds
@@ -1710,7 +1707,7 @@ class Square : Shape {
     function size(this) -> int32 { this->side }
 }
 int Square::area(int scale) const {
-} by { execute(); solve(); }
+}
 ```
 
 The object is the sealed abstract resource `Shape__object`, with a field for
@@ -1762,7 +1759,7 @@ template<class T> class Wrap<T> : Holder<T> {
     function held(this) -> T { this->value }
 }
 template<class T> void Wrap<T>::put(T x) {
-} by { execute(); solve(); }
+}
 ```
 
 The object is the generic resource `Holder__object<T>`, and each instance
@@ -1859,7 +1856,7 @@ class BigSquare : Square {
     function size(this) -> int32 { this->base.side + this->extra }
 }
 int BigSquare::area(int scale) const {
-} by { execute(); solve(); }
+}
 ```
 
 Each of its overrides keeps the object class's interface read with its own

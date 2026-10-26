@@ -960,5 +960,4 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  }
  step_until(assignment(adler, 39));
  apply(zlib_reduced_result(old(buf), old((int32)(uint32)len), adler, sum2));
- execute(); solve();
 }

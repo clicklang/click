@@ -1,6 +1,7 @@
 # A returned fold uses a theorem applied after return
 
-A theorem applied after `execute()` reaches the function's exit is a
+A theorem applied after `step_until(function.exit)` reaches the function's
+exit is a
 checked fact on the returning path, exactly as a `have` there is. A later
 fold of a produced resource may rely on its conclusion.
 

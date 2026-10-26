@@ -50,12 +50,12 @@ void nullable(int32* p, int32 value) {
 } by {
     if p == 0 {
         unfold(c);
-        execute();
+        step_until(function.exit);
         let c = fold(guarded(p), { value: value });
         solve();
     } else {
         unfold(c);
-        execute();
+        step_until(function.exit);
         let c = fold(guarded(p), { value: value });
         solve();
     }

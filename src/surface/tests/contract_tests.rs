@@ -12,13 +12,13 @@ fn inline_array_element_addresses_are_logical_without_granting_access() {
     let proof = r#"verifying "addresses.c";
         void logical(struct packet* p) {
             ensures &p->values[0] == p->values;
-        } by { execute(); solve(); }
+        } by { step_until(function.exit); solve(); }
         uint8* byte_at(struct packet* p, uint32 i) {
             views p->bytes[0..4];
             requires i < 4u32;
             ensures result == &p->bytes[i];
             ensures result == &p->bytes[0] + i;
-        } by { execute(); solve(); }
+        } by { step_until(function.exit); solve(); }
     "#;
     let verified_for_expansion = verify_c0_sources(proof, &inputs).unwrap();
     for (_, expanded) in
@@ -50,7 +50,7 @@ fn inline_array_element_addresses_are_logical_without_granting_access() {
     let missing_view = r#"verifying "addresses.c";
         int32 read(struct packet* p) {
             ensures &p->values[0] == p->values;
-        } by { execute(); solve(); }
+        } by { step_until(function.exit); solve(); }
     "#;
     assert!(verify_c0_sources(missing_view, &inputs).is_err());
 }
@@ -71,7 +71,7 @@ fn historical_wide_view_bound_reads_the_marked_counter() {
                 step();
                 have to_integer(at(before, 16u64 * (uint64)n)) == to_integer(32u64) by solve();
                 have at(before, viewable(p[0u64..16u64 * (uint64)n])) by solve();
-                execute(); solve();
+                step_until(function.exit); solve();
             }}
         "#
         );
@@ -93,8 +93,8 @@ fn historical_wide_view_bound_reads_the_marked_counter() {
 fn readonly_scalar_initialization_preserves_address_and_expands() {
     let source = "int32 seven() { return 7; } int32 probe() { const int32 x = seven(); const int32* p = &x; return *p; }";
     let proof = r#"verifying "readonly.c";
-        int32 seven() { ensures result == 7; } by { execute(); solve(); }
-        int32 probe() { ensures result == 7; } by { execute(); solve(); }"#;
+        int32 seven() { ensures result == 7; }
+        int32 probe() { ensures result == 7; }"#;
     verify_c0_sources(proof, &[("readonly.c", source)]).unwrap();
     let expanded = expand_c0_claim_source(
         proof,
@@ -112,7 +112,7 @@ fn typed_load_through_entry_pointer_reads_current_memory() {
     let source = "void probe(int32* p, int32* q) { *p = 7; p = q; }";
     let proof = r#"verifying "snapshot.c"; void probe(int32* p, int32* q) {
         owns p[0..1]; ensures load_int32(old(p)) == 7;
-    } by { execute(); solve(); }"#;
+    }"#;
     verify_c0_sources(proof, &[("snapshot.c", source)]).unwrap();
     let expanded = expand_c0_claim_source(
         proof,
@@ -137,7 +137,7 @@ fn typed_pointer_load_through_entry_pointer_expands() {
     let source = "void probe(int32** p, int32* q, int32** r) { *p = q; p = r; }";
     let proof = r#"verifying "snapshot.c"; void probe(int32** p, int32* q, int32** r) {
         owns p[0..1]; ensures load_int32_pointer(old(p)) == q;
-    } by { execute(); solve(); }"#;
+    }"#;
     verify_c0_sources(proof, &[("snapshot.c", source)]).unwrap();
     let expanded = expand_c0_claim_source(
         proof,
@@ -158,7 +158,7 @@ fn native_contract_byte_casts_preserve_pointer_identity_and_offsets() {
             views p[0..1];
             ensures (uint8*)result == old((uint8*)(p + 1));
             ensures (uint8*)result == (uint8*)p + 4;
-        } by { execute(); solve(); }"#;
+        }"#;
     verify_c0_sources(proof, &[("bytes.c", source)]).unwrap();
     let expanded = expand_c0_claim_source(
         proof,
@@ -209,7 +209,7 @@ fn native_contract_byte_casts_do_not_grant_memory_access() {
     let source = "uint8 probe(uint8* p) { return *p; }";
     let proof = r#"verifying "bytes.c"; uint8 probe(uint8* p) {
         views p[0..1]; ensures result == *((uint8*)p);
-    } by { execute(); solve(); }"#;
+    }"#;
     verify_c0_sources(proof, &[("bytes.c", source)]).unwrap();
     assert!(
         verify_c0_sources(&proof.replace("views p[0..1];", ""), &[("bytes.c", source)]).is_err()
@@ -224,7 +224,7 @@ fn unsigned_word_array_field_contracts_decay_to_typed_addresses() {
             requires 0 <= k and k < 4;
             views p->values[0..4];
             ensures result == old(p->values[k]);
-        } by { execute(); solve(); }"#;
+        }"#;
     verify_c0_sources(proof, &[("fields.c", source)]).unwrap();
     assert!(
         verify_c0_sources(
@@ -627,7 +627,7 @@ fn abstract_resource_construction_adds_one_authorized_token() {
             int32 open_thing() {
                 constructs open_fd(result);
                 produces open_fd(result) by {
-                    execute();
+                    step_until(function.exit);
                     construct(open_fd(result));
                 }
             }
@@ -651,7 +651,7 @@ fn abstract_resource_construction_requires_function_authorization() {
 
             int32 fake_open() {
                 produces open_fd(result) by {
-                    execute();
+                    step_until(function.exit);
                     construct(open_fd(result));
                 }
             }
@@ -705,10 +705,7 @@ fn flat_function_proof_stays_on_proof_through_claim_acceptance() {
             verifying "identity.c";
 
             int32 identity(int32 x) {
-                ensures returns_x: result == x by {
-                    execute();
-                    solve();
-                }
+                ensures returns_x: result == x;
             }
         "#;
 
@@ -740,7 +737,7 @@ fn individual_linear_open_proof_stays_on_proof_through_claim_acceptance() {
                 consumes marker(x);
                 ensures returns_x: result == x by {
                     open(marker(x)) {
-                        execute();
+                        step_until(function.exit);
                     }
                     solve();
                 }
@@ -761,7 +758,10 @@ fn individual_linear_open_proof_stays_on_proof_through_claim_acceptance() {
     )
     .expect("the individual open proof should expand");
     assert!(expanded.contains("open(marker(x))"), "{expanded}");
-    assert!(!expanded.contains("execute();"), "{expanded}");
+    assert!(
+        !expanded.contains("step_until(function.exit);"),
+        "{expanded}"
+    );
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the rewritten individual open proof should verify normally");
 
@@ -827,7 +827,7 @@ fn explicit_call_partition_if_stays_on_one_proof_after_scoped_open() {
                 ensures result == 0 implies owner->data == old(owner->data);
             } by {
                 unfold(allocated_cell(owner));
-                execute();
+                step_until(function.exit);
                 fold(allocated_cell(owner));
                 solve();
             }
@@ -919,7 +919,7 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
                 ensures result == 1 implies not owner->data == old(owner->data);
             } by {
                 unfold(allocated_cell(owner));
-                execute();
+                step_until(function.exit);
                 fold(allocated_cell(owner));
                 solve();
             }
@@ -1091,7 +1091,7 @@ fn post_execution_resource_fold_completes_without_a_body_rerun() {
             ensures result == old(p[0]);
         } by {
             unfold(cell(p));
-            execute();
+            step_until(function.exit);
             fold(cell(p));
             solve();
         }
@@ -1132,9 +1132,6 @@ fn implicitly_closed_population_entry_completes_without_a_body_rerun() {
             ensures count(checked_out(p)) == 2;
             ensures count(checked_out(q)) == 1;
             ensures result == 0;
-        } by {
-            execute();
-            solve();
         }
     "#;
 
@@ -1236,9 +1233,6 @@ fn grouped_flat_function_proof_stays_on_one_proof_through_claim_acceptance() {
             int32 identity(int32 x) {
                 ensures first: result == result;
                 ensures second: result == result;
-            } by {
-                execute();
-                solve();
             }
         "#;
 
@@ -1259,7 +1253,10 @@ fn grouped_flat_function_proof_stays_on_one_proof_through_claim_acceptance() {
         CProofClaim::Grouped,
     )
     .expect("the retained grouped Proof should expand");
-    assert!(!expanded.contains("execute();"), "{expanded}");
+    assert!(
+        !expanded.contains("step_until(function.exit);"),
+        "{expanded}"
+    );
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the grouped rewrite should verify normally");
@@ -1292,9 +1289,6 @@ fn grouped_n_way_function_outcomes_stay_on_one_proof() {
             int32 classify(int32 x) {
                 ensures lower: result >= -1;
                 ensures upper: result <= 1;
-            } by {
-                execute();
-                solve();
             }
         "#;
 
@@ -1316,7 +1310,10 @@ fn grouped_n_way_function_outcomes_stay_on_one_proof() {
         CProofClaim::Grouped,
     )
     .expect("the retained grouped N-way Proof should expand");
-    assert!(!expanded.contains("execute();"), "{expanded}");
+    assert!(
+        !expanded.contains("step_until(function.exit);"),
+        "{expanded}"
+    );
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c0_sources(&expanded, &[("classify.c", c_source)])
         .expect("the expanded grouped N-way proof should verify normally");
@@ -1336,7 +1333,7 @@ fn grouped_n_way_outcomes_discard_exactly_infeasible_siblings_on_proof() {
                 requires p == 0;
                 ensures result == 1;
             } by {
-                execute();
+                step_until(function.exit);
                 solve();
             }
         "#;
@@ -1380,9 +1377,6 @@ fn grouped_calls_keep_contract_transitions_on_proof() {
                 requires permit >= 0;
                 owns data[0..1];
                 ensures data[0] == 1;
-            } by {
-                execute();
-                solve();
             }
 
             int32 call_set_one(int32 data[], int32 permit) {
@@ -1390,9 +1384,6 @@ fn grouped_calls_keep_contract_transitions_on_proof() {
                 owns data[0..1];
                 ensures exact: result == 1;
                 ensures post_call: data[0] == 1;
-            } by {
-                execute();
-                solve();
             }
         "#;
     let sources = &[("set_one.c", set_source), ("call_set_one.c", caller_source)];
@@ -1409,7 +1400,10 @@ fn grouped_calls_keep_contract_transitions_on_proof() {
         .split("int32 call_set_one")
         .nth(1)
         .expect("the expanded source should retain the selected caller");
-    assert!(!caller_expansion.contains("execute();"), "{expanded}");
+    assert!(
+        !caller_expansion.contains("step_until(function.exit);"),
+        "{expanded}"
+    );
     assert!(!caller_expansion.contains("solve();"), "{expanded}");
     assert!(caller_expansion.contains("step();"), "{expanded}");
     verify_c0_sources(&expanded, sources)
@@ -1461,9 +1455,6 @@ fn outcome_simp_spells_a_call_postcondition_across_two_snapshots() {
                 owns p->y;
                 ensures p->x == old(p->x);
                 ensures p->y == 1;
-            } by {
-                execute();
-                solve();
             }
 
             int32 keep_x(struct pair* p) {
@@ -1471,9 +1462,6 @@ fn outcome_simp_spells_a_call_postcondition_across_two_snapshots() {
                 owns p->x;
                 owns p->y;
                 ensures result == old(p->x);
-            } by {
-                execute();
-                solve();
             }
         "#;
     let struct_source = "struct pair { int32 x; int32 y; };\n";
@@ -1532,17 +1520,11 @@ fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
             int32 borrow_token(int32 key) {
                 owns token_bundle(key);
                 ensures result == key;
-            } by {
-                execute();
-                solve();
             }
 
             int32 borrow_token_twice(int32 key) {
                 owns token_bundle(key);
                 ensures result == key;
-            } by {
-                execute();
-                solve();
             }
         "#;
     let sources = &[
@@ -1566,7 +1548,10 @@ fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
         .split("int32 borrow_token_twice")
         .nth(1)
         .expect("the expanded source should retain the selected caller");
-    assert!(!caller_expansion.contains("execute();"), "{expanded}");
+    assert!(
+        !caller_expansion.contains("step_until(function.exit);"),
+        "{expanded}"
+    );
     assert!(!caller_expansion.contains("solve();"), "{expanded}");
     assert_eq!(
         caller_expansion.matches("step();").count(),
@@ -1619,7 +1604,7 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
                 ensures result == 7;
             } by {
                 open(owned_cell(cell)) {
-                    execute();
+                    step_until(function.exit);
                 }
                 solve();
             }
@@ -1629,7 +1614,7 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
                 ensures result == 7;
             } by {
                 open(wrapped_cell(cell)) {
-                    execute();
+                    step_until(function.exit);
                 }
                 solve();
             }
@@ -1659,7 +1644,10 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
         caller_expansion.contains("open(wrapped_cell(cell))"),
         "{expanded}"
     );
-    assert!(!caller_expansion.contains("execute();"), "{expanded}");
+    assert!(
+        !caller_expansion.contains("step_until(function.exit);"),
+        "{expanded}"
+    );
     assert!(!caller_expansion.contains("solve();"), "{expanded}");
     verify_c0_sources(&expanded, sources)
         .expect("the rewritten scoped composite-call proof should verify normally");
@@ -1710,7 +1698,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
                 ensures result == 0 or result == 1;
             } by {
                 open(owned_cell(cell)) {
-                    execute();
+                    step_until(function.exit);
                 }
                 solve();
             }
@@ -1721,7 +1709,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
             } by {
                 open(wrapped_cell(cell)) {
                 }
-                execute();
+                step_until(function.exit);
                 solve();
             }
         "#;
@@ -1746,7 +1734,10 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
         .split("int32 prepare_then_set_seven")
         .nth(1)
         .expect("the expanded source should retain the selected caller");
-    assert!(!caller_expansion.contains("execute();"), "{expanded}");
+    assert!(
+        !caller_expansion.contains("step_until(function.exit);"),
+        "{expanded}"
+    );
     assert!(!caller_expansion.contains("solve();"), "{expanded}");
     assert!(caller_expansion.contains("open(wrapped_cell(cell))"));
     verify_c0_sources(&expanded, sources)
@@ -1784,7 +1775,7 @@ fn grouped_sequential_top_level_scopes_stay_on_one_proof() {
                     step();
                 }
                 open(second_marker(x)) {
-                    execute();
+                    step_until(function.exit);
                 }
                 solve();
             }
@@ -1807,7 +1798,10 @@ fn grouped_sequential_top_level_scopes_stay_on_one_proof() {
         2,
         "both top-level scopes should be serialized: {expanded}"
     );
-    assert!(!caller_expansion.contains("execute();"), "{expanded}");
+    assert!(
+        !caller_expansion.contains("step_until(function.exit);"),
+        "{expanded}"
+    );
     assert!(!caller_expansion.contains("solve();"), "{expanded}");
     verify_c0_sources(&expanded, sources)
         .expect("the rewritten sequential-scope proof should verify normally");
@@ -1844,9 +1838,6 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
                 requires nonnegative(x);
                 ensures preserved: nonnegative(result);
                 ensures exact: same(result, x);
-            } by {
-                execute();
-                solve();
             }
         "#;
     let sources = &[("identity.c", c_source)];
@@ -1867,7 +1858,10 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
         "{expanded}"
     );
     assert!(expanded.contains("unfold(same);"), "{expanded}");
-    assert!(!expanded.contains("execute();"), "{expanded}");
+    assert!(
+        !expanded.contains("step_until(function.exit);"),
+        "{expanded}"
+    );
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c0_sources(&expanded, sources)
         .expect("the rewritten predicate proof should verify normally");
@@ -1991,7 +1985,7 @@ fn grouped_leading_resource_relations_stay_on_one_proof() {
                 have separate(memory(left[0..1]), memory(right[0..1])) by {
                     assumption();
                 }
-                execute();
+                step_until(function.exit);
                 solve();
             }
         "#;
@@ -2071,7 +2065,7 @@ fn grouped_unfolded_resource_relations_stay_on_one_proof() {
                     assumption();
                 }
                 fold(pair(left, right));
-                execute();
+                step_until(function.exit);
                 solve();
             }
         "#;
@@ -2139,7 +2133,7 @@ fn grouped_owned_outcome_resources_stay_on_one_proof() {
                 ensures result == 7;
             } by {
                 unfold(seven_cell(cell));
-                execute();
+                step_until(function.exit);
                 have cell[0] == 7 by {
                     solve();
                 }
@@ -2174,10 +2168,7 @@ fn flat_function_expansion_rewrites_and_rejects_tampering() {
             verifying "identity.c";
 
             int32 identity(int32 x) {
-                ensures returns_x: result == x by {
-                    execute();
-                    solve();
-                }
+                ensures returns_x: result == x;
             }
         "#;
 
@@ -2188,7 +2179,10 @@ fn flat_function_expansion_rewrites_and_rejects_tampering() {
         CProofClaim::Ensure(0),
     )
     .expect("the retained flat Proof should expand");
-    assert!(!expanded.contains("execute();"), "{expanded}");
+    assert!(
+        !expanded.contains("step_until(function.exit);"),
+        "{expanded}"
+    );
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the rewritten source should verify normally");
@@ -2217,7 +2211,7 @@ fn post_execution_frame_using_relowers_a_preceding_have_fact() {
                 owns data[0..1];
                 ensures data[0] == 0;
             } by {
-                execute();
+                step_until(function.exit);
                 have data[0] == 0 by {
                     normalize();
                 }
@@ -2240,10 +2234,7 @@ fn ordinary_verification_stops_at_the_tactic_work_budget() {
             verifying "identity.c";
 
             int32 identity(int32 x) {
-                ensures returns_x: result == x by {
-                    execute();
-                    solve();
-                }
+                ensures returns_x: result == x;
             }
         "#;
     let limits = crate::instrumentation::TacticWorkLimits {
@@ -2542,7 +2533,10 @@ fn sequence_contracts_reject_mixed_and_non_equality_types() {
 #[test]
 fn source_have_failures_keep_the_written_operation_in_each_execution_phase() {
     let c_source = "int32 identity(int32 x) { return x; }";
-    for (before, after) in [("", "execute();"), ("execute();", "")] {
+    for (before, after) in [
+        ("", "step_until(function.exit);"),
+        ("step_until(function.exit);", ""),
+    ] {
         for (body, diagnostic) in [
             (
                 "apply(missing()); assumption();",
@@ -2592,12 +2586,12 @@ fn grouped_outcome_fold_is_local_to_the_returning_branch() {
         } by {
             if (flag != 0) {
                 unfold(seven_cell(cell));
-                execute();
+                step_until(function.exit);
                 have cell[0] == 7 by { solve(); }
                 fold(seven_cell(cell));
                 solve();
             } else {
-                execute();
+                step_until(function.exit);
                 solve();
             }
         }
@@ -2724,7 +2718,7 @@ fn have_sorry_admits_one_fact_while_the_rest_checks() {
         int32 f(int32 x) {
             ensures result == x;
         } by {
-            execute();
+            step_until(function.exit);
             have result == x by { sorry(); }
             solve();
         }
@@ -2824,7 +2818,7 @@ uint64 nested(uint64 total) {
    solve();
   }
  }
- execute(); solve();
+ step_until(function.exit); solve();
 }
 "#;
     verify_c0_sources(proof, &[("nested.c", c)]).unwrap();
@@ -2852,7 +2846,7 @@ fn a_function_cannot_assume_its_own_pointer_return_type_guarantee() {
     )];
     let source = r#"verifying "return.c";
         function node_type(p: struct node*) -> int32 { 1 }
-        struct node* get(void* p) { POST } by { execute(); solve(); }
+        struct node* get(void* p) { POST }
     "#;
     verify_c0_sources(
         &source.replace("POST", "ensures address(result) == address(p);"),
@@ -2883,7 +2877,7 @@ fn casts_of_resource_fields_keep_their_declared_scalar_types() {
             ensures ((int64)o.size) == -1i64;
         } by {
             have ((int32)o.size) == o.size by normalize();
-            execute(); solve();
+            step_until(function.exit); solve();
         }
     "#;
     verify_c0_sources(source, &[("field.c", c)])

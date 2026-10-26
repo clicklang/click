@@ -87,7 +87,7 @@ void child_retain(struct child* obj) {
     step();
     fold(child_ref(obj));
     fold(child_control(obj));
-    execute();
+    step_until(function.exit);
     solve();
 }
 
@@ -103,7 +103,7 @@ void child_release(struct child* obj) {
     have to_integer(obj->refs - 1) >= 1;
     step();
     fold(child_control(obj));
-    execute();
+    step_until(function.exit);
     solve();
 }
 
@@ -120,7 +120,7 @@ void parent_attach(struct parent* p, struct child* kid) {
     step();
     step();
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
-    execute();
+    step_until(function.exit);
     solve();
 }
 
@@ -139,7 +139,7 @@ int32 parent_read_payload(struct parent* p) {
         },
         ParentLink::Linked(entry_child) => {
             unfold(link);
-            open(child_control(p->kid)) { execute(); }
+            open(child_control(p->kid)) { step_until(function.exit); }
             let link = fold(parent(p), { link: ParentLink::Linked(p->kid) });
             solve();
         },
@@ -170,7 +170,7 @@ void parent_detach(struct parent* p) {
             step();
             step();
             let out = fold(parent(p), { link: ParentLink::Empty });
-            execute();
+            step_until(function.exit);
             solve();
         },
     }

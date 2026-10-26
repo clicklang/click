@@ -43,7 +43,6 @@ int32 count() {
             close_invariants();
         }
     }
-    execute(); solve();
 }
 ```
 

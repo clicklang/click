@@ -58,7 +58,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
             let { whole: whole } = unfold(out);
             have rebalance == 0;
             step(); // Skip repair.
-            execute(); solve();
+            step_until(function.exit);
         },
         EraseOutcome::Deficit(c) => {
             have erase_out_rb(EraseOutcome::Deficit(c)) == 1 by { rewrite(EraseOutcome::Deficit(c) == out.model); assumption(); }
@@ -86,7 +86,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
             have rebalance != 0;
             step(); // Select the nonnull rebalance branch.
             let { whole: whole } = step(____rb_erase_color, { c: deficit });
-            execute(); solve();
+            step_until(function.exit);
         },
     }
 }

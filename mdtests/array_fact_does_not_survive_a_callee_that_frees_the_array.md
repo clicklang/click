@@ -70,7 +70,7 @@ int32 caller(int32 a[], int32 n) {
     step();
     step();
     branch {
-        execute();
+        step_until(function.exit);
         solve();
     } else {
     }

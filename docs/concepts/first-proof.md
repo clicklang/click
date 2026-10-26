@@ -68,7 +68,7 @@ Click refuses it:
 $ click verify increment.click
 proof error:
   `increment.ensures_0` tactic 0
-  `execute()` produced undefined behavior
+  `step()` produced undefined behavior
   signed overflow
   operation
   `x + 1`
@@ -88,8 +88,8 @@ To get a trace:
   click verify --trace-proof increment increment.click
 ```
 
-The omitted proof's execution is still named `execute()` in the report, and
-the closer that proves a statement's requirements is named the implicit
+The report names each step of the omitted proof's implicit tail `step()`,
+and the closer that proves a statement's requirements is named the implicit
 closer. In C, signed overflow is undefined behavior, and `x + 1` overflows when `x` is
 the largest `int`: the goal `x <= 2147483646` is false there, so no proof can
 close it. Click proves the absence of undefined behavior along with

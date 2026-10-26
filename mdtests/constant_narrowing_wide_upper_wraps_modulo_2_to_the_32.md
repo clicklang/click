@@ -10,7 +10,7 @@ int f(void) { long x = 4294967296L; return x; }
 
 ```click
 verifying "constant_narrowing_wide_upper_wraps_modulo_2_to_the_32.c";
-int32 f() { ensures result == 0; } by { execute(); solve(); }
+int32 f() { ensures result == 0; }
 ```
 
 ```expect

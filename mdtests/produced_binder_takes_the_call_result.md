@@ -1,7 +1,7 @@
 # A function's produced binder takes the instance a call produced
 
-`set_and_get` consumes a `cell_at(c)` and produces one. `execute()` runs both
-calls: each binds the only `cell_at` instance the caller holds, and the last
+`set_and_get` consumes a `cell_at(c)` and produces one. The implicit tail of
+the omitted proof runs both calls: each binds the only `cell_at` instance the caller holds, and the last
 call produces a new one. No proof step names that instance, so it is held
 under no name; at the exit, the produced binder `after` takes it, as the only
 `cell_at` instance there, and the clause checks its arguments.

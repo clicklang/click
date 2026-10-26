@@ -15,7 +15,7 @@ void retire(int32* pool) {
     consumes left: ticket(pool);
     ensures old(left.serial) == 7;
     ensures to_integer(count(ticket(pool))) == to_integer(old(count(ticket(pool))) - 1);
-} by { execute(); unfold(left); solve(); }
+} by { step_until(function.exit); unfold(left); solve(); }
 ```
 
 ```expect

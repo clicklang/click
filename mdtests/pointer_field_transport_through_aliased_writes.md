@@ -33,7 +33,7 @@ void alias_frame(struct node *p, struct node *n, struct node *g) {
         separate(memory(parent->right), memory(n->left));
         separate(memory(parent->right), memory(parent->tag));
     };
-    execute(); assumption();
+    step_until(function.exit); assumption();
 }
 ```
 

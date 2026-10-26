@@ -60,7 +60,7 @@ int32 tree_depth_ok(struct node* root) {
     match t.model {
         HeapTree::Empty => {
             unfold(t);
-            execute();
+            step_until(function.exit);
             let t = fold(tree_at(root), { model: HeapTree::Empty });
             solve();
         },

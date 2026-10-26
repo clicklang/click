@@ -19,7 +19,7 @@ void touch(struct pair* p) {
     owns p->count;
     ensures p->tag == 42;
     ensures p->count == 17;
-} by { execute(); solve(); }
+}
 void keep(struct pair* p, int32 x) {
     requires p != 0;
     owns p->tag;

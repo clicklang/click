@@ -233,7 +233,7 @@ void replace_node_with_children(struct rb_node* victim, struct rb_node* new_node
     have separate(memory(victim->rb_right), memory(new_node->rb_left));
     have separate(memory(victim->rb_right), memory(new_node->rb_right));
     have separate(memory(victim->rb_right), memory(left_child->__rb_parent_color));
-    execute();
+    step_until(function.exit);
     let l2 = fold(rb_at(new_node->rb_left), {
         model: RbTree::Node(left_child, new_node, Color::Red, RbTree::Empty, RbTree::Empty)
     }, { left: ll, right: lr });

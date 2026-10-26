@@ -34,12 +34,12 @@ int32 peek(struct node* p) {
     have p == p by normalize();
     match x.model {
         Cell::Missing => {
-            execute();
+            step_until(function.exit);
             solve();
         },
         Cell::Present(identity) => {
             match x.model {
-                Cell::Missing => { execute(); solve(); },
+                Cell::Missing => { step_until(function.exit); solve(); },
                 Cell::Present(child) => {
                     contradiction(x.model == Cell::Present(child));
                 },

@@ -20,14 +20,14 @@ void preserve(struct pool* pool) {
     owns pool->capacity of slot(pool);
     ensures pool->capacity == old(pool->capacity);
     ensures count(slot(pool)) == old(count(slot(pool)));
-} by { execute(); solve(); }
+}
 void forward(struct pool* pool) {
     owns control(pool);
     owns 0 of slot(pool);
     requires pool->capacity == 1;
     ensures pool->capacity == old(pool->capacity);
     ensures count(slot(pool)) == old(count(slot(pool)));
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

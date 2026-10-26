@@ -16,20 +16,20 @@ verifying "an_index_from_a_call_result_needs_a_nonempty_range.c";
 uint64 size(const struct S* s) {
     views s->n;
     ensures result == s->n;
-} by { execute(); solve(); }
+}
 int32 direct(const struct S* s) {
     views s->p;
     views s->n;
     views s->p[0..s->n];
     requires 1u64 <= s->n;
     ensures result == old(s->p[s->n - 1u64]);
-} by { execute(); solve(); }
+}
 int32 through(const struct S* s) {
     views s->p;
     views s->n;
     views s->p[0..s->n];
     ensures result == old(s->p[s->n - 1u64]);
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

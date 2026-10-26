@@ -1,9 +1,9 @@
 # An `apply` refused after execution names its premise as before it
 
 The companion of `apply_refusal_names_the_premise_a_removed_have_supplied.md`,
-with the same `have` and `apply` written after `execute()`. The function
-returns `n` so that execution needs no premise of its own. The refusal is the
-same: it names the `apply`, the requirement as the lemma writes it, what its
+with the same `have` and `apply` written after
+`step_until(function.exit)`. The function returns `n` so that execution needs
+no premise of its own. The refusal is the same: it names the `apply`, the requirement as the lemma writes it, what its
 parameter was bound to, and the fact it instantiates to.
 
 ```c filename=apply_refusal_after_execution_names_the_premise_as_before_it.c
@@ -33,7 +33,7 @@ int32 first(int32 *a, int32 n) {
     requires forall (k: int32) { 0 <= k and k < n implies a[k] >= 0 };
     ensures result >= 0;
 } by {
-    execute();
+    step_until(function.exit);
     have n >= 0;
     apply(head_nonnegative(a, n));
     solve();

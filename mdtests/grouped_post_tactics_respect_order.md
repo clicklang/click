@@ -15,7 +15,7 @@ verifying "grouped_post_order.c";
 int32 identity(int32 x) {
     ensures exists (k: int32) { k + 1 == result + 1 };
 } by {
-    execute();
+    step_until(function.exit);
     solve();
     have exists (k: int32) { k + 1 == result + 1 } by {
         witness { k: result };

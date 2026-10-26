@@ -22,7 +22,7 @@ verifying "stdatomic_operations_need_the_modeled_pthread_runtime.c";
 void publish(struct channel *channel) {
     owns channel->payload;
     owns channel->ready;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

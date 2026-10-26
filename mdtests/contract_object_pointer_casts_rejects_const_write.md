@@ -14,7 +14,7 @@ verifying "const.c";
 void write(const struct base* p) {
     views ((struct item*)(void*)p)->value;
     ensures ((struct item*)(void*)p)->value == 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

@@ -91,7 +91,6 @@ int32 walk(const uint8* p, int32 n) {
  have to_integer(old(n) - n) <= 15 by solve() using { 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
  have 255 * (old(n) - n) <= 3825 by solve() using { 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
  have total <= 3825 by solve() using { 0 <= total; total <= 255 * (old(n) - n); 255 * (old(n) - n) <= 3825; 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
- execute(); solve();
 }
 ```
 

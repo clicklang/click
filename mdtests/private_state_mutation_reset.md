@@ -35,31 +35,31 @@ unsigned long bump(struct counter *p) {
     ensures p->value == integer::uint64_wrapping_add(old(p->value), 1u64);
     ensures result == p->value;
     ensures result == integer::uint64_wrapping_add(old(p->value), 1u64);
-} by { execute(); solve(); }
+}
 
 void reset(struct counter *p) {
     owns p->value;
     ensures p->value == 0u64;
-} by { execute(); solve(); }
+}
 
 unsigned long left() {
     owns left_file::state.value;
     ensures left_file::state.value == integer::uint64_wrapping_add(old(left_file::state.value), 1u64);
     ensures result == left_file::state.value;
     ensures result == integer::uint64_wrapping_add(old(left_file::state.value), 1u64);
-} by { execute(); solve(); }
+}
 
 void reset_left() {
     owns left_file::state.value;
     ensures left_file::state.value == 0u64;
-} by { execute(); solve(); }
+}
 
 unsigned long right() {
     owns right_file::state.value;
     ensures right_file::state.value == integer::uint64_wrapping_add(old(right_file::state.value), 1u64);
     ensures result == right_file::state.value;
     ensures result == integer::uint64_wrapping_add(old(right_file::state.value), 1u64);
-} by { execute(); solve(); }
+}
 
 int main() {
     ensures result == 1;

@@ -13,7 +13,7 @@ verifying "a_witness_without_its_semicolon_is_refused.c";
 int32 zero(int32 n) {
     requires 0 < n;
     ensures (0..n).any(|k| { k == result }) by {
-        execute();
+        step_until(function.exit);
         witness { k: 0 }
         solve();
     }

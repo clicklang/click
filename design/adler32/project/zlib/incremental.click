@@ -32,7 +32,7 @@ uint64 click_zlib_incremental(uint64 seed, const uint8* buf, uint64 len, uint64 
   normalize();
  }
  mark before_suffix;
- execute();
+ step_until(function.exit);
  have to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed)))) by {
   solve() using { to_integer(result) == adler_spec_checksum_u64(old(buf) + split, len - split, to_integer(zlib_seed_a(at(before_suffix, prefix))), to_integer(zlib_seed_b(at(before_suffix, prefix)))); adler_spec_checksum_u64(old(buf) + split, len - split, to_integer(zlib_seed_a(at(before_suffix, prefix))), to_integer(zlib_seed_b(at(before_suffix, prefix)))) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed)))); };
  }

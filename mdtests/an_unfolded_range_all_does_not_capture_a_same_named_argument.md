@@ -24,7 +24,7 @@ int32 f(int32 p[2], int32 j) {
     requires j == 2;
     ensures allpos(p, j);
 } by {
-    execute();
+    step_until(function.exit);
     unfold(allpos);
     solve();
 }

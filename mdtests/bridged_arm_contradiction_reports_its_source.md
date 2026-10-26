@@ -34,8 +34,6 @@ int32 peek(struct node* p) {
     have p == p by normalize();
     match x.model {
         Cell::Missing => {
-            execute();
-            solve();
         },
         Cell::Present(identity) => {
             have p == p by normalize();

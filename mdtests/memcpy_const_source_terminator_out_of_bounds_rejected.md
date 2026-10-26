@@ -16,7 +16,7 @@ void copy_prefix(char* dst, const char* src, uint64 n) {
     owns dst[0u64..32u64];
     requires separate(memory(dst[0u64..32u64]), memory(src[0u64..n]));
     ensures dst[n] == '\0';
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

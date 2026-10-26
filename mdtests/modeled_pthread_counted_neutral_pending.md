@@ -20,7 +20,7 @@ authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns authority(ticket(argument));
     owns ticket(argument);
-} by { execute(); solve(); }
+}
 int32 run(void* p) {
     owns authority(ticket(p));
     owns ticket(p);

@@ -14,10 +14,10 @@ resource token() { field model: NodeRef; }
 contract void Callback(struct model_node* p) { produces held: token(); ensures true; }
 int32 accept(void (*f)(struct model_node*)) {
     requires Callback(f); ensures result == 0;
-} by { execute(); normalize(); }
-int32 caller() { ensures result == 0; } by { execute(); }
+} by { step_until(function.exit); normalize(); }
+int32 caller() { ensures result == 0; }
 void wrapped(struct model_node* p) { produces held: token(); ensures held.model == NodeRef::At(p); } by {
-    execute(); let held = fold(token(), { model: NodeRef::At(p) });
+    step_until(function.exit); let held = fold(token(), { model: NodeRef::At(p) });
 }
 
 ```

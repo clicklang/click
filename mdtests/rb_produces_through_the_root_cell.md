@@ -104,7 +104,7 @@ void rb_set_root(struct rb_node* node, struct rb_root* root) {
         RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
         RbTree::Node(identity, parent, color, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
-            execute();
+            step_until(function.exit);
             let u = fold(rb_at(root->rb_node), { model: old(t.model) },
                          { left: l, right: r });
             solve();

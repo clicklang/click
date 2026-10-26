@@ -24,7 +24,7 @@ resource nested(root: int32*) {
     owns *root;
     fact leaf_value(child(child(model))) == 0;
 }
-int32 marker() { ensures result == 0; } by { execute(); solve(); }
+int32 marker() { ensures result == 0; }
 ```
 
 ```expect

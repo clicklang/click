@@ -16,24 +16,24 @@ verifying "formation.c";
 int32* zero(int32* p, int32 n) {
     requires n == 0;
     ensures result == p;
-} by { execute(); solve(); }
+}
 int32* signed_zero(int32* p, int64 n) {
     requires n == 0i64;
     ensures result == p;
-} by { execute(); solve(); }
+}
 int32* unsigned_zero(int32* p, uint64 n) {
     requires n == 0u64;
     ensures result == p;
-} by { execute(); solve(); }
+}
 int32* one_past(int32* p) {
     views p[0..2];
     ensures result == p + 2;
-} by { execute(); solve(); }
+}
 int32* alias(int32* p, int32* q) {
     views q[0..2];
     requires p == q;
     ensures result == q + 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

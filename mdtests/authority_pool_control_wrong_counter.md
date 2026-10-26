@@ -37,7 +37,6 @@ void checkout(struct pool* pool, struct payload* p) {
         step();
         fold(item(pool, p));
     }
-    execute(); solve();
 }
 
 ```

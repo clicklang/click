@@ -40,7 +40,7 @@ void join(int32* p, int32* lp, int32* rp, int32* q, int32 value) {
     owns left: cell(q);
     produces root: tree(p);
 } by {
-    execute();
+    step_until(function.exit);
     let root = fold(tree(p), { model: Tree::Branch(value, lp, l.model, rp, right.model) });
     solve();
 }

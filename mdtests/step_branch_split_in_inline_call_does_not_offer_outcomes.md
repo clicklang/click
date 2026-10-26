@@ -45,6 +45,6 @@ void choose(int32* p, int32 c) {
 ```
 
 ```expect
-fail: `execute()` makes this split itself.
+fail: The implicit tail makes this split itself where the script ends.
 proof context:
 ```

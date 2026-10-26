@@ -16,10 +16,10 @@ int read(int* p) {
     ensures c.model == old(c.model);
 } by {
     match c.model {
-        Maybe::None => { unfold(c); execute(); fold(c); solve(); },
+        Maybe::None => { unfold(c); step_until(function.exit); fold(c); solve(); },
         Maybe::Some(value) => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             have result == value by { solve(); }
             fold(c);
             solve();
@@ -181,7 +181,7 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
             "    requires c.model != Maybe::None;\n    ensures c.model",
         )
         .replace(
-            "Maybe::None => { unfold(c); execute(); fold(c); solve(); },",
+            "Maybe::None => { unfold(c); step_until(function.exit); fold(c); solve(); },",
             "Maybe::None => { contradiction(c.model == Maybe::None); },",
         );
     let sources = [("read.c", C)];
@@ -202,7 +202,7 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
             .unwrap_or_else(|error| panic!("{error:?}\n{expanded}"));
         assert!(expanded.contains("contradiction("));
         // `have` is one selectable C-proof tactic, including its nested proof.
-        for offset in [good.find("execute();").unwrap(), good.find("have result").unwrap(), good.rfind("solve();").unwrap()] {
+        for offset in [good.find("step_until(function.exit);").unwrap(), good.find("have result").unwrap(), good.rfind("solve();").unwrap()] {
             let position = expansion::position_at_offset(&good, offset);
             let selected =
                 expand_c0_tactic_source_at(&good, &sources, position.line, position.column)
@@ -250,7 +250,7 @@ int id(int x) {
         Tag::A => { contradiction(r.model == Tag::A); },
         Tag::B => {
             match r.model {
-                Tag::B => { execute(); solve(); },
+                Tag::B => { step_until(function.exit); solve(); },
                 Tag::A => { contradiction(r.model == Tag::A); },
             }
         },
@@ -276,15 +276,15 @@ fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
         (
             "coverage",
             SOURCE.replace(
-                "Maybe::None => { unfold(c); execute(); fold(c); solve(); },",
+                "Maybe::None => { unfold(c); step_until(function.exit); fold(c); solve(); },",
                 "",
             ),
         ),
         (
             "duplicate",
             SOURCE.replace(
-                "Maybe::None => { unfold(c); execute(); fold(c); solve(); },",
-                "Maybe::Some(other) => { unfold(c); execute(); fold(c); solve(); },",
+                "Maybe::None => { unfold(c); step_until(function.exit); fold(c); solve(); },",
+                "Maybe::Some(other) => { unfold(c); step_until(function.exit); fold(c); solve(); },",
             ),
         ),
         (
@@ -304,7 +304,7 @@ fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
         ),
         (
             "missing unfold",
-            SOURCE.replacen("unfold(c); execute(); fold(c)", "execute(); fold(c)", 1),
+            SOURCE.replacen("unfold(c); step_until(function.exit); fold(c)", "step_until(function.exit); fold(c)", 1),
         ),
         ("missing fold", SOURCE.replace("            fold(c);", "")),
         (
@@ -333,7 +333,7 @@ fn proof_match_expands_and_rechecks() {
         panic!("expanded constructor proof rechecks: {error:?}\n{expanded}")
     });
     for offset in [
-        SOURCE.find("execute();").unwrap(),
+        SOURCE.find("step_until(function.exit);").unwrap(),
         SOURCE.find("solve();").unwrap(),
         SOURCE.rfind("solve();").unwrap(),
     ] {
@@ -362,8 +362,8 @@ int read(int x) {
     ensures result == x;
 } by {
     match (match c.value { Maybe::None => Maybe::None, Maybe::Some(v) => Maybe::Some(v) }) {
-        Maybe::None => { execute(); solve(); },
-        Maybe::Some(value) => { execute(); solve(); },
+        Maybe::None => { step_until(function.exit); solve(); },
+        Maybe::Some(value) => { step_until(function.exit); solve(); },
     }
 }
 "#;
@@ -375,7 +375,7 @@ int read(int x) {
             .replace(" }) {", " } {"),
     ] {
         verify_c0_sources(&source, &sources).expect("compound symbolic scrutinee");
-        let offset = source.find("execute();").unwrap();
+        let offset = source.find("step_until(function.exit);").unwrap();
         let position = expansion::position_at_offset(&source, offset);
         let expanded =
             expand_c0_tactic_source_at(&source, &sources, position.line, position.column).unwrap();

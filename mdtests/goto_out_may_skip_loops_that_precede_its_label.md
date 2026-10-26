@@ -18,7 +18,7 @@ while (blk_size >> 32) { ... }
 A loop or switch may come before every label of a function. Each such loop
 then runs in full or is skipped whole, so no jump enters, leaves, or
 re-enters it. A label may also govern an `if` whose arms contain no labels,
-jumps, or loops. Below, `execute()` takes the jump when `size == 0`. The
+jumps, or loops. Below, `step_until(function.exit)` takes the jump when `size == 0`. The
 other case needs the loop's invariant, so the proof splits on it first.
 
 ```c filename=goto_out.c
@@ -49,7 +49,7 @@ int32 scale(uint64 size, int32 i) {
     ensures (size == 0 and result == 0) or (size != 0 and result == 3);
 } by {
     if size == 0 {
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         step();
@@ -59,7 +59,7 @@ int32 scale(uint64 size, int32 i) {
             decreases 3 - i;
             invariant i >= 0 and i <= 3;
         }
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

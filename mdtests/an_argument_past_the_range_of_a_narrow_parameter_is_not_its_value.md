@@ -15,13 +15,13 @@ verifying "an_argument_past_the_range_of_a_narrow_parameter_is_not_its_value.c";
 
 int32 widen(uint8 x) {
     ensures result == x;
-} by { execute(); solve(); }
+}
 
 int32 pass_wide(int32 y) {
     requires 0 <= y;
     requires y <= 300;
     ensures result == y;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

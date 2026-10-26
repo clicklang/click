@@ -11,8 +11,8 @@ verifying "main.c";
 void overwrite(int *p) {
     owns p[0..1];
     ensures p[0] == 9;
-} by { execute(); solve(); }
-int main() { ensures result == 9; } by { execute(); solve(); }
+}
+int main() { ensures result == 9; }
 ```
 
 ```expect

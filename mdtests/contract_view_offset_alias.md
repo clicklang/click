@@ -15,7 +15,7 @@ int32 aliased(int32* p, int32* w) {
     views p[0..3];
     consumes w[0..3];
     ensures result == 3;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

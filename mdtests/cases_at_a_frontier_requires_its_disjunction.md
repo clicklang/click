@@ -19,8 +19,8 @@ int32 f(int32 x) {
     ensures result == 1;
 } by {
     cases {
-        x == 1 => { execute(); }
-        x == 2 => { execute(); }
+        x == 1 => { }
+        x == 2 => { }
     }
 }
 ```

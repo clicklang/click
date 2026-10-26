@@ -39,7 +39,6 @@ void copy_n(char* dst, const char* src, uint64 n) {
             separate(memory(dst[0u64..n + 1u64]), memory(src[0u64..n]));
         };
     }
-    execute();
 }
 ```
 

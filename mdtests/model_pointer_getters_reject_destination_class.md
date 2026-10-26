@@ -15,7 +15,7 @@ void wrong(struct other_node* p) {
     produces held: token();
     ensures true;
 } by {
-    execute();
+    step_until(function.exit);
     let held = fold(token(), { model: NodeRef::At(retyped(p)) });
 }
 ```

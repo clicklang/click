@@ -12,7 +12,7 @@ verifying "a_read_below_a_64_bit_range_start_is_refused.c";
 uint8 below(const uint8* bytes, uint64 length) {
     requires 1u64 < length;
     views bytes[1..length];
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

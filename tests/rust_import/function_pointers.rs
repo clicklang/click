@@ -131,10 +131,14 @@ fn charon_refinement_theorems_name_crate_functions_as_values() {
         let mut sidecar = sidecar.to_string();
         for caller in ["caller", "forward"] {
             let head = format!(
-                "fn function_pointers::{caller}(x: i32) -> i32 {{\n    requires 0 <= x and x <= 1000;\n    ensures result == x + x;\n}} by {{ "
+                "fn function_pointers::{caller}(x: i32) -> i32 {{\n    requires 0 <= x and x <= 1000;\n    ensures result == x + x;\n}}"
             );
             assert!(sidecar.contains(&head), "{caller}");
-            sidecar = sidecar.replacen(&head, &format!("{head}apply(twice_is_doubling()); "), 1);
+            sidecar = sidecar.replacen(
+                &head,
+                &format!("{head} by {{ apply(twice_is_doubling()); }}"),
+                1,
+            );
         }
         format!("{sidecar}\n{theorem}\n")
     };

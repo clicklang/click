@@ -82,9 +82,8 @@ authorities.
   deterministic normalization in an omitted proof.
 - `mdtests/simp_equality_order_transport.md`: deterministic equality rewriting,
   discrete integer-bound normalization, and equality-linked arithmetic.
-- `mdtests/tactic_execute.md`: the older written `execute()`, which runs from
-  the current execution frontier to function exit; it is still accepted but
-  is being removed, since the implicit tail does this work.
+- `mdtests/tactic_execute.md`: an omitted proof whose implicit tail runs
+  from function entry to function exit and closes the postcondition.
 
 ## Pure theorems
 

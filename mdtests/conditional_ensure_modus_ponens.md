@@ -47,10 +47,10 @@ int32 use_five(int32* cell) {
                 c(flag) == 1 implies cell[0] == 5;
             };
         }
-        execute();
+        step_until(function.exit);
         assumption();
     } else {
-        execute();
+        step_until(function.exit);
         assumption();
     }
 }

@@ -36,7 +36,7 @@ void first_byte(const uint8* p, uint64 held) {
     requires 1u64 <= held;
     views p[0u64..held];
     ensures viewable(p[0u64..1u64]);
-} by { execute(); solve() using { 1u64 <= held; viewable(p[0u64..held]); }; }
+} by { step_until(function.exit); solve() using { 1u64 <= held; viewable(p[0u64..held]); }; }
 ```
 
 ```expect

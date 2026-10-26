@@ -44,6 +44,6 @@ uint64 label_copy(char* dst, const char* src) {
                 (0u64..n).all(|k| { ((uint8*)dst)[0u64 + k] == ((uint8*)src)[0u64 + k] })
             );
         }
-        execute();
+        step_until(function.exit);
     }
 }

@@ -51,12 +51,12 @@ int first_or(Node* node, int fallback) {
     match nodes.items {
         List::Nil => {
             unfold(nodes);
-            execute();
+            step_until(function.exit);
             let after = fold(list_at(node), { items: List<int32>::Nil });
         },
         List::Cons(value, rest) => {
             let { tail: tail } = unfold(nodes);
-            execute();
+            step_until(function.exit);
             let after = fold(list_at(node), { items: List::Cons(value, rest) }, { tail: tail });
         },
     }

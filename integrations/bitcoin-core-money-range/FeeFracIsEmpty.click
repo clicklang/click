@@ -10,10 +10,10 @@ bool FeeFrac::IsEmpty() const {
     ensures result == 0 implies this->size != 0;
 } by {
     if this->size == 0 {
-        execute();
+        step_until(function.exit);
         solve();
     } else {
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

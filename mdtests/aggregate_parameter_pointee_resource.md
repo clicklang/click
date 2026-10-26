@@ -17,7 +17,7 @@ int32 touch(struct packet input) {
     ensures result == 7;
     ensures input.data[0] == 7;
     ensures old(input.data[0]) == 3;
-} by { unfold(data_cell(input.data)); execute(); fold(data_cell(input.data)); solve(); }
+} by { unfold(data_cell(input.data)); step_until(function.exit); fold(data_cell(input.data)); solve(); }
 
 ```
 

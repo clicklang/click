@@ -37,7 +37,7 @@ fn value(amount: Amount) -> i32 {
         Amount::Credit(x) => x as i32,
         Amount::Debit(x) => 0i32 - x,
     };
-} by { execute(); solve(); }
+}
 ```
 
 ```text
@@ -47,9 +47,10 @@ could not lower fixed-state obligation
 the kernel lowering stopped at no single evaluation path
 ```
 
-An explicit proof `match amount { Amount::Credit(x) => { execute(); simp(); },
-Amount::Debit(x) => { execute(); simp(); } }` fails the same way in the
-`Credit` arm, where the `Debit` arm's arithmetic is not even taken.
+Before `execute()` was removed, an explicit proof `match amount {
+Amount::Credit(x) => { execute(); simp(); }, Amount::Debit(x) => { execute();
+simp(); } }` failed the same way in the `Credit` arm, where the `Debit` arm's
+arithmetic is not even taken.
 
 ## Acceptance criteria
 

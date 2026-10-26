@@ -50,7 +50,6 @@ void probe(struct node *p) {
                     step();
                     have (other->tag & 1) == 1;
                     let b = fold(frame(), {model: Tag::At(id, color)}, {kid: kid});
-                    execute(); solve();
                 },
             }
         },

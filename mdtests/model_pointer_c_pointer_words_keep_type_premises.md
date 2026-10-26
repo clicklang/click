@@ -13,10 +13,10 @@ verifying "call.c";
 spec enum NodeRef { At(struct model_node*), }
 resource token() { field model: NodeRef; }
 void wrapped(struct model_node* p) { produces held: token(); ensures held.model == NodeRef::At(p); } by {
-    step(); step(); let held = fold(token(), { model: NodeRef::At(q) }); execute();
+    step(); step(); let held = fold(token(), { model: NodeRef::At(q) });
 }
 void caller(void* p) { produces held: token(); ensures true; } by {
-    let { held: held } = step(wrapped, {}); execute();
+    let { held: held } = step(wrapped, {});
 }
 ```
 

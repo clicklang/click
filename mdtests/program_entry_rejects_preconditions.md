@@ -10,7 +10,7 @@ verifying "main.c";
 int main() {
     consumes state;
     ensures result == 7;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

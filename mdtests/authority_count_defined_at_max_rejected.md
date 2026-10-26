@@ -22,7 +22,6 @@ void inspect(struct pool* pool) {
         have count(item(pool, _)) == 2147483647 by solve();
         have defined(count(item(pool, _)) + 1) by solve();
     }
-    execute(); solve();
 }
 ```
 

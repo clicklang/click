@@ -100,16 +100,10 @@ verifying "bad.c";
 
 int32 good(int32 x) {
     ensures result == x;
-} by {
-    execute();
-    solve();
 }
 
 int32 bad(int32 x) {
     ensures result == x + 1;
-} by {
-    execute();
-    solve();
 }
 "#;
     let sources = [("good.c", good_c), ("bad.c", bad_c)];
@@ -154,9 +148,6 @@ verifying "ranked.c";
 
 int32 identity(int32 x) {
     ensures result == x;
-} by {
-    execute();
-    solve();
 }
 
 int32 count_to(int32 n) {
@@ -214,19 +205,19 @@ verifying "caller.c";
 int32 callee(int32 x) {
     ensures result == x;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 
 int32 caller(int32 x) {
     ensures result == x;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
     let sources = [("callee.c", callee_c), ("caller.c", caller_c)];
-    let caller_proof = click_source.rfind("execute()").unwrap();
+    let caller_proof = click_source.rfind("step_until(function.exit)").unwrap();
     let position = expansion::position_at_offset(click_source, caller_proof);
 
     let verified = verify_c0_sources_at(click_source, &sources, position.line, position.column)
@@ -375,7 +366,7 @@ int32 later(int32 x) { ensures result == x; } by solve();
 int32 caller(int32 x) { ensures result == x + x; } by {
     step();
     step();
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -474,7 +465,7 @@ int32 box_init(struct box* owner, int32 data[], int32 value) {
     ensures owner->data == data;
     ensures owner->value == 0;
 } by {
-    execute();
+    step_until(function.exit);
     have separate(memory(*owner), memory(owner->data[0..1])) by solve();
     fold(owned_box(owner));
     solve();
@@ -494,7 +485,7 @@ int32 box_set(struct box* owner, int32 value) {
 } by {
     unfold(owned_box(owner));
     have owner->value < 2147483647 by solve();
-    execute();
+    step_until(function.exit);
     have separate(memory(*owner), memory(owner->data[0..1])) by solve();
     fold(owned_box(owner));
     solve();
@@ -516,7 +507,7 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
     }
     have owner->data[0] == value by solve();
     step();
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -594,7 +585,7 @@ int32 box_init(struct box* owner, int32 data[], int32 value) {
     ensures owner->data == data;
     ensures owner->value == value;
 } by {
-    execute();
+    step_until(function.exit);
     fold(owned_box(owner));
     solve();
 }
@@ -604,7 +595,7 @@ int32 box_touch(struct box* owner) {
     ensures owner->data == old(owner->data);
 } by {
     unfold(owned_box(owner));
-    execute();
+    step_until(function.exit);
     fold(owned_box(owner));
     solve();
 }
@@ -713,7 +704,7 @@ int32 zero(struct counter* owner) {
     ensures result == 0;
     ensures owner->value == 0;
 } by {
-    execute();
+    step_until(function.exit);
     fold(counter(owner));
     solve();
 }
@@ -725,7 +716,7 @@ int32 increment(struct counter* owner) {
     ensures owner->value == old(owner->value) + 1;
 } by {
     unfold(counter(owner));
-    execute();
+    step_until(function.exit);
     fold(counter(owner));
     solve();
 }
@@ -882,7 +873,7 @@ int32 buffer_init(struct buffer* owner, int32 data[], int32 capacity) {
     ensures owner->cap == capacity;
     ensures owner->data == data;
 } by {
-    execute();
+    step_until(function.exit);
     fold(empty_buffer(owner));
     solve();
 }
@@ -897,7 +888,7 @@ int32 buffer_push(struct buffer* owner, int32 value) {
     ensures owner->data == old(owner->data);
 } by {
     unfold(buffer_storage(owner));
-    execute();
+    step_until(function.exit);
     fold(buffer_storage(owner));
     solve();
 }
@@ -971,16 +962,13 @@ verifying "caller.c";
 
 int32 callee(int32 x) {
     ensures result == x;
-} by {
-    execute();
-    solve();
 }
 
 int32 caller(int32 x) {
     ensures result == x;
 } by {
     step_until(region(1));
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -1014,14 +1002,11 @@ verifying "bump.c";
 int32 bump(int32* p) {
     owns p[0..1];
     ensures result == old(p[0]);
-} by {
-    execute();
-    solve();
 }
 "#;
     let sources = [("bump.c", c_source)];
     let position =
-        expansion::position_at_offset(click_source, click_source.find("execute();").unwrap());
+        expansion::position_at_offset(click_source, click_source.find("ensures").unwrap());
     let (session, _) =
         C0VerificationSession::new(click_source, &sources).expect("baseline should verify");
     let mut counts = Vec::new();
@@ -1113,14 +1098,14 @@ verifying "caller.c";
 int32 callee(int32 x) {
     ensures result == x;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 
 int32 caller(int32 x) {
     ensures result == x;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -1208,7 +1193,7 @@ theorem one_is_one(x: int32) {
 int32 same(int32 x) {
     ensures result == x;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -1579,7 +1564,7 @@ fn unfolding_composite_rejects_concretely_overlapping_owned_children() {
             ensures result == 0;
         } by {
             unfold(overlapping(data));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -1615,7 +1600,7 @@ fn unfolding_composite_accepts_propositionally_equal_arguments() {
             ensures result == 0;
         } by {
             unfold(cell(right));
-            execute();
+            step_until(function.exit);
             fold(cell(left));
             solve();
         }
@@ -2009,7 +1994,7 @@ fn earlier_units_then_combine(earlier: usize, reverse: bool) -> (String, String)
             "void mark_{index}(struct region* r, int32* cells) {{ cells[0] = {index}; }}\n"
         ));
         click_source.push_str(&format!(
-            "void mark_{index}(struct region* r, int32* cells) {{ owns cells[0..1]; ensures cells[0] == {index}; }} by {{ execute(); solve(); }}\n"
+            "void mark_{index}(struct region* r, int32* cells) {{ owns cells[0..1]; ensures cells[0] == {index}; }}\n"
         ));
     }
     c_source.push_str(
@@ -2030,7 +2015,7 @@ fn earlier_units_then_combine(earlier: usize, reverse: bool) -> (String, String)
     have combined->arena == arena;
     have combined->start == first->start;
     have combined->end == first->end;
-    execute();
+    step_until(function.exit);
     solve();
 }
 ",
@@ -2122,7 +2107,7 @@ int32 f() {ensures result==4;} by {
     step_until(assignment(x, 1));
     have x==3 by {solve();}
     step(); have x==4 by {solve();}
-    execute(); solve();
+    step_until(function.exit); solve();
 }"#;
     verify_c0_sources(proof, &[("assignment.c", source)]).unwrap();
     for (from, to, diagnostic) in [
@@ -2149,16 +2134,16 @@ int32 f() {ensures result==4;} by {
 fn execute_until_assignment_stops_before_call_results_and_respects_paths() {
     let source = "int32 id(int32 n) {return n;} int32 f() {int32 x; int32 other; x=id(3); other=8; x=id(4); return x;}";
     let proof = r#"verifying "assignment.c";
-int32 id(int32 n) {ensures result==n;} by {execute(); solve();}
+int32 id(int32 n) {ensures result==n; }
 int32 f() {ensures result==4;} by {
     step_until(assignment(x, 0)); step(); have x==3 by {solve();}
     step_until(assignment(x, 1)); have x==3 by {solve();}
-    step(); execute(); solve();
+    step(); step_until(function.exit); solve();
 }"#;
     verify_c0_sources(proof, &[("assignment.c", source)]).unwrap();
     let exited = proof.replace(
-        "step(); execute(); solve();",
-        "step(); execute(); step_until(assignment(x, 1)); solve();",
+        "step(); step_until(function.exit); solve();",
+        "step(); step_until(function.exit); step_until(assignment(x, 1)); solve();",
     );
     let error = verify_c0_sources(&exited, &[("assignment.c", source)]).unwrap_err();
     assert!(error.message().contains("assignment(x, 1)"), "{error:?}");
@@ -2168,7 +2153,7 @@ int32 f() {ensures result==4;} by {
         "int32 f(int32 n) {int32 x; if(0==1) {x=1;} else {x=2;} return x;}",
     ] {
         let proof = r#"verifying "assignment.c";
-int32 f(int32 n) {ensures result==1;} by {step_until(assignment(x, 0)); step(); execute(); solve();}"#;
+int32 f(int32 n) {ensures result==1; } by {step_until(assignment(x, 0)); step(); step_until(function.exit); solve();}"#;
         assert!(verify_c0_sources(proof, &[("assignment.c", source)]).is_err());
     }
     let snapshots = proof.replace("have x==3", "have at(assignment(x, 0).entry, x==3)");
@@ -2181,7 +2166,7 @@ fn execute_until_read_checks_access_and_retains_real_loaded_bounds() {
         "int32 f(const uint8* p) {int32 x;int32 other;other=1;x=(int32)*p;other=2;return x;}";
     let proof = r#"verifying "read.c";
 int32 f(const uint8* p) {views p[0..1]; ensures 0<=result and result<=255;} by {
-    step_until(read(0)); step(); have 0<=x and x<=255 by {solve();} execute(); solve();
+    step_until(read(0)); step(); have 0<=x and x<=255 by {solve();} step_until(function.exit); solve();
 }"#;
     verify_c0_sources(proof, &[("read.c", source)]).unwrap();
     for (from, to) in [
@@ -2214,7 +2199,7 @@ int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
     have x==0 by {solve();}
     have value==at(loaded, x) by {solve();}
     have 0<=(int32)value and 255>=(int32)value by {solve();}
-    execute(); solve();
+    step_until(function.exit); solve();
 }"#;
     verify_c0_sources(proof, &[("read.c", source)]).unwrap();
     for invalid in [

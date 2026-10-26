@@ -5,10 +5,10 @@ bool at_most_max_money(const int64& value) {
     ensures result == (if old(value) <= 2100000000000000i64 { 1 } else { 0 });
 } by {
     if value <= 2100000000000000i64 {
-        execute();
+        step_until(function.exit);
         solve();
     } else {
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

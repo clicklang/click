@@ -27,19 +27,19 @@ unsigned stored(unsigned *u) {
     owns u[0..1];
     ensures result == 4000000000u32;
     ensures u[0] == 4000000000u32;
-} by { execute(); solve(); }
+}
 
 unsigned stated(unsigned *u) {
     views u[0..1];
     requires u[0] == 4000000000u32;
     ensures result == 4000000000u32;
-} by { execute(); solve(); }
+}
 
 int above(unsigned *u) {
     views u[0..1];
     requires u[0] == 4000000000u32;
     ensures result == 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

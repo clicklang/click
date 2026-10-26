@@ -1,8 +1,8 @@
 # An omitted `preserve` splits a comparison assigned to a local
 
 A comparison whose value is stored, `_Bool odd = (i % 2 == 1);`, has two
-successors that only its condition tells apart. `execute()` splits the proof
-on that condition and steps each case. An omitted `preserve` walks the body
+successors that only its condition tells apart. The implicit tail splits the
+proof on that condition and steps each case. An omitted `preserve` walks the body
 the same way, so the stored comparison and the `if` that reads it need no
 written body. Rust lowers every `if` condition to such a stored `bool`.
 

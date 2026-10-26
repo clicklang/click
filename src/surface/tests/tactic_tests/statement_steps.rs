@@ -698,7 +698,7 @@ fn execute_rest_return_certificate_omits_unused_ambient_facts() {
                 requires x < 100;
                 ensures result == x;
             } by {
-                execute();
+                step_until(function.exit);
                 solve();
             }
         "#;
@@ -713,8 +713,8 @@ fn execute_rest_return_certificate_omits_unused_ambient_facts() {
     assert_eq!(expanded[2], ProofTactic::Assumption);
 
     let execute_offset = click_source
-        .find("execute()")
-        .expect("proof should contain execute_rest");
+        .find("step_until(function.exit)")
+        .expect("proof should contain step_until");
     let position = expansion::position_at_offset(click_source, execute_offset);
     let rewritten = expand_c0_tactic_source_at(
         click_source,
@@ -741,7 +741,7 @@ fn linear_execute_retains_its_checked_execution_proof() {
             int32 zero() {
                 ensures result == 0;
             } by {
-                execute();
+                step_until(function.exit);
                 normalize();
             }
         "#;
@@ -776,7 +776,7 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
                 ensures result == 0;
             } by {
                 step_until(region(2));
-                execute();
+                step_until(function.exit);
                 normalize();
             }
         "#;

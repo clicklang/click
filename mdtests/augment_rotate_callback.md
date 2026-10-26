@@ -84,9 +84,6 @@ void bump(struct node* old, struct node* new) {
     owns new->augmented;
     ensures 0 <= new->augmented;
     ensures new->augmented <= 1000;
-} by {
-    execute();
-    solve();
 }
 
 void reset(struct node* old, struct node* new) {
@@ -98,9 +95,6 @@ void reset(struct node* old, struct node* new) {
     owns new->augmented;
     ensures 0 <= new->augmented;
     ensures new->augmented <= 1000;
-} by {
-    execute();
-    solve();
 }
 
 struct node* rotate_left(
@@ -151,9 +145,6 @@ struct node* rotate_bump(struct node* node) {
     ensures result == old(node->right);
     ensures 0 <= result->augmented;
     ensures result->augmented <= 1000;
-} by {
-    execute();
-    solve();
 }
 
 struct node* rotate_reset(struct node* node) {
@@ -170,9 +161,6 @@ struct node* rotate_reset(struct node* node) {
     ensures result == old(node->right);
     ensures 0 <= result->augmented;
     ensures result->augmented <= 1000;
-} by {
-    execute();
-    solve();
 }
 ```
 

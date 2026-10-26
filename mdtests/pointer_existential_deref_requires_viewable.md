@@ -16,7 +16,7 @@ verifying "pointer_existential_deref_requires_loadable.c";
 int32 pointer_existential_deref_requires_loadable(int32* p) {
     requires exists (q: int32*) { q == 0 };
     ensures dereference_is_not_implied: exists (r: int32*) { defined(r[0]) } by {
-        execute();
+        step_until(function.exit);
         obtain (q: int32*) { q == 0 }
         witness { r: q };
         solve();

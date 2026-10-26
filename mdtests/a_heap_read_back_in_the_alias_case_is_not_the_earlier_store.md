@@ -34,8 +34,6 @@ int32 read_back(int32 u) {
     step();
     step();
     if buf == 0 {
-        execute();
-        solve();
     } else {
         step();
         step();

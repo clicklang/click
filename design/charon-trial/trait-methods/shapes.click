@@ -14,7 +14,7 @@ trait trait_methods::Shape {
     fn twice(&self, scale: i32) -> i32 {
         requires 0 <= scale and scale <= 1000;
         ensures result <= 6002;
-    } by { execute(); solve(); }
+    }
 }
 
 // Each implementation inherits the interface's guarantees, which its own
@@ -27,44 +27,44 @@ impl trait_methods::Shape for trait_methods::Square {
         requires 0 <= factor;
         requires factor <= 2000;
         ensures result == factor + 1;
-    } by { execute(); solve(); }
+    }
 }
 
 impl trait_methods::Shape for trait_methods::Circle {
     fn area(&self, scale: i32) -> i32 {
         ensures result == scale + scale + 1;
-    } by { execute(); solve(); }
+    }
     fn twice(&self, scale: i32) -> i32 {
         ensures result == scale + 3;
-    } by { execute(); solve(); }
+    }
 }
 
 fn trait_methods::total<T: trait_methods::Shape>(shape: &T, scale: i32) -> i32 {
     requires 0 <= scale and scale <= 1000;
     ensures scale < result and result <= 3001;
-} by { execute(); solve(); }
+}
 
 fn trait_methods::dynamic(shape: &dyn trait_methods::Shape, scale: i32) -> i32 {
     requires 0 <= scale and scale <= 1000;
     ensures scale < result and result <= 3001;
-} by { execute(); solve(); }
+}
 
 fn trait_methods::through_bound(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 1000;
     ensures scale < result;
-} by { execute(); solve(); }
+}
 
 fn trait_methods::through_dyn(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 1000;
     ensures scale < result;
-} by { execute(); solve(); }
+}
 
 // A call on a known type is a call of that type's implementation, with its
 // own contract.
 fn trait_methods::direct(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 1000;
     ensures result == scale + 1;
-} by { execute(); solve(); }
+}
 
 // A call of `twice` through a bound assumes its interface; on `Square`,
 // which writes no `twice`, it is a call of the default body, and on
@@ -72,19 +72,19 @@ fn trait_methods::direct(scale: i32) -> i32 {
 fn trait_methods::doubled<T: trait_methods::Shape>(shape: &T, scale: i32) -> i32 {
     requires 0 <= scale and scale <= 1000;
     ensures result <= 6002;
-} by { execute(); solve(); }
+}
 
 fn trait_methods::through_default(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 1000;
     ensures result <= 6002;
-} by { execute(); solve(); }
+}
 
 fn trait_methods::direct_default(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 1000;
     ensures result <= 6002;
-} by { execute(); solve(); }
+}
 
 fn trait_methods::circle_default(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 1000;
     ensures result <= 6002;
-} by { execute(); solve(); }
+}

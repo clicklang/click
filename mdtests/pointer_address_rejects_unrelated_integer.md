@@ -25,7 +25,7 @@ struct node* forge(unsigned long word) {
 }
 int32 read_forged(unsigned long word) {
     ensures result == result;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

@@ -43,7 +43,7 @@ int parent(struct node* node) {
                 normalize();
             }
             let t = fold(tree(node), { model: Wrapped::Node(id, unp, left, right) });
-            execute();
+            step_until(function.exit);
         },
     }
     solve();

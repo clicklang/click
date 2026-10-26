@@ -1,7 +1,7 @@
-# execute preserves a derived opaque-call premise
+# The implicit tail preserves a derived opaque-call premise
 
 The caller knows `length <= capacity` and passes `capacity + 1` to an opaque
-helper. `execute()` must retain a valid derivation of the helper's weaker
+helper. The omitted proof's implicit tail must retain a valid derivation of the helper's weaker
 requirement even when the two field loads acquire different materialized
 memory-snapshot spellings.
 
@@ -42,9 +42,6 @@ int32 execute_preserves_derived_call_premise(struct owner* owner) {
     requires owner->capacity < 2147483647;
     views owner_storage(owner);
     ensures result == owner->length;
-} by {
-    execute();
-    solve();
 }
 ```
 

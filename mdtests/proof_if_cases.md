@@ -32,7 +32,7 @@ verifying "sign_before_execution.c";
 
 int32 sign_after_execution(int32 x) {
     ensures result <= 0 or result > 0 by {
-        execute();
+        step_until(function.exit);
         if result <= 0 {
             solve();
         } else {
@@ -44,10 +44,10 @@ int32 sign_after_execution(int32 x) {
 int32 sign_before_execution(int32 x) {
     ensures result <= 0 or result > 0 by {
         if x <= 0 {
-            execute();
+            step_until(function.exit);
             solve();
         } else {
-            execute();
+            step_until(function.exit);
             solve();
         }
     }

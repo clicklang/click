@@ -26,7 +26,7 @@ verifying "mutex_live_rejects_quantity.c";
 
 void keep(struct holder *holder) {
     owns life: lifetime(holder);
-} by { unfold(life); fold(life); execute(); solve(); }
+} by { unfold(life); fold(life); }
 int32 run(struct holder *holder) {
     owns holder->mu;
     requires aligned(&holder->mu, 8);

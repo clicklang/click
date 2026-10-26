@@ -60,7 +60,7 @@ void keep(struct buffer* buffer) {
     ensures suffix.start == old(suffix.start);
 } by {
     unfold(suffix);
-    execute();
+    step_until(function.exit);
     let suffix = fold(suffix_after_prefix(buffer), { start: old(suffix.start) });
     solve();
 }
@@ -95,8 +95,6 @@ void claim(int32* data, int32 capacity, int32 start) {
         assumption();
     }
     let after = fold(zero_suffix(data, capacity), { start: old(before.start) + 1 });
-    execute();
-    solve();
 }
 ```
 

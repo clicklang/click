@@ -42,8 +42,6 @@ int32 invoke(int32 (*callback)()) {
 } by {
     apply(lift(callback));
     step(Progress, { counter: first });
-    execute();
-    solve();
 }
 ```
 

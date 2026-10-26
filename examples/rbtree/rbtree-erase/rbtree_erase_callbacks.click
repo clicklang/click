@@ -25,16 +25,16 @@ resource erase_callbacks(augment: const struct rb_augment_callbacks*) {
 
 void dummy_propagate(struct rb_node* node, struct rb_node* stop) {
     ensures 1 == 1;
-} by { execute(); normalize(); }
+} by { step_until(function.exit); normalize(); }
 void dummy_copy(struct rb_node* old, struct rb_node* new) {
     requires old != 0;
     requires new != 0;
     ensures 1 == 1;
-} by { execute(); normalize(); }
+} by { step_until(function.exit); normalize(); }
 void dummy_rotate(struct rb_node* old, struct rb_node* new) {
     requires new != 0;
     ensures 1 == 1;
-} by { execute(); normalize(); }
+} by { step_until(function.exit); normalize(); }
 
 theorem dummy_propagate_contract() {
     ensures ErasePropagate(&dummy_propagate) by { unfold(ErasePropagate); solve(); }

@@ -31,15 +31,15 @@ void split(int32* a, int32* b) {
     owns a[0..1];
     views b[0..1];
     ensures a[0] == 1;
-} by { execute(); solve(); }
+}
 
 void caller(void (*f)(int32*, int32*)) {
     requires Split(f);
     owns g[0..4];
     ensures g[0] == 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect
-fail: `caller.contract` tactic 0: `execute()` could not verify C operation: stable-view a required resource overlaps a live borrowed footprint refused during planning; selected resource `owns g[0..1]`
+fail: `caller.contract` tactic 0: `step()` could not verify C operation: stable-view a required resource overlaps a live borrowed footprint refused during planning; selected resource `owns g[0..1]`
 ```

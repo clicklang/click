@@ -24,8 +24,8 @@ runtime "modeled-pthread";
 verifying "mutex_storage_free_symbolic_alias.c";
 struct holder* identity(struct holder* p) {
     ensures result == p;
-} by { execute(); solve(); }
-int32 run() { ensures result == 0; } by { execute(); solve(); }
+}
+int32 run() { ensures result == 0; }
 ```
 
 ```expect

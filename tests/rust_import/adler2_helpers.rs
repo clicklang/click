@@ -654,8 +654,8 @@ fn audit_mul_site(tactic: &str) {
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
-fn charon_adler2_helpers_mul_audit_execute_certificate() {
-    audit_mul_site("execute()");
+fn charon_adler2_helpers_mul_audit_step_until_certificate() {
+    audit_mul_site("step_until(function.exit)");
 }
 #[cfg(not(feature = "fast-gate"))]
 #[test]
@@ -2332,7 +2332,7 @@ const STORED_GUARD_PROOF: &str = r#"int adler_stored_guard(int remaining, uint64
  }
  have not (0 < remaining) or not ((int32)(uint32)size <= remaining) by assumption();
  apply(adler_outer_exhausted_remaining(remaining, size)) using { 0 <= remaining; remaining % 22208 == 0; size == 22208u64; not (0 < remaining) or not ((int32)(uint32)size <= remaining); }
- execute(); solve();
+ step_until(function.exit); solve();
 }
 "#;
 

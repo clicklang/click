@@ -1777,7 +1777,7 @@ mod tests {
     #[test]
     fn loop_entry_refusal_bounds_unexecuted_preservation_source() {
         let source = format!(
-            "verifying \"program.c\";\nvoid loop_wall() {{ ensures 0 == 0; }} by {{\nstep_until(loop(0));\nloop {{ invariant i == 1; preserve by {{\n{}step();\n}} }}\nexecute();\n}}",
+            "verifying \"program.c\";\nvoid loop_wall() {{ ensures 0 == 0; }} by {{\nstep_until(loop(0));\nloop {{ invariant i == 1; preserve by {{\n{}step();\n}} }}\nstep_until(function.exit);\n}}",
             "have 0 == 0 by { normalize(); }\n".repeat(300)
         );
         let (root, path) = temporary_project(
@@ -2037,7 +2037,7 @@ void walk(int32 n) { requires n >= 0; ensures 0 == 0; } by {
 void plain(int32 n) { requires n >= 0; ensures 0 == 0; } by {
     have n >= 0 by { assumption(); }
     apply(positive(0));
-    execute(); normalize();
+    step_until(function.exit); normalize();
 }
 "#;
         let (root, path) = temporary_project(
@@ -2086,7 +2086,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         preserve by { step(); close_invariants(); }
     }
     have 0 == 1 by { normalize(); }
-    execute(); solve();
+    step_until(function.exit); solve();
 }
 "#,
         );
@@ -2554,7 +2554,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
              int main() {\n\
                  ensures result == 0;\n\
              } by {\n\
-                 execute();\n\
+                 step_until(function.exit);\n\
                  solve();\n\
              }\n",
         );
@@ -2608,7 +2608,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                  int main() {\n\
                      ensures result == 0;\n\
                  } by {\n\
-                     execute();\n\
+                     step_until(function.exit);\n\
                      solve();\n\
                  }\n",
             );
@@ -2674,7 +2674,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
              int32 identity(int32 x) {\n\
                  ensures result == x;\n\
              } by {\n\
-                 execute();\n\
+                 step_until(function.exit);\n\
                  solve();\n\
              }\n",
         );
@@ -2692,7 +2692,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
     fn a_c_parsing_work_stop_is_a_limit_error() {
         let c_source = "int identity(int x) { return x; }";
         let click_source = "verifying \"program.c\";\n\
-            int identity(int x) { ensures result == x; } by { execute(); solve(); }\n";
+            int identity(int x) { ensures result == x; }\n";
         let (root, click_path) = temporary_project("parsing-work-limit", c_source, click_source);
         let error = entry_with([
             "--work-limit".to_string(),
@@ -2741,7 +2741,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
              int32 f0(int32 x) {\n\
                  ensures result == x;\n\
              } by {\n\
-                 execute();\n\
+                 step_until(function.exit);\n\
                  solve();\n\
              }\n",
         );

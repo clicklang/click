@@ -17,14 +17,14 @@ void update(int* p, int* q) {
     ensures *q == old(*q);
 } by {
     unfold(cell(p));
-    open(cell(q)) { execute(); }
+    open(cell(q)) { step_until(function.exit); }
     fold(cell(p));
     solve();
 }
 void caller(int* p) {
     owns cell(p);
     ensures 1 == 1;
-} by { execute(); solve(); }
+} by { step_until(function.exit); solve(); }
 ```
 ```expect
 fail:stable-view a required resource overlaps a live borrowed footprint refused during planning

@@ -37,7 +37,6 @@ int32 read(int32* p) {
         }
     }
     open(table(p + 1)) { }
-    execute(); solve();
 }
 ```
 

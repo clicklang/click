@@ -1,7 +1,9 @@
-# `execute()` names a branch arm's shared-continuation limit
+# Stepping past a branch arm names its shared-continuation limit
 
-The arm reaches its boundary before function exit. Its refusal must name
-the branch-arm rule instead of claiming that the function has no exit path.
+The `branch` arm reaches its boundary, the shared continuation after the C
+`if`, before function exit. A `step()` past that boundary is refused, and the
+refusal must name the branch-arm rule instead of claiming that the function
+has no exit path.
 
 ```c filename=f.c
 void mark_one(int32 a[], int32 n, int32 i, int32 m, int32 c) {
@@ -26,14 +28,12 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m, int32 c) {
 } by {
     mark entry;
     branch {
-        execute();
-    } else {
-        execute();
-    }
-    solve();
+        step();
+        step();
+    } else {}
 }
 ```
 
 ```expect
-fail: an arm of `branch` must stop at the shared continuation
+fail: `step()` ran past the end of its branch body; an arm of `branch` must stop at the shared continuation
 ```

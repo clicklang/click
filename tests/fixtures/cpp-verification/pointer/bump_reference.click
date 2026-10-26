@@ -5,9 +5,6 @@ int32 bump_pointer(int32* pointer) {
     owns pointer[0..1];
     ensures pointer[0] == old(pointer[0]) + 1;
     ensures result == pointer[0];
-} by {
-    execute();
-    solve();
 }
 
 int32 bump_reference(int32& value) {
@@ -15,7 +12,4 @@ int32 bump_reference(int32& value) {
     owns value;
     ensures value == old(value) + 1;
     ensures result == value;
-} by {
-    execute();
-    solve();
 }

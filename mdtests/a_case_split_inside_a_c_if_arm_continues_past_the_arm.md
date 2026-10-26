@@ -1,6 +1,6 @@
 # A case split inside a C `if` arm continues past the arm
 
-`execute()` plans every path to function exit. A C `if` it enters as a
+The implicit tail plans every path to function exit. A C `if` it enters as a
 `branch` bounds each arm at the `if`'s shared continuation, and a path that
 reaches that boundary continues privately into the continuation through the
 branch's split. A case split inside the arm did not: its cases ran as

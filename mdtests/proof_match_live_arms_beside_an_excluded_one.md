@@ -32,9 +32,9 @@ int read(int* p) {
 } by {
     match c.model {
         Quad::Zero => { contradiction(c.model == Quad::Zero); },
-        Quad::One(value) => { unfold(c); execute(); fold(c); solve(); },
-        Quad::Two(value) => { unfold(c); execute(); fold(c); solve(); },
-        Quad::Three(value) => { unfold(c); execute(); fold(c); solve(); },
+        Quad::One(value) => { unfold(c); step_until(function.exit); fold(c); solve(); },
+        Quad::Two(value) => { unfold(c); step_until(function.exit); fold(c); solve(); },
+        Quad::Three(value) => { unfold(c); step_until(function.exit); fold(c); solve(); },
     }
 }
 ```

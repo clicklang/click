@@ -129,17 +129,17 @@ int apply(const std::function<int(int)>& f, int x, int k) {
     requires 0 <= x and x <= 1000;
     requires 0 <= k and k <= 1000;
     ensures result == x + k;
-} by { execute(); solve(); }
+}
 int caller::(lambda#0)(int y) {
     requires 0 <= y and y <= 1000;
     requires 0 <= k and k <= 1000;
     ensures result == y + k;
-} by { execute(); solve(); }
+}
 int caller(int k, int x) {
     requires 0 <= k and k <= 1000;
     requires 0 <= x and x <= 1000;
     ensures result == x + k;
-} by { execute(); solve(); }
+}
 "#;
 
 // A lambda passed for a `std::function` parameter is made from the value it
@@ -201,10 +201,10 @@ fn libcxx_std_function_holds_a_function_and_is_passed_on() {
         let sidecar = format!(
             r#"verifying "callback.cpp";
 contract int Doubling(int x) {{ requires 0 <= x and x <= 1000; ensures result == x + x; }}
-int apply({parameter}, int x) {{ requires Doubling(f); requires 0 <= x and x <= 1000; ensures result == x + x; }} by {{ execute(); solve(); }}
-int relay({parameter}, int x) {{ requires Doubling(f); requires 0 <= x and x <= 1000; ensures result == x + x; }} by {{ execute(); solve(); }}
-int twice(int y) {{ requires 0 <= y and y <= 1000; ensures result == y + y; }} by {{ execute(); solve(); }}
-int caller(int x) {{ requires 0 <= x and x <= 1000; ensures result == x + x; }} by {{ execute(); solve(); }}
+int apply({parameter}, int x) {{ requires Doubling(f); requires 0 <= x and x <= 1000; ensures result == x + x; }}
+int relay({parameter}, int x) {{ requires Doubling(f); requires 0 <= x and x <= 1000; ensures result == x + x; }}
+int twice(int y) {{ requires 0 <= y and y <= 1000; ensures result == y + y; }}
+int caller(int x) {{ requires 0 <= x and x <= 1000; ensures result == x + x; }}
 "#
         );
         let (root, import) = import("function", &source, "caller").unwrap();

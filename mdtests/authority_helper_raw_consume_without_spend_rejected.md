@@ -15,7 +15,7 @@ authorized resource ticket(p: void*) {}
 void drop(void* p) {
     owns authority(ticket(p));
     consumes ticket(p);
-} by { execute(); solve(); }
+}
 int32 run(void* p) {
     owns authority(ticket(p));
     consumes ticket(p);

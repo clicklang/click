@@ -55,8 +55,6 @@ int32 inspect_cell(int32 p[]) {
     ensures result >= 0;
 } by {
     open(initialized_cell(p)) {
-        execute();
-        solve();
     }
 }
 ```

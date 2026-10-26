@@ -12,7 +12,6 @@ void probe(int32* p, int32* q) {
 } by {
     have identity(q) == q by { unfold(identity(q)); normalize(); }
     have p == q by { normalize() using { }; }
-    execute(); solve();
 }
 ```
 

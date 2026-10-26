@@ -456,7 +456,7 @@ impl<'a> ProofScope<'a> {
         self.body.certificate_since(checkpoint)
     }
 
-    /// Runs the `execute()` search inside this scope.
+    /// Runs the implicit tail's search inside this scope.
     ///
     /// Each selected statement is checked and retained by
     /// `Proof::try_statement_step`; the search never mutates a second

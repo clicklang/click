@@ -78,7 +78,7 @@ void erase_mutating(struct node* node, struct node* parent,
     ensures parent->right == old(parent->right);
 } by {
     open(callback_suite(augment)) {
-        execute();
+        step_until(function.exit);
     }
     solve();
 }

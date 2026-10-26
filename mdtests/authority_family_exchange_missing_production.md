@@ -30,7 +30,6 @@ void checkout(int32* pool, struct payload* p) {
     ensures count(capacity(pool)) == old(count(capacity(pool))) - 1;
 } by {
     unfold(capacity(pool));
-    execute(); solve();
 }
 int32 lifecycle(struct payload* first, struct payload* second) {
     owns *first;
@@ -52,7 +51,6 @@ int32 lifecycle(struct payload* first, struct payload* second) {
     unfold(item(&pool, second));
     unfold(authority(capacity(&pool)));
     unfold(authority(item(&pool, _)));
-    execute(); solve();
 }
 ```
 

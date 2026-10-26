@@ -24,7 +24,7 @@ int32 mk(const uint8* p, uint64 n) {
     requires forall (k: uint64) { 0u64 <= k and k < n + 2u64 implies defined(p[k]) };
     produces cstr_at(p, n + 1u64);
 } by {
-    execute();
+    step_until(function.exit);
     fold(cstr_at(p, n + 1u64));
 }
 ```

@@ -58,11 +58,6 @@ path = "mdtests/user_tactic_reshapes_owned_resources.md"
 needle = "divide(p, { x: x });"
 
 [[form]]
-id = "execute"
-path = "mdtests/tactic_execute.md"
-needle = "execute();"
-
-[[form]]
 id = "step-until"
 path = "mdtests/step_until_steps_to_a_statement.md"
 needle = "step_until(statement(2));"

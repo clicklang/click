@@ -555,7 +555,8 @@ pub(super) fn parse_file_items_for_module(
 /// Whether `name` is the leading word of a built-in tactic or proof form, which
 /// a user-defined tactic may not shadow.
 fn is_builtin_tactic_spelling(name: &str) -> bool {
-    matches!(name, "let" | "by" | "sorry" | "auto" | "simp")
+    matches!(name, "let" | "by" | "sorry")
+        || removed_tactic_refusal(name).is_some()
         || crate::surface::PUBLIC_TACTIC_FORMS.iter().any(|form| {
             form.id != "user-tactic"
                 && form
@@ -592,6 +593,9 @@ fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
             "`arithmetic()` is now `solve() using { ... }`, which closes the goal from only the listed premises; `arithmetic()` with no list is `solve() using {}`"
         }
         "execute_until" => "`execute_until` is now `step_until`",
+        "execute" => {
+            "`execute()` is removed: end the script and its implicit tail runs the C that is left and closes every goal, or step to function exit with `step_until(function.exit)` to work there"
+        }
         _ => return None,
     })
 }
@@ -9605,10 +9609,6 @@ impl Parser {
                 }
                 ProofTactic::CloseInvariants
             }
-            "execute" => {
-                self.expect_empty_tactic_args(&name)?;
-                ProofTactic::SmartExecute
-            }
             "step_until" => {
                 self.expect(Token::LParen)?;
                 let region_ref = if self.peek_ident() == Some("function")
@@ -16056,7 +16056,6 @@ mod tactic_classification_tests {
             "step() { requires x == 1 by { normalize(); }; }",
         ),
         ("user-tactic", "name(x, { cell: c });"),
-        ("execute", "execute();"),
         ("step-until", "step_until(label);"),
         ("unfold-predicate", "unfold(name);"),
         ("unfold-function", "unfold(f(x));"),

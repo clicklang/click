@@ -15,13 +15,9 @@ verifying "negative_quantity.c";
 void inspect(int32* pool, int32 n) {
     owns n of slot(pool);
     ensures 0 <= n;
-} by {
-    execute(); solve();
 }
 void caller(int32* pool) {
     ensures 0 == 0;
-} by {
-    execute(); solve();
 }
 ```
 

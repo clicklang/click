@@ -19,7 +19,7 @@ int32* allocate_int32s(int32 count) {
     requires count <= 536870911;
     produces maybe_allocated_int32s(result, count);
 } by {
-    execute();
+    step_until(function.exit);
     fold(maybe_allocated_int32s(result, count));
     solve();
 }

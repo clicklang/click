@@ -3,7 +3,7 @@
 `buf[0] = 3; buf[u] = 7; r = buf[0];` reads `7` when `u == 0` and the `3`
 otherwise, whichever object `buf` is. The twins below are the same program
 over a file-scope array and over a `malloc` buffer, each proved twice: by
-`execute()`, and with the case split written as a proof `if` after the store
+the omitted proof, and with the case split written as a proof `if` after the store
 has run, so the case `u != 0` is learned only after `buf[u] = 7` dropped the
 cached `buf[0]`.
 
@@ -86,9 +86,6 @@ int32 global_planned(int32 u) {
     owns g[0..4];
     ensures u != 0 or result == 7;
     ensures u == 0 or result == 3;
-} by {
-    execute();
-    solve();
 }
 
 int32 global_stepped(int32 u) {
@@ -119,9 +116,6 @@ int32 heap_planned(int32 u) {
     requires u < 4;
     ensures result == 0 or u != 0 or result == 7;
     ensures result == 0 or u == 0 or result == 3;
-} by {
-    execute();
-    solve();
 }
 
 int32 heap_stepped(int32 u) {
@@ -133,8 +127,6 @@ int32 heap_stepped(int32 u) {
     step();
     step();
     if buf == 0 {
-        execute();
-        solve();
     } else {
         step();
         step();
@@ -160,9 +152,6 @@ int32 zeroed_heap_planned(int32 u) {
     requires u < 4;
     ensures result == 0 or u != 0 or result == 7;
     ensures result == 0 or u == 0 or result == 3;
-} by {
-    execute();
-    solve();
 }
 ```
 

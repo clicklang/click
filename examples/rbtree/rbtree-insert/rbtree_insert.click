@@ -434,9 +434,6 @@ contract void AugmentRotate(struct rb_node* old, struct rb_node* new) {
 void dummy_rotate(struct rb_node* old, struct rb_node* new) {
     requires new != 0;
     ensures 1 == 1;
-} by {
-    execute();
-    solve();
 }
 
 void __rb_insert(struct rb_node* node, struct rb_root* root,

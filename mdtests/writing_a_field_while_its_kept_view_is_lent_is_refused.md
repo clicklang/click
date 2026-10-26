@@ -26,7 +26,7 @@ void keep(struct S* p) {
     owns p->a;
     owns p->b;
     ensures p->a == 2;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

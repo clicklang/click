@@ -36,7 +36,7 @@ int32 discard(int32 a[], int32 n) {
         peel(icount(a, 0, 0)) using { 0 <= 0; };
         normalize();
     }
-    execute();
+    step_until(function.exit);
     have icount(a, 0, 0) == 0;
     solve();
 }

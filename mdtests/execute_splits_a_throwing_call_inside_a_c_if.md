@@ -1,6 +1,6 @@
-# `execute()` splits a throwing call inside a C `if`
+# The implicit tail splits a throwing call inside a C `if`
 
-A maybe-throwing call is a fork, like a C `if`: `execute()` splits it into
+A maybe-throwing call is a fork, like a C `if`: the implicit tail splits it into
 `returned` and `threw` arms wherever it sits. Here it sits inside one arm
 of a C `if`, after a C `if`, and in straight-line code, and the omitted
 proofs of each function close on every path.

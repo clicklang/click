@@ -31,7 +31,7 @@ fn selected_pure_expansion_does_not_check_unrelated_proof_bodies() {
 fn partial_tactic_capture_runs_once_as_selected_sites_grow() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
     let samples = [4, 8, 16, 32].map(|size| {
-        let source = format!("verifying \"identity.c\";\nint32 identity(int32 x) {{ ensures result == x; }} by {{\nexecute();\n{}{}solve();\n}}\n",
+        let source = format!("verifying \"identity.c\";\nint32 identity(int32 x) {{ ensures result == x; }} by {{\nstep_until(function.exit);\n{}{}solve();\n}}\n",
             "have x + 0 == x by solve();\n".repeat(8), "have x == x by solve();\n".repeat(size));
         let sites = c0_smart_tactic_source_sites(&source, &c).unwrap();
         let positions = sites[9..9+size].iter().map(|s| s.position.clone()).collect::<Vec<_>>();

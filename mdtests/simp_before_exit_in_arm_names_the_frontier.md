@@ -5,7 +5,8 @@ script that steps through every statement of a body still stands before the
 body's end, one step short of the exit, and the arm driver used to decline
 that shape with a generic "not implemented in this execution context". It
 now says where the frontier is and how to reach the exit. The same script
-with one more `step()`, or with `execute()` in place of the steps, verifies.
+with one more `step()`, or with `step_until(function.exit)` in place of the
+steps, verifies.
 
 ```c filename=simp_before_exit_in_arm_names_the_frontier.c
 struct cell { int32 value; };

@@ -10,9 +10,9 @@ verifying "call.c";
 spec enum NodeRef { At(struct model_node*), }
 resource token() { field model: NodeRef; }
 void wrapped(struct model_node* p) { produces held: token(); ensures held.model == NodeRef::At(p); } by {
- execute(); let held = fold(token(), { model: NodeRef::At(p) });
+ step_until(function.exit); let held = fold(token(), { model: NodeRef::At(p) });
 }
-void caller(int32* p) { produces held: token(); ensures true; } by { let { held: held } = step(wrapped, {}); execute(); }
+void caller(int32* p) { produces held: token(); ensures true; } by { let { held: held } = step(wrapped, {}); }
 ```
 ```expect
 fail: requires original object class `struct model_node` or null

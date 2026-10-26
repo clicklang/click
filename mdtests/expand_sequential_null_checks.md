@@ -260,16 +260,10 @@ verifying "null_check_chain_nesting.c";
 
 int eleven() {
     ensures result == 18 or result == -1;
-} by {
-    execute();
-    solve();
 }
 
 int twelve() {
     ensures result == 18 or result == -1;
-} by {
-    execute();
-    solve();
 }
 ```
 

@@ -238,7 +238,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                 }
             }
-            execute(); solve();
+            step_until(function.exit);
         },
     }
 }
@@ -250,7 +250,6 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_mirrored_flip_finish(old(state.phase));
 } by {
     step(__rb_insert, { state: state });
-    execute(); solve();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -261,5 +260,4 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_mirrored_flip_finish(old(state.phase));
 } by {
     step(__rb_insert_augmented, { state: state });
-    execute(); solve();
 }

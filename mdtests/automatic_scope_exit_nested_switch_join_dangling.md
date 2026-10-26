@@ -31,7 +31,7 @@ int32 nested_switch_join_dangling(int32 inner) {
 
 ```click
 verifying "automatic_scope_exit_nested_switch_join_dangling.c";
-int32 nested_switch_join_dangling(int32 inner) { ensures 0 <= result; } by { execute(); solve(); }
+int32 nested_switch_join_dangling(int32 inner) { ensures 0 <= result; }
 ```
 
 ```expect

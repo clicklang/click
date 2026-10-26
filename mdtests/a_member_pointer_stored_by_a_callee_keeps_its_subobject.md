@@ -16,14 +16,14 @@ verifying "stored_member.c";
 void set(struct Pair* p, struct Holder* h) {
     owns h->link;
     ensures h->link == &p->first;
-} by { execute(); solve(); }
+}
 
 int32 probe(struct Pair* p, struct Holder* h) {
     views p->first;
     views p->second;
     owns h->link;
     ensures result == p->second;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

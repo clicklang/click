@@ -6,7 +6,7 @@ int32 f(int32 n) { int32* q; int32 z; if (n == 0) { int32 a[2]; a[0] = 5; if (n 
 
 ```click
 verifying "automatic_scope_exit_nested_branch.c";
-int32 f(int32 n) { ensures 0 <= result; } by { execute(); solve(); }
+int32 f(int32 n) { ensures 0 <= result; }
 ```
 
 ```expect

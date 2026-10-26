@@ -61,7 +61,7 @@ int32 make_zero(struct box* box) {
     ensures result == 0;
     ensures box->value == 0;
 } by {
-    execute();
+    step_until(function.exit);
     fold(zero_box(box));
     solve();
 }

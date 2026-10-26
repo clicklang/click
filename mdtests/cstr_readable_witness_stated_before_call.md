@@ -41,8 +41,6 @@ uint64 fixed_string_length(uint8 bytes[]) {
         enumerate();
     }
     step(strlen, { n: 2u64 });
-    execute();
-    solve();
 }
 ```
 

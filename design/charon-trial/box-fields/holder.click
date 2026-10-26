@@ -27,12 +27,12 @@ impl box_fields::Holder {
         match before.value {
             Option::None => {
                 let {} = unfold(before);
-                execute();
+                step_until(function.exit);
                 solve();
             }
             Option::Some(v) => {
                 let {} = unfold(before);
-                execute();
+                step_until(function.exit);
                 solve();
             }
         }
@@ -49,12 +49,12 @@ impl box_fields::Holder {
         match before.value {
             Option::None => {
                 let {} = unfold(before);
-                execute();
+                step_until(function.exit);
                 let after = fold(slot(self.slot), { value: Option<u32>::Some(x) }, {});
             }
             Option::Some(v) => {
                 let {} = unfold(before);
-                execute();
+                step_until(function.exit);
                 let after = fold(slot(self.slot), { value: Option<u32>::Some(x) }, {});
             }
         }

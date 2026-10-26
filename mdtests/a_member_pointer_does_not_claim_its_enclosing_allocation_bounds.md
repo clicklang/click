@@ -13,11 +13,11 @@ verifying "allocation.c";
 int32* probe(int32* p) {
  owns allocation(p, 12);
  ensures true;
-} by { execute(); solve(); }
+}
 int32* caller(struct Pair* p) {
  owns allocation(p, sizeof(struct Pair));
  ensures true;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

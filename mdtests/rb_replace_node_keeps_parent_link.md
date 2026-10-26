@@ -185,7 +185,7 @@ void replace_root_node(struct rb_node* victim, struct rb_node* new_node,
         unfold(color_bit(Color::Black));
         normalize();
     }
-    execute();
+    step_until(function.exit);
     let l2 = fold(rb_at(new_node->rb_left), { model: RbTree::Empty }, {});
     let r2 = fold(rb_at(new_node->rb_right), { model: RbTree::Empty }, {});
     let u = fold(rb_at(new_node), {

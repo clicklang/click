@@ -20,7 +20,7 @@ tactic append(x: int32) {
 int f(int x) {
     requires x == 1;
     ensures result + 1 == 2;
-} by { append(x); execute(); solve(); }
+} by { append(x); }
 ```
 
 ```expect

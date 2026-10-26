@@ -164,8 +164,6 @@ void child_init(struct child* obj, int32 payload) {
     step();
     fold(child_ref(obj));
     fold(child_storage(obj));
-    execute();
-    solve();
 }
 
 void child_retain(struct child* obj) {
@@ -179,8 +177,6 @@ void child_retain(struct child* obj) {
     step();
     fold(child_ref(obj));
     fold(child_control(obj));
-    execute();
-    solve();
 }
 
 void child_release(struct child* obj) {
@@ -197,7 +193,7 @@ void child_release(struct child* obj) {
     if obj->refs == 1 {
         unfold(child_ref(obj));
         unfold(authority(child_ref(obj)));
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         unfold(child_ref(obj));
@@ -208,7 +204,7 @@ void child_release(struct child* obj) {
         step();
         step();
         fold(child_control(obj));
-        execute();
+        step_until(function.exit);
         solve();
     }
 }
@@ -226,7 +222,7 @@ void parent_attach(struct parent* p, struct child* kid) {
     ensures p->kid == kid;
     ensures kid->payload == old(kid->payload);
 } by {
-    execute();
+    step_until(function.exit);
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
     solve();
 }
@@ -249,7 +245,7 @@ int32 parent_read_payload(struct parent* p) {
         ParentLink::Linked(entry_child) => {
             unfold(link);
             have old(p->kid) == entry_child;
-            open(child_control(p->kid)) { execute(); }
+            open(child_control(p->kid)) { step_until(function.exit); }
             let link = fold(parent(p), { link: ParentLink::Linked(entry_child) });
             solve();
         },
@@ -280,7 +276,7 @@ void parent_detach(struct parent* p) {
             have entry_child->refs == old(p->kid->refs);
             if entry_child->refs > 1 {
                 have to_integer(old(count(child_ref(p->kid)))) > 1;
-                execute();
+                step_until(function.exit);
                 solve();
             } else {
                 have to_integer(old(count(child_ref(p->kid)))) == to_integer(entry_child->refs);
@@ -288,7 +284,7 @@ void parent_detach(struct parent* p) {
                     rewrite(to_integer(old(count(child_ref(p->kid)))) == to_integer(entry_child->refs));
                     solve();
                 }
-                execute();
+                step_until(function.exit);
                 have to_integer(old(count(child_ref(p->kid)))) > 1 implies old(p->kid)->payload == old(p->kid->payload) by {
                     intro();
                     contradiction(to_integer(old(count(child_ref(p->kid)))) <= 1);

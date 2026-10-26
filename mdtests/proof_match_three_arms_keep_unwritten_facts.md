@@ -70,19 +70,19 @@ void change_child(struct rb_node* old_child, struct rb_node* new_child,
     match c.model {
         Frame::Top => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let d = fold(ctx_at(new_child, parent, root), { model: Frame::Top }, {});
             solve();
         },
         Frame::RedParent => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let d = fold(ctx_at(new_child, parent, root), { model: Frame::RedParent }, {});
             solve();
         },
         Frame::BlackParent => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let d = fold(ctx_at(new_child, parent, root), { model: Frame::BlackParent }, {});
             solve();
         },

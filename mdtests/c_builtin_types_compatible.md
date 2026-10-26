@@ -40,18 +40,18 @@ int32 pointee_const() { return __builtin_types_compatible_p(int*, const int*); }
 
 ```click
 verifying "compatible.c";
-int32 same(struct rb_node* p) { ensures result == 1 by { execute(); normalize(); } }
-int32 other(struct rb_node* p) { ensures result == 0 by { execute(); normalize(); } }
-int32 is_void(struct rb_node* p) { ensures result == 0 by { execute(); normalize(); } }
-int32 aliases() { ensures result == 1 by { execute(); normalize(); } }
+int32 same(struct rb_node* p) { ensures result == 1 by { step_until(function.exit); normalize(); } }
+int32 other(struct rb_node* p) { ensures result == 0 by { step_until(function.exit); normalize(); } }
+int32 is_void(struct rb_node* p) { ensures result == 0 by { step_until(function.exit); normalize(); } }
+int32 aliases() { ensures result == 1 by { step_until(function.exit); normalize(); } }
 int32 untouched(struct rb_node* p) {
     requires p == 0;
-    ensures result == 1 by { execute(); normalize(); }
+    ensures result == 1 by { step_until(function.exit); normalize(); }
 }
-int32 assigned() { ensures result == 1 by { execute(); normalize(); } }
-int32 rank() { ensures result == 0 by { execute(); normalize(); } }
-int32 top_const() { ensures result == 1 by { execute(); normalize(); } }
-int32 pointee_const() { ensures result == 0 by { execute(); normalize(); } }
+int32 assigned() { ensures result == 1 by { step_until(function.exit); normalize(); } }
+int32 rank() { ensures result == 0 by { step_until(function.exit); normalize(); } }
+int32 top_const() { ensures result == 1 by { step_until(function.exit); normalize(); } }
+int32 pointee_const() { ensures result == 0 by { step_until(function.exit); normalize(); } }
 ```
 
 ```expect

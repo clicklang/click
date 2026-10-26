@@ -82,7 +82,7 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
     match before.shape {
         WriteShape::Skip => {
             unfold(before);
-            execute();
+            step_until(function.exit);
             let after = fold(write_result(cells), {
                 model: WriteOutcome::Skipped
             });
@@ -118,7 +118,7 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
         },
         WriteShape::At(position) => {
             unfold(before);
-            execute();
+            step_until(function.exit);
             let after = fold(write_result(cells), {
                 model: WriteOutcome::Written(index)
             });

@@ -36,8 +36,6 @@ void zap(int32 *v, int32 n) {
     ) using {
         forall (k: int32) { 0 <= k and to_integer(k) < to_integer(n - 1) implies at(before_call, v[k]) == at(before_call, v[k]) };
     };
-    execute();
-    solve();
 }
 ```
 

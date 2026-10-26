@@ -15,7 +15,7 @@ impl adler2::Adler32 {
      ensures forall (k: uint64) { k < bytes.len() implies bytes[k] == old(bytes[k]) };
     } by {
      // The computation states the uint64 specification at the slice's own length.
-     execute();
+     step_until(function.exit);
      apply(adler_canonical_observation(self.a));
      apply(adler_canonical_observation(self.b));
      have forall (k: uint64) { k < bytes.len() implies bytes[k] == old(bytes[k]) } by solve();
@@ -57,6 +57,4 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
    to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a);
    65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum_u64(data, data.len(), 1, 0));
   };
- execute();
- solve();
 }

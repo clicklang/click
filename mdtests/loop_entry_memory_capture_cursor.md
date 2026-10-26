@@ -47,7 +47,6 @@ int32 cursor(const uint8* p, int32 n) {
    close_invariants() by solve();
   }
  }
- execute(); solve();
 }
 ```
 

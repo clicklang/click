@@ -1306,10 +1306,6 @@ id = "tactic.step"
 path = "reference/tactics/index.md#execution"
 
 [[item]]
-id = "tactic.execute"
-path = "reference/tactics/index.md#execution"
-
-[[item]]
 id = "tactic.step_until"
 path = "reference/tactics/index.md#execution"
 
@@ -1479,9 +1475,6 @@ path = "reference/tactics/index.md#execution"
 [[item]]
 id = "tactic-form.user-tactic"
 path = "reference/tactics/index.md#resources-and-snapshots"
-[[item]]
-id = "tactic-form.execute"
-path = "reference/tactics/index.md#execution"
 [[item]]
 id = "tactic-form.step-until"
 path = "reference/tactics/index.md#execution"

@@ -1,5 +1,8 @@
 # A huge unsigned offset cannot wrap into an in-bounds displacement
 
+The omitted proof's implicit tail steps the subtraction and refuses it as
+undefined behavior instead of wrapping the offset back to `&cells[2]`.
+
 ```c filename=offset_wrap.c
 int32 run() {
     int32 cells[3];
@@ -11,9 +14,9 @@ int32 run() {
 
 ```click
 verifying "offset_wrap.c";
-int32 run() { ensures result == 1; } by { execute(); normalize(); }
+int32 run() { ensures result == 1; }
 ```
 
 ```expect
-fail: execute
+fail: `step()` produced undefined behavior: pointer arithmetic left the pointed-to object
 ```

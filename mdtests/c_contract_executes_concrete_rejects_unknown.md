@@ -20,26 +20,18 @@ contract void Quiet(int32* state) {
 }
 
 theorem increment_is_quiet() executes increment(int32* state) {
-    ensures Quiet(&increment) by {
-        execute();
-        solve();
-    }
+    ensures Quiet(&increment);
 }
 
 int32 accept(void (*callback)(int32*)) {
     requires Quiet(callback);
     ensures result == 0;
-} by {
-    execute();
-    solve();
 }
 
 int32 caller() {
     ensures result == 0;
 } by {
     apply(increment_is_quiet());
-    execute();
-    solve();
 }
 ```
 

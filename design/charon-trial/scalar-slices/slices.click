@@ -10,7 +10,7 @@ fn first(xs: &[i32]) -> i32 {
     views *xs;
     ensures xs.len() == 0 implies result == 0;
     ensures xs.len() > 0 implies result == xs[0];
-} by { execute(); solve(); }
+}
 
 fn sum(xs: &[u32]) -> u32 {
     views *xs;
@@ -21,7 +21,6 @@ fn sum(xs: &[u32]) -> u32 {
         decreases xs.len() - i;
         invariant i <= xs.len();
     }
-    execute(); solve();
 }
 
 fn zero(xs: &mut [u64]) {
@@ -33,25 +32,24 @@ fn zero(xs: &mut [u64]) {
         decreases xs.len() - i;
         invariant i <= xs.len();
     }
-    execute(); solve();
 }
 
 fn set_at(xs: &mut [i64], k: usize, v: i64) {
     owns *xs;
     requires k < xs.len();
     ensures xs[k] == v;
-} by { execute(); solve(); }
+}
 
 fn get(xs: &[u16], k: usize) -> u16 {
     views *xs;
     requires k < xs.len();
     ensures result == xs[k];
-} by { execute(); solve(); }
+}
 
 fn swap_ends(xs: &mut [i8]) {
     owns *xs;
     ensures xs.len() >= 2 implies xs[0] == old(xs[xs.len() - 1]);
-} by { execute(); solve(); }
+}
 
 fn last(xs: &[i64]) -> i64 {
     views xs[0..xs.len()];
@@ -85,25 +83,24 @@ fn last(xs: &[i64]) -> i64 {
             have iter_cursor == xs + (xs.len() - iter_remaining);
         }
     }
-    execute(); solve();
 }
 
 fn head(xs: &[u64]) -> u64 {
     views *xs;
     ensures xs.len() > 0 implies result == xs[0];
-} by { execute(); solve(); }
+}
 
 fn head_twice(xs: &[u64]) -> u64 {
     views *xs;
     ensures xs.len() > 0 implies result == xs[0];
-} by { execute(); solve(); }
+}
 
 fn clear_first(xs: &mut [i16]) {
     owns *xs;
     ensures xs.len() > 0 implies xs[0] == 0i16;
-} by { execute(); solve(); }
+}
 
 fn clear_twice(xs: &mut [i16]) {
     owns *xs;
     ensures xs.len() > 0 implies xs[0] == 0i16;
-} by { execute(); solve(); }
+}

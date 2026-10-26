@@ -9,9 +9,9 @@ language. A tactic is either **smart**, **simple**, or **control**:
   `step()` or `fold`, `close_invariants()`, and
   the elided forms whose search fills one argument a simple form writes:
   `apply(theorem(args))`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
-  are the tactics that `click profile` may recommend expanding. `execute()`
-  is still accepted. The parser refuses the removed spellings `simp()`,
-  `auto()`, `arithmetic()` and `execute_until` and names each replacement.
+  are the tactics that `click profile` may recommend expanding. The parser
+  refuses the removed spellings `simp()`, `auto()`, `arithmetic()`,
+  `execute()` and `execute_until` and names each replacement.
 - Simple tactics request one deterministic checked operation without heuristic
   planning or search. They may use indexed ambient context when that context is
   an input to the operation, as it is for `step()`. They are the leaves emitted
@@ -144,7 +144,7 @@ not the resource, it first folds it, as a written `fold(R(...))` after the C
 would; a fold that does not check leaves the path as it was
 (`mdtests/an_omitted_proof_folds_the_resource_its_contract_produces.md`). A proof
 script that ends with a claim still open closes it the same way, so a script
-needs no final closer and no final `execute()`. The body of an `open` scope is
+needs no final closer and no final step to function exit. The body of an `open` scope is
 the exception: the scope closes where its body ends, before the tail runs, so
 a body that must reach the function's return steps there itself with
 `step_until(function.exit)`. On a stated fact,
@@ -301,7 +301,6 @@ the one execution transition that fails.
 | `mark name;` | simple | Specialized | Name the current execution state. | [Reference](#proof-marks) |
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
 | `let { result: name } = step()` | simple | Specialized | Bind the checked value of a scalar assignment. | [Reference](#binding-a-statement-result) |
-| `execute()` | smart | Specialized | Older written form of the implicit tail: run to function exit, splitting undecided paths. | [Reference](#execution-to-function-exit) |
 | `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-program-point) |
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
@@ -536,8 +535,8 @@ binding adds no assumption. Expansion retains the binding unchanged.
 
 ### Execution to function exit
 
-**Form:** none; the implicit tail. `execute()` is its older written form, still
-accepted.
+**Form:** none; the implicit tail. The parser refuses the removed spelling
+`execute()` and names the implicit tail and `step_until(function.exit)`.
 
 **Core.** A proof that stops at a live frontier runs to function exit on the
 checked proof: one `step()` per statement, a `branch` at each undecided C `if`
@@ -566,8 +565,8 @@ their native load widths and short-circuit operand facts are preserved.
 When one arm of a `branch` returns, the rest of the script runs in the arm that
 continues, and a script that stops there is finished by the tail too
 (`mdtests/a_script_that_stops_in_the_arm_that_continues_runs_the_rest.md`).
-A written `execute()` inside an arm that must stop at its shared continuation
-is refused and names that arm limit.
+A `step()` that runs past the end of an arm that must stop at its shared
+continuation is refused and names that arm limit.
 
 To run to function exit and do proof work there on one path, write
 `step_until(function.exit)` and then the work; it never splits, and at a

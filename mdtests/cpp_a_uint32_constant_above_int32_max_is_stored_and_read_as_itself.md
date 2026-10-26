@@ -18,17 +18,17 @@ unsigned int stated(const unsigned int& u) noexcept { return u; }
 verifying "constants.cpp";
 unsigned int literal() {
     ensures result == 4000000000u32;
-} by { execute(); solve(); }
+}
 unsigned int stored(uint32& u) {
     owns u;
     ensures result == 4000000000u32;
     ensures u == 4000000000u32;
-} by { execute(); solve(); }
+}
 unsigned int stated(const uint32& u) {
     views u;
     requires u == 4000000000u32;
     ensures result == 4000000000u32;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

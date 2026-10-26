@@ -181,7 +181,7 @@ fn header_project(transitive: bool) -> Project {
     );
     project.write(
         "project.click",
-        "verifying \"probe.c\";\nint probe() { ensures result == 1; } by { execute(); solve(); }\n",
+        "verifying \"probe.c\";\nint probe() { ensures result == 1; }\n",
     );
     project
 }

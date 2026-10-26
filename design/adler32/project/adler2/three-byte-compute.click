@@ -450,7 +450,7 @@ impl adler2::Adler32 {
      have to_integer(__rust_mir_151) < to_integer(65521u32);
      have to_integer(__rust_mir_151) <= 65535 by solve() using { to_integer(__rust_mir_151) < 65521; };
      mark reduced_b;
-     execute();
+     step_until(function.exit);
      have to_integer(self.a) == to_integer(at(reduced_a, __rust_mir_149)) by { arithmetic_certificate rules {
      premise 0: 0 <= to_integer(at(reduced_a, __rust_mir_149)) => 0 <= to_integer(at(reduced_a, __rust_mir_149));
      premise 1: to_integer(at(reduced_a, __rust_mir_149)) <= 65535 => to_integer(at(reduced_a, __rust_mir_149)) <= 65535;

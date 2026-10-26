@@ -11,12 +11,12 @@ void after_call(void) { if (off()) spin(); }
 ```
 ```click
 verifying "unreachable.c";
-int32 off() { ensures result == 0; } by { execute(); solve(); }
+int32 off() { ensures result == 0; }
 void caller(int32 flag) {
     requires flag == 0;
     ensures 1 == 1;
 }
-void after_call() { ensures 1 == 1; } by { execute(); solve(); }
+void after_call() { ensures 1 == 1; }
 ```
 ```expect
 pass

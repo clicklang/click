@@ -68,7 +68,7 @@ void detach(struct node* n) {
         Tree::Empty => { contradiction(t.model == Tree::Empty); },
         Tree::Node(identity, node_parent, value) => {
             unfold(t);
-            execute();
+            step_until(function.exit);
             let u = fold(tree_at(n), { model: Tree::Node(identity, 0, value) });
             have is_root(Tree::Node(identity, 0, value)) == 1 by {
                 unfold(is_root(Tree::Node(identity, 0, value)));

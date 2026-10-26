@@ -6,7 +6,7 @@ int ignore(const int *(*f)(int *)) { return 0; }
 
 ```click
 verifying "main.c";
-int ignore(int *(*f)(int *)) { ensures result == 0; } by { execute(); solve(); }
+int ignore(int *(*f)(int *)) { ensures result == 0; }
 ```
 
 ```expect

@@ -171,7 +171,7 @@ template<class T> void Stack<T>::push(T value) {
     match state.items {
         List::Nil => {
             unfold(state);
-            execute();
+            step_until(function.exit);
             let tail = fold(nodes<T>(this->head->next), { items: List<T>::Nil });
             let state = fold(nodes<T>(this->head), { items: List::Cons(value, List<T>::Nil) }, { tail: tail });
             unfold(length(List::Cons(value, List<T>::Nil)));
@@ -180,7 +180,7 @@ template<class T> void Stack<T>::push(T value) {
         },
         List::Cons(top, below) => {
             let { tail: rest } = unfold(state);
-            execute();
+            step_until(function.exit);
             let tail = fold(nodes<T>(this->head->next), { items: List::Cons(top, below) }, { tail: rest });
             let state = fold(nodes<T>(this->head), { items: List::Cons(value, List::Cons(top, below)) }, { tail: tail });
             unfold(length(List::Cons(value, List::Cons(top, below))));
@@ -194,7 +194,7 @@ template<class T> bool Stack<T>::pop(T& out) {
     match state.items {
         List::Nil => {
             unfold(state);
-            execute();
+            step_until(function.exit);
             let state = fold(nodes<T>(this->head), { items: List<T>::Nil });
             unfold(is_cons(List<T>::Nil));
             unfold(first_or(List<T>::Nil, old(out)));
@@ -209,7 +209,7 @@ template<class T> bool Stack<T>::pop(T& out) {
                 length(tail_items) >= 0;
             };
             let { tail: tail } = unfold(state);
-            execute();
+            step_until(function.exit);
             unfold(is_cons(List::Cons(value, tail_items)));
             unfold(first_or(List::Cons(value, tail_items), old(out)));
             unfold(rest(List::Cons(value, tail_items)));
@@ -289,7 +289,7 @@ int caller(Stack<int>& stack, int x) {
     requires stack.count < 18446744073709551615u64;
     ensures result == x;
 } by {
-    execute();
+    step_until(function.exit);
     unfold(first_or(List<int>::Cons(x, old(state.items)), 0));
     solve();
 }
@@ -299,7 +299,7 @@ int local_round_trip(int x) {
     step_until(region(2));
     let state = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
-    execute();
+    step_until(function.exit);
     unfold(first_or(List<int32>::Cons(x, List<int32>::Nil), 0));
     solve();
 }
@@ -308,7 +308,7 @@ unsigned long pushed_size(Container<int>& container, int x) {
     requires size(container) < 18446744073709551615u64;
     ensures to_integer(result) == length(old(items(container))) + 1;
 } by {
-    execute();
+    step_until(function.exit);
     unfold(length(List<int32>::Cons(x, old(items(container)))));
     solve();
 }

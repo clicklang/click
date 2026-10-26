@@ -23,15 +23,15 @@ int apply(int (*f)(int), int x) {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 int caller::(lambda#0)(int y) {
     requires 0 <= y and y <= 1000;
     ensures result == y + y;
-} by { execute(); solve(); }
+}
 int caller(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

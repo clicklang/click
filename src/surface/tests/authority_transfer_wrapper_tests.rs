@@ -21,14 +21,14 @@ fn authority_transfer_wrapper_preserves_each_existing_child() {
             consumes member(object);
             owns member(object);
             produces held(object) by {
-                execute();
+                step_until(function.exit);
                 fold(held(object));
             }
         }
         int32 unpack(int32 object) {
             consumes held(object);
             produces member(object) by {
-                execute();
+                step_until(function.exit);
                 unfold(held(object));
             }
         }
@@ -46,7 +46,7 @@ fn authority_transfer_wrapper_cannot_create_a_missing_child() {
         verifying "wrapper.c";
         int32 package(int32 object) {
             produces held(object) by {
-                execute();
+                step_until(function.exit);
                 fold(held(object));
             }
         }
@@ -74,7 +74,7 @@ fn authority_transfer_wrapper_cannot_bypass_member_birth_checks() {
             step();
             fold(authority(member(&x)));
             fold(held(&x));
-            execute();
+            step_until(function.exit);
         }
     "#;
     let error = verify_c0_project(
@@ -96,7 +96,7 @@ fn authority_transfer_wrapper_preserves_a_tracked_member() {
         } by {
             step();
             step();
-            branch { execute(); solve(); } else {}
+            branch { step_until(function.exit); solve(); } else {}
             fold(authority(member(p)));
             fold(member(p));
             fold(held(p));
@@ -104,7 +104,7 @@ fn authority_transfer_wrapper_preserves_a_tracked_member() {
             have count(member(p)) == 1 by { solve(); }
             unfold(member(p));
             unfold(authority(member(p)));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -124,14 +124,14 @@ fn authority_member_wrapper_requires_population_cleanup_before_free() {
         } by {
             step();
             step();
-            branch { execute(); solve(); } else {}
+            branch { step_until(function.exit); solve(); } else {}
             fold(authority(member(p)));
             fold(member(p));
             fold(authority(held(p)));
             fold(held(p));
             have count(held(p)) == 1 by solve();
             have count(member(p)) == 1 by solve();
-            execute();
+            step_until(function.exit);
         }
     "#;
     let c = "int32 run(void) { int32* p = malloc(4); if (p == 0) return 0; free(p); return 1; }";
@@ -157,11 +157,11 @@ fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome()
         } by {
             step();
             step();
-            branch { execute(); solve(); } else {}
+            branch { step_until(function.exit); solve(); } else {}
             fold(authority(member(p)));
             fold(member(p));
             fold(authority(held(p)));
-            execute();
+            step_until(function.exit);
             fold(held(result));
             solve();
         }
@@ -196,7 +196,7 @@ const MEMORY_FRAME_SOURCE: &str = r#"
             owns frame->wide;
             owns frame->narrow;
             produces held(object) by {
-                execute();
+                step_until(function.exit);
                 fold(held(object));
             }
         }
@@ -205,7 +205,7 @@ const MEMORY_FRAME_SOURCE: &str = r#"
             owns frame->wide;
             owns frame->narrow;
             produces member(object) by {
-                execute();
+                step_until(function.exit);
                 unfold(held(object));
             }
         }

@@ -47,18 +47,18 @@ class Boxed : Store {
 int Boxed::get() const {
 } by {
     unfold(state);
-    execute();
+    step_until(function.exit);
     let state = fold(cell(this->slot), { value: old(state.value) });
 }
 int read(const Store& store) {
     ensures result == held(store);
-} by { execute(); solve(); }
+}
 int peek(const Boxed& boxed) {
     owns boxed;
     owns state: cell(boxed.slot);
     ensures result == state.value;
     ensures state.value == old(state.value) + 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

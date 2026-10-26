@@ -105,7 +105,7 @@ void tree_node_init(struct tree_node* node, int value,
     produces root: tree_at(node);
     ensures root.model == HeapTree::Node(node, value, old(l.model), old(r.model));
 } by {
-    execute();
+    step_until(function.exit);
     let root = fold(tree_at(node), {
         model: HeapTree::Node(node, value, l.model, r.model)
     }, { left: l, right: r });
@@ -389,7 +389,7 @@ struct tree_node* tree_rotate_left(struct tree_node* root) {
                 HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model) => {
                     let { left: left, right: r } = unfold(t);
                     let { left: m, right: right } = unfold(r);
-                    execute();
+                    step_until(function.exit);
                     let lower = fold(tree_at(root), {
                         model: HeapTree::Node(node, value, left_model, middle_model)
                     }, { right: m });
@@ -422,7 +422,7 @@ struct tree_node* tree_rotate_right(struct tree_node* root) {
                 HeapTree::Node(pivot_node, pivot_value, far_left_model, middle_model) => {
                     let { left: l, right: right } = unfold(t);
                     let { left: left, right: m } = unfold(l);
-                    execute();
+                    step_until(function.exit);
                     let lower = fold(tree_at(root), {
                         model: HeapTree::Node(node, value, middle_model, right_model)
                     }, { left: m });
@@ -446,7 +446,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
     match t.model {
         HeapTree::Empty => {
             unfold(t);
-            execute();
+            step_until(function.exit);
             let t = fold(tree_at(root), { model: HeapTree::Empty });
             solve();
         },

@@ -15,8 +15,8 @@ verifying "solve_closes_one_goal.c";
 
 int32 solve_one(int32 x) {
     requires x == 3;
-    ensures add_zero: result == x + 0 by { execute(); solve(); }
-    ensures listed: x + 1 == 4 by { execute(); solve() using { x == 3; }; }
+    ensures add_zero: result == x + 0 by { step_until(function.exit); solve(); }
+    ensures listed: x + 1 == 4 by { step_until(function.exit); solve() using { x == 3; }; }
 }
 ```
 

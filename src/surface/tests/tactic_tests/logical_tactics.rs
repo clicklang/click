@@ -35,7 +35,7 @@ fn fixed_state_simp_closes_from_false_without_leaking_into_other_contracts() {
             requires false;
             ensures result == 0;
         } by {
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -420,7 +420,7 @@ fn assumption_reuses_facts_but_does_not_normalize_or_extract_implications() {
 fn parses_local_have_proof_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { have n < 2147483647 by solve(); execute(); solve(); }",
+        "== 2 by { have n < 2147483647 by solve(); step_until(function.exit); solve(); }",
     );
     let file = parse(&source).expect("local have tactic should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -438,7 +438,10 @@ fn parses_local_have_proof_tactic() {
     ));
     assert_eq!(
         &tactics[1..],
-        &[ProofTactic::SmartExecute, ProofTactic::Simp]
+        &[
+            ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
+            ProofTactic::Simp
+        ]
     );
 }
 
@@ -551,7 +554,7 @@ fn fixed_state_proof_intro_places_forall_binder_in_surface_scope() {
             ensures forall (k: int32) {
                 (k == k and value == value) implies k == k
             } by {
-                execute();
+                step_until(function.exit);
                 have forall (k: int32) {
                     (k == k and value == value) implies k == k
                 } by {
@@ -573,7 +576,7 @@ fn fixed_state_proof_intro_places_forall_binder_in_surface_scope() {
 fn parses_proof_if_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { if n <= 0 { execute(); solve(); } else { execute(); solve(); } }",
+        "== 2 by { if n <= 0 { step_until(function.exit); solve(); } else { step_until(function.exit); solve(); } }",
     );
     let file = parse(&source).expect("proof if should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -587,8 +590,8 @@ fn parses_proof_if_tactic() {
             then_tactics,
             else_tactics,
             ..
-        }) if then_tactics == &[ProofTactic::SmartExecute, ProofTactic::Simp]
-            && else_tactics == &[ProofTactic::SmartExecute, ProofTactic::Simp]
+        }) if then_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Simp]
+            && else_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Simp]
     ));
 }
 
@@ -596,13 +599,16 @@ fn parses_proof_if_tactic() {
 fn parses_existential_proof_tactics() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { execute(); obtain (k: int32) { k == k }; witness { j: k + 1 }; solve(); }",
+        "== 2 by { step_until(function.exit); obtain (k: int32) { k == k }; witness { j: k + 1 }; solve(); }",
     );
     let file = parse(&source).expect("existential explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
     let tactics = ensure.proof().tactics().expect("expected tactics");
-    assert!(matches!(tactics[0], ProofTactic::SmartExecute));
+    assert!(matches!(
+        tactics[0],
+        ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit)
+    ));
     assert!(matches!(&tactics[1], ProofTactic::LetSatisfy(binding)
         if binding.bindings == [("k".to_string(), ClickType::C(C0Type::Int32))]));
     assert_eq!(
@@ -703,7 +709,10 @@ fn rejects_legacy_structural_region_syntax() {
 
 #[test]
 fn rejects_legacy_proof_tactic_region_syntax() {
-    let source = FILL3_CLICK.replace("== 2;", "== 2 by { execute(); step_until(loop 0); }");
+    let source = FILL3_CLICK.replace(
+        "== 2;",
+        "== 2 by { step_until(function.exit); step_until(loop 0); }",
+    );
     let error = parse(&source).expect_err("legacy proof tactic region syntax should fail");
 
     assert!(
@@ -1100,7 +1109,7 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
                 requires viewable(p[0..2]);
                 requires sorted_pair(p);
                 ensures consequence: p[0] <= p[1] by {
-                    execute();
+                    step_until(function.exit);
                     unfold(sorted_pair);
                     solve();
                 }
@@ -1115,7 +1124,7 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
         verified[0].proof_tactics(),
         Some(
             [
-                ProofTactic::SmartExecute,
+                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
                 ProofTactic::UnfoldPredicate("sorted_pair".to_string()),
                 ProofTactic::Simp,
             ]
@@ -1149,9 +1158,7 @@ fn unfolds_predicate_goal_to_prove_compare_swap_sorted() {
             int32 compare_swap2(int32* p) {
                 consumes p[0..2];
                 ensures sorted: sorted_pair(p) by {
-                    execute();
                     unfold(sorted_pair);
-                    solve();
                 }
             }
         "#;
@@ -1188,7 +1195,7 @@ fn unfolds_general_sorted_predicate() {
                 requires viewable(p[0..n]);
                 requires sorted(p, n);
                 ensures still_sorted: sorted(p, n) by {
-                    execute();
+                    step_until(function.exit);
                     unfold(sorted);
                     solve();
                 }
@@ -1283,10 +1290,7 @@ fn every_claim_proof_form_retains_expandable_provenance() {
 
             int32 clamp(int32 p[1], int32 x) {
                 consumes p[0..1];
-                ensures result >= 0 by {
-                    execute();
-                    solve();
-                }
+                ensures result >= 0;
             }
         "#;
 
@@ -1317,7 +1321,7 @@ fn mid_execution_witness_simp_have_expands_to_a_simple_certificate() {
                     witness { j: x };
                     solve();
                 }
-                execute();
+                step_until(function.exit);
                 solve();
             }
         "#;
@@ -1392,7 +1396,7 @@ fn mid_execution_choose_witness_simp_retains_the_checked_proof_path() {
                     witness { j: k };
                     solve();
                 }
-                execute();
+                step_until(function.exit);
                 solve();
             }
         "#;
@@ -1473,7 +1477,7 @@ fn explicit_mid_execution_witness_certificate_checks_and_expands() {
                     witness { j: x };
                     normalize();
                 }
-                execute();
+                step_until(function.exit);
                 solve();
             }
         "#;
@@ -1512,7 +1516,7 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_simp() {
                     witness { j: x };
                     solve();
                 }
-                execute();
+                step_until(function.exit);
                 solve();
             }
         "#;
@@ -1535,7 +1539,7 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_simp() {
         .find("have exists (j: int32)")
         .expect("expansion should retain the selected have")
         ..expanded
-            .find("execute();")
+            .find("step_until(function.exit);")
             .expect("expansion should retain the proof suffix")];
     assert!(
         expanded_have.contains("witness { j: x }"),
@@ -1615,7 +1619,7 @@ fn outcome_instantiate_uses_the_checked_proof_path() {
             };
             ensures two_le: 2 <= value;
         } by {
-            execute();
+            step_until(function.exit);
             have 2 <= value by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < 3 implies k <= value
@@ -1647,7 +1651,7 @@ fn instantiate_does_not_discharge_guards_from_ambient_facts() {
             };
             ensures two_le: 2 <= value;
         } by {
-            execute();
+            step_until(function.exit);
             have 2 <= value by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies k <= value
@@ -1683,9 +1687,6 @@ fn constant_bound_weakenings_lower_to_named_theorem_chains() {
             requires n <= 10;
             ensures under_twenty: n < 20;
             ensures next_under_fifteen: n + 1 <= 15;
-        } by {
-            execute();
-            solve();
         }
     "#;
 
@@ -1707,7 +1708,7 @@ fn cases_eliminates_a_disjunctive_premise() {
             requires x == 1 or x == 2;
             ensures identity: result == x;
         } by {
-            execute();
+            step_until(function.exit);
             have x <= 2 by {
                 cases {
                     x == 1 => {
@@ -1742,7 +1743,7 @@ fn cases_requires_its_exact_disjunction_as_an_available_fact() {
             requires x == 1 or x == 2;
             ensures identity: result == x;
         } by {
-            execute();
+            step_until(function.exit);
             have x <= 3 by {
                 cases {
                     x == 1 => {
@@ -1786,7 +1787,7 @@ fn cases_checks_each_branch_under_exactly_its_own_disjunct() {
             requires x == 1 or x == 2;
             ensures identity: result == x;
         } by {
-            execute();
+            step_until(function.exit);
             have x <= 2 by {
                 cases {
                     x == 1 => {
@@ -1972,7 +1973,7 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
                 }
                 assumption();
             }
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -2060,7 +2061,7 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
                     assumption();
                 }
             }
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -2140,7 +2141,7 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
                 }
                 enumerate();
             }
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -2202,7 +2203,7 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
                 int32 identity(int32 x) {
                     ensures exists (k: int32) { k == result };
                 } by {
-                    execute();
+                    step_until(function.exit);
                     witness { k: result };
                     solve();
                 }
@@ -2218,7 +2219,7 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
                     ensures result == x;
                 } by {
                     obtain (k: int32) { k == x };
-                    execute();
+                    step_until(function.exit);
                     solve();
                 }
             "#,
@@ -2303,7 +2304,7 @@ fn fixed_state_have_cases_certificate_uses_checked_proof_branches() {
             requires x <= 0 or x > 0;
             ensures sign: x <= 0 or x > 0;
         } by {
-            execute();
+            step_until(function.exit);
             have x <= 0 or x > 0 by {
                 cases {
                     x <= 0 => {
@@ -2349,7 +2350,7 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
         int32 keep(int32 x) {
             ensures excluded_middle: x == 0 or not (x == 0);
         } by {
-            execute();
+            step_until(function.exit);
             have x == 0 or not (x == 0) by {
                 if x == 0 {
                     apply(equality_case(x));
@@ -2405,7 +2406,7 @@ fn leading_universal_contradiction_scope_stays_on_proof() {
             have forall (k: int32) { k == k } by {
                 contradiction(x == 0);
             }
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -2431,7 +2432,7 @@ fn enumerate_closes_a_constant_bounded_universal_goal() {
             requires x <= 5;
             ensures bounded: forall (k: int32) { 0 <= k and k < 2 implies x <= 5 };
         } by {
-            execute();
+            step_until(function.exit);
             have forall (k: int32) { 0 <= k and k < 2 implies x <= 5 } by {
                 have 0 <= 0 and 0 < 2 implies x <= 5 by { intro(); assumption(); }
                 have 0 <= 1 and 1 < 2 implies x <= 5 by { intro(); assumption(); }
@@ -2462,7 +2463,7 @@ fn enumerate_requires_each_in_range_instance_as_an_available_fact() {
             requires 1 <= x;
             ensures bounded: forall (k: int32) { 0 <= k and k < 2 implies k <= x };
         } by {
-            execute();
+            step_until(function.exit);
             have forall (k: int32) { 0 <= k and k < 2 implies k <= x } by {
                 have 0 <= 1 and 1 < 2 implies 1 <= x by { intro(); assumption(); }
                 enumerate();
@@ -2498,7 +2499,7 @@ fn enumerate_requires_a_constant_bounded_universal_goal() {
             requires x <= 5;
             ensures bounded: forall (k: int32) { 0 <= k and k < x implies x <= 5 };
         } by {
-            execute();
+            step_until(function.exit);
             have forall (k: int32) { 0 <= k and k < x implies x <= 5 } by {
                 enumerate();
             }
@@ -2860,7 +2861,7 @@ fn outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg() {
             ensures ordered_pair(pair);
         } by {
             unfold(ordered_pair);
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -3004,7 +3005,7 @@ fn cases_arms_out_of_the_disjunction_order_are_refused() {
 fn parses_outcomes_arms_in_either_order() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { outcomes { threw => { solve(); } returned => { execute(); solve(); } } }",
+        "== 2 by { outcomes { threw => { solve(); } returned => { step_until(function.exit); solve(); } } }",
     );
     let file = parse(&source).expect("outcomes arms in either order should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -3016,7 +3017,7 @@ fn parses_outcomes_arms_in_either_order() {
         ProofTactic::CallOutcomes(ProofCallOutcomes {
             returned_tactics,
             threw_tactics,
-        }) if returned_tactics == &[ProofTactic::SmartExecute, ProofTactic::Simp]
+        }) if returned_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Simp]
             && threw_tactics == &[ProofTactic::Simp]
     ));
 
@@ -3297,20 +3298,20 @@ const TERMINAL_BINDINGS_C: &str =
     "int32 identity(int32 n) { return n; } int32 f(int32 n) { return identity(n); }";
 const TERMINAL_BINDINGS_CLICK: &str = r#"
         verifying "terminal_bindings.c";
-        int32 identity(int32 n) { ensures result == n; } by { execute(); solve(); }
+        int32 identity(int32 n) { ensures result == n; }
         int32 f(int32 n) {
             ensures returned: result == n;
         } by {
             if n >= 0 {
                 let { result: positive } = step(identity, {});
                 have positive == n;
-                execute();
+                step_until(function.exit);
                 have result == positive;
                 solve();
             } else {
                 let { result: negative } = step(identity, {});
                 have negative == n;
-                execute();
+                step_until(function.exit);
                 have result == negative;
                 solve();
             }

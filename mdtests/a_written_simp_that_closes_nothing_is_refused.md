@@ -1,6 +1,7 @@
 # A written `solve() using` that closes nothing is refused
 
-After execution a written `solve() using` acts on the first open goal. Here
+At function exit, reached with `step_until(function.exit)`, a written
+`solve() using` acts on the first open goal. Here
 it cites a premise that does not hold, so it closes nothing and is refused
 with that goal. It used to be skipped, leaving the implicit closer to close
 the claim and `click expand` to drop the written tactic.
@@ -16,12 +17,12 @@ verifying "a_written_simp_that_closes_nothing_is_refused.c";
 
 int32 zero() {
     ensures result == 0 by {
-        execute();
+        step_until(function.exit);
         solve() using { 1 == 2; }
     }
 }
 ```
 
 ```expect
-fail: did not retain a complete transition for every pending claim
+fail: `ensures result == 0` failed for `zero.ensures_0` path 0: unclosed goal
 ```

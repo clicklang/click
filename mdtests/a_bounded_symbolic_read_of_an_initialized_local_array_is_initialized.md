@@ -84,37 +84,22 @@ verifying "a_bounded_symbolic_read_of_an_initialized_local_array_is_initialized.
 
 int32 full(int32 x) {
     ensures result == result;
-} by {
-    execute();
-    solve();
 }
 
 int32 partial(int32 x) {
     ensures result == result;
-} by {
-    execute();
-    solve();
 }
 
 int32 zero(int32 x) {
     ensures result == result;
-} by {
-    execute();
-    solve();
 }
 
 int32 assigned(int32 x) {
     ensures result == result;
-} by {
-    execute();
-    solve();
 }
 
 int32 unsigned_index(uint32 x) {
     ensures result == result;
-} by {
-    execute();
-    solve();
 }
 ```
 

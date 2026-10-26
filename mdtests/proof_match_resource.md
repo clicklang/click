@@ -22,10 +22,10 @@ int read(int* p) {
     ensures c.model == old(c.model);
 } by {
     match c.model {
-        Maybe::None => { unfold(c); execute(); fold(c); solve(); },
+        Maybe::None => { unfold(c); step_until(function.exit); fold(c); solve(); },
         Maybe::Some(value) => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             fold(c);
             solve();
         },

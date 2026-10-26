@@ -50,7 +50,7 @@ void child_retain(struct child* obj) {
     step();
     fold(child_ref(obj));
     fold(child_control(obj));
-    execute();
+    step_until(function.exit);
     solve();
 }
 void share(struct child* obj) {
@@ -86,7 +86,7 @@ struct child* last_kid(struct parent* a, struct parent* b, struct parent* c) {
                         ParentLink::Empty => { contradiction(a_link.link == ParentLink::Empty); },
                         ParentLink::Linked(ak) => {
                             unfold(a_link);
-                            execute();
+                            step_until(function.exit);
                             solve();
                         },
                     }

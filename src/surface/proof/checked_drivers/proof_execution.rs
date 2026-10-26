@@ -1212,9 +1212,9 @@ fn apply_frontier_source_tactic<'a>(
                     && proof.execution().is_some_and(|execution| {
                         execution.core.frontier.region == ExecutionRegionKind::BranchArm
                     }) {
-                    "`execute()` cannot reach function exit from a continuing branch arm; an arm of `branch` must stop at the shared continuation"
+                    "the implicit tail cannot reach function exit from a continuing branch arm; an arm of `branch` must stop at the shared continuation"
                 } else {
-                    "`execute()` found no checked path from this frontier to function exit"
+                    "the implicit tail found no checked path from this frontier to function exit"
                 };
                 return Err(proof.step_error(message));
             }
@@ -1280,7 +1280,7 @@ fn advance_checked_linear_continuation<'a>(
     };
     for (offset, indexed) in tactics.iter().enumerate() {
         // A written `auto();` at a live frontier first executes the C that
-        // remains, as `execute()` would, then closes the open goals at
+        // remains, as the implicit tail does, then closes the open goals at
         // function exit like the `auto` an omitted proof stands for.
         if matches!(indexed.tactic, ProofTactic::AutoClose) && !proof.is_at_function_exit() {
             check_verification_deadline()?;
@@ -5481,7 +5481,7 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
         ProofTactic::StepBind(name) => format!("let {{ result: {name} }} = step()"),
         ProofTactic::StepCall(transport) => transport.to_string(),
         ProofTactic::UserTactic(application) => application.tactic_spelling(),
-        ProofTactic::SmartExecute => "execute()".to_string(),
+        ProofTactic::SmartExecute => "the implicit tail".to_string(),
         ProofTactic::ExecuteUntil(region) => format!(
             "step_until({})",
             crate::surface::diagnostics::describe_code_region_ref(region)
@@ -5490,19 +5490,19 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
         // function outcome no longer has.
         ProofTactic::Iterated(tactic) => {
             return Some(format!(
-                "`{}` must run before execution reaches function exit; move it before the `execute()` or last `step()` that reaches the exit",
+                "`{}` must run before execution reaches function exit; move it before the `step_until(function.exit)` or last `step()` that reaches the exit",
                 crate::surface::printing::describe_iterated_tactic(tactic)
             ));
         }
         ProofTactic::ObserveResource(resource) => {
             return Some(format!(
-                "`observe({})` must run before execution reaches function exit; move it before the `execute()` or last `step()` that reaches the exit",
+                "`observe({})` must run before execution reaches function exit; move it before the `step_until(function.exit)` or last `step()` that reaches the exit",
                 crate::surface::printing::format_resource_target(resource)
             ));
         }
         ProofTactic::Mark(name) => {
             return Some(format!(
-                "`mark {name};` must name a program point before function exit; move it before the `execute()` or last `step()` that reaches the exit"
+                "`mark {name};` must name a program point before function exit; move it before the `step_until(function.exit)` or last `step()` that reaches the exit"
             ));
         }
         _ => return None,
@@ -5532,7 +5532,7 @@ fn pre_exit_outcome_tactic_error(proof: &Proof<'_>, tactic: &ProofTactic) -> Opt
         _ => return None,
     };
     Some(format!(
-        "`{name}` requires execution to reach function exit first; write `execute();` before it"
+        "`{name}` requires execution to reach function exit first; write `step_until(function.exit);` before it"
     ))
 }
 

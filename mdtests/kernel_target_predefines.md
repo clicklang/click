@@ -21,7 +21,7 @@ int selected(void) { return TARGET_VALUE; }
 target "x86_64-unknown-linux-gnu";
 mode "kernel";
 verifying "main.c";
-int selected() { ensures result == 8; } by { execute(); solve(); }
+int selected() { ensures result == 8; }
 ```
 
 ```expect

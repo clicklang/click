@@ -33,20 +33,20 @@ extern int Shape::area(int scale) const {
 int Shape::twice(int scale) const {
     requires 0 <= scale and scale <= 1000;
     ensures 0 < result;
-} by { execute(); solve(); }
+}
 int Square::area(int scale) const {
     ensures to_integer(result) == to_integer(scale + 1);
-} by { execute(); solve(); }
+}
 int Tile::area(int scale) const {
-} by { execute(); solve(); }
+}
 int total(const Shape& shape, int scale) {
     requires 0 <= scale and scale <= 1000;
     ensures 0 < result;
-} by { execute(); solve(); }
+}
 int caller(const Square& square, int scale) {
     requires 0 <= scale and scale <= 1000;
     ensures 0 < result;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

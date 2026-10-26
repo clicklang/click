@@ -9,7 +9,7 @@ impl adler2::Adler32 {
      views bytes[0..0];
      ensures self.a == 1;
      ensures self.b == 0;
-    } by { execute(); solve(); }
+    }
 }
 
 fn adler2::adler32_slice(data: &[u8]) -> u32 {
@@ -41,6 +41,4 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
    to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a);
    65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum_u64(data, 0u64, 1, 0));
   };
- execute();
- solve();
 }

@@ -83,7 +83,7 @@ int32 read_one(struct cell* a) {
                                                                                                 Maybe::None => { contradiction(t.model == Maybe::None); },
                                                                                                 Maybe::Some(v11) => {
                                                                                                     unfold(t);
-                                                                                                    execute();
+                                                                                                    step_until(function.exit);
                                                                                                     let t = fold(cell(a), { model: old(t.model) }, {});
                                                                                                     solve();
                                                                                                 },

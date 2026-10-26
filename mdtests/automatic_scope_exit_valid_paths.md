@@ -27,10 +27,10 @@ int32 nested_empty(int32 n) {
 
 ```click
 verifying "automatic_scope_exit_valid_paths.c";
-int32 branch_return(int32 n) { ensures result == 5; } by { execute(); solve(); }
-int32 outer_survives(int32 n) { ensures result == 5; } by { execute(); solve(); }
-int32 reentry() { ensures result == 5; } by { execute(); solve(); }
-int32 nested_empty(int32 n) { ensures result == 5; } by { execute(); solve(); }
+int32 branch_return(int32 n) { ensures result == 5; }
+int32 outer_survives(int32 n) { ensures result == 5; }
+int32 reentry() { ensures result == 5; }
+int32 nested_empty(int32 n) { ensures result == 5; }
 ```
 
 ```expect

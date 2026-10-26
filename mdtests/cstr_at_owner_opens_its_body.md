@@ -24,7 +24,6 @@ uint64 outer(uint8* src, uint64 n) {
     ensures result == 0u64;
 } by {
     open(cstr_at(src, n)) {
-        execute();
     }
 }
 ```

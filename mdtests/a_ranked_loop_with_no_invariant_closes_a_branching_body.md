@@ -31,8 +31,6 @@ int32 settle(int32 state) {
     loop {
         decreases state;
     }
-    execute();
-    solve();
 }
 ```
 

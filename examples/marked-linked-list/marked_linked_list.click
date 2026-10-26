@@ -32,12 +32,12 @@ struct node* list_prepend(int32 value, struct node* tail) {
     ensures result == tail or result != 0;
     ensures aligned(result, 8);
 } by {
-    execute();
-    if result == tail {
-        solve();
+    step_until(statement(1));
+    if node == 0 {
+        step_until(function.exit);
     } else {
+        step_until(function.exit);
         fold(marked_list(result));
-        solve();
     }
 }
 
@@ -67,14 +67,13 @@ struct node* list_next(struct node* node) {
     ensures aligned(result, 8);
 } by {
     observe(marked_list(node));
-    execute();
+    step_until(function.exit);
     have address(result) == (node->word & ~1) by {
         solve() using {
             aligned(result, 8);
             node->word == address(result) + (node->word & 1);
         }
     }
-    solve();
 }
 
 uint32 list_count_live(struct node* node) {
@@ -82,8 +81,7 @@ uint32 list_count_live(struct node* node) {
     owns marked_list(node);
 } by {
     if node == 0 {
-        execute();
-        solve();
+        step_until(function.exit);
     } else {
         unfold(marked_list(node));
     }
@@ -95,12 +93,10 @@ void list_destroy(struct node* node) {
 } by {
     if node == 0 {
         unfold(marked_list(node));
-        execute();
-        solve();
+        step_until(function.exit);
     } else {
         unfold(marked_list(node));
-        execute();
-        solve();
+        step_until(function.exit);
     }
 }
 

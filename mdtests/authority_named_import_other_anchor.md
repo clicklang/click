@@ -11,9 +11,8 @@ verifying "helper.c";
 void preserve(int32* pool) {
     owns authority(ticket(pool));
     owns member: ticket(pool);
-    ensures member.serial == old(member.serial);
     ensures count(ticket(pool + 1)) >= 0;
-} by { execute(); solve(); }
+}
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool)));
@@ -23,7 +22,6 @@ int32 run() { ensures result == 0; } by {
     have count(ticket(&pool)) == 1 by solve();
     unfold(first);
     unfold(authority(ticket(&pool)));
-    execute(); solve();
 }
 ```
 

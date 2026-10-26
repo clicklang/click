@@ -85,7 +85,7 @@ void clear(struct cell* c) {
                 unfold(is_owner(Owned::Held(c, 0), c));
                 normalize();
             }
-            execute();
+            step_until(function.exit);
             let u = fold(cell_at(c), { model: Owned::Held(c, 0) });
             solve();
         },
@@ -101,7 +101,7 @@ int32 peek(struct cell* c) {
         Owned::Free => { contradiction(t.model == Owned::Free); },
         Owned::Held(owner, v) => {
             unfold(t);
-            execute();
+            step_until(function.exit);
             let t = fold(cell_at(c), { model: old(t.model) });
             solve();
         },

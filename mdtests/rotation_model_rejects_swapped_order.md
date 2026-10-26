@@ -104,7 +104,7 @@ struct tree_node* rotate_left(struct tree_node* root) {
                 HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model) => {
                     let { left: l, right: r } = unfold(t);
                     let { left: m, right: z } = unfold(r);
-                    execute();
+                    step_until(function.exit);
                     let lower = fold(tree_at(root), {
                         model: HeapTree::Node(node, value, left_model, middle_model)
                     }, { left: l, right: m });
@@ -128,5 +128,5 @@ struct tree_node* rotate_left(struct tree_node* root) {
 ```
 
 ```expect
-fail: `rotate_left.contract` proof step tactic 11 > have body tactic 4: `normalize` goal did not normalize to true
+fail: `normalize` goal did not normalize to true
 ```

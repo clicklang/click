@@ -2,7 +2,8 @@
 
 `decreases n ^ -1` is the bitwise complement of `n`, which is negative for
 every `n` that reaches the recursive call, so the measure's nonnegativity
-obligation there is false and `execute()` refuses the call's prerequisite.
+obligation there is false and the omitted proof's implicit tail refuses the
+call's prerequisite.
 
 Two parts of that refusal used to print no source. The measure's name in the
 obligation was the parsed expression's structural dump,
@@ -31,5 +32,5 @@ int32 count(int32 n) {
 ```
 
 ```expect
-fail: `execute()` is missing prerequisite (count recursion measure: `(n ^ -1)` is nonnegative at the recursive call): condition-certificate premise search did not derive `0 <= (-1 ^ n - 1)`
+fail: `step()` is missing prerequisite (count recursion measure: `(n ^ -1)` is nonnegative at the recursive call): condition-certificate premise search did not derive `0 <= (-1 ^ n - 1)`
 ```

@@ -47,7 +47,7 @@ verifying "pool_control_call_frames.c";
 int32 pool_used(struct pool* pool) {
     owns control(pool);
 } by {
-    open(control(pool)) { execute(); }
+    open(control(pool)) { step_until(function.exit); }
     solve();
 }
 int32 forward(struct pool* pool) {

@@ -31,7 +31,7 @@ void increment(int32* state) {
     ensures first.revision == 1;
 } by {
     unfold(first);
-    execute();
+    step_until(function.exit);
     let first = fold(Counter(), { model: Mark::Set, revision: 1 });
     solve();
 }
@@ -50,8 +50,6 @@ void invoke(void (*callback)(int32*), int32* state) {
     ensures k.revision == 1;
 } by {
     step(Exact, { cell: k });
-    execute();
-    solve();
 }
 
 void concrete_caller(int32* state) {
@@ -61,8 +59,6 @@ void concrete_caller(int32* state) {
 } by {
     apply(increment_is_exact());
     step(invoke, { k: mine });
-    execute();
-    solve();
 }
 ```
 

@@ -28,11 +28,11 @@ void* worker(void* argument) {
     owns authority(ticket(argument));
     owns ticket(argument);
     ensures count(ticket(argument)) >= 1;
-} by { execute(); solve(); }
+}
 void* consumer(void* argument) {
     owns authority(ticket(argument));
     consumes ticket(argument);
-} by { unfold(ticket(argument)); execute(); solve(); }
+} by { unfold(ticket(argument)); }
 int32 run(void* p, void* q) {
     owns authority(ticket(p));
     owns authority(ticket(q));

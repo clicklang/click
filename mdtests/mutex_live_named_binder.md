@@ -10,7 +10,7 @@ void keep(struct holder *holder) {}
 target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_live_rejects_named_binder.c";
-void keep(struct holder *holder) { owns life: mutex_live(&holder->mu); } by { execute(); solve(); }
+void keep(struct holder *holder) { owns life: mutex_live(&holder->mu); }
 ```
 
 ```expect

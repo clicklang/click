@@ -8,7 +8,7 @@ struct model_node* wrong(void* p) { return (struct model_node*)p; }
 ```click
 verifying "returns.c";
 struct model_node* wrong(void* p) { ensures address(result) == address(p); } by {
-    execute(); normalize();
+    step_until(function.exit); normalize();
 }
 ```
 

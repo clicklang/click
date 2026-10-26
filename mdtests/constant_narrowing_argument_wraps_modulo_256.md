@@ -11,8 +11,8 @@ int f(void) { int x = -56; return take(x); }
 
 ```click
 verifying "constant_narrowing_argument_wraps_modulo_256.c";
-int32 take(uint8 c) { ensures result == c; } by { execute(); solve(); }
-int32 f() { ensures result == 200; } by { execute(); solve(); }
+int32 take(uint8 c) { ensures result == c; }
+int32 f() { ensures result == 200; }
 ```
 
 ```expect

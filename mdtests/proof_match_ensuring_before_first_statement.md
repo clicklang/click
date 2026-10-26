@@ -50,7 +50,7 @@ void probe(struct node *p, struct node *q, struct node *value) {
             have p->next == value;
         },
     }
-    execute(); solve();
+    step_until(function.exit); solve();
 }
 ```
 

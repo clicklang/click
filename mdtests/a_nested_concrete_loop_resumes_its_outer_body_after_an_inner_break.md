@@ -1,7 +1,7 @@
 # A nested concrete loop resumes its outer body after an inner `break`
 
-Both loops carry no annotations, so `execute()` runs them concretely. The
-inner loop leaves through `break` on its second iteration, and the outer body
+Both loops carry no annotations, so the implicit tail of the omitted proof
+runs them concretely. The inner loop leaves through `break` on its second iteration, and the outer body
 resumes at the statement after it: `i = i + 1`, then the outer head again.
 The `break` consumes the inner loop's continuation, whose source is the rest
 of the outer body alone; the source the next theorem consumes is read from

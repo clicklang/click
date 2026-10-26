@@ -24,7 +24,7 @@ struct object* retain(struct object* obj) {
     produces reference(obj);
     ensures result == obj;
 } by {
-    open(control(obj)) { fold(reference(obj)); execute(); }
+    open(control(obj)) { fold(reference(obj)); }
     solve();
 }
 ```

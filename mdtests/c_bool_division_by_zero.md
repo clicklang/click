@@ -9,7 +9,7 @@ int divide_by_false(void) {
 
 ```click
 verifying "boolean_divide.c";
-int32 divide_by_false() { ensures result == 0; } by { execute(); solve(); }
+int32 divide_by_false() { ensures result == 0; }
 ```
 
 ```expect

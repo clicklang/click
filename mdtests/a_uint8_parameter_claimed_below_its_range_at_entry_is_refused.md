@@ -14,7 +14,7 @@ verifying "a_uint8_parameter_claimed_below_its_range_at_entry_is_refused.c";
 
 int32 ignore_u8(uint8 x) {
     ensures x <= 254;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

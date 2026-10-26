@@ -1,6 +1,6 @@
 # The arms of `cases` rejoin with the facts every arm proved
 
-With tactics written after it, the arms of `cases` rejoin, as a proof `if`'s do: the proof continues once, here before the first statement, with the facts every arm proved. `x > 0` holds in each arm, so it survives the join, and `execute()` runs once with it.
+With tactics written after it, the arms of `cases` rejoin, as a proof `if`'s do: the proof continues once, here before the first statement, with the facts every arm proved. `x > 0` holds in each arm, so it survives the join, and the implicit tail runs once with it.
 
 ```c filename=cases_arms_rejoin_with_the_facts_every_arm_proved.c
 int32 f(int32 x) {

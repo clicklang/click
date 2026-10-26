@@ -18,7 +18,7 @@ resource box() { field model: Model; }
 void attach(struct child* kid) {
     produces held: box();
     ensures held.model == Model::At((void*)kid);
-} by { execute(); let held = fold(box(), {model: Model::At((void*)kid)}); solve(); }
+} by { step_until(function.exit); let held = fold(box(), {model: Model::At((void*)kid)}); solve(); }
 void caller(struct child* kid) { ensures true; } by {
     let {held: held} = step(attach, {});
     have held.model != Model::Empty by solve();

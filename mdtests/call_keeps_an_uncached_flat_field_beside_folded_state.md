@@ -49,17 +49,11 @@ verifying "call_keeps_an_uncached_flat_field_beside_folded_state.c";
 
 void touch(int32* flags, int32* data, int32 n) {
     owns cells(flags, data, n);
-} by {
-    execute();
-    solve();
 }
 
 void give(struct box* b) {
     owns b->v;
     ensures b->v == old(b->v);
-} by {
-    execute();
-    solve();
 }
 
 int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
@@ -73,8 +67,6 @@ int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
     have b->v == at(m, b->v) by {
         solve();
     }
-    execute();
-    solve();
 }
 ```
 

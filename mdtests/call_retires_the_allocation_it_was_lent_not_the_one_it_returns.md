@@ -49,8 +49,6 @@ void box_repoint(struct box* box, int32* other) {
     ensures box->data == other;
 } by {
     unfold(boxed(box));
-    execute();
-    solve();
 }
 
 void box_release(struct box* box, int32* other) {
@@ -58,9 +56,6 @@ void box_release(struct box* box, int32* other) {
     produces *box;
     consumes allocation(other, 4);
     consumes other[0..1];
-} by {
-    execute();
-    solve();
 }
 ```
 

@@ -14,11 +14,11 @@ void release(int32* pool, int32* p) {
     produces p[0..1];
     ensures p[0] == 0;
     ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
-} by { unfold(slot(pool, p)); execute(); solve(); }
+} by { unfold(slot(pool, p)); }
 void caller(int32* pool, int32* p) {
     consumes slot(pool, p);
     produces p[0..1];
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

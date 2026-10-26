@@ -52,15 +52,15 @@ template<class T> class Wrap<T> : Holder<T> {
 }
 template<class T> void Wrap<T>::assign(T x) {
     ensures this->value == x;
-} by { execute(); solve(); }
+}
 template<class T> void Wrap<T>::put(T x) {
-} by { execute(); solve(); }
+}
 template<class T> T Wrap<T>::get() const {
-} by { execute(); solve(); }
+}
 template<class T> Wrap<T>::~Wrap() {
     owns *this;
     ensures this->puts == 0;
-} by { execute(); solve(); }
+}
 
 theorem stored_value(v: int32, x: int32) {
     requires v == x;
@@ -71,7 +71,7 @@ int store(Holder<int>& holder, int x) {
     ensures result == x;
     ensures held(holder) == x;
 } by {
-    execute();
+    step_until(function.exit);
     apply(stored_value(held(holder), x));
     solve();
 }
@@ -80,7 +80,7 @@ int through(Wrap<int>& wrap, int x) {
     owns wrap;
     ensures result == x;
     ensures wrap.value == x;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

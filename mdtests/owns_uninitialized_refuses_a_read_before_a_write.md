@@ -16,7 +16,7 @@ verifying "uninitialized_get.c";
 int32 get(int32* p) {
     owns uninitialized(p[0..1]);
     ensures true;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

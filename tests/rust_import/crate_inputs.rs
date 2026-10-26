@@ -37,7 +37,7 @@ fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
     let names: std::collections::BTreeSet<_> = functions.iter().map(|f| &f.name).collect();
     assert_eq!(names.len(), 5);
     assert!(functions.iter().any(|f| f.name.contains("_T25_")));
-    let proof = "verifying \"src/lib.rs\";\nfn demo::left::read(x: u32) -> u32 { ensures result == x; } by { execute(); solve(); }\nfn demo::right::read(x: u32) -> u32 { ensures result == 7; } by { execute(); solve(); }\nfn demo::left_read() -> u32 { ensures result == 99; } by { execute(); solve(); }\nimpl demo::Value { fn read(&self) -> u32 { views self.n; ensures result == self.n; } by { execute(); solve(); } }\nfn demo::entry(v: &demo::Value) -> u32 { views v.n; ensures result == v.n; } by { execute(); solve(); }";
+    let proof = "verifying \"src/lib.rs\";\nfn demo::left::read(x: u32) -> u32 { ensures result == x; }\nfn demo::right::read(x: u32) -> u32 { ensures result == 7; }\nfn demo::left_read() -> u32 { ensures result == 99; }\nimpl demo::Value { fn read(&self) -> u32 { views self.n; ensures result == self.n; } }\nfn demo::entry(v: &demo::Value) -> u32 { views v.n; ensures result == v.n; }";
     C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
     fs::write(p.root.join("borrow.click"), proof).unwrap();
     let cli = p.cli(&["verify"]);
@@ -184,7 +184,7 @@ fn charon_adler2_locked_crate_imports_compute_and_proves_constants() {
                 .any(|f| f.name.ends_with(&format!("_I7_compute{suffix}")))
         );
         proof.push_str(&format!(
-            "fn compute::{name}() -> {ty} {{ ensures result == {value}; }} by {{ execute(); solve(); }}\n"
+            "fn compute::{name}() -> {ty} {{ ensures result == {value}; }}\n"
         ));
     }
     proof.push_str("}\n");
@@ -240,18 +240,18 @@ fn rust_crate_constructor_bodies_return_owned_field_values() {
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     let constructors = "verifying \"lib.rs\";
-        impl Default for demo::inner::Value { fn default() -> demo::inner::Value { ensures result.a == 1u32; ensures result.b == 0u32; } by { execute(); solve(); } }
-        impl demo::inner::Value { fn new() -> demo::inner::Value { ensures result.a == 1u32; ensures result.b == 0u32; } by { execute(); solve(); } }
-        fn demo::make(x: u32) -> demo::inner::Value { ensures result.a == x; ensures result.b == 7u32; } by { execute(); solve(); }";
+        impl Default for demo::inner::Value { fn default() -> demo::inner::Value { ensures result.a == 1u32; ensures result.b == 0u32; } }
+        impl demo::inner::Value { fn new() -> demo::inner::Value { ensures result.a == 1u32; ensures result.b == 0u32; } }
+        fn demo::make(x: u32) -> demo::inner::Value { ensures result.a == x; ensures result.b == 7u32; }";
     let proof = r#"
-        impl Drop for demo::Token { fn drop(&mut self) { owns self.n; ensures self.n == 9u32; } by { execute(); solve(); } }
-        fn demo::token() -> demo::Token { ensures result.n == 4u32; } by { execute(); solve(); }
-        fn demo::token_entry() -> u32 { ensures result == 4u32; } by { execute(); solve(); }
-        fn demo::packet(x: u32) -> demo::Packet { ensures result.words[3] == x; } by { execute(); solve(); }
-        fn demo::packet_entry(x: u32) -> u32 { ensures result == x; } by { execute(); solve(); }
-        fn demo::entry() -> u32 { ensures result == 1u32; } by { execute(); solve(); }
-        fn demo::second() -> u32 { ensures result == 0u32; } by { execute(); solve(); }
-        fn demo::argument(x: u32) -> u32 { ensures result == x; } by { execute(); solve(); }
+        impl Drop for demo::Token { fn drop(&mut self) { owns self.n; ensures self.n == 9u32; } }
+        fn demo::token() -> demo::Token { ensures result.n == 4u32; }
+        fn demo::token_entry() -> u32 { ensures result == 4u32; }
+        fn demo::packet(x: u32) -> demo::Packet { ensures result.words[3] == x; }
+        fn demo::packet_entry(x: u32) -> u32 { ensures result == x; }
+        fn demo::entry() -> u32 { ensures result == 1u32; }
+        fn demo::second() -> u32 { ensures result == 0u32; }
+        fn demo::argument(x: u32) -> u32 { ensures result == x; }
     "#;
     let proof = format!("{constructors}\n{proof}");
     C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
@@ -316,7 +316,7 @@ fn charon_adler2_unchanged_constructor_returns_initialized_state() {
         prepared.export().records[0].name,
         "__rust_q_I6_adler2_I7_Adler32"
     );
-    let proof = "verifying \"lib.rs\"; impl Default for adler2::Adler32 { fn default() -> adler2::Adler32 { ensures result.a == 1; ensures result.b == 0; } by { execute(); solve(); } } impl adler2::Adler32 { fn new() -> adler2::Adler32 { ensures result.a == 1; ensures result.b == 0; } by { execute(); solve(); } }";
+    let proof = "verifying \"lib.rs\"; impl Default for adler2::Adler32 { fn default() -> adler2::Adler32 { ensures result.a == 1; ensures result.b == 0; } } impl adler2::Adler32 { fn new() -> adler2::Adler32 { ensures result.a == 1; ensures result.b == 0; } }";
     C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
     assert!(
         C0VerificationSession::new_program_prepared(
@@ -394,15 +394,15 @@ fn rust_crate_owned_operator_operands_copy_and_move_independently() {
     }
     let proof = format!(
         r#"verifying "lib.rs";
-        impl AddAssign<Self> for demo::Packet {{ fn add_assign(&mut self, other: demo::Packet) {{ {clauses} }} by {{ execute(); solve(); }} }}
-        fn demo::entry(x: u32) -> u32 {{ requires x <= 1000u32; ensures result == x; }} by {{ execute(); solve(); }}
-        fn demo::consume(value: demo::Value) -> u32 {{ ensures result == 9u32; }} by {{ execute(); solve(); }}
-        fn demo::moving(x: u32) -> u32 {{ ensures result == 9u32; }} by {{ execute(); solve(); }}
-        fn demo::copy_parameter(packet: demo::Packet) -> u32 {{ ensures result == 9u32; }} by {{ execute(); solve(); }}
-        fn demo::independent(x: u32) -> u32 {{ ensures result == x; }} by {{ execute(); solve(); }}
-        impl Drop for demo::Token {{ fn drop(&mut self) {{ owns self.n; ensures self.n == 9u32; }} by {{ execute(); solve(); }} }}
-        fn demo::consume_token(token: demo::Token) -> u32 {{ ensures result == old(token.n); }} by {{ execute(); solve(); }}
-        fn demo::drop_argument(x: u32) -> u32 {{ ensures result == x; }} by {{ execute(); solve(); }}
+        impl AddAssign<Self> for demo::Packet {{ fn add_assign(&mut self, other: demo::Packet) {{ {clauses} }} }}
+        fn demo::entry(x: u32) -> u32 {{ requires x <= 1000u32; ensures result == x; }}
+        fn demo::consume(value: demo::Value) -> u32 {{ ensures result == 9u32; }}
+        fn demo::moving(x: u32) -> u32 {{ ensures result == 9u32; }}
+        fn demo::copy_parameter(packet: demo::Packet) -> u32 {{ ensures result == 9u32; }}
+        fn demo::independent(x: u32) -> u32 {{ ensures result == x; }}
+        impl Drop for demo::Token {{ fn drop(&mut self) {{ owns self.n; ensures self.n == 9u32; }} }}
+        fn demo::consume_token(token: demo::Token) -> u32 {{ ensures result == old(token.n); }}
+        fn demo::drop_argument(x: u32) -> u32 {{ ensures result == x; }}
     "#
     );
     C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
@@ -463,7 +463,7 @@ fn rust_crate_scalar_constants_execute_checked_initializers() {
             panic!("unexpected imported function {}", function.name);
         };
         proof.push_str(&format!(
-            "fn {}() -> {ty} {{ ensures result == {value}; }} by {{ execute(); solve(); }}\n",
+            "fn {}() -> {ty} {{ ensures result == {value}; }}\n",
             click::surface::source_display_name(&function.name).unwrap()
         ));
     }

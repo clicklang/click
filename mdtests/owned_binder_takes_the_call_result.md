@@ -1,7 +1,7 @@
 # A function's owned binder takes the instance a call produced
 
-`set_and_get` owns a `cell_at(c)` under the name `cell`. `execute()` runs
-both calls: the first consumes the instance `cell` holds, and each produces a
+`set_and_get` owns a `cell_at(c)` under the name `cell`. The implicit tail of
+the omitted proof runs both calls: the first consumes the instance `cell` holds, and each produces a
 new one. No proof step names the last, so it is held under no name; at the
 exit, the owned binder `cell`, whose own instance is gone, takes it as the
 only `cell_at` instance there, and the clause checks its arguments.

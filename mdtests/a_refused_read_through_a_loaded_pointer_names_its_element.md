@@ -14,7 +14,7 @@ verifying "a_refused_read_through_a_loaded_pointer_names_its_element.c";
 uint8 last(struct buf* s) {
     views *s;
     views s->data[0..s->len];
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

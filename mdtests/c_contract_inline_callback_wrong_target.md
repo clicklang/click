@@ -12,8 +12,8 @@ int caller(void) { return invoke(&table); }
 ```click
 verifying "inline_wrong.c";
 contract int32 One() { ensures result == 1; }
-int32 one() { ensures result == 1; } by { execute(); normalize(); }
-int32 two() { ensures result == 2; } by { execute(); normalize(); }
+int32 one() { ensures result == 1; } by { step_until(function.exit); normalize(); }
+int32 two() { ensures result == 2; } by { step_until(function.exit); normalize(); }
 theorem one_contract() {
     ensures One(&one) by { unfold(One); solve(); }
 }
@@ -24,14 +24,13 @@ resource callback_table(p: const struct callbacks*) {
 int32 invoke(const struct callbacks* p) {
     views callback_table(p);
     ensures result == 1;
-} by { open(callback_table(p)) { execute(); solve(); } }
+} by { open(callback_table(p)) { } }
 int32 caller() {
     views table.run;
     ensures result == 1;
 } by {
     apply(one_contract());
     fold(callback_table(&table));
-    execute(); solve();
 }
 ```
 

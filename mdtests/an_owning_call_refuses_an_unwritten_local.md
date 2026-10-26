@@ -23,11 +23,11 @@ verifying "get_unwritten.c";
 int32 get(const int32* p) {
     views p[0..1];
     ensures result == p[0];
-} by { execute(); solve(); }
+}
 
 int32 caller() {
     ensures true;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

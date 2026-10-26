@@ -64,8 +64,6 @@ int main() {
     ensures result == 1;
 } by {
     have wide::static_zero::empty.signed_values[1] == 0;
-    execute();
-    solve();
 }
 long global_read() {
     views global.signed_values;

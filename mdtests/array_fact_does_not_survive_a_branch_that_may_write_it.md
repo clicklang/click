@@ -1,6 +1,9 @@
 # epoch attack 4: a branch join where one arm writes the array
 
 One arm of the join writes `a[0]`, so at the join the array may have changed.
+A proof `if flag != 0` splits the proof where the C splits, and each case
+steps to exit with `step_until(function.exit)` and restates the fact; the
+case whose arm wrote `a[0]` refuses it.
 
 The fact carries content: `icount(a, 0, 1) == 5` comes from
 `requires a[0] == 5` through the fold's defining equation, and it reads the
@@ -38,9 +41,13 @@ void maybe_mark(int32 a[], int32 n, int32 flag) {
         peel(icount(a, 0, 1)) using { 0 <= 0; 0 < 2147483647; };
         solve() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; };
     }
-    execute();
-    have icount(a, 0, 1) == 5;
-    solve();
+    if flag != 0 {
+        step_until(function.exit);
+        have icount(a, 0, 1) == 5;
+    } else {
+        step_until(function.exit);
+        have icount(a, 0, 1) == 5;
+    }
 }
 ```
 

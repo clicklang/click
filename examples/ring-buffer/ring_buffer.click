@@ -41,7 +41,7 @@ int32 ring_buffer_init_linear(
     ensures owner->tail == 4;
     ensures owner->data == data;
 } by {
-    execute();
+    step_until(function.exit);
     fold(ring_frame(owner));
     fold(linear_ring(owner));
     solve();
@@ -64,9 +64,6 @@ int32 ring_buffer_push_wrap(
     ensures result == value;
     ensures owner->data[0] == value;
     ensures owner->tail == 1;
-} by {
-    execute();
-    solve();
 }
 
 int32 ring_buffer_wrapped_tail(
@@ -78,8 +75,6 @@ int32 ring_buffer_wrapped_tail(
 } by {
     observe(wrapped_ring(owner));
     observe(ring_frame(owner));
-    execute();
-    solve();
 }
 
 int32 ring_buffer_pop_to_linear(
@@ -96,9 +91,6 @@ int32 ring_buffer_pop_to_linear(
 
     ensures result == old(owner->data[0]);
     ensures owner->tail == 4;
-} by {
-    execute();
-    solve();
 }
 
 int32 ring_buffer_pipeline(
@@ -115,7 +107,7 @@ int32 ring_buffer_pipeline(
 } by {
     unfold(linear_ring(owner));
     unfold(ring_frame(owner));
-    execute();
+    step_until(function.exit);
     fold(ring_frame(owner));
     fold(linear_ring(owner));
     have result == replacement by {

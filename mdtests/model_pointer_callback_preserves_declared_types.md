@@ -19,7 +19,7 @@ void wrapped(struct model_node* p) {
     produces held: token();
     ensures held.model == Ref::At(p);
 } by {
-    execute(); let held = fold(token(), { model: Ref::At(p) });
+    step_until(function.exit); let held = fold(token(), { model: Ref::At(p) });
 }
 theorem wrapped_is_callback() executes wrapped(struct model_node* p) {
     ensures Callback(&wrapped) as { held: r } by {
@@ -29,7 +29,7 @@ theorem wrapped_is_callback() executes wrapped(struct model_node* p) {
 }
 int32 accept(void (*f)(struct model_node*)) {
     requires Callback(f); ensures result == 0;
-} by { execute(); normalize(); }
+} by { step_until(function.exit); normalize(); }
 int32 caller() { ensures result == 0; } by { apply(wrapped_is_callback()); }
 ```
 

@@ -67,9 +67,6 @@ void clobber(struct node* old, struct node* new) {
     owns old->left;
     ensures 0 <= new->augmented;
     ensures new->augmented <= 1000;
-} by {
-    execute();
-    solve();
 }
 
 struct node* rotate_left(
@@ -125,9 +122,6 @@ struct node* rotate_clobber(struct node* node) {
     ensures result == old(node->right);
     ensures 0 <= result->augmented;
     ensures result->augmented <= 1000;
-} by {
-    execute();
-    solve();
 }
 ```
 

@@ -21,14 +21,13 @@ int32 before(int32 n) {
     have n <= 1 by {
         cases { n == 0 => { solve(); } n == 1 => { solve(); } }
     }
-    execute(); solve();
 }
 int32 after(int32 n) {
     requires n == 0 or n == 1;
     ensures 0 <= result;
     ensures result <= 1;
 } by {
-    execute();
+    step_until(function.exit);
     have 0 <= result by {
         cases { n == 0 => { solve(); } n == 1 => { solve(); } }
     }

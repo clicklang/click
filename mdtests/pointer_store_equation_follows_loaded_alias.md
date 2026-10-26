@@ -31,7 +31,6 @@ void link(struct node* p, struct node* q) {
     step(); step(); step();
     have sibling == q;
     have q->left == p;
-    execute(); solve();
 }
 ```
 

@@ -79,7 +79,7 @@ fn cover(bytes: &[u8]) -> usize {
     }
     have iter_remaining == 0u64;
     have iter_cursor == iter_tail;
-    execute();
+    step_until(function.exit);
     have forall (k: usize) {
         k < bytes.len() implies bytes[k] == old(bytes[k])
     } by { intro(); intro(); solve(); }

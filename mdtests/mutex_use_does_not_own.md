@@ -22,10 +22,10 @@ verifying "mutex_use_does_not_own.c";
 
 void need_owner(struct holder *holder) {
     owns mutex_live(&holder->mu);
-} by { execute(); solve(); }
+}
 void inner(struct holder *holder) {
     owns mutex_use(&holder->mu);
-} by { step(need_owner, {}); execute(); solve(); }
+} by { step(need_owner, {}); }
 void keep(struct holder *holder) {
     owns mutex_use(&holder->mu);
 } by {

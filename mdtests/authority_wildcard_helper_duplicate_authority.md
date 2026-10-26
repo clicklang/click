@@ -11,7 +11,7 @@ void inspect(int32* pool, int32* member) {
     owns authority(slot(pool, _));
     owns authority(slot(pool, _));
     owns slot(pool, member);
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

@@ -40,7 +40,7 @@ int read(int* p) {
     match c.model {
         Quad::Zero => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell(p), { model: Quad::Zero }, {});
             have quad_code(old(c.model)) == 0 by {
                 rewrite(old(c.model) == Quad::Zero);
@@ -51,7 +51,7 @@ int read(int* p) {
         },
         Quad::One => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell(p), { model: Quad::One }, {});
             have quad_code(old(c.model)) == 1 by {
                 rewrite(old(c.model) == Quad::One);
@@ -62,7 +62,7 @@ int read(int* p) {
         },
         Quad::Two => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell(p), { model: Quad::Two }, {});
             have quad_code(old(c.model)) == 2 by {
                 rewrite(old(c.model) == Quad::Two);
@@ -73,7 +73,7 @@ int read(int* p) {
         },
         Quad::Other(value) => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell(p), { model: Quad::Other(value) }, {});
             have quad_code(old(c.model)) == value by {
                 rewrite(old(c.model) == Quad::Other(value));

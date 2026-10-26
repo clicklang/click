@@ -41,9 +41,6 @@ verifying "simp_chains_equalities_stated_in_a_scope.c";
 void mark_one(int32* other) {
     owns other[0..1];
     ensures other[0] == 1;
-} by {
-    execute();
-    solve();
 }
 
 int32 caller(int32* occ, int32* other, int32 n) {
@@ -87,8 +84,6 @@ int32 caller(int32* occ, int32* other, int32 n) {
         }
         solve();
     }
-    execute();
-    solve();
 }
 ```
 

@@ -841,10 +841,10 @@ impl<'a> Proof<'a> {
         self.leave_execution_match_arm_keeping(plan, false)
     }
 
-    /// Leaves an arm that `execute()` opened at a Rust `match` and ran to
-    /// function exit. The arm's binders stay in scope on its finished path,
-    /// as its case fact does, so the closers written after `execute()` can
-    /// cite that fact.
+    /// Leaves an arm that the implicit tail opened at a Rust `match` and ran
+    /// to function exit. The arm's binders stay in scope on its finished path,
+    /// as its case fact does, so the closer at function exit can cite that
+    /// fact.
     pub(in crate::surface::proof) fn leave_terminal_execution_match_arm(
         &self,
         plan: &ExecutionMatchPlan,

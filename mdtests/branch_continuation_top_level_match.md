@@ -2,7 +2,9 @@
 
 The top-level sibling of `branch_continuation_nested_match.md`: the
 `branch`'s `then` arm returns and its `else` arm runs the continuation, a
-proof `match`, to function exit. The match used to leave the arm proof
+proof `match`, to function exit; the match arm splits at the C's second `if`
+with a proof `if`, each case stepping to exit with
+`step_until(function.exit)`. The match used to leave the arm proof
 attributed to its own tactic, so the branch's certificate checkpoint failed
 with an internal "certificate checkpoint belongs to a different proof
 context" error.
@@ -43,8 +45,11 @@ int32 f(int32* p, int32 x) {
     } else {}
     match c.m {
         T::A(w) => {
-            execute();
-            solve();
+            if x < 5 {
+                step_until(function.exit);
+            } else {
+                step_until(function.exit);
+            }
         },
     }
 }

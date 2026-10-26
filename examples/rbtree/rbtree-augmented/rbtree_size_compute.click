@@ -39,13 +39,34 @@ int32 compute_size(struct sized_node* node, int32 exit) {
             unfold(right);
             unfold(parent);
             apply(size_sum_defined(old(left.value), old(right.value)));
-            execute();
-            fold(left);
-            fold(right);
-            let parent = fold(size_metadata((struct rb_node*)(void*)node), {
-                value: 1 + old(left.value) + old(right.value)
-            });
-            solve();
+            if exit == 0 {
+                step_until(function.exit);
+                fold(left);
+                fold(right);
+                let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                    value: 1 + old(left.value) + old(right.value)
+                });
+                solve();
+            } else {
+                step_until(statement(3));
+                if node->size == size {
+                    step_until(function.exit);
+                    fold(left);
+                    fold(right);
+                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                        value: 1 + old(left.value) + old(right.value)
+                    });
+                    solve();
+                } else {
+                    step_until(function.exit);
+                    fold(left);
+                    fold(right);
+                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                        value: 1 + old(left.value) + old(right.value)
+                    });
+                    solve();
+                }
+            }
         } else {
             have old(right.value) == 0 by {
  cases {
@@ -57,13 +78,34 @@ int32 compute_size(struct sized_node* node, int32 exit) {
             unfold(right);
             unfold(parent);
             apply(size_sum_defined(old(left.value), old(right.value)));
-            execute();
-            fold(left);
-            fold(right);
-            let parent = fold(size_metadata((struct rb_node*)(void*)node), {
-                value: 1 + old(left.value) + old(right.value)
-            });
-            solve();
+            if exit == 0 {
+                step_until(function.exit);
+                fold(left);
+                fold(right);
+                let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                    value: 1 + old(left.value) + old(right.value)
+                });
+                solve();
+            } else {
+                step_until(statement(3));
+                if node->size == size {
+                    step_until(function.exit);
+                    fold(left);
+                    fold(right);
+                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                        value: 1 + old(left.value) + old(right.value)
+                    });
+                    solve();
+                } else {
+                    step_until(function.exit);
+                    fold(left);
+                    fold(right);
+                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                        value: 1 + old(left.value) + old(right.value)
+                    });
+                    solve();
+                }
+            }
         }
     } else {
         have old(left.value) == 0 by {
@@ -77,13 +119,34 @@ int32 compute_size(struct sized_node* node, int32 exit) {
             unfold(right);
             unfold(parent);
             apply(size_sum_defined(old(left.value), old(right.value)));
-            execute();
-            fold(left);
-            fold(right);
-            let parent = fold(size_metadata((struct rb_node*)(void*)node), {
-                value: 1 + old(left.value) + old(right.value)
-            });
-            solve();
+            if exit == 0 {
+                step_until(function.exit);
+                fold(left);
+                fold(right);
+                let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                    value: 1 + old(left.value) + old(right.value)
+                });
+                solve();
+            } else {
+                step_until(statement(3));
+                if node->size == size {
+                    step_until(function.exit);
+                    fold(left);
+                    fold(right);
+                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                        value: 1 + old(left.value) + old(right.value)
+                    });
+                    solve();
+                } else {
+                    step_until(function.exit);
+                    fold(left);
+                    fold(right);
+                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                        value: 1 + old(left.value) + old(right.value)
+                    });
+                    solve();
+                }
+            }
         } else {
             have old(right.value) == 0 by {
  cases {
@@ -95,13 +158,34 @@ int32 compute_size(struct sized_node* node, int32 exit) {
             unfold(right);
             unfold(parent);
             apply(size_sum_defined(old(left.value), old(right.value)));
-            execute();
-            fold(left);
-            fold(right);
-            let parent = fold(size_metadata((struct rb_node*)(void*)node), {
-                value: 1 + old(left.value) + old(right.value)
-            });
-            solve();
+            if exit == 0 {
+                step_until(function.exit);
+                fold(left);
+                fold(right);
+                let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                    value: 1 + old(left.value) + old(right.value)
+                });
+                solve();
+            } else {
+                step_until(statement(3));
+                if node->size == size {
+                    step_until(function.exit);
+                    fold(left);
+                    fold(right);
+                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                        value: 1 + old(left.value) + old(right.value)
+                    });
+                    solve();
+                } else {
+                    step_until(function.exit);
+                    fold(left);
+                    fold(right);
+                    let parent = fold(size_metadata((struct rb_node*)(void*)node), {
+                        value: 1 + old(left.value) + old(right.value)
+                    });
+                    solve();
+                }
+            }
         }
     }
 }

@@ -46,12 +46,8 @@ int32 use_probe(int32 *cell) {
     step();
     if c(r) == 0 {
         have cell[0] == 0 and cell[1] == at(before_probe, cell[0]);
-        execute();
-        solve();
     } else {
         have cell[0] == 0 and cell[1] == at(before_probe, cell[0]);
-        execute();
-        solve();
     }
 }
 ```

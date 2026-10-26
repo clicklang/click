@@ -70,7 +70,7 @@ int32 buffer_push(struct buffer* owner, int32 value) {
     ensures owner->data[0] == old(owner->data[0]);
 } by {
     unfold(owned_buffer(owner));
-    execute();
+    step_until(function.exit);
     have 0 <= owner->len by {
         solve();
     }
@@ -94,9 +94,6 @@ int32 buffer_push_preserves_first(
     owns owned_buffer(owner);
 
     ensures data[0] == old(data[0]);
-} by {
-    execute();
-    solve();
 }
 ```
 

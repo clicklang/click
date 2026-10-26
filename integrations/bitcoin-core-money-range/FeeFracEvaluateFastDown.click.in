@@ -119,7 +119,7 @@ int64 FeeFrac::EvaluateFee<true>(int32 at_size) const {
             truncating_remainder(to_integer(this->fee) * to_integer(at_size), to_integer(this->size)) <= to_integer(this->size) - 1;
         }
     }
-    execute();
+    step_until(function.exit);
     have to_integer(result) == to_integer((((uint64)this->fee * (uint64)at_size) / (uint64)(uint32)this->size)) by {
         arithmetic_certificate rules {
             premise 0: 0 <= to_integer((((uint64)this->fee * (uint64)at_size) / (uint64)(uint32)this->size)) => 0 <= to_integer((((uint64)this->fee * (uint64)at_size) / (uint64)(uint32)this->size));
@@ -169,4 +169,4 @@ int64 FeeFrac::EvaluateFeeDown(int32 at_size) const {
     ensures to_integer(result) * to_integer(this->size) <= to_integer(this->fee) * to_integer(at_size);
     ensures to_integer(this->fee) * to_integer(at_size) < (to_integer(result) + 1) * to_integer(this->size);
     ensures to_integer(result) == truncating_quotient(to_integer(this->fee) * to_integer(at_size), to_integer(this->size));
-} by { execute(); solve(); }
+}

@@ -29,7 +29,7 @@ void increment(int32* state) {
     ensures first.model == Mark::Set;
 } by {
     unfold(first);
-    execute();
+    step_until(function.exit);
     let first = fold(Counter(), { model: Mark::Set, revision: 1 });
     solve();
 }
@@ -44,17 +44,12 @@ theorem increment_is_exact() executes increment(int32* state) {
 int32 accept(void (*callback)(int32*)) {
     requires Exact(callback);
     ensures result == 0;
-} by {
-    execute();
-    solve();
 }
 
 int32 caller() {
     ensures result == 0;
 } by {
     apply(increment_is_exact());
-    execute();
-    solve();
 }
 ```
 

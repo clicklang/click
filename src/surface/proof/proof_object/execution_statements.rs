@@ -131,7 +131,7 @@ impl<'a> Proof<'a> {
         if sources.is_empty() {
             return Ok(None);
         }
-        let unfinished = "the proof stops before function exit; finish the remaining C operations with `step()` or `execute()`";
+        let unfinished = "the proof stops before function exit; finish the remaining C operations with `step()` or `step_until(function.exit)`, or end the script so its implicit tail runs them";
         let mut pending = self.clone();
         for _ in 0..6 {
             check_verification_deadline()?;

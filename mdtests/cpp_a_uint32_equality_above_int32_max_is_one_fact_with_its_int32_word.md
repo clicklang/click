@@ -16,15 +16,15 @@ verifying "equality.cpp";
 int is_max(unsigned int u) {
     requires u == 4294967295u32;
     ensures result == 1;
-} by { execute(); solve(); }
+}
 int signed_view(unsigned int u) {
     requires u == 4294967295u32;
     ensures result == 1;
-} by { execute(); solve(); }
+}
 unsigned int stated(unsigned int u) {
     requires u == 4294967295u32;
     ensures result == 4294967295u32;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

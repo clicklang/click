@@ -38,7 +38,7 @@ void roundtrip(struct node* p) {
    let { left: l, right: r } = unfold(t);
    step();
    let t = fold(tree(id), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
-   execute();
+   step_until(function.exit);
    solve();
   },
  }

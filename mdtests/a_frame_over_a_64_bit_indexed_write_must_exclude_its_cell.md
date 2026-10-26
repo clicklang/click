@@ -21,7 +21,7 @@ void set_at(int32* p, const struct S* s, uint64 i, int32 v) {
     requires i < s->e.n;
     ensures forall (k: uint64) { k < s->e.n implies p[k] == old(p[k]) };
 } by {
-    execute();
+    step_until(function.exit);
     transport(
         forall (k: uint64) { k < s->e.n implies old(p[k]) == old(p[k]) },
         forall (k: uint64) { k < s->e.n implies p[k] == old(p[k]) }

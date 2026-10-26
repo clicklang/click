@@ -5,4 +5,4 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  requires len == 0u64;
  requires buf != 0;
  ensures result == 1u64;
-} by { execute(); solve(); }
+}

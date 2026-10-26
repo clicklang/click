@@ -26,7 +26,6 @@ int32 fill_too_many_second_fields() {
 } by {
     step(); step(); step();
     loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }
-    execute(); solve();
 }
 ```
 

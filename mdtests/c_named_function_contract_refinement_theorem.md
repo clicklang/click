@@ -45,12 +45,12 @@ void set_one_if_active(int32 active, int32* cell) {
 } by {
     if active != 0 {
         unfold(optional_cell(active, cell));
-        execute();
+        step_until(function.exit);
         fold(optional_cell(active, cell));
         solve();
     } else {
         unfold(optional_cell(active, cell));
-        execute();
+        step_until(function.exit);
         fold(optional_cell(active, cell));
         solve();
     }
@@ -78,11 +78,7 @@ void apply_positive(
     ensures active != 0 implies cell[0] > 0;
 } by {
     if active != 0 {
-        execute();
-        solve();
     } else {
-        execute();
-        solve();
     }
 }
 
@@ -91,8 +87,6 @@ void refinement_theorem_caller(int32* cell) {
     ensures cell[0] > 0;
 } by {
     apply(set_one_is_make_positive());
-    execute();
-    solve();
 }
 ```
 

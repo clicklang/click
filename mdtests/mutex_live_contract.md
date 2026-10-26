@@ -21,7 +21,7 @@ verifying "mutex_live_contract.c";
 
 void inner(struct holder *holder) {
     owns mutex_live(&holder->mu);
-} by { execute(); solve(); }
+}
 void keep(struct holder *holder) {
     owns mutex_live(&holder->mu);
 } by {

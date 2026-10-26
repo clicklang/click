@@ -6,4 +6,4 @@ int64 FeeRateState::ReadFee() const {
     ensures this->fee == old(this->fee);
     ensures this->size == old(this->size);
     ensures result == old(this->fee);
-} by { execute(); solve(); }
+}

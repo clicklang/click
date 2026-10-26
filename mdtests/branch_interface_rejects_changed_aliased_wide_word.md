@@ -72,7 +72,7 @@ resource parent_at(p: struct node*) {
 void set_tag(struct node* p) {
     owns p->tag;
     ensures p->tag == 1;
-} by { execute(); solve(); }
+}
 void inspect(struct node* parent) {
     consumes tree_context: parent_at(parent);
     requires parent == parent_identity(tree_context.model);
@@ -151,7 +151,6 @@ void inspect(struct node* parent) {
             }
         }
     }
-    execute(); solve();
 }
 ```
 

@@ -25,10 +25,10 @@ verifying "private_helper.c";
 void consume(int32* pool, int32* p) {
     consumes member: ticket(pool, p);
     produces p[0..1];
-} by { unfold(member); execute(); solve(); }
+} by { unfold(member); step_until(function.exit); solve(); }
 int32 run() { ensures result == 0 or result == 3; } by {
     step(); step(); step(); step();
-    branch { execute(); solve(); } else {}
+    branch { step_until(function.exit); solve(); } else {}
     step(); step();
     fold(authority(ticket(&pool, _)));
     let first = fold(ticket(&pool, p), { serial: 1 });
@@ -41,7 +41,7 @@ int32 run() { ensures result == 0 or result == 3; } by {
     have count(ticket(&pool, _)) == 2 by solve();
     unfold(second);
     unfold(authority(ticket(&pool, _)));
-    execute(); solve();
+    step_until(function.exit); solve();
 }
 ```
 

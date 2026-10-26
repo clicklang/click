@@ -12,7 +12,7 @@ int32 redirect(struct packet input, int32* other) {
 verifying "pointer_field_mutation.c";
 int32 redirect(struct packet input, int32* other) {
     ensures input.data == other;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

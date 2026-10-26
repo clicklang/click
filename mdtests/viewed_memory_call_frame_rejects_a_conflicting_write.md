@@ -9,7 +9,7 @@ verifying "overlap.c";
 resource item(p: int32*) { owns *p; }
 void mutate(int32* p) { owns item(p); } by {
     unfold(item(p));
-    execute();
+    step_until(function.exit);
     fold(item(p));
     solve();
 }
@@ -17,7 +17,7 @@ int32 observe(int32* p) {
     views *p;
     owns item(p);
     ensures result == *p;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

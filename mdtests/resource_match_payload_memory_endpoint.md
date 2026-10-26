@@ -42,7 +42,7 @@ void keep(struct buffer* buffer) {
     match suffix.tag {
         SuffixTag::Available(start) => {
             unfold(suffix);
-            execute();
+            step_until(function.exit);
             let suffix = fold(suffix_after_prefix(buffer), {
                 tag: SuffixTag::Available(start)
             });

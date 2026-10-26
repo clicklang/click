@@ -11,8 +11,6 @@ impl Drop for Guard {
         ensures self.slot == old(self.slot);
         ensures self.saved == old(self.saved);
         ensures *self.slot == old(self.saved);
-    } by {
-        execute(); solve();
     }
 }
 
@@ -45,7 +43,6 @@ fn guarded_walk(value: &mut i32, n: i32) -> i32 {
         invariant guard.slot == value;
         invariant guard.saved == old(value[0]);
     }
-    execute(); solve();
 }
 
 fn final_header(n: i32) -> i32 {
@@ -68,5 +65,4 @@ fn final_header(n: i32) -> i32 {
         }
         invariant 0 <= i and i <= n;
     }
-    execute(); solve();
 }

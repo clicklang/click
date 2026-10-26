@@ -22,7 +22,7 @@ fn rust_default_conditional_simp_expansion_reverifies() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();
     let expanded =
-        click::surface::expand_program_prepared_tactic_source_at(SIDECAR, &prepared, 8, 5).unwrap();
+        click::surface::expand_program_prepared_tactic_source_at(SIDECAR, &prepared, 5, 5).unwrap();
     C0VerificationSession::new_program_prepared(&expanded, &prepared)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }

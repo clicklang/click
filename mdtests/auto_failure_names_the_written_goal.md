@@ -12,7 +12,6 @@ unsigned long bound(unsigned long a, unsigned long b) { return a; }
 verifying "bound.c";
 uint64 bound(uint64 a, uint64 b) { ensures result == a; } by {
     have to_integer(a) <= to_integer(b - b % 4u64);
-    execute(); solve();
 }
 ```
 

@@ -1,7 +1,7 @@
 # A guarded quantified postcondition expands and re-verifies
 
 `vacuous` returns `0`, so its postcondition `result == 1 implies forall (k:
-int32) { ... }` holds vacuously. `execute(); solve();` proves it, and claim
+int32) { ... }` holds vacuously. The omitted proof proves it, and claim
 expansion renders the closer as a `have` of the claim followed by
 `assumption()`. The `have` and the claim lower the same guarded quantifier
 with independent fresh binders, and `assumption` used to compare an
@@ -33,9 +33,6 @@ int vacuous(int32* occ, int32 cap) {
     ensures result == 1 implies forall (k: int32) {
         0 <= k and k < cap implies occ[k] == 1
     };
-} by {
-    execute();
-    solve();
 }
 
 int by_hand(int32* occ, int32 cap) {
@@ -45,7 +42,7 @@ int by_hand(int32* occ, int32 cap) {
         0 <= k and k < cap implies occ[k] == 1
     };
 } by {
-    execute();
+    step_until(function.exit);
     have result == 1 implies forall (k: int32) {
         0 <= k and k < cap implies occ[k] == 1
     } by {

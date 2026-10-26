@@ -41,8 +41,6 @@ int fill(int32* occ, int32 cap) {
         invariant forall (k: int32) { 0 <= k and k < i implies occ[k] == 1 };
         owns occ[0..cap];
     }
-    execute();
-    solve();
 }
 ```
 

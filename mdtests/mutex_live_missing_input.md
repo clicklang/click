@@ -20,7 +20,7 @@ verifying "mutex_live_missing_input.c";
 
 void inner(struct holder *holder) {
     owns mutex_live(&holder->mu);
-} by { execute(); solve(); }
+}
 void keep(struct holder *holder) {
     owns mutex_live(&holder->mu);
 } by {

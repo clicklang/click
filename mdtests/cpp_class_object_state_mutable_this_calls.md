@@ -2,7 +2,7 @@
 
 `Shape::grow_twice` calls `grow` twice through a mutable `this`. The second
 call's precondition on `size(this)` holds through the first call's `ensures`,
-and `execute()` proves it there; a caller lends a `Square` and reads back the
+and the omitted proof's implicit tail proves it there; a caller lends a `Square` and reads back the
 side the two calls grew.
 
 ```cpp filename=shapes.cpp function=caller profile=normal_only

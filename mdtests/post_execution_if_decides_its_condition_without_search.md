@@ -1,9 +1,10 @@
-# A post-execution `if` decides its condition on each outcome path
+# A proof `if` before the C decides the C branch in each arm
 
-After `execute()`, an `if` over a stable condition picks one arm per outcome
-path. Each path decides `old(b) < old(a)` by exact lookup or by the kernel's
-condition decision, here from the C condition the path took, without
-searching the proof context.
+A proof `if` over the inputs, placed before the C, gives each arm its
+condition. In each arm `step_until(function.exit)` reaches the C `if` and
+decides `a > b` from the arm's condition, `b < a` or its negation, by exact
+lookup or by the kernel's condition decision, without searching the proof
+context, so neither arm splits and each arm states its path's result.
 
 ```c filename=pick_decided.c
 int32 pick(int32 a, int32 b) {
@@ -20,10 +21,11 @@ verifying "pick_decided.c";
 int32 pick(int32 a, int32 b) {
     ensures result >= a;
 } by {
-    execute();
-    if old(b) < old(a) {
+    if b < a {
+        step_until(function.exit);
         have result == a;
     } else {
+        step_until(function.exit);
         have result == b;
     }
 }

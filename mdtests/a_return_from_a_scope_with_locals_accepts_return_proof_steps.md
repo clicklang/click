@@ -1,9 +1,10 @@
 # a return from a scope with locals accepts proof steps at the return
 
 A `return` inside a block ends the block's automatic locals after the return
-statement itself. A proof step after `execute()` at that return, such as the
-`fold` that produces a contract's resource, still finds the return statement
-that completed the path.
+statement itself. A proof step after `step_until(function.exit)` at that
+return, such as the `fold` that produces a contract's resource, still finds the
+return statement that completed the path. A proof `if` on the cell's value
+splits the proof before the C, so each case steps to its own return.
 
 ```c filename=a_return_from_a_scope_with_locals_accepts_return_proof_steps.c
 int32 read_or_zero(int32 *p) {
@@ -30,8 +31,13 @@ int32 read_or_zero(int32* p) {
     ensures after.v == old(before.v);
 } by {
     let {} = unfold(before);
-    execute();
-    let after = fold(cell(p), { v: old(before.v) }, {});
+    if old(before.v) != 0 {
+        step_until(function.exit);
+        let after = fold(cell(p), { v: old(before.v) }, {});
+    } else {
+        step_until(function.exit);
+        let after = fold(cell(p), { v: old(before.v) }, {});
+    }
 }
 ```
 

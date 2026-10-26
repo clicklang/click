@@ -3668,7 +3668,7 @@ pub(super) fn record_current_statement_entry(
 
 pub(super) const BOUNDED_EXECUTE_STEP_LIMIT: usize = 10_000;
 
-/// The C branches one smart `execute()` may split at. Each arm runs to
+/// The C branches one implicit tail may split at. Each arm runs to
 /// function exit, so `n` sequential branches give `2^n` paths; past this many
 /// splits the search stops promptly and names the explicit join. No gate test
 /// splits more than 32 times (2026-10-21); a function of ten sequential
@@ -3736,7 +3736,7 @@ pub(super) fn condition_path_case_split_condition(
 /// The proof `match` that separates a Rust `match` of an enum local: one arm
 /// per variant, each field bound as `<local>_<variant>_<index>` with the
 /// variant in snake case, made fresh against the function's locals. Every
-/// arm's binders differ, so all stay bound after `execute()` finishes.
+/// arm's binders differ, so all stay bound after the implicit tail finishes.
 fn enum_switch_proof_match(
     statement: &CStatement,
     state: &CState,
@@ -3891,7 +3891,7 @@ fn describe_path_case_split_guidance(
         None => "No case condition has a Click spelling, so the cases cannot yet be split in source terms.\n".to_string(),
     };
     format!(
-        "These successors are {} cases of one C operation, told apart only by the conditions above; a simple step never splits the proof. {split}`execute()` makes this split itself.\n",
+        "These successors are {} cases of one C operation, told apart only by the conditions above; a simple step never splits the proof. {split}The implicit tail makes this split itself where the script ends.\n",
         case_count,
     )
 }

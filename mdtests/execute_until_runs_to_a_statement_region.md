@@ -21,7 +21,7 @@ verifying "execute_until_statement.c";
 int32 f(int32 v) {
     requires v < 1000;
     ensures result == v + 1;
-} by { execute(); solve(); }
+}
 
 int32 probe(int32 x) {
     requires x < 10;
@@ -31,8 +31,6 @@ int32 probe(int32 x) {
     have y == x + 1 by solve();
     step_until(statement(1).call(f, 1));
     have y == x + 1 by solve();
-    execute();
-    solve();
 }
 ```
 

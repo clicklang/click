@@ -81,8 +81,6 @@ void recycle(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) {
     give(data[a..a + 1]);
     let w = fold(arena_window(data, occupied, capacity, a, b + 1), { next: a });
     step(claim_run, { w: w });
-    execute();
-    solve();
 }
 ```
 

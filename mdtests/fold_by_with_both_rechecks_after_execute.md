@@ -1,4 +1,4 @@
-# a fold's `by` body with `both` checks after `execute()`
+# a fold's `by` body with `both` checks after the C runs
 
 This is the expansion of
 `mdtests/unfold_names_a_witness_for_a_fold_body_fact.md`: the implicit

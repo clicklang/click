@@ -146,7 +146,7 @@ fn false_quantified_frames_do_not_materialize_the_constant_domain() {
                 String::new()
             };
             let source = format!(
-                "verifying \"probe.c\"; int32 untouched_element(int32* a) {{ owns a[0..{size}]; ensures result == old(a[2]); {frame} }} by {{ execute(); solve(); }}"
+                "verifying \"probe.c\"; int32 untouched_element(int32* a) {{ owns a[0..{size}]; ensures result == old(a[2]); {frame} }}"
             );
             let (result, work) =
                 measure_deterministic_work(|| verify_c0_sources(&source, &[("probe.c", program)]));
@@ -198,8 +198,8 @@ fn refusing_a_false_literal_result_after_calls_scales_with_the_true_result() {
             let source = format!(
                 r#"
                 verifying "calls.c";
-                int32 read(int32* p) {{ owns p[0..1]; ensures result == old(p[0]); ensures p[0] == old(p[0]); }} by {{ execute(); solve(); }}
-                int32 many({parameters}, int32* p) {{ owns p[0..1]; requires p[0] == 7; ensures result == {value}; ensures p[0] == 7; }} by {{ execute(); {closer}(); }}
+                int32 read(int32* p) {{ owns p[0..1]; ensures result == old(p[0]); ensures p[0] == old(p[0]); }}
+                int32 many({parameters}, int32* p) {{ owns p[0..1]; requires p[0] == 7; ensures result == {value}; ensures p[0] == 7; }} by {{ step_until(function.exit); {closer}(); }}
             "#
             );
             let ((result, events), total) = measure_deterministic_work(|| {
@@ -903,7 +903,7 @@ fn specification_conditional_lowering_ignores_unrelated_ambient_facts() {
              int32 conditional_caller(int32 flag, int32 left, int32 right) {{\n    \
                  requires (if flag != 0 {{ left }} else {{ right }}) == 7;\n    \
                  ensures result == 0;\n\
-             }} by {{\n{unrelated}    execute();\n    solve();\n}}\n"
+             }} by {{\n{unrelated}    step_until(function.exit);\n    solve();\n}}\n"
         );
         let (verified, sample) = scaling_sample(size, || {
             verify_c0_sources(
@@ -974,8 +974,8 @@ fn verified_call_ensure_premises_ignore_unrelated_ambient_facts() {
                  ensures result == 0;\n    \
                  ensures flag > 0 implies cell[0] == 1;\n\
              }} by {{\n    \
-                 if flag > 0 {{\n        execute();\n        solve();\n    \
-                 }} else {{\n        execute();\n        solve();\n    }}\n\
+                 if flag > 0 {{\n        step_until(function.exit);\n        solve();\n    \
+                 }} else {{\n        step_until(function.exit);\n        solve();\n    }}\n\
              }}\n\
              \n\
              int32 ensure_premise_scaling_caller(int32 count, int32* cell) {{\n    \
@@ -983,7 +983,7 @@ fn verified_call_ensure_premises_ignore_unrelated_ambient_facts() {
                  requires count <= 1000;\n    \
                  owns cell[0..1];\n    \
                  ensures result == 0;\n\
-             }} by {{\n{unrelated}    execute();\n    solve();\n}}\n"
+             }} by {{\n{unrelated}    step_until(function.exit);\n    solve();\n}}\n"
         );
         let (verified, sample) = scaling_sample(size, || {
             verify_c0_sources(
@@ -1686,7 +1686,7 @@ fn explicit_separation_alias_transport_has_constant_selected_work() {
    separate(memory(parent->left), memory(child->word)); parent == alias;
   }};
  }}
- execute(); solve();
+ step_until(function.exit); solve();
 }}"
         );
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
@@ -2941,7 +2941,7 @@ fn wide_execution_match_project(width: usize) -> (String, String) {
             format!(
                 "        Wide::V{index} => {{\n\
                  \x20           unfold(c);\n\
-                 \x20           execute();\n\
+                 \x20           step_until(function.exit);\n\
                  \x20           let c = fold(cell(p), {{ model: Wide::V{index} }}, {{}});\n\
                  \x20           have wide_code(old(c.model)) == {index} by {{\n\
                  \x20               rewrite(old(c.model) == Wide::V{index});\n\
@@ -3036,7 +3036,7 @@ fn assert_outcome_operations_do_not_reimport_ambient_facts(
                     {requirements}
                     owns marker(x);
                     ensures result == x;
-                }} by {{ execute(); {body} solve(); }}
+                }} by {{ step_until(function.exit); {body} solve(); }}
             "#
             );
             crate::kernel::proof::take_fact_entry_counts();
@@ -3228,7 +3228,7 @@ fn array_fact_across_local_stores(statement_count: usize) -> (String, String) {
         click_source.push_str("    step();\n");
         click_source.push_str("    have icount(a, 0, 0) == 0 by { solve(); }\n");
     }
-    click_source.push_str("    execute();\n    solve();\n}\n");
+    click_source.push_str("    step_until(function.exit);\n    solve();\n}\n");
     (c_source, click_source)
 }
 
@@ -3248,7 +3248,7 @@ fn array_fact_across_declarations(statement_count: usize) -> (String, String) {
         click_source.push_str("    step();\n");
         click_source.push_str("    have icount(a, 0, 0) == 0 by { solve(); }\n");
     }
-    click_source.push_str("    execute();\n    solve();\n}\n");
+    click_source.push_str("    step_until(function.exit);\n    solve();\n}\n");
     (c_source, click_source)
 }
 
@@ -3264,13 +3264,13 @@ fn array_fact_across_calls(statement_count: usize) -> (String, String) {
     c_source.push_str("    return h[0];\n}\n");
 
     let mut click_source = String::from(
-        "verifying \"keep_h.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid touch_g() {\n    owns g[0..1];\n} by {\n    execute();\n    solve();\n}\n\nint32 keep_h() {\n    requires h[0] == 5;\n    owns g[0..1];\n    views h[0..1];\n    ensures result == 5;\n} by {\n    have 0 <= 0 by { solve(); }\n    have icount(h, 0, 0) == 0 by {\n        peel(icount(h, 0, 0)) using { 0 <= 0; }\n        normalize();\n    }\n",
+        "verifying \"keep_h.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid touch_g() {\n    owns g[0..1];\n}\n\nint32 keep_h() {\n    requires h[0] == 5;\n    owns g[0..1];\n    views h[0..1];\n    ensures result == 5;\n} by {\n    have 0 <= 0 by { solve(); }\n    have icount(h, 0, 0) == 0 by {\n        peel(icount(h, 0, 0)) using { 0 <= 0; }\n        normalize();\n    }\n",
     );
     for _ in 0..statement_count {
         click_source.push_str("    step();\n");
         click_source.push_str("    have icount(h, 0, 0) == 0 by { solve(); }\n");
     }
-    click_source.push_str("    execute();\n    solve();\n}\n");
+    click_source.push_str("    step_until(function.exit);\n    solve();\n}\n");
     (c_source, click_source)
 }
 
@@ -3404,7 +3404,7 @@ fn stores_beside_many_owned_ranges(size: usize) -> (String, String) {
     // per-store composition query, and `size` claims about `size` stores
     // would be quadratic before the query is ever reached.
     click_source.push_str(
-        "    produces MaybeCell(result);\n    ensures result != 0 implies value[0] == result[0];\n} by {\n    apply(lift(acquire));\n    step();\n    step(Boxed);\n    if c(cell) != 0 {\n        unfold(MaybeCell(c(cell)));\n        unfold(Cell(c(cell)));\n        execute();\n        fold(Cell(result));\n        fold(MaybeCell(result));\n        solve();\n    } else {\n        unfold(MaybeCell(c(cell)));\n        execute();\n        fold(MaybeCell(result));\n        solve();\n    }\n}\n",
+        "    produces MaybeCell(result);\n    ensures result != 0 implies value[0] == result[0];\n} by {\n    apply(lift(acquire));\n    step();\n    step(Boxed);\n    if c(cell) != 0 {\n        unfold(MaybeCell(c(cell)));\n        unfold(Cell(c(cell)));\n        step_until(function.exit);\n        fold(Cell(result));\n        fold(MaybeCell(result));\n        solve();\n    } else {\n        unfold(MaybeCell(c(cell)));\n        step_until(function.exit);\n        fold(MaybeCell(result));\n        solve();\n    }\n}\n",
     );
     (c_source, click_source)
 }
@@ -3561,7 +3561,8 @@ fn roundtrip_with_unrelated_allocations(unrelated: usize, extra_copies: usize) -
     c
 }
 
-const ROUNDTRIP_CLICK: &str = "verifying \"rep_copy.c\";\n\nint f() {\n    ensures result == 18 or result == -1;\n} by {\n    execute();\n    solve();\n}\n";
+const ROUNDTRIP_CLICK: &str =
+    "verifying \"rep_copy.c\";\n\nint f() {\n    ensures result == 18 or result == -1;\n}\n";
 
 fn roundtrip_sample(unrelated: usize, extra_copies: usize) -> ScalingSample {
     std::thread::Builder::new()
@@ -3606,7 +3607,7 @@ fn roundtrip_sample_on_this_thread(unrelated: usize, extra_copies: usize) -> Sca
 /// This guards those collapses; it is not the logarithmic contract, which
 /// the expanded proof meets (see the next test). The remaining growth, about
 /// 17 units per unrelated allocation, is mostly the
-/// smart `execute` planner's condition-premise search over its listed pure
+/// implicit tail's condition-premise search over its listed pure
 /// facts and that search's simp checkpoints (about 12 per allocation); the
 /// rest is re-derived snapshot comparison relative to a base and more
 /// composition separation-candidate projections. The kernel call path is
@@ -3650,7 +3651,7 @@ fn roundtrip_extra_copy_stays_nearly_flat_beside_unrelated_allocations() {
 /// proof `if`, and the round trip adds four of its own to the eleven allowed.
 const EXPANDED_ROUNDTRIP_MAX_UNRELATED: usize = 7;
 
-/// Expands the round trip's `execute(); solve();` proof beside `unrelated`
+/// Expands the round trip's omitted proof beside `unrelated`
 /// allocations to explicit simple tactics, outside the measurement, and
 /// returns the C source length with the expanded proof's verification work.
 fn expanded_roundtrip_sample(unrelated: usize, extra_copies: usize) -> (usize, ScalingSample) {
@@ -3719,7 +3720,7 @@ fn expanded_roundtrip_samples(sizes: &[usize]) -> Vec<[(usize, ScalingSample); 2
 /// cold-checking this identical matrix twice.
 ///
 /// This is the contract the smart test above does not meet: both variants'
-/// `execute(); solve();` proofs are expanded outside the measurement, and only
+/// omitted proofs are expanded outside the measurement, and only
 /// the two expanded proofs' verification is compared. Seven allocations is
 /// the largest family member the checked proof drivers' nesting bound admits
 /// (see [`EXPANDED_ROUNDTRIP_MAX_UNRELATED`]). Measured marginals on
@@ -3908,7 +3909,7 @@ resource holder_state(h: struct holder*) {
         rewrite(h->start == s);
         assumption();
     }
-    execute();
+    step_until(function.exit);
     let r = fold(holder_state(h), { start: s });
     let st = fold(box_state(h->box), { len: l });
     solve();
@@ -3942,7 +3943,7 @@ struct holder {
     ensures st.len == old(st.len);
 }} by {{
     let {{ len: l }} = unfold(st);
-    execute();
+    step_until(function.exit);
     let st = fold(box_state(b), {{ len: l }});
     solve();
 }}
@@ -4052,7 +4053,7 @@ fn framed_field_cells_loop(cells: usize) -> (String, String) {
          \x20           close_invariants() by {{ {closure} }}\n\
          \x20       }}\n\
          \x20   }}\n\
-         \x20   execute();\n\
+         \x20   step_until(function.exit);\n\
          \x20   solve();\n\
          }}\n"
     );
@@ -4138,7 +4139,7 @@ fn many_clause_loop(clauses: usize) -> (String, String) {
          \x20           close_invariants();\n\
          \x20       }}\n\
          \x20   }}\n\
-         \x20   execute();\n\
+         \x20   step_until(function.exit);\n\
          \x20   solve();\n\
          }}\n"
     );
@@ -4208,7 +4209,7 @@ fn simp_equality_chain_is_linear_and_unrelated_queries_are_flat() {
         (
             format!("int chain({parameters}) {{\n    return 0;\n}}\n"),
             format!(
-                "verifying \"chain.c\";\n\nfunction marker(index: int32, x: int32) -> int32 {{ x }}\n\nint32 chain({parameters}) {{\n{requires}    requires y == z;\n    requires z == w;\n    ensures {goal};\n}} by {{\n    execute();\n    solve();\n}}\n"
+                "verifying \"chain.c\";\n\nfunction marker(index: int32, x: int32) -> int32 {{ x }}\n\nint32 chain({parameters}) {{\n{requires}    requires y == z;\n    requires z == w;\n    ensures {goal};\n}}\n"
             ),
         )
     };
@@ -4391,7 +4392,7 @@ fn branching_grouped_claim_project(claim_count: usize) -> (String, String) {
         click_source.push_str("    ensures result == a;\n");
     }
     click_source.push_str(
-        "} by {\n    step();\n    branch {\n            execute();\n            solve();\n        } else {}\n    step();\n    have x == a by {\n        solve();\n    }\n    execute();\n    solve();\n}\n",
+        "} by {\n    step();\n    branch {\n            step_until(function.exit);\n            solve();\n        } else {}\n    step();\n    have x == a by {\n        solve();\n    }\n    step_until(function.exit);\n    solve();\n}\n",
     );
     (c_source, click_source)
 }
@@ -4463,7 +4464,7 @@ fn counter_call_chain(call_count: usize) -> (String, String) {
     }
     c_source.push_str("}\n");
     let mut click_source = String::from(
-        "verifying \"drive.c\";\n\nvoid touch(struct range* r) {\n    owns *r;\n    requires r->end < 1000000;\n    ensures r->end == old(r->end) + 1;\n    ensures r->start == old(r->start);\n} by {\n    execute();\n    solve();\n}\n\n",
+        "verifying \"drive.c\";\n\nvoid touch(struct range* r) {\n    owns *r;\n    requires r->end < 1000000;\n    ensures r->end == old(r->end) + 1;\n    ensures r->start == old(r->start);\n}\n\n",
     );
     click_source.push_str(&format!(
         "void drive(struct range* r) {{\n    owns *r;\n    requires r->end == 0;\n    ensures r->end == {call_count};\n}} by {{\n"
@@ -4471,7 +4472,7 @@ fn counter_call_chain(call_count: usize) -> (String, String) {
     for _ in 0..call_count {
         click_source.push_str("    step();\n");
     }
-    click_source.push_str("    execute();\n    solve();\n}\n");
+    click_source.push_str("    step_until(function.exit);\n    solve();\n}\n");
     (c_source, click_source)
 }
 
@@ -4984,7 +4985,7 @@ fn explicit_fold_read_transport_along_a_store_sequence_is_near_linear() {
                  requires zeros(v, 0, i) == 0;\n    \
                  owns v[i..(i + 1)];\n    \
                  ensures zeros(v, 0, i) == 0;\n\
-             }} by {{\n{steps}    execute();\n    solve();\n}}\n"
+             }} by {{\n{steps}    step_until(function.exit);\n    solve();\n}}\n"
         );
         let (verified, sample) = scaling_sample(size, || {
             verify_c0_sources(&click_source, &[("mark.c", c_source.as_str())])
@@ -5039,7 +5040,7 @@ fn collecting_a_states_variables_visits_a_global_array_once() {
     };
     let click_source = |statements: usize| {
         format!(
-            "verifying \"inc.c\";\n\nint32 inc(int32 x) {{\n    requires x < 100;\n    ensures to_integer(result) == to_integer(x + {statements});\n}} by {{\n    execute();\n    solve();\n}}\n"
+            "verifying \"inc.c\";\n\nint32 inc(int32 x) {{\n    requires x < 100;\n    ensures to_integer(result) == to_integer(x + {statements});\n}}\n"
         )
     };
     let samples = [
@@ -5094,7 +5095,7 @@ fn a_constant_view_costs_the_same_whatever_its_length() {
     let c_source = "int32 get(int32 *a, int32 i) { return a[i]; }\n";
     let click_source = |length: u64| {
         format!(
-            "verifying \"get.c\";\n\nint32 get(int32 *a, int32 i) {{\n    views a[0..{length}];\n    requires 0 <= i;\n    requires i < {length};\n    ensures result == a[i];\n}} by {{\n    execute();\n    solve();\n}}\n"
+            "verifying \"get.c\";\n\nint32 get(int32 *a, int32 i) {{\n    views a[0..{length}];\n    requires 0 <= i;\n    requires i < {length};\n    ensures result == a[i];\n}}\n"
         )
     };
     // One unmeasured verification first: what the first verification on a
@@ -5238,7 +5239,7 @@ fn quantified_frame_project(stores: usize, conjuncts: usize, facts: usize) -> (S
              owns visited[0..n];\n    \
              ensures {target};\n\
          }} by {{\n{steps}    transport({source}, {target}) using {{ {source}; }};\n    \
-             execute();\n    solve();\n}}\n"
+             step_until(function.exit);\n    solve();\n}}\n"
     );
     (c_source, click_source)
 }
@@ -5422,7 +5423,7 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
     let c_source = "int32 put(int32 *a) {\n    a[3] = 5;\n    return a[3];\n}\n\nvoid put_pointer(int32 **p, int32 *q) {\n    p[1] = q;\n}\n";
     let click_source = |length: u64| {
         format!(
-            "verifying \"put.c\";\n\nresource block(p: int32*) {{ owns p[0..{length}]; }}\nresource pointers(p: int32**) {{ owns p[0..{length}]; }}\n\nint32 put(int32 *a) {{\n    owns block(a);\n    ensures result == 5;\n    ensures a[4] == old(a[4]);\n}} by {{\n    unfold(block(a));\n    execute();\n    fold(block(a));\n    solve();\n}}\n\nvoid put_pointer(int32 **p, int32 *q) {{\n    owns pointers(p);\n    ensures p[2] == old(p[2]);\n    ensures p[1] == q;\n}} by {{\n    unfold(pointers(p));\n    execute();\n    fold(pointers(p));\n    solve();\n}}\n"
+            "verifying \"put.c\";\n\nresource block(p: int32*) {{ owns p[0..{length}]; }}\nresource pointers(p: int32**) {{ owns p[0..{length}]; }}\n\nint32 put(int32 *a) {{\n    owns block(a);\n    ensures result == 5;\n    ensures a[4] == old(a[4]);\n}} by {{\n    unfold(block(a));\n    step_until(function.exit);\n    fold(block(a));\n    solve();\n}}\n\nvoid put_pointer(int32 **p, int32 *q) {{\n    owns pointers(p);\n    ensures p[2] == old(p[2]);\n    ensures p[1] == q;\n}} by {{\n    unfold(pointers(p));\n    step_until(function.exit);\n    fold(pointers(p));\n    solve();\n}}\n"
         )
     };
     verify_c0_sources(&click_source(8), &[("put.c", c_source)]).expect("warm-up verifies");
@@ -5479,7 +5480,7 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
     verify_c0_sources(
         "verifying \"read.c\"; int32 read_after_store(int32 *a, int32 k) {
             owns a[0..16]; requires 0 <= k; requires k < 16;
-            ensures result == a[k]; } by { execute(); solve(); }",
+            ensures result == a[k]; }",
         &[("read.c", c_source)],
     )
     .expect("warm-up verifies");
@@ -5497,7 +5498,7 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
                  int32 read_after_store(int32 *a, int32 k) {{\n\
                    owns block(a); requires 0 <= k; requires k < {length}; {distinct}\n\
                    ensures result == {value};\n\
-                 }} by {{ unfold(block(a)); execute(); fold(block(a)); solve(); }}"
+                 }} by {{ unfold(block(a)); step_until(function.exit); fold(block(a)); solve(); }}"
             );
             let (result, sample) = scaling_sample(length, || {
                 verify_c0_sources(&source, &[("read.c", c_source)])
@@ -5562,7 +5563,7 @@ fn bounded_index_stores(stores: usize) -> (String, String) {
     let steps = "    step();\n".repeat(stores);
     let click_source = format!(
         "verifying \"mark.c\";\n\n{signature} {{\n{bounds}    owns a[0..n];\n    \
-         ensures a[c{last}] == {last};\n}} by {{\n{steps}    execute();\n    solve();\n}}\n"
+         ensures a[c{last}] == {last};\n}} by {{\n{steps}    step_until(function.exit);\n    solve();\n}}\n"
     );
     (c_source, click_source)
 }
@@ -5669,7 +5670,7 @@ fn bounded_size_t_index_stores(stores: usize) -> (String, String) {
     let steps = "    step();\n".repeat(stores);
     let click_source = format!(
         "verifying \"mark.c\";\n\n{signature} {{\n{bounds}    owns a[0..n];\n    \
-         ensures a[c{last}] == {last};\n}} by {{\n{steps}    execute();\n    solve();\n}}\n"
+         ensures a[c{last}] == {last};\n}} by {{\n{steps}    step_until(function.exit);\n    solve();\n}}\n"
     );
     (c_source, click_source)
 }
@@ -5746,10 +5747,10 @@ fn owned_size_t_window_calls(calls: usize) -> (String, String) {
     let steps = "    step();\n".repeat(calls);
     let click_source = format!(
         "verifying \"write.c\";\n\n\
-         void set_four(uint8* chunk) {{\n    owns chunk[0..4];\n}} by {{ execute(); solve(); }}\n\n\
+         void set_four(uint8* chunk) {{\n    owns chunk[0..4];\n}}\n\n\
          void write(uint8* bytes, uint64 length, uint64 index) {{\n    \
          requires index <= length;\n    requires 4u64 <= length - index;\n    \
-         owns bytes[0..length];\n}} by {{\n{steps}    execute();\n    solve();\n}}\n"
+         owns bytes[0..length];\n}} by {{\n{steps}    step_until(function.exit);\n    solve();\n}}\n"
     );
     (c_source, click_source)
 }
@@ -5797,7 +5798,7 @@ fn constant_index_stores(stores: usize) -> (String, String) {
     let steps = "    step();\n".repeat(stores);
     let click_source = format!(
         "verifying \"mark.c\";\n\n{signature} {{\n    owns a[0..{stores}];\n    \
-         ensures a[0] == 0;\n}} by {{\n{steps}    execute();\n    solve();\n}}\n"
+         ensures a[0] == 0;\n}} by {{\n{steps}    step_until(function.exit);\n    solve();\n}}\n"
     );
     (c_source, click_source)
 }
@@ -5836,7 +5837,7 @@ fn chain_ordered_index_stores_in(stores: usize, descending: bool) -> (String, St
     let steps = "    step();\n".repeat(stores);
     let click_source = format!(
         "verifying \"mark.c\";\n\n{signature} {{\n{bounds}    owns a[0..n];\n    \
-         ensures a[c0] == 0;\n}} by {{\n{steps}    execute();\n    solve();\n}}\n"
+         ensures a[c0] == 0;\n}} by {{\n{steps}    step_until(function.exit);\n    solve();\n}}\n"
     );
     (c_source, click_source)
 }
@@ -6392,14 +6393,14 @@ fn post_execution_ifs_with_earlier_haves_have_near_linear_work() {
     let mut samples = Vec::new();
     for size in [4, 8, 16, 32] {
         let mut source = String::from(
-            "verifying \"pick.c\"; int32 pick(int32 a, int32 b) { requires a > b or a == b; ensures result >= a; } by { execute();",
+            "verifying \"pick.c\"; int32 pick(int32 a, int32 b) { requires a > b or a == b; ensures result >= a; } by {",
         );
-        for _ in 0..size {
-            source.push_str(
-                "have old(a) >= old(b); if old(a) >= old(b) { have result >= a; } else {}",
-            );
-        }
-        source.push('}');
+        // Each C path steps to its exit, then reasons there.
+        let reasoning =
+            "have old(a) >= old(b); if old(a) >= old(b) { have result >= a; } else {}".repeat(size);
+        source.push_str(&format!(
+            "if a > b {{ step_until(function.exit); {reasoning} }} else {{ step_until(function.exit); {reasoning} }} }}"
+        ));
         let (verified, sample) =
             scaling_sample(size, || verify_c0_sources(&source, &[("pick.c", c_source)]));
         verified.unwrap_or_else(|error| panic!("{size} post-execution ifs: {}", error.message()));
@@ -7241,7 +7242,7 @@ fn failing_simp_work_is_flat_along_a_variable_chain() {
         (
             format!("int chain({c_parameters}) {{\n    return 0;\n}}\n"),
             format!(
-                "verifying \"chain.c\";\n\nint32 chain({parameters}) {{\n    requires 0 <= x0;\n{requires}    requires x{size} <= 100;\n    ensures x0 + 1 <= 50;\n}} by {{\n    execute();\n    solve();\n}}\n"
+                "verifying \"chain.c\";\n\nint32 chain({parameters}) {{\n    requires 0 <= x0;\n{requires}    requires x{size} <= 100;\n    ensures x0 + 1 <= 50;\n}}\n"
             ),
         )
     };
@@ -7265,10 +7266,9 @@ fn failing_simp_work_is_flat_along_a_variable_chain() {
     );
 }
 
-/// The `execute(); solve();` proof of [`early_return_fan_out`] written with
-/// simple tactics only, as `click expand` writes it when it expands
-/// `execute()` and then `solve()`: the steps and C branches of `execute`, then
-/// one closer per path under the same nested conditions. A returned constant
+/// The `step_until(function.exit); solve();` proof of [`early_return_fan_out`] written with
+/// simple tactics only, as `click expand` writes it: the steps and C
+/// branches the execution takes, then one closer per path under the same nested conditions. A returned constant
 /// closes by `assumption`; the two `-1` returns transport the postcondition
 /// from `function.exit`, since `result` cannot be named in an earlier
 /// snapshot.
@@ -7344,7 +7344,7 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
             concat!(
                 "verifying \"fan_out.c\";\n",
                 "int g(int a) { ensures result == a or result == -1; } ",
-                "by { execute(); solve(); }",
+                "by { step_until(function.exit); solve(); }",
             )
             .to_string()
         };
@@ -7596,7 +7596,8 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
             named_growth_diagnostic(&samples)
         );
         let c = early_return_fan_out(64);
-        let false_click = "verifying \"fan_out.c\";\nint g(int a) { ensures result == a or result == -2; } by { execute(); solve(); }";
+        let false_click =
+            "verifying \"fan_out.c\";\nint g(int a) { ensures result == a or result == -2; }";
         let error = verify_c0_sources(false_click, &[("fan_out.c", c.as_str())])
             .expect_err("indexed premises cannot prove an incorrect postcondition");
         assert!(!error.message().contains("budget"), "{}", error.message());
@@ -7626,7 +7627,7 @@ fn check_early_return_execution_expansion(returns: usize) {
         // Match the existing fan-out tests and unoptimized fixture workers.
         .stack_size(64 << 20)
         .spawn(move || {
-            let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    execute();\n    solve();\n}\n";
+            let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n}\n";
             let c = early_return_fan_out(returns);
             let sources = [("fan_out.c", c.as_str())];
             let expanded = expand_c0_tactic_source_at(click, &sources, 6, 5)
@@ -8018,7 +8019,10 @@ fn callback_parsing_and_explicit_steps_scale_with_written_calls() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let source = click.replace("execute();", &"step(); ".repeat(3 * (count + 2) + 1));
+        let source = click.replace(
+            "step_until(function.exit);",
+            &"step(); ".repeat(3 * (count + 2) + 1),
+        );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             verify_c0_sources(&source, &sources)
         });
@@ -8067,7 +8071,7 @@ void narrow(const uint8* bytes, int32 index) {
    viewable(bytes[0..22208]); 0 <= index; to_integer(index) <= to_integer(index + 4); to_integer(index + 4) <= 22208; 0 <= 22208;
   }
  }
- execute(); solve();
+ step_until(function.exit); solve();
 }
 "#;
     (c_source, contract)
@@ -8222,9 +8226,11 @@ fn consecutive_resource_closers_attempt_one_transition() {
             "    produces *anchor;",
             &(outputs + "    produces *anchor;"),
         );
-        let tail = source.rfind("    execute(); solve();").unwrap();
+        let tail = source
+            .rfind("    step_until(function.exit); solve();")
+            .unwrap();
         source.replace_range(
-            tail..tail + "    execute(); solve();".len(),
+            tail..tail + "    step_until(function.exit); solve();".len(),
             &format!("    step(); {}", "assumption(); ".repeat(8 + 2 * size)),
         );
         let (verified, events) = crate::instrumentation::collect(|| {
@@ -8544,7 +8550,7 @@ void inspect(struct node* parent, struct node* child{parameters}) {{
  {unfolds}
  unfold(c);
  have separate(memory(parent->word), memory(child->word)) by assumption();
- execute(); solve();
+ step_until(function.exit); solve();
 }}"
         );
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
@@ -8590,7 +8596,7 @@ resource callbacks0(cb: const struct callbacks*) {
         for layer in (1..=depth).rev() {
             source.push_str(&format!("unfold(node{layer}(p)); observe(callbacks{layer}(cb));\n"));
         }
-        source.push_str("unfold(node0(p)); open(callbacks0(cb)) { execute(); } fold(node0(p));\n");
+        source.push_str("unfold(node0(p)); open(callbacks0(cb)) { step_until(function.exit); } fold(node0(p));\n");
         for layer in 1..=depth {
             source.push_str(&format!("fold(node{layer}(p));\n"));
         }
@@ -8626,7 +8632,7 @@ resource callbacks0(cb: const struct callbacks*) {
 /// existing linear validation cost for surrounding owners.
 ///
 /// Nightly: each of the four verifications costs over half a second in a
-/// debug build at any size, and the proof's `execute` grows faster than
+/// debug build at any size, and the proof's execution grows faster than
 /// the owners (3,561, 6,045, 13,413 and 37,749 units at 4 to 32 owners in a
 /// release build on 2026-10-15), so the largest size dominates.
 #[test]
@@ -8771,7 +8777,7 @@ fn unrelated_call_work_stays_flat_with_kept_pointer_aliases() {
             .map(|i| format!("requires q{i} == b;"))
             .collect::<String>();
         let source = format!(
-            "verifying \"aliases.c\"; void touch(int32* flags, int32* data, int32 k) {{ owns flags[0..k]; owns data[0..k]; }} by {{ execute(); solve(); }} int32 caller(int32* flags, int32* data, int32 k, struct box* b{parameters}) {{ owns flags[0..k]; owns data[0..k]; owns *b; {requirements} ensures result == {size}; }} by {{ step(); step(); step(); step(); step(); solve(); }}"
+            "verifying \"aliases.c\"; void touch(int32* flags, int32* data, int32 k) {{ owns flags[0..k]; owns data[0..k]; }} int32 caller(int32* flags, int32* data, int32 k, struct box* b{parameters}) {{ owns flags[0..k]; owns data[0..k]; owns *b; {requirements} ensures result == {size}; }} by {{ step(); step(); step(); step(); step(); solve(); }}"
         );
         let (verified, events) = crate::instrumentation::collect(|| {
             verify_c0_sources(&source, &[("aliases.c", c.as_str())])
@@ -8919,7 +8925,7 @@ void touch(int32* flags, int32* data, int32 k) {{ return; }}
                 "verifying \"fields.c\";
 void touch(int32* flags, int32* data, int32 k) {{
 owns flags[0..k]; owns data[0..k];
-}} by {{ execute(); solve(); }}
+}}
 {signature} {{ owns flags[0..k]; owns data[0..k]; {owns}
 ensures result == {expected};
 }} by {{ {} solve(); }}",
@@ -9014,7 +9020,7 @@ fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
     for size in sizes {
         let (_, mut source) = function_with_unrelated_facts(
             size,
-            "    step();\n    transport(target == 7, target == 7);\n    execute();\n    assumption();\n",
+            "    step();\n    transport(target == 7, target == 7);\n    step_until(function.exit);\n    assumption();\n",
         );
         // Keep transport at a live statement frontier. A return would enter
         // the distinct post-execution premise-search path.
@@ -9291,7 +9297,7 @@ fn mixed_width_owned_entry_work_is_independent_of_segment_length() {
     let mut baseline = None;
     for length in [32, 1_024, 65_536, 2_147_483_647] {
         let source = format!(
-            "verifying \"entry.c\"; void entry(uint64* word, uint8* bytes) {{ owns word[0..1]; owns bytes[0..{length}]; }} by {{ execute(); }}"
+            "verifying \"entry.c\"; void entry(uint64* word, uint8* bytes) {{ owns word[0..1]; owns bytes[0..{length}]; }}"
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             verify_c0_sources(&source, &[("entry.c", program)])
@@ -9311,7 +9317,7 @@ fn native_read_equality_refusal_does_not_restart_snapshot_search_as_integer() {
     verify_c0_sources(
         "verifying \"read.c\"; int32 read_after_store(int32 *a, int32 k) {
             owns a[0..16]; requires 0 <= k; requires k < 16;
-            ensures result == a[k]; } by { execute(); solve(); }",
+            ensures result == a[k]; }",
         &[("read.c", c)],
     )
     .expect("warm-up verifies");
@@ -9324,7 +9330,7 @@ fn native_read_equality_refusal_does_not_restart_snapshot_search_as_integer() {
              {ty} pick({ty} x, {ty} y) {{
                requires to_integer(x) + 1 == to_integer(y) + 1;
                ensures result == y;
-             }} by {{ execute(); solve(); }}"
+             }}"
         );
         verify_c0_sources(&source, &[("integer_input.c", c.as_str())]).unwrap_or_else(|error| {
             panic!(
@@ -9340,7 +9346,7 @@ fn native_read_equality_refusal_does_not_restart_snapshot_search_as_integer() {
              int32 read_after_store(int32 *a, int32 k) {{
                owns block(a); requires 0 <= k; requires k < {length};
                ensures result == old(a[k]);
-             }} by {{ unfold(block(a)); execute(); fold(block(a)); solve(); }}"
+             }} by {{ unfold(block(a)); step_until(function.exit); fold(block(a)); solve(); }}"
         );
         let (result, events) =
             crate::instrumentation::collect(|| verify_c0_sources(&source, &[("read.c", c)]));
@@ -9379,7 +9385,7 @@ fn composite_native_read_equality_refusal_keeps_one_snapshot_search() {
              int32 read_after_store(int32 *a, int32 k) {{
                owns block(a); requires 0 <= k; requires k < {length};
                ensures result + 0 == old(a[k]) + 0;
-             }} by {{ unfold(block(a)); execute(); fold(block(a)); solve(); }}"
+             }} by {{ unfold(block(a)); step_until(function.exit); fold(block(a)); solve(); }}"
         );
         let (result, events) =
             crate::instrumentation::collect(|| verify_c0_sources(&source, &[("read.c", c)]));

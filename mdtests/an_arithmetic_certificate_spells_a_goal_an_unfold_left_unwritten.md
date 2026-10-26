@@ -40,7 +40,7 @@ void f(int32* q) {
     ensures true;
 } by {
     match h.model {
-        Chain::Leaf => { execute(); },
+        Chain::Leaf => { step_until(function.exit); },
         Chain::Link(at, v, rest) => {
             have chain_size(Chain::Link(at, v, rest)) == 1 + chain_size(rest) by {
                 unfold(chain_size(Chain::Link(at, v, rest)));
@@ -53,7 +53,7 @@ void f(int32* q) {
                     chain_size(Chain::Link(at, v, rest)) == 1 + chain_size(rest);
                 };
             }
-            execute();
+            step_until(function.exit);
         },
     }
 }

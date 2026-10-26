@@ -48,7 +48,6 @@ struct object* object_retain(struct object* obj) {
             solve();
         }
     }
-    execute(); solve();
 }
 ```
 

@@ -90,9 +90,9 @@ predicate one_more(x: int32, y: int32) {
 
 int32 increment_value(int32 x) {
     requires x < 2147483647;
-    ensures result_value: result == inc(x) by { execute(); solve(); }
+    ensures result_value: result == inc(x);
     ensures predicate_value: one_more(x, result) by {
-        execute();
+        step_until(function.exit);
         unfold(one_more);
         solve();
     }
@@ -115,12 +115,9 @@ int32 count_three_matches(int32 p[3], int32 x) {
 }
 
 int32 range_helpers() {
-    ensures all_reflexive: (0..3).all(|k| { k == k }) by {
-        execute();
-        solve();
-    }
+    ensures all_reflexive: (0..3).all(|k| { k == k });
     ensures any_has_one: (0..3).any(|k| { k == 1 }) by {
-        execute();
+        step_until(function.exit);
         witness { k: 1 };
         solve();
     }
@@ -129,7 +126,7 @@ int32 range_helpers() {
 int32 identity_permutation(int32 p[3]) {
     requires viewable(p[0..3]);
     ensures same_multiset: permutation::permutation(p, p, 0, 3) by {
-        execute();
+        step_until(function.exit);
         unfold(permutation::permutation);
         solve();
     }

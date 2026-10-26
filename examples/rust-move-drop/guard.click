@@ -9,9 +9,6 @@ impl Drop for Guard {
         ensures self.slot == old(self.slot);
         ensures self.saved == old(self.saved);
         ensures *self.slot == old(self.saved);
-    } by {
-        execute();
-        solve();
     }
 }
 
@@ -19,7 +16,4 @@ fn restore(early: bool, value: &mut i32) -> i32 {
     owns *value;
     ensures result == (if early { 7 } else { 9 });
     ensures *value == old(*value);
-} by {
-    execute();
-    solve();
 }

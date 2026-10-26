@@ -25,7 +25,7 @@ void set_last(int32* p, int32 x) {
     requires x > 0;
     owns cell(p);
 } by {
-    open(cell(p)) { execute(); } by { solve(); }
+    open(cell(p)) { step_until(function.exit); } by { solve(); }
     solve();
 }
 ```

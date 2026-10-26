@@ -44,7 +44,7 @@ void probe(struct node* node) {
     ensures node->right->augmented == 7;
 } by {
     unfold(pair(node));
-    execute();
+    step_until(function.exit);
     fold(pair(node));
     solve();
 }
@@ -58,7 +58,7 @@ void probe_reversed(struct node* node) {
     ensures node->right->augmented == 7;
 } by {
     unfold(pair(node));
-    execute();
+    step_until(function.exit);
     fold(pair(node));
     solve();
 }

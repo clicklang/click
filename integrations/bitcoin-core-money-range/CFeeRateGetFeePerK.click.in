@@ -13,4 +13,4 @@ int64 CFeeRate::GetFeePerK() const {
     ensures to_integer(result) <= 9223372036854775807;
     ensures to_integer(result) * to_integer(this->m_feerate.base.size) <= to_integer(this->m_feerate.base.fee) * 1000;
     ensures to_integer(this->m_feerate.base.fee) * 1000 < (to_integer(result) + 1) * to_integer(this->m_feerate.base.size);
-} by { execute(); solve(); }
+}

@@ -939,9 +939,6 @@ fn parses_void_c_function_contracts_without_a_result_binding() {
 
         void destroy(int32* value) {
             consumes value[0..1];
-        } by {
-            execute();
-            solve();
         }
     "#;
     let file = parse(source).expect("void C contracts should parse");
@@ -3618,9 +3615,6 @@ fn nested_field_segments_keep_the_terminal_field_offset() {
             views root->child;
             consumes root->child->value;
             ensures result == 7;
-        } by {
-            execute();
-            solve();
         }
     "#;
     let file = parse_c0_click_file(click_source, &[("write_nested.c", c_source)])
@@ -3722,7 +3716,7 @@ fn an_embedded_struct_is_viewed_as_a_place() {
         }
     "#;
     // An embedded struct is viewed like any other place.
-    let viewed = format!("{click_source} by {{ execute(); solve(); }}");
+    let viewed = format!("{click_source}");
     verify_c0_sources(&viewed, &[("aggregate_resource_places.c", c_source)]).unwrap();
 }
 
@@ -4313,7 +4307,7 @@ fn a_child_resource_is_owned_like_any_other() {
     let c_source = "struct cell { int32 value; int32 other; }; \
         int32 get(struct cell* p) { return p->value; }";
     let proof = "int32 get(struct cell* p) { owns outer(p); ensures result == result; } by { \
-        unfold(outer(p)); unfold(inner(p)); execute(); fold(inner(p)); fold(outer(p)); solve(); }";
+        unfold(outer(p)); unfold(inner(p)); step_until(function.exit); fold(inner(p)); fold(outer(p)); solve(); }";
     let inner = "resource inner(p: struct cell*) { owns p->value; }";
     let source = format!(
         "{inner} resource outer(p: struct cell*) {{ owns inner(p); owns p->other; }} \
@@ -4349,7 +4343,7 @@ fn an_invariant_label_names_it_in_a_failure() {
         format!(
             "verifying \"count.c\"; int32 count(int32 n) {{ requires 0 <= n; ensures result == result; }} by {{ \
              step_until(loop(0)); loop {{ decreases n - i; invariant {invariant} i <= n - 1; \
-             preserve by {{ execute(); solve(); }} }} execute(); solve(); }}"
+             }} step_until(function.exit); solve(); }}"
         )
     };
     let labelled = verify_c0_sources(&sidecar("upper:"), &[("count.c", c_source)])
@@ -4401,7 +4395,7 @@ fn pointer_storage_views_name_the_field_alone() {
             views p->data;
             views p->data[0..1];
             ensures result == p->data[0];
-        } by { execute(); solve(); }
+        }
     "#;
     verify_c0_sources(click_source, &[("pointer.c", c_source)]).unwrap();
     let file = parse_c0_click_file(click_source, &[("pointer.c", c_source)]).unwrap();
@@ -4424,7 +4418,7 @@ fn a_contract_cannot_return_one_place_twice() {
         int32 get(struct cell* p) { return p->value; }";
     for (contract, expected) in [
         (
-            "int32 get(struct cell* p) { owns p->value; produces p->value; ensures result == result; } by { execute(); solve(); }",
+            "int32 get(struct cell* p) { owns p->value; produces p->value; ensures result == result; }",
             "`get` both owns and produces `p->value`; `owns` already returns it",
         ),
         (
@@ -4436,11 +4430,11 @@ fn a_contract_cannot_return_one_place_twice() {
             "`Twice` both owns and produces `p->value`; `owns` already returns it",
         ),
         (
-            "int32 get(struct cell* p) { views p->value; produces p->other; produces p->other; ensures result == result; } by { execute(); solve(); }",
+            "int32 get(struct cell* p) { views p->value; produces p->other; produces p->other; ensures result == result; }",
             "`get` produces `p->other` twice",
         ),
         (
-            "int32 get(struct cell* p) { owns *p; produces *p; ensures result == result; } by { execute(); solve(); }",
+            "int32 get(struct cell* p) { owns *p; produces *p; ensures result == result; }",
             "`get` both owns and produces `*p`",
         ),
     ] {
@@ -4456,7 +4450,7 @@ fn a_contract_cannot_return_one_place_twice() {
     // Giving a place up and returning it is not twice, and a place reached
     // through a pointer the function may replace is left to the proof.
     for contract in [
-        "int32 get(struct cell* p) { consumes p->value; produces p->value; ensures result == result; } by { execute(); solve(); }",
+        "int32 get(struct cell* p) { consumes p->value; produces p->value; ensures result == result; }",
         "contract int32 Swap(struct cell* p) { owns p->data; owns p->data[0..1]; produces p->data[0..1]; }",
         "contract int32 Fields(struct cell* p) { consumes p->value; consumes p->data; produces p->value; produces p->data; }",
     ] {
@@ -4488,7 +4482,7 @@ fn a_contract_cannot_return_one_place_twice() {
 fn a_reference_parameter_does_not_match_a_c_pointer() {
     let c_source = "int32 read(int32* p) { return p[0]; }";
     let source = "verifying \"read.c\"; int32 read(int32& p) { views p; ensures result == p; } \
-        by { execute(); solve(); }";
+";
     let error = verify_c0_sources(source, &[("read.c", c_source)])
         .expect_err("a C parameter is not a reference");
     assert!(
@@ -4506,9 +4500,9 @@ fn a_contract_cannot_return_overlapping_places() {
     let c_source = "struct cell { int32 value; int32 other; }; \
         int32 get(struct cell* p) { return p->value; }";
     for contract in [
-        "int32 get(struct cell* p) { owns *p; produces p->value; ensures result == result; } by { execute(); solve(); }",
+        "int32 get(struct cell* p) { owns *p; produces p->value; ensures result == result; }",
         "contract int32 Whole(struct cell* p) { owns *p; produces p->value; } \
-         int32 get(struct cell* p) { views p->value; ensures result == result; } by { execute(); solve(); }",
+         int32 get(struct cell* p) { views p->value; ensures result == result; }",
     ] {
         let source = format!("verifying \"cell.c\"; {contract}");
         let error = verify_c0_sources(&source, &[("cell.c", c_source)])
@@ -4524,9 +4518,9 @@ fn a_contract_cannot_return_overlapping_places() {
     // same way; one they leave open is not.
     let range_source = "int32 keep(int32* q, int32 n) { return 0; }";
     for contract in [
-        "int32 keep(int32* q, int32 n) { requires n >= 2; owns q[0..n]; produces q[1]; } by { execute(); solve(); }",
+        "int32 keep(int32* q, int32 n) { requires n >= 2; owns q[0..n]; produces q[1]; }",
         "contract int32 Range(int32* q, int32 n) { requires n >= 2; owns q[0..n]; produces q[1]; } \
-         int32 keep(int32* q, int32 n) { ensures result == 0; } by { execute(); solve(); }",
+         int32 keep(int32* q, int32 n) { ensures result == 0; }",
     ] {
         let source = format!("verifying \"range.c\"; {contract}");
         let error = verify_c0_sources(&source, &[("range.c", range_source)])
@@ -4539,7 +4533,7 @@ fn a_contract_cannot_return_overlapping_places() {
         );
     }
     let open = "verifying \"range.c\"; int32 keep(int32* q, int32 n) { requires n >= 0; \
-        owns q[0..n]; produces q[1]; } by { execute(); solve(); }";
+        owns q[0..n]; produces q[1]; }";
     let error = verify_c0_sources(open, &[("range.c", range_source)])
         .expect_err("the exit state still refuses what the entry could not decide");
     assert!(
@@ -4548,7 +4542,7 @@ fn a_contract_cannot_return_overlapping_places() {
     );
     // Two fields of one struct do not overlap.
     let disjoint = "verifying \"cell.c\"; int32 get(struct cell* p) { owns p->value; \
-        owns p->other; ensures result == result; } by { execute(); solve(); }";
+        owns p->other; ensures result == result; }";
     verify_c0_sources(disjoint, &[("cell.c", c_source)]).unwrap();
 }
 
@@ -4560,7 +4554,7 @@ fn a_hidden_record_needs_its_child_declared_first() {
     let source = "resource pair(p: struct pair*) { owns p->a; owns first: counted(p->a); } \
         resource counted(c: struct cell*) { field v: int32; owns c->value; } \
         verifying \"pair.c\"; \
-        int32 get(struct pair* p) { owns x: pair(p); } by { execute(); solve(); }";
+        int32 get(struct pair* p) { owns x: pair(p); }";
     let c_source = "struct cell { int32 value; }; struct pair { struct cell* a; }; \
         int32 get(struct pair* p) { return 0; }";
     let error = verify_c0_sources(source, &[("pair.c", c_source)])
@@ -4605,12 +4599,12 @@ fn a_rust_sidecar_compares_a_bitwise_operand_without_parentheses() {
 fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     let c_shaped = "verifying \"arithmetic.c\"; \
         uint32 add_byte(uint32 sum, uint8 byte) { requires sum <= 4294967040u32; \
-        ensures result == sum + (uint32)byte; } by { execute(); solve(); } \
-        bool touch(uint64 count, bool flag) { ensures result == flag; } by { execute(); solve(); }";
+        ensures result == sum + (uint32)byte; } \
+        bool touch(uint64 count, bool flag) { ensures result == flag; }";
     let rust = "verifying \"arithmetic.rs\"; \
         fn add_byte(sum: u32, byte: u8) -> u32 { requires sum <= 4294967040u32; \
-        ensures result == sum + byte as u32; } by { execute(); solve(); } \
-        fn touch(count: usize, flag: bool) -> bool { ensures result == flag; } by { execute(); solve(); }";
+        ensures result == sum + byte as u32; } \
+        fn touch(count: usize, flag: bool) -> bool { ensures result == flag; }";
     assert_eq!(
         parser::parse(rust)
             .expect("the Rust spelling parses")
@@ -4633,19 +4627,19 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             "replace `p->f` with `p.f`",
         ),
         (
-            "verifying \"add.c\"; fn add(a: i32) -> i32 { ensures result == result; } by { execute(); solve(); }",
+            "verifying \"add.c\"; fn add(a: i32) -> i32 { ensures result == result; }",
             "a `fn` signature is the Rust spelling",
         ),
         (
-            "verifying \"add.rs\"; fn read(value: &&i32) -> i32 { ensures result == result; } by { execute(); solve(); }",
+            "verifying \"add.rs\"; fn read(value: &&i32) -> i32 { ensures result == result; }",
             "a reference to a reference or to `()` in a `fn` signature is not supported",
         ),
         (
-            "verifying \"add.rs\"; fn read(bytes: [u8; 4]) -> u8 { ensures result == result; } by { execute(); solve(); }",
+            "verifying \"add.rs\"; fn read(bytes: [u8; 4]) -> u8 { ensures result == result; }",
             "an array or slice passed by value in a `fn` signature is not supported",
         ),
         (
-            "verifying \"add.rs\"; fn pick<i32>(a: i32) -> i32 { ensures result == a; } by { execute(); solve(); }",
+            "verifying \"add.rs\"; fn pick<i32>(a: i32) -> i32 { ensures result == a; }",
             "write the contract once, on the generic function",
         ),
         (
@@ -4662,14 +4656,14 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         parser::parse(
             "verifying \"borrow.rs\"; \
              fn set(value: &mut i32, seen: &i32) { owns *value; views *seen; \
-             ensures *value == *seen; } by { execute(); solve(); }"
+             ensures *value == *seen; }"
         )
         .expect("the Rust spelling parses")
         .function_blocks(),
         parser::parse(
             "verifying \"borrow.c\"; \
              void set(int32* value, const int32* seen) { owns *value; views *seen; \
-             ensures *value == *seen; } by { execute(); solve(); }"
+             ensures *value == *seen; }"
         )
         .expect("the C-shaped spelling parses")
         .function_blocks(),
@@ -4680,33 +4674,31 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         parser::parse(
             "verifying \"borrow.rs\"; \
              fn set<'a, 'b: 'a>(value: &'a mut i32, seen: &'b i32, bytes: &'a [u8]) \
-             { owns *value; views *seen; ensures *value == *seen; } by { execute(); solve(); }"
+             { owns *value; views *seen; ensures *value == *seen; }"
         )
         .expect("the spelling with lifetimes parses"),
         parser::parse(
             "verifying \"borrow.rs\"; \
              fn set(value: &mut i32, seen: &i32, bytes: &[u8]) \
-             { owns *value; views *seen; ensures *value == *seen; } by { execute(); solve(); }"
+             { owns *value; views *seen; ensures *value == *seen; }"
         )
         .expect("the spelling without lifetimes parses"),
     );
     // A character literal is still one byte between quotes.
-    let byte = parser::parse(
-        "verifying \"c.rs\"; fn f(x: u8) -> u8 { ensures result == 'a'; } by { execute(); solve(); }",
-    );
+    let byte = parser::parse("verifying \"c.rs\"; fn f(x: u8) -> u8 { ensures result == 'a'; }");
     assert!(byte.is_ok(), "{byte:?}");
     // A slice is one name over the pointer and length Rust passes.
     assert_eq!(
         parser::parse(
             "verifying \"bytes.rs\"; fn length(bytes: &[u8], out: &mut [u32]) -> usize { \
-             ensures result == bytes.len() + out.len(); } by { execute(); solve(); }"
+             ensures result == bytes.len() + out.len(); }"
         )
         .expect("the Rust spelling parses")
         .function_blocks(),
         parser::parse(
             "verifying \"bytes.c\"; uint64 length(const uint8* bytes, uint64 bytes_len, \
              uint32* out, uint64 out_len) { ensures result == bytes_len + out_len; } \
-             by { execute(); solve(); }"
+"
         )
         .expect("the C-shaped spelling parses")
         .function_blocks(),
@@ -4716,7 +4708,7 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     // verifies what these mean; here they parse.
     parser::parse(
         "verifying \"bytes.rs\"; fn read(bytes: &[u8], index: usize) -> u8 { \
-         views *bytes; ensures result == bytes[index]; } by { execute(); solve(); }",
+         views *bytes; ensures result == bytes[index]; }",
     )
     .expect("the Rust spelling parses");
     // A trait's type argument names the method as the importer does:
@@ -4747,12 +4739,12 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         assert_eq!(
             parser::parse(&format!(
                 "verifying \"l.rs\"; impl {header} for Lanes {{ fn {method}(&mut self, {parameter}) {{ \
-                 ensures 0 == 0; }} by {{ execute(); solve(); }} }}"
+                 ensures 0 == 0; }} }}"
             ))
             .unwrap_or_else(|error| panic!("{header}: {error:?}")).function_blocks(),
             parser::parse(&format!(
                 "verifying \"l.c\"; void {name}(struct Lanes* self, {c_parameter}) {{ \
-                 ensures 0 == 0; }} by {{ execute(); solve(); }}"
+                 ensures 0 == 0; }}"
             ))
             .expect("the C-shaped spelling parses").function_blocks(),
             "{header}"
@@ -4795,16 +4787,14 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
              const struct __rust_q_I1_a_I1_b_I5_Lanes* other) { ensures 0 == 0; }",
         ),
     ] {
-        let rust = rust.replace('@', "by { execute(); solve(); }");
+        let rust = rust.replace('@', "");
         assert_eq!(
             parser::parse(&format!("verifying \"lib.rs\"; {rust}"))
                 .unwrap_or_else(|error| panic!("{rust}: {error:?}"))
                 .function_blocks(),
-            parser::parse(&format!(
-                "verifying \"lib.c\"; {c_shaped} by {{ execute(); solve(); }}"
-            ))
-            .unwrap_or_else(|error| panic!("{c_shaped}: {error:?}"))
-            .function_blocks(),
+            parser::parse(&format!("verifying \"lib.c\"; {c_shaped}"))
+                .unwrap_or_else(|error| panic!("{c_shaped}: {error:?}"))
+                .function_blocks(),
             "{rust}"
         );
     }
@@ -4813,7 +4803,7 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     // functions at hand the method is found by its type and name; without
     // them the block is taken to be in its type's module.
     let method = "impl adler2::Adler32 { fn compute(&mut self, seed: u32) { ensures 0 == 0; } \
-                  by { execute(); solve(); } }";
+}";
     let source = format!("verifying \"lib.rs\"; {method}");
     let elsewhere = "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
     let beside = "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
@@ -4858,11 +4848,11 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             "an `impl` block holds `fn` contracts",
         ),
         (
-            "verifying \"g.rs\"; impl MulAssign<u32> { fn mul_assign(&mut self, rhs: u32) { ensures 0 == 0; } by { execute(); solve(); } }",
+            "verifying \"g.rs\"; impl MulAssign<u32> { fn mul_assign(&mut self, rhs: u32) { ensures 0 == 0; } }",
             "a trait with a type argument is implemented `for` a type",
         ),
         (
-            "verifying \"g.c\"; impl Guard { fn drop(&mut self) { ensures 0 == 0; } by { execute(); solve(); } }",
+            "verifying \"g.c\"; impl Guard { fn drop(&mut self) { ensures 0 == 0; } }",
             "unknown C type `impl`",
         ),
     ] {
@@ -4873,22 +4863,20 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     assert_eq!(
         parser::parse(
             "verifying \"arrays.rs\"; fn first(bytes: &[u8; 4], words: &mut [u32; 1 + 2]) -> u8 { \
-             views bytes[0..4]; ensures result == bytes[0]; } by { execute(); solve(); }"
+             views bytes[0..4]; ensures result == bytes[0]; }"
         )
         .expect("the Rust spelling parses")
         .function_blocks(),
         parser::parse(
             "verifying \"arrays.c\"; uint8 first(const uint8* bytes, uint32* words) { \
-             views bytes[0..4]; ensures result == bytes[0]; } by { execute(); solve(); }"
+             views bytes[0..4]; ensures result == bytes[0]; }"
         )
         .expect("the C-shaped spelling parses")
         .function_blocks(),
     );
     // `as` before anything but a scalar type is not a cast.
-    parser::parse(
-        "verifying \"add.c\"; int32 add(int32 a) { ensures result == a; } by { execute(); solve(); }",
-    )
-    .expect("a C sidecar is unchanged");
+    parser::parse("verifying \"add.c\"; int32 add(int32 a) { ensures result == a; }")
+        .expect("a C sidecar is unchanged");
 }
 
 /// A missing memory fact is reported as the place a clause would name.
@@ -4928,7 +4916,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
             "held `views q[0]` does not cover `q[1]`",
         ),
     ] {
-        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); solve(); }}");
+        let source = format!("verifying \"place.c\"; {contract}");
         let error = verify_c0_sources(&source, &[("place.c", c_source)])
             .expect_err("the access is not authorized");
         assert!(error.message.contains(expected), "{contract}: {error:?}");
@@ -4985,7 +4973,7 @@ fn held_recursive_struct_range_and_bound_load_name_their_fields() {
     let click_source = r#"
 resource pair(node: struct node*) { field weight: int32; owns node->left; owns node->right; }
 verifying "relink.c";
-void relink(struct node* node) { requires node != 0; owns links: pair(node); owns node->right->augmented; } by { execute(); }
+void relink(struct node* node) { requires node != 0; owns links: pair(node); owns node->right->augmented; }
 "#;
     let error = verify_c0_sources(click_source, &[("relink.c", c_source)]).unwrap_err();
     assert!(
@@ -5017,7 +5005,7 @@ void relink(struct node* node) { requires node != 0; owns links: pair(node); own
 #[test]
 fn a_production_obligation_names_the_same_struct_place_as_its_missing_fact() {
     let c_source = "struct cell { int32 a; int32 b; }; int32 release(struct cell* p) { return 0; }";
-    let source = r#"verifying "cell.c"; int32 release(struct cell* p) { produces p[0..1]; ensures result == 0; } by { execute(); solve(); }"#;
+    let source = r#"verifying "cell.c"; int32 release(struct cell* p) { produces p[0..1]; ensures result == 0; }"#;
     let error = verify_c0_sources(source, &[("cell.c", c_source)]).unwrap_err();
     assert!(
         error.message.contains("missing resource fact `owns *p`"),
@@ -5037,9 +5025,7 @@ fn a_struct_pointer_range_counts_structs() {
         int32 second(struct cell* p) { return p[1].other; } \
         struct cell* first(struct cell** link) { return *link; }";
     let contract = |clause: &str| {
-        format!(
-            "verifying \"cells.c\"; int32 second(struct cell* p) {{ {clause} }} by {{ execute(); solve(); }}"
-        )
+        format!("verifying \"cells.c\"; int32 second(struct cell* p) {{ {clause} }}")
     };
     verify_c0_sources(&contract("views p[0..2];"), &[("cells.c", c_source)]).unwrap();
     let error = verify_c0_sources(&contract("views p[0..1];"), &[("cells.c", c_source)])
@@ -5086,7 +5072,7 @@ fn a_resource_clause_names_a_place() {
         "int32 read_first(int32* q) { views *q; ensures result == q[0]; }",
         "int32 read_next(struct node* n) { views n->next; owns *n->next; }",
     ] {
-        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); solve(); }}");
+        let source = format!("verifying \"place.c\"; {contract}");
         verify_c0_sources(&source, &[("place.c", c_source)])
             .unwrap_or_else(|error| panic!("{contract}: {error:?}"));
     }
@@ -5121,7 +5107,7 @@ fn a_resource_clause_names_a_place() {
             "`object(p)` is now written `*p`",
         ),
     ] {
-        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); solve(); }}");
+        let source = format!("verifying \"place.c\"; {contract}");
         let error = verify_c0_sources(&source, &[("place.c", c_source)])
             .expect_err("the clause names no ownable place");
         assert!(error.message.contains(expected), "{contract}: {error:?}");
@@ -5136,10 +5122,10 @@ fn a_whole_struct_view_reads_and_does_not_write() {
         int32 read(struct packet* p) { return p->other; } \
         int32 write(struct packet* p) { p->other = 1; return 0; }";
     let read = "verifying \"pointer.c\"; int32 read(struct packet* p) { views *p; \
-        ensures result == p->other; } by { execute(); solve(); }";
+        ensures result == p->other; }";
     verify_c0_sources(read, &[("pointer.c", c_source)]).unwrap();
     let write = "verifying \"pointer.c\"; int32 write(struct packet* p) { views *p; } \
-        by { execute(); solve(); }";
+";
     let error = verify_c0_sources(write, &[("pointer.c", c_source)])
         .expect_err("a view does not authorize a write");
     assert!(error.message.contains("missing resource fact"), "{error:?}");
@@ -5201,7 +5187,7 @@ fn inline_callback_identity_rejects_ambiguous_translation_units() {
         verifying "alpha.c";
         verifying "beta.c";
         contract int32 One() { ensures result == 1; }
-        int32 callback() { ensures result == 1; } by { execute(); normalize(); }
+        int32 callback() { ensures result == 1; } by { step_until(function.exit); normalize(); }
         theorem callback_contract() {
             ensures One(&callback) by { unfold(One); solve(); }
         }
@@ -5324,7 +5310,7 @@ fn rust_integer_casts_read_historical_operands() {
             "verifying \"bytes.rs\";
              fn bytes::bump(x: u32) -> u32 {{
                  ensures ({cast}) == ({cast});
-             }} by {{ mark before; execute(); solve(); }}"
+             }} by {{ mark before; step_until(function.exit); solve(); }}"
         )
     };
     for cast in [
@@ -5358,7 +5344,7 @@ fn a_rust_trait_implementation_inherits_its_interface() {
         requires 0 <= scale and scale <= 1000; ensures scale < result; } }";
     let implementation = "impl shapes::Shape for shapes::Circle { \
         fn area(&self, scale: i32) -> i32 { ensures result == scale + scale + 1; } \
-        by { execute(); solve(); } }";
+}";
     for source in [
         format!("verifying \"shapes.rs\"; {interface} {implementation}"),
         format!("verifying \"shapes.rs\"; {implementation} {interface}"),
@@ -5543,7 +5529,7 @@ fn a_rust_trait_function_is_its_object_field() {
         trait shapes::Shape { function size(self) -> i32; \
             fn area(&self, scale: i32) -> i32 { ensures result == size(self) + scale; } } \
         impl shapes::Shape for shapes::Square { function size(self) -> i32 { self.side } \
-            fn area(&self, s: i32) -> i32 { } by { execute(); solve(); } }";
+            fn area(&self, s: i32) -> i32 { } }";
     // The importer supplies `Square`'s layout, which `owns *self` reads.
     let parse = |source: &str| {
         parser::parse_with_layouts_and_aggregate_objects(
@@ -5637,7 +5623,6 @@ fn a_cpp_class_function_is_its_object_field() {
         class Shape { function size(this) -> int32; } \
         extern int Shape::area(int scale) const { ensures result == size(this) + scale; } \
         int total(const Shape& shape, int scale) { ensures result == size(shape) + scale; } \
-            by { execute(); solve(); } \
         class Square : Shape { function size(this) -> int32 { this->side } }";
     use crate::languages::c::syntax::{C0StructLayout, C0Type};
     let layout = |fields, size| C0StructLayout::from_explicit_fields(fields, size, 8).unwrap();

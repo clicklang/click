@@ -15,9 +15,6 @@ int32 bump(int32 n) {
     requires 0 <= n;
     requires n <= 100;
     ensures result <= 101;
-} by {
-    execute();
-    solve() using { 0 <= n; n <= 100; };
 }
 ```
 

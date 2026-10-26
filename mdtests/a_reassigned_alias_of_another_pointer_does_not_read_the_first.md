@@ -29,7 +29,7 @@ int read_after_moving(int *p, int *r, int n) {
 verifying "view.c";
 verifying "caller.c";
 
-const int *view(int *p) { ensures result == p; } by { execute(); solve(); }
+const int *view(int *p) { ensures result == p; }
 
 int read_after_moving(int *p, int *r, int n) {
     views p[0..n];

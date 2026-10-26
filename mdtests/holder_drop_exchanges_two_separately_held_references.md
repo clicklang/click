@@ -41,8 +41,6 @@ void child_retain(struct child* obj) {
     step();
     fold(child_ref(obj));
     fold(child_control(obj));
-    execute();
-    solve();
 }
 void child_release(struct child* obj) {
     requires 1 < to_integer(count(child_ref(obj)));
@@ -55,8 +53,6 @@ void child_release(struct child* obj) {
     have to_integer(obj->refs - 1) >= 1;
     step();
     fold(child_control(obj));
-    execute();
-    solve();
 }
 void holder_drop(struct holder* h) {
     owns h->kid;
@@ -69,8 +65,6 @@ void holder_drop(struct holder* h) {
     have to_integer(count(child_ref(h->kid))) > 1 by {
         solve() using { 2 <= to_integer(count(child_ref(h->kid))); };
     }
-    execute();
-    solve();
 }
 void share_then_drop(struct holder* h, struct child* kid) {
     requires to_integer(count(child_ref(kid))) < 2147483647;
@@ -78,9 +72,6 @@ void share_then_drop(struct holder* h, struct child* kid) {
     requires h->kid == kid;
     owns child_control(kid);
     owns child_ref(kid);
-} by {
-    execute();
-    solve();
 }
 ```
 

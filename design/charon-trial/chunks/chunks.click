@@ -2,7 +2,7 @@ verifying "chunks.rs";
 fn tail(bytes: &[u8], size: usize) -> usize {
     requires size != 0u64;
     ensures result == bytes.len() % size;
-} by { execute(); solve(); }
+}
 
 fn walk(bytes: &[u8]) -> usize {
     views bytes[0..bytes.len()];
@@ -121,7 +121,7 @@ fn walk(bytes: &[u8]) -> usize {
     }
     have iter_remaining == 0u64;
     have iter_cursor == iter_tail;
-    execute();
+    step_until(function.exit);
     have forall (k: uint64) {
         k < bytes.len() implies bytes[k] == old(bytes[k])
     } by { intro(); intro(); solve(); }
@@ -131,7 +131,7 @@ fn walk(bytes: &[u8]) -> usize {
 fn next_len(bytes: &[u8]) -> usize {
     requires bytes.len() == 8u64;
     ensures result == 4u64;
-} by { execute(); solve(); }
+}
 
 fn tail_byte(bytes: &[u8]) -> u8 {
     requires bytes.len() == 7u64;
@@ -139,5 +139,4 @@ fn tail_byte(bytes: &[u8]) -> u8 {
     ensures result == old(bytes[4]);
 } by {
     have bytes.len() - bytes.len() % 4u64 == 4u64 by { rewrite(bytes.len() == 7u64); solve(); }
-    execute(); solve();
 }

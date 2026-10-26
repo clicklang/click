@@ -45,12 +45,12 @@ impl resource_state::Store<u32> for resource_state::Slot {
         match state.value {
             Option::None => {
                 let {} = unfold(state);
-                execute();
+                step_until(function.exit);
                 let state = fold(boxed(self.item), { value: Option<u32>::Some(x) }, {});
             }
             Option::Some(v) => {
                 let {} = unfold(state);
-                execute();
+                step_until(function.exit);
                 let state = fold(boxed(self.item), { value: Option<u32>::Some(x) }, {});
             }
         }
@@ -60,13 +60,13 @@ impl resource_state::Store<u32> for resource_state::Slot {
         match state.value {
             Option::None => {
                 let {} = unfold(state);
-                execute();
+                step_until(function.exit);
                 let state = fold(boxed(self.item), { value: Option<u32>::None }, {});
                 solve();
             }
             Option::Some(v) => {
                 let {} = unfold(state);
-                execute();
+                step_until(function.exit);
                 let state = fold(boxed(self.item), { value: Option<u32>::None }, {});
                 solve();
             }
@@ -78,7 +78,7 @@ fn resource_state::refill<S: resource_state::Store<u32>>(store: &mut S, x: u32) 
     ensures result == x;
     ensures item(store) == Option<u32>::None;
 } by {
-    execute();
+    step_until(function.exit);
     unfold(value_or(Option<u32>::Some(x), 0u32));
     solve();
 }
@@ -87,7 +87,7 @@ fn resource_state::refill_dyn(store: &mut dyn resource_state::Store<u32>, x: u32
     ensures result == x;
     ensures item(store) == Option<u32>::None;
 } by {
-    execute();
+    step_until(function.exit);
     unfold(value_or(Option<u32>::Some(x), 0u32));
     solve();
 }
@@ -100,11 +100,11 @@ fn resource_state::through(slot: &mut resource_state::Slot, x: u32) -> u32 {
     owns state: boxed(slot.item);
     ensures result == x;
     ensures state.value == Option<u32>::None;
-} by { execute(); solve(); }
+}
 
 fn resource_state::through_dyn(slot: &mut resource_state::Slot, x: u32) -> u32 {
     owns *slot;
     owns state: boxed(slot.item);
     ensures result == x;
     ensures state.value == Option<u32>::None;
-} by { execute(); solve(); }
+}

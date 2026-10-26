@@ -21,8 +21,8 @@ int32 compatible(struct node* p) {
 
 ```click
 verifying "layout.c";
-uint64 offset() { ensures result == 12u64; } by { execute(); normalize(); }
-int32 compatible(struct node* p) { ensures result == 1; } by { execute(); normalize(); }
+uint64 offset() { ensures result == 12u64; } by { step_until(function.exit); normalize(); }
+int32 compatible(struct node* p) { ensures result == 1; } by { step_until(function.exit); normalize(); }
 ```
 
 ```expect

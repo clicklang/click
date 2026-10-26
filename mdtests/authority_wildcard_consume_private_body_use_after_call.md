@@ -29,11 +29,11 @@ void release(int32* pool, int32* p) {
     ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
 } by {
     unfold(slot(pool, p));
-    execute(); solve();
+    step_until(function.exit); solve();
 }
 int32 lifecycle() { ensures result == 0 or result == 2; } by {
     step(); step(); step(); step();
-    branch { execute(); solve(); } else {}
+    branch { step_until(function.exit); solve(); } else {}
     step(); step();
     fold(authority(slot(&pool, _)));
     fold(slot(&pool, p));
@@ -44,7 +44,7 @@ int32 lifecycle() { ensures result == 0 or result == 2; } by {
     open(slot(&pool, p + 1)) { step(); step(); }
     unfold(slot(&pool, p + 1));
     unfold(authority(slot(&pool, _)));
-    execute(); solve();
+    step_until(function.exit); solve();
 }
 ```
 

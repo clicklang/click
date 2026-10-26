@@ -14,7 +14,7 @@ int32 f(struct cell* p) {
     requires 0 <= cell.number;
     requires cell.number <= 2147483646;
     ensures result == 1 + old(cell.number);
-} by { unfold(cell); execute(); fold(cell); solve(); }
+} by { unfold(cell); step_until(function.exit); fold(cell); solve(); }
 ```
 ```expect
 pass

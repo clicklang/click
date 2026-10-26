@@ -69,8 +69,6 @@ void mark_and_swap(struct arena* arena, int32 start, int32 end) {
             close_invariants();
         }
     }
-    execute();
-    solve();
 }
 ```
 

@@ -33,7 +33,7 @@ void release(struct root* root) {
 } by {
     match state.shape {
         Shape::Empty => { unfold(state); contradiction(0 == 1); },
-        Shape::Node => { let { leaf: leaf } = unfold(state); execute(); },
+        Shape::Node => { let { leaf: leaf } = unfold(state); step_until(function.exit); },
     }
 }
 struct node* caller(struct root* root) {

@@ -22,12 +22,8 @@ uint64 g(uint64 b) {
     ensures result < 4294967296u64;
 } by {
     if (b >> 32) != 0u64 {
-        execute();
-        solve();
     } else {
         have b < 4294967296u64;
-        execute();
-        solve();
     }
 }
 ```

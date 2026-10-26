@@ -12,7 +12,7 @@ void preserve(int32* pool) {
     owns authority(ticket(pool));
     consumes member: ticket(pool);
     ensures to_integer(count(ticket(pool))) == to_integer(old(count(ticket(pool))) - 1);
-} by { unfold(member); execute(); solve(); }
+} by { unfold(member); }
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool)));
@@ -22,7 +22,6 @@ int32 run() { ensures result == 0; } by {
     have to_integer(count(ticket(&pool))) == 1 by solve();
     unfold(first);
     unfold(authority(ticket(&pool)));
-    execute(); solve();
 }
 ```
 

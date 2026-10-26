@@ -17,7 +17,6 @@ impl adler2::Adler32 {
      have to_integer(2) == to_integer(2u64) by normalize();
      apply(adler_spec_a_bridge(bytes, 2, 2u64, 1)) using { to_integer(2) == to_integer(2u64); };
      apply(adler_spec_b_bridge(bytes, 2, 2u64, 1, 0)) using { to_integer(2) == to_integer(2u64); };
-     execute(); solve();
     }
 }
 
@@ -43,6 +42,4 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
    to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a);
    65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum_u64(data, 2u64, 1, 0));
   };
- execute();
- solve();
 }

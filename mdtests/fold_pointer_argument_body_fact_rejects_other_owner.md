@@ -58,7 +58,7 @@ void clear(struct cell* c, struct cell* other) {
         Owned::Free => { contradiction(t.model == Owned::Free); },
         Owned::Held(owner, v) => {
             unfold(t);
-            execute();
+            step_until(function.exit);
             let u = fold(cell_at(c), { model: Owned::Held(other, 0) });
             solve();
         },

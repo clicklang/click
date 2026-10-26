@@ -31,7 +31,7 @@ int32 wrapped_fold(int32* p, int32 n) {
     requires 0 < n;
     produces slice_of(p, n);
 } by {
-    execute();
+    step_until(function.exit);
     fold(slice_of(p, n));
     solve();
 }

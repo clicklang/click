@@ -395,8 +395,8 @@ fn bounded_audit_batches_only_claims_that_fit_the_remaining_cap() {
          int32 first(int32 x) { return x; }\n\
          int32 second(int32 x) { return x; }\n```\n\n```click\n\
          verifying \"two.c\";\n\
-         int32 first(int32 x) { ensures result == x; } by { execute(); solve(); }\n\
-         int32 second(int32 x) { ensures result == x; } by { execute(); solve(); }\n\
+         int32 first(int32 x) { ensures result == x; }\n\
+         int32 second(int32 x) { ensures result == x; }\n\
          ```\n\n```expect\npass\n```\n",
     )
     .unwrap();

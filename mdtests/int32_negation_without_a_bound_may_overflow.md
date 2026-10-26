@@ -13,7 +13,7 @@ verifying "int32_negation_without_a_bound.c";
 
 int32 negate(int32 x) {
     ensures result == -x;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

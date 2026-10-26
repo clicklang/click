@@ -121,7 +121,6 @@ void inspect(struct node* parent) {
             }
         }
     }
-    execute(); solve();
 }
 ```
 

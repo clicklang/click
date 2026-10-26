@@ -21,7 +21,7 @@ verifying "mutex_use_rejects_view.c";
 
 void inner(struct holder *holder) {
     views mutex_use(&holder->mu);
-} by { execute(); solve(); }
+}
 void keep(struct holder *holder) {
     views mutex_use(&holder->mu);
 } by {

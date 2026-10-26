@@ -15,7 +15,7 @@ int32 probe(int32 n, int32 m) {
     produces either(n, m);
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     fold(either(n, m)) by { solve(); }
     solve();
 }

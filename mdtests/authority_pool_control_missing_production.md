@@ -38,7 +38,6 @@ void checkout(struct pool* pool, struct payload* p) {
         step();
         have pool->capacity == pool->checked_out + count(slot(pool));
     }
-    execute(); solve();
 }
 
 ```

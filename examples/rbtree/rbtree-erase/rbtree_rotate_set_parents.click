@@ -30,7 +30,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                 }
             }
             unfold(before);
-            execute();
+            step_until(function.exit);
             let after = fold(ctx_at(new, root), { model: Context::Top });
             solve();
         },
@@ -47,7 +47,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                 }
             }
             let { sibling: sibling, up: outer } = unfold(before);
-            execute();
+            step_until(function.exit);
             let after = fold(ctx_at(new, root), {
                 model: Context::Left(identity, grandparent, color, sibling_model, outer_model)
             }, { up: outer });
@@ -78,7 +78,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                             contradiction(old != 0);
                         } else { assumption(); }
                     }
-                    execute();
+                    step_until(function.exit);
                     let sibling = fold(rb_at(parent->rb_left), { model: RbTree::Empty });
                     let after = fold(ctx_at(new, root), {
                         model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
@@ -87,10 +87,12 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                 },
                 RbTree::Node(sid, sp, sc, sl, sr) => {
                     let { left: left, right: right } = unfold(sibling);
-                    execute();
+                    step();
+                    step();
                     let sibling = fold(rb_at(parent->rb_left), {
                         model: RbTree::Node(sid, sp, sc, sl, sr)
                     });
+                    step_until(function.exit);
                     let after = fold(ctx_at(new, root), {
                         model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
                     }, { up: outer });
@@ -170,7 +172,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
             }
-            execute(); solve();
+            step_until(function.exit);
         },
         Context::Left(id, above, pc, sibling, up) => {
             unfold(ctx_identity(Context::Left(id, above, pc, sibling, up)));
@@ -214,7 +216,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
             }
-            execute(); solve();
+            step_until(function.exit);
         },
         Context::Right(id, above, pc, sibling, up) => {
             unfold(ctx_identity(Context::Right(id, above, pc, sibling, up)));
@@ -258,7 +260,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
             }
-            execute(); solve();
+            step_until(function.exit);
         },
     }
 }

@@ -955,7 +955,7 @@ pub(in crate::surface::proof) fn walk_loop_body<'a>(
 
 /// Steps the statement at the frontier. A statement whose successors are
 /// path cases, such as a comparison assigned to a local, is first split on
-/// the condition that separates them, as `execute()` splits it, and each
+/// the condition that separates them, as the implicit tail splits it, and each
 /// case is stepped.
 fn preservation_step_paths<'a>(proof: &Proof<'a>) -> Result<Vec<Proof<'a>>, ClickError> {
     let error = match preservation_smart_step(proof) {

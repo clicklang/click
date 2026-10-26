@@ -18,7 +18,6 @@ void retarget(int32* p, int32* q, int32* anchor) {
 } by {
     unfold(a);
     let b = fold(cursor(q, anchor), { tag: old(a.tag) });
-    execute(); solve();
 }
 void call(int32* p, int32* q, int32* anchor) {
     requires p != q;
@@ -28,7 +27,6 @@ void call(int32* p, int32* q, int32* anchor) {
     let { b: c } = step(retarget, { a: c });
     let { b: d } = step(retarget, { a: c });
     unfold(d);
-    execute(); solve();
 }
 ```
 

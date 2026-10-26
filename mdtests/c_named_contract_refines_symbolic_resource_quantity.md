@@ -88,8 +88,6 @@ void abstract_quantity_caller(
     owns available of credit();
 } by {
     apply(preserving_used_preserves_available(callback));
-    execute();
-    solve();
 }
 ```
 

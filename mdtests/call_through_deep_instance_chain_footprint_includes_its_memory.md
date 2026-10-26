@@ -106,7 +106,7 @@ void overwrite(struct node* p) {
     let { tag: t2, child: c1 } = unfold(c2);
     let { tag: t1, child: c0 } = unfold(c1);
     let { tag: t0 } = unfold(c0);
-    execute();
+    step_until(function.exit);
     let c0 = fold(layer0(p), { tag: t0 }, {});
     let c1 = fold(layer1(p), { tag: t1 }, { child: c0 });
     let c2 = fold(layer2(p), { tag: t2 }, { child: c1 });
@@ -174,8 +174,6 @@ void caller(struct node* p) {
     let ac7 = fold(layer7(p), { tag: at7 }, { child: ac6 });
     let ac8 = fold(layer8(p), { tag: at8 }, { child: ac7 });
     let w = fold(layer9(p), { tag: at9 }, { child: ac8 });
-    execute();
-    solve();
 }
 ```
 

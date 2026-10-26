@@ -16,12 +16,12 @@ spec enum NodeRef { At(struct model_node*), }
 resource token() { field model: NodeRef; }
 struct model_node* cast_address(void* p) {
     ensures address(result) == address(p);
-} by { execute(); normalize(); }
+} by { step_until(function.exit); normalize(); }
 void wrapped(struct model_node* p) { produces held: token(); ensures held.model == NodeRef::At(p); } by {
-    execute(); let held = fold(token(), { model: NodeRef::At(p) });
+    step_until(function.exit); let held = fold(token(), { model: NodeRef::At(p) });
 }
 void caller(void* p) { produces held: token(); ensures true; } by {
-    step(); step(); let { held: held } = step(wrapped, {}); execute();
+    step(); step(); let { held: held } = step(wrapped, {});
 }
 ```
 

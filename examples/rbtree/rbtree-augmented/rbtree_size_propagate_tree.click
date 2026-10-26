@@ -154,7 +154,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                 unfold(sized_walk_pending(SizedWalk::Done(result_model))); normalize();
             }
             let { whole: whole } = finish_sized_walk(rb, stop, { walk: walk });
-            execute(); solve();
+            step_until(function.exit);
         },
     }
 }

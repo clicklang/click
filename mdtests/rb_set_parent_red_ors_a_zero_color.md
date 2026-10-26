@@ -84,7 +84,7 @@ void set_parent_red(struct rb_node* node, struct rb_node* parent) {
                 unfold(color_bit(Color::Red));
                 normalize();
             }
-            execute();
+            step_until(function.exit);
             let u = fold(rb_at(node), {
                 model: RbTree::Node(identity, parent, Color::Red, left_model, right_model)
             });

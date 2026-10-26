@@ -11,7 +11,7 @@ int32 f(const uint8* bytes) { const uint8* cursor = bytes; int32 outer = 0; whil
 
 ```click
 verifying "alias-nested-call.c";
-int32 read(const uint8* p) { views p[0..4]; ensures 0 <= result and result <= 255; } by { execute(); solve(); }
+int32 read(const uint8* p) { views p[0..4]; ensures 0 <= result and result <= 255; }
 int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
  step_until(loop(0));
  have viewable(bytes[0..8]) by { transport(at(function.entry,viewable(bytes[0..8])),viewable(bytes[0..8])) using { at(function.entry,viewable(bytes[0..8])); 0 <= 8; }; }
@@ -69,7 +69,6 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
   close_invariants() by { solve(); }
  }
  }
- execute(); solve();
 }
 ```
 

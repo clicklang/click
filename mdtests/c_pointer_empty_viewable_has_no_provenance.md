@@ -15,7 +15,7 @@ verifying "c_pointer_empty_loadable_has_no_provenance.c";
 int32 self_order(int32* pointer) {
     requires viewable(pointer[0..0]);
     ensures result == 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

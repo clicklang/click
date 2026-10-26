@@ -10,7 +10,7 @@ void keep(struct holder *holder) {}
 target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_live_rejects_consume.c";
-void keep(struct holder *holder) { consumes mutex_live(&holder->mu); } by { execute(); solve(); }
+void keep(struct holder *holder) { consumes mutex_live(&holder->mu); }
 ```
 
 ```expect

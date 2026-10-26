@@ -155,7 +155,7 @@ void change_child_left(struct rb_node* old_child, struct rb_node* new_child,
     ensures s.model == old(s.model);
 } by {
     let { sibling: sib, up: u } = unfold(c);
-    execute();
+    step_until(function.exit);
     let d = fold(ctx_at(new_child, root), { model: old(c.model) }, { sibling: sib, up: u });
     solve();
 }

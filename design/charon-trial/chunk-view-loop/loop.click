@@ -3,7 +3,7 @@ fn first(bytes: &[u8]) -> u8 {
     requires bytes.len() == 4u64;
     views bytes[0..4];
     ensures result == bytes[0];
-} by { execute(); solve(); }
+}
 fn walk(bytes: &[u8]) -> u32 {
     requires bytes.len() == 16u64;
     views bytes[0..16];
@@ -64,5 +64,4 @@ fn walk(bytes: &[u8]) -> u32 {
             close_invariants();
         }
     }
-    execute(); solve();
 }

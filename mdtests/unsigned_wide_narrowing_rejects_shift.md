@@ -8,7 +8,7 @@ unsigned int shift(unsigned long x) { unsigned int n = x >> 58; return 1u << n; 
 verifying "shift.c";
 unsigned int shift(unsigned long x) {
     ensures result == result;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

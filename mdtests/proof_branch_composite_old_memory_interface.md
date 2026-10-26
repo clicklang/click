@@ -58,8 +58,6 @@ int32 retain_original(struct buffer* owner, int32 flag) {
     } else {
         step();
     }
-    execute();
-    solve();
 }
 ```
 

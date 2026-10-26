@@ -142,7 +142,7 @@ verifying "identity.c";
 int32 identity(int32 x, int32 d) {
     requires d > 0;
     ensures x < 0 implies truncating_quotient(to_integer(result), to_integer(d)) == truncating_quotient(to_integer(x), to_integer(d));
-} by { execute(); intro(); solve(); }
+} by { step_until(function.exit); intro(); solve(); }
 "#;
 
 #[test]
@@ -290,7 +290,7 @@ fn both_and_outcome_expands_and_rechecks() {
 fn parses_frontier_branch_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { branch { step(); } else { execute(); } }",
+        "== 2 by { branch { step(); } else { step_until(function.exit); } }",
     );
     let file = parse(&source).expect("frontier branch tactic should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -305,13 +305,13 @@ fn parses_frontier_branch_tactic() {
             then_tactics,
             else_tactics,
         }) if then_tactics == &[ProofTactic::Step]
-            && else_tactics == &[ProofTactic::SmartExecute]
+            && else_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit)]
     ));
 }
 
 #[test]
 fn parses_frontier_branch_ensuring_interface() {
-    let source = FILL3_CLICK.replace("== 2;", "== 2 by { branch ensuring { fact i >= 0; owns p[0..3]; } then { step(); } else { execute(); } }",
+    let source = FILL3_CLICK.replace("== 2;", "== 2 by { branch ensuring { fact i >= 0; owns p[0..3]; } then { step(); } else { step_until(function.exit); } }",
     );
     let file = parse(&source).expect("frontier branch ensuring interface should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -329,7 +329,7 @@ fn parses_frontier_branch_ensuring_interface() {
             ProofAssertion::Fact(_),
             ProofAssertion::Resource(ResourceClause::OwnMemory(_)),
         ]) && then_tactics == &[ProofTactic::Step]
-            && else_tactics == &[ProofTactic::SmartExecute]
+            && else_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit)]
     ));
 }
 
@@ -575,11 +575,9 @@ fn empty_proof_if_branches_contribute_only_their_case_split() {
             int32 sign_bit(int32 x) {
                 ensures result == 0 or result == 1;
             } by {
-                execute();
                 if x < 0 {
                 } else {
                 }
-                solve();
             }
         "#;
     verify_c0_sources(click_source, &[("sign.c", c_source)]).unwrap_or_else(|error| {
@@ -594,7 +592,7 @@ fn empty_proof_if_branches_contribute_only_their_case_split() {
 fn parses_execute_until_proof_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { step_until(region(1)); execute(); solve(); }",
+        "== 2 by { step_until(region(1)); step_until(function.exit); solve(); }",
     );
     let file = parse(&source).expect("execute_until explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
@@ -604,7 +602,7 @@ fn parses_execute_until_proof_tactic() {
         Some(
             [
                 ProofTactic::ExecuteUntil(CodeRegionRef::Region(1)),
-                ProofTactic::SmartExecute,
+                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
                 ProofTactic::Simp,
             ]
             .as_slice()
@@ -614,7 +612,10 @@ fn parses_execute_until_proof_tactic() {
 
 #[test]
 fn parses_unfold_proof_tactic() {
-    let source = FILL3_CLICK.replace("== 2;", "== 2 by { execute(); unfold(sorted); solve(); }");
+    let source = FILL3_CLICK.replace(
+        "== 2;",
+        "== 2 by { step_until(function.exit); unfold(sorted); solve(); }",
+    );
     let file = parse(&source).expect("unfold explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
@@ -622,7 +623,7 @@ fn parses_unfold_proof_tactic() {
         ensure.proof().tactics(),
         Some(
             [
-                ProofTactic::SmartExecute,
+                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
                 ProofTactic::UnfoldPredicate("sorted".to_string()),
                 ProofTactic::Simp,
             ]
@@ -635,7 +636,7 @@ fn parses_unfold_proof_tactic() {
 fn parses_apply_theorem_proof_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { execute(); apply(nonnegative(result)); solve(); }",
+        "== 2 by { step_until(function.exit); apply(nonnegative(result)); solve(); }",
     );
     let file = parse(&source).expect("apply explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
@@ -644,7 +645,7 @@ fn parses_apply_theorem_proof_tactic() {
         ensure.proof().tactics(),
         Some(
             [
-                ProofTactic::SmartExecute,
+                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
                 ProofTactic::ApplyTheorem(TheoremApplication {
                     name: "nonnegative".to_string(),
                     arguments: vec![current_var("result")],
@@ -661,7 +662,7 @@ fn parses_apply_theorem_with_explicit_premises() {
     let source = FILL3_CLICK.replace(
         "== 2;",
         "== 2 by {
-            execute();
+            step_until(function.exit);
             apply(nonnegative(result)) using {
                 result >= 0;
             }
@@ -686,7 +687,7 @@ fn parses_transport_with_explicit_premises() {
             transport(old(p[0]) == 0, p[0] == 0) using {
                 old(p[0]) == 0;
             }
-            execute();
+            step_until(function.exit);
             solve();
         }",
     );
@@ -1160,7 +1161,7 @@ const ORDERED_PAIR_CLICK: &str = r#"
 
         ensures ordered_pair(pair);
     } by {
-        execute();
+        step_until(function.exit);
         have ordered_pair(pair) by {
             unfold(ordered_pair);
             solve();
@@ -1222,9 +1223,6 @@ fn fixed_state_have_certifies_a_post_call_fact_across_a_later_store() {
             owns *pair;
 
             ensures pair->low == 0;
-        } by {
-            execute();
-            solve();
         }
 
         void touch(struct pair* pair) {
@@ -1283,7 +1281,7 @@ fn grouped_outcome_simp_splits_an_unfold_active_conjunction_ensure() {
             ensures ordered_pair(pair);
         } by {
             unfold(ordered_pair);
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -1310,7 +1308,7 @@ fn parses_execute_until_assignment_and_preserves_same_spelled_labels() {
     ] {
         let source = FILL3_CLICK.replace(
             "== 2;",
-            &format!("== 2 by {{ step_until({spelling}); execute(); solve(); }}"),
+            &format!("== 2 by {{ step_until({spelling}); step_until(function.exit); solve(); }}"),
         );
         let file = parse(&source).unwrap();
         assert_eq!(
@@ -1336,7 +1334,7 @@ fn parses_execute_until_read_and_preserves_read_labels() {
     ] {
         let source = FILL3_CLICK.replace(
             "== 2;",
-            &format!("== 2 by {{step_until({spelling}); execute(); solve();}}"),
+            &format!("== 2 by {{step_until({spelling}); step_until(function.exit); solve();}}"),
         );
         let file = parse(&source).unwrap();
         assert_eq!(

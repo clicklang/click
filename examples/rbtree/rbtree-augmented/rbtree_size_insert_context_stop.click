@@ -114,7 +114,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     let { whole: whole } = restore_sized_context(node, root->rb_node, 0, value, { path: path, sub: tree });
                     have whole.model == sized_plug(old(state.context), old(state.model)) by { assumption(); }
-                    execute();
+                    step_until(function.exit);
                 },
                 SizedContext::Right(a, above, shade, count, sibling_model, up_model) => {
                     have sized_context_parent(path.model, 0) == a by {
@@ -178,7 +178,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     let { whole: whole } = restore_sized_context(node, root->rb_node, 0, value, { path: path, sub: tree });
                     have whole.model == sized_plug(old(state.context), old(state.model)) by { assumption(); }
-                    execute();
+                    step_until(function.exit);
                 },
             }
         },

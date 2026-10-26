@@ -9354,7 +9354,7 @@ fn finite_forall_lazy_pairs_keep_nearest_first_order_for_unequal_domains() {
 #[test]
 fn false_quantified_frame_does_not_exhaust_a_small_load_registry() {
     crate::kernel::eval::with_load_variable_registry_capacity(1000, || {
-        let source = "verifying \"probe.c\"; int32 untouched_element(int32* a) { owns a[0..1000000]; ensures result == old(a[2]); ensures (0..1000000).all(|k| { a[k] == old(a[k]) }); } by { execute(); solve(); }";
+        let source = "verifying \"probe.c\"; int32 untouched_element(int32* a) { owns a[0..1000000]; ensures result == old(a[2]); ensures (0..1000000).all(|k| { a[k] == old(a[k]) }); }";
         let c = "int32 untouched_element(int32* a) { unsigned char* b; b = (unsigned char*)(void*) a; b[5] = 7; return a[2]; }";
         let error = crate::surface::verify_c0_sources(source, &[("probe.c", c)])
             .expect_err("the whole range is changed");

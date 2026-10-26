@@ -8,7 +8,7 @@ void inspect(int32* p) {
     owns authority(token(p));
     owns token(p);
     ensures count(token(p)) == 1;
-} by { execute(); solve(); }
+}
 ```
 ```expect
 fail: to_integer(count(token(p))) == 1

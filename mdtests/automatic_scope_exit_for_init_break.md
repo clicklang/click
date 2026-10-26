@@ -6,7 +6,7 @@ int32 f() { int32* q; for (int32 i = 0; i < 1; i++) { q = &i; break; } return q[
 
 ```click
 verifying "automatic_scope_exit_for_init_break.c";
-int32 f() { ensures 0 <= result; } by { execute(); solve(); }
+int32 f() { ensures 0 <= result; }
 ```
 
 ```expect

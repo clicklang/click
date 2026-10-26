@@ -98,10 +98,10 @@ mod tests {
     #[test]
     fn scalar_casts_keep_byte_read_width_in_definedness() {
         let c = "int32 read(const uint8* p) { return (int32)p[0]; }";
-        let source = "verifying \"read.c\"; int32 read(const uint8* p) { views p[0..1]; ensures defined((int32)p[0]); } by { execute(); solve(); }";
+        let source = "verifying \"read.c\"; int32 read(const uint8* p) { views p[0..1]; ensures defined((int32)p[0]); }";
         verify_c0_sources(source, &[("read.c", c)]).unwrap();
         let expanded =
-            expand_c0_claim_source_by_label(source, &[("read.c", c)], "read.contract").unwrap();
+            expand_c0_claim_source_by_label(source, &[("read.c", c)], "read.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[("read.c", c)]).unwrap();
         assert!(
             verify_c0_sources(
@@ -212,7 +212,7 @@ mod tests {
     #[test]
     fn forward_conversion_memory_requires_ownership_and_definedness() {
         let c = "int32 read(int32* p) { return *p; }";
-        let source = "verifying \"read.c\"; int32 read(int32* p) { owns p[0..1]; requires defined(p[0] + 1); ensures to_integer(p[0] + 1) == to_integer(p[0] + 1); } by { execute(); solve(); }";
+        let source = "verifying \"read.c\"; int32 read(int32* p) { owns p[0..1]; requires defined(p[0] + 1); ensures to_integer(p[0] + 1) == to_integer(p[0] + 1); }";
         verify_c0_sources(source, &[("read.c", c)]).unwrap();
         for missing in ["owns p[0..1];", "requires defined(p[0] + 1);"] {
             let invalid = source.replace(missing, "");
@@ -252,7 +252,7 @@ mod tests {
             }
         }
         let c = "int32 identity(int32 x) { return x; }";
-        let source = "verifying \"identity.c\"; int32 identity(int32 x) { ensures to_integer(x + 1) == to_integer(x + 1); } by { execute(); solve(); }";
+        let source = "verifying \"identity.c\"; int32 identity(int32 x) { ensures to_integer(x + 1) == to_integer(x + 1); }";
         assert!(verify_c0_sources(source, &[("identity.c", c)]).is_err());
         let bounded = source.replace("{ ensures", "{ requires defined(x + 1); ensures");
         verify_c0_sources(&bounded, &[("identity.c", c)]).unwrap();
@@ -705,7 +705,7 @@ mod tests {
     ensures to_integer(result) == to_integer(old(self->{field}));
     ensures self->{field} == old(self->{field});
 }} by {{
-    execute();
+    step_until(function.exit);
     have to_integer(result) == to_integer(self->{field}) by {{ arithmetic_certificate rules {{
         premise 0: {lower} <= to_integer(self->{field}) => {lower} <= to_integer(self->{field});
         premise 1: to_integer(self->{field}) <= {upper} => to_integer(self->{field}) <= {upper};
@@ -757,14 +757,14 @@ mod tests {
             let source = format!(
                 r#"verifying "cast.c";
 {destination} cast({source_ty} value) {{ {contract} }} by {{
-    execute();
+    step_until(function.exit);
     arithmetic_certificate rules {{
         premise 0: {lower} <= to_integer(value) => {lower} <= to_integer(value);
         premise 1: to_integer(value) <= {upper} => to_integer(value) <= {upper};
         integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(value); conclusion 0;
     }}
 }}
-{destination} caller({source_ty} value) {{ {contract} }} by {{ execute(); solve(); }}
+{destination} caller({source_ty} value) {{ {contract} }}
 "#
             );
             verify_c0_sources(&source, &[("cast.c", &c)])
@@ -855,7 +855,7 @@ mod tests {
     #[test]
     fn uint32_subtract_bridge_verifies_executed_c_difference() {
         let c = "unsigned int difference(unsigned int left, unsigned int right) { return left - right; }";
-        let source = "import click::integer; verifying \"difference.c\"; uint32 difference(uint32 left, uint32 right) { requires right <= left; ensures to_integer(result) == to_integer(left) - to_integer(right); } by { execute(); apply(integer::uint32_subtract_to_integer(left, right)) using { right <= left; } solve(); }";
+        let source = "import click::integer; verifying \"difference.c\"; uint32 difference(uint32 left, uint32 right) { requires right <= left; ensures to_integer(result) == to_integer(left) - to_integer(right); } by { step_until(function.exit); apply(integer::uint32_subtract_to_integer(left, right)) using { right <= left; } solve(); }";
         verify_c0_sources(source, &[("difference.c", c)]).unwrap();
         let expanded =
             expand_c0_claim_source_by_label(source, &[("difference.c", c)], "difference.contract")
@@ -972,7 +972,7 @@ mod tests {
                 "uint32 op(uint32 left, uint32 right) {{ return left {op} right; }} uint32 caller(uint32 left, uint32 right) {{ return op(left, right); }}"
             );
             let source = format!(
-                "import click::integer; verifying \"op.c\"; uint32 op(uint32 left, uint32 right) {{ requires {guard}; ensures {goal}; }} by {{ apply({name}(left, right)); execute(); solve(); }} uint32 caller(uint32 left, uint32 right) {{ requires {guard}; ensures {goal}; }} by {{ execute(); solve(); }}"
+                "import click::integer; verifying \"op.c\"; uint32 op(uint32 left, uint32 right) {{ requires {guard}; ensures {goal}; }} by {{ apply({name}(left, right)); step_until(function.exit); solve(); }} uint32 caller(uint32 left, uint32 right) {{ requires {guard}; ensures {goal}; }}"
             );
             verify_c0_sources(&source, &[("op.c", &c)])
                 .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
@@ -1090,7 +1090,7 @@ mod tests {
                 "to_integer(result)",
             );
             let source = format!(
-                "import click::integer; verifying \"op.c\"; uint64 op(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }} by {{ apply({name}(left, right)); execute(); solve(); }} uint64 caller(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }} by {{ execute(); solve(); }}"
+                "import click::integer; verifying \"op.c\"; uint64 op(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }} by {{ apply({name}(left, right)); step_until(function.exit); solve(); }} uint64 caller(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }}"
             );
             verify_c0_sources(&source, &[("op.c", &c)])
                 .unwrap_or_else(|e| panic!("{name}: {}", e.message()));

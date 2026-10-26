@@ -1045,7 +1045,7 @@ fn first_executing_tactic(tactics: &[ProofTactic]) -> Option<&'static str> {
         | ProofTactic::StepContract(_)
         | ProofTactic::StepCall(_)
         | ProofTactic::StepProved { .. } => Some("step"),
-        ProofTactic::SmartExecute => Some("execute"),
+        ProofTactic::SmartExecute => Some("implicit tail"),
         ProofTactic::ExecuteUntil(_) => Some("step_until"),
         ProofTactic::Loop(_) => Some("loop"),
         ProofTactic::Branch(_) => Some("branch"),
@@ -8030,7 +8030,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
-        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); solve(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch { step(); solve(); } else {} step(); step(); solve(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch { step(); solve(); } else {} step(); step(); solve(); }\n";
         verify_c0_sources(click, &[("fork_join.c", c)])
             .expect("a saved status should choose the checked create outcome");
         let expanded =
@@ -8043,7 +8043,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn source_cannot_read_transferred_memory_before_status_and_join() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int early = p->value; if (rc != 0) return 0; pthread_join(h, NULL); return early; }\n";
-        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); solve(); }\nint32 run(struct cell *p) { owns p->value; } by { step(); step(); step(); step(); step(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; }\nint32 run(struct cell *p) { owns p->value; } by { step(); step(); step(); step(); step(); }\n";
         let error = verify_c0_sources(click, &[("fork_join.c", c)])
             .expect_err("the task memory cannot be read while creation is pending");
         assert!(
@@ -8058,7 +8058,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn a_session_cannot_drop_the_modeled_runtime() {
         let c = "#include <pthread.h>\nint answer(void) { return 1; }\n";
-        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nint32 answer() { ensures result == 1; } by { execute(); solve(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nint32 answer() { ensures result == 1; }\n";
         let (session, _) = C0VerificationSession::new(click, &[("fork_join.c", c)])
             .expect("baseline modeled proof");
         let changed = click.replace("runtime \"modeled-pthread\";\n", "");
@@ -8179,7 +8179,7 @@ verifying "answer.c";
 int32 answer() {
     ensures result == 1;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 
@@ -8203,7 +8203,7 @@ int32 answer() {
     fn direct_and_targeted_routes_attach_the_same_fixed_identity() {
         let sources = [("answer.c", C_SOURCE)];
         let direct = verify_c0_sources(CLICK, &sources).expect("direct verification");
-        let (line, column) = position(CLICK, "execute();");
+        let (line, column) = position(CLICK, "step_until(function.exit);");
         let targeted =
             verify_c0_sources_at(CLICK, &sources, line, column).expect("targeted verification");
         assert_eq!(direct.len(), targeted.len());
@@ -8241,7 +8241,7 @@ int32 answer() {
     #[test]
     fn the_address_taken_pass_reads_the_bodies_verification_parses() {
         const C: &str = "int32* echo(int32* p) { return p; }\nvoid v4(void) { int32 x; int32* q; x = 5; q = echo(&x); x = 1; }\n";
-        const SIDECAR: &str = "verifying \"a2.c\";\nint32* echo(int32* p) { ensures result == p; } by { execute(); solve(); }\nvoid v4() { ensures 1 == 1; } by { execute(); solve(); }\n";
+        const SIDECAR: &str = "verifying \"a2.c\";\nint32* echo(int32* p) { ensures result == p; }\nvoid v4() { ensures 1 == 1; }\n";
         let sources = [("a2.c", C)];
         let context = CSourceContext::bundle(&sources);
         let file = super::selected_c_target(SIDECAR)
@@ -8266,7 +8266,7 @@ int32 answer() {
         let sources = [("answer.c", C_SOURCE)];
         let (mut session, _) =
             C0VerificationSession::new(CLICK, &sources).expect("baseline verification");
-        let (line, column) = position(CLICK, "execute();");
+        let (line, column) = position(CLICK, "step_until(function.exit);");
         session.environment_identity =
             CSourceContext::bundle(&[("answer.c", "int answer(void) { return 2; }")])
                 .environment_identity(CTarget::SUPPORTED);
@@ -8282,7 +8282,7 @@ int32 answer() {
         let (session, baseline) =
             C0VerificationSession::new(CLICK, &sources).expect("baseline verification");
         let rewritten = CLICK.replace("solve();", "solve();\n    ");
-        let (line, column) = position(&rewritten, "execute();");
+        let (line, column) = position(&rewritten, "step_until(function.exit);");
         let verified = session
             .verify_at(&rewritten, line, column)
             .expect("proof-only rewrite remains within the session identity");
@@ -8332,9 +8332,6 @@ mode "kernel";
 verifying "answer.c";
 int32 answer() {
     ensures result == 1;
-} by {
-    execute();
-    solve();
 }
 "#;
         let sources = [("answer.c", C_SOURCE)];
@@ -8364,9 +8361,6 @@ int32 reader(int32 p[], int32 q[]) {
     owns q[0..1];
     ensures result == p[0];
     ensures q[0] == 1;
-} by {
-    execute();
-    solve();
 }
 "#;
         let source = "int reader(int *p, int *q) { q[0] = 1; return p[0]; }";
@@ -8386,9 +8380,6 @@ verifying "reader.c";
 int32 reader(int32 p[]) {
     views p[0..1];
     ensures result == p[0];
-} by {
-    execute();
-    solve();
 }
 "#;
         let source = "int reader(int *p) { p[0] = 1; return p[0]; }";
@@ -8414,9 +8405,6 @@ int32 reader(int32 p[], int32 q[]) {
     views p[0..1];
     owns q[0..1];
     ensures result == p[0];
-} by {
-    execute();
-    solve();
 }
 "#;
         let source = "int reader(int *p, int *q) { q[0] = 1; return p[0]; }";
@@ -8458,7 +8446,7 @@ int32 reader(int32 p[], int32 q[]) {{
     views p[0..3];
     consumes q[0..3];
     ensures result == 3;
-}} by {{ execute(); solve(); }}
+}}
 "#
             );
             let error = verify_sources(
@@ -8485,7 +8473,7 @@ int32 reader(int32 p[], int32 q[]) {
     views p[0..3];
     consumes q[0..1];
     ensures result == 3;
-} by { execute(); solve(); }
+}
 "#;
         verify_sources(
             click,
@@ -8512,9 +8500,6 @@ int32 read_entry(struct buffer* owner, int32* other) {
     owns owner->data;
     views owner->data[0..1];
     ensures result == owner->data[0];
-} by {
-    execute();
-    solve();
 }
 "#;
         verify_sources(click, RETARGET_SOURCE)
@@ -8536,9 +8521,6 @@ int32 read_retargeted(struct buffer* owner, int32* other) {
     owns owner->data;
     views owner->data[0..1];
     ensures result == owner->data[0];
-} by {
-    execute();
-    solve();
 }
 "#;
         let error = verify_sources(click, RETARGET_SOURCE)
@@ -8572,18 +8554,12 @@ int32 peek(const int32 values[], int32 q[]) {
     views values[0..2];
     views q[0..1];
     ensures result == q[0];
-} by {
-    execute();
-    solve();
 }
 
 int32 run(int32 q[]) {
     views table[0..2];
     views q[0..1];
     ensures result == table[1];
-} by {
-    execute();
-    solve();
 }
 "#;
         let source = "static const int32 table[2] = {5, 7};\n\
@@ -8617,9 +8593,6 @@ verifying "t.c";
 int32 run(int32 p[]) {
     views p[0..1];
     ensures result == p[0];
-} by {
-    execute();
-    solve();
 }
 "#;
         let source = "#include \"include/h.h\"\nint run(int *p) { return get0(p); }";
@@ -8638,9 +8611,6 @@ verifying "t.c";
 int32 run(int32 p[]) {
     views p[0..1];
     ensures result == 0;
-} by {
-    execute();
-    solve();
 }
 "#;
         let source = "#include \"include/h.h\"\nint run(int *p) { return set0(p); }";
@@ -8686,9 +8656,6 @@ int32 copy_pair(struct pair* s, struct pair* t) {
     views *s;
     owns *t;
     ensures result == 0;
-} by {
-    execute();
-    solve();
 }
 "#;
         let source = "struct pair { int a; int b; };\nint copy_pair(struct pair *s, struct pair *t) { *s = *t; return 0; }";
@@ -8707,9 +8674,9 @@ int32 copy_pair(struct pair* s, struct pair* t) {
     fn private_aggregate_parameters_can_lend_ownership_to_helpers() {
         let source = "struct packet { uint32 n; }; void change(uint32* n) { *n = 9; } uint32 consume(struct packet p) { uint32 before = p.n; change(&p.n); return before; } uint32 entry(uint32 x) { struct packet p = {x}; uint32 ignored = consume(p); return p.n; }";
         let proof = r#"verifying "reader.c";
-            void change(uint32* n) { owns n[0..1]; ensures *n == 9u32; } by { execute(); solve(); }
-            uint32 consume(struct packet p) { ensures result == old(p.n); } by { execute(); solve(); }
-            uint32 entry(uint32 x) { ensures result == x; } by { execute(); solve(); }
+            void change(uint32* n) { owns n[0..1]; ensures *n == 9u32; }
+            uint32 consume(struct packet p) { ensures result == old(p.n); }
+            uint32 entry(uint32 x) { ensures result == x; }
         "#;
         verify_sources(proof, source).unwrap();
         assert!(verify_sources(&proof.replace("result == x", "result != x"), source).is_err());
@@ -8732,8 +8699,8 @@ int32 copy_pair(struct pair* s, struct pair* t) {
     fn unsigned_array_field_returns_preserve_values_in_c_callers() {
         let source = "struct packet { uint32 words[4]; }; struct packet make(uint32 x) { struct packet p = {{x, x, x, x}}; return p; } uint32 read(uint32 x) { struct packet p = make(x); return p.words[3]; }";
         let proof = r#"verifying "reader.c";
-            struct packet make(uint32 x) { ensures result.words[3] == x; } by { execute(); solve(); }
-            uint32 read(uint32 x) { ensures result == x; } by { execute(); solve(); }
+            struct packet make(uint32 x) { ensures result.words[3] == x; }
+            uint32 read(uint32 x) { ensures result == x; }
         "#;
         verify_sources(proof, source).unwrap();
         assert!(verify_sources(&proof.replace("result == x", "result != x"), source).is_err());
@@ -8965,9 +8932,6 @@ verifying "reader.c";
 int32 reader(int32 p[]) {
     owns p[0..1];
     ensures result == p[0];
-} by {
-    execute();
-    solve();
 }
 "#;
         let source = "int reader(int *p) { return p[0]; }";
@@ -9007,7 +8971,7 @@ int read_view(const int *(*f)(const int *), const int *p) {{
     requires Exact(f);
     views p[0..1];
     ensures result == p[0];
-}} by {{ apply(lift(f)); step({goal}); execute(); solve(); }}
+}} by {{ apply(lift(f)); step({goal}); step_until(function.exit); solve(); }}
 "#
         )
     }

@@ -13,7 +13,7 @@ int32 invoke(int32 (*callback)(int32), int32 x) {
  requires Negative(callback);
  requires x == 0;
  ensures result == 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

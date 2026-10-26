@@ -3,8 +3,8 @@
 The negative of
 [`a_load_that_may_read_an_earlier_store_splits_into_its_cases.md`](a_load_that_may_read_an_earlier_store_splits_into_its_cases.md).
 `r = g[0]` reads the `7` that `g[u] = 7` stored only when `u == 0`; for any
-other `u` it reads the entry value. `execute()` splits the load into those two
-cases and continues each, and the claim `result == 8` holds only in the first.
+other `u` it reads the entry value. The implicit tail splits the load into
+those two cases and continues each, and the claim `result == 8` holds only in the first.
 The refusal is the ordinary unclosed goal of the other case, where the result
 is the entry value of `g[0]` plus one. Its proof context names that case,
 `0 == u is false`, on a line of its own: the condition shares no term with the

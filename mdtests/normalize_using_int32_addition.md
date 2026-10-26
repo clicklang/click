@@ -13,7 +13,7 @@ void keep(int32 a, int32 b, int32 c) {
     requires defined(b + c);
     ensures to_integer(a + c) == to_integer(b + c);
 } by {
-    execute();
+    step_until(function.exit);
     normalize() using { };
 }
 

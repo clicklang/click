@@ -23,7 +23,7 @@ void f(int32 a[], int32 n) {
     owns g[0..1];
     ensures a[0] == 5;
     ensures g[0] == 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

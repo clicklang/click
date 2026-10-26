@@ -70,11 +70,11 @@ impl<T> Destruct for generic_container::Node<T> {
         match rest.values {
             List::Nil => {
                 let {} = unfold(rest);
-                execute();
+                step_until(function.exit);
             }
             List::Cons(v, tail_values) => {
                 let { tail: tail } = unfold(rest);
-                execute();
+                step_until(function.exit);
             }
         }
     }
@@ -90,11 +90,11 @@ impl<T> Destruct for generic_container::Stack<T> {
         match rest.values {
             List::Nil => {
                 let {} = unfold(rest);
-                execute();
+                step_until(function.exit);
             }
             List::Cons(v, tail_values) => {
                 let { tail: tail } = unfold(rest);
-                execute();
+                step_until(function.exit);
             }
         }
     }
@@ -108,7 +108,7 @@ impl<T> generic_container::Stack<T> {
         ensures result.len == 0usize;
         ensures to_integer(result.len) == length(after.values);
     } by {
-        execute();
+        step_until(function.exit);
         let after = fold(nodes<T>(result.head), { values: List<T>::Nil }, {});
         unfold(length(List<T>::Nil));
     }
@@ -123,7 +123,7 @@ impl<T> generic_container::Stack<T> {
         ensures after.values == List::Cons(value, old(before.values));
         ensures to_integer(self.len) == length(after.values);
     } by {
-        execute();
+        step_until(function.exit);
         let after = fold(nodes<T>(self.head), { values: List::Cons(value, old(before.values)) }, { tail: before });
         unfold(length(List::Cons(value, old(before.values))));
         have to_integer(old(self.len) + 1u64) == to_integer(old(self.len)) + to_integer(1u64);
@@ -143,7 +143,7 @@ impl<T> generic_container::Stack<T> {
         match before.values {
             List::Nil => {
                 let {} = unfold(before);
-                execute();
+                step_until(function.exit);
                 let after = fold(nodes<T>(self.head), { values: List<T>::Nil }, {});
                 unfold(first(List<T>::Nil));
                 unfold(rest(List<T>::Nil));
@@ -159,7 +159,7 @@ impl<T> generic_container::Stack<T> {
                 unfold(first(List::Cons(v, tail_values)));
                 unfold(rest(List::Cons(v, tail_values)));
                 let { tail: tail } = unfold(before);
-                execute();
+                step_until(function.exit);
                 match tail_values {
                     List::Nil => {
                         let {} = unfold(tail);
@@ -197,8 +197,6 @@ impl<T> generic_container::Stack<T> {
         requires to_integer(self.len) == length(list.values);
         ensures to_integer(result) == length(old(list.values));
         ensures list.values == old(list.values);
-    } by {
-        execute();
     }
 }
 
@@ -207,7 +205,7 @@ impl<T> generic_container::Stack<T> {
 fn generic_container::round_trip(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
 } by {
-    execute();
+    step_until(function.exit);
     unfold(first(List::Cons(x, List<u32>::Nil)));
 }
 
@@ -255,11 +253,11 @@ impl<T> generic_container::Container<T> for generic_container::Stack<T> {
     function items(self) -> List<T> { state.values }
     function size(self) -> usize { self.len }
     fn put(&mut self, value: T) {
-    } by { execute(); solve(); }
+    }
     fn take(&mut self) -> Option<T> {
-    } by { execute(); solve(); }
+    }
     fn count(&self) -> usize {
-    } by { execute(); solve(); }
+    }
 }
 
 // Through any container of `u32`: what is put is what is taken, and the
@@ -271,7 +269,7 @@ fn generic_container::round_trip_dyn(container: &mut dyn generic_container::Cont
     ensures result == Option<u32>::Some(x);
     ensures items(container) == old(items(container));
 } by {
-    execute();
+    step_until(function.exit);
     apply(first_cons(x, old(items(container))));
     apply(rest_cons(x, old(items(container))));
     solve();
@@ -280,4 +278,4 @@ fn generic_container::round_trip_dyn(container: &mut dyn generic_container::Cont
 // A new stack lent as a container returns what was put.
 fn generic_container::through_dyn(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
-} by { execute(); solve(); }
+}

@@ -1,14 +1,14 @@
 # `int32` division is defined when the facts exclude `INT_MIN / -1`
 
 The one signed overflow of an `int32` division or remainder is `INT_MIN / -1`.
-`execute()` decides its overflow condition the way the `int64` twin in
+The implicit tail decides its overflow condition the way the `int64` twin in
 [`int64_checked_scalar_arithmetic.md`](int64_checked_scalar_arithmetic.md)
 does, from the operands: a divisor range without `-1`, on either side of it,
 or a dividend range without `INT_MIN`, each read from that operand's own
 indexed bounds and moved past the values its exact disequalities exclude; and
 a recorded `y != -1` or `x != INT_MIN`, read directly, since `-1` lies inside
 a divisor range where no endpoint walk reaches it. Each spelling below
-excludes the pair and passes `execute()`.
+excludes the pair and verifies with the proof omitted.
 
 The refusal that remains is
 [`int32_division_by_a_nonzero_divisor_may_still_overflow.md`](int32_division_by_a_nonzero_divisor_may_still_overflow.md);

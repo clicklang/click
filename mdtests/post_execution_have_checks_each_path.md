@@ -1,7 +1,10 @@
-# Post-execution have checks every path
+# A have after a branch is checked on the arm's own path
 
-A `have` after batch execution must hold on every completed return path, not
-only the first symbolic outcome.
+A proof is at one program point at a time, so a `have` about `result` is
+checked on the path where it is written. Here `branch` splits at the C `if`,
+each arm steps to exit with `step_until(function.exit)`, and each states
+`result == 1`. It holds on the arm that returns `1` and is refused on the arm
+that returns `0`.
 
 ```c filename=post_have_each_path.c
 int32 branch_value(int32 flag) {
@@ -19,9 +22,13 @@ verifying "post_have_each_path.c";
 int32 branch_value(int32 flag) {
     ensures result >= 0;
 } by {
-    execute();
-    have result == 1 by solve();
-    solve();
+    branch {
+        step_until(function.exit);
+        have result == 1 by solve();
+    } else {
+        step_until(function.exit);
+        have result == 1 by solve();
+    }
 }
 ```
 

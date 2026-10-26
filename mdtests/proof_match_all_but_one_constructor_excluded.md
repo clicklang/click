@@ -35,7 +35,7 @@ int read(int* p) {
         Tri::One => { contradiction(c.model == Tri::One); },
         Tri::Two(value) => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             fold(c);
             solve();
         },

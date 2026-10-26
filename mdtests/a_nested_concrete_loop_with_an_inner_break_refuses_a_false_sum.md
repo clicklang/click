@@ -28,7 +28,7 @@ verifying "a_nested_concrete_loop_with_an_inner_break_refuses_a_false_sum.c";
 
 int32 f(int32 x) {
     ensures result == 4;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

@@ -24,14 +24,14 @@ int32 f(int32 n) {
         loop {
             invariant n >= 0;
         }
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         loop {
             decreases 0;
             invariant n <= 0;
         }
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

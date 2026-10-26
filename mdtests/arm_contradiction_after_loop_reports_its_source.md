@@ -43,8 +43,6 @@ int32 peek(struct node* p) {
     have p == p by normalize();
     match x.model {
         Cell::Missing => {
-            execute();
-            solve();
         },
         Cell::Present(identity) => {
             contradiction(x.model == Cell::Present(identity));

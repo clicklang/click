@@ -25,7 +25,7 @@ int32 make_readback(int32 p[]) {
     consumes p[0..1];
     produces readback(p);
 } by {
-    execute();
+    step_until(function.exit);
     fold(readback(p));
 }
 ```
