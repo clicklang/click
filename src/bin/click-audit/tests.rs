@@ -5,6 +5,62 @@ use click::surface::{
 };
 
 #[test]
+#[ignore = "nightly: C++ generic method expansion and retained/cold rechecks"]
+fn generic_cpp_clause_proofs_stay_on_the_generic_method() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for (fixture, claim) in [
+        (
+            "cpp_class_template_verified_once",
+            "__cpp_q_X7_43656c6c3c543e_I3_get.ensures_0",
+        ),
+        (
+            "cpp_generic_resource_checked_once",
+            "__cpp_q_X8_537461636b3c543e_I4_size.ensures_0",
+        ),
+    ] {
+        let path = root.join("mdtests").join(format!("{fixture}.md"));
+        let arguments = parse_arguments([
+            "--claim".to_string(),
+            claim.to_string(),
+            path.display().to_string(),
+        ])
+        .unwrap();
+        run_audit(arguments).unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    }
+
+    let path = root.join("mdtests/cpp_class_template_verified_once.md");
+    let original = fs::read_to_string(&path).unwrap();
+    let invalid = original.replacen(
+        "ensures result == this->value;",
+        "ensures result == this->value by { have 0 == 1 by normalize(); }",
+        1,
+    );
+    assert_ne!(invalid, original);
+    let source = load_audit_source_from_text(&path, invalid).unwrap();
+    let error = match start_session(&source) {
+        Ok(_) => panic!("the generic method's invalid proof must still be checked"),
+        Err(error) => error,
+    };
+    assert!(error.contains("normalize"), "{error}");
+    assert!(
+        !error.contains("external function contracts cannot carry proof"),
+        "{error}"
+    );
+
+    let error = verify_c0_sources(
+        "extern int32 f() { ensures result == 0 by { normalize(); } }",
+        &[],
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("external function contracts cannot carry proof"),
+        "{error}"
+    );
+}
+
+#[test]
 fn parses_arguments_and_duration_units() {
     let arguments = parse_arguments(
         [

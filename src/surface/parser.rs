@@ -4703,6 +4703,14 @@ impl Parser {
         } else {
             None
         };
+        if external && written_instance && self.verifies_cpp() {
+            // Generated externs inherit the generic method's contract at
+            // concrete types. Its clause proofs are checked on the generic
+            // body, not copied into the extern contracts of its instances.
+            for clause in ensures.iter_mut().chain(exceptional_ensures.iter_mut()) {
+                clause.proof = SourceProof::Default;
+            }
+        }
         if external
             && (decreases.is_some()
                 || grouped_proof.is_some()
