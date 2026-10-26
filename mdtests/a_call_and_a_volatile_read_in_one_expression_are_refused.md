@@ -13,7 +13,7 @@ int f(void) { return one() + g; }
 verifying "volatile_operand.c";
 
 int one() { ensures result == 1; }
-int f() { ensures result >= 0 or result < 0; } by { execute(); solve(); }
+int f() { ensures result >= 0 or result < 0; }
 ```
 
 ```expect

@@ -68,7 +68,7 @@ struct child* parent_detach(struct parent* p) {
         },
         ParentLink::Linked(linked) => {
             unfold(link);
-            execute();
+            step_until(function.exit);
             solve();
         },
     }

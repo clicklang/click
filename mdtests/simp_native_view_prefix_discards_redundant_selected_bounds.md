@@ -50,7 +50,7 @@ void prefix(const uint8* p, uint64 held) {
 } by {
  have viewable(p[0u64..held]) by solve();
  have viewable(p[0u64..1u64]) by solve();
- execute(); assumption();
+ step_until(function.exit); assumption();
 }
 ```
 

@@ -39,9 +39,6 @@ extern int32 g(int32 x) {
 }
 int32 f(int32 x) {
     ensures result == 42;
-} by {
-    execute();
-    solve();
 }
 "#;
 
@@ -88,9 +85,6 @@ extern int32 f(int32 x) {
 }
 int32 g(int32 x) {
     ensures result == 42;
-} by {
-    execute();
-    solve();
 }
 "#,
     );
@@ -121,9 +115,6 @@ extern int32 h(int32 x) {
 }
 int32 f(int32 x) {
     ensures result == 42;
-} by {
-    execute();
-    solve();
 }
 "#,
     );
@@ -152,9 +143,6 @@ int32 g(int32 x) {
 }
 int32 f(int32 x) {
     ensures result == 42;
-} by {
-    execute();
-    solve();
 }
 "#,
     );

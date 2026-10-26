@@ -8,7 +8,7 @@ int main(void) { return value(); }
 ```click
 verifying "call.c";
 extern unsigned long value() { ensures result == 41u64; }
-int main() { ensures result == 41; } by { execute(); solve(); }
+int main() { ensures result == 41; }
 ```
 
 ```expect

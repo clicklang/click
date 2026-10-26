@@ -7,7 +7,7 @@ verifying "bound.c";
 void inspect(int32* p) {
     owns token(p);
     ensures 1 <= count(token(p));
-} by { execute(); solve(); }
+}
 ```
 ```expect
 fail: count(...) requires owning authority for that population

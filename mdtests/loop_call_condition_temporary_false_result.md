@@ -22,7 +22,6 @@ int32 walk(int32 n) { requires n >= 0; ensures result == 1; } by {
         initialize by solve();
         preserve by { step(); step(); step(); }
     }
-    execute(); solve();
 }
 ```
 

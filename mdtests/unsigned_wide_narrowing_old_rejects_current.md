@@ -14,7 +14,7 @@ verifying "old.c";
 unsigned int take(struct state *p) {
     owns p->value;
     ensures result == (uint32)p->value;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

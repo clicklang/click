@@ -15,7 +15,7 @@ int32 invoke(int32 (*callback)()) {
     requires Touch(callback);
     owns first: marker();
     ensures first.revision == old(first.revision);
-} by { step(Touch, { cell: first }); execute(); solve(); }
+} by { step(Touch, { cell: first }); }
 ```
 
 ```expect

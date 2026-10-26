@@ -65,8 +65,8 @@ or a simple tactic written with an elided argument, such as `apply(t(x))` or
 a bare `transport(P, Q)`, whose search fills that argument. The same tactic
 with its argument written is a `SIMPLE` row. A written `solve()` or
 `solve() using` row reads `solve`, a `step_until` row reads `step_until`, and
-the implicit tail at the end of a script or an omitted proof reports its C
-execution as `execute` and its closing as `implicit tail`. The implicit closer
+the implicit tail at the end of a script or an omitted proof, its C
+execution and its closing, reads `implicit tail`. The implicit closer
 that proves a `step()` or `fold` requirement is an `implicit closer` row.
 
 A slow smart success may be expanded. A slow simple tactic is an engine

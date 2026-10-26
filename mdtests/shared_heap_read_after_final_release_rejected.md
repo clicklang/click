@@ -59,7 +59,7 @@ void child_release(struct child* obj) {
     if obj->refs == 1 {
         unfold(child_ref(obj));
         unfold(authority(child_ref(obj)));
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         unfold(child_ref(obj));
@@ -70,7 +70,7 @@ void child_release(struct child* obj) {
         step();
         step();
         fold(child_control(obj));
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

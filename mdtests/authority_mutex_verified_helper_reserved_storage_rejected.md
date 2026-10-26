@@ -24,12 +24,12 @@ verifying "authority_mutex_verified_helper_reserved_storage_rejected.c";
 void touch(struct holder *holder) {
     owns mutex_live(&holder->mu);
     owns holder->mu;
-} by { execute(); solve(); }
+}
 int32 run(struct holder *holder) {
     owns holder->mu;
     requires aligned(&holder->mu, 8);
     ensures result == 0;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

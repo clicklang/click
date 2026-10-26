@@ -22,7 +22,7 @@ int32 guarded_value(int32* p) {
     ensures result == 0;
 } by {
     unfold(guarded_cell(p));
-    execute();
+    step_until(function.exit);
     fold(guarded_cell(p));
     solve();
 }

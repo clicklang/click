@@ -5,7 +5,4 @@ int32 increment(int32& value) {
     owns value;
     ensures value == old(value) + 1;
     ensures result == value;
-} by {
-    execute();
-    solve();
 }

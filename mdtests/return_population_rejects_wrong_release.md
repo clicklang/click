@@ -23,7 +23,7 @@ void release(struct object* obj) {
     owns reference(obj);
     consumes reference(obj);
 } by {
-    open(control(obj)) { unfold(reference(obj)); execute(); }
+    open(control(obj)) { unfold(reference(obj)); }
     solve();
 }
 ```

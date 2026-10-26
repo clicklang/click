@@ -41,9 +41,6 @@ int32 box_cycle(struct box* box) {
     requires separate(memory(*box), memory(box->data[0..1]));
     produces box->data[0..1];
     ensures result == old(box->data[0]);
-} by {
-    execute();
-    solve();
 }
 ```
 

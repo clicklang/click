@@ -1,25 +1,25 @@
 verifying "slices.rs";
 fn length(bytes: &[u8]) -> usize {
     ensures result == bytes.len();
-} by { execute(); solve(); }
+}
 fn read(bytes: &[u8], index: usize) -> u8 {
     requires bytes.len() <= 2147483647u64;
     requires index < bytes.len();
     views bytes[0..bytes.len()];
     ensures result == old(bytes[index]);
-} by { execute(); solve(); }
+}
 fn write(bytes: &mut [u8], index: usize, value: u8) {
     requires bytes.len() <= 2147483647u64;
     requires index < bytes.len();
     owns bytes[0..bytes.len()];
     ensures bytes[index] == value;
-} by { execute(); solve(); }
+}
 fn alias(bytes: &mut [u8], index: usize) -> u8 {
     requires bytes.len() <= 2147483647u64;
     requires index < bytes.len();
     owns bytes[0..bytes.len()];
     ensures result == old(bytes[index]);
-} by { execute(); solve(); }
+}
 
 fn write_read(bytes: &mut [u8], index: usize, value: u8) -> u8 {
     requires bytes.len() <= 2147483647u64;
@@ -28,7 +28,7 @@ fn write_read(bytes: &mut [u8], index: usize, value: u8) -> u8 {
     ensures result == value;
     ensures bytes[index] == value;
 } by {
-    execute();
+    step_until(function.exit);
     have result == bytes[index];
     solve();
 }
@@ -42,7 +42,7 @@ impl Drop for Guard {
         ensures self.slot == old(self.slot);
         ensures self.saved == old(self.saved);
         ensures *self.slot == old(self.saved);
-    } by { execute(); solve(); }
+    }
 }
 
 fn guarded_read(value: &mut i32, bytes: &[u8], index: usize) -> u32 {
@@ -54,7 +54,7 @@ fn guarded_read(value: &mut i32, bytes: &[u8], index: usize) -> u32 {
     ensures result == old((uint32)bytes[index]);
     ensures value[0] == old(value[0]);
 } by {
-    execute();
+    step_until(function.exit);
     have index <= 2147483647u64 by { solve() using { index < bytes.len(); bytes.len() <= 2147483647u64; }; }
     have 0 <= (int32)(uint32)index by { solve() using { index <= 2147483647u64; }; }
     have ((int32)(uint32)index) < (int32)(uint32)bytes.len() by { solve() using { index < bytes.len(); bytes.len() <= 2147483647u64; }; }

@@ -12,7 +12,7 @@ verifying "named_retirement.c";
 void retire(int32* pool) {
     owns authority(ticket(pool));
     consumes left: ticket(pool);
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

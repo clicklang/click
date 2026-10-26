@@ -63,8 +63,7 @@ fn loop_decreases_keeps_its_bounds_beside_many_counter_invariants() {
     }
     let (source, c_source) = program(4);
     let sources = [("many.c", c_source.as_str())];
-    let expanded =
-        expand_c0_claim_source(&source, &sources, "caller", CProofClaim::Grouped).unwrap();
+    let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
     let false_ranking = source.replace("decreases 4 - i;", "decreases i;");
     assert!(verify_c0_sources(&false_ranking, &sources).is_err());
@@ -182,7 +181,7 @@ fn expanded_loop_phase_proofs_are_certificates() {
 fn nested_conjunction_extraction_precedes_explicit_arithmetic_certificate() {
     let (click, sources) = loop_fixture("arithmetic_conjunction_provenance");
     let sources = borrowed_sources(&sources);
-    let expanded = expand_c0_claim_source(&click, &sources, "drain", CProofClaim::Grouped)
+    let expanded = expand_function_proof_source(&click, &sources, "drain")
         .expect("nested conjunction provenance should expand");
     assert!(expanded.contains("extract(n >= 0);"), "{expanded}");
     // The extracted conjunct is the initialization's own fact; the
@@ -253,8 +252,7 @@ fn natural_goto_exits_retain_checked_paths_and_expand() {
                 "{filename}: {trace}"
             );
         });
-        let expanded =
-            expand_c0_claim_source(&click, &sources, function, CProofClaim::Grouped).unwrap();
+        let expanded = expand_function_proof_source(&click, &sources, function).unwrap();
         verify_c0_sources(&expanded, &sources).unwrap();
     }
 }
@@ -274,9 +272,8 @@ fn natural_goto_mixed_return_retains_paths_and_expands() {
         click.clone(),
         click.replace("result == 0 or result == 7", "result == 7 or result == 0"),
     ] {
-        let expanded =
-            expand_c0_claim_source(&click, &sources, "count_down_or_stop", CProofClaim::Grouped)
-                .expect("both checked loop exits must expand");
+        let expanded = expand_function_proof_source(&click, &sources, "count_down_or_stop")
+            .expect("both checked loop exits must expand");
         assert!(!expanded.contains("if result =="), "{expanded}");
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
@@ -302,7 +299,7 @@ fn natural_goto_mixed_return_retains_paths_and_expands() {
 fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
     let (click, sources) = loop_fixture("c_decreases_lexicographic_loop");
     let sources = borrowed_sources(&sources);
-    let expanded = expand_c0_claim_source(&click, &sources, "phase_count", CProofClaim::Grouped)
+    let expanded = expand_function_proof_source(&click, &sources, "phase_count")
         .unwrap_or_else(|error| panic!("lexicographic expansion failed: {}", error.message()));
     let closer = expanded
         .find("close_invariants() by {")
@@ -416,7 +413,7 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
         click.contains("close_invariants();"),
         "the fixture must exercise the smart closer: {click}"
     );
-    let expanded = expand_c0_claim_source(&click, &sources, "count_to_n", CProofClaim::Grouped)
+    let expanded = expand_function_proof_source(&click, &sources, "count_to_n")
         .unwrap_or_else(|error| panic!("count-up expansion failed: {}", error.message()));
     let closer = expanded
         .find("close_invariants() by {")
@@ -463,7 +460,7 @@ fn smart_ranking_closure_expands_its_pivot_arm() {
         click.contains("close_invariants() by { solve(); }"),
         "the fixture must exercise the smart closer: {click}"
     );
-    let expanded = expand_c0_claim_source(&click, &sources, "nested_count", CProofClaim::Grouped)
+    let expanded = expand_function_proof_source(&click, &sources, "nested_count")
         .unwrap_or_else(|error| panic!("nested-loop expansion failed: {}", error.message()));
     assert!(
         expanded.contains("assumption();"),
@@ -630,7 +627,7 @@ fn grouped_arithmetic_using_expands_to_checked_certificate() {
         .collect::<Vec<_>>();
     let click = fixture.click_source.unwrap();
     verify_c0_sources(&click, &sources).unwrap();
-    let expanded = expand_c0_claim_source(&click, &sources, "bump", CProofClaim::Grouped).unwrap();
+    let expanded = expand_function_proof_source(&click, &sources, "bump").unwrap();
     assert!(
         expanded.contains("arithmetic_certificate signed_int32"),
         "{expanded}"
@@ -655,9 +652,10 @@ fn symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planni
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let click = fixture.click_source.unwrap().replace(
-        "    solve();\n}",
-        "    have aligned(p + i, 8) by { solve(); }\n    solve();\n}",
+        "    ensures result == 1;\n}",
+        "    ensures result == 1;\n} by {\n    step_until(function.exit);\n    have aligned(p + i, 8) by { solve(); }\n    solve();\n}",
     );
+    assert!(click.contains("have aligned(p + i, 8)"));
     let verified_for_expansion = verify_c0_sources(&click, &sources).unwrap();
     let expanded =
         expand_checked_grouped_claim(&click, &verified_for_expansion, "element_is_aligned")
@@ -919,13 +917,11 @@ fn explicit_invariant_body_quantified_bubble_census() {
         .collect::<Vec<_>>();
     let click = fixture.click_source.as_deref().unwrap();
     verify_c0_sources(click, &sources).unwrap();
-    let expanded =
-        expand_c0_claim_source(click, &sources, "bubble_pass3", CProofClaim::Grouped).unwrap();
+    let expanded = expand_function_proof_source(click, &sources, "bubble_pass3").unwrap();
     assert!(expanded.contains("close_invariants() by {"));
     let explicit = expanded.replace("close_invariants();", "close_invariants() by { solve(); }");
     verify_c0_sources(&explicit, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
-    let expanded =
-        expand_c0_claim_source(&explicit, &sources, "bubble_pass3", CProofClaim::Grouped).unwrap();
+    let expanded = expand_function_proof_source(&explicit, &sources, "bubble_pass3").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
 }
 
@@ -943,12 +939,11 @@ fn explicit_invariant_body_copy3_checks_and_expands() {
         .collect::<Vec<_>>();
     let click = fixture.click_source.as_deref().unwrap();
     verify_c0_sources(click, &sources).unwrap();
-    let expanded = expand_c0_claim_source(click, &sources, "copy3", CProofClaim::Grouped).unwrap();
+    let expanded = expand_function_proof_source(click, &sources, "copy3").unwrap();
     assert!(expanded.contains("close_invariants() by {"));
     let explicit = expanded.replace("close_invariants();", "close_invariants() by { solve(); }");
     verify_c0_sources(&explicit, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
-    let expanded =
-        expand_c0_claim_source(&explicit, &sources, "copy3", CProofClaim::Grouped).unwrap();
+    let expanded = expand_function_proof_source(&explicit, &sources, "copy3").unwrap();
     assert!(!expanded.contains("close_invariants();"));
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
 }
@@ -1569,13 +1564,11 @@ fn frontier_local_loop_verifies_nested_loops_at_their_respective_frontiers() {
     let sources = [("nested_count.c", c_source)];
     verify_c0_sources(click_source, &sources)
         .expect("nested loop proofs should be scoped to their respective frontiers");
-    let expanded =
-        expand_c0_claim_source(click_source, &sources, "nested_count", CProofClaim::Grouped)
-            .expect("nested loop proofs should expand");
+    let expanded = expand_function_proof_source(click_source, &sources, "nested_count")
+        .expect("nested loop proofs should expand");
     verify_c0_sources(&expanded, &sources).expect("expanded nested loops should verify");
-    let repeated =
-        expand_c0_claim_source(&expanded, &sources, "nested_count", CProofClaim::Grouped)
-            .expect("expanded nested loops should remain expandable");
+    let repeated = expand_function_proof_source(&expanded, &sources, "nested_count")
+        .expect("expanded nested loops should remain expandable");
     assert_eq!(repeated, expanded);
 }
 
@@ -2401,9 +2394,7 @@ fn changed_break_exit_does_not_label_head_invariants_as_exit_facts() {
         invariant forall (k: int32) { k == k };"#,
     );
     verify_c0_sources(&source, &sources).unwrap();
-    let expanded =
-        expand_c0_claim_source(&source, &sources, "assign_then_break", CProofClaim::Grouped)
-            .unwrap();
+    let expanded = expand_function_proof_source(&source, &sources, "assign_then_break").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
     for fact in ["r == 0", "at(loop(0).exit, r) == at(loop(0).exit, 0)"] {
         let false_have = source.replace(
@@ -2526,8 +2517,7 @@ fn loop_return_closers_expand_in_their_preservation_arms() {
                     });
             verify_c0_sources(&expanded, &sources).unwrap();
         }
-        let expanded =
-            expand_c0_claim_source(&click, &sources, function, CProofClaim::Grouped).unwrap();
+        let expanded = expand_function_proof_source(&click, &sources, function).unwrap();
         assert!(!expanded.contains("if result =="), "{expanded}");
         assert!(
             c0_smart_tactic_source_sites(&expanded, &sources)
@@ -2583,7 +2573,7 @@ int32 f(int32 n) {
             expand_c0_tactic_source_at(click, &sources, position.line, position.column).unwrap();
         verify_c0_sources(&expanded, &sources).unwrap();
     }
-    let expanded = expand_c0_claim_source(click, &sources, "f", CProofClaim::Grouped).unwrap();
+    let expanded = expand_function_proof_source(click, &sources, "f").unwrap();
     assert!(
         c0_smart_tactic_source_sites(&expanded, &sources)
             .unwrap()
@@ -2686,8 +2676,7 @@ fn loop_local_pointer_invariants_refuse_short_wide_views_and_expand() {
         "{error:?}"
     );
     for function in ["f", "wide"] {
-        let expanded =
-            expand_c0_claim_source(&click, &sources, function, CProofClaim::Grouped).unwrap();
+        let expanded = expand_function_proof_source(&click, &sources, function).unwrap();
         verify_c0_sources(&expanded, &sources).unwrap();
     }
 }
@@ -2725,7 +2714,7 @@ fn native_read_aliases_do_not_supply_missing_authority_or_bounds() {
 fn native_read_aliases_expand_and_reverify() {
     let (click, sources) = loop_fixture("native_read_retains_wide_index_beside_narrow_alias");
     let sources = borrowed_sources(&sources);
-    let expanded = expand_c0_claim_source(&click, &sources, "read", CProofClaim::Grouped).unwrap();
+    let expanded = expand_function_proof_source(&click, &sources, "read").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
 }
 
@@ -2733,7 +2722,7 @@ fn native_read_aliases_expand_and_reverify() {
 fn theorem_application_expands_with_a_recorded_historical_byte_premise() {
     let (click, sources) = loop_fixture("theorem_application_reuses_recorded_historical_premise");
     let sources = borrowed_sources(&sources);
-    let expanded = expand_c0_claim_source(&click, &sources, "f", CProofClaim::Grouped).unwrap();
+    let expanded = expand_function_proof_source(&click, &sources, "f").unwrap();
     assert!(expanded.contains("p[0] == old(p)[index];"), "{expanded}");
     verify_c0_sources(&expanded, &sources).unwrap();
     let missing = expanded.replace("requires index == 0;", "");
@@ -2754,8 +2743,7 @@ fn byte_pointer_view_alias_rewrites_refuse_missing_authority_and_expand() {
         assert!(verify_c0_sources(&forged, &sources).is_err());
     }
     for function in ["f", "shifted"] {
-        let expanded =
-            expand_c0_claim_source(&click, &sources, function, CProofClaim::Grouped).unwrap();
+        let expanded = expand_function_proof_source(&click, &sources, function).unwrap();
         verify_c0_sources(&expanded, &sources).unwrap();
     }
 }
@@ -2784,7 +2772,7 @@ fn nested_loop_cursor_views_refuse_forged_ranges_and_expand() {
     ] {
         assert!(verify_c0_sources(&forged, &sources).is_err());
     }
-    let expanded = expand_c0_claim_source(&click, &sources, "f", CProofClaim::Grouped).unwrap();
+    let expanded = expand_function_proof_source(&click, &sources, "f").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
 }
 

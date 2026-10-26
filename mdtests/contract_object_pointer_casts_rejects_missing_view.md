@@ -11,7 +11,7 @@ verifying "read.c";
 int32 read(struct base* p) {
     views p->tag;
     ensures result == ((struct item*)(void*)p)->value;
-} by { execute(); normalize(); }
+} by { step_until(function.exit); normalize(); }
 ```
 
 ```expect

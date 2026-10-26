@@ -11,7 +11,7 @@ verifying "execute_until_after_exit.c";
 
 int32 execute_until_after_exit(int32 x) {
     ensures result == x by {
-        execute();
+        step_until(function.exit);
         step_until(region(0));
         solve();
     }

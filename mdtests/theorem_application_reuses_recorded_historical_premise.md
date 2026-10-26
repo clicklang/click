@@ -16,7 +16,7 @@ void f(const uint8* p, int32 index) {
 } by {
  have p[0] == old(p)[index] by solve();
  apply(same_byte(p[0], old(p)[index]));
- execute(); assumption();
+ step_until(function.exit); assumption();
 }
 ```
 ```expect

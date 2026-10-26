@@ -19,7 +19,7 @@ fn parses_grouped_function_proof() {
                 ensures result == value;
                 ensures p[0] == value;
             } by {
-                execute();
+                step_until(function.exit);
                 solve();
             }
         "#;
@@ -28,7 +28,13 @@ fn parses_grouped_function_proof() {
 
     assert_eq!(
         function.grouped_proof().and_then(SourceProof::tactics),
-        Some([ProofTactic::SmartExecute, ProofTactic::Simp].as_slice())
+        Some(
+            [
+                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
+                ProofTactic::Simp
+            ]
+            .as_slice()
+        )
     );
     assert!(matches!(
         function.ensures()[0].proof(),
@@ -44,7 +50,7 @@ fn rejects_a_grouped_proof_that_proves_no_claim() {
             int32 identity(int32 value) {
                 ensures result == value by { step_until(function.exit); }
             } by {
-                execute();
+                step_until(function.exit);
                 solve();
             }
         "#;
@@ -93,9 +99,6 @@ fn grouped_function_proof_checks_every_claim() {
             int32 identity(int32 value) {
                 ensures result == value;
                 ensures result != value;
-            } by {
-                execute();
-                solve();
             }
         "#;
     let error = verify_c0_sources(click_source, &[("identity.c", c_source)])
@@ -128,9 +131,6 @@ fn grouped_function_certificates_share_finalized_specification() {
                 owns p[0..1];
                 ensures result == value;
                 ensures p[0] == value;
-            } by {
-                execute();
-                solve();
             }
         "#;
     let verified = verify_c0_sources(click_source, &[("set.c", c_source)])
@@ -202,9 +202,6 @@ fn grouped_resource_predicate_proof_completes_without_a_body_rerun() {
             int32 return_zero(int32 p[]) {
                 owns zero_cell(p);
                 ensures result == 0;
-            } by {
-                execute();
-                solve();
             }
         "#;
 
@@ -222,13 +219,19 @@ fn grouped_resource_predicate_proof_completes_without_a_body_rerun() {
 
 #[test]
 fn parses_proof_tactic_script() {
-    let source = FILL3_CLICK.replace("== 2;", "== 2 by { execute(); solve(); }");
+    let source = FILL3_CLICK.replace("== 2;", "== 2 by { step_until(function.exit); solve(); }");
     let file = parse(&source).expect("explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
     assert_eq!(
         ensure.proof().tactics(),
-        Some([ProofTactic::SmartExecute, ProofTactic::Simp].as_slice())
+        Some(
+            [
+                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
+                ProofTactic::Simp
+            ]
+            .as_slice()
+        )
     );
 }
 
@@ -305,7 +308,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
                 owns uncalled(flag) by {
                     observe(uncalled(flag));
                     unfold(uncalled(flag));
-                    execute();
+                    step_until(function.exit);
                     fold(uncalled(flag));
                 }
             }
@@ -337,7 +340,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
                     arguments: vec![current_var("flag")],
                     parameter_types: vec![C0Type::Int32Pointer],
                 }),
-                ProofTactic::SmartExecute,
+                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
                 ProofTactic::FoldResource(ResourceClause::Declared {
                     type_schema: None,
                     resource_type_arguments: Vec::new(),

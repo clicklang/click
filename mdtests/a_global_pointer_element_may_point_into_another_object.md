@@ -22,7 +22,7 @@ verifying "a_global_pointer_element_may_point_into_another_object.c";
 
 int32 points_elsewhere() {
     ensures result == 0;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

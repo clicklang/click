@@ -9,7 +9,6 @@ fn final_header(bytes: &[u8]) -> usize {
         decreases bytes.len() - i;
         invariant i <= bytes.len();
     }
-    execute(); solve();
 }
 
 fn negated(bytes: &[u8]) -> usize {
@@ -21,5 +20,4 @@ fn negated(bytes: &[u8]) -> usize {
         decreases bytes.len() - i;
         invariant i <= bytes.len();
     }
-    execute(); solve();
 }

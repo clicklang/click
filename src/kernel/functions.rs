@@ -2023,7 +2023,7 @@ pub(super) fn execute_c_function_call_paths(
             .is_some_and(|transport| transport.names_call_to(function.name()))
     {
         return Ok(vec![resource_call_failure(
-            "a binder map cannot select a contract for a `static inline` helper that has none: its body executes at the call site on the caller's resources; give the helper a Click contract, or step the call with `step()` or `execute()`",
+            "a binder map cannot select a contract for a `static inline` helper that has none: its body executes at the call site on the caller's resources; give the helper a Click contract, or step the call with `step()`",
         )]);
     }
     if !executes_inline_body {

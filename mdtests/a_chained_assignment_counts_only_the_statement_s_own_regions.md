@@ -23,7 +23,6 @@ int32 stored(int32 c) {
     ensures 0 <= result and result <= 2;
 } by {
     step_until(statement(2).assignment(y, 0));
-    execute(); solve();
 }
 ```
 

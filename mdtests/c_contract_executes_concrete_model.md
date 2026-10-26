@@ -55,9 +55,6 @@ contract void Preserve(struct tree_node* node) {
 void touch(struct tree_node* node) {
     owns t: tree_at(node);
     ensures t.model == old(t.model);
-} by {
-    execute();
-    solve();
 }
 
 theorem touch_preserves() executes touch(struct tree_node* node) {
@@ -70,17 +67,12 @@ theorem touch_preserves() executes touch(struct tree_node* node) {
 int accept(void (*callback)(struct tree_node*)) {
     requires Preserve(callback);
     ensures result == 0;
-} by {
-    execute();
-    solve();
 }
 
 int caller() {
     ensures result == 0;
 } by {
     apply(touch_preserves());
-    execute();
-    solve();
 }
 ```
 

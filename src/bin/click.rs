@@ -218,11 +218,11 @@ mod tests {
              void f(int32* p) {\n\
              \x20   owns p[0..1];\n\
              \x20   ensures p[0] == 1 by {\n\
-             \x20       execute();\n\
+             \x20       step_until(function.exit);\n\
              \x20       solve();\n\
              \x20   }\n\
              }\n\
-             void g(int32* p) { owns p[0..1]; ensures p[0] == 2 by { execute(); solve(); } }\n",
+             void g(int32* p) { owns p[0..1]; ensures p[0] == 2; }\n",
         )
         .unwrap();
         let path = sidecar.display().to_string();
@@ -236,7 +236,7 @@ mod tests {
         let by_label = expand("f.ensures_0", "ensures.click").unwrap();
         assert!(by_label.contains("    owns p[0..1];\n"), "{by_label}");
         assert!(
-            !by_label.contains("execute();\n        solve();"),
+            !by_label.contains("step_until(function.exit);\n        solve();"),
             "{by_label}"
         );
         let by_line = expand(&format!("{path}:5"), "line.click").unwrap();
@@ -318,7 +318,7 @@ mod tests {
             fs::write(
                 &sidecar,
                 format!(
-                    "verifying \"f.c\";\nint32 f() {{\n    ensures result == 0;\n}} by {{\n    step(); step(); step();\n    loop {{ decreases 5 - i; invariant i >= 0; invariant i <= 4;{preserve} }}\n    execute(); solve();\n}}\n"
+                    "verifying \"f.c\";\nint32 f() {{\n    ensures result == 0;\n}} by {{\n    step(); step(); step();\n    loop {{ decreases 5 - i; invariant i >= 0; invariant i <= 4;{preserve} }}\n    step_until(function.exit); solve();\n}}\n"
                 ),
             )
             .unwrap();
@@ -381,7 +381,7 @@ mod tests {
         let three_steps = "} by {\n    step(); step(); step(); solve();\n}\n";
 
         let store = verify(
-            "int32 store() {\n    ensures result == 0;\n} by {\n    step(); step(); step();\n    loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }\n    execute(); solve();\n}\n",
+            "int32 store() {\n    ensures result == 0;\n} by {\n    step(); step(); step();\n    loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }\n    step_until(function.exit); solve();\n}\n",
         );
         assert!(
             store.contains(
@@ -480,7 +480,7 @@ mod tests {
         let frame = "int32 area(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures to_integer(result) == to_integer(w * h);\n}\nint32 frame(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures to_integer(result) == to_integer(w * h + 1);\n}\n";
         let overflow = run(frame, &[]);
         assert!(
-            overflow.contains("`execute()` produced undefined behavior\n  signed overflow"),
+            overflow.contains("`step()` produced undefined behavior\n  signed overflow"),
             "{overflow}"
         );
         assert!(
@@ -757,7 +757,7 @@ mod tests {
             .unwrap();
         let identity = |body: &str| {
             format!(
-                "verifying \"identity.c\";\nint32 identity(int32 x) {{\n    ensures result == x;\n}} by {{\n    have x <= x by {{\n{body}    }}\n    execute();\n    solve();\n}}\n"
+                "verifying \"identity.c\";\nint32 identity(int32 x) {{\n    ensures result == x;\n}} by {{\n    have x <= x by {{\n{body}    }}\n    step_until(function.exit);\n    solve();\n}}\n"
             )
         };
         let count_up = |phase: &str| {
@@ -1033,7 +1033,7 @@ void recolor(struct rb_node* gparent) {
             parent == gparent->rb_left;
         };
     }
-    execute();
+    step_until(function.exit);
 }
 "#;
         let directory = std::env::temp_dir().join(format!(
@@ -1086,9 +1086,9 @@ int32 child(int32 *a, int32 *visited, int32 x) {
     views a[0..2];
     owns visited[0..1];
     requires separate(memory(a[0..2]), memory(visited[0..1]));
-    ensures result == 1 by { execute(); solve(); }
+    ensures result == 1;
     ensures result != 0 implies exists (z: int32) { z == x } by {
-        execute(); intro(); witness { z: x }; normalize();
+        step_until(function.exit); intro(); witness { z: x }; normalize();
     }
 }
 int32 parent(int32 *a, int32 *visited, int32 cur) {
@@ -1270,7 +1270,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         let sidecar = directory.join("calls.click");
         fs::write(
             &sidecar,
-            "verifying \"calls.c\";\nvoid read(int32* p) { owns p[0..1]; } by { execute(); solve(); }\nvoid caller(int32* second) { ensures second == second; } by { step(); solve(); }\n",
+            "verifying \"calls.c\";\nvoid read(int32* p) { owns p[0..1]; }\nvoid caller(int32* second) { ensures second == second; } by { step(); solve(); }\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -1299,7 +1299,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         let sidecar = directory.join("goal.click");
         fs::write(
             &sidecar,
-            "verifying \"goal.c\";\nint32 bump(int32 x, int32 j, int32 y) {\n    requires 0 <= x and x <= j;\n    requires j < 10;\n    requires y > 3;\n    ensures result == x + 2;\n} by { execute(); solve(); }\n",
+            "verifying \"goal.c\";\nint32 bump(int32 x, int32 j, int32 y) {\n    requires 0 <= x and x <= j;\n    requires j < 10;\n    requires y > 3;\n    ensures result == x + 2;\n}\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -1334,7 +1334,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         let sidecar = directory.join("case.click");
         fs::write(
             &sidecar,
-            "verifying \"case.c\";\nint32 pick(int32 x, int32 y, int32 z) {\n    requires x < 10;\n    requires z > 3;\n    ensures result == 0;\n} by {\n    if y > 3 { execute(); solve(); } else { execute(); solve(); }\n}\n",
+            "verifying \"case.c\";\nint32 pick(int32 x, int32 y, int32 z) {\n    requires x < 10;\n    requires z > 3;\n    ensures result == 0;\n} by {\n    if y > 3 { step_until(function.exit); solve(); } else { step_until(function.exit); solve(); }\n}\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -1687,7 +1687,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
                 let expanded = fs::read_to_string(expanded_path).unwrap();
                 assert!(expanded.contains("integer_product_bounds bounds [0, 1, 2, 3]"));
                 assert!(
-                    !expanded.contains("execute();"),
+                    !expanded.contains("step_until(function.exit);"),
                     "the selected execution must expand"
                 );
                 entry(["verify".to_string(), expanded_path.display().to_string()])?;
@@ -2149,7 +2149,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\n\nvoid release(int32 *x, int32 i, int32 j) {\n    requires 0 <= i;\n    requires i <= j;\n    consumes x[0..(i + 1)];\n    consumes x[j..(j + 1)];\n} by {\n    execute();\n    solve();\n}\n",
+            "verifying \"f.c\";\n\nvoid release(int32 *x, int32 i, int32 j) {\n    requires 0 <= i;\n    requires i <= j;\n    consumes x[0..(i + 1)];\n    consumes x[j..(j + 1)];\n}\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -2187,7 +2187,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\n\nint32 leak() {\n    ensures result == -1 or result == 0;\n} by {\n    execute();\n    solve();\n}\n",
+            "verifying \"f.c\";\n\nint32 leak() {\n    ensures result == -1 or result == 0;\n}\n",
         )
         .unwrap();
         let leak = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();

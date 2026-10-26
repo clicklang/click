@@ -26,9 +26,6 @@ void put(int32* a, int32 k) {
     requires 5 <= k and k < 999;
     ensures a[0] == old(a[0]);
     ensures a[k] == old(a[k]);
-} by {
-    execute();
-    solve();
 }
 ```
 

@@ -35,16 +35,11 @@ int32 get(struct slot* s) {
     ensures result == old(s->pool->data[0]);
 } by {
     unfold(pool_state(s->pool));
-    execute();
-    solve();
 }
 
 int32 read_slot(struct slot* s) {
     views *s;
     views pool_state(s->pool);
-} by {
-    execute();
-    solve();
 }
 ```
 

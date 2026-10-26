@@ -2040,7 +2040,7 @@ void arena_free(struct region* region) {
     }
     fold(arena_cells(arena->data, arena->occupied, arena->capacity));
     let after = fold(arena_state(arena), { live: n - 1, capacity: c });
-    execute();
+    step_until(function.exit);
     solve();
 }
 
@@ -2088,7 +2088,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
         memory(*(region->arena->data + (region->start + index)))
     );
     mark w;
-    execute();
+    step_until(function.exit);
     have region->arena == old(region->arena);
     have region->arena->data == old(region->arena->data);
 
@@ -2155,7 +2155,7 @@ int32 arena_read(struct region* region, int32 index) {
     have to_integer(s) <= to_integer(s + index);
     have to_integer(s + index) < to_integer(e);
     mark w;
-    execute();
+    step_until(function.exit);
     have forall (k: int32) {
         0 <= k and k < at(w, region->arena->capacity) implies
             at(w, region->arena->occupied[k]) == region->arena->occupied[k]
@@ -2194,7 +2194,7 @@ void arena_destroy(struct arena* arena) {
     ));
     unfold(arena_cells(arena->data, arena->occupied, arena->capacity));
     scatter(arena_cells(arena->data, arena->occupied, arena->capacity));
-    execute();
+    step_until(function.exit);
     solve();
 }
 
@@ -2211,7 +2211,7 @@ int32 arena_region_length(struct region* region) {
     let { live: n } = unfold(st);
     let { start: s, end: e } = unfold(r);
     have region->start == s by assumption();
-    execute();
+    step_until(function.exit);
     have result == e - s;
     let r = fold(arena_region(region), { start: s, end: e });
     let st = fold(arena_state(region->arena), { live: n, capacity: region->arena->capacity });
@@ -2242,7 +2242,7 @@ int32 arena_pipeline(
     branch {
         have o0.model == ArenaInitOutcome::Failure;
         unfold(o0);
-        execute();
+        step_until(function.exit);
         solve();
     } else {}
     have initialized == 1 by {
@@ -2312,7 +2312,7 @@ int32 arena_pipeline(
         }
         step(arena_destroy, { st: s0 });
         unfold(o1);
-        execute();
+        step_until(function.exit);
         solve();
     } else {}
     have allocated == 1 by {
@@ -2557,7 +2557,7 @@ int32 arena_pipeline(
         }
         step(arena_destroy, { st: g1 });
         unfold(o2);
-        execute();
+        step_until(function.exit);
         solve();
     } else {}
     have allocated == 1 by {
@@ -3479,7 +3479,7 @@ int32 arena_pipeline(
         }
         step(arena_destroy, { st: g3 });
         unfold(o3);
-        execute();
+        step_until(function.exit);
         solve();
     } else {}
     have allocated == 1 by {
@@ -3891,7 +3891,7 @@ int32 arena_pipeline(
         }
     }
     step(arena_destroy, { st: g4 });
-    execute();
+    step_until(function.exit);
     solve();
 }
 

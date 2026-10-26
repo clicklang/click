@@ -36,7 +36,7 @@ void set_first(struct owner* owner) {
     ensures owner->second_len == old(owner->second_len);
     ensures owner->first_data == old(owner->first_data);
     ensures owner->second_data == old(owner->second_data);
-} by { execute(); solve(); }
+}
 void set_second(struct owner* owner) {
     requires separate(memory(*owner), memory(owner->second_data[0..owner->second_len]));
     views owner->first_len;
@@ -48,14 +48,13 @@ void set_second(struct owner* owner) {
     ensures owner->second_len == old(owner->second_len);
     ensures owner->first_data == old(owner->first_data);
     ensures owner->second_data == old(owner->second_data);
-} by { execute(); solve(); }
+}
 void probe(struct owner* owner) {
     owns buffers(owner);
 } by {
     unfold(buffers(owner));
     step(); step();
     fold(buffers(owner));
-    execute(); solve();
 }
 ```
 ```expect

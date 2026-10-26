@@ -1,7 +1,7 @@
 # A false bare `transport` after execution is refused as at a frontier
 
-A bare `transport(source, target)` after `execute()` is planned exactly as it
-is between execution steps: its source alone is tried as the premise, then the
+A bare `transport(source, target)` at function exit, after
+`step_until(function.exit)`, is planned exactly as it is between execution steps: its source alone is tried as the premise, then the
 premise planner selects frame evidence. When nothing carries a false target,
 the refusal is the source-only one, which names the store to `a[i]` between
 the two states, the same refusal
@@ -29,7 +29,7 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
 } by {
     mark entry;
     step();
-    execute();
+    step_until(function.exit);
     transport(at(entry, a[m]) == at(entry, a[m]), at(entry, a[m]) == 5);
     solve();
 }

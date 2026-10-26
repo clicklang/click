@@ -10,18 +10,18 @@ verifying "integers.c";
 int32 add_i32(int32 a, int32 b) {
     requires -2147483648 <= a + b and a + b <= 2147483647;
     ensures result == a + b;
-} by { execute(); solve(); }
+}
 
 int32 sub_i32(int32 a, int32 b) {
     requires -2147483648 <= a - b and a - b <= 2147483647;
     ensures result == a - b;
-} by { execute(); solve(); }
+}
 
 int32 mul_i32(int32 a, int32 b) {
     requires -2147483648 <= a * b and a * b <= 2147483647;
     ensures result == a * b;
 } by {
-    execute();
+    step_until(function.exit);
     have to_integer(a * b) == to_integer(a) * to_integer(b) by {
         arithmetic_certificate rules {
             premise 0: -2147483648 <= to_integer(a) * to_integer(b) => -2147483648 <= to_integer(a) * to_integer(b);
@@ -35,56 +35,56 @@ int32 mul_i32(int32 a, int32 b) {
 
 uint32 wrapping_add_u32(uint32 a, uint32 b) {
     ensures result == integer::uint32_wrapping_add(a, b);
-} by { execute(); solve(); }
+}
 
 uint32 wrapping_sub_u32(uint32 a, uint32 b) {
     ensures result == integer::uint32_wrapping_sub(a, b);
-} by { execute(); solve(); }
+}
 
 uint32 wrapping_mul_u32(uint32 a, uint32 b) {
     ensures result == integer::uint32_wrapping_mul(a, b);
-} by { execute(); solve(); }
+}
 
 uint32 above_int32_max() {
     ensures result == 4000000000u32;
     ensures result > 2147483647u32;
-} by { execute(); solve(); }
+}
 
 uint32 keep_above_int32_max(uint32 u) {
     ensures u > 2147483647u32 implies result == u;
     ensures u <= 2147483647u32 implies result == 0u32;
     ensures u == 4000000000u32 implies result == 4000000000u32;
-} by { execute(); solve(); }
+}
 
 int32 to_signed_i32(uint32 u) {
     ensures result == (int32) u;
     ensures u == 4294967295u32 implies result == -1;
     ensures u == 2147483648u32 implies result == -2147483648;
-} by { execute(); solve(); }
+}
 
 uint32 to_unsigned_u32(int32 x) {
     ensures result == (uint32) x;
     ensures x == -1 implies result == 4294967295u32;
     ensures (int32) result == x;
-} by { execute(); solve(); }
+}
 
 uint32 div_u32(uint32 a, uint32 b) {
     requires b != 0u32;
     ensures result == a / b;
     ensures (a == 4294967295u32 and b == 2u32) implies result == 2147483647u32;
-} by { execute(); solve(); }
+}
 
 uint32 rem_u32(uint32 a, uint32 b) {
     requires b != 0u32;
     ensures result == a % b;
     ensures (a == 4294967295u32 and b == 10u32) implies result == 5u32;
-} by { execute(); solve(); }
+}
 
 uint32 shr_u32(uint32 a, uint32 n) {
     requires n < 32u32;
     ensures result == a >> n;
     ensures (a == 2147483648u32 and n == 1u32) implies result == 1073741824u32;
-} by { execute(); solve(); }
+}
 
 int32 div_i32(int32 a, int32 b) {
     requires b != 0;
@@ -92,7 +92,7 @@ int32 div_i32(int32 a, int32 b) {
     ensures result == a / b;
     ensures (a == -7 and b == 2) implies result == -3;
     ensures (a == 7 and b == -2) implies result == -3;
-} by { execute(); solve(); }
+}
 
 int32 rem_i32(int32 a, int32 b) {
     requires b != 0;
@@ -100,19 +100,19 @@ int32 rem_i32(int32 a, int32 b) {
     ensures result == a % b;
     ensures (a == -7 and b == 2) implies result == -1;
     ensures (a == 7 and b == -2) implies result == 1;
-} by { execute(); solve(); }
+}
 
 int32 shr_i32(int32 a, uint32 n) {
     requires n < 32u32;
     ensures result == a >> n;
     ensures (a == -8 and n == 1u32) implies result == -4;
-} by { execute(); solve(); }
+}
 
 uint8 narrow_u8(uint32 x) {
     ensures (uint32) result == (x & 255u32);
     ensures x == 4000000000u32 implies result == 0u8;
     ensures x == 300u32 implies result == 44u8;
-} by { execute(); solve(); }
+}
 
 int8 narrow_i8(int32 x) {
     ensures (-128 <= x and x <= 127) implies to_integer(result) == to_integer(x);
@@ -120,7 +120,7 @@ int8 narrow_i8(int32 x) {
     ensures x == -129 implies to_integer(result) == 127;
 } by {
     if -128 <= x and x <= 127 {
-        execute();
+        step_until(function.exit);
         have -128 <= to_integer(x);
         have to_integer(x) <= 127;
         have to_integer(result) == to_integer(x) by {
@@ -133,7 +133,7 @@ int8 narrow_i8(int32 x) {
         };
         solve();
     } else {
-        execute();
+        step_until(function.exit);
         solve();
     }
 }
@@ -142,7 +142,7 @@ uint8 narrow_u8_in_range(uint32 x) {
     requires x <= 255u32;
     ensures to_integer(result) == to_integer(x);
 } by {
-    execute();
+    step_until(function.exit);
     have 0 <= to_integer(x);
     have to_integer(x) <= 255;
     have to_integer(result) == to_integer(x) by {
@@ -158,19 +158,19 @@ uint8 narrow_u8_in_range(uint32 x) {
 int64 add_i64(int64 a, int64 b) {
     requires -9223372036854775808 <= a + b and a + b <= 9223372036854775807;
     ensures result == a + b;
-} by { execute(); solve(); }
+}
 
 uint64 wrapping_add_u64(uint64 a, uint64 b) {
     ensures result == integer::uint64_wrapping_add(a, b);
-} by { execute(); solve(); }
+}
 
 bool below_i32(int32 a, int32 b) {
     ensures result implies a < b;
     ensures a < b implies result;
     ensures (a == -2147483648 and b == 0) implies result;
 } by {
-    if a == -2147483648 and b == 0 { execute(); solve(); }
-    else { execute(); solve(); }
+    if a == -2147483648 and b == 0 { step_until(function.exit); solve(); }
+    else { step_until(function.exit); solve(); }
 }
 
 bool below_u32(uint32 a, uint32 b) {
@@ -178,11 +178,11 @@ bool below_u32(uint32 a, uint32 b) {
     ensures a < b implies result;
     ensures (a == 2147483648u32 and b == 0u32) implies not result;
 } by {
-    if a == 2147483648u32 and b == 0u32 { execute(); solve(); }
-    else { execute(); solve(); }
+    if a == 2147483648u32 and b == 0u32 { step_until(function.exit); solve(); }
+    else { step_until(function.exit); solve(); }
 }
 
 bool sign_bit_set(uint32 u) {
     ensures result implies u > 2147483647u32;
     ensures u > 2147483647u32 implies result;
-} by { execute(); solve(); }
+}

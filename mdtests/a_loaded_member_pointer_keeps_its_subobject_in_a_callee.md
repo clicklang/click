@@ -18,13 +18,13 @@ int32 probe(struct Holder* h, struct Pair* p) {
     views p->second;
     requires h->link == &p->first;
     ensures result == p->second;
-} by { execute(); solve(); }
+}
 int32 caller(struct Holder* h, struct Pair* p) {
     owns h->link;
     views p->first;
     views p->second;
     ensures result == p->second;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

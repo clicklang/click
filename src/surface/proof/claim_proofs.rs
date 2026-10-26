@@ -260,7 +260,7 @@ fn unsupported_proof_shape(
         // the proof left open. Say which, rather than calling the shape
         // unimplemented, since the fix is in the proof script.
         return ClickError::new(format!(
-            "`{proof_label}`: a `branch` or proof `if` split the path, one arm returned, and the tactics after the split ran out before the continuing arm reached the function exit, so that path is still open. The proof after the split runs inside the continuing arm; finish it there (for example with `execute();` and `solve();`), or check the continuation's last tactics."
+            "`{proof_label}`: a `branch` or proof `if` split the path, one arm returned, and the tactics after the split ran out before the continuing arm reached the function exit, so that path is still open. The proof after the split runs inside the continuing arm; finish it there (for example with `step_until(function.exit);`), or check the continuation's last tactics."
         ));
     }
     let claim_description = if claim_labels.len() == 1 {
@@ -1675,7 +1675,7 @@ fn close_claim_directly_from_outcome<'a>(
 }
 
 /// The conditions that make one execution path the case it is: each C
-/// branch condition, `execute()` case split, and proof `if` case that sets
+/// branch condition, implicit-tail case split, and proof `if` case that sets
 /// its checked path apart from another -- a condition fact of
 /// `paths[path_index]` that some other path lacks. A fact the execution
 /// started from -- an entry `requires`, or a `have` before the first step --
@@ -3099,7 +3099,7 @@ pub(super) fn finish_ordered_proof<'a>(
     let result = (|| {
         let execution = frontier.execution().ok_or_else(|| {
             ClickError::new(format!(
-                "`{proof_label}` execution proof must reach function exit with `step()`, `execute()`, or `execute()`"
+                "`{proof_label}` execution proof must reach function exit with `step()` or `step_until(function.exit)`"
             ))
         })?;
         let call_edges = proof_execution
@@ -3417,7 +3417,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // under a context that reasons only exactly. An exact
                     // fact of the path's base discharges one, and so does
                     // the checked derivation over that base that discharges
-                    // a statement's prerequisite under `execute()`
+                    // a statement's prerequisite under the implicit tail
                     // (`certified_statement_transitions`, the retained
                     // policy): the bare prover verdict is not evidence, a
                     // derivation that checks is. A bound the facts decide
@@ -6097,7 +6097,7 @@ mod evidence_tests {
         let source = r#"
             resource marker() { fact 0 == 0; }
             verifying "zero.c";
-            int32 zero() { owns marker(); ensures result == 0; } by { execute(); solve(); }
+            int32 zero() { owns marker(); ensures result == 0; }
         "#;
         let verified =
             verify_c0_sources(source, &[("zero.c", "int32 zero() { return 0; }")]).unwrap();

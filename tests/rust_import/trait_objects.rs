@@ -45,8 +45,8 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
             Some(
                 "impl trait_objects::Shape for trait_objects::Square {\n    function size(self) -> i32 { self.side }\n    fn area(",
             ),
-            "    function size(self) -> i32 { self.side }\n    fn area(&self, scale: i32) -> i32 {\n    } by { execute(); solve(); }",
-            "    function size(self) -> i32 { self.side }\n    fn area(&self, scale: i32) -> i32 {\n        requires 0 <= scale and scale <= 50;\n        requires 0 <= self.side and self.side <= 100;\n    } by { execute(); solve(); }",
+            "    function size(self) -> i32 { self.side }\n    fn area(&self, scale: i32) -> i32 {\n    }",
+            "    function size(self) -> i32 { self.side }\n    fn area(&self, scale: i32) -> i32 {\n        requires 0 <= scale and scale <= 50;\n        requires 0 <= self.side and self.side <= 100;\n    }",
             "`<trait_objects::Square as trait_objects::Shape>::area` does not refine",
         ),
         // A caller knows the definition of the struct it passes.

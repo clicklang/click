@@ -12,7 +12,7 @@ verifying "probe.c";
 int32 probe(uint64 word, struct Pair* pair) {
     requires word == address(pair);
     views pair->first;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

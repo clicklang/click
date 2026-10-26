@@ -4716,11 +4716,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "execute",
-        syntax: "execute()",
-        class: "smart",
-    },
-    PublicTacticForm {
         id: "step-until",
         syntax: "step_until",
         class: "smart",

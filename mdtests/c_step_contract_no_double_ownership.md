@@ -15,7 +15,7 @@ int32 invoke(void (*callback)(int32), int32 x) {
     owns Permit(x);
     produces Permit(x);
     ensures result == 0;
-} by { step(First); execute(); solve(); }
+} by { step(First); }
 ```
 
 ```expect

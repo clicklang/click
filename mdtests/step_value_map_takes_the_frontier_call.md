@@ -37,11 +37,11 @@ int32 f(char buf[], int32 len, uint32 flags) {
     step();
     if (flags & 1u32) != 0u32 {
         step(snprintf, { n0: 0u64 });
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         let { result: count } = step(snprintf, { n0: 0u64 });
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

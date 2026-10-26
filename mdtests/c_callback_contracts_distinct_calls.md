@@ -19,7 +19,7 @@ int32 twice(int32 (*callback)()) {
     requires Lower(callback);
     requires Upper(callback);
     ensures result == 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

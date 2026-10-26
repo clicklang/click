@@ -44,9 +44,6 @@ struct object* object_init(struct object* obj) {
 
     ensures result == obj;
     ensures obj->refs == 1;
-} by {
-    execute();
-    solve();
 }
 
 void object_finish(struct object* obj) {
@@ -57,8 +54,6 @@ void object_finish(struct object* obj) {
     unfold(object_control(obj));
     unfold(object_ref(obj));
     unfold(authority(object_ref(obj)));
-    execute();
-    solve();
 }
 ```
 

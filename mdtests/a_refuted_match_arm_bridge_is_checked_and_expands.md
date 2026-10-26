@@ -27,7 +27,7 @@ int id(int x) {
 } by {
     match r.model {
         Tag::A => { have x == x by solve(); contradiction(r.model == Tag::A); },
-        Tag::B => { execute(); solve(); },
+        Tag::B => { step_until(function.exit); solve(); },
     }
 }
 ```

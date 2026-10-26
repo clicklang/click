@@ -15,10 +15,10 @@ void symbolic(int *p, const struct callbacks *cb) { cb->call(p); }
 ```click
 verifying "callbacks.c";
 contract void Invoke(int32* p) { ensures true; }
-void target(int32* p) { ensures true; } by { execute(); solve(); }
+void target(int32* p) { ensures true; } by { step_until(function.exit); solve(); }
 theorem target_has_contract()
 executes target(int32* p) {
-    ensures Invoke(&target) by { execute(); solve(); }
+    ensures Invoke(&target) by { step_until(function.exit); solve(); }
 }
 void symbolic(int32* p, const struct callbacks* cb) {
     requires cb == &table;
@@ -31,7 +31,7 @@ void symbolic(int32* p, const struct callbacks* cb) {
     apply(target_has_contract());
     have Invoke(cb->call) by { assumption(); }
     step(Invoke);
-    execute(); solve();
+    step_until(function.exit); solve();
 }
 ```
 

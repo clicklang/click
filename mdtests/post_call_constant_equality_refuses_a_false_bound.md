@@ -23,7 +23,6 @@ int h() {
 } by {
     step(); step();
     have g > 11;
-    execute(); solve();
 }
 ```
 

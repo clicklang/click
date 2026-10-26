@@ -33,25 +33,16 @@ int read_local_job(struct local_job *job) {
     views job->first;
     views job->second;
     ensures result == job->first;
-} by {
-    execute();
-    solve();
 }
 
 int relay_local_job(struct local_job *job) {
     views job->first;
     views job->second;
     ensures result == job->first;
-} by {
-    execute();
-    solve();
 }
 
 int use_local_job() {
     ensures result == 7;
-} by {
-    execute();
-    solve();
 }
 ```
 

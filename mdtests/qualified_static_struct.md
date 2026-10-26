@@ -25,7 +25,7 @@ unsigned long read_value(struct counter *p) {
     owns p->value;
     ensures result == old(p->value);
     ensures p->value == old(p->value);
-} by { execute(); solve(); }
+}
 
 unsigned long current() {
     owns counter_state();
@@ -34,7 +34,7 @@ unsigned long current() {
 } by {
     unfold(counter_state());
     have old(counter::state.value) == 7u64;
-    execute();
+    step_until(function.exit);
     fold(counter_state());
     rewrite(result == old(counter::state.value));
     solve();
@@ -45,8 +45,6 @@ int main() {
 } by {
     have counter::state.value == 7u64;
     fold(counter_state());
-    execute();
-    solve();
 }
 ```
 

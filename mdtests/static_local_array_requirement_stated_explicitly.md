@@ -48,8 +48,6 @@ int32 call_twice() {
     have static_local::increment_twice::values[1] < 1000;
     have static_local::increment_twice::values[2] > -1000;
     have static_local::increment_twice::values[2] < 1000;
-    execute();
-    solve();
 }
 ```
 

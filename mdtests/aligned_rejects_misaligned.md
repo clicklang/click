@@ -17,7 +17,7 @@ int32 aligned_rejects_misaligned(uint8* p) {
     requires aligned(p, 8);
     ensures aligned(p + 1, 8);
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 ```

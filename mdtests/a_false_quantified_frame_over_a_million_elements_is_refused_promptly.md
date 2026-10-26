@@ -18,7 +18,7 @@ int32 untouched_element(int32* a) {
     owns a[0..1000000];
     ensures result == old(a[2]);
     ensures (0..1000000).all(|k| { a[k] == old(a[k]) });
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

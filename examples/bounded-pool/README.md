@@ -46,8 +46,9 @@ Run `click verify examples/bounded-pool` from the repository root. The sidecar
 contains 11 checked claims, one per original C function, and uses Integer
 specification arithmetic: the ledger facts and
 contracts are exact Integer statements, so no arithmetic lemma or library
-bridge is needed. The counter steps inside the functions are `by auto()`, and
-the remaining postconditions close by the implicit `auto` after `execute()`:
-the solver reads the `int32` facts and definedness facts as Integer bounds,
+bridge is needed. The implicit closer proves the requirements of the bare
+`step()`s over the counters, and each proof steps to function exit with
+`step_until(function.exit)`, unfolds `valid_pool`, and leaves the remaining
+postconditions to the implicit tail's closer: the solver reads the `int32` facts and definedness facts as Integer bounds,
 proves each addition or subtraction defined, and closes every bound and
 conservation equation by a checked certificate, which `click expand` prints.

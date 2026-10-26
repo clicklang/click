@@ -23,9 +23,6 @@ int32 range_probe(uint8 bytes[], int32 len) {
         viewable(bytes[0..length + 1])
     };
     ensures result == 0;
-} by {
-    execute();
-    solve();
 }
 ```
 

@@ -15,10 +15,10 @@ void any(const unsigned char *bytes, int i, unsigned long length) { touch(bytes,
 verifying "a_call_owes_the_order_of_a_range_it_hands_over.c";
 void touch(const uint8* bytes, int32 i, uint64 length) {
     views bytes[i..length];
-} by { execute(); solve(); }
+}
 void any(const uint8* bytes, int32 i, uint64 length) {
     views bytes[0..length];
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

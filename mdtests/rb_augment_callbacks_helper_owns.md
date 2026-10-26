@@ -95,8 +95,6 @@ void erase_augmented(struct node* node, struct node* parent,
     ensures parent->right == old(parent->right);
 } by {
     open(callback_suite(augment)) {
-        execute();
-        solve();
     }
 }
 ```

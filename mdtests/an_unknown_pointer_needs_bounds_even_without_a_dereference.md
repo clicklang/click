@@ -8,7 +8,7 @@ int32* probe(int32* p) { return p + 1; }
 verifying "probe.c";
 int32* probe(int32* p) {
     ensures true;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

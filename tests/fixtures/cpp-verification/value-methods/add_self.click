@@ -10,9 +10,6 @@ void FeeFrac::operator+=(const FeeFrac& other) {
     requires this->size <= 1073741823;
     ensures this->fee == old(this->fee) + old(this->fee);
     ensures this->size == old(this->size) + old(this->size);
-} by {
-    execute();
-    solve();
 }
 
 int32 double_size(struct FeeFrac& value, int32& untouched) {
@@ -27,7 +24,4 @@ int32 double_size(struct FeeFrac& value, int32& untouched) {
     ensures value.fee == old(value.fee) + old(value.fee);
     ensures value.size == old(value.size) + old(value.size);
     ensures result == value.size;
-} by {
-    execute();
-    solve();
 }

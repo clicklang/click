@@ -60,29 +60,29 @@ template<class T> class Wrap<T> : Holder<T> {
     function held(this) -> T { this->value }
 }
 template<class T> void Wrap<T>::put(T x) {
-} by { execute(); solve(); }
+}
 template<class T> T Wrap<T>::get() const {
-} by { execute(); solve(); }
+}
 
 int store(Holder<int>& holder, int x) {
     ensures result == x;
     ensures held(holder) == x;
-} by { execute(); solve(); }
+}
 
 int through(Wrap<int>& wrap, int x) {
     owns wrap;
     ensures result == x;
     ensures wrap.value == x;
-} by { execute(); solve(); }
+}
 
 unsigned int peek(const Holder<unsigned int>& holder) {
     ensures result == held(holder);
-} by { execute(); solve(); }
+}
 
 unsigned int through_peek(const Wrap<unsigned int>& wrap) {
     views wrap;
     ensures result == wrap.value;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

@@ -7,9 +7,6 @@ RestoreState::RestoreState(int32* slot) {
     ensures this->pointer == slot;
     ensures this->saved == old(slot[0]);
     ensures slot[0] == 7;
-} by {
-    execute();
-    solve();
 }
 
 RestoreState::~RestoreState() {
@@ -20,16 +17,10 @@ RestoreState::~RestoreState() {
     ensures this->pointer == old(this->pointer);
     ensures this->saved == old(this->saved);
     ensures this->pointer[0] == old(this->saved);
-} by {
-    execute();
-    solve();
 }
 
 int32 capture(int32& value) {
     owns value;
     ensures result == 7;
     ensures value == old(value);
-} by {
-    execute();
-    solve();
 }

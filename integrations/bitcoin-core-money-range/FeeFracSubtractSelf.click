@@ -6,7 +6,4 @@ void FeeFrac::operator-=(const FeeFrac& other) {
     owns this->size;
     ensures this->fee == 0i64;
     ensures this->size == 0;
-} by {
-    execute();
-    solve();
 }

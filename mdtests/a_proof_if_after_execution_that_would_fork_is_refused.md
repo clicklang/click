@@ -1,6 +1,6 @@
 # A proof `if` after execution that would fork the proof is refused
 
-After `execute()`, `n < 5` is not decided on the function's one outcome path,
+After `step_until(function.exit)`, `n < 5` is not decided on the function's one outcome path,
 so each arm would be a separate path. What follows a proof `if` is checked
 once: the `solve()` after this one would instead run once per arm, and a run of
 such `if`s would check the rest of the proof once per combination of arms.
@@ -22,7 +22,7 @@ int32 f(int32 n) {
     ensures result <= 10;
     ensures result >= 0;
 } by {
-    execute();
+    step_until(function.exit);
     if n < 5 {
         have n <= 10 by assumption();
     } else {

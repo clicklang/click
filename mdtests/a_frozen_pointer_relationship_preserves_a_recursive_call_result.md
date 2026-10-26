@@ -29,7 +29,7 @@ void push(struct node* node, struct node* tail) {
     consumes chain(tail);
     produces chain(node);
     ensures node->next == tail;
-} by { execute(); fold(chain(node)); solve(); }
+} by { step_until(function.exit); fold(chain(node)); solve(); }
 void pop(struct node* node) {
     requires node != 0;
     consumes chain(node);

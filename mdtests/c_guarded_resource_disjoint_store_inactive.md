@@ -23,7 +23,7 @@ int32 f(struct cell* root) {
     requires root->base.left != (struct base*)(void*)root;
     ensures result == 0;
     ensures child.number == old(child.number);
-} by { unfold(child); execute(); fold(child); solve(); }
+} by { unfold(child); step_until(function.exit); fold(child); solve(); }
 ```
 ```expect
 pass

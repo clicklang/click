@@ -208,8 +208,6 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
     }
     let { lo: run_lo, hi: run_hi } = unfold(run);
     fold(arena_cells(data, occupied, capacity));
-    execute();
-    solve();
 }
 ```
 

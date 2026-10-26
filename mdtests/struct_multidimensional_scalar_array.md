@@ -94,9 +94,6 @@ struct copy_packet finish(struct copy_packet value) {
 
 int32 run_struct_multidimensional_scalar_array() {
     ensures result == 75;
-} by {
-    execute();
-    solve();
 }
 ```
 

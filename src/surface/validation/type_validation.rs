@@ -2373,7 +2373,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         | ProofTactic::StepCall(_)
         | ProofTactic::StepProved { .. } => "step",
         ProofTactic::UserTactic(_) => "tactic",
-        ProofTactic::SmartExecute => "execute",
+        ProofTactic::SmartExecute => "implicit tail",
         ProofTactic::ExecuteUntil(_) => "step_until",
         ProofTactic::UnfoldPredicate(_)
         | ProofTactic::UnfoldFunction(_)

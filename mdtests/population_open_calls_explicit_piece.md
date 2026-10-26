@@ -28,7 +28,7 @@ void restored(struct object* obj) {
     open(control(obj)) {
         step();
         step();
-        execute();
+        step_until(function.exit);
     }
     solve();
 }

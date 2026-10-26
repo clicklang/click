@@ -18,7 +18,7 @@ verifying "string_predicates_need_an_import_without_a_string_function.c";
 
 int32 first(const uint8* text) {
     requires cstr::readable(text);
-    ensures 1 == 1 by { execute(); solve(); }
+    ensures 1 == 1;
 }
 ```
 

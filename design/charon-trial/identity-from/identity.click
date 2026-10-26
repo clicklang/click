@@ -1,2 +1,2 @@
 verifying "identity.rs";
-fn identity(x: u16) -> u16 { ensures result == x; } by { execute(); solve(); }
+fn identity(x: u16) -> u16 { ensures result == x; }

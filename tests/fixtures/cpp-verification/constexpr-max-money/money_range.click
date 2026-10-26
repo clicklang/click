@@ -8,14 +8,14 @@ bool money_range(const int64& value) {
 } by {
     if value >= 0i64 {
         if value <= 2100000000000000i64 {
-            execute();
+            step_until(function.exit);
             solve();
         } else {
-            execute();
+            step_until(function.exit);
             solve();
         }
     } else {
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

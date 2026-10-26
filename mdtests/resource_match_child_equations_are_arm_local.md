@@ -42,7 +42,7 @@ void keep(int32* p) {
         Phase::Before => {
             let { first: first, second: second, child: child } = unfold(state);
             have first >= 0 by { assumption(); }
-            unfold(child); execute();
+            unfold(child); step_until(function.exit);
             let child = fold(cell(p), { value: first });
             let state = fold(holder(p), { phase: Phase::Before, first: first, second: second }, { child: child });
             solve();
@@ -50,7 +50,7 @@ void keep(int32* p) {
         Phase::After => {
             let { first: first, second: second, child: child } = unfold(state);
             have second >= 1 by { assumption(); }
-            unfold(child); execute();
+            unfold(child); step_until(function.exit);
             let child = fold(cell(p), { value: second });
             let state = fold(holder(p), { phase: Phase::After, first: first, second: second }, { child: child });
             solve();

@@ -30,7 +30,7 @@ contract int32 Shifts(int32 x) {
 int32 add3(int32 x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + 3;
-} by { execute(); solve(); }
+}
 
 theorem adds_three_shifts_two(f: int32 (*)(int32)) executes f(int32 x) {
     requires Adds(f, { amount: 3 });

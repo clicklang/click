@@ -878,5 +878,4 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    to_integer(sum2) == adler_spec_b(old(buf), 5552, 1, 0);
   };
  }
- execute(); solve();
 }

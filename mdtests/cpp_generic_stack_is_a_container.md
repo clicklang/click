@@ -150,7 +150,7 @@ template<class T> void Stack<T>::push(T value) {
     ensures after.items == List::Cons(value, old(before.items));
     ensures to_integer(this->count) == length(after.items);
 } by {
-    execute();
+    step_until(function.exit);
     let after = fold(nodes<T>(this->head), { items: List::Cons(value, old(before.items)) }, { tail: before });
     unfold(length(List<T>::Cons(value, old(before.items))));
     have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
@@ -175,7 +175,7 @@ template<class T> bool Stack<T>::pop(T& out) {
     match before.items {
         List::Nil => {
             unfold(before);
-            execute();
+            step_until(function.exit);
             let after = fold(nodes<T>(this->head), { items: List<T>::Nil });
             unfold(length(List<T>::Nil));
             unfold(is_cons(List<T>::Nil));
@@ -186,7 +186,7 @@ template<class T> bool Stack<T>::pop(T& out) {
             let { tail: tail } = unfold(before);
             unfold(length(List::Cons(value, tail_items)));
             apply(length_nonnegative(tail_items));
-            execute();
+            step_until(function.exit);
             unfold(is_cons(List::Cons(value, tail_items)));
             unfold(first_or(List::Cons(value, tail_items), old(out)));
             unfold(rest(List::Cons(value, tail_items)));
@@ -310,9 +310,9 @@ template<class T> class Stack<T> : Container<T> {
     function size(this) -> uint64 { this->count }
 }
 template<class T> void Stack<T>::put(T value) {
-} by { execute(); solve(); }
+}
 template<class T> bool Stack<T>::take(T& out) {
-} by { execute(); solve(); }
+}
 
 // Through any container of `int`: what is put is what is taken, and the
 // list is as it was.
@@ -322,7 +322,7 @@ int round_trip_virtual(Container<int>& container, int x) {
     ensures result == x;
     ensures items(container) == old(items(container));
 } by {
-    execute();
+    step_until(function.exit);
     apply(cons_is_cons(x, old(items(container))));
     apply(first_or_cons(x, old(items(container)), 0));
     apply(rest_cons(x, old(items(container))));
@@ -338,8 +338,6 @@ int through(int x) {
     let state = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };
-    execute();
-    solve();
 }
 ```
 

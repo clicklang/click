@@ -27,7 +27,7 @@ int32 member(struct node* node) {
     requires list::contains(singleton(node), node);
     requires list::contains(List::Cons(node, List::Nil), node);
     ensures result == 1;
-} by { execute(); }
+}
 function first(nodes: Nodes) -> List<struct node*> decreases nodes {
     match nodes {
         Nodes::Empty => List::Nil,
@@ -255,7 +255,7 @@ verifying "skip.c";
 int32 skip(int32* p) {
     owns cell(p);
     ensures result == 0;
-} by { execute(); solve(); }
+}
 "#;
     let project = ClickProject::new(
         "skip.click",
@@ -281,11 +281,10 @@ int32 skip(int32* p) {
 #[test]
 fn retained_function_expansion_formats_without_reverification_and_rechecks() {
     let c = "int32 id(int32 x) { return x; }";
-    let source =
-        "verifying \"id.c\"; int32 id(int32 x) { ensures result == x; } by { execute(); solve(); }";
+    let source = "verifying \"id.c\"; int32 id(int32 x) { ensures result == x; }";
     let (_session, verified) = C0VerificationSession::new(source, &[("id.c", c)]).unwrap();
     let (rewritten, events) = instrumentation::collect(|| {
-        expand_verified_function_claim_source_by_label(source, &verified, "id.contract")
+        expand_verified_function_claim_source_by_label(source, &verified, "id.ensures_0")
             .unwrap()
             .unwrap()
     });
@@ -296,7 +295,7 @@ fn retained_function_expansion_formats_without_reverification_and_rechecks() {
     );
     assert_eq!(
         rewritten,
-        expand_c0_claim_source_by_label(source, &[("id.c", c)], "id.contract").unwrap()
+        expand_c0_claim_source_by_label(source, &[("id.c", c)], "id.ensures_0").unwrap()
     );
     verify_c0_sources(&rewritten, &[("id.c", c)]).unwrap();
     assert!(verify_c0_sources(&rewritten, &[("id.c", "int32 id(int32 x) { return 0; }")]).is_err());
@@ -321,11 +320,11 @@ int32 identity(int32 x) { ensures result == x; } by {
     if x == 0 {
         step_until(region(0));
         step_until(assignment(y, 0));
-        step(); execute(); solve();
+        step(); step_until(function.exit); solve();
     } else {
         step_until(region(0));
         step_until(assignment(y, 0));
-        step(); execute(); solve();
+        step(); step_until(function.exit); solve();
     }
 }
 "#;
@@ -345,7 +344,7 @@ int32 identity(int32 x) { ensures result == x; } by {
 /// `rb_erase`'s general wrapper (`examples/rbtree/rbtree-erase`): a file-static
 /// callbacks struct is folded and passed to a call whose outcome resource
 /// unfolds into a child named like the contract's own `produces whole`.
-/// `execute(); solve();` expands to `have whole.model == ...`, which reads
+/// `step_until(function.exit); solve();` expands to `have whole.model == ...`, which reads
 /// the unfolded child through the contract binder's resource, not the
 /// outcome resource the unfold named it from.
 #[test]
@@ -417,7 +416,7 @@ resource callbacks_at(augment: const struct callbacks*) {
 
 void dummy_rotate(struct root* root) {
     ensures 1 == 1;
-} by { execute(); normalize(); }
+} by { step_until(function.exit); normalize(); }
 
 theorem dummy_rotate_contract() {
     ensures Rotate(&dummy_rotate) by { unfold(Rotate); solve(); }
@@ -429,7 +428,7 @@ int produce(struct root* root, const struct callbacks* augment) {
     produces out: out_at(root, result);
     ensures out_value(out.model) == old(cell.model);
 } by {
-    execute();
+    step_until(function.exit);
     let out = fold(out_at(root, 0), { model: Out::Done(cell.model) }, { whole: cell });
     solve();
 }
@@ -449,13 +448,13 @@ void use(struct root* root) {
             have out_value(Out::Done(v)) == old(cell.model) by { rewrite(Out::Done(v) == out.model); assumption(); }
             have v == old(cell.model) by { unfold(out_value(Out::Done(v))); assumption(); }
             let { whole: whole } = unfold(out);
-            execute(); solve();
+            step_until(function.exit); solve();
         },
         Out::Pending(v) => {
             have out_value(Out::Pending(v)) == old(cell.model) by { rewrite(Out::Pending(v) == out.model); assumption(); }
             have v == old(cell.model) by { unfold(out_value(Out::Pending(v))); assumption(); }
             let { pending: whole } = unfold(out);
-            execute(); solve();
+            step_until(function.exit); solve();
         },
     }
 }
@@ -491,7 +490,7 @@ int32 shadowed_c(int32 x) {
     requires x == 0;
     ensures forall (x: int32) { x == x };
 } by {
-    execute();
+    step_until(function.exit);
     intro();
     have outer.x == 0 by { solve(); }
     solve();
@@ -525,7 +524,7 @@ int32 shadowed_twice_c(int32 x) {
     requires x == 0;
     ensures forall (x: int32) { forall (x: int32) { x == x } };
 } by {
-    execute();
+    step_until(function.exit);
     intro();
     intro();
     have outer.outer.x == 0 by { solve(); }
@@ -1040,6 +1039,23 @@ fn expand_top_level_tactic_for_test(
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let function = DeclarationSources::new(&tokens).function(function_block)?;
+    if claim == CProofClaim::Grouped && function.grouped.is_none() {
+        // The omitted proof is the implicit tail alone. It sits at the
+        // contract's closing brace when it covers several claims, and at
+        // the claim itself when there is one.
+        assert_eq!(
+            tactic_index, 0,
+            "an omitted proof has only its implicit tail"
+        );
+        let at = if function_block.covering_proof().is_some() {
+            tokens[function.body_close].span.start
+        } else {
+            let (clause, _) = function.clauses[0].as_ref().expect("the one claim clause");
+            tokens[*clause].span.start
+        };
+        let position = position_at_offset(click_source, at);
+        return expand_c0_tactic_source_at(click_source, c_sources, position.line, position.column);
+    }
     let proof = match claim {
         CProofClaim::Grouped => find_grouped_proof_span(&tokens, &function)?,
         CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
@@ -1060,7 +1076,7 @@ verifying "identity.c";
 int32 identity(int32 x) {
     ensures result == x;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -1074,7 +1090,7 @@ int32 identity(int32 x) {
     )
     .expect("the first grouped tactic should expand");
 
-    assert!(!expanded.contains("execute();"));
+    assert!(!expanded.contains("step_until(function.exit);"));
     assert!(expanded.contains("    step();\n    solve();"));
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the source with one expanded tactic should re-verify");
@@ -1089,9 +1105,6 @@ verifying "read.c";
 int32 read_first(int32 p[1]) {
     views p[0..1];
     ensures result == p[0];
-} by {
-    execute();
-    solve();
 }
 "#;
 
@@ -1104,7 +1117,7 @@ int32 read_first(int32 p[1]) {
     )
     .expect("the grouped immutable read should have one common expansion");
 
-    assert!(!expanded.contains("execute();"));
+    assert!(!expanded.contains("step_until(function.exit);"));
     assert!(expanded.contains("step();"), "{expanded}");
     verify_c0_sources(&expanded, &[("read.c", c_source)])
         .expect("the expanded immutable read should re-verify every grouped claim");
@@ -1120,16 +1133,16 @@ int32 identity(int32 x) {
     ensures result == x;
 } by {
     if x == x {
-        execute();
+        step_until(function.exit);
         solve();
     } else {
-        execute();
+        step_until(function.exit);
         solve();
     }
 }
 "#;
     let then_offset = click_source
-        .find("        execute();")
+        .find("        step_until(function.exit);")
         .expect("then tactic should exist")
         + 8;
     let position = position_at_offset(click_source, then_offset);
@@ -1146,7 +1159,7 @@ int32 identity(int32 x) {
     let expanded = expanded.expect("the nested then tactic should expand");
     assert_eq!(capture_flat_units, 1, "capture should retain one Proof");
 
-    assert_eq!(expanded.matches("execute();").count(), 1);
+    assert_eq!(expanded.matches("step_until(function.exit);").count(), 1);
     assert!(
         expanded.contains("    if x == x {\n        step();"),
         "{expanded}"
@@ -1176,7 +1189,7 @@ int32 identity(int32 x) {
     ensures result == x;
 } by {
     open(known(x)) {
-        execute();
+        step_until(function.exit);
     }
     solve();
 }
@@ -1526,14 +1539,14 @@ verifying "caller.c";
 int32 zero() {
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 
 int32 caller() {
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -1543,7 +1556,7 @@ int32 caller() {
         expand_top_level_tactic_for_test(click_source, &sources, "caller", CProofClaim::Grouped, 0)
             .expect("opaque call internals should not become surface premises");
 
-    assert_eq!(expanded.matches("execute();").count(), 1);
+    assert_eq!(expanded.matches("step_until(function.exit);").count(), 1);
     verify_c0_sources(&expanded, &sources)
         .expect("the caller with one expanded tactic should re-verify");
 }
@@ -1559,9 +1572,6 @@ verifying "caller.c";
 int32 positive(int32 x) {
     requires 0 < x;
     ensures result == x;
-} by {
-    execute();
-    solve();
 }
 
 int32 caller(int32 x) {
@@ -1569,9 +1579,6 @@ int32 caller(int32 x) {
     requires x < 100;
     requires x != 37;
     ensures result == x;
-} by {
-    execute();
-    solve();
 }
 "#;
     let sources = [("positive.c", positive_c), ("caller.c", caller_c)];
@@ -1603,9 +1610,6 @@ int32 positive_at(struct box* p) {
     views p->value;
     requires 0 < p->value;
     ensures result == p->value;
-} by {
-    execute();
-    solve();
 }
 
 int32 caller(struct box* p, int32 x) {
@@ -1613,9 +1617,6 @@ int32 caller(struct box* p, int32 x) {
     requires 0 < p->value;
     requires x < 100;
     ensures result == p->value;
-} by {
-    execute();
-    solve();
 }
 "#;
     let sources = [("positive_at.c", positive_at_c), ("caller.c", caller_c)];
@@ -1649,21 +1650,21 @@ verifying "caller.c";
 int32 zero() {
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 
 int32 passthrough(int32 x) {
     ensures result == x;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 
 int32 caller() {
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -1699,14 +1700,14 @@ verifying "caller.c";
 int32 zero() {
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 
 int32 caller() {
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -1730,14 +1731,14 @@ verifying "caller.c";
 int32 zero() {
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 
 int32 caller() {
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     have at(region(2).entry, c(result)) == 0 by {
         assumption();
     }
@@ -1761,16 +1762,13 @@ verifying "caller.c";
 
 int32 zero() {
     ensures result == 0;
-} by {
-    execute();
-    solve();
 }
 
 int32 caller() {
     ensures result == 0;
 } by {
     step();
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -1796,7 +1794,7 @@ int32 identity(int32 x) {
     ensures result == x;
     ensures result == old(x);
 } by {
-    execute();
+    step_until(function.exit);
     solve();
     solve();
 }
@@ -1840,7 +1838,7 @@ int32 f(int32* p) {
     produces out: Cell(p);
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     have reflexive(p) == 1 by { unfold(reflexive(p)); normalize(); }
     let out = fold(Cell(p), { tag: 1 });
     solve();
@@ -1870,7 +1868,7 @@ int32 inspect(int32 p[1], int32 x) {
         0 <= k and k < 1 implies x == x
     };
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -1908,7 +1906,7 @@ int32 increment_and_return_old(int32 p[1]) {
     ensures result == old(p[0]);
     ensures p[0] == 0;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -1972,7 +1970,7 @@ int32 inspect(struct box* owner) {
     unfold(owned_box(owner));
     unfold(terminated_at);
     step();
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;
@@ -2036,7 +2034,7 @@ int32 contains(uint8 p[], int32 n) {
     requires viewable(p[0..n]);
     requires bytes::contains(p, 0, (uint64) n, 'x');
     ensures bytes::contains(p, 0, (uint64) n, 'x') by {
-        execute();
+        step_until(function.exit);
         unfold(bytes::contains);
         obtain (found: uint64) {
             0u64 <= found and found < (uint64) n and p[found] == 'x'
@@ -2122,54 +2120,28 @@ predicate sorted_pair(p: int32[2]) {
 }
 int32 compare_swap2(int32 p[2]) {
     consumes p[0..2];
-    ensures sorted_pair(p) by {
-        execute();
-        unfold(sorted_pair);
-        solve();
-    }
+    ensures sorted_pair(p);
 }"#;
-    let expanded_execute = expand_top_level_tactic_for_test(
+    let expanded_tail = expand_top_level_tactic_for_test(
         click_source,
         &[("compare_swap2.c", c_source)],
         "compare_swap2",
-        CProofClaim::Ensure(0),
+        CProofClaim::Grouped,
         0,
     );
-    let expanded_execute =
-        expanded_execute.expect("branch-shaped execute should expand from retained Proof steps");
-    verify_c0_sources(&expanded_execute, &[("compare_swap2.c", c_source)])
-        .expect("expanded branch-shaped execute should verify normally");
+    let expanded_tail = expanded_tail
+        .expect("the implicit tail should expand its branch from retained Proof steps");
+    verify_c0_sources(&expanded_tail, &[("compare_swap2.c", c_source)])
+        .expect("the expanded implicit tail should verify normally");
     let original_condition = "if at(region(1).entry, p[1]) < at(region(1).entry, p[0]) {";
     let corrupted_condition = "if at(region(1).entry, p[1]) >= at(region(1).entry, p[0]) {";
-    let corrupted_execute = expanded_execute.replacen(original_condition, corrupted_condition, 1);
+    let corrupted_tail = expanded_tail.replacen(original_condition, corrupted_condition, 1);
     assert_ne!(
-        corrupted_execute, expanded_execute,
-        "the retained execute branch condition should be present"
+        corrupted_tail, expanded_tail,
+        "the retained branch condition should be present"
     );
-    verify_c0_sources(&corrupted_execute, &[("compare_swap2.c", c_source)])
-        .expect_err("ordinary verification should reject a corrupted execute branch");
-
-    let offset = click_source
-        .rfind("solve")
-        .expect("solve should be present");
-    let position = position_at_offset(click_source, offset);
-    let expanded = expand_c0_tactic_source_at(
-        click_source,
-        &[("compare_swap2.c", c_source)],
-        position.line,
-        position.column,
-    );
-    let expanded = expanded.expect("post-execution simp should expand");
-
-    // The branch anchors at the statement that branched; statement 0 is
-    // the `tmp` declaration, so this is the same state as function entry
-    // written at the point the certificate actually read it.
-    assert!(
-        expanded.contains("if at(region(1).entry, p[1]) < at(region(1).entry, p[0])"),
-        "{expanded}"
-    );
-    verify_c0_sources(&expanded, &[("compare_swap2.c", c_source)])
-        .expect("branch certificate should check against the state where it branched");
+    verify_c0_sources(&corrupted_tail, &[("compare_swap2.c", c_source)])
+        .expect_err("ordinary verification should reject a corrupted branch condition");
 }
 
 /// A branch over a field read through a struct pointer expands to a
@@ -2177,7 +2149,7 @@ int32 compare_swap2(int32 p[2]) {
 #[test]
 fn expanded_branch_condition_names_a_struct_pointer_field() {
     let c_source = "struct cell { int first; int second; };\nint pick(struct cell *p) { if (p->second > 0) { return 1; } return 0; }";
-    let click_source = "verifying \"pick.c\";\nint32 pick(struct cell* p) { views p->second; ensures result >= 0; } by { execute(); solve(); }\n";
+    let click_source = "verifying \"pick.c\";\nint32 pick(struct cell* p) { views p->second; ensures result >= 0; }\n";
     let expanded = expand_top_level_tactic_for_test(
         click_source,
         &[("pick.c", c_source)],
@@ -2198,7 +2170,7 @@ fn expanded_branch_condition_names_a_struct_pointer_field() {
 #[test]
 fn expanded_branch_condition_names_a_local_struct_pointer_field() {
     let c_source = "struct cell { int first; int second; };\nint pick(struct cell *p) { struct cell *q = p; if (q->second > 0) { return 1; } return 0; }";
-    let click_source = "verifying \"pick.c\";\nint32 pick(struct cell* p) { views p->second; ensures result >= 0; } by { execute(); solve(); }\n";
+    let click_source = "verifying \"pick.c\";\nint32 pick(struct cell* p) { views p->second; ensures result >= 0; }\n";
     let expanded = expand_top_level_tactic_for_test(
         click_source,
         &[("pick.c", c_source)],
@@ -2218,7 +2190,7 @@ fn expanded_branch_condition_names_a_local_struct_pointer_field() {
 #[test]
 fn expanded_branch_condition_names_nested_and_pointer_fields() {
     let c_source = "struct inner { int x; int y; };\nstruct outer { int tag; struct inner in; struct outer *next; };\nint pick(struct outer *p) { if (p->in.y > 0) { return 1; } if (p->next == 0) { return 2; } return 0; }";
-    let click_source = "verifying \"pick.c\";\nint32 pick(struct outer* p) { views p->in.y; views p->next; ensures result >= 0; } by { execute(); solve(); }\n";
+    let click_source = "verifying \"pick.c\";\nint32 pick(struct outer* p) { views p->in.y; views p->next; ensures result >= 0; }\n";
     let expanded = expand_top_level_tactic_for_test(
         click_source,
         &[("pick.c", c_source)],
@@ -2239,7 +2211,7 @@ fn expanded_branch_condition_names_nested_and_pointer_fields() {
 #[test]
 fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
     let c_source = "struct node { int first; int second; struct node *next; };\nint pick(struct node *p) { if (p->next->second > 0) { return 1; } return 0; }";
-    let click_source = "verifying \"pick.c\";\nint32 pick(struct node* p) { views p->next; views p->next->second; ensures result >= 0; } by { execute(); solve(); }\n";
+    let click_source = "verifying \"pick.c\";\nint32 pick(struct node* p) { views p->next; views p->next->second; ensures result >= 0; }\n";
     let expanded = expand_top_level_tactic_for_test(
         click_source,
         &[("pick.c", c_source)],
@@ -2325,7 +2297,7 @@ fn wide_arithmetic_reads_listed_bounds_at_their_named_snapshot() {
     requires n <= 16;
     ensures result <= 12 by {{
         mark before;
-        execute();
+        step_until(function.exit);
         have result <= 12 by {{
             solve() using {{
                 at(before, 4 <= n);
@@ -2401,7 +2373,7 @@ fn parsed_function_body(source: &str, name: &str) -> Result<FunctionSource, Clic
 /// parameters, and a callable bound has its own parentheses and `->`.
 #[test]
 fn a_generic_rust_head_is_located_by_its_path() {
-    let source = "verifying \"lib.rs\";\nfn lib::apply<F: Fn(i32) -> i32>(f: F, x: i32) -> i32 {\n    ensures 0 == 0;\n} by { execute(); solve(); }\nfn lib::keep<'a>(x: &'a i32) -> i32 {\n    ensures 1 == 1;\n} by { execute(); solve(); }\n";
+    let source = "verifying \"lib.rs\";\nfn lib::apply<F: Fn(i32) -> i32>(f: F, x: i32) -> i32 {\n    ensures 0 == 0;\n}\nfn lib::keep<'a>(x: &'a i32) -> i32 {\n    ensures 1 == 1;\n}\n";
     let apply = parsed_function_body(source, "__rust_q_I3_lib_I5_apply").expect("the generic head");
     let keep = parsed_function_body(source, "__rust_q_I3_lib_I4_keep").expect("the lifetime head");
     assert!(apply.body_open < apply.body_close && apply.body_close < keep.body_open);
@@ -2412,7 +2384,7 @@ fn a_generic_rust_head_is_located_by_its_path() {
 /// the parser builds for it records the method's own body.
 #[test]
 fn an_inherent_method_is_located_inside_its_impl_block() {
-    let source = "verifying \"lib.rs\";\nimpl adler2::Adler32 {\n    fn compute(&mut self, seed: u32) {\n        ensures 0 == 0;\n    } by { execute(); solve(); }\n}\n";
+    let source = "verifying \"lib.rs\";\nimpl adler2::Adler32 {\n    fn compute(&mut self, seed: u32) {\n        ensures 0 == 0;\n    } by { step_until(function.exit); solve(); }\n}\n";
     let tokens = plain_source_tokens(source).unwrap();
     let name = "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
     let body = parsed_function_body(source, name).expect("the parser reads the method's body");
@@ -2464,7 +2436,7 @@ int32 inspect(uint8 p[], uint64 len) {
     requires viewable(p[0..len + 1u64]);
     requires cstr::len(p, len);
     ensures p[len] == '\0' by {
-        execute();
+        step_until(function.exit);
         apply(cstr::len_has_terminator(p, len));
         solve();
     }
@@ -2668,7 +2640,7 @@ fn expands_single_smart_and_default_function_proofs_by_source_location() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let smart = r#"verifying "identity.c";
 int32 identity(int32 x) {
-    ensures result == x by { execute(); solve(); }
+    ensures result == x by { step_until(function.exit); solve(); }
 }
 "#;
     let smart_position = position_at_offset(smart, smart.find("solve").unwrap());
@@ -2679,7 +2651,7 @@ int32 identity(int32 x) {
         smart_position.column,
     )
     .expect("single smart proof should expand as a whole proof");
-    assert!(smart_expanded.contains("execute();"));
+    assert!(smart_expanded.contains("step_until(function.exit);"));
     assert!(!smart_expanded.contains("solve();"));
     verify_c0_sources(&smart_expanded, &[("identity.c", c_source)]).unwrap();
 
@@ -2734,7 +2706,7 @@ fn partial_tactic_expansion_skips_unrelated_broken_proofs() {
     let click_source = r#"verifying "good.c";
 verifying "bad.c";
 int32 good(int32 x) {
-    ensures result == x by { execute(); solve(); }
+    ensures result == x by { step_until(function.exit); solve(); }
 }
 int32 bad(int32 x) {
     ensures result == x + 1 by solve();
@@ -2743,7 +2715,7 @@ int32 bad(int32 x) {
     let sources = [("good.c", good_c), ("bad.c", bad_c)];
     verify_c0_sources(click_source, &sources)
         .expect_err("the unrelated bad proof should fail complete verification");
-    let selected_offset = click_source.find("execute();").unwrap();
+    let selected_offset = click_source.find("step_until(function.exit);").unwrap();
     let selected = position_at_offset(click_source, selected_offset);
 
     let expanded =
@@ -2755,7 +2727,7 @@ int32 bad(int32 x) {
         &expanded[..selected_offset],
         &click_source[..selected_offset]
     );
-    let unselected_suffix = &click_source[selected_offset + "execute();".len()..];
+    let unselected_suffix = &click_source[selected_offset + "step_until(function.exit);".len()..];
     assert!(expanded.ends_with(unselected_suffix));
     let relocated = c0_tactic_source_position(&expanded, &sources, "good.ensures_0", 0).unwrap();
     verify_c0_sources_at(&expanded, &sources, relocated.line, relocated.column)
@@ -2772,13 +2744,13 @@ fn tactic_expansion_does_not_select_a_broken_callee_implementation() {
 verifying "caller.c";
 int32 callee(int32 x) {
     ensures result == x;
-} by { execute(); solve(); }
+}
 int32 caller(int32 x) {
     ensures result == x;
-} by { execute(); solve(); }
+}
 "#;
     let sources = [("callee.c", callee_c), ("caller.c", caller_c)];
-    let selected = position_at_offset(click_source, click_source.rfind("execute();").unwrap());
+    let selected = position_at_offset(click_source, click_source.rfind("ensures").unwrap());
     verify_c0_sources_at(click_source, &sources, selected.line, selected.column)
         .expect("the selected caller should verify under the callee interface");
 
@@ -2790,7 +2762,7 @@ int32 caller(int32 x) {
         .expect("the expanded caller should verify under the callee interface");
     let error = verify_c0_sources(&expanded, &sources)
         .expect_err("whole-file verification must still reject the callee proof");
-    assert!(error.message().contains("callee.contract"));
+    assert!(error.message().contains("callee.ensures_0"));
 }
 
 #[test]
@@ -2809,13 +2781,13 @@ int32 write_selected(int32 p[2], int32 flag) {
     consumes p[0..2];
     ensures result == 0 or result == 1;
 } by {
-    execute();
-    if result == 0 {
+    if flag != 0 {
+        step_until(function.exit);
         have result + 1 == 1 by solve();
     } else {
+        step_until(function.exit);
         have result - 1 == 0 by solve();
     }
-    solve();
 }
 "#;
     let sources = [("write_selected.c", c_source)];
@@ -2833,7 +2805,7 @@ int32 write_selected(int32 p[2], int32 flag) {
                 .expect("one branch's smart have should expand by its execution path");
 
         assert!(!expanded.contains(selected_smart));
-        assert!(expanded.contains("if result == 0"));
+        assert!(expanded.contains("if flag != 0"));
         verify_c0_sources(&expanded, &sources)
             .expect("path-aligned branch expansion should check as a complete proof");
     }
@@ -2893,12 +2865,12 @@ void set_one_if_active(int32 active, int32* cell) {
 } by {
     if active != 0 {
         unfold(optional_cell(active, cell));
-        execute();
+        step_until(function.exit);
         fold(optional_cell(active, cell));
         solve();
     } else {
         unfold(optional_cell(active, cell));
-        execute();
+        step_until(function.exit);
         fold(optional_cell(active, cell));
         solve();
     }
@@ -3517,7 +3489,7 @@ theorem evaluation() executes evaluate(int32 at_size) {
 }
 int32 evaluate(int32 at_size) {
     ensures result == 0;
-} by { execute(); solve(); }
+} by { step_until(function.exit); solve(); }
 "#;
     let tokens = plain_source_tokens(source).unwrap();
     let function = parsed_function_body(source, "evaluate").unwrap();
@@ -3584,7 +3556,7 @@ fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
 
 #[test]
 fn qualified_c_contract_source_locations_preserve_file_aliases() {
-    let source = "verifying \"first.c\" as first;\nverifying \"second.c\" as second;\nint32 first::helper() { ensures result == 1; } by { execute(); solve(); }\nint32 second::helper() { ensures result == 2; } by { execute(); solve(); }\n";
+    let source = "verifying \"first.c\" as first;\nverifying \"second.c\" as second;\nint32 first::helper() { ensures result == 1; }\nint32 second::helper() { ensures result == 2; }\n";
     let tokens = plain_source_tokens(source).unwrap();
     for (name, line) in [("first::helper", 3), ("second::helper", 4)] {
         let found = parsed_function_body(source, name).unwrap();
@@ -3601,7 +3573,8 @@ fn qualified_c_contract_source_locations_preserve_file_aliases() {
 
 #[test]
 fn a_rust_verifying_alias_does_not_change_path_identity() {
-    let source = "verifying \"first.rs\" as first; fn first::helper() -> i32 { ensures result == 1; } by { execute(); solve(); }";
+    let source =
+        "verifying \"first.rs\" as first; fn first::helper() -> i32 { ensures result == 1; }";
     let name = crate::languages::rust::names::path_name(&["first", "helper"]);
     assert!(parsed_function_body(source, &name).is_ok());
 }
@@ -3612,10 +3585,10 @@ fn rust_integer_literal_spans_keep_later_declarations_addressable() {
         fn before(bytes: &[u8; 0x4usize]) -> usize {\n\
             requires 0b1_00usize == 4_usize;\n\
             ensures result == 4_usize;\n\
-        } by { execute(); solve(); }\n\
+        }\n\
         fn length(words: &[u32; 1 + 2]) -> usize {\n\
             ensures result == 0o3usize;\n\
-        } by { execute(); solve(); }\n";
+        }\n";
     let tokens = parser::source_tokens(source).unwrap();
     for literal in ["0x4usize", "0b1_00usize", "4_usize", "0o3usize"] {
         let written = source
@@ -3855,7 +3828,7 @@ int64 inc(int64 q) {
     have -9223372036854775808 <= to_integer(q);
     have defined(q + 1i64) by solve();
     have to_integer(q + 1i64) == to_integer(q) + 1;
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;

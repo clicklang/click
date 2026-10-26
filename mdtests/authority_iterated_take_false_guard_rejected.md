@@ -31,10 +31,8 @@ void poke(int32* data, int32* occupied, int32 capacity, int32 index) {
     unfold(arena_cells(data, occupied, capacity));
     if occupied[index] != 0 {
         take(data[index..index + 1]);
-        execute();
-        solve();
     } else {
-        execute();
+        step_until(function.exit);
         fold(arena_cells(data, occupied, capacity));
         solve();
     }

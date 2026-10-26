@@ -17,7 +17,7 @@ int32 forall_scope(int32 value) {
     ensures forall (k: int32) {
         (k == k and value == value) implies k == k
     } by {
-        execute();
+        step_until(function.exit);
         intro();
         intro();
         solve();

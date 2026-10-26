@@ -68,7 +68,7 @@ void graft(int32* p) {
             let g = fold(tree(p), {
                 model: Shape::Node(Shape::Node(shape_left(old(t.model)), Shape::Empty), Shape::Empty)
             });
-            execute();
+            step_until(function.exit);
             solve();
         },
     }

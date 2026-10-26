@@ -41,7 +41,7 @@ void inspect(struct holder* p) {
                 normalize();
             }
             let h = fold(holder(p), { link: Link::Linked(kid) });
-            execute();
+            step_until(function.exit);
             solve();
         },
     }

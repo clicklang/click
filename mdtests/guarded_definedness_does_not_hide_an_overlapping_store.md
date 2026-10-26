@@ -14,7 +14,7 @@ void fill_t(uint8* dst) {
     owns dst[0..5];
     ensures (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 });
     ensures bytes::all_equal(dst, 0u64, 4u64, 7u8);
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

@@ -81,7 +81,6 @@ void rotate(struct node* parent) {
                                     mark inner_inputs;
                                     step(); step(); step(); // The three link stores.
                                     have sid->right == at(inner_inputs, sid->right) by assumption();
-                                    execute();
                                 },
                             }
                         },

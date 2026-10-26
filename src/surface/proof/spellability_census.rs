@@ -175,7 +175,7 @@ void set(int32* a, int32 i, int32 j) {
     owns a[0..4];
     ensures a[j] == 5;
 } by {
-    execute();
+    step_until(function.exit);
     rewrite(j == i);
 }
 "#;
@@ -215,7 +215,7 @@ void bump(struct cell* p) {
 } by {
     step();
     unfold(flat(p));
-    execute();
+    step_until(function.exit);
     fold(flat(p));
     solve();
 }
@@ -260,7 +260,7 @@ void pack(struct node* p, struct node* id) {
         unfold(tag_at(model_id));
         step();
         fold(tag_at(model_id));
-        execute(); solve();
+        step_until(function.exit); solve();
     }, }
 }
 "#;
@@ -293,7 +293,7 @@ contract int32 Adds(int32 x) {
 int32 add3(int32 x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + 3;
-} by { execute(); solve(); }
+}
 
 theorem add3_adds_four() {
     ensures Adds(&add3, { amount: 4 }) by {

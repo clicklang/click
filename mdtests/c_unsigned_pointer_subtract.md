@@ -18,9 +18,9 @@ int32 typed_offset() {
 
 ```click
 verifying "offset.c";
-void* identity(void* p) { ensures result == p; } by { execute(); normalize(); }
-int32 byte_offset() { ensures result == 1; } by { execute(); normalize(); }
-int32 typed_offset() { ensures result == 1; } by { execute(); normalize(); }
+void* identity(void* p) { ensures result == p; } by { step_until(function.exit); normalize(); }
+int32 byte_offset() { ensures result == 1; } by { step_until(function.exit); normalize(); }
+int32 typed_offset() { ensures result == 1; } by { step_until(function.exit); normalize(); }
 ```
 
 ```expect

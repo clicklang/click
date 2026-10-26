@@ -14,7 +14,7 @@ void issue(int32* pool, int32* p) {
     requires defined(count(slot(pool, _)) + 1);
     produces slot(pool, p);
     ensures count(slot(pool, _)) == old(count(slot(pool, _)));
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

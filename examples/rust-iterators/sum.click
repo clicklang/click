@@ -64,5 +64,4 @@ fn sum(bytes: &[u8]) -> i32 {
         rewrite(iter_remaining == 0u64);
         solve();
     }
-    execute();
 }

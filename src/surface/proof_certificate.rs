@@ -1014,7 +1014,7 @@ pub(super) fn smart_site_spelling(site: SmartSite) -> &'static str {
     match site {
         SmartSite::Engine(SmartTacticKind::Arithmetic) => "arithmetic",
         SmartSite::Engine(SmartTacticKind::Solve) => "solve",
-        SmartSite::Engine(SmartTacticKind::Execute) => "execute",
+        SmartSite::Engine(SmartTacticKind::Execute) => "implicit tail",
         SmartSite::Elided(ElidedArgument::TheoremPremises | ElidedArgument::InductionPremises) => {
             "apply"
         }

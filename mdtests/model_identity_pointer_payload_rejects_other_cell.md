@@ -52,9 +52,12 @@ int cell_same(struct cell* p, struct cell* q) {
         CellModel::Present(identity, value) => {
             unfold(c);
             have identity == q;
-            execute();
+            branch {
+                step_until(function.exit);
+                let c = fold(cell_at(p), { model: old(c.model) });
+            } else {}
+            step_until(function.exit);
             let c = fold(cell_at(p), { model: old(c.model) });
-            solve();
         },
     }
 }

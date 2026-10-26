@@ -22,7 +22,7 @@ void update(struct node* p, const struct callbacks* cb) {
     ensures p->value == 1;
 } by {
     unfold(node_cell(p));
-    open(callback_table(cb)) { execute(); }
+    open(callback_table(cb)) { step_until(function.exit); }
     fold(node_cell(p));
     solve();
 }

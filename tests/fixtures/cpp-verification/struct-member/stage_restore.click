@@ -8,7 +8,4 @@ int32 stage_restore(struct RestoreState& state, int32& value) {
     ensures state.saved == old(value);
     ensures value == 7;
     ensures result == old(value);
-} by {
-    execute();
-    solve();
 }

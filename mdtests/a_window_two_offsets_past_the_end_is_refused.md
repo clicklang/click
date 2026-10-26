@@ -17,7 +17,7 @@ verifying "a_window_two_offsets_past_the_end_is_refused.c";
 uint8 first_of_four(const uint8* chunk) {
     views chunk[0..4];
     ensures result == chunk[0];
-} by { execute(); solve(); }
+}
 uint8 read(const uint8* bytes, uint64 length, uint64 start, uint64 index) {
     requires length <= 2147483647u64;
     requires start <= length;
@@ -31,7 +31,6 @@ uint8 read(const uint8* bytes, uint64 length, uint64 start, uint64 index) {
     have index <= 9223372036854775807u64 by { solve() using { index <= length; length <= 2147483647u64; }; }
     have to_integer(start + index) <= to_integer(length);
     have to_integer(3u64) <= to_integer(length - (start + index));
-    execute(); solve();
 }
 ```
 

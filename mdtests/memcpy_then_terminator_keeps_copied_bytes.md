@@ -39,7 +39,6 @@ void copy_n(char* dst, const char* src, uint64 n) {
             (0u64..n).all(|k| { ((uint8*)dst)[0u64 + k] == ((uint8*)src)[0u64 + k] })
         );
     }
-    execute();
 }
 ```
 

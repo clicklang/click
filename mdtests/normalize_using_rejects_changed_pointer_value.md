@@ -29,7 +29,6 @@ void retarget(struct node* p, struct node* q, int32* anchor) {
 } by {
     unfold(a);
     let b = fold(cursor(q, anchor), { tag: old(a.tag) });
-    execute(); solve();
 }
 void call(struct node* p, struct node* q, int32* anchor) {
     consumes c: cursor(p, anchor);
@@ -50,7 +49,6 @@ void call(struct node* p, struct node* q, int32* anchor) {
     have p->right == 0 by { normalize() using { at(before, p->right) == 0; }; }
     have q->left == p by { normalize() using { }; }
     unfold(c);
-    execute(); solve();
 }
 ```
 

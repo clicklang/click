@@ -36,8 +36,8 @@ fn charon_generic_trait_instances_refine_their_interfaces() {
         // A call through the `u32` instance knows the generic clauses and its
         // own, not the `i32` instance's.
         (
-            "    requires x <= 1000;\n    ensures result != x;\n} by { execute(); solve(); }\n\nfn generic_traits::through_bound",
-            "    requires x <= 1000;\n    ensures x < result;\n} by { execute(); solve(); }\n\nfn generic_traits::through_bound",
+            "    requires x <= 1000;\n    ensures result != x;\n}\n\nfn generic_traits::through_bound",
+            "    requires x <= 1000;\n    ensures x < result;\n}\n\nfn generic_traits::through_bound",
             "generic_traits::wide_total.ensures_0",
         ),
     ] {
@@ -81,8 +81,8 @@ fn charon_generic_trait_objects_carry_state_at_each_instance() {
         // A call through the instance knows the interface's fields only.
         (
             Some("fn bags::fill<"),
-            "    ensures result == old(count(bag)) + 1;\n    ensures last(bag) == x;\n} by { execute(); solve(); }\n\nfn bags::fill_dyn",
-            "    ensures result == old(count(bag)) + 1;\n    ensures last(bag) == x + 1;\n} by { execute(); solve(); }\n\nfn bags::fill_dyn",
+            "    ensures result == old(count(bag)) + 1;\n    ensures last(bag) == x;\n}\n\nfn bags::fill_dyn",
+            "    ensures result == old(count(bag)) + 1;\n    ensures last(bag) == x + 1;\n}\n\nfn bags::fill_dyn",
             "bags::fill.ensures_1",
         ),
         // The packed struct's fields follow its definitions.
@@ -133,7 +133,7 @@ fn charon_generic_object_state_is_verified_once_for_every_type() {
     for (head, before, after, expected) in [
         // The generic implementation answers to the generic interface.
         (
-            "fn get(&self) -> T {\n    } by",
+            "{\n    }\n    fn get(&self) -> T ",
             "        ensures result == held(self);\n    }\n}",
             "        ensures result != held(self);\n    }\n}",
             "`<generic_state::Wrap<T> as generic_state::Holder<T>>::get.interface_ensures_0`",
@@ -164,8 +164,8 @@ fn charon_generic_object_state_is_verified_once_for_every_type() {
     // An implementation for every type whose `requires` the interface does
     // not give is refused, as an instance's is.
     let invalid = STATE_SIDECAR.replacen(
-        "    fn put(&mut self, x: T) {\n    } by",
-        "    fn put(&mut self, x: T) {\n        requires self.puts == 7;\n    } by",
+        "    fn put(&mut self, x: T) {\n    }\n    fn get",
+        "    fn put(&mut self, x: T) {\n        requires self.puts == 7;\n    }\n    fn get",
         1,
     );
     assert_ne!(invalid, STATE_SIDECAR);
@@ -268,8 +268,8 @@ fn charon_generic_struct_fields_are_verified_once_for_every_type() {
         // Generic code's calls of generic code at its own `U` have their
         // contracts at `U`.
         (
-            "        ensures result == self.value;\n    } by { execute(); solve(); }\n\n    fn set",
-            "        ensures true;\n    } by { execute(); solve(); }\n\n    fn set",
+            "        ensures result == self.value;\n    }\n\n    fn set",
+            "        ensures true;\n    }\n\n    fn set",
             "generic_structs::read_twice.ensures_0",
         ),
         (

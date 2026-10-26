@@ -126,7 +126,7 @@ struct rb_node* parent_of(struct rb_node* node) {
     ensures address(result) == (node->__rb_parent_color & ~3);
 } by {
     unfold(linked(node));
-    execute();
+    step_until(function.exit);
     fold(linked(node));
     solve();
 }
@@ -135,9 +135,6 @@ unsigned long color_of(struct rb_node* node) {
     requires node != 0;
     views node->__rb_parent_color;
     ensures result == (node->__rb_parent_color & 1);
-} by {
-    execute();
-    solve();
 }
 
 void set_parent(struct rb_node* node, struct rb_node* parent) {
@@ -145,9 +142,6 @@ void set_parent(struct rb_node* node, struct rb_node* parent) {
     requires aligned(parent, 8);
     owns node->__rb_parent_color;
     ensures node->__rb_parent_color == address(parent) + (old(node->__rb_parent_color) & 1);
-} by {
-    execute();
-    solve();
 }
 
 void set_black_parent(struct rb_node* node, struct rb_node* parent) {
@@ -155,9 +149,6 @@ void set_black_parent(struct rb_node* node, struct rb_node* parent) {
     requires aligned(parent, 8);
     owns node->__rb_parent_color;
     ensures node->__rb_parent_color == address(parent) + 1;
-} by {
-    execute();
-    solve();
 }
 
 struct rb_node* detach_black(struct rb_node* node) {
@@ -165,9 +156,6 @@ struct rb_node* detach_black(struct rb_node* node) {
     owns node->__rb_parent_color;
     ensures node->__rb_parent_color == 1;
     ensures result == 0;
-} by {
-    execute();
-    solve();
 }
 
 struct rb_node* red_parent_of(struct rb_node* red) {
@@ -177,7 +165,7 @@ struct rb_node* red_parent_of(struct rb_node* red) {
     ensures address(result) == red->__rb_parent_color;
 } by {
     unfold(linked(red));
-    execute();
+    step_until(function.exit);
     fold(linked(red));
     solve();
 }
@@ -186,9 +174,6 @@ int32 cleared_is_empty(struct rb_node* node) {
     requires node != 0;
     owns node->__rb_parent_color;
     ensures result == 1;
-} by {
-    execute();
-    solve();
 }
 
 int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
@@ -223,8 +208,6 @@ int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
             assumption();
         }
     }
-    execute();
-    solve();
 }
 
 void link_node(struct rb_node* node, struct rb_node* parent, struct rb_node** rb_link) {
@@ -237,9 +220,6 @@ void link_node(struct rb_node* node, struct rb_node* parent, struct rb_node** rb
     ensures node->rb_left == 0;
     ensures node->rb_right == 0;
     ensures rb_link[0] == node;
-} by {
-    execute();
-    solve();
 }
 ```
 

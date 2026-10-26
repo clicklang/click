@@ -16,7 +16,7 @@ verifying "a_uint32_constant_above_int32_max_prints_as_itself.c";
 unsigned stored(unsigned *u) {
     owns u[0..1];
     ensures result == 1u32;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

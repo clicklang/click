@@ -31,7 +31,6 @@ uint8 first_byte(uint8 p[], uint64 n) {
     ensures true;
 } by {
     open(nonzero_bytes(p, n)) {
-        execute();
     }
 }
 
@@ -41,7 +40,6 @@ char first_char(char p[], int32 n) {
     ensures true;
 } by {
     open(nonzero_chars(p, n)) {
-        execute();
     }
 }
 ```

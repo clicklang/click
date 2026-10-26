@@ -32,7 +32,7 @@ int32 read_b(uint64 w) {
         unfold(h);
         step();
         let h = fold(held_a(w, (struct a*)w), { model: Held::At(obj) });
-        execute();
+        step_until(function.exit);
     } }
 }
 ```

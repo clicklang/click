@@ -14,7 +14,7 @@ verifying "field.c";
 spec enum Ref { At(struct node*), }
 resource token() { field model: Ref; }
 void wrapped(struct node* p) { produces held: token(); ensures held.model == Ref::At(p); } by {
-    execute(); let held = fold(token(), { model: Ref::At(p) });
+    step_until(function.exit); let held = fold(token(), { model: Ref::At(p) });
 }
 void caller(struct holder* h, struct other* p) {
     owns h->child;

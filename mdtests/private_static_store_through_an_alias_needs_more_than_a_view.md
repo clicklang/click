@@ -18,7 +18,7 @@ unsigned long set_then_read(struct counter *p) {
     owns p->value;
     views library::state.value;
     ensures result == 5u64;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

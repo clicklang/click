@@ -17,11 +17,11 @@ int32 nested(struct Outer* o) {
     views o->inner.first;
     views o->inner.second;
     ensures result == o->inner.second;
-} by { execute(); solve(); }
+}
 int32 element(struct Pair* items) {
     views items[0..2];
     ensures 1 == 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

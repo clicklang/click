@@ -53,11 +53,11 @@ int32 even(struct node* node) {
     ensures result == 0;
 } by {
     if node == 0 {
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         observe(list(node));
-        execute();
+        step_until(function.exit);
         solve();
     }
 }
@@ -68,11 +68,11 @@ int32 odd(struct node* node) {
     ensures result == 0;
 } by {
     if node == 0 {
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         observe(list(node));
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

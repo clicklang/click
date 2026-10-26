@@ -2,8 +2,8 @@
 
 The companion of
 `a_have_whose_body_misses_between_execution_steps_is_refused.md`: the same
-written `have` after `execute()` is refused with the same reason, the failing
-step of its script.
+written `have` at function exit, after `step_until(function.exit)`, is refused
+with the same reason, the failing step of its script.
 
 ```c filename=a_have_whose_body_misses_after_execution_is_refused.c
 void mark_one(int32 a[], int32 n, int32 i, int32 m) {
@@ -26,7 +26,7 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
 } by {
     mark entry;
     step();
-    execute();
+    step_until(function.exit);
     have a[m] == 7 by {
         normalize();
     }

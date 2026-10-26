@@ -5,10 +5,10 @@ bool money_nonnegative(const int64& nValue) {
     ensures result == (if old(nValue) >= 0i64 { 1 } else { 0 });
 } by {
     if nValue >= 0i64 {
-        execute();
+        step_until(function.exit);
         solve();
     } else {
-        execute();
+        step_until(function.exit);
         solve();
     }
 }

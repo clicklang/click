@@ -24,7 +24,7 @@ resource right_link(p: struct node*, q: struct node*) {
 void put(struct node *p, struct node *q) {
     owns p->right;
     ensures p->right == q;
-} by { execute(); solve(); }
+}
 void caller(struct node *root, struct node *p, struct node *q) {
     owns root->left;
     requires root->left == p;
@@ -39,7 +39,6 @@ void caller(struct node *root, struct node *p, struct node *q) {
     unfold(s);
     unfold(right_link(p, q));
     have p->left == old(root->left->left) by assumption();
-    execute(); solve();
 }
 ```
 

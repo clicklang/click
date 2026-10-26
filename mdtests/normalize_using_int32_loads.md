@@ -16,7 +16,7 @@ void keep(int32 p[], int32 n, int32 i, int32 j) {
     requires i == j;
     ensures p[i] == p[j];
 } by {
-    execute();
+    step_until(function.exit);
     normalize() using { };
 }
 

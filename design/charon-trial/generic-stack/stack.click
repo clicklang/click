@@ -70,11 +70,11 @@ impl<T> Destruct for generic_stack::Node<T> {
         match rest.values {
             List::Nil => {
                 let {} = unfold(rest);
-                execute();
+                step_until(function.exit);
             }
             List::Cons(v, tail_values) => {
                 let { tail: tail } = unfold(rest);
-                execute();
+                step_until(function.exit);
             }
         }
     }
@@ -90,11 +90,11 @@ impl<T> Destruct for generic_stack::Stack<T> {
         match rest.values {
             List::Nil => {
                 let {} = unfold(rest);
-                execute();
+                step_until(function.exit);
             }
             List::Cons(v, tail_values) => {
                 let { tail: tail } = unfold(rest);
-                execute();
+                step_until(function.exit);
             }
         }
     }
@@ -108,7 +108,7 @@ impl<T> generic_stack::Stack<T> {
         ensures result.len == 0usize;
         ensures to_integer(result.len) == length(after.values);
     } by {
-        execute();
+        step_until(function.exit);
         let after = fold(nodes<T>(result.head), { values: List<T>::Nil }, {});
         unfold(length(List<T>::Nil));
     }
@@ -123,7 +123,7 @@ impl<T> generic_stack::Stack<T> {
         ensures after.values == List::Cons(value, old(before.values));
         ensures to_integer(self.len) == length(after.values);
     } by {
-        execute();
+        step_until(function.exit);
         let after = fold(nodes<T>(self.head), { values: List::Cons(value, old(before.values)) }, { tail: before });
         unfold(length(List::Cons(value, old(before.values))));
         have to_integer(old(self.len) + 1u64) == to_integer(old(self.len)) + to_integer(1u64);
@@ -143,7 +143,7 @@ impl<T> generic_stack::Stack<T> {
         match before.values {
             List::Nil => {
                 let {} = unfold(before);
-                execute();
+                step_until(function.exit);
                 let after = fold(nodes<T>(self.head), { values: List<T>::Nil }, {});
                 unfold(first(List<T>::Nil));
                 unfold(rest(List<T>::Nil));
@@ -159,7 +159,7 @@ impl<T> generic_stack::Stack<T> {
                 unfold(first(List::Cons(v, tail_values)));
                 unfold(rest(List::Cons(v, tail_values)));
                 let { tail: tail } = unfold(before);
-                execute();
+                step_until(function.exit);
                 match tail_values {
                     List::Nil => {
                         let {} = unfold(tail);
@@ -197,8 +197,6 @@ impl<T> generic_stack::Stack<T> {
         requires to_integer(self.len) == length(list.values);
         ensures to_integer(result) == length(old(list.values));
         ensures list.values == old(list.values);
-    } by {
-        execute();
     }
 }
 
@@ -207,6 +205,6 @@ impl<T> generic_stack::Stack<T> {
 fn generic_stack::round_trip(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
 } by {
-    execute();
+    step_until(function.exit);
     unfold(first(List::Cons(x, List<u32>::Nil)));
 }

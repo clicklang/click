@@ -24,7 +24,6 @@ void finish(int32* p) {
 } by {
     open(viewed(p)) {
         let { tag: tag } = step(repair, {});
-        execute(); solve();
     }
 }
 ```

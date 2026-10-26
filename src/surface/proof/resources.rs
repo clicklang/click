@@ -5483,7 +5483,7 @@ void child_release(struct child* obj) {
     have to_integer(obj->refs - 1) >= 1;
     step();
     fold(child_control(obj));
-    execute();
+    step_until(function.exit);
     solve();
 }
 "#;

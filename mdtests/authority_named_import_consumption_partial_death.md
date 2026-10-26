@@ -13,7 +13,7 @@ void retire(int32* pool) {
     owns authority(ticket(pool));
     consumes left: ticket(pool);
     consumes right: ticket(pool);
-} by { unfold(left); execute(); solve(); }
+} by { unfold(left); }
 ```
 
 ```expect

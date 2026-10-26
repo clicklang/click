@@ -39,7 +39,6 @@ void checkout(struct pool* pool, struct payload* p) {
         fold(item(pool, p));
         have pool->capacity == pool->checked_out + count(slot(pool)) by solve();
     }
-    execute(); solve();
 }
 
 ```

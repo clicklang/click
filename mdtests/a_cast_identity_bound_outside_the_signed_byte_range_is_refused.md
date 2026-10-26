@@ -18,7 +18,7 @@ signed char narrow(long value) {
     requires to_integer(value) <= 128;
     ensures to_integer(result) == to_integer(value);
 } by {
-    execute();
+    step_until(function.exit);
     arithmetic_certificate rules {
         premise 0: -128 <= to_integer(old(value)) => -128 <= to_integer(old(value));
         premise 1: to_integer(old(value)) <= 128 => to_integer(old(value)) <= 128;

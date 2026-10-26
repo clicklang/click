@@ -43,7 +43,6 @@ void pool_checkout(struct pool* pool, struct object* object) {
         fold(pool_object(pool, object));
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
-    execute(); solve();
 }
 void forward(struct pool* pool, struct object* object) {
     owns pool_control(pool);
@@ -51,7 +50,7 @@ void forward(struct pool* pool, struct object* object) {
     requires count(pool_slot(pool)) == 0;
     consumes *object;
     produces pool_object(pool, object);
-} by { execute(); }
+}
 ```
 
 ```expect

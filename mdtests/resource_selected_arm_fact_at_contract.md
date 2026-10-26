@@ -50,7 +50,7 @@ int32 read_cell(struct cell* node) {
         Maybe::Some(value) => {
             step();
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell(node), { model: Maybe::Some(value) });
             solve();
         },

@@ -93,8 +93,6 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
             close_invariants();
         }
     }
-    execute();
-    solve();
 }
 ```
 

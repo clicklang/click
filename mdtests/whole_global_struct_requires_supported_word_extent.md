@@ -7,7 +7,7 @@ void keep() {}
 ```
 ```click
 verifying "small.c";
-void keep() { owns state; } by { execute(); solve(); }
+void keep() { owns state; }
 ```
 ```expect
 fail: a whole object cannot represent the 3-byte `struct small`

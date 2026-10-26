@@ -62,7 +62,7 @@ void put(struct pool* pool, struct slot* s, int32 value) {
         rewrite(s->at == a);
         assumption();
     }
-    execute();
+    step_until(function.exit);
     let r = fold(pool_slot(s, pool), { at: a, end: e });
     solve();
 }
@@ -84,8 +84,6 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
             pool->data == at(m1, pool->data);
         };
     }
-    execute();
-    solve();
 }
 ```
 

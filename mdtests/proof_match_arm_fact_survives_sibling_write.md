@@ -78,13 +78,13 @@ void change_child_match(struct rb_node* old_child, struct rb_node* new_child,
     match c.model {
         Ctx::Top => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let d = fold(ctx_at(new_child, parent, root), { model: Ctx::Top }, {});
             solve();
         },
         Ctx::Left => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let d = fold(ctx_at(new_child, parent, root), { model: Ctx::Left }, {});
             solve();
         },

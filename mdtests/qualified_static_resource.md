@@ -31,17 +31,17 @@ void clear() {
     owns both();
     ensures left::count == 0u64;
     ensures right::count == old(right::count);
-} by { unfold(both()); execute(); fold(both()); solve(); }
+} by { unfold(both()); step_until(function.exit); fold(both()); solve(); }
 
 unsigned long read_right() {
     owns both();
     ensures result == old(right::count);
     ensures result == 19u64;
-} by { unfold(both()); execute(); fold(both()); solve(); }
+} by { unfold(both()); step_until(function.exit); fold(both()); solve(); }
 
 int main() {
     ensures result == 1;
-} by { fold(both()); execute(); solve(); }
+} by { fold(both()); }
 ```
 
 ```expect

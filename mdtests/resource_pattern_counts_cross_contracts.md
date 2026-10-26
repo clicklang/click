@@ -75,7 +75,7 @@ void pool_checkout(struct pool* pool, int32 object) {
         unfold(valid_pool);
         solve();
     }
-    execute();
+    step_until(function.exit);
     solve();
 }
 
@@ -94,8 +94,6 @@ void pool_return(struct pool* pool, int32 object) {
         solve() using { count(pool_object(pool, _)) >= 1; };
     }
     unfold(pool_object(pool, object));
-    execute();
-    solve();
 }
 
 void pool_roundtrip(struct pool* pool, int32 object) {
@@ -110,8 +108,6 @@ void pool_roundtrip(struct pool* pool, int32 object) {
     unfold(valid_pool);
     step();
     step();
-    execute();
-    solve();
 }
 ```
 

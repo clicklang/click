@@ -13,7 +13,7 @@ void set_slot(struct pair* p) {
     requires unit::slot == 0;
     requires p != 0;
     ensures unit::slot == 0;
-} by { execute(); solve(); }
+}
 ```
 ```expect
 fail: ensures unit::slot == 0

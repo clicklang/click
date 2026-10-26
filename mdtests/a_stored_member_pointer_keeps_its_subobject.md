@@ -21,7 +21,7 @@ int32 probe(struct Pair* p, struct Holder* h) {
     views p->second;
     owns h->link;
     ensures result == p->second;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

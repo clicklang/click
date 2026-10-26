@@ -21,7 +21,7 @@ struct node* tree_empty() {
 
     ensures result == 0;
 } by {
-    execute();
+    step_until(function.exit);
     fold(tree(result));
     solve();
 }
@@ -76,9 +76,6 @@ int32 tree_swap_children(struct node* node) {
     ensures node->value == old(node->value);
     ensures node->left == old(node->right);
     ensures node->right == old(node->left);
-} by {
-    execute();
-    solve();
 }
 
 int32 tree_leaf_pipeline(struct node* node, int32 value) {

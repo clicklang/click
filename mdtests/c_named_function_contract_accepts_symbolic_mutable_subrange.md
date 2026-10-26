@@ -46,9 +46,6 @@ void increment_at(int32* state, int32 position, int32 count) {
     views state[position + 1..count];
     owns state[position..position + 1];
     ensures state[position] == old(state[position]) + 1;
-} by {
-    execute();
-    solve();
 }
 
 theorem increment_at_is_slice_step() {
@@ -70,9 +67,6 @@ void apply_step(
     requires cells[index] < 100;
     owns cells[0..length];
     ensures old(cells[index]) < cells[index];
-} by {
-    execute();
-    solve();
 }
 
 void symbolic_footprint_caller(int32* cells, int32 index, int32 length) {
@@ -83,8 +77,6 @@ void symbolic_footprint_caller(int32* cells, int32 index, int32 length) {
     ensures old(cells[index]) < cells[index];
 } by {
     apply(increment_at_is_slice_step());
-    execute();
-    solve();
 }
 ```
 

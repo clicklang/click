@@ -35,7 +35,7 @@ int32 read_left(int32* p, int32* left, int32* right) {
 } by {
     let { left: l, right: r } = unfold(root);
     unfold(l);
-    execute();
+    step_until(function.exit);
     let l = fold(tree(left), { model: Tree::Leaf(2) });
     let root = fold(tree(p), { model: old(root.model) }, { left: l, right: r });
     solve();
@@ -48,7 +48,7 @@ void init(int32* p, int32* left, int32* right, int32 value) {
     produces root: tree(p);
     ensures root.model == Tree::Branch(value, left, old(l.model), right, old(r.model));
 } by {
-    execute();
+    step_until(function.exit);
     let root = fold(tree(p), { model: Tree::Branch(value, left, l.model, right, r.model) }, { left: l, right: r });
     solve();
 }

@@ -45,7 +45,7 @@ void pool_init(struct pool* pool, int32 capacity) {
     step(); step();
     fold(capacity of pool_slot(pool));
     fold(pool_control(pool));
-    execute(); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool);
 }
 void pool_destroy(struct pool* pool) {
     consumes pool_control(pool);
@@ -64,7 +64,7 @@ void pool_destroy(struct pool* pool) {
     step();
     unfold(authority(pool_slot(pool)));
     unfold(authority(pool_object(pool, _)));
-    execute(); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool);
 }
 void pool_zero_pipeline(struct pool* pool) {
     consumes pool_storage(pool);
@@ -81,7 +81,7 @@ void pool_zero_pipeline(struct pool* pool) {
     unfold(pool_control(pool));
     fold(pool_control(pool));
     step();
-    execute(); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool);
 }
 
 void pool_checkout(struct pool* pool, struct object* object) {
@@ -104,7 +104,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
         fold(pool_object(pool, object));
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
-    execute(); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool);
 }
 
 void pool_return(struct pool* pool, struct object* object) {
@@ -129,7 +129,7 @@ void pool_return(struct pool* pool, struct object* object) {
         fold(pool_slot(pool));
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
-    execute(); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool);
 }
 
 void pool_pipeline(struct pool* pool, struct object* first, struct object* second) {
@@ -159,7 +159,7 @@ void pool_pipeline(struct pool* pool, struct object* first, struct object* secon
     unfold(pool_control(pool));
     fold(pool_control(pool));
     step();
-    execute(); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool);
 }
 
 void pool_shrink(struct pool* pool, int32 amount) {
@@ -179,7 +179,7 @@ void pool_shrink(struct pool* pool, int32 amount) {
         step();
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
-    execute(); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool);
 }
 
 void pool_resize_pipeline(struct pool* pool) {
@@ -198,7 +198,7 @@ void pool_resize_pipeline(struct pool* pool) {
     unfold(pool_control(pool));
     fold(pool_control(pool));
     step();
-    execute(); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool);
 }
 
 void pool_grow(struct pool* pool, int32 amount) {
@@ -219,7 +219,7 @@ void pool_grow(struct pool* pool, int32 amount) {
         fold(amount of pool_slot(pool));
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
-    execute(); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool);
 }
 
 void pool_transfer(struct pool* source, struct pool* destination, struct object* object) {
@@ -260,7 +260,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
         }
         have source->capacity == source->checked_out + count(pool_slot(source));
     }
-    execute(); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool);
 }
 
 void pool_transfer_pipeline(struct pool* source, struct pool* destination, struct object* object) {
@@ -298,5 +298,5 @@ void pool_transfer_pipeline(struct pool* source, struct pool* destination, struc
     open(pool_control(destination)) { step(); }
     have defined(count(pool_object(destination, _)) + 1);
     step();
-    execute(); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool);
 }

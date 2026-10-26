@@ -21,7 +21,7 @@ void increment(int32* state) {
 } by {
     unfold(first);
     unfold(second);
-    execute();
+    step_until(function.exit);
     let first = fold(Counter(), { revision: 1 });
     let second = fold(Counter(), { revision: 1 });
     solve();

@@ -1209,6 +1209,30 @@ mdtests and examples.
 
     `execute` then names only the tail's stepping and splitting. *Verdicts*
     only where a migration misses; each is explained in the PR.
+
+    Done: no source writes `execute()`, and the parser refuses it, naming
+    the implicit tail and `step_until(function.exit)`. The last uses went
+    the same three ways, in about 1,400 mdtests, the examples, and the Rust
+    tests' own sources: by the same rules first, then the arms and refusal
+    tests by hand. In an arm of a
+    proof `if` or `branch`, an `execute(); solve();` becomes
+    `step_until(function.exit);`, not nothing, since the tail runs after the
+    arms rejoin and loses each arm's condition. Exit work on several paths
+    moved before the C, as a proof `if` on the inputs or `branch`, with
+    each arm stepping to exit (`list_prepend` in the linked-list examples
+    now splits on `node == 0` after `step_until(statement(1))`, where it
+    split on `result == tail` after execution). Tests whose subject was a
+    tactic written after a splitting `execute()` (two that shared one
+    certificate across paths) are gone with that state. A test that
+    expands a whole function proof now expands the omitted proof's tail:
+    at the closing brace when it covers several claims, at the claim when
+    there is one. Refusals that named `execute` now name the tail ("the
+    implicit tail split at more than N C branches") or the step it ran
+    (`step()`), and the step budget `step_until` shares with the tail reads
+    "execution exhausted its 10000-step budget". The trace and profile rows
+    label it `implicit tail`. The migration found one parser defect, now
+    fixed: a Rust trait `impl` read the `function` of a method proof's
+    `step_until(function.exit)` as a `function` definition.
 24. **Spelling migration and removal.** Rewrite `simp()` as `solve()`,
     `arithmetic()` as `solve() using {}`, `arithmetic() using { … }` as
     `solve() using { … }`, and `execute_until` as `step_until` across the
@@ -1267,9 +1291,8 @@ mdtests and examples.
 
     A failed `have P;` is located at its function, not at the `have`, as the
     removed `have P by auto();` was; this is
-    `bugs/a-failed-default-have-points-at-the-function.md`. Left for the
-    `execute()` removal: written `execute()`, the trace and profile rows that
-    name it, and the prose of mdtests about `execute()` itself.
+    `bugs/a-failed-default-have-points-at-the-function.md`. The `execute()`
+    removal followed (step 23).
 
     Measured 2026-10-25, with every `arithmetic()` read as `solve() using {}`
     and every `arithmetic() using { … }` as `solve() using { … }`. At first

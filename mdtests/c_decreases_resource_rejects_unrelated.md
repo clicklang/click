@@ -36,9 +36,6 @@ int32 swap_repeat(struct node* node, struct node* other) {
     views zero_list(other);
 
     ensures result == 0;
-} by {
-    execute();
-    solve();
 }
 ```
 

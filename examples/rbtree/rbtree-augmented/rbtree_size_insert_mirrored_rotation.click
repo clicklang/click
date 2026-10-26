@@ -243,7 +243,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 }
             }
             have node == old(node) by { assumption(); }
-            execute(); solve();
+            step_until(function.exit);
         },
     }
 }
@@ -257,7 +257,6 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_right_three_expected(old(state.phase), node);
 } by {
     step(__rb_insert, { state: state });
-    execute(); solve();
 }
 
 void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
@@ -270,5 +269,4 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_shape(state.model) == sized_right_three_expected(old(state.phase), node);
 } by {
     step(__rb_insert_augmented, { state: state });
-    execute(); solve();
 }

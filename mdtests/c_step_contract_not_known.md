@@ -25,7 +25,7 @@ int32 invoke(void (*callback)(int32*, int32), int32* data, int32 count) {
     requires count >= 0;
     owns Buffer(data, count);
     ensures result == 0;
-} by { step(Buffered); execute(); solve(); }
+} by { step(Buffered); }
 ```
 
 ```expect

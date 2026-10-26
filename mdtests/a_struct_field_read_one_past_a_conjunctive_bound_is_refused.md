@@ -2,8 +2,8 @@
 
 The negative of
 `mdtests/a_struct_field_read_in_a_conjunctive_branch_splits_by_index.md`.
-Under `0 <= x && x < 3`, `x == 2` reads past `items`, and `execute()` is
-refused for the element bound it could not show.
+Under `0 <= x && x < 3`, `x == 2` reads past `items`, and the omitted proof's
+implicit tail is refused for the element bound it could not show.
 
 ```c filename=a_struct_field_read_one_past_a_conjunctive_bound_is_refused.c
 struct point {

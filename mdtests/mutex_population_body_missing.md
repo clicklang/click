@@ -20,11 +20,11 @@ resource counter_state(p: struct counter*) {
 uint32 read_value(struct counter* p) {
     owns p->value;
     ensures result == p->value;
-} by { execute(); solve(); }
+}
 uint32 read_without_lock(struct counter* p) {
     owns contribution(p);
     owns access: mutex_use(&p->mutex, counter_state(p));
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

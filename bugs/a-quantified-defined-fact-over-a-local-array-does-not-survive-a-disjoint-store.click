@@ -13,6 +13,4 @@ int32 d(int32 j) {
     step();
     have forall (k: uint64) { 0u64 <= k and k < 1u64 implies tmp[k] != 0u8 } by { assumption(); }
     have forall (k: uint64) { 0u64 <= k and k < 2u64 implies defined(tmp[k]) } by { assumption(); }
-    execute();
-    solve();
 }

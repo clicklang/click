@@ -21,7 +21,7 @@ int32 vector_push(struct vector* owner, int32 value) {
     ensures owner->cap == old(owner->cap);
     ensures owner->data == old(owner->data);
 } by {
-    execute();
+    step_until(function.exit);
     fold(nonempty_vector(owner));
     solve();
 }

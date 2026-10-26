@@ -103,8 +103,6 @@ int32 run() {
     have private_file::increment_private::local_table[0].value == 2 by solve();
     have private_file::increment_private::local_table[0].value > -1000 by solve();
     have private_file::increment_private::local_table[0].value < 1000 by solve();
-    execute();
-    solve();
 }
 ```
 

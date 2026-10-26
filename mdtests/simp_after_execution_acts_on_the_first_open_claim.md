@@ -19,7 +19,7 @@ int32 f(int32 n) {
     ensures result == 1;
     ensures result == n;
 } by {
-    execute();
+    step_until(function.exit);
     solve();
     normalize();
 }

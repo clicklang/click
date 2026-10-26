@@ -68,7 +68,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 }
             }
             have node == old(node) by { assumption(); }
-            execute(); solve();
+            step_until(function.exit);
         },
     }
 }

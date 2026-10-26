@@ -28,7 +28,6 @@ void mint_pair(int32* o, int32 n, int32 m) {
         solve();
     }
     fold(m of tok(o));
-    execute(); solve();
 }
 void run(int32* o, int32 n, int32 m) {
     owns authority(tok(o));
@@ -39,7 +38,7 @@ void run(int32* o, int32 n, int32 m) {
     requires 0 <= n + m;
     produces (n + m) of tok(o);
     ensures count(tok(o)) == n;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

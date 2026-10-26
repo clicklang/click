@@ -27,7 +27,6 @@ int32 fill_first_fields_unbounded_below() {
 } by {
     step(); step(); step();
     loop { decreases 2 - i; invariant i <= 2; }
-    execute(); solve();
 }
 ```
 

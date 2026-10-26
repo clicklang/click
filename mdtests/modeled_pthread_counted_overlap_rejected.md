@@ -27,7 +27,7 @@ void* worker(void* argument) {
     owns authority(ticket(argument));
     owns ticket(argument);
     ensures count(ticket(argument)) >= 1;
-} by { execute(); solve(); }
+}
 int32 run(void* p, void* q) {
     owns authority(ticket(p));
     owns authority(ticket(q));

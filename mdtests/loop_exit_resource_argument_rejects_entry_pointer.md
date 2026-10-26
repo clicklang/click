@@ -48,7 +48,6 @@ void choose(int32* p, int32* q, int32* anchor, int32 flag) {
     }
     let { b: b } = keep(p, anchor, { a: c });
     unfold(b);
-    execute(); solve();
 }
 ```
 

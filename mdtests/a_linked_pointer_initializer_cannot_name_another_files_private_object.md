@@ -24,7 +24,7 @@ verifying "other.c";
 verifying "data.c";
 verifying "main.c";
 int main() { ensures result == 0; }
-by { execute(); solve(); }
+by { }
 ```
 
 ```expect

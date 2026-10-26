@@ -16,12 +16,9 @@ verifying "pick.c";
 
 int32 pick(bool early) {
     ensures not early implies result == 7;
-} by {
-    execute();
-    solve();
 }
 ```
 
 ```expect
-fail: did not retain a complete proof for `pick.ensures_0`
+fail: `ensures not early == true implies result == 7` failed for `pick.ensures_0` path 1: unclosed goal
 ```

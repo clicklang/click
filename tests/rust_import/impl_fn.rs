@@ -26,8 +26,8 @@ fn charon_impl_fn_arguments_meet_named_contracts() {
         // A capturing closure's contract weaker than the one required.
         (
             Some("fn impl_fn::caller("),
-            "    ensures result == y + k;\n} by { execute(); solve(); }\n\nfn impl_fn::caller(",
-            "    ensures result >= y;\n} by { execute(); solve(); }\n\nfn impl_fn::caller(",
+            "    ensures result == y + k;\n}\n\nfn impl_fn::caller(",
+            "    ensures result >= y;\n}\n\nfn impl_fn::caller(",
             "precondition clause 1 of",
         ),
         // A function item passed for `impl Fn` that does not meet its contract.
@@ -47,8 +47,8 @@ fn charon_impl_fn_arguments_meet_named_contracts() {
         // A false closure contract.
         (
             Some("fn impl_fn::twice::{closure#0}("),
-            "    ensures result == y + k;\n} by { execute(); solve(); }\n\nfn impl_fn::twice::{closure#1}",
-            "    ensures result == y + k + 1;\n} by { execute(); solve(); }\n\nfn impl_fn::twice::{closure#1}",
+            "    ensures result == y + k;\n}\n\nfn impl_fn::twice::{closure#1}",
+            "    ensures result == y + k + 1;\n}\n\nfn impl_fn::twice::{closure#1}",
             "ensures_1",
         ),
         // A type parameter's bound must be the source's.

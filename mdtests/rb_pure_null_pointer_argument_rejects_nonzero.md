@@ -125,7 +125,7 @@ struct rb_node* rb_left_of(struct rb_node* node) {
         RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
         RbTree::Node(identity, node_parent, color, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
-            execute();
+            step_until(function.exit);
             let sub = fold(rb_at(node), { model: old(t.model) }, { left: l, right: r });
             have rb_parent_is(sub.model, 0) == 1 by {
                 rewrite(sub.model == old(t.model));

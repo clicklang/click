@@ -1106,7 +1106,7 @@ outcomes {
     threw => { step(); }
 }
 The `step()` in each arm advances the selected path; add the remaining
-`step()`, `execute()`, and `solve()` tactics inside that arm until all
+`step()`, `step_until(function.exit)`, and `solve()` tactics inside that arm until all
 contract claims are closed.
 "#
     .to_string()

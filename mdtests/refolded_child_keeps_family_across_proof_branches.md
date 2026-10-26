@@ -29,11 +29,9 @@ void preserve(int32* p, int32 flag) {
         unfold(item);
         let replacement = fold(cell(p), { value: old(parent.value) });
         let parent = fold(box(p), { value: old(parent.value) }, { item: replacement });
-        execute();
     } else {
         let { item: item } = unfold(parent);
         let parent = fold(box(p), { value: old(parent.value) }, { item: item });
-        execute();
     }
 }
 ```

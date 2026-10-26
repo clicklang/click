@@ -28,7 +28,7 @@ contract int32 Positive(int32 value) {
 int32 apply(int32 (*callback)(int32), int32 value) {
     requires Positive(callback);
     ensures result == value;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

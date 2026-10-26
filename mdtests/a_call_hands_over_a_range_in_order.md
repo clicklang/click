@@ -18,11 +18,11 @@ verifying "a_call_hands_over_a_range_in_order.c";
 int32 f(const uint8* bytes, int32 i, int32 n) {
     views bytes[i..n];
     ensures i <= n;
-} by { execute(); solve(); }
+}
 int32 g(const uint8* bytes) {
     views bytes[0..8];
     ensures 5 <= 2;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

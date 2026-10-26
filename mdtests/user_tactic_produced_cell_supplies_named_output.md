@@ -67,8 +67,8 @@ void expose_c(struct slot* root) {
     produces root->p;
 } by {
     match state.shape {
-        Shape::A => { let { child: out } = unfold(state); execute(); },
-        Shape::B => { let { child: out } = unfold(state); execute(); },
+        Shape::A => { let { child: out } = unfold(state); step_until(function.exit); },
+        Shape::B => { let { child: out } = unfold(state); step_until(function.exit); },
     }
 }
 void call_c(struct slot* root) {

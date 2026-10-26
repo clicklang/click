@@ -13,16 +13,16 @@ verifying "integers.rs";
 
 fn wrapping_add_u32(a: u32, b: u32) -> u32 {
     ensures result == integer::uint32_wrapping_add(a, b);
-} by { execute(); solve(); }
+}
 
 fn wrapping_sub_u32(a: u32, b: u32) -> u32 {
     ensures result == integer::uint32_wrapping_sub(a, b);
-} by { execute(); solve(); }
+}
 
 fn wrapping_mul_u32(a: u32, b: u32) -> u32 {
     ensures result == integer::uint32_wrapping_mul(a, b);
-} by { execute(); solve(); }
+}
 
 fn wrapping_add_u64(a: u64, b: u64) -> u64 {
     ensures result == integer::uint64_wrapping_add(a, b);
-} by { execute(); solve(); }
+}

@@ -1,8 +1,8 @@
-# `execute` expansion preserves certified post-call facts
+# Expansion of the implicit tail preserves certified post-call facts
 
 A verified call may establish the exact current-memory fact required by a
-later call. Whole-function `execute()` must carry that certified postcondition
-through its generated `step()` certificate, even when the same surface
+later call. The implicit tail of an omitted proof must carry that certified
+postcondition through its generated `step()` certificate, even when the same surface
 expression described an older snapshot earlier in the function.
 
 ```c filename=set_one.c
@@ -72,43 +72,28 @@ resource cell_storage(p: struct cell*) {
 void set_one(struct cell* cell) {
     owns *cell;
     ensures cell->value == 1;
-} by {
-    execute();
-    solve();
 }
 
 void set_two(struct cell* cell) {
     requires cell->value == 1;
     owns *cell;
     ensures cell->value == 2;
-} by {
-    execute();
-    solve();
 }
 
 void restore_one(struct cell* cell) {
     requires cell->value == 2;
     owns *cell;
     ensures cell->value == 1;
-} by {
-    execute();
-    solve();
 }
 
 void require_one(struct cell* cell) {
     requires cell->value == 1;
     views cell_storage(cell);
-} by {
-    execute();
-    solve();
 }
 
 int32 post_call_chain(struct cell* cell) {
     owns *cell;
     ensures result == 0;
-} by {
-    execute();
-    solve();
 }
 ```
 

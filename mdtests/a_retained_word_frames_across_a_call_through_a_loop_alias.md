@@ -115,7 +115,7 @@ void probe(struct node* g, struct node* n) {
                 }
             }
 
-            execute(); assumption();
+            step_until(function.exit); assumption();
         },
     }
 }

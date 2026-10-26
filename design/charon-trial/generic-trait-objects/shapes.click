@@ -22,30 +22,30 @@ impl bags::Bag<i32> for bags::Counter {
     function count(self) -> u32 { self.count }
     function last(self) -> i32 { self.last }
     fn insert(&mut self, x: i32) {
-    } by { execute(); solve(); }
+    }
     fn size(&self) -> u32 {
-    } by { execute(); solve(); }
+    }
 }
 
 fn bags::fill<B: bags::Bag<i32>>(bag: &mut B, x: i32) -> u32 {
     requires count(bag) < 1000;
     ensures result == old(count(bag)) + 1;
     ensures last(bag) == x;
-} by { execute(); solve(); }
+}
 
 fn bags::fill_dyn(bag: &mut dyn bags::Bag<i32>, x: i32) -> u32 {
     requires count(bag) < 1000;
     ensures result == old(count(bag)) + 1;
     ensures last(bag) == x;
-} by { execute(); solve(); }
+}
 
 fn bags::through_fill(x: i32) -> u32 {
     ensures result == 1;
-} by { execute(); solve(); }
+}
 
 fn bags::through_dyn(x: i32) -> i32 {
     ensures result == x;
-} by { execute(); solve(); }
+}
 
 // Every holder: what is put is among its items.
 trait bags::Holder<T> {
@@ -60,15 +60,15 @@ impl bags::Holder<i32> for bags::Slot {
         List<i32>::Cons(self.value, List<i32>::Nil)
     }
     fn put(&mut self, x: i32) {
-    } by { execute(); solve(); }
+    }
 }
 
 fn bags::store<H: bags::Holder<i32>>(holder: &mut H, x: i32) {
     ensures list::contains(items(holder), x);
-} by { execute(); solve(); }
+}
 
 // The caller lends a `Slot` as the holder's object, packed with its
 // definition of `items`.
 fn bags::through_store(x: i32) -> i32 {
     ensures result == x;
-} by { execute(); solve(); }
+}

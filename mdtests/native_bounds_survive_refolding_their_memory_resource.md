@@ -18,7 +18,6 @@ uint8* end(uint8* p, uint64 n) {
 } by {
     unfold(buffer(p, n));
     fold(buffer(p, n));
-    execute(); solve();
 }
 ```
 

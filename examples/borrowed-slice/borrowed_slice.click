@@ -64,7 +64,7 @@ int32 borrowed_slice_buffer_init(
     ensures owner->len == length;
     ensures owner->data == data;
 } by {
-    execute();
+    step_until(function.exit);
     fold(owned_borrowable_buffer(owner, data, length));
     solve();
 }
@@ -91,7 +91,7 @@ int32 borrowed_slice_buffer_borrow(
     ensures owner->data == data;
 } by {
     unfold(owned_borrowable_buffer(owner, data, length));
-    execute();
+    step_until(function.exit);
     fold(owned_slice(data, start, end));
     fold(buffer_without_slice(owner, data, length, start, end));
     solve();
@@ -112,7 +112,7 @@ int32 borrowed_slice_set(
     ensures data[index] == value;
 } by {
     unfold(owned_slice(data, start, end));
-    execute();
+    step_until(function.exit);
     fold(owned_slice(data, start, end));
     solve();
 }
@@ -129,9 +129,6 @@ int32 borrowed_slice_buffer_return(
     ensures result == length;
     ensures owner->len == length;
     ensures owner->data == data;
-} by {
-    execute();
-    solve();
 }
 
 int32 borrowed_slice_buffer_get(

@@ -150,7 +150,7 @@ template<class T> void Stack<T>::push(T value) {
     ensures after.items == List::Cons(value, old(before.items));
     ensures to_integer(this->count) == length(after.items);
 } by {
-    execute();
+    step_until(function.exit);
     let after = fold(nodes<T>(this->head), { items: List::Cons(value, old(before.items)) }, { tail: before });
     unfold(length(List<T>::Cons(value, old(before.items))));
     have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
@@ -176,7 +176,7 @@ template<class T> bool Stack<T>::pop(T& out) {
     match before.items {
         List::Nil => {
             unfold(before);
-            execute();
+            step_until(function.exit);
             let after = fold(nodes<T>(this->head), { items: List<T>::Nil });
             unfold(length(List<T>::Nil));
             unfold(is_cons(List<T>::Nil));
@@ -187,7 +187,7 @@ template<class T> bool Stack<T>::pop(T& out) {
             let { tail: tail } = unfold(before);
             unfold(length(List::Cons(value, tail_items)));
             apply(length_nonnegative(tail_items));
-            execute();
+            step_until(function.exit);
             unfold(is_cons(List::Cons(value, tail_items)));
             unfold(first_or(List::Cons(value, tail_items), old(out)));
             unfold(rest(List::Cons(value, tail_items)));
@@ -264,7 +264,7 @@ template<class T> Stack<T>::~Stack() {
 template<class T> unsigned long Stack<T>::size() const {
     views *this;
     ensures result == this->count;
-} by { execute(); solve(); }
+}
 
 int round_trip(int x) {
     ensures result == x;
@@ -273,7 +273,7 @@ int round_trip(int x) {
     let empty = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };
-    execute();
+    step_until(function.exit);
     unfold(length(List<int32>::Cons(x, List<int32>::Nil)));
     unfold(first_or(List<int32>::Cons(x, List<int32>::Nil), 0));
     solve();
@@ -292,7 +292,7 @@ unsigned long pushed_size(int x) {
         length(List<int32>::Cons(x, List<int32>::Nil)) == length(List<int32>::Nil) + 1;
         length(List<int32>::Nil) == 0;
     };
-    execute();
+    step_until(function.exit);
     unfold(length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))));
     have length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))) == 2 by solve() using {
         length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))) == length(List<int32>::Cons(x, List<int32>::Nil)) + 1;

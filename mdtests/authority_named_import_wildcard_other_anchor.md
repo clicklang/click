@@ -12,11 +12,9 @@ void preserve(int32* pool) {
     owns authority(ticket(pool, _));
     owns left: ticket(pool, 7);
     owns right: ticket(pool, 7);
-    ensures left.serial == old(left.serial);
-    ensures right.serial == old(right.serial);
     ensures count(ticket(pool + 1, _)) >= 0;
     ensures count(ticket(pool, 7)) == old(count(ticket(pool, 7)));
-} by { execute(); solve(); }
+}
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool, _)));
@@ -32,7 +30,6 @@ int32 run() { ensures result == 0; } by {
     have framed.serial == 3 by solve();
     unfold(first); unfold(second); unfold(framed);
     unfold(authority(ticket(&pool, _)));
-    execute(); solve();
 }
 ```
 

@@ -26,7 +26,6 @@ void user(int32 zero) {
     ensures 1 == 1;
 } by {
     nulls(zero, 0, 0);
-    execute(); solve();
 }
 ```
 

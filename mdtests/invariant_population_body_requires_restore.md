@@ -38,7 +38,7 @@ void wrap_object(struct object* obj) {
     consumes *obj;
     produces wrapper(obj);
 } by {
-    execute();
+    step_until(function.exit);
     fold(wrapper(obj));
     solve();
 }

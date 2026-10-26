@@ -7,9 +7,11 @@ tail. The null list owns nothing.
 
 `list_prepend` consumes a tail and returns one list in both allocator outcomes.
 If allocation fails it returns the original tail unchanged. On success it
-initializes a fresh node and folds that node around the tail. The proof splits
-on `result == tail`, which distinguishes reuse from fresh allocation without
-requiring the C implementation to expose proof-oriented control flow.
+initializes a fresh node and folds that node around the tail. The proof steps
+to the C `if (node == 0)` and splits there with a proof `if` on `node == 0`;
+each arm steps to the exit with `step_until(function.exit)`, and the success
+arm folds the fresh node. The C implementation needs no proof-oriented control
+flow.
 
 `list_head` borrows the recursive resource. `list_drop_front` unfolds and frees
 exactly one node, returning ownership of the still-live tail. `list_destroy`

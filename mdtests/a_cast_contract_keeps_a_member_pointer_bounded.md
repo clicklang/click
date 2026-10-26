@@ -14,7 +14,7 @@ int32 read_packed(unsigned long word, struct pair* pair) {
     requires ((int32*)(word & ~1)) == &pair->first;
     views pair->first;
     views pair->second;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

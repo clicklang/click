@@ -19,7 +19,7 @@ uint8 set_and_read(int32* value, const uint8* bytes, uint64 length, uint64 index
     owns value[0..1];
     views bytes[0..length];
     ensures result == 7;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

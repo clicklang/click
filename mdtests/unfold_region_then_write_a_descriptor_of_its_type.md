@@ -59,7 +59,7 @@ int32 peek(struct slot* s, struct slot* other) {
     step();
     step();
     step();
-    execute();
+    step_until(function.exit);
     let r = fold(pool_slot(s), { at: a, end: e });
     let st = fold(pool_state(s->pool), { live: n });
     solve();

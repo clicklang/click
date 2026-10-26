@@ -94,9 +94,6 @@ int32 sum_packet(struct packet packet) {
 
 int32 struct_conditional_value() {
     ensures result == 289;
-} by {
-    execute();
-    solve();
 }
 ```
 

@@ -14,7 +14,7 @@ verifying "uint64_index_high_word_cannot_alias_byte.c";
 void write(uint8* bytes, uint64 index) {
     requires index == 4294967296u64;
     owns bytes[0..1];
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

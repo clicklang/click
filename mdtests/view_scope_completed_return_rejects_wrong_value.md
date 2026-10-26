@@ -13,7 +13,7 @@ void repair() {
     produces tag: marker();
     ensures tag.value == 1;
 } by {
-    execute();
+    step_until(function.exit);
     let tag = fold(marker(), { value: 1 });
     solve();
 }
@@ -24,7 +24,6 @@ void finish(int32* p) {
 } by {
     open(viewed(p)) {
         let { tag: tag } = step(repair, {});
-        execute(); solve();
     }
 }
 ```

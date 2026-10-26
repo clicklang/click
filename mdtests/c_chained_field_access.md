@@ -78,7 +78,7 @@ int32 chain_get(struct outer* o) {
     ensures result == (o->in)->value;
 } by {
     unfold(inner_cell(o));
-    execute();
+    step_until(function.exit);
     fold(inner_cell(o));
     solve();
 }
@@ -88,7 +88,7 @@ int32 chain_set(struct outer* o) {
     ensures result == 5;
 } by {
     unfold(inner_cell(o));
-    execute();
+    step_until(function.exit);
     fold(inner_cell(o));
     solve();
 }
@@ -98,7 +98,7 @@ int32 deep_get(struct root* r) {
 } by {
     unfold(nested(r));
     unfold(leaf_cell(r->mid));
-    execute();
+    step_until(function.exit);
     fold(leaf_cell(r->mid));
     fold(nested(r));
     solve();

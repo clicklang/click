@@ -12,12 +12,12 @@ verifying "first.c" as first;
 verifying "second.c" as second;
 int32 first::helper() {
     ensures result == 2;
-} by { execute(); solve(); }
+}
 int32 second::helper() {
     ensures result == 2;
-} by { execute(); solve(); }
-int32 first_use() { ensures result == 1; } by { execute(); solve(); }
-int32 second_use() { ensures result == 2; } by { execute(); solve(); }
+}
+int32 first_use() { ensures result == 1; }
+int32 second_use() { ensures result == 2; }
 ```
 ```expect
 fail: left side evaluated to 1, right side evaluated to 2

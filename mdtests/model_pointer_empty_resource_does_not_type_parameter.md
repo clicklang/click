@@ -19,7 +19,7 @@ void keep(struct node* p) {
     ensures held.model == old(held.model);
 } by {
     unfold(held);
-    execute();
+    step_until(function.exit);
     let out = fold(output(), { model: Ref::At(p) });
 }
 ```

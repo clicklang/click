@@ -31,7 +31,7 @@ int32 f(int32* p) {
                 rewrite(q == p);
                 unfold(points_to(Link::Node(p), p)); normalize();
             }
-            execute();
+            step_until(function.exit);
             let after = fold(Cell(p), { model: Link::Node(q) });
             solve();
         },

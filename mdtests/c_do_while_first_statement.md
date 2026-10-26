@@ -3,7 +3,7 @@
 Entering a `do ... while` body records no evidence of its own. When the loop
 was the first thing a function executed, the proof object started matching
 evidence from the body alone and found no loop head left when the condition
-was decided, so the implicit tail, `execute()`, and `step()` all failed with an internal
+was decided, so the implicit tail and `step()` both failed with an internal
 evidence error. The Linux kernel wraps its statement macros in
 `do { ... } while (0)`, and they often open a function.
 

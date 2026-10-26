@@ -18,10 +18,7 @@ verifying "cstr_dynamic_indexed_read.c";
 
 int32 read_terminator(uint8 bytes[], uint64 known_len) {
     views click::cstr::cstr_at(bytes, known_len);
-    ensures result == '\0' by {
-        execute();
-        solve();
-    }
+    ensures result == '\0';
 }
 ```
 

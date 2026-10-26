@@ -21,7 +21,7 @@ void poke(uint8* s, uint64 n) {
     requires 0u64 < n;
 } by {
     open(cstr_at(s, n)) {
-        execute();
+        step_until(function.exit);
     }
 }
 ```

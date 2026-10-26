@@ -38,11 +38,22 @@ int32 sequence_contains3(int32 values[], int32 target) {
     ensures result != 0 implies target in old([values[0], values[1], values[2]]);
     ensures target in old([values[0], values[1], values[2]]) implies result != 0;
 } by {
-    if target in [values[0], values[1], values[2]] {
-        execute();
-        solve();
+    if values[0] == target {
+        step_until(function.exit);
     } else {
-        execute();
-        solve();
+        if values[1] == target {
+            step_until(function.exit);
+        } else {
+            if values[2] == target {
+                step_until(function.exit);
+            } else {
+                step_until(function.exit);
+                if target in [values[0], values[1], values[2]] {
+                    solve();
+                } else {
+                    solve();
+                }
+            }
+        }
     }
 }

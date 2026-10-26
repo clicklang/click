@@ -50,14 +50,14 @@ void f(int32* q) {
         Sel::A => {
             let { k: x, u: ru } = unfold(r);
             have x.v == ru by { solve(); }
-            execute();
+            step_until(function.exit);
             let r = fold(root(q), { sel: Sel::A, u: ru }, { k: x });
             solve();
         },
         Sel::B => {
             let { m: x, u: ru } = unfold(r);
             have x.v == ru by { solve(); }
-            execute();
+            step_until(function.exit);
             let r = fold(root(q), { sel: Sel::B, u: ru }, { m: x });
             solve();
         },

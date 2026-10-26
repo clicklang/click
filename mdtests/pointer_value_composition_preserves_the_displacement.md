@@ -11,7 +11,7 @@ void compose(const uint8* base, const uint8* middle, const uint8* end) {
  requires end == middle + 3u64;
  ensures end == base + 6u64;
 } by {
- execute();
+ step_until(function.exit);
  solve() using { end == middle + 3u64; middle == base + 2u64; };
 }
 ```

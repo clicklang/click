@@ -403,7 +403,7 @@ between compiler-checked borrow legality and Click's functional claims.
 | Entry footprint | `field_derived_view_does_not_retarget_after_a_pointer_write` |
 | Composites | `composite_loan_protects_primitive_frontier_and_restores_head_once`, `projection_extends_permitted_descriptions_without_a_transition`, `candidate_composite_with_unstable_facts_is_refused`, `candidate_composite_view_is_backed_by_a_covering_owned_composite`, `mdtests/produced_composite_body_overlapping_a_held_owner.md` |
 | Frame check at the frontier | `frame_check_opens_owned_composites_one_level_and_charges_per_head`, `mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md` |
-| Open and close | `mdtests/rb_augment_callbacks_helper_mutates_body_stepwise.md` (a viewed open closes the same way from a step as from `execute()`), `execution_open_scope_owns_entry_body_and_close_transactionally` |
+| Open and close | `mdtests/rb_augment_callbacks_helper_mutates_body_stepwise.md` (a viewed open closes the same way from a step as from `step_until(function.exit)`), `execution_open_scope_owns_entry_body_and_close_transactionally` |
 | Escaping borrows | `a_hold_blocks_ending_the_scope_and_changes_identity`, `escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed`, `consuming_the_composite_recovers_the_owner`, `mdtests/borrowing_composite_survives_an_owning_call.md`, `examples/input-cursor` |
 | Effects | `candidate_rejects_mutable_effect_overlapping_a_composite_view_piece`, `candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence` |
 | Callbacks and refinement | `stable_view_refinement_uses_checked_variance_for_subranges`, `mdtests/rb_augment_callbacks_helper_owns_without_separate.md` |

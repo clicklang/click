@@ -27,7 +27,7 @@ struct node* forge(struct node* node) {
 unsigned long read_forged(struct node* node) {
     owns node->word;
     requires node->word == 5;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

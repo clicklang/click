@@ -1,7 +1,7 @@
 # a proof step at a return from a scope with locals is still checked
 
-The proof steps a `return` inside a block accepts after `execute()` are
-checked as at any return: a `fold` that claims a value the cell does not hold
+The proof steps a `return` inside a block accepts after
+`step_until(function.exit)` are checked as at any return: a `fold` that claims a value the cell does not hold
 is refused.
 
 ```c filename=a_proof_step_at_a_return_from_a_scope_with_locals_is_checked.c
@@ -29,8 +29,13 @@ int32 read_or_zero(int32* p) {
     ensures after.v == old(before.v);
 } by {
     let {} = unfold(before);
-    execute();
-    let after = fold(cell(p), { v: old(before.v) + 1 }, {});
+    if old(before.v) != 0 {
+        step_until(function.exit);
+        let after = fold(cell(p), { v: old(before.v) + 1 }, {});
+    } else {
+        step_until(function.exit);
+        let after = fold(cell(p), { v: old(before.v) + 1 }, {});
+    }
 }
 ```
 

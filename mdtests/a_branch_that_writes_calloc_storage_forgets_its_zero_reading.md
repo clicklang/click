@@ -47,8 +47,6 @@ int32 f(int32 c) {
         step();
     } else {
     }
-    execute();
-    solve();
 }
 ```
 

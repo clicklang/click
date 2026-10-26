@@ -16,7 +16,7 @@ int32 bump(int32 n) {
     requires n <= 100;
     ensures result <= 101;
 } by {
-    execute();
+    step_until(function.exit);
     solve() using { 0 <= n; };
 }
 ```

@@ -2,7 +2,7 @@
 
 `items[x].y` reads at byte offset `x * 8 + 4`. The cells initialized at
 `0`, `4`, `8` and `12` were each a path case of the read, and the cases at
-`4` and `12` had no Click spelling, so `execute()` could not split them. The
+`4` and `12` had no Click spelling, so the implicit tail could not split them. The
 offset differs from `0` and `8` modulo the 8-byte stride, so those cells are
 now distinct from it without a case, and `x * 8 + 4 == 12` is `x == 1`. The
 read splits into `x == 0` and `x == 1`, exactly as a scalar `items[x]` does,

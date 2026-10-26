@@ -16,13 +16,13 @@ verifying "global.c";
 spec enum NodeRef { At(struct model_node*), }
 resource token() { field model: NodeRef; }
 struct model_node* get_node() { ensures result == &singleton; } by {
-    execute(); normalize();
+    step_until(function.exit); normalize();
 }
 void wrapped(struct model_node* p) { produces held: token(); ensures held.model == NodeRef::At(p); } by {
-    execute(); let held = fold(token(), { model: NodeRef::At(p) });
+    step_until(function.exit); let held = fold(token(), { model: NodeRef::At(p) });
 }
 void caller() { produces held: token(); ensures true; } by {
-    step(); step(); let { held: held } = step(wrapped, {}); execute();
+    step(); step(); let { held: held } = step(wrapped, {});
 }
 ```
 

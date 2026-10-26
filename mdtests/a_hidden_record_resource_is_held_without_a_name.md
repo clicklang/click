@@ -43,7 +43,7 @@ int32 get(struct pair* p) {
     ensures result >= 0;
 } by {
     let { first: c } = unfold(pair(p));
-    execute();
+    step_until(function.exit);
     have result == c.v;
     fold(pair(p), { first: c });
     solve();

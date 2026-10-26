@@ -15,7 +15,7 @@ void stamp(struct slot* slot, int32* p, int32 tag) {
     requires 0 <= tag;
     requires tag <= 1;
     ensures ((int32*)(slot->word & ~3)) == p;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

@@ -12,7 +12,7 @@ int32 f(int32 n) {
 
 ```click
 verifying "automatic_scope_exit_struct_alias.c";
-int32 f(int32 n) { ensures result == 5; } by { execute(); solve(); }
+int32 f(int32 n) { ensures result == 5; }
 ```
 
 ```expect

@@ -50,7 +50,7 @@ fn charon_array_reference_assignments_preserve_bounded_storage_and_proof_work() 
                 "must execute a checked reference region write"
             );
             let sidecar = format!(
-                "verifying \"bounds.rs\"; fn {name}() -> u32 {{ ensures result == 7u32; }} by {{ execute(); solve(); }}"
+                "verifying \"bounds.rs\"; fn {name}() -> u32 {{ ensures result == 7u32; }}"
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 C0VerificationSession::new_program_prepared(&sidecar, &prepared)
@@ -121,7 +121,7 @@ fn charon_external_array_operations_keep_lowering_and_proof_work_bounded() {
                 )
             };
             let sidecar = format!(
-                "verifying \"external.rs\"; fn {name}({parameters}) {{ owns target[0..{count}]; {contract} }} by {{ execute(); solve(); }}"
+                "verifying \"external.rs\"; fn {name}({parameters}) {{ owns target[0..{count}]; {contract} }}"
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 C0VerificationSession::new_program_prepared(&sidecar, &prepared)

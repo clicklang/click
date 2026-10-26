@@ -26,10 +26,10 @@ void make(int32* pool, int32* p) {
     consumes p[0..1];
     produces member: ticket(pool, p);
     ensures member.serial == 1;
-} by { let member = fold(ticket(pool, p), { serial: 1 }); execute(); solve(); }
+} by { let member = fold(ticket(pool, p), { serial: 1 }); step_until(function.exit); solve(); }
 int32 run() { ensures result == 0 or result == 3; } by {
     step(); step(); step(); step();
-    branch { execute(); solve(); } else {}
+    branch { step_until(function.exit); solve(); } else {}
     step(); step();
     fold(authority(ticket(&pool, _)));
     let second = fold(ticket(&pool, p + 1), { serial: 2 });
@@ -41,7 +41,7 @@ int32 run() { ensures result == 0 or result == 3; } by {
     have count(ticket(&pool, _)) == 2 by solve();
     unfold(second);
     unfold(authority(ticket(&pool, _)));
-    execute(); solve();
+    step_until(function.exit); solve();
 }
 ```
 

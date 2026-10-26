@@ -1,11 +1,13 @@
-# Function-exit execution refuses a completed loop-control path
+# Function-exit stepping refuses a completed loop-control path
 
 The original unsigned guard consumes the old value and decrements on every
 test, including the final false test. Its lowering introduces a consumed-value
-carrier and a break path. `execute()` searches for function exit. In a written preservation proof, it
-cannot resume a completed loop-control path into the enclosing branch. This
-script must receive an ordinary proof refusal, without attempting to append
-evidence after the completed `break`.
+carrier and a break path. In a written preservation proof, the arm where the
+facts select that break path (`n == 0u64`) asks `step_until(function.exit)` to
+run on to function exit. It cannot resume a completed loop-control path into
+the enclosing branch, so the script must receive an ordinary proof refusal,
+without attempting to append evidence after the completed `break`. The proof
+after the loop is the implicit tail.
 
 ```c filename=drain.c
 unsigned long drain(unsigned long n) {
@@ -26,12 +28,13 @@ uint64 drain(uint64 n) {
   decreases n;
   invariant n <= 15u64;
   initialize by { assumption(); }
-  preserve by { execute(); solve(); }
+  preserve by {
+   if n == 0u64 { step_until(function.exit); } else { step(); }
+  }
  }
- execute(); solve();
 }
 ```
 
 ```expect
-fail: `execute()` found no checked path from this frontier to function exit
+fail: `step_until` found no checked step from this frontier
 ```

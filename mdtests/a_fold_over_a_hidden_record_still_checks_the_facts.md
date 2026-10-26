@@ -37,7 +37,7 @@ void clear(struct pair* p) {
     owns x: pair(p);
 } by {
     let { first: c } = unfold(x);
-    execute();
+    step_until(function.exit);
     let x = fold(pair(p), { first: c });
     solve();
 }

@@ -29,17 +29,11 @@ uint64 keep(uint8* p, uint64 n) {
     owns cstr_at(p, m);
     requires n == m;
     ensures result == old(m);
-} by {
-    execute();
-    solve();
 }
 
 uint64 measure(uint8* src, uint64 m) {
     owns cstr_at(src, m);
     ensures result == m;
-} by {
-    execute();
-    solve();
 }
 ```
 

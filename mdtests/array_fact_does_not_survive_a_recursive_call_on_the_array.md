@@ -5,7 +5,9 @@ fact reads through is exactly the object the call may write. The body writes
 nothing at all, and that is the point: what the edge carries is the declared
 write set, and calling itself is not a way around it. The contract does not
 promise to keep `a[0]`, so the claim after the call is not a consequence of
-anything the call site may use.
+anything the call site may use. A proof `if n <= 0` splits the proof where
+the C splits, and each case steps to exit with `step_until(function.exit)` and
+restates the fact; the case that makes the call refuses it.
 
 The fact carries content: `icount(a, 0, 1) == 5` comes from
 `requires a[0] == 5` through the fold's defining equation, and it reads the
@@ -46,9 +48,13 @@ void wipe(int32 a[], int32 n) {
         peel(icount(a, 0, 1)) using { 0 <= 0; 0 < 2147483647; };
         solve() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; };
     }
-    execute();
-    have icount(a, 0, 1) == 5;
-    solve();
+    if n <= 0 {
+        step_until(function.exit);
+        have icount(a, 0, 1) == 5;
+    } else {
+        step_until(function.exit);
+        have icount(a, 0, 1) == 5;
+    }
 }
 ```
 

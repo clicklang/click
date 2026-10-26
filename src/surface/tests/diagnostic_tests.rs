@@ -6,7 +6,7 @@ fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
     let source = r#"verifying "f.c";
         int32 f(int32 x) { ensures result == x; } by {
             have x == 42 implies x == 43 by { intro(); }
-            execute(); solve();
+            step_until(function.exit); solve();
         }"#;
     with_proof_trace("f", || {
         let error =
@@ -48,8 +48,7 @@ fn unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise() {
 #[test]
 fn missing_write_permission_explains_the_available_view_and_failed_check() {
     let c = "void write(int *p) { p[0] = 7; }";
-    let source =
-        r#"verifying "write.c"; void write(int32* p) { views p[0..1]; } by { execute(); }"#;
+    let source = r#"verifying "write.c"; void write(int32* p) { views p[0..1]; }"#;
     let error = verify_c0_sources(source, &[("write.c", c)]).unwrap_err();
     let report = error.concise_report();
     assert!(
@@ -72,7 +71,7 @@ fn missing_write_permission_explains_the_available_view_and_failed_check() {
 #[test]
 fn first_operation_failure_retains_the_required_access_and_empty_resources() {
     let c = "int read(int *p) { return *p; }";
-    let source = r#"verifying "read.c"; int32 read(int32* p) { ensures result == 7; } by { execute(); solve(); }"#;
+    let source = r#"verifying "read.c"; int32 read(int32* p) { ensures result == 7; }"#;
     with_proof_trace("read", || {
         let error = verify_c0_sources(source, &[("read.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
@@ -91,11 +90,11 @@ fn first_operation_failure_retains_the_required_access_and_empty_resources() {
 #[test]
 fn execution_tactic_in_a_have_names_the_proposition_context() {
     let c = "int f(void) { return 7; }";
-    let source = r#"verifying "f.c"; int32 f() { ensures result == 7; } by { have 1 == 1 by { execute(); } execute(); solve(); }"#;
+    let source = r#"verifying "f.c"; int32 f() { ensures result == 7; } by { have 1 == 1 by { step_until(function.exit); } step_until(function.exit); solve(); }"#;
     let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
     let report = error.concise_report();
     assert!(
-        report.contains("unsupported proof operation `execute`"),
+        report.contains("unsupported proof operation `step_until`"),
         "{report}"
     );
     assert!(report.contains("proposition proof"), "{report}");
@@ -121,7 +120,7 @@ fn failed_simp_reports_actual_cell_queries_separately_from_history_explanations(
     let source = r#"verifying "f.c"; void f(int32* p, int32 i) {
         owns p[0..2]; requires 0 <= i; requires i < 2;
         ensures p[0] == old(p[0]);
-    } by { execute(); solve(); }"#;
+    }"#;
     with_proof_trace("f", || {
         let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
@@ -158,7 +157,7 @@ fn failed_written_have_keeps_its_goal_and_actual_queries() {
         let source = format!(
             r#"verifying "f.c"; void f(int32* p, int32 i) {{
             owns p[0..2]; requires 0 <= i; requires i < 2;
-        }} by {{ step(); have p[0] == old(p[0]) by {closer}(); execute(); }}"#
+        }} by {{ step(); have p[0] == old(p[0]) by {closer}(); step_until(function.exit); }}"#
         );
         let ordinary = verify_c0_sources(&source, &[("f.c", c)])
             .unwrap_err()
@@ -189,8 +188,8 @@ fn failed_written_have_keeps_its_goal_and_actual_queries() {
 fn failed_outcome_reports_post_call_resources_not_the_execution_entry() {
     let c = "void drop(int *p) {} void f(int *p) { drop(p); }";
     let source = r#"verifying "f.c";
-        void drop(int32* p) { consumes p[0..1]; } by { execute(); solve(); }
-        void f(int32* p) { consumes p[0..1]; ensures 1 == 2; } by { execute(); solve(); }"#;
+        void drop(int32* p) { consumes p[0..1]; }
+        void f(int32* p) { consumes p[0..1]; ensures 1 == 2; }"#;
     with_proof_trace("f", || {
         let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
@@ -254,7 +253,7 @@ fn implicit_loop_closure_is_smart_while_written_closure_is_simple() {
             verifying "f.c";
             int32 f(int32 n) {{ requires n == 2; ensures result == 0; }} by {{
                 loop {{ {declaration} preserve by {{ step(); {closer} }} }}
-                execute(); solve();
+                step_until(function.exit); solve();
             }}
         "#
         );
@@ -297,7 +296,7 @@ fn implicit_auto_is_a_smart_tactic_at_the_simple_tactic_site() {
             produces either(x, y);
         } by {
             fold(either(x, y));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -338,7 +337,7 @@ fn auto_have_budget_failure_keeps_the_exhaustion_reason() {
         verifying "bound.c";
         uint64 bound(uint64 a, uint64 b) { ensures result == a; } by {
             have a <= b - b % 4u64;
-            execute(); solve();
+            step_until(function.exit); solve();
         }
     "#;
     let error = crate::instrumentation::with_tactic_work_limits(
@@ -379,7 +378,7 @@ fn smart_closer_inside_a_have_script_spends_the_smart_budget() {
                 have a <= b - b % 4u64 by { solve(); }
                 assumption();
             }
-            execute(); solve();
+            step_until(function.exit); solve();
         }
     "#;
     let error = crate::instrumentation::with_tactic_work_limits(
@@ -506,7 +505,7 @@ fn worker_without_protocol_contract_is_a_proof_error() {
             fact box->value == value;
         }
         verifying "mutex.c";
-        void *idle(void *arg) { ensures result == 0; } by { execute(); solve(); }
+        void *idle(void *arg) { ensures result == 0; }
         void start(struct box *box) {
             owns box->mu;
             requires aligned(&box->mu, 8);
@@ -664,7 +663,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
             ensures owner->data == old(owner->data);
         } by {
             unfold(storage(owner));
-            execute();
+            step_until(function.exit);
             fold(storage(owner));
             solve();
         }
@@ -682,7 +681,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
             unfold(storage(owner));
             have 1 <= owner->cap by solve();
             fold(allocated(owner));
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -1703,7 +1702,7 @@ fn statement_sites_change_nothing_but_the_location_line() {
     let header = "verifying \"f.c\";\n";
     let cases = [
         (
-            "int32 store() {\n    ensures result == 0;\n} by {\n    step(); step(); step();\n    loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }\n    execute(); solve();\n}\n",
+            "int32 store() {\n    ensures result == 0;\n} by {\n    step(); step(); step();\n    loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }\n    step_until(function.exit); solve();\n}\n",
             Some(("f.c:8:9: `items[i].x = 7;`", "f.c:11:11: `items[i].x = 7;`")),
         ),
         (
@@ -1788,7 +1787,7 @@ fn failed_generated_loop_closer_reports_a_short_summary_at_the_loop_tactic() {
                 decreases state;
                 invariant state >= 0;
             }
-            execute();
+            step_until(function.exit);
             solve();
         }
     "#;
@@ -2038,7 +2037,7 @@ int32 last(int32* data, uint64 length) {
     owns data[0..1];
     requires length == 1u64;
     ensures result == old(data[0]);
-} by { execute(); solve(); }
+}
 "#;
     // Exact wide-index constants now resolve without a manual rewrite.
     verify_c0_sources(sidecar, &[("last.c", source)]).unwrap();
@@ -2085,7 +2084,7 @@ fn callback_script_tails_report_missing_authority_and_complete_valid_steps() {
         let mut source = fixture.click_source.unwrap();
         if expected.is_none() {
             // Three lowered operations per callback and the implicit void return.
-            source = source.replace("execute();", &"step(); ".repeat(10));
+            source = source.replace("step_until(function.exit);", &"step(); ".repeat(10));
         }
         let sources = fixture
             .c_sources
@@ -2119,7 +2118,7 @@ fn callback_script_tails_report_missing_authority_and_complete_valid_steps() {
             );
             verify_c0_sources(&named, &sources)
                 .unwrap_or_else(|error| panic!("named callback steps: {}", error.message()));
-            let smart = source.replace(&"step(); ".repeat(10), "execute();");
+            let smart = source.replace(&"step(); ".repeat(10), "step_until(function.exit);");
             let expanded =
                 expand_c0_claim_source(&smart, &sources, "erase_augmented", CProofClaim::Grouped)
                     .unwrap();
@@ -2146,7 +2145,7 @@ fn callback_script_tails_complete_or_report_a_bounded_failure() {
             // implicit auto tail must finish the remaining valid callbacks.
             (
                 source
-                    .replace("execute();", "step(); step(); step();")
+                    .replace("step_until(function.exit);", "step(); step(); step();")
                     .replace("solve();", ""),
                 fixture.c_sources,
             )
@@ -2227,7 +2226,7 @@ fn struct_field_frame_failure_names_the_read_and_written_members() {
         } by {
             step();
             have p[0].left == old(p[0].left) by { solve(); }
-            execute(); solve();
+            step_until(function.exit); solve();
         }
     "#;
     let error = verify_c0_sources(source, &[("field.c", c_source)])
@@ -2419,7 +2418,7 @@ void run(int32 total) {{ requires 0 <= total; requires total <= 1000; ensures 0 
   {invariants}
   preserve by {{ step(); close_invariants() by {{ solve(); }} }}
  }}
- execute(); solve();
+ step_until(function.exit); solve();
 }}
 "#
     );
@@ -2473,7 +2472,7 @@ fn linear_function_proofs_execute_once_at_multiple_sizes() {
     for size in [16, 64, 256] {
         let premises = "have 0 == 0 by { normalize(); }\n".repeat(size);
         let source = format!(
-            "verifying \"f.c\"; int32 f() {{ ensures result == 0; }} by {{ {premises} execute(); solve(); }}"
+            "verifying \"f.c\"; int32 f() {{ ensures result == 0; }} by {{ {premises} step_until(function.exit); solve(); }}"
         );
         let (result, events) =
             collect(|| verify_c0_sources(&source, &[("f.c", "int32 f() { return 0; }")]));
@@ -2482,7 +2481,7 @@ fn linear_function_proofs_execute_once_at_multiple_sizes() {
             .iter()
             .filter(|event| {
                 matches!(event,
-                    VerificationEvent::TacticStarted(tactic) if tactic.tactic_name == "execute"
+                    VerificationEvent::TacticStarted(tactic) if tactic.tactic_name == "step_until"
                 )
             })
             .count();
@@ -2524,7 +2523,7 @@ void f(struct node* p) {
             have p->right == link by { assumption(); }
             step();
             let t = fold(tree(id), { model: Tree::Node(id, link, lm, rm) }, { left: l, right: r });
-            execute(); solve();
+            step_until(function.exit); solve();
         },
     }
 }
@@ -2564,9 +2563,9 @@ void f(struct node* p) {
 #[test]
 fn execute_failure_trace_retains_checked_call_facts() {
     let c = "int helper(void) { return 1; } int f(void) { return helper(); }";
-    for execution in ["execute();", "step(); step();"] {
+    for execution in ["step_until(function.exit);", "step(); step();"] {
         let source = format!(
-            "verifying \"f.c\"; int32 helper() {{ ensures result == 1; }} by {{ execute(); solve(); }} \
+            "verifying \"f.c\"; int32 helper() {{ ensures result == 1; }} \
              int32 f() {{ ensures result == 2; }} by {{ {execution} solve(); }}"
         );
         with_proof_trace("f", || {
@@ -2596,7 +2595,7 @@ fn fold_over_a_hidden_record_names_the_failed_fact() {
                   resource pair(p: struct pair*) { owns p->a; owns p->n; owns first: counted(p->a); \
                   fact p->n == first.v; fact first.v >= 0; } \
                   verifying \"f.c\"; void clear(struct pair* p) { owns x: pair(p); } by { \
-                  let { first: c } = unfold(x); execute(); let x = fold(pair(p), { first: c }); solve(); }";
+                  let { first: c } = unfold(x); step_until(function.exit); let x = fold(pair(p), { first: c }); solve(); }";
     let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
     let report = error.concise_report();
     // The instance reads the field the body stored to; the read keeps its
@@ -2836,7 +2835,7 @@ void retarget(int32* p, int32* q, int32* anchor) {
 } by {
     unfold(a);
     let b = fold(cursor(q, anchor), { tag: old(a.tag) });
-    execute(); solve();
+    step_until(function.exit); solve();
 }
 void call(int32* p, int32* q, int32* anchor) {
     requires p != q;
@@ -2846,7 +2845,7 @@ void call(int32* p, int32* q, int32* anchor) {
     let { b: c } = step(retarget, { a: c });
     let { b: d } = step(retarget, { a: c });
     unfold(d);
-    execute(); solve();
+    step_until(function.exit); solve();
 }
 "#;
     for tracing in [false, true] {
@@ -2917,7 +2916,7 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
             "solve();"
         };
         let source = format!(
-            "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; requires defined(value * 2); ensures cell[0] == value; }} by {{ step(); have to_integer(cell[0]) == to_integer(value * 2) by {{ {body} }} execute(); solve(); }}"
+            "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; requires defined(value * 2); ensures cell[0] == value; }} by {{ step(); have to_integer(cell[0]) == to_integer(value * 2) by {{ {body} }} step_until(function.exit); solve(); }}"
         );
         with_proof_trace("f", || {
             let error = crate::instrumentation::with_tactic_work_limits(
@@ -2975,7 +2974,7 @@ fn loop_have_budget_refusal_retains_checked_store_trace() {
                     have cell[0] == value + 1 by { solve(); }
                 }
             }
-            execute(); solve();
+            step_until(function.exit); solve();
         }
     "#;
     with_proof_trace("f", || {
@@ -3072,7 +3071,7 @@ uint64 drain(uint64 len) {
    close_invariants() by assumption();
   }
  }
- execute(); solve();
+ step_until(function.exit); solve();
 }
 "#;
 
@@ -3194,7 +3193,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
                     }
                 }
             }
-            execute(); solve();
+            step_until(function.exit); solve();
         }
     "#;
     with_proof_trace("branch_drain", || {
@@ -3502,7 +3501,7 @@ fn successful_transport_trace_keeps_checked_operands_without_added_facts() {
             void f(int32 *p) {{ owns p[0]; requires p[0] == 7; ensures true; }} by {{
                 step(); mark saved;
                 transport(at(saved, p[0] == 7), p[0] == 7){suffix};
-                execute(); assumption();
+                step_until(function.exit); assumption();
             }}
         "#
         );
@@ -3543,7 +3542,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
             void f(int32 *p) {{ owns p[0]; requires p[0] == 7; ensures true; }} by {{
                 step(); mark saved;
                 transport(at(saved, p[0] == 7), p[0] == 7){suffix};
-                execute(); assumption();
+                step_until(function.exit); assumption();
             }}
         "#
         );
@@ -3557,7 +3556,10 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
                 .expect("accepted transport retains its trace");
             let chosen = "chosen: transport(at(saved, p[0] == 7), p[0] == 7) using {";
             assert_eq!(trace.contains(chosen), elided, "{trace}");
-            assert!(trace.contains("tactic 3: step (from `execute`)"), "{trace}");
+            assert!(
+                trace.contains("tactic 3: step (from `step_until`)"),
+                "{trace}"
+            );
             assert!(
                 trace.contains("have true == true (from `implicit tail`)"),
                 "{trace}"
@@ -3605,7 +3607,7 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
             void f(int32 *p) {{ owns p[0..10]; requires p[0] == 7; ensures true; }} by {{
                 {steps} mark stored; step();
                 {transport}
-                execute(); assumption();
+                step_until(function.exit); assumption();
             }}
         "#
         );
@@ -3665,7 +3667,7 @@ fn failed_normalize_using_retains_actual_wide_read_resolution() {
         void f(uint64 *p) { owns p[0]; ensures true; } by {
             step();
             have p[0] == 7u64 by { normalize() using {}; };
-            execute(); assumption();
+            step_until(function.exit); assumption();
         }
     "#;
     with_proof_trace("f", || {
@@ -3710,7 +3712,7 @@ fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
                     };
                 }
             }
-            execute(); assumption();
+            step_until(function.exit); assumption();
         }
     "#;
     with_proof_trace("f", || {
@@ -3745,7 +3747,7 @@ fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
             transport(at(before_write, p[0] == 7u64), p[0] == 7u64) using {
                 at(before_write, p[0] == 7u64);
             };
-            execute(); normalize();
+            step_until(function.exit); normalize();
         }
     "#;
     with_proof_trace("f", || {
@@ -3811,8 +3813,8 @@ fn a_failed_retain_names_the_population_count_requirement() {
 #[test]
 fn have_failure_trace_retains_checked_call_prefix() {
     let c = "int helper(void) { return 1; } int f(void) { int x; x = helper(); return x; }";
-    let source = "verifying \"f.c\"; int32 helper() { ensures result == 1; } by { execute(); solve(); } \
-                  int32 f() { ensures result == 1; } by { step(); step(); have x == 2; execute(); solve(); }";
+    let source = "verifying \"f.c\"; int32 helper() { ensures result == 1; } \
+                  int32 f() { ensures result == 1; } by { step(); step(); have x == 2; step_until(function.exit); solve(); }";
     with_proof_trace("f", || {
         let error =
             verify_c0_sources(source, &[("f.c", c)]).expect_err("the false have must still fail");
@@ -3846,7 +3848,7 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
                     step();
                 }
             }
-            execute(); normalize();
+            step_until(function.exit); normalize();
         }
     "#;
     with_proof_trace("f", || {
@@ -3878,7 +3880,7 @@ fn budget_stopped_explicit_transport_retains_its_checked_prefix_and_goal() {
         void f(int32 **p, int32 **q) {
             owns p[0]; owns q[0]; ensures p[0] == old(p[0]);
         } by {
-            execute();
+            step_until(function.exit);
             transport(old(p[0]) == old(p[0]), p[0] == old(p[0])) using {
                 separate(memory(p[0]), memory(q[0]));
             };
@@ -3937,12 +3939,12 @@ fn callback_refinement_hint_with_produced_resource_is_a_checked_proof() {
         }
         void wrapped(struct node* p) {
             produces held: token(); ensures held.model == Ref::At(p);
-        } by { execute(); let held = fold(token(), { model: Ref::At(p) }); }
+        } by { step_until(function.exit); let held = fold(token(), { model: Ref::At(p) }); }
         /* REFINEMENT */
         int32 accept(void (*f)(struct node*)) {
             requires Callback(f); ensures result == 0;
-        } by { execute(); normalize(); }
-        int32 caller() { ensures result == 0; } by { /* APPLY */ execute(); }
+        } by { step_until(function.exit); normalize(); }
+        int32 caller() { ensures result == 0; } by { /* APPLY */ step_until(function.exit); }
     "#;
     let c = [(
         "callback.c",
@@ -4029,7 +4031,7 @@ fn failed_branch_interface_retains_its_arm_and_written_requirement() {
 /// `int32` reading `-1`.
 #[test]
 fn a_uint32_equality_above_int32_max_prints_in_its_own_type() {
-    let source = "verifying \"t.c\";\nunsigned read(unsigned *u) {\n    requires u[0] == 4294967295u32;\n    ensures result == 4294967295u32;\n} by { execute(); solve(); }\n";
+    let source = "verifying \"t.c\";\nunsigned read(unsigned *u) {\n    requires u[0] == 4294967295u32;\n    ensures result == 4294967295u32;\n}\n";
     let error = verify_c0_sources(
         source,
         &[("t.c", "unsigned read(unsigned *u) { return *u; }")],

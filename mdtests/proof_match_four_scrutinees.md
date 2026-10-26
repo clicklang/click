@@ -63,7 +63,7 @@ int32 sum4(struct cell* a, struct cell* b, struct cell* c, struct cell* d) {
                                     unfold(tb);
                                     unfold(tc);
                                     unfold(td);
-                                    execute();
+                                    step_until(function.exit);
                                     let ta = fold(cell(a), { model: old(ta.model) }, {});
                                     let tb = fold(cell(b), { model: old(tb.model) }, {});
                                     let tc = fold(cell(c), { model: old(tc.model) }, {});

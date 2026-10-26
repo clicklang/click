@@ -1,11 +1,11 @@
-//! Smart execute-until search, fact transport, and theorem selection.
+//! Smart execution search, fact transport, and theorem selection.
 
 use super::proof_object::StepUntilTarget;
 use super::*;
 use std::collections::BTreeSet;
 
 impl<'a> Proof<'a> {
-    /// Runs `step_until` on checked descendants: the `execute()` search
+    /// Runs `step_until` on checked descendants: the implicit tail's search
     /// with a target, which stops before that source statement and follows
     /// one path, refusing where it would have to split. The returned fact
     /// list is only the prefix's output delta; scope adapters use it to
@@ -147,7 +147,7 @@ impl<'a> Proof<'a> {
             .map(|(proof, _)| proof))
     }
 
-    /// Runs `execute()` to function exit on checked descendants: one
+    /// Runs the implicit tail to function exit on checked descendants: one
     /// statement step at a time, splitting at C branches, call outcomes, and
     /// path cases. A partial path is discarded unless it reaches function
     /// exit. The returned fact list is the top-level advances' output delta.
@@ -157,10 +157,11 @@ impl<'a> Proof<'a> {
         if self.is_at_function_exit() {
             return Ok(None);
         }
-        // The statement steps below run on behalf of `execute()`, and a
-        // refusal names it; the returned descendant carries this proof's own
-        // context again, so checkpoints taken before it still apply.
-        let proof = self.with_execution_step_tactic_name("execute()");
+        // The statement steps below are the implicit tail's, and a refusal
+        // names the step that refused; the returned descendant carries this
+        // proof's own context again, so checkpoints taken before it still
+        // apply.
+        let proof = self.with_execution_step_tactic_name("step()");
         // Retrying a refused statement is bounded by the owning smart
         // operation: one retained-have attempt per distinct requirement
         // identity. The set follows this immutable search, rather than a
@@ -181,7 +182,7 @@ impl<'a> Proof<'a> {
     }
 
     /// Returns the already-checked function-exit descendant selected by the
-    /// `execute()` search.
+    /// implicit tail's search.
     pub(in crate::surface::proof) fn try_execute_to_exit(
         &self,
     ) -> Result<Option<Self>, ClickError> {

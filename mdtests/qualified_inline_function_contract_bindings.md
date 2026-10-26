@@ -23,7 +23,7 @@ void first::helper(int32* p) {
     produces after: cell(p);
     ensures after.value == 1;
 } by {
-    unfold(before); execute();
+    unfold(before); step_until(function.exit);
     let after = fold(cell(p), { value: 1 }); solve();
 }
 void second::helper(int32* p) {
@@ -31,7 +31,7 @@ void second::helper(int32* p) {
     produces after: cell(p);
     ensures after.value == 2;
 } by {
-    unfold(before); execute();
+    unfold(before); step_until(function.exit);
     let after = fold(cell(p), { value: 2 }); solve();
 }
 void run(int32* p) {

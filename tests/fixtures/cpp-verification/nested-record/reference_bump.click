@@ -5,7 +5,7 @@ void BumpSizeRef(int32& value) {
     requires 0 <= value;
     requires value <= 10;
     ensures value == old(value) + 1;
-} by { execute(); solve(); }
+}
 
 void FeeEnvelope::BumpLeftByReference() {
     owns this->state.left.size;
@@ -14,4 +14,4 @@ void FeeEnvelope::BumpLeftByReference() {
     requires this->state.left.size <= 10;
     ensures this->state.left.size == old(this->state.left.size) + 1;
     ensures this->state.right.size == old(this->state.right.size);
-} by { execute(); solve(); }
+}

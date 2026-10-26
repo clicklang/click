@@ -64,8 +64,7 @@ Expansion writes what a site's search found. A smart tactic (`solve`,
 `solve() using`, `step_until`, or the implicit tail that ends every script and
 is all of an omitted proof) is replaced by the simple steps it checked: for the
 tail, the steps, splits, and closers that run the remaining C and close each
-goal. The still-accepted `execute()` selects and expands the same way. A
-simple tactic written with
+goal. A simple tactic written with
 an elided argument, such as `apply(t(x))` or a bare `transport(P, Q)`, keeps
 its place, and the argument is written into it: `apply(t(x)) using { P; Q; }`.
 The implicit closer that proves a `step()` or `fold` requirement is written

@@ -75,7 +75,7 @@ void arena_write(struct region* region, int32 value, int32 k) {
         rewrite(region->start == s); assumption();
     }
     mark w;
-    execute();
+    step_until(function.exit);
     have at(w, region->arena->occupied[k]) == region->arena->occupied[k] by {
         transport(at(w, region->arena->occupied[k]) == at(w, region->arena->occupied[k]),
             at(w, region->arena->occupied[k]) == region->arena->occupied[k]) using {};

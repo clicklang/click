@@ -30,7 +30,7 @@ void sized_copy_from_table(struct rb_node* old, struct rb_node* new,
         step(CopySizedStructure, {
             source_tree: source_tree, target_tree: target_tree, source: source, target: target
         });
-        execute(); solve();
+        step_until(function.exit);
     }
 }
 
@@ -110,7 +110,7 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                     unfold(sized_rotation_input_tree(SizedRotationInput::Left(tree_model)));
                     normalize();
                 }
-                execute(); solve();
+                step_until(function.exit);
             },
             SizedRotationInput::Right(tree_model) => {
                 let { tree: tree } = unfold(input);
@@ -121,7 +121,7 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                     unfold(sized_rotation_input_tree(SizedRotationInput::Right(tree_model)));
                     normalize();
                 }
-                execute(); solve();
+                step_until(function.exit);
             },
         }
     }
@@ -201,6 +201,6 @@ void sized_propagate_from_table(struct rb_node* rb, struct rb_node* stop,
     open(sized_callback_table(augment)) {
         step(); step();
         let { whole: whole } = step(PropagateTree, { walk: walk });
-        execute(); solve();
+        step_until(function.exit);
     }
 }

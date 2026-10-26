@@ -31,7 +31,7 @@ fn quad::load(bytes: &[u8]) -> quad::Quad {
  apply(quad_byte_observation(bytes[1]));
  apply(quad_byte_observation(bytes[2]));
  apply(quad_byte_observation(bytes[3]));
- execute();
+ step_until(function.exit);
  have result.lanes[0] == old((uint32)bytes[0]);
  have to_integer(result.lanes[0]) == old(to_integer((int32)bytes[0])) by { rewrite(result.lanes[0] == old((uint32)bytes[0])); assumption(); }
  have result.lanes[1] == old((uint32)bytes[1]);
@@ -116,5 +116,4 @@ fn quad::walk(bytes: &[u8]) -> u32 {
             close_invariants();
         }
     }
-    execute(); solve();
 }

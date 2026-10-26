@@ -12,7 +12,7 @@ verifying "bounded_byte_increment_fail.c";
 int64 next(uint8 byte) {
     requires byte == 255;
     ensures result <= 255i64;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

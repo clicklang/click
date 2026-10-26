@@ -13,7 +13,7 @@ void inspect(int32* pool, int32* member) {
     owns authority(slot(pool, _));
     owns slot(pool, member);
     ensures count(slot(pool, _)) == 1;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

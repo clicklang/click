@@ -44,8 +44,6 @@ int32 peek(struct node* p) {
             contradiction(p == 0);
         },
         Cell::Present(identity) => {
-            execute();
-            solve();
         },
     }
 }

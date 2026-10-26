@@ -180,7 +180,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
         }
     }
     let { next: n } = unfold(w);
-    execute();
+    step_until(function.exit);
     fold(arena_cells(data, occupied, capacity));
     fold(region(data, start, end));
     solve();

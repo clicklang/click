@@ -5615,7 +5615,7 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
             int32 identity(int32 x) {
                 ensures result == x;
             } by {
-                execute();
+                step_until(function.exit);
                 have result == result by {
                     apply(result_reflexive(result));
                     solve();
@@ -5711,7 +5711,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
             int32 bounded(int32 upper) {
                 ensures result <= upper;
             } by {
-                execute();
+                step_until(function.exit);
                 apply(less_than_implies_less_equal(result, upper)) using {
                     result < upper;
                 }
@@ -9269,7 +9269,7 @@ fn execution_resource_observation_is_retained_transactional_and_logarithmic() {
                 ensures returns_x: result == x;
             } by {
                 observe(marker(x));
-                execute();
+                step_until(function.exit);
             }
         "#,
     )
@@ -9381,7 +9381,7 @@ fn execution_resource_unfold_is_retained_transactional_and_logarithmic() {
                 ensures returns_x: result == x;
             } by {
                 unfold(marker(x));
-                execute();
+                step_until(function.exit);
             }
         "#,
     )
@@ -9491,7 +9491,7 @@ fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
             } by {
                 unfold(marker(x));
                 fold(marker(x));
-                execute();
+                step_until(function.exit);
             }
         "#,
     )
@@ -12568,7 +12568,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
                 branch {
                     outcomes {
                         returned => { step(); }
-                        threw => { step(); execute(); }
+                        threw => { step(); step_until(function.exit); }
                     }
                 } else { }
                 step();
@@ -13556,7 +13556,7 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
             } by {
                 unfold(marker(x));
                 fold(marker(x));
-                execute();
+                step_until(function.exit);
             }
         "#,
     )

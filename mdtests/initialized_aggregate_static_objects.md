@@ -118,8 +118,6 @@ int32 run() {
     have private_file::increment_local::local.ready == 0 by solve();
     step();
     have private_file::file_private.value < 1000 by solve();
-    execute();
-    solve();
 }
 ```
 

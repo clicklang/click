@@ -512,7 +512,7 @@ fn object_traits(source: &[Spanned]) -> Result<BTreeMap<String, ObjectTrait>, Cl
             let mut methods = BTreeMap::new();
             let mut item = open + 1;
             while item < close {
-                if is_ident(source.get(item), "function") {
+                if function_item_at(source, item) {
                     let end = (item..close)
                         .find(|&at| source[at].0 == Token::Semicolon)
                         .ok_or_else(|| {
@@ -644,6 +644,14 @@ fn family_use(object: &ObjectTrait, position: &SourcePosition) -> Vec<Spanned> {
     tokens
 }
 
+/// Whether a `function` item starts at `index`: not the `function` of a
+/// method proof's `step_until(function.exit)`, which an item scan meets as
+/// it steps over a method's tokens.
+fn function_item_at(source: &[Spanned], index: usize) -> bool {
+    is_ident(source.get(index), "function")
+        && source.get(index + 1).map(|(token, _)| token) != Some(&Token::Dot)
+}
+
 /// Rewrites the item at `index` into `output`, returning the index after it.
 fn rewrite_item(
     source: &[Spanned],
@@ -662,7 +670,7 @@ fn rewrite_item(
         output.extend(source[index..=open].iter().cloned());
         let mut item = open + 1;
         while item < close {
-            if is_ident(source.get(item), "function") {
+            if function_item_at(source, item) {
                 item = (item..close)
                     .find(|&at| source[at].0 == Token::Semicolon)
                     .map_or(close, |end| end + 1);
@@ -1083,7 +1091,7 @@ fn rewrite_implementation(
                 .map_or(close, |end| end + 1);
             continue;
         }
-        if is_ident(source.get(item), "function")
+        if function_item_at(source, item)
             && let Some(body_open) = (item..close).find(|&at| source[at].0 == Token::LBrace)
             && let Some(body_close) = matching(source, body_open)
         {

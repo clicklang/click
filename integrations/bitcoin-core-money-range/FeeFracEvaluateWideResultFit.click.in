@@ -33,7 +33,7 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
     }
     step();
     let { result: rounded } = step(FeeFrac::Div, { });
-    execute();
+    step_until(function.exit);
     have @DIV_BOUND_1@;
     have @DIV_BOUND_2@;
     have to_integer(result) == to_integer(rounded);
@@ -71,7 +71,7 @@ int64 FeeFrac::EvaluateFee@MODE@(int32 at_size) const {
     ensures to_integer(result) <= 9223372036854775807;
     ensures @CALLER_BOUND_1@;
     ensures @CALLER_BOUND_2@;
-} by { execute(); solve(); }
+}
 
 contract int64 OversizeFee(const struct FeeFrac* this, int32 at_size) {
     requires this->fee == @FEE_WITNESS@i64;
@@ -97,5 +97,5 @@ contract int64 OversizeFee(const struct FeeFrac* this, int32 at_size) {
 }
 
 theorem oversize_fee_evaluation() executes FeeFrac::EvaluateFee@MODE@(const struct FeeFrac* this, int32 at_size) {
-    ensures OversizeFee(&FeeFrac::EvaluateFee@MODE@) by { execute(); solve(); }
+    ensures OversizeFee(&FeeFrac::EvaluateFee@MODE@);
 }

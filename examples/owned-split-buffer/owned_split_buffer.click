@@ -53,7 +53,7 @@ int32 owned_split_buffer_init(
     ensures owner->len == length;
     ensures owner->data == data;
 } by {
-    execute();
+    step_until(function.exit);
     fold(owned_split_buffer(owner));
     solve();
 }
@@ -78,9 +78,6 @@ int32 owned_split_buffer_set_left(
     ensures owner->split == old(owner->split);
     ensures owner->len == old(owner->len);
     ensures owner->data == old(owner->data);
-} by {
-    execute();
-    solve();
 }
 
 int32 owned_split_buffer_set_right(

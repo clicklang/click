@@ -26,9 +26,6 @@ uint64 through_const_char(uint8 bytes[]) {
     views click::cstr::cstr_at(bytes, length);
     ensures result == length;
     ensures bytes[result] == '\0';
-} by {
-    execute();
-    solve();
 }
 
 uint64 through_unsigned_char(uint8 bytes[]) {
@@ -36,9 +33,6 @@ uint64 through_unsigned_char(uint8 bytes[]) {
     views click::cstr::cstr_at(bytes, length);
     ensures result == length;
     ensures bytes[result] == '\0';
-} by {
-    execute();
-    solve();
 }
 ```
 

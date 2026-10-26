@@ -15,7 +15,7 @@ uint8 first(const uint8* p, uint64 whole, uint64 remaining) {
     requires remaining <= whole;
     views p[0u64..whole];
     ensures result == result;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

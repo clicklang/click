@@ -19,7 +19,7 @@ int32 mint(int32 x, int32 k) {
     requires 0 <= k;
     produces k of ok(x);
 } by {
-    execute();
+    step_until(function.exit);
     fold(k of ok(x));
     solve();
 }

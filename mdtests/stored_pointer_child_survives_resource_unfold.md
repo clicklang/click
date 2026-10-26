@@ -17,7 +17,7 @@ void set(struct node *p, struct node *q, struct node *r) {
 ```
 ```click
 verifying "stored_pointer_child.c";
-struct node* same(struct node* p) { ensures result == p; } by { execute(); solve(); }
+struct node* same(struct node* p) { ensures result == p; }
 resource leaf(p: struct node*) {
     field tag: int32;
     owns p->next;

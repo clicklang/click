@@ -696,7 +696,7 @@ void f(int32* p) {
 } by {
     let { leaf: inner } = unfold(box);
     unfold(inner);
-    execute();
+    step_until(function.exit);
     let leaf = fold(Leaf(p), { value: old(box.value) });
     solve();
 }
@@ -850,7 +850,7 @@ import "library.click";
 verifying "test.c";
 int32 identity(int32 x) {
     ensures result == x + 1 by {
-        execute();
+        step_until(function.exit);
         apply(false_step(result));
         assumption();
     }
@@ -874,7 +874,7 @@ int32 identity(int32 x) {
             "library.click",
             r#"
 verifying "test.c";
-int32 helper(int32 x) { ensures result == x + 1 by { execute(); solve(); } }
+int32 helper(int32 x) { ensures result == x + 1 by { step_until(function.exit); solve(); } }
 tactic impossible(x: int32) { ensures x == x + 1; } by { solve(); }
 "#,
             [],
@@ -885,9 +885,9 @@ tactic impossible(x: int32) { ensures x == x + 1; } by { solve(); }
 import "library.click";
 verifying "test.c";
 int32 caller(int32 x) {
-    ensures result == x + 1 by { execute(); solve(); }
+    ensures result == x + 1 by { step_until(function.exit); solve(); }
 }
-void user() { ensures 0 == 1; } by { impossible(0); execute(); assumption(); }
+void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); assumption(); }
 "#,
             ["library.click".to_string()],
         );
@@ -945,7 +945,7 @@ void user() { ensures 0 == 1; } by { impossible(0); execute(); assumption(); }
             "library.click",
             r#"
 verifying "test.c";
-int32 helper(int32 x) { ensures result == x by { execute(); solve(); } }
+int32 helper(int32 x) { ensures result == x; }
 tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
 "#,
             [],
@@ -991,7 +991,7 @@ tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
                 ),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"library.click\"; verifying \"test.c\"; int32 caller() { ensures result == 0 by { execute(); solve(); } }",
+                    "import \"library.click\"; verifying \"test.c\"; int32 caller() { ensures result == 0; }",
                     ["library.click".to_string()],
                 ),
             ],
@@ -1014,7 +1014,7 @@ tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
             r#"
 import "library.click";
 verifying "test.c";
-int32 identity(int32 x) { ensures result == x by { execute(); solve(); } }
+int32 identity(int32 x) { ensures result == x; }
 "#,
             ["library.click".to_string()],
         );

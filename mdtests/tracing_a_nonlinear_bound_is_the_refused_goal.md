@@ -33,5 +33,5 @@ int32 frame(int32 w, int32 h) {
 ```
 
 ```expect
-fail: `execute()` produced undefined behavior: signed overflow
+fail: `step()` produced undefined behavior: signed overflow
 ```

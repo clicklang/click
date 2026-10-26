@@ -54,7 +54,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
             }
         }
     }
-    execute();
+    step_until(function.exit);
     have at(loop(0).exit, i) == length;
     have forall (k: uint64) { k < length implies bytes[k] == value } by {
         intro();

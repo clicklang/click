@@ -17,7 +17,7 @@ resource cell(p: int32*) {
 void dispose(struct packet input) {
     consumes cell(input.data);
     ensures input.data[0] == old(input.data[0]);
-} by { unfold(cell(input.data)); execute(); solve(); }
+} by { unfold(cell(input.data)); }
 ```
 
 ```expect

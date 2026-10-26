@@ -20,7 +20,6 @@ int32 probe(int32 a, int32 b, int32 c) {
     ensures result == 0;
 } by {
     apply(add_observation(a + b, c)) using { defined(a + b); };
-    execute(); solve();
 }
 ```
 

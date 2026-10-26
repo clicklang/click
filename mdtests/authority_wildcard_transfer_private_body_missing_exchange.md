@@ -17,8 +17,6 @@ void move(int32* source, int32* destination, int32* p) {
     ensures p[0] == old(p[0]);
     ensures count(slot(source, _)) == old(count(slot(source, _))) - 1;
     ensures count(slot(destination, _)) == old(count(slot(destination, _))) + 1;
-} by {
-    execute(); solve();
 }
 ```
 

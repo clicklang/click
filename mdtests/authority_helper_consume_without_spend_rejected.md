@@ -31,7 +31,7 @@ resource control(obj: struct object*) {
 void drop(struct object* obj) {
     owns control(obj);
     consumes reference(obj);
-} by { execute(); solve(); }
+}
 int32 run() {
     ensures result == -1 or result == 0;
 } by {

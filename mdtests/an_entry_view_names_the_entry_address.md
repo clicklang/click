@@ -26,7 +26,7 @@ void f(struct holder* p, int32* other, int32 n) {
     owns *p;
     views p->buf[0..n];
     ensures p->buf[0] == 5;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

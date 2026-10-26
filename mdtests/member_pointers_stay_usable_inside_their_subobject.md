@@ -31,28 +31,28 @@ verifying "members.c";
 int32 same(struct Pair* p) {
     views p->first;
     ensures result == p->first;
-} by { execute(); solve(); }
+}
 int32* one_past(struct Pair* p) {
     views *p;
     ensures address(result) == address(&p->second);
-} by { execute(); solve(); }
+}
 int32 second(struct Pair* p) {
     views p->second;
     ensures result == p->second;
-} by { execute(); solve(); }
+}
 int32 element(struct Rec* r) {
     views r->arr[0..4];
     ensures result == r->arr[3];
-} by { execute(); solve(); }
+}
 int32 nested(struct Outer* o) {
     views o->inner.second;
     ensures result == o->inner.second;
-} by { execute(); solve(); }
+}
 int32 stored(struct Pair* p, struct Holder* h) {
     views p->first;
     owns h->link;
     ensures result == p->first;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

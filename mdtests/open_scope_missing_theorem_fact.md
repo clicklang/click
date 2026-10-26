@@ -19,7 +19,6 @@ void touch(int32* p) {
         apply(needs_zero(p[0]));
         step();
     }
-    execute(); solve();
 }
 ```
 

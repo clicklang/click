@@ -34,8 +34,8 @@ int32 read_cell(struct cell* node) {
     ensures result >= 0;
 } by {
     match c.model {
-        Maybe::None => { unfold(c); execute(); fold(c); solve(); },
-        Maybe::Some(value) => { unfold(c); execute(); fold(c); solve(); },
+        Maybe::None => { unfold(c); step_until(function.exit); fold(c); solve(); },
+        Maybe::Some(value) => { unfold(c); step_until(function.exit); fold(c); solve(); },
     }
 }
 ```

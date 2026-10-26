@@ -12,11 +12,11 @@ void set_pair(struct pair* p) {
     owns *p;
     ensures p->left == 7u64;
     ensures p->right == 11u64;
-} by { execute(); solve(); }
+}
 uint64 set_global() {
     owns state;
     ensures result == 18u64;
-} by { execute(); assumption(); rewrite(state.left == 7u64); rewrite(state.right == 11u64); normalize(); }
+} by { step_until(function.exit); assumption(); rewrite(state.left == 7u64); rewrite(state.right == 11u64); normalize(); }
 ```
 ```expect
 pass

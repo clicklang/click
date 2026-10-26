@@ -9,7 +9,7 @@ int32 run() {
 
 ```click
 verifying "false_assert.c";
-int32 run() { ensures result == 0; } by { execute(); normalize(); }
+int32 run() { ensures result == 0; } by { step_until(function.exit); normalize(); }
 ```
 
 ```expect

@@ -9,14 +9,14 @@ bool MoneyRange(const int64& nValue) {
 } by {
     if nValue >= 0i64 {
         if nValue <= 2100000000000000i64 {
-            execute();
+            step_until(function.exit);
             solve();
         } else {
-            execute();
+            step_until(function.exit);
             solve();
         }
     } else {
-        execute();
+        step_until(function.exit);
         solve();
     }
 }
@@ -29,10 +29,7 @@ contract bool BelowRange(const int64& nValue) {
 }
 
 theorem below_range_is_false() executes MoneyRange(const int64& nValue) {
-    ensures BelowRange(&MoneyRange) by {
-        execute();
-        solve();
-    }
+    ensures BelowRange(&MoneyRange);
 }
 
 contract bool AtZero(const int64& nValue) {
@@ -43,10 +40,7 @@ contract bool AtZero(const int64& nValue) {
 }
 
 theorem zero_is_in_range() executes MoneyRange(const int64& nValue) {
-    ensures AtZero(&MoneyRange) by {
-        execute();
-        solve();
-    }
+    ensures AtZero(&MoneyRange);
 }
 
 contract bool AtMaxMoney(const int64& nValue) {
@@ -57,10 +51,7 @@ contract bool AtMaxMoney(const int64& nValue) {
 }
 
 theorem max_money_is_in_range() executes MoneyRange(const int64& nValue) {
-    ensures AtMaxMoney(&MoneyRange) by {
-        execute();
-        solve();
-    }
+    ensures AtMaxMoney(&MoneyRange);
 }
 
 contract bool AboveRange(const int64& nValue) {
@@ -71,8 +62,5 @@ contract bool AboveRange(const int64& nValue) {
 }
 
 theorem above_range_is_false() executes MoneyRange(const int64& nValue) {
-    ensures AboveRange(&MoneyRange) by {
-        execute();
-        solve();
-    }
+    ensures AboveRange(&MoneyRange);
 }

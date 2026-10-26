@@ -44,7 +44,7 @@ void with_fresh_map(int32* data, int32 capacity) {
     step();
     step();
     branch {
-        execute();
+        step_until(function.exit);
         solve();
     } else {}
     step();
@@ -65,7 +65,7 @@ void with_fresh_map(int32* data, int32 capacity) {
     }
     gather(arena_cells(data, occupied, capacity));
     scatter(arena_cells(data, occupied, capacity));
-    execute();
+    step_until(function.exit);
     solve();
 }
 ```

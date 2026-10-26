@@ -22,12 +22,12 @@ int32 window(int32* p, uint64 k, uint64 n) {
     views p[0..1];
     requires n != 7u64 implies n <= k;
     ensures result == old(p[0]);
-} by { execute(); solve(); }
+}
 
 int32 use_five(int32* p) {
     views p[0..1];
     ensures result == old(p[0]);
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

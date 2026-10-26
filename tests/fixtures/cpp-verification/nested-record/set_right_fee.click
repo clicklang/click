@@ -9,4 +9,4 @@ void FeeEnvelope::SetRightFee(int64 next) {
     ensures this->state.left.fee == old(this->state.left.fee);
     ensures this->state.right.size == old(this->state.right.size);
     ensures this->stamp == old(this->stamp);
-} by { execute(); solve(); }
+}

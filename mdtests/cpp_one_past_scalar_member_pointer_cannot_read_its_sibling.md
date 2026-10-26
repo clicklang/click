@@ -16,7 +16,7 @@ int32 probe(struct Pair& pair) {
     views pair.first;
     views pair.second;
     ensures result == pair.second;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

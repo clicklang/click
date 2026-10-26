@@ -33,9 +33,6 @@ verifying "uaf_local.c";
 int32 zero_one(int32 p[]) {
     owns uninitialized(p[0..1]);
     ensures forall (k: int32) { 0 <= k and k < 1 implies p[k] == 0 };
-} by {
-    execute();
-    solve();
 }
 
 int32* uaf_local(int32 fallback[], int32 j) {
@@ -43,12 +40,9 @@ int32* uaf_local(int32 fallback[], int32 j) {
     requires j < 1;
     views fallback[0..1];
     ensures defined(result[j]);
-} by {
-    execute();
-    solve();
 }
 ```
 
 ```expect
-fail: checked outcome `solve` search did not retain a complete proof
+fail: `ensures defined(result[j])` failed for `uaf_local.ensures_0` path 1: unclosed goal: defined(result[j])
 ```

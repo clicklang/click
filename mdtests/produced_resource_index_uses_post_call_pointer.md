@@ -41,7 +41,7 @@ void release(struct root* root, struct node* replacement) {
             unfold(incoming);
             step();
             let leaf = fold(cell(root->node), { tag: old(incoming.tag) });
-            execute(); solve();
+            step_until(function.exit); solve();
         },
     }
 }

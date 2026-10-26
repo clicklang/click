@@ -9,4 +9,4 @@ void FeeEnvelope::AddLeftSize(int delta) {
     requires delta <= 10;
     ensures this->state.left.size == old(this->state.left.size) + delta;
     ensures this->state.right.size == old(this->state.right.size);
-} by { execute(); solve(); }
+}

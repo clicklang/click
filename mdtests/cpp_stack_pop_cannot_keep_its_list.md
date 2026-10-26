@@ -119,7 +119,7 @@ void Stack<int>::push(int value) {
     ensures after.items == List::Cons(value, old(before.items));
     ensures to_integer(this->count) == length(after.items);
 } by {
-    execute();
+    step_until(function.exit);
     let after = fold(nodes(this->head), { items: List::Cons(value, old(before.items)) }, { tail: before });
     unfold(length(List::Cons(value, old(before.items))));
     have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
@@ -145,7 +145,7 @@ bool Stack<int>::pop(int& out) {
     match before.items {
         List::Nil => {
             unfold(before);
-            execute();
+            step_until(function.exit);
             let after = fold(nodes(this->head), { items: List<int32>::Nil });
             unfold(length(List<int32>::Nil));
             unfold(is_cons(List<int32>::Nil));
@@ -156,7 +156,7 @@ bool Stack<int>::pop(int& out) {
             let { tail: tail } = unfold(before);
             unfold(length(List::Cons(value, tail_items)));
             apply(length_nonnegative(tail_items));
-            execute();
+            step_until(function.exit);
             unfold(is_cons(List::Cons(value, tail_items)));
             unfold(first_or(List::Cons(value, tail_items), old(out)));
             unfold(rest(List::Cons(value, tail_items)));

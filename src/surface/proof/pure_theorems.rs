@@ -3615,10 +3615,14 @@ mod tests {
             error.message()
         );
         let error = verify_instantiation_theorem(
-            "theorem unsupported() { ensures 0 == 0 by { execute(); } }",
+            "theorem unsupported() { ensures 0 == 0 by { step_until(function.exit); } }",
         )
         .unwrap_err();
-        assert!(error.message().contains("execute"), "{}", error.message());
+        assert!(
+            error.message().contains("step_until"),
+            "{}",
+            error.message()
+        );
     }
 
     #[test]

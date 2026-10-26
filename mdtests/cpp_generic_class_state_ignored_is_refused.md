@@ -98,13 +98,13 @@ template<class T> void Stack<T>::push(T value) {
     match state.items {
         List::Nil => {
             unfold(state);
-            execute();
+            step_until(function.exit);
             let tail = fold(nodes<T>(this->head->next), { items: List<T>::Nil });
             let state = fold(nodes<T>(this->head), { items: List::Cons(value, List<T>::Nil) }, { tail: tail });
         },
         List::Cons(top, below) => {
             let { tail: rest } = unfold(state);
-            execute();
+            step_until(function.exit);
             let tail = fold(nodes<T>(this->head->next), { items: List::Cons(top, below) }, { tail: rest });
             let state = fold(nodes<T>(this->head), { items: List::Cons(value, List::Cons(top, below)) }, { tail: tail });
         },
@@ -115,7 +115,7 @@ template<class T> bool Stack<T>::pop(T& out) {
     match state.items {
         List::Nil => {
             unfold(state);
-            execute();
+            step_until(function.exit);
             let state = fold(nodes<T>(this->head), { items: List<T>::Nil });
             unfold(is_cons(List<T>::Nil));
             unfold(first_or(List<T>::Nil, old(out)));
@@ -123,7 +123,7 @@ template<class T> bool Stack<T>::pop(T& out) {
         },
         List::Cons(value, tail_items) => {
             let { tail: tail } = unfold(state);
-            execute();
+            step_until(function.exit);
             unfold(is_cons(List::Cons(value, tail_items)));
             unfold(first_or(List::Cons(value, tail_items), old(out)));
             unfold(rest(List::Cons(value, tail_items)));
@@ -144,13 +144,13 @@ template<class T> bool Stack<T>::pop(T& out) {
 }
 int round_trip(Container<int>& container, int x) {
     ensures result == first_or(List::Cons(x, old(items(container))), 0);
-} by { execute(); solve(); }
+}
 int caller(Stack<int>& stack, int x) {
     owns stack;
     owns state: nodes<int>(stack.head);
     ensures result == x;
 } by {
-    execute();
+    step_until(function.exit);
     unfold(first_or(List<int>::Cons(x, old(state.items)), 0));
     solve();
 }

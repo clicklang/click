@@ -96,7 +96,7 @@ The `by` block is an ordinary proof at a fixed execution point. It may use
 `match`, `unfold`, `fold`, `have`, theorem application, applications of
 tactics (itself included), `if`/`cases` on propositions, and smart tactics
 such as `solve`. It may not use `step`, `step_until`, `branch`, `loop`, or any
-other tactic that advances C, including the older `execute`. The proof ends when every produced instance and
+other tactic that advances C. The proof ends when every produced instance and
 every `ensures` is established; there is no exit statement to step to.
 
 A recursive application inside the body is the induction hypothesis. It owes

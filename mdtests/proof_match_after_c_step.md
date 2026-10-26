@@ -43,7 +43,7 @@ int32 read_after_step(struct cell* node) {
         Maybe::None => { contradiction(c.model == Maybe::None); },
         Maybe::Some(value) => {
             unfold(c);
-            execute();
+            step_until(function.exit);
             let c = fold(cell(node), { model: Maybe::Some(value) });
             have Maybe::Some(value) == old(c.model) by {
                 solve() using { old(c.model) == Maybe::Some(value); };

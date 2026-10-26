@@ -1,6 +1,6 @@
 verifying "nested.rs";
-fn array_len() -> usize { ensures result == 8u64; } by { execute(); solve(); }
-fn array_mut() -> u8 { ensures result == 9; } by { execute(); solve(); }
+fn array_len() -> usize { ensures result == 8u64; }
+fn array_mut() -> u8 { ensures result == 9; }
 
 fn nested(bytes: &[u8]) -> usize {
     requires bytes.len() == 8u64;
@@ -159,17 +159,17 @@ fn nested(bytes: &[u8]) -> usize {
     }
     have __rust_mir_8_remaining % 4u64 == __rust_mir_8_remaining by { normalize() using { __rust_mir_8_remaining < 4u64; }; }
     have __rust_mir_8_remaining == 0u64;
-    execute();
+    step_until(function.exit);
     have forall (k: int32) { 0 <= k and k < 8 implies bytes[k] == old(bytes[k]) } by {
         intro(); intro(); solve();
     }
     solve();
 }
 
-fn empty_array_len() -> usize { ensures result == 0u64; } by { execute(); solve(); }
-fn medium_array_len() -> usize { ensures result == 1024u64; } by { execute(); solve(); }
-fn large_array_len() -> usize { ensures result == 1000000u64; } by { execute(); solve(); }
+fn empty_array_len() -> usize { ensures result == 0u64; }
+fn medium_array_len() -> usize { ensures result == 1024u64; }
+fn large_array_len() -> usize { ensures result == 1000000u64; }
 fn array_read(index: usize) -> u8 {
     requires index < 8u64;
     ensures result == 7;
-} by { execute(); solve(); }
+}

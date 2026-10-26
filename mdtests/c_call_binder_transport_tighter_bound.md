@@ -6,7 +6,7 @@ knows only `c.revision < 999` has to bridge the two bounds itself. The bridge
 is a `have` written in the grouped contract proof, so a grouped proof accepts
 `have` wherever an execution step may stand — before the first step
 (`advance_once`) and between two steps (`run_twice`) — with the scoping it has
-after `execute()`.
+at function exit.
 
 ```c filename=c_call_binder_transport_tighter_bound.c
 void increment(int32* state) { }

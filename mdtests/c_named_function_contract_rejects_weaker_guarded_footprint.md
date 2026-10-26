@@ -51,11 +51,7 @@ int32 apply_guarded_effect(
     ensures result == active;
 } by {
     if active != 0 {
-        execute();
-        solve();
     } else {
-        execute();
-        solve();
     }
 }
 

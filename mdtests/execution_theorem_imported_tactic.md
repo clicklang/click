@@ -18,7 +18,7 @@ int32 zero(int32* p) {
     ensures result == 0;
 } by {
     unfold(before);
-    execute();
+    step_until(function.exit);
     let after = fold(cell(p), { value: *p });
     solve();
 }

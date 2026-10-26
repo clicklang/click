@@ -97,8 +97,6 @@ int32 sum(int32 a, int32 b) {
             conclusion 0;
         }
     }
-    execute();
-    solve();
 }
 
 int32 difference(int32 a, int32 b) {
@@ -116,8 +114,6 @@ int32 difference(int32 a, int32 b) {
             conclusion 0;
         }
     }
-    execute();
-    solve();
 }
 
 int32 sum_by_simp(int32 a, int32 b) {
@@ -128,8 +124,6 @@ int32 sum_by_simp(int32 a, int32 b) {
     have defined(a + b) by {
         solve();
     }
-    execute();
-    solve();
 }
 
 int32 difference_by_simp(int32 a, int32 b) {
@@ -141,8 +135,6 @@ int32 difference_by_simp(int32 a, int32 b) {
     have defined(a - b) by {
         solve();
     }
-    execute();
-    solve();
 }
 
 int32 sum_by_listed_simp(int32 a, int32 b) {
@@ -156,8 +148,6 @@ int32 sum_by_listed_simp(int32 a, int32 b) {
             b == 1;
         };
     }
-    execute();
-    solve();
 }
 
 int32 sum_by_arithmetic(int32 a, int32 b) {
@@ -171,8 +161,6 @@ int32 sum_by_arithmetic(int32 a, int32 b) {
             b == 1;
         };
     }
-    execute();
-    solve();
 }
 
 int32 bump(struct box* b) {
@@ -183,8 +171,6 @@ int32 bump(struct box* b) {
 } by {
     let { total: n } = unfold(st);
     let st = fold(counted(b), { total: n + 1 });
-    execute();
-    solve();
 }
 
 int32 caller(struct box* b) {
@@ -194,8 +180,6 @@ int32 caller(struct box* b) {
 } by {
     step();
     step(bump, { st: st });
-    execute();
-    solve();
 }
 ```
 

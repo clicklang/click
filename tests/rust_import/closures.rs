@@ -18,7 +18,7 @@ fn charon_closures_passed_for_a_function_pointer_meet_its_named_contract() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    let caller_closure = "fn closures::caller::{closure#0}(y: i32) -> i32 {\n    requires 0 <= y and y <= 1000;\n    ensures result == y + y;\n} by { execute(); solve(); }\n";
+    let caller_closure = "fn closures::caller::{closure#0}(y: i32) -> i32 {\n    requires 0 <= y and y <= 1000;\n    ensures result == y + y;\n}\n";
     assert!(SIDECAR.contains(caller_closure));
     // Keep the original full positive check. Select complete function
     // proofs for local failures; declaration/interface boundary cases

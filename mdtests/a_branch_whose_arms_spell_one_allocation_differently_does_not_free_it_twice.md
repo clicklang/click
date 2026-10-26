@@ -41,7 +41,7 @@ int32* same(int32* p) {
     ensures result == p;
 } by {
     unfold(allocated(p));
-    execute();
+    step_until(function.exit);
     fold(allocated(result));
     solve();
 }

@@ -61,7 +61,6 @@ void inspect(struct node* root) {
             }
         }
     }
-    execute(); solve();
 }
 ```
 

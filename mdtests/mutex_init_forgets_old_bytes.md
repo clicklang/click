@@ -25,7 +25,7 @@ int run(void) {
 target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_init_forgets_old_bytes.c";
-int32 run() { ensures result == 0 or result == 17; } by { execute(); solve(); }
+int32 run() { ensures result == 0 or result == 17; }
 ```
 
 ```expect

@@ -400,9 +400,6 @@ int32 caller(int32* data, struct box* b) {{
             format!(
                 "void touch{i}(int32* data) {{
     owns data[0..4];
-}} by {{
-    execute();
-    solve();
 }}"
             )
         })

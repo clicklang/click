@@ -36,7 +36,7 @@ int32 h(int32* a, int32* b) {
 } by {
     step();
     unfold(wrap(a));
-    execute();
+    step_until(function.exit);
     fold(wrap(a));
     solve();
 }

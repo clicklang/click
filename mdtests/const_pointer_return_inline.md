@@ -11,7 +11,7 @@ const int *caller(int *p) { return view(p); }
 
 ```click
 verifying "caller.c";
-const int *caller(int *p) { ensures result == p; } by { execute(); solve(); }
+const int *caller(int *p) { ensures result == p; }
 ```
 
 ```expect

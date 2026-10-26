@@ -27,13 +27,12 @@ void shrink(int32* counter) {
     step();
     fold(member(counter));
     fold(control(counter));
-    execute(); solve();
 }
 void lifecycle(int32* counter) {
     owns control(counter);
     owns member(counter);
     requires count(member(counter)) == 3;
-} by { step(); execute(); solve(); }
+} by { step(); }
 ```
 
 ```expect

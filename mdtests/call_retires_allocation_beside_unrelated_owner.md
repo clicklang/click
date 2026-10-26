@@ -55,17 +55,12 @@ void box_destroy(struct box* box) {
     produces *box;
 } by {
     unfold(boxed(box));
-    execute();
-    solve();
 }
 
 void box_release(struct box* box, struct box* other) {
     consumes boxed(box);
     produces *box;
     owns *other;
-} by {
-    execute();
-    solve();
 }
 ```
 

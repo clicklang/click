@@ -341,5 +341,4 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  };
  have (adler | (sum2 << 16)) <= 4294967295u64;
  apply(adler_spec_checksum_bridge(old(buf), old((int32)(uint32)len), old(len), 1, 0)) using { to_integer(old((int32)(uint32)len)) == to_integer(old(len)); };
- execute(); solve();
 }

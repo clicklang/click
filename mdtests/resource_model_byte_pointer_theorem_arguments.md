@@ -37,7 +37,7 @@ void keep(const uint8* p, int32 i) {
    mark model_ready;
    have (at(model_ready, q) + i) + 4 == at(model_ready, q) + (i + 4) by { apply(bounded_pointer_association(at(model_ready, q), i)) using { 0 <= i; i <= 22200; }; }
    let h = fold(Cell(p, i), { model: Link::Node(q) });
-   execute(); solve();
+   step_until(function.exit); solve();
   },
  }
 }

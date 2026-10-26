@@ -162,8 +162,6 @@ void child_init(struct child* obj, int32 payload) {
     step();
     fold(child_ref(obj));
     fold(child_storage(obj));
-    execute();
-    solve();
 }
 
 void child_retain(struct child* obj) {
@@ -177,8 +175,6 @@ void child_retain(struct child* obj) {
     step();
     fold(child_ref(obj));
     fold(child_control(obj));
-    execute();
-    solve();
 }
 
 void child_release(struct child* obj) {
@@ -195,7 +191,7 @@ void child_release(struct child* obj) {
     if obj->refs == 1 {
         unfold(child_ref(obj));
         unfold(authority(child_ref(obj)));
-        execute();
+        step_until(function.exit);
         solve();
     } else {
         unfold(child_ref(obj));
@@ -206,7 +202,7 @@ void child_release(struct child* obj) {
         step();
         step();
         fold(child_control(obj));
-        execute();
+        step_until(function.exit);
         solve();
     }
 }
@@ -223,7 +219,7 @@ void parent_attach(struct parent* p, struct child* kid) {
     ensures link.link == ParentLink::Linked(kid);
     ensures kid->payload == old(kid->payload);
 } by {
-    execute();
+    step_until(function.exit);
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
     solve();
 }
@@ -246,7 +242,7 @@ int32 parent_read_payload(struct parent* p) {
         ParentLink::Linked(linked_child) => {
             unfold(link);
             have old(p->kid) == linked_child;
-            open(child_control(p->kid)) { execute(); }
+            open(child_control(p->kid)) { step_until(function.exit); }
             let link = fold(parent(p), { link: ParentLink::Linked(linked_child) });
             solve();
         },
@@ -274,10 +270,10 @@ void parent_detach(struct parent* p) {
             have old(p->kid) == linked_child;
             step();
             if linked_child->refs > 1 {
-                execute();
+                step_until(function.exit);
                 solve();
             } else {
-                execute();
+                step_until(function.exit);
                 solve();
             }
         },

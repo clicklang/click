@@ -19,7 +19,6 @@ int32 inspect(const uint8* p, int32 n) {
   views p[0..n];
   invariant 0 <= n and n <= old(n);
  }
- execute(); solve();
 }
 ```
 

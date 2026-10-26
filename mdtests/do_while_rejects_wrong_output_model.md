@@ -79,7 +79,7 @@ void walk(struct Node* p, int32* marker) {
                 Chain::Empty => {
                     unfold(t);
                     let empty = fold(list(0), { model: Chain::Empty });
-                    execute(); solve();
+                    step_until(function.exit); solve();
                 },
                 Chain::Node(next_identity, rest) => {
                     have t.model != Chain::Empty by {

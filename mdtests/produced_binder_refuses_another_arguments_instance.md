@@ -32,7 +32,7 @@ void write(struct cell* c, int32 v) {
     ensures after.value == v;
 } by {
     let {} = unfold(before);
-    execute();
+    step_until(function.exit);
     let after = fold(cell_at(c), { value: v }, {});
 }
 

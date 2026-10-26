@@ -1,6 +1,6 @@
 # take after function exit says to move it
 
-`take` moves an element at the execution frontier. After `execute()` reaches the exit there is none, and the refusal says so instead of reporting an unsupported proof shape.
+`take` moves an element at the execution frontier. After `step_until(function.exit)` reaches the exit there is none, and the refusal says so instead of reporting an unsupported proof shape.
 
 ```c filename=take_after_function_exit_says_to_move_it.c
 void f(int *data, int *occupied, int capacity, int index) { }
@@ -23,7 +23,7 @@ void f(int32* data, int32* occupied, int32 capacity, int32 index) {
     requires 0 <= index; requires index < capacity; requires occupied[index] == 0;
 } by {
     unfold(cells(data, occupied, capacity));
-    execute();
+    step_until(function.exit);
     take(data[index..index + 1]);
     give(data[index..index + 1]);
     fold(cells(data, occupied, capacity));

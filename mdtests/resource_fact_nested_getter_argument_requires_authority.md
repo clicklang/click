@@ -11,7 +11,7 @@ resource bad(root: int32*, other: int32*) {
     owns *other;
     fact identity(identity(*root)) == 0;
 }
-int32 marker() { ensures result == 0; } by { execute(); solve(); }
+int32 marker() { ensures result == 0; }
 ```
 
 ```expect

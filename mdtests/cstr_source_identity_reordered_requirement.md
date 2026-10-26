@@ -23,9 +23,6 @@ uint64 read_terminator(uint8 haystack[], uint64 known_len) {
     views click::cstr::cstr_at(haystack, n);
     views haystack[0..known_len + 1u64];
     ensures result < 18446744073709551615u64;
-} by {
-    execute();
-    solve();
 }
 ```
 

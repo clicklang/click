@@ -44,7 +44,7 @@ void set_word(struct node* m, struct node* p) {
     ensures true;
 } by {
     unfold(w);
-    execute();
+    step_until(function.exit);
     let after = fold(word_at(m), { tag: 0 });
 }
 
@@ -109,7 +109,7 @@ void probe(struct node* g, struct node* n) {
                 }
             }
 
-            execute(); assumption();
+            step_until(function.exit); assumption();
         },
     }
 }

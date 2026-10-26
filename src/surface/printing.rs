@@ -2442,7 +2442,7 @@ mod tests {
                 requires index == 1;
                 views p[0..4];
                 ensures {printed};
-            }} by {{ execute(); rewrite(index == 1); solve(); }}
+            }} by {{ step_until(function.exit); rewrite(index == 1); solve(); }}
         "#
         );
         let sources = [(

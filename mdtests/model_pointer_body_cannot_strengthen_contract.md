@@ -16,7 +16,7 @@ void hidden_requirement(struct model_node* p) {
     produces held: token();
     ensures true;
 } by {
-    execute();
+    step_until(function.exit);
     let held = fold(token(), { model: Ref::At(p) });
 }
 ```

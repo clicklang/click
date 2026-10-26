@@ -41,7 +41,7 @@ uint32 read_member(struct counter* p) {
     requires p->value == count(member(p));
     ensures result == count(member(p));
     ensures p->value == old(p->value);
-} by { execute(); solve(); }
+}
 uint32 run(struct counter* p) {
     owns authority(member(p));
     requires count(member(p)) == 0;

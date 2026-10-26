@@ -12,7 +12,7 @@ void issue(int32* pool, int32* p) {
     owns authority(slot(pool, _));
     consumes slot(pool, p);
     produces cell(pool, p + 1);
-} by { unfold(slot(pool, p)); execute(); solve(); }
+} by { unfold(slot(pool, p)); }
 ```
 
 ```expect

@@ -9,16 +9,10 @@ impl Drop for Guard {
         ensures self.slot == old(self.slot);
         ensures self.saved == old(self.saved);
         ensures *self.slot == old(self.saved);
-    } by {
-        execute();
-        solve();
     }
 }
 
 fn cleanup(value: &mut i32) {
     owns *value;
     ensures *value == 42;
-} by {
-    execute();
-    solve();
 }

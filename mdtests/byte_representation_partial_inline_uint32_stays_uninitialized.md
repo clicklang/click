@@ -19,7 +19,7 @@ unsigned int decode(void) {
 verifying "partial_inline_word.c";
 uint32 decode() {
     ensures result == result;
-} by { execute(); solve(); }
+}
 ```
 
 ```expect

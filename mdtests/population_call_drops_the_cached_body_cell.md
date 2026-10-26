@@ -44,7 +44,7 @@ struct object* object_retain(struct object* obj) {
     open(control(obj)) {
         step();
         fold(object_ref(obj));
-        execute();
+        step_until(function.exit);
     }
     solve();
 }

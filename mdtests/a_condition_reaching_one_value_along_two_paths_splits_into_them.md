@@ -4,8 +4,8 @@ A C `if` has one arm per truth value, but its condition can reach one value
 along two checked paths: `x > 0 && y > 0` is false when `x > 0` is false and
 also when `x > 0` holds and `y > 0` does not.
 
-`execute()` splits the proof on a condition that every path decides, here
-`x > 0`, before the `if`, and runs the `if` again in each case. There each
+The implicit tail of `both_positive`'s omitted proof splits on a condition
+that every path decides, here `x > 0`, before the `if`, and runs the `if` again in each case. There each
 truth value has one path and the C branch applies as usual. Before, the plan
 entered the `if` with one path per truth value and dropped the other, and the
 checked join refused it: "checked C branch split does not exhaust its
@@ -38,9 +38,6 @@ verifying "a_condition_reaching_one_value_along_two_paths_splits_into_them.c";
 
 int32 both_positive(int32 x, int32 y) {
     ensures result == 2 or (x > 0 and y > 0);
-} by {
-    execute();
-    solve();
 }
 
 int32 both_positive_stepped(int32 x, int32 y) {

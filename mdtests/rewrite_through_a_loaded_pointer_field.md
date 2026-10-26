@@ -39,8 +39,6 @@ int32 same(struct outer* o, struct inner* a) {
     have o->in->cells[3] == a->cells[3] by {
         solve();
     }
-    execute();
-    solve();
 }
 ```
 
