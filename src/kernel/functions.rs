@@ -13967,6 +13967,31 @@ fn resource_body_fact_is_established(
     if required_obligation_is_exactly_discharged(established, proposition) {
         return true;
     }
+    // A pointer read in the fact keeps its name; where these facts show the
+    // pointer still stored at its address, the fact holds of that pointer.
+    let mut resolved = proposition.clone();
+    for pointer in crate::kernel::proof::term_rewrite::proposition_pointer_terms(proposition) {
+        let PointerBlock::LoadedPointer(_) = &pointer.block else {
+            continue;
+        };
+        let Some(stored) =
+            crate::kernel::memory_provenance::complete_pointer_read_value(&pointer, established)
+        else {
+            continue;
+        };
+        let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_exact(
+            &pointer,
+            stored.pointer(),
+        );
+        let rewritten = rewrite.proposition(&resolved);
+        if rewrite.refusal().is_none() {
+            resolved = rewritten;
+        }
+    }
+    if resolved != *proposition && required_obligation_is_exactly_discharged(established, &resolved)
+    {
+        return true;
+    }
     // A copied wide word can have a fresh read name that recurs inside its
     // packed-word equation. Query only exact 64-bit neighbors of the stated
     // endpoints and captured variables, using checked equality substitution. A

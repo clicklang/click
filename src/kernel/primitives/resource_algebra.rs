@@ -8044,24 +8044,6 @@ fn related_pointer_roots(
     for alias in assumptions.exact_pointer_offset_aliases(pointer) {
         extend_related_memory_base_roots(&alias, assumptions, &mut roots, &mut walked);
     }
-    // A pointer read the path's facts show still holds a stored pointer (a
-    // frame the memory alone does not show) is rooted there too.
-    if let PointerBlock::LoadedPointer(_) = &pointer.block
-        && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
-            &Pointer {
-                block: pointer.block.clone(),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            assumptions,
-        )
-    {
-        let stored = stored.pointer().clone();
-        let stored = Pointer {
-            block: stored.block,
-            offset: PointerOffsetTerm::add(stored.offset, pointer.offset.clone()),
-        };
-        extend_related_memory_base_roots(&stored, assumptions, &mut roots, &mut walked);
-    }
     roots
 }
 

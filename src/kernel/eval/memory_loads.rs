@@ -1992,34 +1992,11 @@ fn canonicalized_symbolic_load_value_with_identity(
     };
     // The read keeps its version name. The equality graph relates it to the
     // pointer stored there whenever a query names the read and memory alone
-    // shows that pointer (`EqualityGraph::register_logical_read_values`). The
+    // shows that pointer (`EqualityGraph::register_logical_read_values`); the
     // read equation beside it lets a context that keeps it reach the read from
-    // the stored pointer too; where only the path's frame facts show the
-    // pointer still stored, the equation is a side fact of the lowering, and
-    // the term is still the read.
+    // the stored pointer too.
     if names_version {
-        let stored = pointer_read_over_write_c_value(pointer_value.pointer()).or_else(|| {
-            (!assumptions.should_force_symbolic_external_loads())
-                .then(|| {
-                    crate::kernel::memory_provenance::complete_pointer_read_value(
-                        pointer_value.pointer(),
-                        assumptions,
-                    )
-                    .or_else(|| {
-                        crate::kernel::memory_provenance::complete_pointer_read_value(
-                            &Pointer::loaded_value(
-                                &crate::kernel::intern_c_memory_ref(memory),
-                                &address,
-                            ),
-                            assumptions,
-                        )
-                    })
-                })
-                .flatten()
-        });
-        if let Some(stored) = stored
-            && stored.pointer() != pointer_value.pointer()
-        {
+        if let Some(stored) = pointer_read_over_write_c_value(pointer_value.pointer()) {
             facts.push(ExecutionPureFact::logical_read_equation(
                 stored.with_type(value_type),
                 pointer_value.pointer().clone(),
