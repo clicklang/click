@@ -337,6 +337,14 @@ enum Node {
     Add(u64, u64),
     Int32Scaled(u64, i64),
     Int64Scaled(u64, i64, bool),
+    /// `Bool` values (`TermClasses::bool_node`): a literal, a binder, a
+    /// `-> Bool` function's head, the conditional's head, and the read head
+    /// of one snapshot's `bool` cells.
+    BoolConstant(bool),
+    BoolVariable(Variable),
+    BoolFunction(crate::kernel::SharedPureApplication, usize),
+    BoolIf,
+    BoolRead((u32, u32)),
 }
 
 // Operand IDs in an application are structural; in a signature they are
@@ -491,6 +499,11 @@ pub(super) struct TermClasses {
     // Truth is an annotation of a condition class, not a union between all
     // true facts. Unrelated order facts must not create value equivalences.
     condition_truth: PersistentMap<u64, u8>,
+    // The truth of each `Bool` binder's admitted facts, kept whether or not a
+    // `Bool` value has interned the binder yet, so a binder interned later
+    // starts with it and the answer does not depend on the order facts were
+    // admitted in. One entry per binder fact; nothing reads it but interning.
+    bool_binder_truth: PersistentMap<crate::kernel::Variable, u8>,
     // Constant signed int32 bounds belong to a value class, not a spelling.
     // A class union intersects two intervals in constant local work.
     signed_int32_intervals: PersistentMap<u64, (i64, i64)>,
@@ -2151,7 +2164,9 @@ impl TermClasses {
         {
             use congruence::ConditionKind::*;
             let truth = match kind {
-                Int32Eq | UInt64Eq | PointerEq | OffsetEq | AlgebraicEq | IntegerEq => Some(1),
+                Int32Eq | UInt64Eq | PointerEq | OffsetEq | AlgebraicEq | IntegerEq | BoolEq => {
+                    Some(1)
+                }
                 IntegerNe => Some(2),
                 _ => None,
             };

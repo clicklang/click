@@ -1622,6 +1622,25 @@ fn hash_memory_blind_condition<H: std::hash::Hasher>(condition: &ConditionTerm, 
             std::hash::Hash::hash(left, hasher);
             std::hash::Hash::hash(right, hasher);
         }
+        // An application's arguments are hashed whole, as a word-valued
+        // Click application's are.
+        ConditionTerm::BoolApplication(application) => {
+            std::hash::Hash::hash(application, hasher);
+        }
+        ConditionTerm::BoolIf {
+            condition,
+            then_condition,
+            else_condition,
+        } => {
+            hash_memory_blind_condition(condition, hasher);
+            hash_memory_blind_condition(then_condition, hasher);
+            hash_memory_blind_condition(else_condition, hasher);
+        }
+        ConditionTerm::BoolEqual(left, right) => {
+            hash_memory_blind_condition(left, hasher);
+            hash_memory_blind_condition(right, hasher);
+        }
+        ConditionTerm::BoolLoad(_, pointer) => hash_memory_blind_pointer(pointer, hasher),
     }
 }
 
@@ -1766,6 +1785,28 @@ fn collect_condition_memory_load_keys(
         }
         crate::kernel::integer_comparison_condition!(_, _) => {}
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
+        // As a word-valued Click application's: its arguments are not keyed.
+        ConditionTerm::BoolApplication(_) => {}
+        ConditionTerm::BoolIf {
+            condition,
+            then_condition,
+            else_condition,
+        } => {
+            for condition in [condition, then_condition, else_condition] {
+                collect_condition_memory_load_keys(condition, keys);
+            }
+        }
+        ConditionTerm::BoolEqual(left, right) => {
+            collect_condition_memory_load_keys(left, keys);
+            collect_condition_memory_load_keys(right, keys);
+        }
+        ConditionTerm::BoolLoad(_, pointer) => {
+            keys.insert((
+                pointer.block.clone(),
+                memory_blind_pointer_fingerprint(pointer),
+            ));
+            collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
+        }
     }
 }
 
@@ -1998,6 +2039,37 @@ fn collect_condition_memory_loads(
             collect_integer_memory_loads(right, current_memory, loads, seen_integers)
         }
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => Ok(()),
+        ConditionTerm::BoolApplication(_) => {
+            Err("opaque Click function may hide a current memory load".into())
+        }
+        ConditionTerm::BoolIf {
+            condition,
+            then_condition,
+            else_condition,
+        } => {
+            for condition in [condition, then_condition, else_condition] {
+                collect_condition_memory_loads(condition, current_memory, loads, seen_integers)?;
+            }
+            Ok(())
+        }
+        ConditionTerm::BoolEqual(left, right) => {
+            collect_condition_memory_loads(left, current_memory, loads, seen_integers)?;
+            collect_condition_memory_loads(right, current_memory, loads, seen_integers)
+        }
+        // A `bool` cell is one byte.
+        ConditionTerm::BoolLoad(memory, pointer) => {
+            if CMemorySnapshotIdentity::of(memory.memory())
+                == CMemorySnapshotIdentity::of(current_memory)
+            {
+                loads.push((pointer.as_ref().clone(), 1));
+            }
+            collect_pointer_offset_memory_loads(
+                &pointer.offset,
+                current_memory,
+                loads,
+                seen_integers,
+            )
+        }
     }
 }
 
@@ -7218,6 +7290,11 @@ impl PureFactContext {
                 .congruence_conditions
                 .insert(condition.clone(), value);
         }
+        // A `Bool` value's binders take the truths their own facts gave them
+        // (rule L-Eq): those facts may predate the value's classes.
+        if condition.is_bool_value_form() {
+            self.admit_bool_binder_truths(&condition);
+        }
         // A specification `bool` is exactly `0` or `1` by its structure, so
         // its equation with one of them also files the other's: `b != true`
         // is `b == false`, however the negation was reached. One constant
@@ -7238,6 +7315,28 @@ impl PureFactContext {
             }));
         }
         self
+    }
+
+    /// Admit, for each binder directly under a `Bool` value's conditionals
+    /// and equalities, its own filed truth into the e-graph, where an L-Eq
+    /// merge can carry it. One indexed lookup per binder of the value.
+    fn admit_bool_binder_truths(&mut self, condition: &ConditionTerm) {
+        let mut pending = vec![condition];
+        while let Some(condition) = pending.pop() {
+            match condition {
+                ConditionTerm::Variable(_) => {
+                    if let Some(value) = self.condition_facts.get(condition).copied()
+                        && self.equality_graph.add_condition(condition, value)
+                    {
+                        self.equality_graph
+                            .admitted
+                            .congruence_conditions
+                            .insert(condition.clone(), value);
+                    }
+                }
+                condition => pending.extend(condition.bool_children()),
+            }
+        }
     }
 
     /// Files the signed range of a word an unsigned upper bound below the sign
@@ -11375,6 +11474,9 @@ mod annotated_numeric_pointer_condition_tests {
 
 #[cfg(test)]
 mod decided_algebraic_if_tests;
+
+#[cfg(test)]
+mod bool_sort_tests;
 
 /// The order facts of a context, each filed as its own condition under the
 /// lower end an order walk follows it from. The exact order walks

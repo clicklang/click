@@ -2287,12 +2287,17 @@ impl ConditionTerm {
             | Self::IntegerNotEqual(left, right) => (left == right).then_some(false),
             Self::PointerOffsetEqual(left, right) => (left == right).then_some(true),
             Self::PointerEqual(left, right) => (left == right).then_some(true),
+            // A `Bool` value is two-valued, so it is equivalent to itself.
+            Self::BoolEqual(left, right) => (left == right).then_some(true),
             Self::AlgebraicEqual(_, _)
             | Self::Constant(_)
             | Self::Variable(_)
             | Self::Overflows { .. }
             | Self::Float32(_)
-            | Self::Float64(_) => None,
+            | Self::Float64(_)
+            | Self::BoolApplication(_)
+            | Self::BoolIf { .. }
+            | Self::BoolLoad(..) => None,
         }
     }
 

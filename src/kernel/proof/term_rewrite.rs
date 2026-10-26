@@ -751,6 +751,36 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
             }
             collect_pointer_carriers(right, variables);
         }
+        ConditionTerm::BoolApplication(application) => {
+            let mut seen = BTreeSet::new();
+            for argument in application.arguments() {
+                collect_argument_carriers(argument, variables, &mut seen);
+                if variables.exhausted() {
+                    return;
+                }
+            }
+        }
+        ConditionTerm::BoolIf {
+            condition,
+            then_condition,
+            else_condition,
+        } => {
+            for condition in [condition, then_condition, else_condition] {
+                collect_condition_carriers(condition, variables);
+                if variables.exhausted() {
+                    return;
+                }
+            }
+        }
+        ConditionTerm::BoolEqual(left, right) => {
+            collect_condition_carriers(left, variables);
+            if variables.exhausted() {
+                return;
+            }
+            collect_condition_carriers(right, variables);
+        }
+        // As a word-sized read: only the pointer expression participates.
+        ConditionTerm::BoolLoad(_, pointer) => collect_pointer_carriers(pointer, variables),
     }
 }
 
@@ -4792,6 +4822,44 @@ impl<'a> TermRewrite<'a> {
                 } else {
                     ConditionTerm::integer_not_equal(self.integer(a), self.integer(b))
                 }
+            }
+            // A `Bool` value rewrites its children, an application's
+            // arguments and a read's pointer, as a word-valued application
+            // and a load do; a read keeps its snapshot.
+            v if v.is_bool_value_form() => {
+                let mut children = Vec::with_capacity(3);
+                for child in v.bool_children() {
+                    children.push(self.condition(child));
+                }
+                let mut children = children.into_iter();
+                let rewritten = match v {
+                    ConditionTerm::BoolApplication(application) => {
+                        let mut arguments = Vec::with_capacity(application.arguments().len());
+                        for argument in application.arguments() {
+                            arguments.push(self.argument(argument));
+                        }
+                        ConditionTerm::BoolApplication(
+                            crate::kernel::SharedPureApplication::intern(
+                                application.name().to_owned(),
+                                arguments,
+                            ),
+                        )
+                    }
+                    ConditionTerm::BoolLoad(memory, pointer) => {
+                        ConditionTerm::BoolLoad(memory.clone(), Box::new(self.pointer(pointer)))
+                    }
+                    v => v
+                        .map_bool_value_form(
+                            |_| children.next().expect("one rewrite per child"),
+                            |argument| argument.clone(),
+                            |memory, pointer| (memory.clone(), pointer.clone()),
+                        )
+                        .expect("a `Bool` value form maps"),
+                };
+                if self.checked_work_exhausted() {
+                    return ConditionTerm::Constant(false);
+                }
+                rewritten
             }
             v => {
                 let (op, left, right) = v

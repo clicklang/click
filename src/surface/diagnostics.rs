@@ -893,6 +893,10 @@ pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
         ConditionTerm::PointerEqual(_, _) => "pointer equality",
         ConditionTerm::Constant(_) => "constant condition",
         ConditionTerm::Variable(_) => "condition variable",
+        ConditionTerm::BoolApplication(_) => "Bool function application",
+        ConditionTerm::BoolIf { .. } => "Bool conditional",
+        ConditionTerm::BoolEqual(..) => "Bool equality",
+        ConditionTerm::BoolLoad(..) => "bool read",
     }
 }
 
@@ -7582,6 +7586,29 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
         crate::kernel::ConditionTerm::Compare { .. }
         | crate::kernel::ConditionTerm::Overflows { .. } => {
             unreachable!("bitvector comparisons are described above")
+        }
+        // The Surface spellings of the `Bool` value forms, as the
+        // word-valued application and load are described.
+        ConditionTerm::BoolApplication(application) => {
+            format!("{}(<typed Click arguments>)", application.name())
+        }
+        ConditionTerm::BoolIf {
+            condition,
+            then_condition,
+            else_condition,
+        } => format!(
+            "if {} {{ {} }} else {{ {} }}",
+            describe_condition(condition),
+            describe_condition(then_condition),
+            describe_condition(else_condition)
+        ),
+        ConditionTerm::BoolEqual(left, right) => format!(
+            "({}) == ({})",
+            describe_condition(left),
+            describe_condition(right)
+        ),
+        ConditionTerm::BoolLoad(_, pointer) => {
+            describe_load_at(pointer, ParameterBinding::default())
         }
     }
 }

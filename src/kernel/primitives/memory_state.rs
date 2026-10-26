@@ -633,6 +633,38 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Pointer(*left));
                     }
+                    // As a word-valued Click application: by its hash.
+                    ConditionTerm::BoolApplication(application) => {
+                        use std::hash::{Hash, Hasher};
+                        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                        application.hash(&mut hasher);
+                        let _ = write!(identity, "bclick:{:x};", hasher.finish());
+                    }
+                    ConditionTerm::BoolIf {
+                        condition,
+                        then_condition,
+                        else_condition,
+                    } => {
+                        identity.push_str("bif(");
+                        tasks.push(HavocIdentityTask::Text(")"));
+                        tasks.push(HavocIdentityTask::Condition(*else_condition));
+                        tasks.push(HavocIdentityTask::Text(","));
+                        tasks.push(HavocIdentityTask::Condition(*then_condition));
+                        tasks.push(HavocIdentityTask::Text(","));
+                        tasks.push(HavocIdentityTask::Condition(*condition));
+                    }
+                    ConditionTerm::BoolEqual(left, right) => {
+                        identity.push_str("beq(");
+                        tasks.push(HavocIdentityTask::Text(")"));
+                        tasks.push(HavocIdentityTask::Condition(*right));
+                        tasks.push(HavocIdentityTask::Text(","));
+                        tasks.push(HavocIdentityTask::Condition(*left));
+                    }
+                    ConditionTerm::BoolLoad(_, pointer) => {
+                        identity.push_str("bload(");
+                        tasks.push(HavocIdentityTask::Text(")"));
+                        tasks.push(HavocIdentityTask::Pointer(*pointer));
+                    }
                 }
             }
         }

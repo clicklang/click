@@ -846,6 +846,51 @@ impl Printer<'_> {
                     }
                 };
             }
+            // The `Bool` value forms (`design/machine-integers.md`, Stage 5)
+            // in their Surface spellings: an application `f(x)`, a
+            // conditional `if c { a } else { b }`, an equality `a == b`, a
+            // read the place it reads.
+            ConditionTerm::BoolApplication(application) => {
+                let call = self.call(application.name(), application.arguments(), depth)?;
+                return Some(if polarity { call } else { negation(call) });
+            }
+            ConditionTerm::BoolIf {
+                condition,
+                then_condition,
+                else_condition,
+            } => {
+                let condition = self.condition(condition, true, depth)?;
+                let then_condition = self.condition(then_condition, true, depth)?;
+                let else_condition = self.condition(else_condition, true, depth)?;
+                let spelled_if = atom(format!(
+                    "if {} {{ {} }} else {{ {} }}",
+                    condition.text, then_condition.text, else_condition.text
+                ));
+                return Some(if polarity {
+                    spelled_if
+                } else {
+                    negation(spelled_if)
+                });
+            }
+            ConditionTerm::BoolEqual(left, right) => {
+                let left = self.condition(left, true, depth)?;
+                let right = self.condition(right, true, depth)?;
+                return Some(atom(format!(
+                    "{} {} {}",
+                    operand(left, ATOM),
+                    if polarity { "==" } else { "!=" },
+                    operand(right, ATOM)
+                )));
+            }
+            ConditionTerm::BoolLoad(memory, pointer) => {
+                let read = self.load(
+                    memory.as_ref(),
+                    pointer,
+                    crate::kernel::LoadKind::UInt8,
+                    depth,
+                )?;
+                return Some(if polarity { read } else { negation(read) });
+            }
             _ => {}
         }
         let (operator, left, right) = condition.as_bitvector_comparison()?;

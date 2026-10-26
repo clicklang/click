@@ -463,7 +463,11 @@ impl ConditionTerm {
             | Self::PointerOffsetEqual(..)
             | Self::PointerEqual(..)
             | Self::PointerValueEqual(..)
-            | crate::kernel::integer_comparison_condition!(_, _) => None,
+            | crate::kernel::integer_comparison_condition!(_, _)
+            | Self::BoolApplication(_)
+            | Self::BoolIf { .. }
+            | Self::BoolEqual(..)
+            | Self::BoolLoad(..) => None,
         }
     }
 }

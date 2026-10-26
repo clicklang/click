@@ -1827,6 +1827,44 @@ pub(crate) fn collect_condition_bitvector_variables(
             collect_integer_variables(left, variables);
             collect_integer_variables(right, variables);
         }
+        ConditionTerm::BoolApplication(application) => {
+            collect_application_connection_variables(application.arguments(), variables);
+        }
+        ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+            for child in condition.bool_children() {
+                collect_condition_bitvector_variables(child, variables);
+            }
+        }
+        ConditionTerm::BoolLoad(memory, pointer) => {
+            collect_shared_memory_bitvector_variables(memory, variables);
+            collect_pointer_bitvector_variables(pointer, variables);
+            collect_stored_load_connection_variables(memory, pointer, variables);
+        }
+    }
+}
+
+/// An application's arguments are not free bitvector variables of the
+/// term, but a fact about one of them is related to it.
+fn collect_application_connection_variables(
+    arguments: &[PureFunctionArgument],
+    variables: &mut BTreeSet<Variable>,
+) {
+    if !collecting_connection_variables() {
+        return;
+    }
+    for argument in arguments {
+        match argument {
+            PureFunctionArgument::Value(value) => {
+                collect_c_value_bitvector_variables(value, variables)
+            }
+            PureFunctionArgument::Algebraic(value) => {
+                collect_algebraic_term_bitvector_variables(value, variables)
+            }
+            PureFunctionArgument::Integer(value) => collect_integer_variables(value, variables),
+            PureFunctionArgument::ArrayRef { pointer, .. } => {
+                collect_c_value_bitvector_variables(pointer, variables)
+            }
+        }
     }
 }
 
@@ -2750,26 +2788,7 @@ pub(crate) fn collect_bitvector_variables(
             }
         }
         Bitvector32Term::ClickFunctionApplication { arguments, .. } => {
-            // An application's arguments are not free bitvector variables
-            // of the term, but a fact about one of them is related to it.
-            if collecting_connection_variables() {
-                for argument in arguments {
-                    match argument {
-                        PureFunctionArgument::Value(value) => {
-                            collect_c_value_bitvector_variables(value, variables)
-                        }
-                        PureFunctionArgument::Algebraic(value) => {
-                            collect_algebraic_term_bitvector_variables(value, variables)
-                        }
-                        PureFunctionArgument::Integer(value) => {
-                            collect_integer_variables(value, variables)
-                        }
-                        PureFunctionArgument::ArrayRef { pointer, .. } => {
-                            collect_c_value_bitvector_variables(pointer, variables)
-                        }
-                    }
-                }
-            }
+            collect_application_connection_variables(arguments, variables);
         }
         Bitvector32Term::AlgebraicMatch {
             scrutinee, arms, ..
@@ -3014,6 +3033,25 @@ fn collect_condition_capture_variables(
                 return;
             }
             collect_shared_integer_bitvector_capture_variables(right, variables, integer_seen);
+        }
+        ConditionTerm::BoolApplication(application) => {
+            for argument in application.arguments() {
+                if crate::instrumentation::checked_collection_exhausted() {
+                    return;
+                }
+                collect_capture_variables_in_pure_argument(argument, variables, integer_seen);
+            }
+        }
+        ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+            for child in condition.bool_children() {
+                if crate::instrumentation::checked_collection_exhausted() {
+                    return;
+                }
+                collect_condition_capture_variables(child, variables, integer_seen);
+            }
+        }
+        ConditionTerm::BoolLoad(_, pointer) => {
+            collect_pointer_capture_variables(pointer, variables, integer_seen)
         }
     }
 }
@@ -3794,6 +3832,27 @@ fn collect_condition_scope_summary(
             summary.merge(collect_integer_scope_summary_shared(right, summaries));
             summary
         }
+        ConditionTerm::BoolApplication(application) => {
+            let mut summary = IntegerScopeSummary::default();
+            for argument in application.arguments() {
+                if crate::instrumentation::checked_collection_exhausted() {
+                    return IntegerScopeSummary::default();
+                }
+                summary.merge(collect_scope_summary_in_argument(argument, summaries));
+            }
+            summary
+        }
+        ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+            let mut summary = IntegerScopeSummary::default();
+            for child in condition.bool_children() {
+                if crate::instrumentation::checked_collection_exhausted() {
+                    return IntegerScopeSummary::default();
+                }
+                summary.merge(collect_condition_scope_summary(child, summaries));
+            }
+            summary
+        }
+        ConditionTerm::BoolLoad(_, pointer) => collect_pointer_scope_summary(pointer, summaries),
     }
 }
 
@@ -4467,6 +4526,34 @@ fn collect_condition_binder_variables(
             );
         }
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
+        ConditionTerm::BoolApplication(application) => {
+            for argument in application.arguments() {
+                if crate::instrumentation::checked_collection_exhausted() {
+                    return;
+                }
+                collect_binder_variables_in_pure_argument(
+                    argument,
+                    integer_variables,
+                    bitvector_variables,
+                    integer_seen,
+                );
+            }
+        }
+        ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+            for child in condition.bool_children() {
+                if crate::instrumentation::checked_collection_exhausted() {
+                    return;
+                }
+                collect_condition_binder_variables(
+                    child,
+                    integer_variables,
+                    bitvector_variables,
+                    integer_seen,
+                );
+            }
+        }
+        // As a word-valued load: a read binds nothing.
+        ConditionTerm::BoolLoad(..) => {}
     }
 }
 

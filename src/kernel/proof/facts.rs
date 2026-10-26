@@ -2897,6 +2897,22 @@ fn collect_condition_bitvector_atoms(
             collect_pointer_bitvector_atoms(right, atoms);
         }
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
+        // As a word-valued Click application's: opaque.
+        ConditionTerm::BoolApplication(_) => {}
+        ConditionTerm::BoolIf {
+            condition,
+            then_condition,
+            else_condition,
+        } => {
+            for condition in [condition, then_condition, else_condition] {
+                collect_condition_bitvector_atoms(condition, atoms);
+            }
+        }
+        ConditionTerm::BoolEqual(left, right) => {
+            collect_condition_bitvector_atoms(left, atoms);
+            collect_condition_bitvector_atoms(right, atoms);
+        }
+        ConditionTerm::BoolLoad(_, pointer) => collect_pointer_bitvector_atoms(pointer, atoms),
     }
 }
 

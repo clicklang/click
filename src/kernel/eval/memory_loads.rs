@@ -3265,6 +3265,8 @@ pub(crate) fn canonical_condition(condition: &ConditionTerm) -> ConditionTerm {
         ConditionTerm::AlgebraicEqual(_, _) | ConditionTerm::PointerValueEqual(..) => {
             condition.clone()
         }
+        // `Bool` values are kept as built, as algebraic equalities are.
+        condition if condition.is_bool_value_form() => condition.clone(),
         ConditionTerm::Float32(float_condition) => {
             ConditionTerm::Float32(float_condition.map_bitvector_terms(canonical_term))
         }
@@ -3412,6 +3414,10 @@ fn substitute_load_variables(
             }
             Task::VisitCondition(condition) => match condition {
                 ConditionTerm::AlgebraicEqual(_, _) | ConditionTerm::PointerValueEqual(..) => {
+                    condition_results.push(condition.clone())
+                }
+                // `Bool` values keep their reads, as algebraic equalities do.
+                condition if condition.is_bool_value_form() => {
                     condition_results.push(condition.clone())
                 }
                 crate::kernel::integer_comparison_condition!(_, _) => {
@@ -3731,6 +3737,17 @@ fn condition_mentions_a_memory_load(condition: &ConditionTerm) -> bool {
                 || offset_mentions_a_memory_load(&right.offset)
         }
         crate::kernel::integer_comparison_condition!(_, _) => false,
+        ConditionTerm::BoolApplication(_) | ConditionTerm::BoolLoad(..) => true,
+        ConditionTerm::BoolIf {
+            condition,
+            then_condition,
+            else_condition,
+        } => [condition, then_condition, else_condition]
+            .into_iter()
+            .any(|condition| condition_mentions_a_memory_load(condition)),
+        ConditionTerm::BoolEqual(left, right) => {
+            condition_mentions_a_memory_load(left) || condition_mentions_a_memory_load(right)
+        }
     }
 }
 

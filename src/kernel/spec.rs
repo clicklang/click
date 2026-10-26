@@ -2869,6 +2869,12 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
                 integer_carrier_in_pointer(left, variable)
                     || integer_carrier_in_pointer(right, variable)
             }
+            // An application's arguments or a read's address may carry
+            // one; keep the scope, as for an opaque payload.
+            ConditionTerm::BoolApplication(_) | ConditionTerm::BoolLoad(..) => true,
+            ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => condition
+                .bool_children()
+                .any(|child| condition_contains(child, variable)),
         }
     }
 
