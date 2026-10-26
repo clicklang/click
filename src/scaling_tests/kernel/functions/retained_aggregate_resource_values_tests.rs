@@ -62,7 +62,21 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         let (_, measured) =
             crate::instrumentation::measure_deterministic_work(|| resolve(&mut expression));
         work.push(measured);
-        assert_eq!(expression, CExpression::Value(value.clone()));
+        // The retained field is the entry read, named by its version and
+        // carrying the stored pointer, which the read-over-write authority
+        // relates it to.
+        let retained = |expression: &CExpression| match expression {
+            CExpression::Value(CValue::Pointer(read)) => {
+                let CValue::Pointer(stored) = &value else {
+                    unreachable!()
+                };
+                *read == stored.clone().with_address(read.pointer().clone())
+                    && crate::kernel::eval::pointer_read_over_write_value(read.pointer()).as_ref()
+                        == Some(stored.pointer())
+            }
+            _ => false,
+        };
+        assert!(retained(&expression), "{expression:?}");
         let address = CExpression::AddressOf(Box::new(field.clone()));
         let mut expression = address.clone();
         resolve(&mut expression);
@@ -72,9 +86,9 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         );
         let mut expression = CExpression::Load(Box::new(field.clone()));
         resolve(&mut expression);
-        assert_eq!(
-            expression,
-            CExpression::Load(Box::new(CExpression::Value(value.clone())))
+        assert!(
+            matches!(&expression, CExpression::Load(inner) if retained(inner)),
+            "{expression:?}"
         );
         assert!(!state.memory.has_block(&slot.block));
         assert!(state.resources().facts().is_empty());

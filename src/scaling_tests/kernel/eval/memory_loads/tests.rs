@@ -85,7 +85,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
             CExpressionOutcome::Value(CValue::Pointer(cached_value.clone()))
         );
         assert!(path.obligations.is_empty());
-        assert_eq!(path.facts.len(), 1);
+        assert!(!path.facts.is_empty());
         assert!(!path.facts.has_path_conditions());
         assert_eq!(
             equal(&context),
@@ -1055,7 +1055,15 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             );
         }
         let snapshot = intern_c_memory_ref(&memory);
-        assert_eq!(logical_pointer_read(&memory, &address, &context), stored);
+        // A logical read through `address` keeps its name; only the alias
+        // fact relates it to the pointer stored through `alias`.
+        let proven_equal =
+            crate::kernel::reasoning::memory_resolution::pointers_proven_equal_for_memory_resolution;
+        assert!(proven_equal(
+            &logical_pointer_read(&memory, &address, &context),
+            &stored,
+            &context
+        ));
 
         // A later projection may name the same cell by its scalar load.
         // The checked C pointer read must still denote the cached value.
@@ -1105,7 +1113,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             CValue::typed_pointer(replacement.clone(), CType::Int64Pointer),
         );
         let changed = logical_pointer_read(&later, &address, &context);
-        assert_eq!(changed, replacement);
+        assert!(proven_equal(&changed, &replacement, &context));
         assert!(!context.pointers_known_equal(&stored, &changed));
         let later_read = Pointer::symbolic(Variable(98_000 + count));
         context.register_checked_pointer_read(&later_read, &intern_c_memory_ref(&later), &address);

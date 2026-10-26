@@ -599,6 +599,21 @@ pub(crate) fn last_same(resource: Resource<'_>, at: &ProgramPoint) -> Option<Las
     }
 }
 
+/// [`last_same`] for a cell, from the memoized naming walk
+/// ([`last_same_point`]): the point a read there is named at, and why the
+/// walk stopped there. A caller asking about a cell a read was just named
+/// for pays no second walk.
+pub(crate) fn last_same_named_cell(
+    pointer: &Pointer,
+    bytes: u32,
+    at: &ProgramPoint,
+) -> Option<LastSame> {
+    let resource = Resource::Cell { pointer, bytes };
+    let point = last_same_point(resource, at)?;
+    let stopped_by = Stop::at_point(&point, resource);
+    Some(LastSame { point, stopped_by })
+}
+
 /// Whether the resource is known to hold the same version at both points.
 ///
 /// Two points agree exactly when they name the same version, which is what
