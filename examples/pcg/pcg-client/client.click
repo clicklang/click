@@ -17,7 +17,7 @@ int32 first_outputs_repeat() {
     // Seeding leaves a known state. Each draw's output is the XSH-RR
     // formula on the state its call started from, evaluated once that
     // state is known.
-    execute_until(region(2));
+    step_until(region(2));
     have pcg::pcg32_global.state == 1753877967969059832u64 by {
         unfold(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64));
         unfold(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)));
@@ -27,7 +27,7 @@ int32 first_outputs_repeat() {
         solve();
     }
     have pcg::pcg32_global.inc == 109u64 by { solve(); }
-    execute_until(region(8));
+    step_until(region(8));
     have at(region(4).entry, pcg::pcg32_global.state) == 3118741472915405573u64 by {
         rewrite(at(region(4).entry, pcg::pcg32_global.state) == at(region(2).entry, integer::uint64_wrapping_add(integer::uint64_wrapping_mul(pcg::pcg32_global.state, 6364136223846793005u64), pcg::pcg32_global.inc)));
         rewrite(at(region(2).entry, pcg::pcg32_global.state) == 1753877967969059832u64);

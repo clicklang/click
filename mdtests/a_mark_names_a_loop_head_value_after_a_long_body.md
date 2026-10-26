@@ -63,14 +63,14 @@ int32 count_down(int32 n) {
     requires n >= 0;
     ensures result == 0;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         decreases k;
         invariant k >= 0;
         invariant k == n;
         preserve by {
             mark iteration;
-            execute_until(back_edge());
+            step_until(back_edge());
         }
     }
 }

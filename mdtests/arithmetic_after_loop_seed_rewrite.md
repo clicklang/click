@@ -18,7 +18,7 @@ uint64 seed(uint64 word, uint64 len) {
  ensures result == decode(old(word));
 } by {
  unfold(decode(word));
- execute_until(loop(0));
+ step_until(loop(0));
  loop {
   decreases to_integer(len);
   invariant to_integer(len) <= 15;

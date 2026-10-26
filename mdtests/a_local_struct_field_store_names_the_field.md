@@ -34,7 +34,7 @@ verifying "a_local_struct_field_store_names_the_field.c";
 int32 loop_writes_field() {
     ensures result == 3;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         decreases 2 - i;
         invariant i >= 0;

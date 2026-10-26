@@ -47,7 +47,7 @@ void tag_then_count(struct node *p) {
     consumes c: cell(p);
     ensures 1 == 1;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         owns c: cell(p);
         decreases 0;

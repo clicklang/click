@@ -34,7 +34,7 @@ int64 countdown(int64 n) {
     requires n >= 0;
     ensures result == 0;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         decreases i;
         invariant 0 <= i and i <= n;
@@ -44,7 +44,7 @@ int64 countdown(int64 n) {
 uint64 countdown_unsigned(uint64 n) {
     ensures result == 0;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         decreases i;
         invariant i <= n;
