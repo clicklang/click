@@ -2068,7 +2068,16 @@ impl Printer<'_> {
         let binding = ParameterBinding::new(parameters, arguments);
         match resource {
             CResource::Memory(range) => {
-                crate::surface::diagnostics::describe_memory_range(range, binding)
+                let text = crate::surface::diagnostics::describe_memory_range(range, binding);
+                if !text.starts_with('…') {
+                    return text;
+                }
+                // A base only a recorded snapshot names, a call's result.
+                let (parameters, arguments) = self.labels.naming_with_snapshot_values();
+                crate::surface::diagnostics::describe_memory_range(
+                    range,
+                    ParameterBinding::new(&parameters, &arguments),
+                )
             }
             CResource::Instance(instance) => {
                 let application = self.resource_arguments(instance.name(), instance.arguments());
