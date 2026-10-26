@@ -23,9 +23,9 @@ int32 g(uint32 tag, int32 *p, int32 **restored) {
             conclusion 0;
         }
     }
-    have to_integer(tag + (uint32)p[0]) == to_integer(tag) + to_integer((uint32)p[0]) by auto();
-    have 0 <= to_integer(tag + (uint32)p[0]) by auto();
-    have to_integer(tag + (uint32)p[0]) <= 2000 by auto();
+    have to_integer(tag + (uint32)p[0]) == to_integer(tag) + to_integer((uint32)p[0]);
+    have 0 <= to_integer(tag + (uint32)p[0]);
+    have to_integer(tag + (uint32)p[0]) <= 2000;
     have to_integer((int32)(tag + (uint32)p[0])) == to_integer(tag + (uint32)p[0]) by {
         arithmetic_certificate rules {
             premise 0: 0 <= to_integer(tag + (uint32)p[0]) => 0 <= to_integer(tag + (uint32)p[0]);

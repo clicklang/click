@@ -61,7 +61,7 @@ void mark_and_swap(struct arena* arena, int32 start, int32 end) {
         };
         decreases end - i;
         initialize by {
-            simp();
+            solve();
         }
         preserve by {
             step();
@@ -70,7 +70,7 @@ void mark_and_swap(struct arena* arena, int32 start, int32 end) {
         }
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

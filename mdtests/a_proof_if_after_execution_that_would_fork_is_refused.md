@@ -2,7 +2,7 @@
 
 After `execute()`, `n < 5` is not decided on the function's one outcome path,
 so each arm would be a separate path. What follows a proof `if` is checked
-once: the `simp()` after this one would instead run once per arm, and a run of
+once: the `solve()` after this one would instead run once per arm, and a run of
 such `if`s would check the rest of the proof once per combination of arms.
 The `if` is refused, as an execution-frontier `if` whose arms do not rejoin
 is (`proof_if_arms_must_rejoin.md`).

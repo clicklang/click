@@ -5,8 +5,8 @@ not turn a non-strict bound into a strict bound.
 
 ```click
 theorem observed_bounds(x: uint32) {
-    ensures 0 <= to_integer(x) by auto();
-    ensures to_integer(x) <= 4294967295 by auto();
+    ensures 0 <= to_integer(x);
+    ensures to_integer(x) <= 4294967295;
 }
 
 theorem observed_range(x: uint32) {

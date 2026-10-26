@@ -106,7 +106,7 @@ void reparent_left_child(struct rb_node* victim, struct rb_node* new_node,
                     let l2 = fold(rb_at(new_node->rb_left, new_node), {
                         model: RbTree::Node(lid, Color::Black, ll, lr)
                     }, { left: lleft, right: lright });
-                    simp();
+                    solve();
                 },
             }
         },

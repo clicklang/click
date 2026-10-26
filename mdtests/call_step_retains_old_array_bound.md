@@ -38,7 +38,7 @@ int32 probe(int32 *left, int32 *visited, int32 n, int32 cur) {
         assumption();
     }
     let { result: value } = step(use, {});
-    step(); simp();
+    step(); solve();
 }
 ```
 

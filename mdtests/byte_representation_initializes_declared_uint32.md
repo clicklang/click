@@ -23,7 +23,7 @@ unsigned int decode(void) {
 verifying "initialize_word.c";
 uint32 decode() {
     ensures result == 4293820433u32;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

@@ -1,6 +1,6 @@
-# a have without a proof is simp
+# a have without a proof is `solve`
 
-A `have` states a fact where it is written, so an omitted proof is `simp` at
+A `have` states a fact where it is written, so an omitted proof is `solve` at
 that point. It does not execute C: the first `have` below is proved before
 any statement runs, and the first `step()` still starts at the declaration.
 

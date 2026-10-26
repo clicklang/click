@@ -554,7 +554,7 @@ impl<'a> Proof<'a> {
         let stated = surface_premises
             .iter()
             .find_map(|premise| {
-                self.lower_cited_surface_proposition(premise, "`arithmetic using` premise")
+                self.lower_cited_surface_proposition(premise, "`solve() using` premise")
                     .ok()
                     .as_ref()
                     .and_then(Carrier::of)
@@ -635,7 +635,7 @@ impl<'a> Proof<'a> {
         let literal = |text: &str| ContractExpression::IntegerLiteral(text.to_string());
         for premise in surface_premises {
             let kernel = self
-                .lower_cited_surface_proposition(premise, "`arithmetic using` premise")
+                .lower_cited_surface_proposition(premise, "`solve() using` premise")
                 .map_err(|error| {
                     Some(format!(
                         "the premise `{}` could not be read: {}",
@@ -749,13 +749,13 @@ impl<'a> Proof<'a> {
                         // would name the observed reading rather than the
                         // listed premise the proof lacks.
                         let available = self
-                            .lower_surface_proposition(premise, "`arithmetic` premise")
+                            .lower_surface_proposition(premise, "arithmetic premise")
                             .is_ok_and(|lowered| {
                                 self.facts().listed_premise_available(&lowered, &[], false)
                             });
                         if !available {
                             return Err(Some(format!(
-                                "`arithmetic` requires an unavailable exact premise: `{}`",
+                                "arithmetic requires an unavailable exact premise: `{}`",
                                 spell(premise)
                             )));
                         }
@@ -946,7 +946,7 @@ impl<'a> Proof<'a> {
                 Some(match &uncarried {
                     Some(reason) => format!("{reason}: {}", error.raw_summary()),
                     None => format!(
-                        "the goal's Integer reading `{}` does not follow from the listed premises' Integer readings by one Integer `arithmetic` step, which combines a pair of order premises and at most one more taken whole; state an intermediate fact with `have` first: {}",
+                        "the goal's Integer reading `{}` does not follow from the listed premises' Integer readings by one Integer arithmetic step, which combines a pair of order premises and at most one more taken whole; state an intermediate fact with `have` first: {}",
                         spell(&observed_goal),
                         error.raw_summary()
                     ),

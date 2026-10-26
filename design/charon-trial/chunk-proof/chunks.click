@@ -10,15 +10,15 @@ fn cover(bytes: &[u8]) -> usize {
     };
 } by {
     have to_integer(bytes.len() % 4u64) <= to_integer(bytes.len()) by normalize();
-    execute_until(loop(0));
+    step_until(loop(0));
     have to_integer(iter_remaining) == to_integer(bytes.len() - bytes.len() % 4u64);
     have to_integer((bytes.len() - bytes.len() % 4u64) % 4u64) == to_integer(0u64);
     have to_integer(iter_remaining % 4u64) == to_integer(0u64) by {
-        rewrite(to_integer(iter_remaining) == to_integer(bytes.len() - bytes.len() % 4u64)); simp();
+        rewrite(to_integer(iter_remaining) == to_integer(bytes.len() - bytes.len() % 4u64)); solve();
     }
-    have to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) == to_integer(0u64) by auto();
+    have to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) == to_integer(0u64);
     have iter_cursor == bytes + ((bytes.len() - bytes.len() % 4u64) - iter_remaining) by {
-        rewrite(to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) == to_integer(0u64)); simp();
+        rewrite(to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) == to_integer(0u64)); solve();
     }
     loop {
         decreases iter_remaining;
@@ -34,12 +34,12 @@ fn cover(bytes: &[u8]) -> usize {
         preserve by {
             have 4u64 <= iter_remaining;
             mark iteration;
-            have to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) < to_integer(bytes.len()) by auto();
-            have to_integer(((bytes.len() - bytes.len() % 4u64) - iter_remaining) + 3u64) < to_integer(bytes.len()) by auto();
-            have 4 + to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) <= to_integer(bytes.len()) by auto();
-            have 3 + to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) <= to_integer(bytes.len()) by auto();
-            have 3 + to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) < to_integer(bytes.len()) by auto();
-            execute_until(read(1)); step();
+            have to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) < to_integer(bytes.len());
+            have to_integer(((bytes.len() - bytes.len() % 4u64) - iter_remaining) + 3u64) < to_integer(bytes.len());
+            have 4 + to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) <= to_integer(bytes.len());
+            have 3 + to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) <= to_integer(bytes.len());
+            have 3 + to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) < to_integer(bytes.len());
+            step_until(read(1)); step();
             have to_integer(iter_remaining) == to_integer(at(iteration, iter_remaining) - 4u64);
             have to_integer((at(iteration, iter_remaining) - 4u64) % 4u64) == to_integer(at(iteration, iter_remaining % 4u64)) by {
                 normalize() using { 4u64 <= at(iteration, iter_remaining); };
@@ -47,29 +47,29 @@ fn cover(bytes: &[u8]) -> usize {
             have to_integer(iter_remaining % 4u64) == to_integer(0u64) by {
                 rewrite(to_integer(iter_remaining) == to_integer(at(iteration, iter_remaining) - 4u64));
                 rewrite(to_integer((at(iteration, iter_remaining) - 4u64) % 4u64) == to_integer(at(iteration, iter_remaining % 4u64)));
-                simp();
+                solve();
             }
-            have to_integer(iter_remaining) <= to_integer((bytes.len() - bytes.len() % 4u64)) by auto();
-            have to_integer((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) <= to_integer(18446744073709551611u64) by auto();
-            have at(iteration, iter_cursor) == bytes + ((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) by auto();
+            have to_integer(iter_remaining) <= to_integer((bytes.len() - bytes.len() % 4u64));
+            have to_integer((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) <= to_integer(18446744073709551611u64);
+            have at(iteration, iter_cursor) == bytes + ((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining));
             have at(iteration, iter_cursor) + 4 == bytes + (((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64) by {
-                arithmetic() using {
+                solve() using {
                     at(iteration, iter_cursor) == bytes + ((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining));
                     to_integer((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) <= to_integer(18446744073709551611u64);
                 };
             }
-            have to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) == to_integer(((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64) by auto();
+            have to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) == to_integer(((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64);
             have iter_cursor == bytes + ((bytes.len() - bytes.len() % 4u64) - iter_remaining) by {
                 rewrite(to_integer((bytes.len() - bytes.len() % 4u64) - iter_remaining) == to_integer(((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64));
-                simp();
+                solve();
             }
-            have iter_remaining < at(iteration, iter_remaining) by auto();
+            have iter_remaining < at(iteration, iter_remaining);
         }
     }
     have iter_remaining < 4u64 by {
         cases {
             not (0u64 < iter_remaining) => {
-                arithmetic() using { not 0u64 < iter_remaining; };
+                solve() using { not 0u64 < iter_remaining; };
             }
             not (4u64 <= iter_remaining) => { assumption(); }
         }
@@ -82,6 +82,6 @@ fn cover(bytes: &[u8]) -> usize {
     execute();
     have forall (k: usize) {
         k < bytes.len() implies bytes[k] == old(bytes[k])
-    } by { intro(); intro(); simp(); }
-    simp();
+    } by { intro(); intro(); solve(); }
+    solve();
 }

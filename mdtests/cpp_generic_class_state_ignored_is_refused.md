@@ -131,12 +131,12 @@ template<class T> bool Stack<T>::pop(T& out) {
                 List::Nil => {
                     unfold(tail);
                     let state = fold(nodes<T>(this->head), { items: List<T>::Nil });
-                    simp();
+                    solve();
                 },
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
                     let state = fold(nodes<T>(this->head), { items: List::Cons(next_value, next_items) }, { tail: next });
-                    simp();
+                    solve();
                 },
             }
         },
@@ -144,7 +144,7 @@ template<class T> bool Stack<T>::pop(T& out) {
 }
 int round_trip(Container<int>& container, int x) {
     ensures result == first_or(List::Cons(x, old(items(container))), 0);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int caller(Stack<int>& stack, int x) {
     owns stack;
     owns state: nodes<int>(stack.head);
@@ -152,7 +152,7 @@ int caller(Stack<int>& stack, int x) {
 } by {
     execute();
     unfold(first_or(List<int>::Cons(x, old(state.items)), 0));
-    simp();
+    solve();
 }
 ```
 

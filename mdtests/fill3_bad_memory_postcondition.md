@@ -1,6 +1,6 @@
 # fill3 rejects a false memory postcondition
 
-This checks that `auto` reports the actual final memory value when a memory
+This checks that the omitted proof reports the actual final memory value when a memory
 postcondition is false.
 
 ```c filename=fill3_bad_memory.c
@@ -20,7 +20,7 @@ verifying "fill3_bad_memory.c";
 
 int32 fill3_bad_memory(int32* p) {
     consumes p[0..3];
-    ensures third: p[2] == 3 by auto();
+    ensures third: p[2] == 3;
 }
 ```
 

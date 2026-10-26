@@ -56,7 +56,7 @@ void box_destroy(struct box* box) {
 } by {
     unfold(boxed(box));
     execute();
-    simp();
+    solve();
 }
 
 void box_release(struct box* box, struct box* other) {
@@ -65,7 +65,7 @@ void box_release(struct box* box, struct box* other) {
     owns *other;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

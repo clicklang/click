@@ -1,6 +1,6 @@
 # A uint64 equality that does not follow is not arithmetic
 
-`a <= b` alone does not give `a == b`. `arithmetic` proves a 64-bit
+`a <= b` alone does not give `a == b`. Arithmetic proves a 64-bit
 equality as the equality of two Integer observations, and
 `to_integer(a) <= to_integer(b)` does not make them equal, so the step is
 refused.
@@ -11,7 +11,7 @@ refused.
 theorem squeeze(a: uint64, b: uint64) {
     requires a <= b;
     ensures a == b by {
-        arithmetic() using { a <= b; };
+        solve() using { a <= b; };
     }
 }
 ```

@@ -66,7 +66,7 @@ int32 borrowed_slice_buffer_init(
 } by {
     execute();
     fold(owned_borrowable_buffer(owner, data, length));
-    simp();
+    solve();
 }
 
 int32 borrowed_slice_buffer_borrow(
@@ -94,7 +94,7 @@ int32 borrowed_slice_buffer_borrow(
     execute();
     fold(owned_slice(data, start, end));
     fold(buffer_without_slice(owner, data, length, start, end));
-    simp();
+    solve();
 }
 
 int32 borrowed_slice_set(
@@ -114,7 +114,7 @@ int32 borrowed_slice_set(
     unfold(owned_slice(data, start, end));
     execute();
     fold(owned_slice(data, start, end));
-    simp();
+    solve();
 }
 
 int32 borrowed_slice_buffer_return(
@@ -131,7 +131,7 @@ int32 borrowed_slice_buffer_return(
     ensures owner->data == data;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 borrowed_slice_buffer_get(
@@ -144,7 +144,7 @@ int32 borrowed_slice_buffer_get(
     requires index < length;
     views owned_borrowable_buffer(owner, data, length);
 
-    ensures result == data[index] by auto();
+    ensures result == data[index];
 }
 
 int32 borrowed_slice_buffer_pipeline(
@@ -179,5 +179,5 @@ int32 borrowed_slice_buffer_pipeline(
     fold(owned_borrowable_buffer(owner, data, length));
     step();
     step();
-    simp();
+    solve();
 }

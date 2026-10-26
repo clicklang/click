@@ -41,28 +41,28 @@ class Square : Shape {
     function size(this) -> int32 { this->side }
 }
 int Square::area(int scale) const {
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 class BigSquare : Square {
     function size(this) -> int32 { this->base.side + this->extra }
 }
 int BigSquare::area(int scale) const {
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int Square::twice(int scale) const {
     requires 0 <= scale and scale <= 100;
     requires 0 <= this->side and this->side <= 100;
     ensures result == this->side + scale;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int through_square(const Square& square, int scale) {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(square) and size(square) <= 100;
     ensures result == size(square) + scale;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int caller(BigSquare& big, int scale) {
     owns big;
     requires 0 <= scale and scale <= 100;
     requires 0 <= big.base.side + big.extra and big.base.side + big.extra <= 100;
     ensures result == big.base.side + big.extra + scale;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

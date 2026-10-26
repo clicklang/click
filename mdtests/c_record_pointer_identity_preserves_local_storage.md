@@ -15,10 +15,10 @@ verifying "identity.c";
 struct Pair* identity(struct Pair* pair) {
     views pair->first;
     ensures result == pair;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 caller() {
     ensures result == 7;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

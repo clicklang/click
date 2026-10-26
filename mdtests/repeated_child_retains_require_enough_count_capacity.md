@@ -50,7 +50,7 @@ void child_retain(struct child* obj) {
     fold(child_ref(obj));
     fold(child_control(obj));
     execute();
-    simp();
+    solve();
 }
 
 void retain_many(struct child* obj) {
@@ -67,7 +67,7 @@ void retain_many(struct child* obj) {
     step(child_retain, {});
     step(child_retain, {});
     step();
-    simp();
+    solve();
 }
 ```
 

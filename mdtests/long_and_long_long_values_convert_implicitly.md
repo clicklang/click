@@ -47,27 +47,27 @@ long long read_both(long *a, long long *b) {
 verifying "main.c";
 
 long narrow(long long value) {
-    ensures result == value by auto();
+    ensures result == value;
 }
 
 long round_trip(long value) {
-    ensures result == value by auto();
+    ensures result == value;
 }
 
 long long sum(long a, long long b) {
     requires a >= 0 and a <= 100;
     requires b >= 0 and b <= 100;
-    ensures to_integer(result) == to_integer(a + b) by auto();
+    ensures to_integer(result) == to_integer(a + b);
 }
 
 unsigned long long mixed(unsigned long a, long long b) {
     requires a <= 100u64;
     requires b == 7;
-    ensures to_integer(result) == to_integer(a + 7u64) by auto();
+    ensures to_integer(result) == to_integer(a + 7u64);
 }
 
 long long take(long long value) {
-    ensures result == value by auto();
+    ensures result == value;
 }
 
 long pass_long(long value) {

@@ -2,7 +2,7 @@
 
 A one-step body after `close_invariants() by` is written as the call alone,
 `close_invariants() by normalize();`, as it is after `have` and `ensures`.
-It is the body `{ normalize(); }`. The bare `by simp();` form is in
+It is the body `{ normalize(); }`. The bare `by solve();` form is in
 `diverges_perpetual_loop.md`.
 
 ```c filename=close_invariants_takes_one_tactic_call_without_braces.c

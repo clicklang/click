@@ -47,12 +47,12 @@ void set_one_if_active(int32 active, int32* cell) {
         unfold(optional_cell(active, cell));
         execute();
         fold(optional_cell(active, cell));
-        simp();
+        solve();
     } else {
         unfold(optional_cell(active, cell));
         execute();
         fold(optional_cell(active, cell));
-        simp();
+        solve();
     }
 }
 
@@ -61,9 +61,9 @@ theorem set_one_is_make_positive() {
         unfold(MakePositive);
 
         if active != 0 {
-            simp();
+            solve();
         } else {
-            simp();
+            solve();
         }
     }
 }
@@ -79,10 +79,10 @@ void apply_positive(
 } by {
     if active != 0 {
         execute();
-        simp();
+        solve();
     } else {
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -92,7 +92,7 @@ void refinement_theorem_caller(int32* cell) {
 } by {
     apply(set_one_is_make_positive());
     execute();
-    simp();
+    solve();
 }
 ```
 

@@ -29,7 +29,7 @@ uint32 cleanup(struct counter* p) {
     unfold(control(p));
     unfold(3 of remaining(p));
     step();
-    simp();
+    solve();
 }
 ```
 

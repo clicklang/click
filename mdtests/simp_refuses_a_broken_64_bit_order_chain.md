@@ -1,4 +1,4 @@
-# `simp` refuses a broken 64-bit order chain
+# `solve` refuses a broken 64-bit order chain
 
 As `simp_closes_a_64_bit_order_chain.md`, but nothing orders `b` below `c`:
 the second fact runs the wrong way, so no chain reaches the goal.

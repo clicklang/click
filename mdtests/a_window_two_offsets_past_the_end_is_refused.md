@@ -26,11 +26,11 @@ uint8 read(const uint8* bytes, uint64 length, uint64 start, uint64 index) {
     views bytes[0..length];
     ensures result == result;
 } by {
-    have start <= 9223372036854775807u64 by { arithmetic() using { start <= length; length <= 2147483647u64; }; }
-    have index <= length by auto();
-    have index <= 9223372036854775807u64 by { arithmetic() using { index <= length; length <= 2147483647u64; }; }
-    have to_integer(start + index) <= to_integer(length) by auto();
-    have to_integer(3u64) <= to_integer(length - (start + index)) by auto();
+    have start <= 9223372036854775807u64 by { solve() using { start <= length; length <= 2147483647u64; }; }
+    have index <= length;
+    have index <= 9223372036854775807u64 by { solve() using { index <= length; length <= 2147483647u64; }; }
+    have to_integer(start + index) <= to_integer(length);
+    have to_integer(3u64) <= to_integer(length - (start + index));
     execute(); solve();
 }
 ```

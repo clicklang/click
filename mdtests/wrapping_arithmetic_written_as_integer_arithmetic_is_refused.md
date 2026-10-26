@@ -17,7 +17,7 @@ verifying "wrapping_arithmetic_written_as_integer_arithmetic_is_refused.c";
 
 uint64 step(uint64 state, uint64 inc) {
     ensures result == state * 6364136223846793005u64 + inc;
-} by auto();
+}
 ```
 
 ```expect

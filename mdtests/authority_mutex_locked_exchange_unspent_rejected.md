@@ -50,18 +50,18 @@ void object_retain(struct object *obj) {
     have count(permit(obj)) >= 1 by solve();
     have slack == count(permit(obj)) by solve();
     have 1 <= slack by solve();
-    have to_integer(1) <= to_integer(slack) by auto();
+    have to_integer(1) <= to_integer(slack);
     have to_integer(refs) + to_integer(slack) == 3 by solve();
-    have to_integer(refs) <= to_integer(2) by arithmetic() using {
+    have to_integer(refs) <= to_integer(2) by solve() using {
         to_integer(refs) + to_integer(slack) == 3;
         to_integer(1) <= to_integer(slack);
     };
-    have refs <= 2 by auto();
+    have refs <= 2;
     have defined(refs + 1) by solve();
     have defined(slack - 1) by solve();
-    have to_integer(refs + 1) == to_integer(refs) + to_integer(1) by auto();
-    have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by auto();
-    have to_integer(refs + 1) + to_integer(slack - 1) == 3 by arithmetic() using {
+    have to_integer(refs + 1) == to_integer(refs) + to_integer(1);
+    have to_integer(slack - 1) == to_integer(slack) - to_integer(1);
+    have to_integer(refs + 1) + to_integer(slack - 1) == 3 by solve() using {
         to_integer(refs + 1) == to_integer(refs) + to_integer(1);
         to_integer(slack - 1) == to_integer(slack) - to_integer(1);
         to_integer(refs) + to_integer(slack) == 3;

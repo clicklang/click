@@ -4,7 +4,7 @@ This checks that a fixed-size two-pass bubble sort over three cells can prove
 sortedness from loop VCs and quantified invariants, without bounded execution.
 
 The proof below is a saved expansion of explicit branch arguments and invariant
-closure bodies. Keeping the simple steps avoids repeating the expensive `simp`
+closure bodies. Keeping the simple steps avoids repeating the expensive `solve`
 search; the C and invariants are unchanged.
 
 ```c filename=bubble_sort3_two_pass.c
@@ -92,7 +92,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     intro();
                     intro();
                     if k < (j - 1) {
-                        have k < at(region(4).entry, j) by auto();
+                        have k < at(region(4).entry, j);
                         instantiate(forall (__click_q0: int32) { at(region(6).entry, 0) <= at(region(6).entry, __click_q0) and at(region(6).entry, 0) <= at(region(6).entry, __click_q0) and at(region(6).entry, __click_q0) < at(region(6).entry, j) implies at(region(6).entry, p[__click_q0]) <= at(region(6).entry, tmp) }, k);
                         transport(at(region(6).entry, p[k]) <= at(region(6).entry, tmp), p[k] <= p[j]) using {
                             at(region(6).entry, p[k]) <= at(region(6).entry, tmp);
@@ -106,10 +106,10 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                             at(function.entry, viewable(p[0..3]));
                         };
                     } else {
-                        have k == (j - 1) by auto();
-                        have to_integer(k) == to_integer(at(region(4).entry, j)) by auto();
+                        have k == (j - 1);
+                        have to_integer(k) == to_integer(at(region(4).entry, j));
                         rewrite(k == at(region(4).entry, j));
-                        arithmetic() using {
+                        solve() using {
                             at(region(7).entry, p[(j + 1)]) < at(region(7).entry, tmp);
                         };
                     }
@@ -149,9 +149,9 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                             assumption();
                         } and {
                             both {
-                                arithmetic() using { at(region(4).entry, j) >= at(region(4).entry, 0); at(region(4).entry, j) < at(region(4).entry, 2); };
+                                solve() using { at(region(4).entry, j) >= at(region(4).entry, 0); at(region(4).entry, j) < at(region(4).entry, 2); };
                             } and {
-                                arithmetic() using { at(region(4).entry, j) >= at(region(4).entry, 0); at(region(4).entry, j) < at(region(4).entry, 2); };
+                                solve() using { at(region(4).entry, j) >= at(region(4).entry, 0); at(region(4).entry, j) < at(region(4).entry, 2); };
                             }
                         }
                     }
@@ -165,7 +165,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     intro();
                     intro();
                     if k < (j - 1) {
-                        have k < at(region(4).entry, j) by auto();
+                        have k < at(region(4).entry, j);
                         instantiate(forall (__click_q0: int32) { at(region(9).entry, 0) <= at(region(9).entry, __click_q0) and at(region(9).entry, 0) <= at(region(9).entry, __click_q0) and at(region(9).entry, __click_q0) < at(region(9).entry, j) implies at(region(9).entry, p[__click_q0]) <= at(region(9).entry, p[j]) }, k);
                         transport(at(region(9).entry, p[k]) <= at(region(9).entry, p[j]), p[k] <= p[j]) using {
                             at(region(9).entry, p[k]) <= at(region(9).entry, p[j]);
@@ -179,11 +179,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                             at(function.entry, viewable(p[0..3]));
                         };
                     } else {
-                        have k == (j - 1) by auto();
-                        have to_integer(k) == to_integer(at(region(4).entry, j)) by auto();
+                        have k == (j - 1);
+                        have to_integer(k) == to_integer(at(region(4).entry, j));
                         rewrite(k == at(region(4).entry, j));
-                        have at(region(9).entry, p[(j + 1)]) >= at(region(9).entry, p[j]) by auto();
-                        arithmetic() using {
+                        have at(region(9).entry, p[(j + 1)]) >= at(region(9).entry, p[j]);
+                        solve() using {
                             at(region(9).entry, p[(j + 1)]) >= at(region(9).entry, p[j]);
                         };
                     }
@@ -223,9 +223,9 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                             assumption();
                         } and {
                             both {
-                                arithmetic() using { at(region(4).entry, j) >= at(region(4).entry, 0); at(region(4).entry, j) < at(region(4).entry, 2); };
+                                solve() using { at(region(4).entry, j) >= at(region(4).entry, 0); at(region(4).entry, j) < at(region(4).entry, 2); };
                             } and {
-                                arithmetic() using { at(region(4).entry, j) >= at(region(4).entry, 0); at(region(4).entry, j) < at(region(4).entry, 2); };
+                                solve() using { at(region(4).entry, j) >= at(region(4).entry, 0); at(region(4).entry, j) < at(region(4).entry, 2); };
                             }
                         }
                     }
@@ -275,8 +275,8 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
             if p[(j + 1)] < p[j] {
                 unfold(all_le_range);
                 have j == 0 by {
-                    have j <= 0 by auto();
-                    arithmetic() using {
+                    have j <= 0;
+                    solve() using {
                         j <= 0;
                         j >= 0;
                     };
@@ -316,7 +316,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     at(before_swap, p[(j + 1)] < p[j]);
                 };
                 have p[0] <= p[1] by {
-                    arithmetic() using {
+                    solve() using {
                         p[0] < p[1];
                     };
                 }
@@ -328,12 +328,12 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 close_invariants() by {
                     both {
                         both {
-                            arithmetic() using {
+                            solve() using {
                                 at(region(12).entry, j) >= at(region(12).entry, 0);
                                 at(region(12).entry, j) < at(region(12).entry, 1);
                             };
                         } and {
-                            arithmetic() using {
+                            solve() using {
                                 at(region(12).entry, j) < at(region(12).entry, 1);
                             };
                         }
@@ -361,8 +361,8 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
             } else {
                 unfold(all_le_range);
                 have j == 0 by {
-                    have j <= 0 by auto();
-                    arithmetic() using {
+                    have j <= 0;
+                    solve() using {
                         j <= 0;
                         j >= 0;
                     };
@@ -390,16 +390,16 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 };
                 have p[0] <= p[1] by {
                     have p[0] <= p[1] by {
-                        arithmetic() using {
+                        solve() using {
                             not p[1] < p[0];
                         };
                     }
                     have p[0] <= p[1] by {
-                        arithmetic() using {
+                        solve() using {
                             not at(region(18).entry, p[1]) < at(region(18).entry, p[0]);
                         };
                     }
-                    arithmetic() using {
+                    solve() using {
                         at(region(18).entry, p[1]) >= at(region(18).entry, p[0]);
                     };
                 }
@@ -411,12 +411,12 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 close_invariants() by {
                     both {
                         both {
-                            arithmetic() using {
+                            solve() using {
                                 at(region(12).entry, j) >= at(region(12).entry, 0);
                                 at(region(12).entry, j) < at(region(12).entry, 1);
                             };
                         } and {
-                            arithmetic() using {
+                            solve() using {
                                 at(region(12).entry, j) < at(region(12).entry, 1);
                             };
                         }

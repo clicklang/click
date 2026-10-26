@@ -1,7 +1,7 @@
 # conditional call ensure discharged by explicit modus ponens
 
 A callee's conditional ensure reaches the caller as an implication fact.
-Once the caller's branch establishes the antecedent, `simp() using` with
+Once the caller's branch establishes the antecedent, `solve() using` with
 exactly the antecedent and the implication must prove the consequent, and
 its certificate must lower to the explicit bounded rule (`extract` of the
 discharged consequent, then `assumption`) rather than reporting a missing
@@ -33,7 +33,7 @@ int32 set_five(int32* cell) {
     owns cell[0..1];
     ensures result == 0 or result == 1;
     ensures result == 1 implies cell[0] == 5;
-} by auto();
+}
 
 int32 use_five(int32* cell) {
     owns cell[0..1];

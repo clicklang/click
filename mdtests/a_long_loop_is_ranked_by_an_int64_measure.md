@@ -6,7 +6,7 @@
 owes `0 <= length - i` at the back edge, because a signed value is not a
 natural number by construction.
 
-The 64-bit facts the back edge owes are each one `arithmetic() using`
+The 64-bit facts the back edge owes are each one `solve() using`
 (`mdtests/arithmetic_proves_int64_order_goals.md`).
 `a_size_t_loop_stepping_by_two_closes_with_arithmetic.md` is the same loop
 with an unsigned index, which owes no lower bounds.

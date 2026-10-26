@@ -11,11 +11,11 @@ unsigned long bound(unsigned long a, unsigned long b) { return a; }
 ```click
 verifying "bound.c";
 uint64 bound(uint64 a, uint64 b) { ensures result == a; } by {
-    have to_integer(a) <= to_integer(b - b % 4u64) by auto();
+    have to_integer(a) <= to_integer(b - b % 4u64);
     execute(); solve();
 }
 ```
 
 ```expect
-fail: `auto` could not prove `to_integer(a) <= to_integer((b - (b % 4u64)))`
+fail: could not establish `to_integer(a) <= to_integer((b - (b % 4u64)))`
 ```

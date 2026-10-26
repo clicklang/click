@@ -419,7 +419,7 @@ pub(in crate::surface::proof) enum RewriteClosers<'p> {
     /// would select the same premises and search them again.
     Selected,
     /// `normalize` and an atomic plan over these premises alone, for
-    /// `simp() using`, which reads no ambient fact.
+    /// `solve() using`, which reads no ambient fact.
     Listed(&'p [(Proposition, ClickProposition)]),
 }
 
@@ -1068,7 +1068,7 @@ impl<'a> Proof<'a> {
             let mut forms = Vec::new();
             if let Some(unanchored) = unanchored_equality(&surface)
                 && let Ok(lowered) =
-                    self.lower_surface_proposition(&unanchored, "`auto` rewrite equality")
+                    self.lower_surface_proposition(&unanchored, "`solve` rewrite equality")
             {
                 forms.extend(oriented_forms(lowered, unanchored));
             }
@@ -1140,7 +1140,7 @@ impl<'a> Proof<'a> {
             // the checked rewrite decide. Offer the unanchored form first.
             if let Some(unanchored) = unanchored_equality(&surface)
                 && let Ok(lowered) =
-                    self.lower_surface_proposition(&unanchored, "`auto` rewrite equality")
+                    self.lower_surface_proposition(&unanchored, "`solve` rewrite equality")
             {
                 candidates.push(oriented_forms(lowered, unanchored));
             }
@@ -1166,7 +1166,7 @@ impl<'a> Proof<'a> {
 
     /// The same search over equalities a step selected or listed instead
     /// of the goal's connected facts: `simp`'s premises from its
-    /// derivation, or a `simp() using` list. Each equality is used at most
+    /// derivation, or a `solve() using` list. Each equality is used at most
     /// once, so the chain is as long as the list allows, and `closers`
     /// says what may close a rewritten goal.
     pub(in crate::surface::proof) fn try_premise_equality_chain_closure(
@@ -1336,7 +1336,7 @@ impl<'a> Proof<'a> {
             let fact = match unanchored_equality(&fact) {
                 Some(unanchored)
                     if self
-                        .lower_surface_proposition(&unanchored, "`auto` definition fact")
+                        .lower_surface_proposition(&unanchored, "`solve` definition fact")
                         .is_ok_and(|lowered| lowered == kernel) =>
                 {
                     unanchored
@@ -1603,7 +1603,7 @@ impl<'a> Proof<'a> {
                 if crate::surface::printing::source_click_proposition(&condition) == goal.text
                     || (same_shape(&condition, goal.surface)
                         && self
-                            .lower_surface_proposition(&condition, "`auto` definition condition")
+                            .lower_surface_proposition(&condition, "`solve` definition condition")
                             .is_ok_and(|lowered| lowered == *goal.kernel))
                 {
                     *meets_goal = true;
@@ -2253,7 +2253,7 @@ mod tests {
 theorem successor_identity(x: int32) {
     requires x < 2147483647;
     ensures to_integer(x + 1) == to_integer(x) + 1 by {
-        have to_integer(x + 1) == to_integer(x) + 1 by auto();
+        have to_integer(x + 1) == to_integer(x) + 1 by solve();
         assumption();
     }
 }
@@ -2261,9 +2261,9 @@ theorem successor_identity(x: int32) {
         crate::surface::verify_click_theorems(source).unwrap();
         let line = source
             .lines()
-            .position(|line| line.contains("by auto()"))
+            .position(|line| line.contains("by solve()"))
             .unwrap();
-        let column = source.lines().nth(line).unwrap().find("auto()").unwrap();
+        let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
             crate::surface::expand_c0_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
         assert_eq!(
@@ -2274,8 +2274,8 @@ theorem successor_identity(x: int32) {
         crate::surface::verify_click_theorems(&expanded).unwrap();
     }
 
-    /// `auto` reaches `simp` before splitting a plain 64-bit equality into
-    /// its two bounds, each of which would run a nested `auto`.
+    /// `solve` reaches its simplification before splitting a plain 64-bit
+    /// equality into its two bounds, each of which would run a nested search.
     #[test]
     fn auto_leaves_a_plain_64_bit_equality_to_simp() {
         let source = r#"spec enum Color { Red, Black, }
@@ -2285,7 +2285,7 @@ function color_bit(color: Color) -> int32 {
 theorem low_bit_is_the_color_bit(bits: uint64, color: Color) {
     requires (bits & 1u64) == (uint64)color_bit(color);
     ensures (bits & 1u64) == (uint64)color_bit(color) by {
-        have (bits & 1u64) == (uint64)color_bit(color) by auto();
+        have (bits & 1u64) == (uint64)color_bit(color) by solve();
         assumption();
     }
 }
@@ -2293,9 +2293,9 @@ theorem low_bit_is_the_color_bit(bits: uint64, color: Color) {
         crate::surface::verify_click_theorems(source).unwrap();
         let line = source
             .lines()
-            .position(|line| line.contains("by auto()"))
+            .position(|line| line.contains("by solve()"))
             .unwrap();
-        let column = source.lines().nth(line).unwrap().find("auto()").unwrap();
+        let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
             crate::surface::expand_c0_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
         assert!(!expanded.contains("equal_from_bounds"), "{expanded}");
@@ -2314,7 +2314,7 @@ theorem black_color_is_black(color: Color) {
     ensures color == Color::Black by {
         induct(color) as ih {
             Color::Red => {
-                have not(color_black(Color::Red) == 1) by auto();
+                have not(color_black(Color::Red) == 1);
                 contradiction(color_black(Color::Red) == 1);
             }
             Color::Black => { normalize(); }
@@ -2326,7 +2326,7 @@ theorem black_color_is_black(color: Color) {
         .unwrap();
     }
 
-    /// The connected-equality rewrite search is `simp`'s, so `simp()` alone
+    /// The connected-equality rewrite search is `simp`'s, so `solve()` alone
     /// proves what used to need `auto()`.
     #[test]
     fn simp_runs_the_connected_equality_rewrite_search() {
@@ -2340,7 +2340,7 @@ theorem black_color_is_black(color: Color) {
     ensures color == Color::Black by {
         induct(color) as ih {
             Color::Red => {
-                have not(color_black(Color::Red) == 1) by simp();
+                have not(color_black(Color::Red) == 1) by solve();
                 contradiction(color_black(Color::Red) == 1);
             }
             Color::Black => { normalize(); }

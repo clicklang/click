@@ -9,19 +9,19 @@ import click::integer;
 
 theorem reflect32(left: int32, right: int32) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by auto();
+    ensures left <= right;
 }
 theorem preserve64(left: int64, right: int64) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right) by auto();
+    ensures to_integer(left) <= to_integer(right);
 }
 theorem reflect64(left: int64, right: int64) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by auto();
+    ensures left <= right;
 }
 theorem equal64(left: int64, right: int64) {
     requires to_integer(left) == to_integer(right);
-    ensures left == right by auto();
+    ensures left == right;
 }
 ```
 

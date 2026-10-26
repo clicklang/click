@@ -9,7 +9,7 @@ fact.
 
 That fact is now provable, so the workaround is not needed. `induct(hi)` gives
 an induction hypothesis guarded by the theorem's own `requires` at the smaller
-endpoint; `have viewable(v[lo..hi - 1]) by { simp(); }` narrows the theorem's
+endpoint; `have viewable(v[lo..hi - 1]);` narrows the theorem's
 own range to that endpoint, against the order facts proved just above it, and
 `assumption()` assembles the hypothesis premise the guard is written as. Every other
 step is unchanged from the version with `n`.

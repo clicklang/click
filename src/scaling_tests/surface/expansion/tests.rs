@@ -162,7 +162,7 @@ fn locating_every_declaration_scales_with_source() {
     for size in [8, 32, 128, 512] {
         let mut source = String::new();
         for index in 0..size {
-            source.push_str(&format!("verifying \"unit{index}.c\" as unit{index};\nint32 unit{index}::helper() {{ ensures result == 1; }} by {{ execute(); simp(); }}\n"));
+            source.push_str(&format!("verifying \"unit{index}.c\" as unit{index};\nint32 unit{index}::helper() {{ ensures result == 1; }} by {{ execute(); solve(); }}\n"));
         }
         let file = parser::parse_file_items(&source).unwrap();
         let tokens = proof_source_tokens(&source, &file.source_spans().implicit_proofs).unwrap();
@@ -242,9 +242,7 @@ fn typed_equality_certificate_steps_ignore_unrelated_parameters() {
         let label = format!("chain_{count}.ensures_0");
         samples
             .iter()
-            .find(|sample| {
-                sample.tactic.claim == label && sample.tactic.tactic_name == "arithmetic"
-            })
+            .find(|sample| sample.tactic.claim == label && sample.tactic.tactic_name == "solve")
             .expect("the typed equality certificate ran")
             .work
     });

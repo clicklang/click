@@ -38,7 +38,7 @@ fn charon_chunk_proof_tools_agree() {
     let p = project();
     assert_cli(&p, &["profile"]);
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
-    let offset = proof.find("execute_until(read(1))").unwrap();
+    let offset = proof.find("step_until(read(1))").unwrap();
     let line = proof[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let column = offset - proof[..offset].rfind('\n').map_or(0, |p| p + 1) + 1;
     let cursor = format!("{}:{line}:{column}", p.root.join("borrow.click").display());

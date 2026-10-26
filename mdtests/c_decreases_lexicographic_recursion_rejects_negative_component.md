@@ -26,8 +26,8 @@ int32 walk(int32 m, int32 n) {
 } by {
     step();
     branch {
-        have 0 <= to_integer(m - 1) by auto();
-        have to_integer(m - 1) < to_integer(m) by auto();
+        have 0 <= to_integer(m - 1);
+        have to_integer(m - 1) < to_integer(m);
         step();
         step();
         solve();

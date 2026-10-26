@@ -6,7 +6,7 @@
 and claims the first value survives. The caller keeps `first`'s region, so
 the call havoc must keep its cell, which is addressed through a reloaded
 `pool->data` rather than the base spelling the region was folded with;
-`simp` relates the two through `put`'s `pool->data == old(pool->data)`.
+`solve` relates the two through `put`'s `pool->data == old(pool->data)`.
 
 ```c filename=call_keeps_a_field_bearing_region_beside_the_lent_one.c
 struct pool { int32* data; };
@@ -48,7 +48,7 @@ void put(struct pool* pool, struct slot* s, int32 value) {
     let { at: a, end: e } = unfold(r);
     execute();
     let r = fold(pool_slot(s, pool), { at: a, end: e });
-    simp();
+    solve();
 }
 
 void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
@@ -61,7 +61,7 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
     step(put, { r: a });
     step(put, { r: b });
     execute();
-    simp();
+    solve();
 }
 ```
 

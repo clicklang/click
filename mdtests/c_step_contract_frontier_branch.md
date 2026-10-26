@@ -18,7 +18,7 @@ void invoke(void (*callback)(int32*), int32* cell, int32 active) {
 } by {
     branch { step(Buffered); } else { step(Buffered); }
     execute();
-    simp();
+    solve();
 }
 ```
 

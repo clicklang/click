@@ -5,5 +5,5 @@ int64 quotient(int64 n, int64 d) {
     ensures result == n / d;
 } by {
     execute();
-    simp();
+    solve();
 }

@@ -7,7 +7,7 @@
 //! certificate family establishes it from each operand's width range and
 //! cited constant bounds. This closer only selects those bounds: the constant
 //! order and equality facts of the goal's width indexed under each operand
-//! term, or, for `simp() using`, the listed premises that bound an operand.
+//! term, or, for `solve() using`, the listed premises that bound an operand.
 //! It spells each cited fact through the goal's own operand spelling, so the
 //! certificate re-lowers to exactly the facts it names. Selection is a keyed
 //! lookup per operand and never scans the context; the kernel checker, not
@@ -226,7 +226,7 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// `simp() using { .. }` on an `int32` or `int64` definedness goal: cite
+    /// `solve() using { .. }` on an `int32` or `int64` definedness goal: cite
     /// exactly the listed premises that bound an operand by a constant.
     pub(super) fn try_restricted_signed_definedness_closure(
         &self,

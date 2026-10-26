@@ -1,4 +1,4 @@
-# `simp` does not drop a conjunct under a different guard
+# `solve` does not drop a conjunct under a different guard
 
 Dropping a conjunct of a guarded universal keeps its binder and guards
 exactly. `memset(dst, 7, 4)` states its values only for `k < 4`; the claim
@@ -27,5 +27,5 @@ void fill_short(uint8* dst) {
 ```
 
 ```expect
-fail: `simp` search did not retain a complete proof
+fail: `solve` search did not retain a complete proof
 ```

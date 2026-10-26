@@ -23,11 +23,11 @@ void zap(int32 *v, int32 n) {
 } by {
     branch {
         step();
-        simp();
+        solve();
     } else {}
     step();
-    have 0 <= to_integer(n - 1) by { arithmetic() using { 0 < n; }; }
-    have to_integer(n - 1) <= 1000 by { arithmetic() using { 0 < n; n <= 1000; }; }
+    have 0 <= to_integer(n - 1) by { solve() using { 0 < n; }; }
+    have to_integer(n - 1) <= 1000 by { solve() using { 0 < n; n <= 1000; }; }
     mark before_call;
     step();
     transport(
@@ -37,7 +37,7 @@ void zap(int32 *v, int32 n) {
         forall (k: int32) { 0 <= k and to_integer(k) < to_integer(n - 1) implies at(before_call, v[k]) == at(before_call, v[k]) };
     };
     execute();
-    simp();
+    solve();
 }
 ```
 

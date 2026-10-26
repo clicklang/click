@@ -49,10 +49,10 @@ int stated_unsigned_read_signed(unsigned *u, int i) {
 ```click
 verifying "a_32_bit_cell_read_at_the_other_signedness_is_its_sign_cast.c";
 
-int unsigned_stored_read_signed() { ensures result == -1 by auto(); }
-unsigned unsigned_stored_read_unsigned() { ensures result == 4294967295u32 by auto(); }
-unsigned signed_stored_read_unsigned() { ensures result == 4294967295u32 by auto(); }
-int signed_stored_read_signed() { ensures result == -1 by auto(); }
+int unsigned_stored_read_signed() { ensures result == -1; }
+unsigned unsigned_stored_read_unsigned() { ensures result == 4294967295u32; }
+unsigned signed_stored_read_unsigned() { ensures result == 4294967295u32; }
+int signed_stored_read_signed() { ensures result == -1; }
 
 int stated_unsigned_read_signed(unsigned *u, int i) {
     requires i >= 0;

@@ -81,14 +81,14 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             have 0 <= start;
             have start <= m;
             have start <= i;
-            have 0 <= i by auto();
+            have 0 <= i;
             have end <= arena->capacity;
-            have i < arena->capacity by auto();
+            have i < arena->capacity;
             mark opened;
             step();
             give(arena->data[i..i + 1]);
             step();
-            have to_integer(start) <= to_integer(at(opened, i) + 1) by auto();
+            have to_integer(start) <= to_integer(at(opened, i) + 1);
             have forall (k: int32) {
                 start <= k and to_integer(k) < to_integer(at(opened, i) + 1) implies arena->occupied[k] == 0
             } by {
@@ -109,7 +109,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         };
                         assumption();
                     }
-                    have 0 <= k by auto();
+                    have 0 <= k;
                     transport(at(opened, arena->occupied[k]) == 0, arena->occupied[k] == 0) using {
                         at(opened, arena->occupied[k]) == 0;
                         k < at(opened, i);
@@ -118,8 +118,8 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         at(opened, i) < arena->capacity;
                     };
                 } else {
-                    have k <= at(opened, i) by auto();
-                    have k == at(opened, i) by auto();
+                    have k <= at(opened, i);
+                    have k == at(opened, i);
                     rewrite(k == at(opened, i));
                     normalize();
                 }
@@ -145,7 +145,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     };
                     assumption();
                 }
-                have k < at(opened, i) by auto();
+                have k < at(opened, i);
                 transport(
                     at(opened, arena->occupied[k]) ==
                         at(clear_occupied.entry, arena->occupied[k]),
@@ -180,9 +180,9 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     };
                     assumption();
                 }
-                have at(opened, i) < k by auto();
-                have at(opened, i) <= k by auto();
-                have 0 <= k by auto();
+                have at(opened, i) < k;
+                have at(opened, i) <= k;
+                have 0 <= k;
                 transport(
                     at(opened, arena->occupied[k]) ==
                         at(clear_occupied.entry, arena->occupied[k]),
@@ -197,9 +197,9 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     k < arena->capacity;
                 };
             }
-            have arena->data == old(arena->data) by auto();
-            have arena->occupied == old(arena->occupied) by auto();
-            have arena->capacity == old(arena->capacity) by auto();
+            have arena->data == old(arena->data);
+            have arena->occupied == old(arena->occupied);
+            have arena->capacity == old(arena->capacity);
             have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by {
                 rewrite(arena->data == old(arena->data));
                 rewrite(arena->occupied == old(arena->occupied));
@@ -209,7 +209,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end), {
                 next: at(opened, i) + 1
             });
-            have start <= end by auto();
+            have start <= end;
             close_invariants() by {
                 both { normalize(); } and {
                     both { solve(); } and {
@@ -235,11 +235,11 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     have n <= end;
     have n == i;
     have not (n < end) by { rewrite(n == i); assumption(); }
-    have n == end by auto();
+    have n == end;
     step_until(function.exit);
-    have arena->data == old(arena->data) by auto();
-    have arena->occupied == old(arena->occupied) by auto();
-    have arena->capacity == old(arena->capacity) by auto();
+    have arena->data == old(arena->data);
+    have arena->occupied == old(arena->occupied);
+    have arena->capacity == old(arena->capacity);
     fold(arena_cells(arena->data, arena->occupied, arena->capacity));
     solve();
 }

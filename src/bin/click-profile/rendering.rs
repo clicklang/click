@@ -119,7 +119,7 @@ pub(super) fn render_profiles_with_top(
         CategorySection {
             category: TacticCategory::Smart,
             title: "SMART — EXPAND ONLY FROM VERIFIED PROOFS",
-            advice: "A smart site is `simp`, `arithmetic`, `execute`, `auto` (with the implicit auto), or a simple tactic with an elided argument such as `apply(t(x))`. A successful hotspot in a fully verified proof is an expansion candidate; expanding an elided form writes its argument into the same tactic. In an incomplete run it is diagnostic only. A failed smart search has no certificate: write the elided argument of a search miss, or use smaller or explicit simple tactics, unless it missed its bound or failed unclearly.",
+            advice: "A smart site is `solve`, the implicit tail that ends every proof, or a simple tactic with an elided argument such as `apply(t(x))`. A successful hotspot in a fully verified proof is an expansion candidate; expanding an elided form writes its argument into the same tactic. In an incomplete run it is diagnostic only. A failed smart search has no certificate: write the elided argument of a search miss, or use smaller or explicit simple tactics, unless it missed its bound or failed unclearly.",
         },
         thresholds,
         &blocked_expansion_sources,

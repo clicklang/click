@@ -517,7 +517,7 @@ int answer(void) { return ANSWER; }
 "#,
     )
     .unwrap();
-    let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
+    let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); solve(); }";
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
     let verified = verify_c0_prepared_sources(proof, &imports).unwrap();
@@ -565,7 +565,7 @@ fn userspace_and_kernel_imports_have_distinct_identity_for_identical_c() {
         fs::read(project.0.join(".click/main/main.c.i")).unwrap()
     );
     assert_ne!(kernel[0].identity(), userspace[0].identity());
-    let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
+    let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); solve(); }";
     assert!(verify_c0_prepared_sources(proof, &kernel).is_err());
     verify_c0_prepared_sources(proof, &userspace).unwrap();
 }
@@ -852,7 +852,7 @@ fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
             Some(imports[0].identity())
         );
     }
-    let offset = proof.find("execute_until(loop(0));").unwrap();
+    let offset = proof.find("step_until(loop(0));").unwrap();
     let line = proof[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -991,7 +991,7 @@ fn adler_uint64_specification_agrees_with_the_int32_one_and_does_not_narrow() {
     let past_int32 = "theorem adler_byte_past_four_gib(bytes: uint8[]) {
  ensures adler_byte_sum_u64(bytes, 4294967297u64) == adler_byte_sum_u64(bytes, 4294967296u64) + to_integer(bytes[4294967296u64]) by {
   apply(adler_sum_append_u64(bytes, 4294967297u64)) using { 0u64 < 4294967297u64; };
-  simp();
+  solve();
  }
 }";
     click::surface::verify_click_theorems(&format!("{source}\n{past_int32}"))
@@ -999,10 +999,10 @@ fn adler_uint64_specification_agrees_with_the_int32_one_and_does_not_narrow() {
     let wrapped = "theorem adler_four_gib_wraps(bytes: uint8[], length: uint64) {
  requires length == 4294967296u64;
  ensures adler_byte_sum_u64(bytes, length) == 0 by {
-  have length == 0u64 by simp();
+  have length == 0u64 by solve();
   rewrite(length == 0u64);
   apply(adler_sum_empty_u64(bytes, 0));
-  simp();
+  solve();
  }
 }";
     assert!(
@@ -1051,7 +1051,7 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
             Some(imports[0].identity())
         );
     }
-    let offset = proof.find("execute_until(loop(3));").unwrap();
+    let offset = proof.find("step_until(loop(3));").unwrap();
     let line = proof[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -1437,7 +1437,7 @@ int32 label_fits(const char* label) {
     ensures result == 0 or result == 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
 

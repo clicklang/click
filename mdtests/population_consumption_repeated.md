@@ -30,9 +30,9 @@ uint32 contribute_early(struct counter* p) {
     requires count(remaining(p)) > 1;
 } by {
     open(control(p)) {
-        have to_integer((p->value + 1u32) + 1u32) == 3 - to_integer(count(remaining(p)) - 2) by auto();
+        have to_integer((p->value + 1u32) + 1u32) == 3 - to_integer(count(remaining(p)) - 2);
         have count(remaining(p)) - 2 <= 3 by {
-            arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
+            solve() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
         }
         unfold(remaining(p));
         step();

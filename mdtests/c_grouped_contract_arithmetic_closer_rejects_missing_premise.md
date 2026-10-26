@@ -1,4 +1,4 @@
-# The grouped `arithmetic() using` closer cites exactly its premises
+# The grouped `solve() using` closer cites exactly its premises
 
 `result <= 101` needs both caller bounds: without `n <= 100` the step is a
 prompt, local arithmetic failure on the focused claim, not an ambient search
@@ -17,10 +17,10 @@ int32 bump(int32 n) {
     ensures result <= 101;
 } by {
     execute();
-    arithmetic() using { 0 <= n; };
+    solve() using { 0 <= n; };
 }
 ```
 
 ```expect
-fail: `arithmetic` did not prove the current goal `result <= 101`
+fail: could not be proved from only the listed premises
 ```

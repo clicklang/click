@@ -23,12 +23,12 @@ contract int32 Adds(int32 x) {
 int32 add3(int32 x) {
     requires 0 <= x and x <= 1000;
     ensures to_integer(result) == to_integer(x + 3);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 theorem add3_adds_three() {
     ensures Adds(&add3, { amount: 3 }) by {
         unfold(Adds);
-        simp();
+        solve();
     }
 }
 ```

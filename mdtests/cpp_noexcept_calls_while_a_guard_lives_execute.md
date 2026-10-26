@@ -30,25 +30,25 @@ verifying "g.cpp";
 Guard::Guard(int32& v) {
     owns this->p;
     ensures this->p == &v;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 Guard::~Guard() {
     owns this->p;
     owns this->p[0..1];
     ensures this->p == old(this->p);
     ensures this->p[0] == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 void set(int32& out) {
     owns out;
     ensures out == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int f(int32& v) {
     owns v;
     ensures result == 1;
     ensures v == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

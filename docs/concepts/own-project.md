@@ -439,14 +439,14 @@ uint64 label_fit(uint64 length) {
     ensures result <= length;
     ensures length < 32u64 implies result == length;
     ensures 32u64 <= length implies result == 31u64;
-} by auto();
+}
 
 uint64 label_measure(const char* src) {
     let n: uint64;
     views cstr_at(src, n);
     ensures n < 32u64 implies result == n;
     ensures 32u64 <= n implies result == 31u64;
-} by auto();
+}
 
 uint64 label_copy(char* dst, const char* src) {
     let len: uint64;
@@ -481,8 +481,8 @@ uint64 label_copy(char* dst, const char* src) {
 
 `label_fit` now states exactly what it returns, and `label_measure` and
 `label_copy` state exactly which length they keep: the whole string when it
-fits, 31 bytes otherwise. `} by auto();` is the older spelling of the
-omitted proof, which proves the two new `label_fit` claims: on each path of
+fits, 31 bytes otherwise. The omitted
+proof of `label_fit` proves its two new claims: on each path of
 the C branch it refutes the claim's other hypothesis, such as `length < 32u64`
 where `length >= 32`. The sidecar imports `click::cstr` for
 `cstr_at`; see [Click library imports](sidecars.md#click-library-imports).

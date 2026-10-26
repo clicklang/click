@@ -36,9 +36,9 @@ int32 nest(int32 n) {
                 decreases 10 - n;
                 invariant n >= 0 and n <= 100;
                 preserve by {
-                    have to_integer(n + 1) >= 0 by auto();
-                    have n < 100 by { arithmetic() using { n < 10; }; }
-                    have to_integer(n + 1) <= 100 by auto();
+                    have to_integer(n + 1) >= 0;
+                    have n < 100 by { solve() using { n < 10; }; }
+                    have to_integer(n + 1) <= 100;
                     step();
                     close_invariants() by { solve(); }
                 }

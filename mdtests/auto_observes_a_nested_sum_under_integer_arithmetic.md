@@ -1,9 +1,9 @@
-# `auto` observes a nested sum under Integer arithmetic
+# The implicit closer observes a nested sum under Integer arithmetic
 
 Under Integer specification arithmetic, `result == a + b + c` compares
 `to_integer(result)` with `to_integer(a) + to_integer(b) + to_integer(c)`. The
-returned value is the machine sum `(a + b) + c`, so `auto` needs two operation
-identities, and the outer one's range bounds need the inner one. `auto` proves
+returned value is the machine sum `(a + b) + c`, so the implicit closer needs two operation
+identities, and the outer one's range bounds need the inner one. It proves
 the inner identity first, so the outer bounds read it and no proof states it.
 The function shape is the binary-tree example's `tree_sum_root_and_children`:
 the inner sum is stored in a local and its operands are memory reads.

@@ -30,7 +30,7 @@ int32 report(int32 *v) {
         forall (choice: Choice) { pick(v, choice) == 0 } by {
         intro(); assumption();
     }
-    simp();
+    solve();
 }
 ```
 

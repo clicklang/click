@@ -68,7 +68,7 @@ int32 count_down(struct node* p, int32 n) {
                 invariant w.model == Wrap::Wrap(entry_model);
             }
             execute();
-            simp();
+            solve();
         },
     }
 }

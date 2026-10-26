@@ -251,11 +251,11 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                 },
                 Context::Left(i2, g2, c2, s2, u2) => {
                     step();
-                    simp();
+                    solve();
                 },
                 Context::Right(i2, g2, c2, s2, u2) => {
                     step();
-                    simp();
+                    solve();
                 },
             }
         },
@@ -298,11 +298,11 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                 },
                 Context::Left(i2, g2, c2, s2, u2) => {
                     step();
-                    simp();
+                    solve();
                 },
                 Context::Right(i2, g2, c2, s2, u2) => {
                     step();
-                    simp();
+                    solve();
                 },
             }
         },

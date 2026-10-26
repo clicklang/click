@@ -28,7 +28,7 @@ fn authority_control_extra_payload_does_not_replace_counter_ownership() {
         verifying "private_body.c";
         void keep(struct object* obj) {
             owns control(obj);
-        } by { execute(); simp(); }
+        } by { execute(); solve(); }
     "#;
     let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
         .expect_err("payload ownership does not authenticate the counter load");
@@ -60,12 +60,12 @@ fn authority_member_local_body_uses_scalar_allocation_ownership() {
             step();
             fold(authority(reference(&x)));
             fold(reference(&x));
-            have count(reference(&x)) == 1 by { simp(); }
+            have count(reference(&x)) == 1 by { solve(); }
             unfold(reference(&x));
-            have count(reference(&x)) == 0 by { simp(); }
+            have count(reference(&x)) == 0 by { solve(); }
             unfold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
@@ -95,17 +95,17 @@ fn authority_member_private_heap_body_round_trip() {
             step();
             branch {
                 execute();
-                simp();
+                solve();
             } else {}
             fold(authority(reference(p)));
             fold(reference(p));
             open(reference(p)) {
-                have count(reference(p)) == 1 by { simp(); }
+                have count(reference(p)) == 1 by { solve(); }
             }
             unfold(reference(p));
             unfold(authority(reference(p)));
             execute();
-            simp();
+            solve();
         }
     "#;
     verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
@@ -137,7 +137,7 @@ fn authority_helper_returns_member_with_private_memory_body() {
         } by {
             open(reference(p)) { step(); }
             execute();
-            simp();
+            solve();
         }
 
         int32 value() {
@@ -145,7 +145,7 @@ fn authority_helper_returns_member_with_private_memory_body() {
         } by {
             step();
             step();
-            branch { execute(); simp(); } else {}
+            branch { execute(); solve(); } else {}
             fold(authority(reference(p)));
             fold(reference(p));
             step();
@@ -153,7 +153,7 @@ fn authority_helper_returns_member_with_private_memory_body() {
             unfold(reference(p));
             unfold(authority(reference(p)));
             execute();
-            simp();
+            solve();
         }
     "#;
     verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
@@ -192,7 +192,7 @@ fn authority_helpers_create_and_consume_member_with_private_memory_body() {
             step();
             fold(reference(p));
             execute();
-            simp();
+            solve();
         }
 
         int32 release(int32* p) {
@@ -206,7 +206,7 @@ fn authority_helpers_create_and_consume_member_with_private_memory_body() {
             step();
             step();
             execute();
-            simp();
+            solve();
         }
 
         int32 value() {
@@ -214,16 +214,16 @@ fn authority_helpers_create_and_consume_member_with_private_memory_body() {
         } by {
             step();
             step();
-            branch { execute(); simp(); } else {}
+            branch { execute(); solve(); } else {}
             fold(authority(reference(p)));
             step();
             step();
-            have count(reference(p)) == 1 by { simp(); }
+            have count(reference(p)) == 1 by { solve(); }
             step();
-            have count(reference(p)) == 0 by { simp(); }
+            have count(reference(p)) == 0 by { solve(); }
             unfold(authority(reference(p)));
             execute();
-            simp();
+            solve();
         }
     "#;
     verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
@@ -251,7 +251,7 @@ fn authority_creating_helper_cannot_outlive_caller_scalar_storage() {
             step();
             fold(reference(p));
             execute();
-            simp();
+            solve();
         }
         int32 value() {
             ensures result == 7;
@@ -259,7 +259,7 @@ fn authority_creating_helper_cannot_outlive_caller_scalar_storage() {
             step();
             fold(authority(reference(&x)));
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
@@ -286,7 +286,7 @@ fn authority_consuming_helper_cannot_return_the_wrong_private_body() {
         } by {
             unfold(reference(p));
             execute();
-            simp();
+            solve();
         }
     "#;
     let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
@@ -328,7 +328,7 @@ fn authority_member_private_heap_body_cannot_back_two_births() {
         } by {
             step();
             step();
-            branch { execute(); simp(); } else {}
+            branch { execute(); solve(); } else {}
             fold(authority(reference(p)));
             fold(reference(p));
             fold(reference(p));
@@ -354,7 +354,7 @@ fn authority_malloc_statement_evidence_starts_at_running_state() {
             step();
             step();
             execute();
-            simp();
+            solve();
         }
     "#;
     verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
@@ -385,7 +385,7 @@ fn authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes(
         verifying "private_body.c";
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { execute(); simp(); } else {}
+            branch { execute(); solve(); } else {}
             step();
             fold(authority(reference(p)));
             fold(control(p));
@@ -399,7 +399,7 @@ fn authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes(
             }
             unfold(control(p));
             unfold(authority(reference(p)));
-            execute(); simp();
+            execute(); solve();
         }
     "#;
     verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
@@ -430,7 +430,7 @@ fn authority_control_wrapper_rejects_a_false_close_invariant() {
         verifying "private_body.c";
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { execute(); simp(); } else {}
+            branch { execute(); solve(); } else {}
             step();
             fold(authority(reference(p)));
             fold(control(p));
@@ -474,7 +474,7 @@ fn authority_control_wrapper_requires_its_contained_authority() {
         verifying "private_body.c";
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { execute(); simp(); } else {}
+            branch { execute(); solve(); } else {}
             step();
             fold(control(p));
         }
@@ -507,7 +507,7 @@ fn authority_control_wrapper_requires_its_counter_memory() {
         verifying "private_body.c";
         int32 value() { ensures result == -1 or result == 1; } by {
             step(); step();
-            branch { execute(); simp(); } else {}
+            branch { execute(); solve(); } else {}
             step();
             fold(authority(reference(p)));
             step();
@@ -558,7 +558,7 @@ fn authority_control_survives_balanced_helper_calls() {
                 step();
                 fold(reference(p));
             }
-            execute(); simp();
+            execute(); solve();
         }
         void release(int32* p) {
             owns control(p);
@@ -569,23 +569,23 @@ fn authority_control_survives_balanced_helper_calls() {
                 unfold(reference(p));
                 step();
             }
-            execute(); simp();
+            execute(); solve();
         }
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { execute(); simp(); } else {}
+            branch { execute(); solve(); } else {}
             step();
             fold(authority(reference(p)));
             fold(control(p));
             step();
             open(control(p)) {
-                have count(reference(p)) == 1 by { simp(); }
-                have p[0] == 1 by { simp(); }
+                have count(reference(p)) == 1 by { solve(); }
+                have p[0] == 1 by { solve(); }
             }
             step();
             unfold(control(p));
             unfold(authority(reference(p)));
-            execute(); simp();
+            execute(); solve();
         }
     "#;
     verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
@@ -635,18 +635,18 @@ fn authority_final_release_helper_retires_population_and_allocation() {
             unfold(reference(obj));
             unfold(authority(reference(obj)));
             step();
-            execute(); simp();
+            execute(); solve();
         }
 
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { execute(); simp(); } else {}
+            branch { execute(); solve(); } else {}
             step();
             fold(authority(reference(obj)));
             fold(reference(obj));
             fold(control(obj));
             step();
-            execute(); simp();
+            execute(); solve();
         }
     "#;
     verify_c0_project(&project(click_source), &[("private_body.c", c_source)])

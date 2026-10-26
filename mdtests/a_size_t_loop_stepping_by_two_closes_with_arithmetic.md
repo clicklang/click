@@ -1,9 +1,9 @@
 # A size_t loop stepping by two closes with arithmetic
 
 The loop of `a_size_t_loop_stepping_by_two_closes_with_explicit_steps.md`,
-with each of its two 64-bit facts proved by one `arithmetic() using`.
+with each of its two 64-bit facts proved by one `solve() using`.
 
-`arithmetic` reads a `uint64` order goal through the exact Integer
+Arithmetic reads a `uint64` order goal through the exact Integer
 observations of its operands. It carries each listed 64-bit premise to
 Integer order, shows that each sum and difference in the premises and the
 goal does not wrap, proves the Integer claim, and carries it back. The

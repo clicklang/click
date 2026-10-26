@@ -74,7 +74,7 @@ void set_one(struct cell* cell) {
     ensures cell->value == 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void set_two(struct cell* cell) {
@@ -83,7 +83,7 @@ void set_two(struct cell* cell) {
     ensures cell->value == 2;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void restore_one(struct cell* cell) {
@@ -92,7 +92,7 @@ void restore_one(struct cell* cell) {
     ensures cell->value == 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void require_one(struct cell* cell) {
@@ -100,7 +100,7 @@ void require_one(struct cell* cell) {
     views cell_storage(cell);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 post_call_chain(struct cell* cell) {
@@ -108,7 +108,7 @@ int32 post_call_chain(struct cell* cell) {
     ensures result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

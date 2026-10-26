@@ -1,7 +1,7 @@
 # A callee's `ensures` about an abstract resource's field supports arithmetic
 
 `grow`'s `ensures o.size == old(o.size) + delta` relates the new field to the
-old one. Through two calls, `simp` substitutes the equalities in turn: the
+old one. Through two calls, `solve` substitutes the equalities in turn: the
 caller states the size two steps on, bounds it, and reads it back as an
 offset from entry, none of which restates `grow`'s postcondition.
 

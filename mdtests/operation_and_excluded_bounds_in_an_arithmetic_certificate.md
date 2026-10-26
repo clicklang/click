@@ -1,6 +1,6 @@
 # An arithmetic certificate cites operation and excluded bounds
 
-`click expand` writes the bounds `auto` used as certificate nodes.
+`click expand` writes the bounds arithmetic used as certificate nodes.
 `operation_bound => P;` states the bound an unsigned quotient, shift, or
 remainder by a constant takes from its operand, and the kernel finds the
 operation among `P`'s own terms. `excluded_bound N: D => P;` cites premise `N`,

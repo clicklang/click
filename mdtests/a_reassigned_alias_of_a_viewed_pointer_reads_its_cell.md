@@ -5,7 +5,7 @@ its own equality, so the outcome knows `q == p` at two points, once about the
 value `q` held after the first call and once about the value it holds now. The
 read of `q[0]` is a load through the newer value.
 
-`simp` closes such a goal by rewriting with the recorded equalities. It used to
+`solve` closes such a goal by rewriting with the recorded equalities. It used to
 commit to the first one that applied, and rewriting `p` into the *older* value
 of `q` leaves a goal no rewrite by the newer equality makes reflexive. Every
 remaining equality is now offered the chance to close the goal before one that

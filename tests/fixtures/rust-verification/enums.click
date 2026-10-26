@@ -7,4 +7,4 @@ fn grow(s: Shape) -> Shape {
         Shape::Rect(w, h) => Shape::Rect(w, h),
         Shape::Empty => Shape::Empty,
     };
-} by { execute(); simp(); }
+} by { execute(); solve(); }

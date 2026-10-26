@@ -25,7 +25,7 @@ int32 element_is_aligned(struct pair* p, int32 i) {
     ensures result == 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

@@ -27,22 +27,22 @@ int32 count() { ensures result == 3; } by {
         decreases 3 - i;
         invariant i >= 0;
         invariant i <= 3;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             mark iteration;
             step();
             close_invariants() by {
-                both { simp(); }
+                both { solve(); }
                 and {
-                    both { simp(); }
-                    and { both { arithmetic() using { at(iteration, i) < 3; at(iteration, i) >= 0; }; }
-                        and { arithmetic() using { at(iteration, i) < 3; at(iteration, i) >= 0; }; } }
+                    both { solve(); }
+                    and { both { solve() using { at(iteration, i) < 3; at(iteration, i) >= 0; }; }
+                        and { solve() using { at(iteration, i) < 3; at(iteration, i) >= 0; }; } }
                 }
             }
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

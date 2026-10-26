@@ -39,7 +39,7 @@ function nested_bound(lo: int32, hi: int32) -> int32 {
 }
 
 int32 fold_binder_is_not_an_enclosing_accumulator(int32 lo, int32 hi) {
-    ensures distinct_folds: nested_free(lo, hi) == nested_bound(lo, hi) by { execute(); simp(); }
+    ensures distinct_folds: nested_free(lo, hi) == nested_bound(lo, hi) by { execute(); solve(); }
 }
 ```
 

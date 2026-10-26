@@ -261,10 +261,10 @@ fn branches(n: usize) -> (String, String) {
             fact s <= {bound};
         }} then {{
             step();
-            have 0 <= s by {{ simp(); }}
-            have s <= {bound} by {{ simp(); }}
+            have 0 <= s by {{ solve(); }}
+            have s <= {bound} by {{ solve(); }}
         }} else {{
-            have s <= {bound} by {{ simp(); }}
+            have s <= {bound} by {{ solve(); }}
         }}"
         )
     });
@@ -277,7 +277,7 @@ int32 caller({params}) {{
         step();
 {arms}
         step();
-        simp();
+        solve();
     }}
 }}"
     );
@@ -341,7 +341,7 @@ int32 caller(int32* p) {{
     step();
 {proof}
     step();
-    simp();
+    solve();
 }}"
     );
     (c, click)
@@ -402,7 +402,7 @@ int32 caller(int32* data, struct box* b) {{
     owns data[0..4];
 }} by {{
     execute();
-    simp();
+    solve();
 }}"
             )
         })
@@ -1041,9 +1041,9 @@ int32 caller({params}) {{
     ensures result == a0 by {{
         step();
         step();
-        have s == a0 by {{ simp(); }}
+        have s == a0 by {{ solve(); }}
         step();
-        simp();
+        solve();
     }}
 }}"
     );

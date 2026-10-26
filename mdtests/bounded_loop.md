@@ -1,7 +1,7 @@
 # bounded loop verification
 
 This checks the current bounded loop path: a loop with concrete state can be
-unrolled by `auto` until it reaches the return.
+unrolled by the implicit tail until it reaches the return.
 
 The same execution is the loop's termination evidence. A loop the proof does
 not summarize has one route through the verifier, which runs it one bounded
@@ -25,7 +25,7 @@ int32 count_to_three() {
 verifying "bounded_loop.c";
 
 int32 count_to_three() {
-    ensures returns_three: result == 3 by auto();
+    ensures returns_three: result == 3;
 }
 ```
 

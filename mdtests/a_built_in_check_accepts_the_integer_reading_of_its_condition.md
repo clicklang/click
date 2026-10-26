@@ -47,7 +47,7 @@ uint32 fits(uint32 a, uint32 b) {
 theorem a_difference_in_range_is_defined(a: int32, b: int32) {
     requires to_integer(a) - to_integer(b) >= -2147483648;
     requires to_integer(a) - to_integer(b) <= 2147483647;
-    ensures defined(a - b) by auto();
+    ensures defined(a - b);
 }
 ```
 

@@ -62,7 +62,7 @@ int32 read_shared() {
     requires shared_table[2] == 6;
     requires shared_table[3] == 0;
     requires shared_table[4] == 9;
-    ensures result == 18 by auto();
+    ensures result == 18;
 }
 
 int32 read_private() {
@@ -80,7 +80,7 @@ int32 read_private() {
     requires local_table[2] < 1000;
     requires local_table[3] > -1000;
     requires local_table[3] < 1000;
-    ensures to_integer(result) == to_integer(private_table[0] + private_table[2] + local_table[0] + local_table[1] + local_table[2] + local_table[3]) by auto();
+    ensures to_integer(result) == to_integer(private_table[0] + private_table[2] + local_table[0] + local_table[1] + local_table[2] + local_table[3]);
 }
 
 int32 run() {

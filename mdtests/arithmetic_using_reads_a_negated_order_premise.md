@@ -1,4 +1,4 @@
-# `arithmetic` reads a negated order premise as the reverse order
+# Arithmetic reads a negated order premise as the reverse order
 
 `not (a >= b)` is the same ordered pair as `a < b`. A certificate that adds it
 to another bound prints the sum of the pair, and the check reads the negated

@@ -53,11 +53,11 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                         k < at(before, i);
                     };
                 } else {
-                    have k < at(before, i) + 1 by { auto(); }
+                    have k < at(before, i) + 1;
                     have k <= at(before, i) by {
                         solve() using { k < at(before, i) + 1; };
                     }
-                    have k == at(before, i) by auto();
+                    have k == at(before, i);
                     rewrite(k == at(before, i));
                     solve();
                 }
@@ -65,7 +65,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
         }
     }
     step_until(function.exit);
-    have at(loop(0).exit, i) == length by auto();
+    have at(loop(0).exit, i) == length;
     have forall (k: uint64) { k < length implies bytes[k] == value } by {
         intro();
         intro();

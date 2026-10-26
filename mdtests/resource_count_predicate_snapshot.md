@@ -45,10 +45,10 @@ struct object* object_retain(struct object* obj) {
         fold(object_ref(obj));
         have valid_refcount(obj) by {
             unfold(valid_refcount);
-            simp();
+            solve();
         }
     }
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

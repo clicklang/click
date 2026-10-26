@@ -7,7 +7,7 @@ counter, so nothing relates `c.rank` to `i` and `have c.rank == i` has no
 proof.
 
 When the two allocators were separate streams that both started at the same
-identity, `c.rank` and `i` became the *same* kernel variable and `simp` closed
+identity, `c.rank` and `i` became the *same* kernel variable and `solve` closed
 that `have` outright. With `invariant c.rank == old(c.rank)` and
 `requires c.rank == 0` that yields `i == 0` on every visit, and this loop —
 which plainly leaves `i == n` — proved the false `ensures n <= 1`.
@@ -55,13 +55,13 @@ int32 spin(struct cell* node, int32 n) {
         preserve by {
             have c.rank == i;
             have i == 0 by { solve() using { c.rank == i; c.rank == old(c.rank); old(c.rank) == 0; }; }
-            have 0 <= n - i - 1 by { arithmetic() using { i < n; 0 <= i; }; }
-            have n - i - 1 < n - i by { arithmetic() using { i < n; 0 <= i; }; }
+            have 0 <= n - i - 1 by { solve() using { i < n; 0 <= i; }; }
+            have n - i - 1 < n - i by { solve() using { i < n; 0 <= i; }; }
             step();
             close_invariants();
         }
     }
-    have n <= 1 by { arithmetic() using { i >= n; i <= 1; }; }
+    have n <= 1 by { solve() using { i >= n; i <= 1; }; }
     step();
     solve();
 }

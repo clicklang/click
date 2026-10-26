@@ -1,9 +1,9 @@
-# simp proves defined over a field read through a produced resource
+# solve proves defined over a field read through a produced resource
 
 After `init(pool, 1)`, `pool` is reached through the resource `control(pool)`
 that `init` produced, so `defined(pool->capacity - 1)` lowers to the
 subtraction's overflow condition together with the definedness of the read.
-`simp` proves `defined(pool->capacity)` as a nested `have` and cites it,
+`solve` proves `defined(pool->capacity)` as a nested `have` and cites it,
 beside the bound `pool->capacity == 1`, in the `int32_defined` rule, which
 accepts the read's definedness as a cited premise.
 

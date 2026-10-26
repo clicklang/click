@@ -1,7 +1,7 @@
 # Grouped function proof
 
-A trailing proof block proves all resource and pure postconditions from one
-execution pass. `simp()` closes the postconditions from the resulting shared
+The omitted proofs share one implicit tail, which proves all resource and pure postconditions from one
+execution pass. Its closer closes the postconditions from the resulting shared
 state; the write bound comes from the contract's ownership, with no separate
 effect goal to discharge.
 

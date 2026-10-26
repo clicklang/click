@@ -1,10 +1,10 @@
-# `auto` proves an implication whose consequent needs the solver
+# The implicit closer proves an implication whose consequent needs the solver
 
 Under Integer specification arithmetic, `b->cap == old(b->cap) + 1` compares exact
 Integers, so proving it needs the operation identity
 `to_integer(old(b->cap) + 1) == to_integer(old(b->cap)) + 1`, which only the
 solver finds. As a claim under `result == 1 implies`, the antecedent reads
-`true` on the growing path and `simp` misses the consequent. `auto` then
+`true` on the growing path and `solve` misses the consequent. The implicit closer then
 introduces the antecedent and runs the solver on the consequent. The function
 shape is the owned-vector example's `vector_grow`.
 

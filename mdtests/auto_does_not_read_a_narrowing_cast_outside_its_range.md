@@ -1,4 +1,4 @@
-# `auto` does not read a narrowing cast outside its range
+# The implicit closer does not read a narrowing cast outside its range
 
 The negative of
 [`auto_reads_a_narrowing_cast_inside_its_range.md`](auto_reads_a_narrowing_cast_inside_its_range.md).
@@ -19,7 +19,7 @@ uint32 narrow_wide(uint64 x) {
 } by {
     step();
     step();
-    have 1u32 <= y by { auto(); }
+    have 1u32 <= y;
 }
 ```
 

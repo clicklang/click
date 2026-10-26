@@ -91,7 +91,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                                 have sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), sized_context_parent(sized_path_context(path_model), stop)) == 1 by {
                                     rewrite(SizedTree::Node(identity, parent, color, value, left_model, right_model) == repaired.model); assumption();
                                 }
-                                have parent == sized_context_parent(sized_path_context(path_model), stop) by auto();
+                                have parent == sized_context_parent(sized_path_context(path_model), stop);
                                 let { metadata: metadata, left: left, right: right } = unfold(repaired);
                                 step(); step();
                                 have rb == parent by { normalize(); }

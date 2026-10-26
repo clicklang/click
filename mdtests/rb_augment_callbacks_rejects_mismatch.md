@@ -81,7 +81,7 @@ void dummy_propagate(struct node* node, struct node* stop) {
     ensures node->left == old(node->left);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void dummy_copy(struct node* old, struct node* new) {
@@ -91,7 +91,7 @@ void dummy_copy(struct node* old, struct node* new) {
     ensures new->left == old(new->left);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void dummy_rotate(struct node* old, struct node* new) {
@@ -102,7 +102,7 @@ void dummy_rotate(struct node* old, struct node* new) {
     ensures new->right == old(new->right);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void erase_augmented(struct node* node, struct node* parent,
@@ -119,7 +119,7 @@ void erase_augmented(struct node* node, struct node* parent,
     ensures parent->right == old(parent->right);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void erase_dummy(struct node* node, struct node* parent) {
@@ -135,7 +135,7 @@ void erase_dummy(struct node* node, struct node* parent) {
 } by {
     fold(rb_augment_callbacks_storage(&dummy_callbacks));
     execute();
-    simp();
+    solve();
 }
 ```
 

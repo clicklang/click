@@ -20,7 +20,7 @@ void issue(int32* pool, int32* p) {
     ensures to_integer(count(member(pool, _))) == to_integer(old(count(member(pool, _))) + 1);
 } by {
     open(control(pool)) { fold(member(pool, p)); }
-    execute(); simp();
+    execute(); solve();
 }
 void duplicate(int32* pool, int32* p) {
     owns control(pool);
@@ -28,12 +28,12 @@ void duplicate(int32* pool, int32* p) {
     requires to_integer(count(member(pool, _))) == 0;
     produces 2 of member(pool, p);
 } by {
-    have defined(count(member(pool, _)) + 1) by simp();
+    have defined(count(member(pool, _)) + 1) by solve();
     step();
-    have to_integer(count(member(pool, _))) == 1 by simp();
-    have defined(count(member(pool, _)) + 1) by simp();
+    have to_integer(count(member(pool, _))) == 1 by solve();
+    have defined(count(member(pool, _)) + 1) by solve();
     step();
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

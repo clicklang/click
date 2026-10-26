@@ -34,7 +34,7 @@ int32 f(int32 n) {
                 step();
                 step();
                 have result == 7;
-                simp();
+                solve();
             } else {
                 step();
                 step();
@@ -44,7 +44,7 @@ int32 f(int32 n) {
     }
     step();
     have result == 5;
-    simp();
+    solve();
 }
 ```
 

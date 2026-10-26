@@ -12,7 +12,7 @@ void set_pair(struct pair* p) {
     owns *p;
     ensures p->left == 7u64;
     ensures p->right == 11u64;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 uint64 set_global() {
     owns state;
     ensures result == 18u64;

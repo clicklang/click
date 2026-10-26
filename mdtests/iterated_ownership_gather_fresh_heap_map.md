@@ -45,7 +45,7 @@ void with_fresh_map(int32* data, int32 capacity) {
     step();
     branch {
         execute();
-        simp();
+        solve();
     } else {}
     step();
     loop {
@@ -66,7 +66,7 @@ void with_fresh_map(int32* data, int32 capacity) {
     gather(arena_cells(data, occupied, capacity));
     scatter(arena_cells(data, occupied, capacity));
     execute();
-    simp();
+    solve();
 }
 ```
 

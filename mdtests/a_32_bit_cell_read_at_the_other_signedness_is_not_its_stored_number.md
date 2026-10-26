@@ -17,7 +17,7 @@ int unsigned_stored_read_signed(void) {
 ```click
 verifying "a_32_bit_cell_read_at_the_other_signedness_is_not_its_stored_number.c";
 
-int unsigned_stored_read_signed() { ensures result == 4294967295 by auto(); }
+int unsigned_stored_read_signed() { ensures result == 4294967295; }
 ```
 
 ```expect

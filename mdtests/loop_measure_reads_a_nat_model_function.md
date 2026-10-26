@@ -7,7 +7,7 @@ ranking member can compare, so the measure ranks by its Integer image
 `nat::to_integer_nonnegative` already states that image's nonnegativity, so the
 bundle's nonnegativity member is closed by construction. Only the decrease is
 owed, and `nat::to_integer_succ` turns the arm's `Nat::Succ` into the `+ 1` that
-`arithmetic` compares. The `Integer` form of the same loop is
+arithmetic compares. The `Integer` form of the same loop is
 `loop_measure_reads_a_model_function.md`.
 
 ```c filename=loop_measure_reads_a_nat_model_function.c

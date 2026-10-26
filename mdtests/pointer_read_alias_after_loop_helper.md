@@ -22,7 +22,7 @@ resource cell(p: struct node*) {
 void copy_tag(struct node *p, struct node *q) {
  owns p->tag; owns q->tag;
  ensures q->tag == old(p->tag); ensures p->tag == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 spec enum Tree { At(struct node*, Pair) }
 function tree_identity(t: Tree) -> struct node* { match t { Tree::At(id, c) => id, } }
 resource parent(p: struct node*) {
@@ -38,11 +38,11 @@ void inspect(struct node *p) {
  requires p == tree_identity(t.model);
  ensures 1 == 1;
 } by {
- execute_until(loop(0));
- loop { owns t: parent(root); invariant p == tree_identity(t.model); decreases 0; initialize by simp(); preserve by {
+ step_until(loop(0));
+ loop { owns t: parent(root); invariant p == tree_identity(t.model); decreases 0; initialize by solve(); preserve by {
  match t.model { Tree::At(pid, cm) => {
  have p == tree_identity(Tree::At(pid, cm)) by { rewrite(Tree::At(pid, cm) == t.model); assumption(); }
- have p == pid by { unfold(tree_identity(Tree::At(pid, cm))); simp(); }
+ have p == pid by { unfold(tree_identity(Tree::At(pid, cm))); solve(); }
  let { child: c } = unfold(t);
  match c.model {
   Pair::At(identity) => {
@@ -64,7 +64,7 @@ void inspect(struct node *p) {
  }
  }, }
  } }
- execute(); simp();
+ execute(); solve();
 }
 ```
 

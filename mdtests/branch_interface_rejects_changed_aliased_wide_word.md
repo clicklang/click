@@ -72,23 +72,23 @@ resource parent_at(p: struct node*) {
 void set_tag(struct node* p) {
     owns p->tag;
     ensures p->tag == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void inspect(struct node* parent) {
     consumes tree_context: parent_at(parent);
     requires parent == parent_identity(tree_context.model);
     ensures 1 == 1;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         owns tree_context: parent_at(root);
         invariant parent == parent_identity(tree_context.model);
         decreases 0;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match tree_context.model {
                 Parent::At(pid, sm, fm) => {
                     have parent == parent_identity(Parent::At(pid, sm, fm)) by { rewrite(Parent::At(pid, sm, fm) == tree_context.model); assumption(); }
-                    have parent == pid by { unfold(parent_identity(Parent::At(pid, sm, fm))); simp(); }
+                    have parent == pid by { unfold(parent_identity(Parent::At(pid, sm, fm))); solve(); }
                     let { c: c, f: f } = unfold(tree_context);
             match c.model {
                 Pair::At(model, far_identity, lm) => {
@@ -116,7 +116,7 @@ void inspect(struct node* parent) {
                     have sibling == model;
                     have far == far_identity;
                     have far->tag == (address(sibling) | 1);
-                    have far_identity->tag == (address(model) | 1) by { simp() using { far->tag == (address(sibling) | 1); far == far_identity; sibling == model; }; }
+                    have far_identity->tag == (address(model) | 1) by { solve() using { far->tag == (address(sibling) | 1); far == far_identity; sibling == model; }; }
                     mark before_update;
                     match lm ensuring {
                         owns after: leaf_at(child);
@@ -151,7 +151,7 @@ void inspect(struct node* parent) {
             }
         }
     }
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

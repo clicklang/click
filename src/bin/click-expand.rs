@@ -16,7 +16,7 @@ use click::surface::{
     tactic_source_position, verify_project_at, verify_sources_at,
 };
 
-const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output; a --claim expansion is checked with the implicit `auto` off, so it is self-contained. With --in-place, the original is atomically replaced only after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
+const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output; a --claim expansion is checked with the implicit closer off, so it is self-contained. With --in-place, the original is atomically replaced only after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
@@ -604,7 +604,7 @@ fn verified_expansion(
 }
 
 /// Checks the expansion before it is written. A whole claim's expansion has
-/// nothing smart left, so it is checked with the implicit `auto` off and so
+/// nothing smart left, so it is checked with the implicit closer off and so
 /// shown self-contained; a single site's leaves
 /// the claim's other steps and smart tactics, which still use it.
 fn verify_expansion(
@@ -772,10 +772,10 @@ mod tests {
         let (line_index, line) = click_source
             .lines()
             .enumerate()
-            .find(|(_, line)| *line == "    simp();")
+            .find(|(_, line)| *line == "    solve();")
             .expect("fixture should contain an exit simp");
         let markdown_line = mdtest.click_start_line + line_index;
-        let column = line.find("simp()").unwrap() + 1;
+        let column = line.find("solve()").unwrap() + 1;
         let selection = format!("{}:{markdown_line}:{column}", path.display());
         let arguments = parse_arguments([selection]).expect("fixture selection should parse");
         // Use the artifact loader so the C inputs survive both expansion and
@@ -834,7 +834,7 @@ mod tests {
         let c_source = "int32 identity(int32 x) { return x; }";
         let click_source = r#"verifying "identity.c";
 int32 identity(int32 x) {
-    ensures result == x by { execute(); simp(); }
+    ensures result == x by { execute(); solve(); }
 }
 "#;
         let click_path = directory.join("project.click");
@@ -996,10 +996,10 @@ int32 identity(int32 x) {
         let click_source = r#"verifying "good.c";
 verifying "bad.c";
 int32 good(int32 x) {
-    ensures result == x by { execute(); simp(); }
+    ensures result == x by { execute(); solve(); }
 }
 int32 bad(int32 x) {
-    ensures result == x + 1 by simp();
+    ensures result == x + 1 by solve();
 }
 "#;
         let click_path = directory.join("project.click");
@@ -1025,7 +1025,8 @@ int32 bad(int32 x) {
 
         assert_ne!(expanded, click_source);
         assert!(
-            expanded.ends_with("int32 bad(int32 x) {\n    ensures result == x + 1 by simp();\n}\n")
+            expanded
+                .ends_with("int32 bad(int32 x) {\n    ensures result == x + 1 by solve();\n}\n")
         );
         fs::remove_dir_all(directory).unwrap();
     }
@@ -1045,7 +1046,7 @@ int32 bad(int32 x) {
             .expect("fixture should contain the nested smart have")
             + 1;
         let simp = markdown.lines().nth(have_line).unwrap();
-        assert_eq!(simp.trim(), "simp() using {", "{simp}");
+        assert_eq!(simp.trim(), "solve() using {", "{simp}");
         let run_at = |line: usize, column: usize| {
             run(&Arguments {
                 click_path: path.clone(),
@@ -1059,7 +1060,7 @@ int32 bad(int32 x) {
             })
         };
 
-        let from_simp = run_at(have_line + 1, simp.find("simp").unwrap() + 1)
+        let from_simp = run_at(have_line + 1, simp.find("solve").unwrap() + 1)
             .expect("the nested simp should select its smart have");
         let from_have = run_at(have_line, 9).expect("the have keyword should select it");
 
@@ -1070,7 +1071,7 @@ int32 bad(int32 x) {
             "{from_simp}"
         );
         assert!(
-            !from_simp.contains("simp() using {\n                    defined(1 + got)"),
+            !from_simp.contains("solve() using {\n                    defined(1 + got)"),
             "{from_simp}"
         );
     }
@@ -1182,13 +1183,13 @@ int32 bad(int32 x) {
         }
     }
 
-    /// Loop phases: the smart `initialize by simp()` and the smart
+    /// Loop phases: the smart `initialize by solve()` and the smart
     /// `close_invariants()` of a frontier-local loop are selected by line.
     #[test]
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn lines_in_loop_phases_select_their_smart_tactics() {
         let path = mdtest_path("c_decreases_count_up.md");
-        for (line, text) in [(27, "initialize by simp();"), (30, "close_invariants();")] {
+        for (line, text) in [(27, "initialize by solve();"), (30, "close_invariants();")] {
             assert_eq!(markdown_line(&path, line).trim(), text);
             let expanded = run_location(&path, &line.to_string())
                 .unwrap_or_else(|error| panic!("line {line}: {error}"));
@@ -1202,11 +1203,11 @@ int32 bad(int32 x) {
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn a_column_inside_a_close_bundle_selects_the_bundle() {
         let path = mdtest_path("loop_invariant_body.md");
-        assert_eq!(markdown_line(&path, 35).trim(), "both { simp(); }");
+        assert_eq!(markdown_line(&path, 35).trim(), "both { solve(); }");
         let from_simp = run_location(&path, "35:24").unwrap();
         let from_bundle = run_location(&path, "34:13").unwrap();
         assert_eq!(from_simp, from_bundle);
-        assert!(!from_simp.contains("both { simp(); }"), "{from_simp}");
+        assert!(!from_simp.contains("both { solve(); }"), "{from_simp}");
     }
 
     /// Call outcomes: the `simp` closing the `returned` arm is selected by
@@ -1215,14 +1216,14 @@ int32 bad(int32 x) {
     #[ignore = "nightly: 1.1s in the parallel gate"]
     fn a_line_in_a_call_outcome_arm_selects_its_smart_tactic() {
         let path = mdtest_path("cpp_single_guard_throw_step.md");
-        assert_eq!(markdown_line(&path, 81).trim(), "simp();");
+        assert_eq!(markdown_line(&path, 81).trim(), "solve();");
         let expanded = run_location(&path, "81").unwrap();
         let tail = expanded
             .split_once("        threw => {\n")
             .expect("the threw arm is kept")
             .1;
         assert!(
-            tail.starts_with("            step();\n            execute();\n            simp();\n"),
+            tail.starts_with("            step();\n            execute();\n            solve();\n"),
             "{expanded}"
         );
     }
@@ -1249,18 +1250,18 @@ int32 bad(int32 x) {
             \x20   ensures result == x;\n\
             } by {\n\
             \x20   have x <= x by {\n\
-            \x20       have x == x by { simp(); }\n\
-            \x20       simp();\n\
+            \x20       have x == x by { solve(); }\n\
+            \x20       solve();\n\
             \x20   }\n\
-            \x20   have x >= x by { have x == x by simp(); simp(); }\n\
+            \x20   have x >= x by { have x == x by solve(); solve(); }\n\
             \x20   execute();\n\
-            \x20   simp();\n\
+            \x20   solve();\n\
             }\n";
         fs::write(&click_path, click_source).unwrap();
 
         let expanded = run_location(&click_path, "7").unwrap();
         assert!(
-            expanded.contains("        have x == x by { simp(); }\n        normalize();\n    }\n"),
+            expanded.contains("        have x == x by { solve(); }\n        normalize();\n    }\n"),
             "{expanded}"
         );
         let ambiguous = run_location(&click_path, "9").expect_err("line 9 is ambiguous");
@@ -1273,7 +1274,7 @@ int32 bad(int32 x) {
         );
         let expanded = run_location(&click_path, "9:45").unwrap();
         assert!(
-            expanded.contains("    have x >= x by { have x == x by simp(); normalize(); }\n"),
+            expanded.contains("    have x >= x by { have x == x by solve(); normalize(); }\n"),
             "{expanded}"
         );
         let between =
@@ -1301,7 +1302,7 @@ int32 identity(int32 x) {
     ensures result == x;
 } by {
     execute();
-    simp();
+    solve();
 }
 "#;
         let click_path = directory.join("project.click");
@@ -1319,7 +1320,7 @@ int32 identity(int32 x) {
 
         assert_ne!(expanded, click_source);
         assert!(!expanded.contains("execute();"));
-        assert!(!expanded.contains("simp();"));
+        assert!(!expanded.contains("solve();"));
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1333,7 +1334,7 @@ int32 identity(int32 x) {
         fs::create_dir(&directory).unwrap();
         let click_path = directory.join("project.click");
         let click_source = r#"theorem successor(x: int32) {
-    ensures x == x by { simp(); }
+    ensures x == x by { solve(); }
 }
 "#;
         fs::write(&click_path, click_source).unwrap();
@@ -1348,7 +1349,7 @@ int32 identity(int32 x) {
         let expanded = run(&arguments).expect("pure theorem claims should expand by label");
 
         assert_ne!(expanded, click_source);
-        assert!(!expanded.contains("simp();"));
+        assert!(!expanded.contains("solve();"));
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1381,10 +1382,10 @@ int32 f(int32 a, int32 b) {
     loop {
         decreases a + 1;
         invariant a <= 0;
-        initialize by simp();
+        initialize by solve();
     }
     step();
-    simp();
+    solve();
 }
 "#;
         let click_path = directory.join("project.click");
@@ -1400,7 +1401,7 @@ int32 f(int32 a, int32 b) {
             })
         };
 
-        let written = "initialize by simp();";
+        let written = "initialize by solve();";
         let start = click_source.find(written).unwrap();
         let end = start + written.len();
         let by_label = expand("f.loop(0).initialize".to_string())
@@ -1438,7 +1439,7 @@ int32 f(int32 a, int32 b) {
         let click_path = directory.join("project.click");
         let click_source = r#"theorem add_one(x: Integer) {
     requires x == x;
-    ensures x + 1 > x by { simp(); }
+    ensures x + 1 > x by { solve(); }
 }
 
 theorem use_add_one(x: Integer) {
@@ -1468,7 +1469,7 @@ theorem use_add_one(x: Integer) {
         let c_source = "int32 identity(int32 x) { return x; }";
         let click_source = r#"verifying "identity.c";
 int32 identity(int32 x) {
-    ensures result == x by auto();
+    ensures result == x;
 }
 "#;
         let inputs = CInput::Bundle(vec![("identity.c".to_string(), c_source.to_string())]);
@@ -1500,7 +1501,7 @@ int32 identity(int32 x) {
         let c_source = "int32 identity(int32 x) { return x; }";
         let click_source = r#"verifying "identity.c";
 int32 identity(int32 x) {
-    ensures result == x by { execute(); simp(); }
+    ensures result == x by { execute(); solve(); }
 }
 "#;
         let click_path = directory.join("project.click");
@@ -1565,7 +1566,7 @@ mod output_context_tests {
         let c_source = "int32 identity(int32 x) { return x; }";
         let click_source = r#"verifying "identity.c";
 int32 identity(int32 x) {
-    ensures result == x by { execute(); simp(); }
+    ensures result == x by { execute(); solve(); }
 }
 "#;
         fs::write(directory.join("source/identity.c"), c_source).unwrap();

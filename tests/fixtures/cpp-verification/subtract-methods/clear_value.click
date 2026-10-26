@@ -8,7 +8,7 @@ void FeeFrac::operator-=(const FeeFrac& other) {
     ensures this->size == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 clear_value(struct FeeFrac& value, int32& untouched) {
@@ -21,5 +21,5 @@ int32 clear_value(struct FeeFrac& value, int32& untouched) {
     ensures untouched == old(untouched);
 } by {
     execute();
-    simp();
+    solve();
 }

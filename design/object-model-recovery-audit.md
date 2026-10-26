@@ -260,7 +260,7 @@ resource cell(p: int32*) { owns p[0]; }
 int32 probe(int32* p, int32 input) {
     owns cell(p);
     ensures result == input;
-} by { unfold(cell(p)); execute(); fold(cell(p)); simp(); }
+} by { unfold(cell(p)); execute(); fold(cell(p)); solve(); }
 ```
 
 The extraction adds only
@@ -338,7 +338,7 @@ int32 probe(struct Pair* p) {
     views p->first;
     views p->second;
     ensures result == p->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 Both probes exit 0. Under C11's one-element scalar domain,

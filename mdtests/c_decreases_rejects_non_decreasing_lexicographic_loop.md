@@ -41,11 +41,11 @@ int32 stuck_phase(int32 n) {
                 step();
                 solve();
             } else {
-                have 0 <= to_integer(i - 1) by auto();
+                have 0 <= to_integer(i - 1);
                 step();
                 step();
                 step();
-                have i >= 0 by { arithmetic() using { 0 <= i; }; }
+                have i >= 0 by { solve() using { 0 <= i; }; }
                 solve();
             }
         }

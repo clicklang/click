@@ -49,8 +49,6 @@ struct packet finish(struct packet value) {
     ensures result.values[0] == 5;
     ensures result.values[1] == 6;
     ensures result.bytes[0] == 9;
-} by {
-    auto();
 }
 
 int32 run_struct_by_value_array() {

@@ -86,35 +86,35 @@ int32 full(int32 x) {
     ensures result == result;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 partial(int32 x) {
     ensures result == result;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 zero(int32 x) {
     ensures result == result;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 assigned(int32 x) {
     ensures result == result;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 unsigned_index(uint32 x) {
     ensures result == result;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

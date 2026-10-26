@@ -1,10 +1,10 @@
-# `simp` does not carry a predicate from one argument to another
+# `solve` does not carry a predicate from one argument to another
 
 `holds(b, p)` asks whether a boxed integer is `p`. Knowing that it is says
 nothing about an unrelated `q`: with `b` the box of `0`, `holds(b, 0)` is `1`
 and `holds(b, 1)` is `0`.
 
-`simp()` used to prove the theorem below. The certificate it found was made of
+`solve()` used to prove the theorem below. The certificate it found was made of
 simple tactics: rewrite the goal's `1` to `holds(b, p)`, unfold both
 applications, and rewrite by the premise. The last step was the unsound one. A
 `rewrite` whose source is a composite term could not substitute through the

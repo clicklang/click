@@ -129,7 +129,7 @@ theorem length_nonnegative<T>(xs: List<T>) {
         induct(xs) as ih {
             List::Nil => {
                 unfold(length(List<T>::Nil));
-                simp();
+                solve();
             }
             List::Cons(value, rest) => {
                 apply(ih(rest));
@@ -175,8 +175,8 @@ template<class T> void Stack<T>::push(T value) {
             let tail = fold(nodes<T>(this->head->next), { items: List<T>::Nil });
             let state = fold(nodes<T>(this->head), { items: List::Cons(value, List<T>::Nil) }, { tail: tail });
             unfold(length(List::Cons(value, List<T>::Nil)));
-            have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64) by auto();
-            simp();
+            have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
+            solve();
         },
         List::Cons(top, below) => {
             let { tail: rest } = unfold(state);
@@ -184,8 +184,8 @@ template<class T> void Stack<T>::push(T value) {
             let tail = fold(nodes<T>(this->head->next), { items: List::Cons(top, below) }, { tail: rest });
             let state = fold(nodes<T>(this->head), { items: List::Cons(value, List::Cons(top, below)) }, { tail: tail });
             unfold(length(List::Cons(value, List::Cons(top, below))));
-            have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64) by auto();
-            simp();
+            have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
+            solve();
         },
     }
 }
@@ -217,7 +217,7 @@ template<class T> bool Stack<T>::pop(T& out) {
                 List::Nil => {
                     unfold(tail);
                     let state = fold(nodes<T>(this->head), { items: List<T>::Nil });
-                    have to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64) by auto();
+                    have to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);
                     unfold(length(List<T>::Nil));
                     have to_integer(old(this->count) - 1u64) == 0 by solve() using {
                         to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - 1;
@@ -225,18 +225,18 @@ template<class T> bool Stack<T>::pop(T& out) {
                         length(List::Cons(value, List<T>::Nil)) == length(List<T>::Nil) + 1;
                         length(List<T>::Nil) == 0;
                     };
-                    simp();
+                    solve();
                 },
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
                     let state = fold(nodes<T>(this->head), { items: List::Cons(next_value, next_items) }, { tail: next });
-                    have to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64) by auto();
+                    have to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);
                     have to_integer(old(this->count) - 1u64) == length(List::Cons(next_value, next_items)) by solve() using {
                         to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - 1;
                         to_integer(old(this->count)) == length(List::Cons(value, List::Cons(next_value, next_items)));
                         length(List::Cons(value, List::Cons(next_value, next_items))) == length(List::Cons(next_value, next_items)) + 1;
                     };
-                    simp();
+                    solve();
                 },
             }
         },
@@ -253,7 +253,7 @@ template<class T> Stack<T>::~Stack() {
         owns list: nodes<T>(this->head);
         decreases length(list.items);
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             match list.items {
                 List::Nil => { contradiction(list.items == List<T>::Nil); },
@@ -261,7 +261,7 @@ template<class T> Stack<T>::~Stack() {
                     let { tail: tail } = unfold(list);
                     unfold(length(List::Cons(value, rest)));
                     apply(length_nonnegative(rest));
-                    have 0 <= length(tail.items) by simp();
+                    have 0 <= length(tail.items) by solve();
                     have length(tail.items) < length(List::Cons(value, rest)) by solve() using {
                         length(List::Cons(value, rest)) == length(rest) + 1;
                         tail.items == rest;
@@ -275,7 +275,7 @@ template<class T> Stack<T>::~Stack() {
         }
     }
     unfold(list);
-    simp();
+    solve();
 }
 int round_trip(Container<int>& container, int x) {
     requires to_integer(size(container)) == length(items(container));
@@ -291,17 +291,17 @@ int caller(Stack<int>& stack, int x) {
 } by {
     execute();
     unfold(first_or(List<int>::Cons(x, old(state.items)), 0));
-    simp();
+    solve();
 }
 int local_round_trip(int x) {
     ensures result == x;
 } by {
-    execute_until(region(2));
+    step_until(region(2));
     let state = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     execute();
     unfold(first_or(List<int32>::Cons(x, List<int32>::Nil), 0));
-    simp();
+    solve();
 }
 unsigned long pushed_size(Container<int>& container, int x) {
     requires to_integer(size(container)) == length(items(container));
@@ -310,7 +310,7 @@ unsigned long pushed_size(Container<int>& container, int x) {
 } by {
     execute();
     unfold(length(List<int32>::Cons(x, old(items(container)))));
-    simp();
+    solve();
 }
 ```
 

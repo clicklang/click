@@ -32,7 +32,7 @@ void bump(int32 a[], int32 n) {
     step();
     have icount(a, 0, 0) == 0;
     execute();
-    simp();
+    solve();
 }
 ```
 

@@ -28,5 +28,5 @@ void mark(int32 *left, int32 *visited, int32 n, int32 m, int32 cur) {
 ```
 
 ```expect
-fail: `simp` failed
+fail: `solve` failed
 ```

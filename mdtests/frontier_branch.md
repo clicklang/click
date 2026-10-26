@@ -40,7 +40,7 @@ int32 nested_branch(int32 x, int32 y) {
             step();
         }
         step();
-        simp();
+        solve();
     }
 }
 ```

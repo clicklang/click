@@ -72,15 +72,15 @@ int32 buffer_push(struct buffer* owner, int32 value) {
     unfold(owned_buffer(owner));
     execute();
     have 0 <= owner->len by {
-        simp();
+        solve();
     }
     have owner->len < owner->cap by {
-        simp() using {
+        solve() using {
             to_integer(old(owner->len) + 1) < to_integer(old(owner->cap));
         };
     }
     fold(owned_buffer(owner));
-    simp();
+    solve();
 }
 
 int32 buffer_push_preserves_first(
@@ -96,7 +96,7 @@ int32 buffer_push_preserves_first(
     ensures data[0] == old(data[0]);
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

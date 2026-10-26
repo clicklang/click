@@ -35,8 +35,8 @@ int32 walk(int32 s, int32 n) {
         preserve by {
             step();
             have i <= n;
-            have i < 2147483647 by { arithmetic() using { i <= n; n < 2147483647; }; }
-            have defined(i + 1) by auto();
+            have i < 2147483647 by { solve() using { i <= n; n < 2147483647; }; }
+            have defined(i + 1);
             close_invariants();
         }
     }

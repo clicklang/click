@@ -53,14 +53,10 @@ verifying "struct_aggregate_initializer_embedded_array.c";
 
 int32 struct_aggregate_initializer() {
     ensures result == 38;
-} by {
-    auto();
 }
 
 int32 struct_aggregate_initializer_embedded_array() {
     ensures result == 22;
-} by {
-    auto();
 }
 ```
 

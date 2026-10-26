@@ -39,21 +39,21 @@ int32 drain_to_zero(int32 value) {
     loop {
         decreases value;
         invariant value >= 0;
-        initialize by simp();
+        initialize by solve();
         preserve by {
-            have 0 <= to_integer(value - 1) by auto();
+            have 0 <= to_integer(value - 1);
             step();
             close_invariants() by {
-                both { arithmetic() using { 0 <= value; }; }
+                both { solve() using { 0 <= value; }; }
                 and {
-                    both { arithmetic() using { 0 <= value; }; }
-                    and { arithmetic() using { 0 <= value; }; }
+                    both { solve() using { 0 <= value; }; }
+                    and { solve() using { 0 <= value; }; }
                 }
             }
         }
     }
     step();
-    simp();
+    solve();
 }
 
 int32 run(int32 n) {
@@ -61,7 +61,7 @@ int32 run(int32 n) {
     ensures result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

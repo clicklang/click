@@ -1,11 +1,11 @@
-# `simp` does not open a call guarantee off its path
+# `solve` does not open a call guarantee off its path
 
 The companion of `simp_opens_a_call_guarantee_under_its_path_condition.md`
 asks for the guarantee's consequent on the branch where `r != 0`. There the
 antecedent `r == 0` is not available, and the consequent is false: `probe`
 returned 1 without writing `cell[1]`, which need not equal
 `at(before_probe, cell[0])`. Modus ponens needs the antecedent exactly, so
-`simp` refuses.
+`solve` refuses.
 
 ```c filename=probe.c
 int32 probe(int32 *cell) {
@@ -35,7 +35,7 @@ int32 probe(int32 *cell) {
     owns cell[0..2];
     ensures result == 0 or result == 1;
     ensures result == 0 implies cell[0] == 0 and cell[1] == old(cell[0]);
-} by auto();
+}
 
 int32 use_probe(int32 *cell) {
     owns cell[0..2];

@@ -21,7 +21,7 @@ trait trait_objects::Shape {
         requires 0 <= scale and scale <= 50;
         requires 0 <= size(self) and size(self) <= 100;
         ensures result == size(self) + scale + scale;
-    } by { execute(); simp(); }
+    } by { execute(); solve(); }
 }
 
 // Each implementation defines `size` and inherits `area`'s interface, read
@@ -29,25 +29,25 @@ trait trait_objects::Shape {
 impl trait_objects::Shape for trait_objects::Square {
     function size(self) -> i32 { self.side }
     fn area(&self, scale: i32) -> i32 {
-    } by { execute(); simp(); }
+    } by { execute(); solve(); }
     fn set(&mut self, half: i32) {
-    } by { execute(); simp(); }
+    } by { execute(); solve(); }
 }
 
 impl trait_objects::Shape for trait_objects::Circle {
     function size(self) -> i32 { self.radius + self.radius }
     fn area(&self, scale: i32) -> i32 {
-    } by { execute(); simp(); }
+    } by { execute(); solve(); }
     fn set(&mut self, half: i32) {
-    } by { execute(); simp(); }
+    } by { execute(); solve(); }
 }
 
 impl trait_objects::Shape for trait_objects::Tagged {
     function size(self) -> i32 { self.side }
     fn area(&self, scale: i32) -> i32 {
-    } by { execute(); simp(); }
+    } by { execute(); solve(); }
     fn set(&mut self, half: i32) {
-    } by { execute(); simp(); }
+    } by { execute(); solve(); }
 }
 
 // A reference to a bound type parameter, or a `&dyn Shape`, holds the
@@ -56,64 +56,64 @@ fn trait_objects::total<T: trait_objects::Shape>(shape: &T, scale: i32) -> i32 {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(shape) and size(shape) <= 100;
     ensures result == size(shape) + scale;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 fn trait_objects::dynamic(shape: &dyn trait_objects::Shape, scale: i32) -> i32 {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(shape) and size(shape) <= 100;
     ensures result == size(shape) + scale;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 // A caller that holds the struct passes it as the object, whose size is the
 // struct's definition: 3 for this `Square`, 2 + 2 for this `Circle`.
 fn trait_objects::through_bound(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 100;
     ensures result == 3 + scale;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 fn trait_objects::through_dyn(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 100;
     ensures result == 4 + scale;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 // A mutable reference to a bound type parameter, or a `&mut dyn Shape`,
 // holds the object too, and a call through it may change its size.
 fn trait_objects::reset<T: trait_objects::Shape>(shape: &mut T, half: i32) {
     requires 0 <= half and half <= 50;
     ensures size(shape) == half + half;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 fn trait_objects::reset_dyn(shape: &mut dyn trait_objects::Shape, half: i32) {
     requires 0 <= half and half <= 50;
     ensures size(shape) == half + half;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 // A caller that lends the struct mutably gets it back with fields that the
 // definitions equate to the object's new size, not the fields it lent.
 fn trait_objects::reset_square(half: i32) -> i32 {
     requires 0 <= half and half <= 50;
     ensures result == half + half;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 fn trait_objects::reset_dyn_square(half: i32) -> i32 {
     requires 0 <= half and half <= 50;
     ensures result == half + half;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 // `Square` keeps `area_twice`'s default body, called with its object.
 fn trait_objects::default_square(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 50;
     ensures result == 3 + scale + scale;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 // A shared object lends the struct's memory for the call, so the caller keeps
 // the fields the trait's functions do not read, `tag` here.
 fn trait_objects::tag_after_dyn(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 100;
     ensures result == 7;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 fn trait_objects::tag_after_bound(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 100;
     ensures result == 7;
-} by { execute(); simp(); }
+} by { execute(); solve(); }

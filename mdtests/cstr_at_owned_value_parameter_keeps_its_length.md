@@ -31,7 +31,7 @@ uint64 keep(uint8* p, uint64 n) {
     ensures result == old(m);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 uint64 measure(uint8* src, uint64 m) {
@@ -39,7 +39,7 @@ uint64 measure(uint8* src, uint64 m) {
     ensures result == m;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

@@ -40,7 +40,7 @@ int32* box_take(struct box* box) {
 } by {
     unfold(half_boxed(box));
     execute();
-    simp();
+    solve();
 }
 
 void box_release(struct box* box) {
@@ -49,7 +49,7 @@ void box_release(struct box* box) {
     owns box->data[1..2];
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

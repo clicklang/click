@@ -33,11 +33,11 @@ template<class T> class Wrap<T> : Holder<T> {
     function held(this) -> T { this->value }
 }
 template<class T> void Wrap<T>::put(T x) {
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 void store(Holder<int>& holder, int x) {
     ensures held(holder) == x;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

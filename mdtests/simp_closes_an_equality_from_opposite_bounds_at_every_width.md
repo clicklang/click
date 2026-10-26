@@ -1,11 +1,11 @@
-# `simp` closes an equality from opposite bounds at every width
+# `solve` closes an equality from opposite bounds at every width
 
 `a == b` follows from `a <= b` and `b <= a`. At `int32` the order facts are
 the kernel's signed order; at `uint32` they are the signed order of
 sign-flipped operands, and at 64 bits their own orders, which the atomic
-derivation does not combine into an equality. `simp` looks the two facts up
+derivation does not combine into an equality. `solve` looks the two facts up
 on the goal's operands, in any spelling (`a >= b`, `not (a < b)`), and closes
-the goal with an `arithmetic() using` step citing them. A loop that counts to
+the goal with a `solve() using` step citing them. A loop that counts to
 its bound ends this way: its invariant gives `i <= n` and its exit `not (i <
 n)`.
 

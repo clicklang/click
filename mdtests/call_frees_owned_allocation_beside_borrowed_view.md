@@ -36,7 +36,7 @@ void box_destroy(struct box* box) {
 } by {
     unfold(boxed(box));
     execute();
-    simp();
+    solve();
 }
 
 void box_release(struct box* box, struct box* other, int32* q) {
@@ -46,7 +46,7 @@ void box_release(struct box* box, struct box* other, int32* q) {
     views q[0..1];
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

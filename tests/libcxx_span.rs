@@ -154,7 +154,7 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
     ensures result == std_span_data(s)[1];
 }} by {{
     execute();
-    simp();
+    solve();
 }}"
     );
     check(

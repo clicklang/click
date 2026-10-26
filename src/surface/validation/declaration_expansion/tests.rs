@@ -183,7 +183,7 @@ fn check_isolated_program(value: i32, expected: i32) {
         verifying "answer.c";
         predicate wanted(x: int32) {{ x == {expected} }}
         int32 answer() {{
-            ensures wanted(result) by {{ execute(); unfold(wanted); simp(); }}
+            ensures wanted(result) by {{ execute(); unfold(wanted); solve(); }}
         }}
         "#
     );
@@ -358,7 +358,7 @@ fn certification_checks_only_the_cited_library_theorem() {
                 }
             }
             execute();
-            simp();
+            solve();
         }
     "#;
     let proved = proved_theorems_during(|| {

@@ -1,11 +1,11 @@
-# simp proves a constructor disequality from a call-produced field
+# solve proves a constructor disequality from a call-produced field
 
 `parent_attach` produces the instance `link` and ensures
-`link.link == ParentLink::Linked(kid)`. `simp` proves
+`link.link == ParentLink::Linked(kid)`. `solve` proves
 `link.link != ParentLink::Empty` from it: synthesis spells the produced
 field and the constructor, the equality rewrites the goal, and
 normalization decides the two constructors differ. The same reasoning lets
-the implicit `auto` prove `parent_detach`'s precondition on its call step.
+the implicit closer prove `parent_detach`'s precondition on its call step.
 
 The logical pointer annotations below use `void*` for address identities;
 object access remains governed by the unchanged C types and resource ownership.

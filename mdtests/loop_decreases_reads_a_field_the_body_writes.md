@@ -32,7 +32,7 @@ int32 drain(struct box* box) {
         invariant 0 <= box->len;
         initialize by solve();
         preserve by {
-            have 0 <= to_integer(box->len - 1) by auto();
+            have 0 <= to_integer(box->len - 1);
             step();
             close_invariants();
         }

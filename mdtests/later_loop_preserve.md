@@ -38,13 +38,13 @@ int32 later_loop_preserve() {
         invariant j >= 0 and j <= 1;
         preserve by {
             step();
-            simp();
+            solve();
         }
     }
     have i == 1;
     have j == 1;
     step();
-    simp();
+    solve();
 }
 ```
 

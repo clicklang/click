@@ -2,7 +2,7 @@
 
 Unsigned arithmetic wraps. Exact observations of addition and multiplication
 require a bound of the type's maximum; subtraction requires no underflow.
-`auto` reads the sum and difference identities by one rule at every width, so
+The omitted proof reads the sum and difference identities by one rule at every width, so
 the `uint32` ones close as the `uint64` ones do. Division
 and remainder require native and observed nonzero divisor facts and use
 mathematical truncation.
@@ -12,7 +12,7 @@ import click::integer;
 
 theorem bridge0(left: uint64, right: uint64) {
     requires to_integer(left) + to_integer(right) <= 18446744073709551615;
-    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by auto();
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
 }
 theorem bridge1(left: uint64, right: uint64) {
     requires to_integer(left) * to_integer(right) <= 18446744073709551615;
@@ -20,7 +20,7 @@ theorem bridge1(left: uint64, right: uint64) {
 }
 theorem bridge2(left: uint64, right: uint64) {
     requires to_integer(right) <= to_integer(left);
-    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by auto();
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
 }
 theorem bridge3(left: uint64, right: uint64) {
     requires right != 0u64;
@@ -34,19 +34,19 @@ theorem bridge4(left: uint64, right: uint64) {
 }
 theorem bridge5(left: uint64, right: uint64) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right) by auto();
+    ensures to_integer(left) <= to_integer(right);
 }
 theorem bridge6(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by auto();
+    ensures left <= right;
 }
 theorem bridge0_uint32(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
-    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by auto();
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
 }
 theorem bridge2_uint32(left: uint32, right: uint32) {
     requires to_integer(right) <= to_integer(left);
-    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by auto();
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
 }
 ```
 

@@ -8,7 +8,7 @@ caches nothing, and its havoc drops the entry cell. The havoc edge of `touch`
 still records the caller's flat member `b->v`, because the kept ranges are
 read from the residual ownership (every owned flat member in a block the
 write set may alias, through the per-block owned-memory index), not from the
-cells the havoc found cached. So `simp` names `b->v` across `touch` at its
+cells the havoc found cached. So `solve` names `b->v` across `touch` at its
 value before the call, and `give`'s postcondition carries it back to entry.
 
 The arena example meets the same shape in `arena_reuse`, where
@@ -51,7 +51,7 @@ void touch(int32* flags, int32* data, int32 n) {
     owns cells(flags, data, n);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void give(struct box* b) {
@@ -59,7 +59,7 @@ void give(struct box* b) {
     ensures b->v == old(b->v);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
@@ -71,10 +71,10 @@ int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
     mark m;
     step();
     have b->v == at(m, b->v) by {
-        simp();
+        solve();
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

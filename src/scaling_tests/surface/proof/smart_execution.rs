@@ -7,7 +7,7 @@ use crate::surface::proof::pure_theorems::PureTheoremContext;
 #[test]
 fn model_argument_guard_selection_is_independent_of_unrelated_facts() {
     let parsed = crate::surface::parse(
-        "spec enum Count { At(int32) } theorem accept(model: Count) { ensures model == model by simp(); }",
+        "spec enum Count { At(int32) } theorem accept(model: Count) { ensures model == model by solve(); }",
     ).unwrap();
     let theorem = &parsed.theorem_definitions()[0];
     let application = TheoremApplication {

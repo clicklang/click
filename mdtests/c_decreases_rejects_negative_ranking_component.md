@@ -28,7 +28,7 @@ int32 drift(int32 n) {
         invariant n <= 100;
         initialize by solve();
         preserve by {
-            have 0 <= to_integer(n - 1) by auto();
+            have 0 <= to_integer(n - 1);
             step();
             close_invariants() by { solve(); }
         }

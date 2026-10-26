@@ -62,15 +62,15 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                 intro();
                 intro();
                 if to_integer(k) < to_integer((i - 1)) {
-                    have to_integer(k) != to_integer((i - 1)) by auto();
+                    have to_integer(k) != to_integer((i - 1));
                     instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, i) implies at(region(3).entry, dst[k]) == old(src[k]) }, k);
                     transport(at(region(3).entry, dst[k]) == old(src[k]), dst[k] == old(src[k])) using {
                         at(region(3).entry, dst[k]) == old(src[k]);
                     };
                 } else {
                     have to_integer(k) == to_integer((i - 1)) by {
-                        have to_integer(k) <= to_integer((i - 1)) by auto();
-                        have k == ((i - 1)) by auto();
+                        have to_integer(k) <= to_integer((i - 1));
+                        have k == ((i - 1));
                         assumption();
                     }
                     instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, 3) implies at(region(3).entry, src[k]) == old(src[k]) }, k) using {

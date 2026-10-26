@@ -1,8 +1,8 @@
-# `auto` rewrites by an earlier `have` in a theorem
+# The implicit closer rewrites by an earlier `have` in a theorem
 
 A theorem with no C has no execution frontier to record spellings on, yet
-`auto` and `simp` cite a premise by its written form. A `have` there is
-spelled where the proof stands, as one in a C proof is, so `auto` can rewrite
+the implicit closer and `solve` cite a premise by its written form. A `have` there is
+spelled where the proof stands, as one in a C proof is, so the implicit closer can rewrite
 `black(v)` by `v == Walk::At(d, rest)` and close it by the requirement. The
 requirement alone does not do it: `same` has to be unfolded first, which the
 rewrite search does not try.
@@ -28,7 +28,7 @@ theorem black_through_an_earlier_have(v: Walk, d: Integer, rest: Walk) {
             rewrite(same(Walk::At(d, rest)) == Walk::At(d, rest));
             normalize();
         }
-        have black(v) == 1 by auto();
+        have black(v) == 1;
         assumption();
     }
 }

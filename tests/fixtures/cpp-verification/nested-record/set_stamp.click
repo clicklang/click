@@ -13,4 +13,4 @@ void FeeEnvelope::SetStamp(int next) {
     ensures this->state.right.fee == old(this->state.right.fee);
     ensures this->state.right.size == old(this->state.right.size);
     ensures this->state.generation == old(this->state.generation);
-} by { execute(); simp(); }
+} by { execute(); solve(); }

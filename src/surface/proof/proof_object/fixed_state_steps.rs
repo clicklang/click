@@ -3770,11 +3770,11 @@ impl<'a> Proof<'a> {
         };
         Some(if accepted {
             format!(
-                "`{target}` is accepted by the kernel native view checker in the current proof context, but `simp` did not construct a checked source proof"
+                "`{target}` is accepted by the kernel native view checker in the current proof context, but `solve` did not construct a checked source proof"
             )
         } else {
             format!(
-                "the kernel native view checker did not establish `{target}` in the current proof context; `simp` did not construct a checked source proof"
+                "the kernel native view checker did not establish `{target}` in the current proof context; `solve` did not construct a checked source proof"
             )
         })
     }

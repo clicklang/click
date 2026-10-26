@@ -1,6 +1,6 @@
 # Select a loop entry without counting prefix statements
 
-`execute_until(loop(0))` executes the checked prefix and stops at the loop
+`step_until(loop(0))` executes the checked prefix and stops at the loop
 entry. Its expansion records the same explicit steps as a statement target.
 
 ```c filename=loop_entry.c
@@ -20,7 +20,7 @@ int32 count(int32 n) {
     requires 0 <= n;
     ensures result == n;
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;

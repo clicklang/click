@@ -365,7 +365,7 @@ and imports only the completed conclusions. It imports the path's execution
 facts and resource observations once, then checks persistent fact deltas for
 successive proofs. Resource folds recompute their semantic facts; they never
 replace the path context with a proof's ambient assumptions. Explicit
-resource `assumption` closers and `simp` retain the same checked claim
+resource `assumption` closers and `solve` retain the same checked claim
 receipts, and certification checks their joint availability independently of
 how the certificate was printed.
 
@@ -417,7 +417,7 @@ for the folds that remain (a term compared with itself, a constant premise
 or conjunct, a negated condition), and a completion recorded at the
 artifact's own caller state also certifies a path rebased from that state.
 A claim with no `by` block ends, like every script, with the implicit closer
-(`SmartSite::Implicit`, which diagnostics still spell `auto`): the direct
+(`SmartSite::Implicit`, which diagnostics call the implicit closer): the direct
 logical closure of the kernel's claim goal from the outcome Proof or, when
 that does not apply, the smart `solve` search, whose certificates are
 checked like explicit ones; each
@@ -519,9 +519,9 @@ simple and structural operations as explicit tactics. A candidate is not
 accepted merely because the planner labels it successful; success is a
 completed checked descendant.
 
-A checked `simp` derivation is added only for a common, bounded,
+A checked `solve` derivation is added only for a common, bounded,
 checkable shape: it must emit proof steps the kernel checks one at a
-time and a certificate can encode. That the search-based `simp` decision
+time and a certificate can encode. That the search-based `solve` decision
 procedure could decide a goal is not a criterion; it is a diagnostic, not
 an authority.
 
@@ -605,7 +605,7 @@ Three standing rules keep the boundary where the 2026-09 cleanup left it.
   reconstruct a match-bound scalar name, but only when lowering that name in
   the same scope yields the exact available kernel premise. The emitted proof
   keeps the source name, never the kernel's fresh variable spelling.
-  For an implication guarded by algebraic equality, `simp` first tries to
+  For an implication guarded by algebraic equality, `solve` first tries to
   refute the guard with an indexed model equality and direct normalization.
   A successful candidate emits the ordinary scoped `have`, `rewrite`,
   `intro`, and `contradiction` operations, before selecting or spelling facts

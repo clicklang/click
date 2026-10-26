@@ -1,6 +1,6 @@
-# `arithmetic` proves a wrapper function's bound once the wrapper is unfolded
+# Arithmetic proves a wrapper function's bound once the wrapper is unfolded
 
-`arithmetic` decides linear claims over the atoms it is given; it does not open
+Arithmetic decides linear claims over the atoms it is given; it does not open
 function definitions. `w2(a, b)` is one atom until the proof unfolds it, and
 then the goal is `0 <= d(a) + d(b)`, which follows linearly from the two listed
 bounds. The recursive `d` applications stay atoms throughout. The same holds

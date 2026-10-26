@@ -1,7 +1,7 @@
 # A fact about `result` is not cited at function entry
 
 `result` exists only once the function returns, so a fact that names it
-cannot be read at `function.entry`. When `auto` cites the `have` about
+cannot be read at `function.entry`. When the omitted proof cites the `have` about
 `result` below, its expansion spells the fact as written instead of
 anchoring it at entry, which would not parse.
 
@@ -17,8 +17,8 @@ uint32 decrement(uint32 x) {
     requires 1u32 <= x;
     ensures to_integer(result) <= to_integer(x) by {
         step_until(function.exit);
-        have to_integer(result) == to_integer(x) - 1 by auto();
-        have to_integer(result) <= to_integer(x) by auto();
+        have to_integer(result) == to_integer(x) - 1;
+        have to_integer(result) <= to_integer(x);
     }
 }
 ```

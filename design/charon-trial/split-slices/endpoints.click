@@ -2,9 +2,9 @@ verifying "split.rs";
 fn left_length(bytes: &[u8], mid: usize) -> usize {
     requires mid == 0u64;
     ensures result == 0u64;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 fn right_length(bytes: &[u8], mid: usize) -> usize {
     requires bytes.len() == 8u64;
     requires mid == 8u64;
     ensures result == 0u64;
-} by { execute(); simp(); }
+} by { execute(); solve(); }

@@ -32,7 +32,7 @@ int32 settle(int32 state) {
         decreases state;
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

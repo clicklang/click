@@ -37,17 +37,17 @@ class Square : Shape {
     function size(this) -> int32 { this->side }
 }
 int Square::area(int scale) const {
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 class BigSquare : Square {
     function size(this) -> int32 { this->base.side + this->extra }
 }
 int BigSquare::area(int scale) const {
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int through_square(const Square& square, int scale) {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(square) and size(square) <= 100;
     ensures to_integer(result) == to_integer(size(square) + scale);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

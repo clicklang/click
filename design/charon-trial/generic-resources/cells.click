@@ -34,5 +34,5 @@ fn generic_resources::set_and_get(cell: &mut generic_resources::Cell<u32>, x: u3
     ensures after.value == x;
 } by {
     execute();
-    simp();
+    solve();
 }

@@ -4,7 +4,7 @@
 `length` stated: `length` is itself at most the largest `uint64`, so `i` is
 below that and `i + 1` does not wrap.
 
-`arithmetic` proves a 64-bit goal through Integer observations, and reads
+Arithmetic proves a 64-bit goal through Integer observations, and reads
 the sum as the sum of its operands' observations once it is shown not to
 wrap. It states the type's range for each value written
 (`integer::uint64_to_integer_bounds`), which is the fact that shows it here.

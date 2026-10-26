@@ -13,7 +13,7 @@ int32 wide(const uint64* bytes) { const uint64* chunk = bytes; int32 inner = 1; 
 ```click
 verifying "one-view.c";
 int32 f(const uint8* bytes) { views bytes[0..4]; ensures result == 0; } by {
- execute_until(loop(0));
+ step_until(loop(0));
  have chunk == bytes;
  have viewable(bytes[0..4]) by { transport(at(function.entry,viewable(bytes[0..4])),viewable(bytes[0..4])) using { at(function.entry,viewable(bytes[0..4])); 0 <= 4; }; }
  have viewable(chunk[0..4]) by { rewrite(chunk == bytes); assumption(); }
@@ -26,12 +26,12 @@ int32 f(const uint8* bytes) { views bytes[0..4]; ensures result == 0; } by {
  invariant chunk == bytes;
  preserve by { mark inner_head; step();
  have viewable(chunk[0..4]) by { transport(at(inner_head,viewable(chunk[0..4])),viewable(chunk[0..4])) using { at(inner_head,viewable(chunk[0..4])); 0 <= 4; }; }
- close_invariants() by { simp(); } }
+ close_invariants() by { solve(); } }
  }
 }
 
 int32 wide(const uint64* bytes) { views bytes[0..4]; ensures result == 0; } by {
- execute_until(loop(0));
+ step_until(loop(0));
  have chunk == bytes;
  have viewable(bytes[0..4]) by { transport(at(function.entry,viewable(bytes[0..4])),viewable(bytes[0..4])) using { at(function.entry,viewable(bytes[0..4])); 0 <= 4; }; }
  have viewable(chunk[0..4]) by { rewrite(chunk == bytes); assumption(); }
@@ -44,7 +44,7 @@ int32 wide(const uint64* bytes) { views bytes[0..4]; ensures result == 0; } by {
  invariant chunk == bytes;
  preserve by { mark inner_head; step();
  have viewable(chunk[0..4]) by { transport(at(inner_head,viewable(chunk[0..4])),viewable(chunk[0..4])) using { at(inner_head,viewable(chunk[0..4])); 0 <= 4; }; }
- close_invariants() by { simp(); } }
+ close_invariants() by { solve(); } }
  }
 }
 ```

@@ -395,8 +395,8 @@ fn bounded_audit_batches_only_claims_that_fit_the_remaining_cap() {
          int32 first(int32 x) { return x; }\n\
          int32 second(int32 x) { return x; }\n```\n\n```click\n\
          verifying \"two.c\";\n\
-         int32 first(int32 x) { ensures result == x; } by { execute(); simp(); }\n\
-         int32 second(int32 x) { ensures result == x; } by { execute(); simp(); }\n\
+         int32 first(int32 x) { ensures result == x; } by { execute(); solve(); }\n\
+         int32 second(int32 x) { ensures result == x; } by { execute(); solve(); }\n\
          ```\n\n```expect\npass\n```\n",
     )
     .unwrap();
@@ -435,7 +435,7 @@ fn bounded_audit_batches_only_claims_that_fit_the_remaining_cap() {
         "{}:{}:{}",
         path.display(),
         line + 1,
-        text.find("simp()").unwrap() + 1
+        text.find("solve()").unwrap() + 1
     );
     let output = Command::new(env!("CARGO_BIN_EXE_click"))
         .args([
@@ -512,7 +512,7 @@ fn rbtree_auto_recolor_expansion_rechecks() {
             (depth == 0).then_some(open + offset + character.len_utf8())
         })
         .expect("the written proof block ends");
-    source.replace_range(start..end, "by auto();");
+    source.replace_range(start..end, "by solve();");
     let c_sources = read_verifying_sources(&path, &source).unwrap();
     let project = read_click_project(&path, &source).unwrap();
     let line = source[..start]
@@ -786,10 +786,10 @@ fn rbtree_erase_general_explicit_closers_preserve_ownership() {
     let (line, text) = source
         .lines()
         .enumerate()
-        .filter(|(_, line)| line.trim() == "simp();")
+        .filter(|(_, line)| line.trim() == "solve();")
         .last()
         .unwrap();
-    let column = text.find("simp").unwrap() + 1;
+    let column = text.find("solve").unwrap() + 1;
     limits::spawn(
         "general unlink closer expansion",
         "click-general-erase-expansion".into(),
@@ -811,7 +811,7 @@ fn rbtree_erase_general_explicit_closers_preserve_ownership() {
 
 /// The general unlink against a copy of `rb_erase_augmented.c` with one
 /// statement replaced, refused with `refusal`. Each mutation keeps the C's
-/// statement count, so the proof's `execute_until(statement(...))` positions
+/// statement count, so the proof's `step_until(statement(...))` positions
 /// still name the same statements and the refusal is the exit that depends
 /// on the replaced statement, not a misaligned frontier.
 fn general_erase_refuses_mutation(before: &str, after: &str, refusal: &str) {
@@ -849,7 +849,7 @@ fn auto_on_an_arena_cell_read_answers_instead_of_deadlocking() {
             .expect("the written proof closes")
         + "\n                }".len();
     let edited = format!(
-        "{}have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by auto();{}",
+        "{}have first->arena->occupied[k] == at(f1, first->arena->occupied[k]);{}",
         &source[..start],
         &source[block_end..]
     );

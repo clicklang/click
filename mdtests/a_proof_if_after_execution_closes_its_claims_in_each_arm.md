@@ -1,7 +1,7 @@
 # A proof `if` after execution closes its claims in each arm
 
 The companion of `a_proof_if_after_execution_that_would_fork_is_refused.md`.
-With the closing `simp()` written inside the arms, nothing follows the `if`,
+With the closing `solve()` written inside the arms, nothing follows the `if`,
 and each arm closes the claims on its own path.
 
 ```c filename=a_proof_if_after_execution_closes_its_claims_in_each_arm.c

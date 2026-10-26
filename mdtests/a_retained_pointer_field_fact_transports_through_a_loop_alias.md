@@ -5,7 +5,7 @@ that carries a fact about the field rather than the field's read: the input
 resource states `n->right == saved`, and the transport carries it across the
 setter call that retains `n->right`. With the input opened and re-folded before
 the loop, the fact is stated at the loop head; `have n->right == saved` carries
-it across the body's two stores to the point before the call (`simp` transports
+it across the body's two stores to the point before the call (`solve` transports
 it, the stores being separate from `n->right`), and the transport carries it on
 across the call. The fact is a
 pointer-value equality, and the transport once compared such facts only

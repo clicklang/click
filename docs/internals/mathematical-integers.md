@@ -984,8 +984,8 @@ width, operation, guard polarity and exact conclusion. The in-range addition
 identity `to_integer(left + right) == to_integer(left) + to_integer(right)`
 needs no library law: `solve()` proves it from `defined(left + right)`.
 
-The unchanged Bitcoin division sidecar states that addition identity by
-`auto()`, the older spelling of `solve()`, for the three possible correction
+The unchanged Bitcoin division sidecar states that addition identity as a
+`have` with its proof omitted for the three possible correction
 values after proving each native sum is defined. Explicit Integer arithmetic then bounds those corrected observations
 before the original short-circuit expression executes. Signed order reflection
 restores native bounds on the actual returned value. This proves output bounds
@@ -1302,7 +1302,7 @@ theorem integer_product_congruence(a: Integer, b: Integer, d: Integer) {
     requires a == b;
     ensures a * d + a == b * d + b by {
         rewrite(a == b);
-        simp();
+        solve();
     }
 }
 ```

@@ -1,8 +1,8 @@
-# Simp relates descriptors that share one buffer pointer
+# The implicit closer relates descriptors that share one buffer pointer
 
 Four descriptors each hold the same buffer pointer `p`, stated as four
 separate equalities, and the function compares the first and last
-descriptors' pointers. `simp` must chain the equalities through `p` to
+descriptors' pointers. The implicit closer must chain the equalities through `p` to
 show the comparison is true. The four aliases of one pointer offset are
 recorded in a persistent set whose insertion order forces rebalancing, so
 this also catches a rotation in that set that loses or misorders an alias.

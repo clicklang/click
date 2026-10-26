@@ -80,14 +80,14 @@ int32 sum(int32 a[], int32 n) {
             }
             have i <= n by {
                 if n < 1073741823 {
-                    have n != 1073741823 by auto();
+                    have n != 1073741823;
                     assumption();
                 } else {
                     have n == 1073741823 by {
                         have n <= 1073741823 by {
                             assumption();
                         }
-                        have n == 1073741823 by auto();
+                        have n == 1073741823;
                         assumption();
                     }
                     rewrite(n == 1073741823);
@@ -109,12 +109,12 @@ int32 sum(int32 a[], int32 n) {
                 instantiate(forall (k: int32) { 0 <= k and k < n implies -1000 <= a[k] and a[k] <= 1000 }, i);
                 assumption();
             }
-            have -1000 <= to_integer(a[i]) by auto();
-            have to_integer(a[i]) <= 1000 by auto();
-            have 0 <= to_integer(i) by auto();
+            have -1000 <= to_integer(a[i]);
+            have to_integer(a[i]) <= 1000;
+            have 0 <= to_integer(i);
             have to_integer(i) <= 1000 by {
-                have to_integer(i) <= to_integer(n) by auto();
-                have to_integer(n) <= 1000 by auto();
+                have to_integer(i) <= to_integer(n);
+                have to_integer(n) <= 1000;
                 arithmetic_certificate {
                     premise 0: to_integer(i) <= to_integer(n) => to_integer(i) <= to_integer(n);
                     premise 1: to_integer(n) <= 1000 => to_integer(n) <= 1000;
@@ -188,14 +188,14 @@ int32 sum(int32 a[], int32 n) {
                 };
             }
             have defined((total + a[i])) by {
-                have defined(total + a[i]) by auto();
+                have defined(total + a[i]);
                 both {
                     assumption();
                 } and {
                     assumption();
                 }
             }
-            have to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])) by auto();
+            have to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i]));
             have to_integer((total + a[i])) == ((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[i])) by {
                 arithmetic_certificate {
                     premise 0: to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])) => to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i]));
@@ -205,15 +205,15 @@ int32 sum(int32 a[], int32 n) {
                 }
             }
             have i < 2147483647 by {
-                have i < 1000 by auto();
+                have i < 1000;
                 have 1000 < 2147483647 by {
                     normalize();
                 }
-                have i < 2147483647 by auto();
+                have i < 2147483647;
                 assumption();
             }
-            have defined((i + 1)) by auto();
-            have to_integer((i + 1)) == (to_integer(i) + to_integer(1)) by auto();
+            have defined((i + 1));
+            have to_integer((i + 1)) == (to_integer(i) + to_integer(1));
             have (-1000 * to_integer((i + 1))) <= (to_integer(total) + to_integer(a[i])) by {
                 arithmetic_certificate {
                     premise 0: ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])) => ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i]));
@@ -268,8 +268,8 @@ int32 sum(int32 a[], int32 n) {
                     forall (k: int32) { 0 <= k and k < n implies -1000 <= a[k] and a[k] <= 1000 };
                 };
             }
-            have 0 <= i by auto();
-            have i <= n by auto();
+            have 0 <= i;
+            have i <= n;
             have to_integer(total) == (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
                 arithmetic_certificate {
                     premise 0: to_integer(total) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)])) => to_integer(total) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)]));
@@ -304,7 +304,7 @@ int32 sum(int32 a[], int32 n) {
             have forall (k: int32) { k >= 0 and k < i implies defined(a[k]) } by {
                 intro();
                 intro();
-                have k < n by auto();
+                have k < n;
                 transport(viewable(a[0..n]), defined(a[k])) using {
                     viewable(a[0..n]);
                     0 <= n;
@@ -372,7 +372,7 @@ int32 sum(int32 a[], int32 n) {
             }
         }
     }
-    have i == n by auto();
+    have i == n;
     have n == i by {
         rewrite(n == i);
         normalize();

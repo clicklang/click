@@ -34,8 +34,6 @@ verifying "choose.c";
 struct pair choose(int32 choose_left, struct pair left, struct pair right) {
     ensures choose_left == 0 implies result.value == right.value;
     ensures choose_left != 0 implies result.value == left.value;
-} by {
-    auto();
 }
 
 int32 read_chosen() {

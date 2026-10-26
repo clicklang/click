@@ -14,11 +14,11 @@ verifying "allocation.c";
 int32* field(struct Pair* p) {
     owns allocation(p, sizeof(struct Pair));
     ensures result == &p->second;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32* one_past(int32* p) {
     owns allocation(p, 8);
     ensures result == p + 2;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

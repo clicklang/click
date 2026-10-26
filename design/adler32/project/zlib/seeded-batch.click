@@ -15,33 +15,33 @@ theorem zlib_seeded_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
      and to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b0) + to_integer(n + 1) * to_integer(a0) + adler_weighted_sum(bytes, n + 1, n + 1)
      and to_integer(a + (uint64)(uint32)value) <= 65520 + 255 * to_integer(n + 1)
      and to_integer(b + (a + (uint64)(uint32)value)) <= 65520 + 1481280 * to_integer(n + 1) by {
-  have n <= 5551 by arithmetic() using { n < 5552; };
-  have n < 2147483647 by arithmetic() using { n < 5552; };
-  have defined(n + 1) by simp();
-  have to_integer(n + 1) == to_integer(n) + to_integer(1) by auto();
+  have n <= 5551 by solve() using { n < 5552; };
+  have n < 2147483647 by solve() using { n < 5552; };
+  have defined(n + 1) by solve();
+  have to_integer(n + 1) == to_integer(n) + to_integer(1);
   apply(zlib_byte_u64(value));
   apply(zlib_byte_integer_identity(value));
   apply(zlib_equal_byte_integers(value, bytes[n]));
   apply(zlib_component_step(bytes, n));
-  have to_integer(a) + to_integer((uint64)(uint32)value) <= 1481280 by arithmetic() using {
+  have to_integer(a) + to_integer((uint64)(uint32)value) <= 1481280 by solve() using {
    to_integer(a) <= 65520 + 255 * to_integer(n);
    to_integer(n) <= 5551;
    to_integer((uint64)(uint32)value) == to_integer((int32)value);
    to_integer((int32)value) <= 255;
   };
-  have to_integer(a) + to_integer((uint64)(uint32)value) <= 18446744073709551615 by arithmetic() using { to_integer(a) + to_integer((uint64)(uint32)value) <= 1481280; };
-  have to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value) by auto();
-  have to_integer(a + (uint64)(uint32)value) <= 1481280 by arithmetic() using {
+  have to_integer(a) + to_integer((uint64)(uint32)value) <= 18446744073709551615 by solve() using { to_integer(a) + to_integer((uint64)(uint32)value) <= 1481280; };
+  have to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
+  have to_integer(a + (uint64)(uint32)value) <= 1481280 by solve() using {
    to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
    to_integer(a) + to_integer((uint64)(uint32)value) <= 1481280;
   };
-  have to_integer(b) + to_integer(a + (uint64)(uint32)value) <= 18446744073709551615 by arithmetic() using {
+  have to_integer(b) + to_integer(a + (uint64)(uint32)value) <= 18446744073709551615 by solve() using {
    to_integer(b) <= 65520 + 1481280 * to_integer(n);
    to_integer(n) <= 5551;
    to_integer(a + (uint64)(uint32)value) <= 1481280;
   };
-  have to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b) + to_integer(a + (uint64)(uint32)value) by auto();
-  have to_integer(a + (uint64)(uint32)value) == to_integer(a0) + adler_byte_sum(bytes, n + 1) by arithmetic() using {
+  have to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b) + to_integer(a + (uint64)(uint32)value);
+  have to_integer(a + (uint64)(uint32)value) == to_integer(a0) + adler_byte_sum(bytes, n + 1) by solve() using {
    to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
    to_integer(a) == to_integer(a0) + adler_byte_sum(bytes, n);
    to_integer((uint64)(uint32)value) == to_integer((int32)value);
@@ -55,27 +55,27 @@ theorem zlib_seeded_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
     integer_polynomial_identity bounds [] => (to_integer(n) + 1) * to_integer(a0) == to_integer(n) * to_integer(a0) + to_integer(a0); conclusion 0;
    }
   }
-  have to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b0) + to_integer(n + 1) * to_integer(a0) + adler_weighted_sum(bytes, n + 1, n + 1) by arithmetic() using {
+  have to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b0) + to_integer(n + 1) * to_integer(a0) + adler_weighted_sum(bytes, n + 1, n + 1) by solve() using {
    to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b) + to_integer(a + (uint64)(uint32)value);
    to_integer(b) == to_integer(b0) + to_integer(n) * to_integer(a0) + adler_weighted_sum(bytes, n, n);
    to_integer(a + (uint64)(uint32)value) == to_integer(a0) + adler_byte_sum(bytes, n + 1);
    adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n, n) + adler_byte_sum(bytes, n + 1);
    to_integer(n + 1) * to_integer(a0) == to_integer(n) * to_integer(a0) + to_integer(a0);
   };
-  have to_integer(a + (uint64)(uint32)value) <= 65520 + 255 * to_integer(n + 1) by arithmetic() using {
+  have to_integer(a + (uint64)(uint32)value) <= 65520 + 255 * to_integer(n + 1) by solve() using {
    to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
    to_integer(a) <= 65520 + 255 * to_integer(n);
    to_integer((uint64)(uint32)value) == to_integer((int32)value);
    to_integer((int32)value) <= 255;
    to_integer(n + 1) == to_integer(n) + to_integer(1);
   };
-  have to_integer(b + (a + (uint64)(uint32)value)) <= 65520 + 1481280 * to_integer(n + 1) by arithmetic() using {
+  have to_integer(b + (a + (uint64)(uint32)value)) <= 65520 + 1481280 * to_integer(n + 1) by solve() using {
    to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b) + to_integer(a + (uint64)(uint32)value);
    to_integer(b) <= 65520 + 1481280 * to_integer(n);
    to_integer(a + (uint64)(uint32)value) <= 1481280;
    to_integer(n + 1) == to_integer(n) + to_integer(1);
   };
-  simp();
+  solve();
  }
 }
 
@@ -98,15 +98,15 @@ theorem zlib_seeded_reduced_components(bytes: uint8[], length: int32, a: uint64,
   apply(integer::uint64_remainder_to_integer(b, 65521u64));
   apply(integer::positive_divisor_remainder_upper(to_integer(a), 65521));
   apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
-  have to_integer(a % 65521u64) <= 65520 by arithmetic() using {
+  have to_integer(a % 65521u64) <= 65520 by solve() using {
    to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
    truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
   };
-  have to_integer(b % 65521u64) <= 65520 by arithmetic() using {
+  have to_integer(b % 65521u64) <= 65520 by solve() using {
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
    truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
-  simp();
+  solve();
  }
 }
 
@@ -127,7 +127,7 @@ theorem zlib_seeded_batch_concat(bytes: uint8[], prefix: int32, length: int32, a
   have to_integer(a % 65521u64) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, 1)) by {
    rewrite(adler_spec_a(bytes, prefix, 1) == to_integer(a0)); assumption();
   }
-  arithmetic() using {
+  solve() using {
    to_integer(a % 65521u64) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, 1));
    adler_spec_a(bytes, prefix + length, 1) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, 1));
   };
@@ -139,7 +139,7 @@ theorem zlib_seeded_batch_concat(bytes: uint8[], prefix: int32, length: int32, a
    rewrite(adler_spec_a(bytes, prefix, 1) == to_integer(a0));
    rewrite(adler_spec_b(bytes, prefix, 1, 0) == to_integer(b0)); assumption();
   }
-  arithmetic() using {
+  solve() using {
    to_integer(b % 65521u64) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, 1), adler_spec_b(bytes, prefix, 1, 0));
    adler_spec_b(bytes, prefix + length, 1, 0) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, 1), adler_spec_b(bytes, prefix, 1, 0));
   };
@@ -153,14 +153,14 @@ theorem zlib_stream_batch_read_bound(total: uint64, remaining: uint64, n: uint32
  requires to_integer(remaining) <= to_integer(total - 5552u64);
  requires 1u32 <= n;
  requires n <= 347u32;
- ensures remaining <= total by arithmetic() using { to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
- ensures to_integer(5552u64) <= to_integer(total - remaining) by arithmetic() using { to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
+ ensures remaining <= total by solve() using { to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
+ ensures to_integer(5552u64) <= to_integer(total - remaining) by solve() using { to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
  ensures to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) <= to_integer(total - 16u64) by {
   apply(zlib_batch_nonempty_remaining(n));
   apply(zlib_batch_remaining_limit(n));
-  have remaining <= total by arithmetic() using { to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
-  have to_integer(5552u64) <= to_integer(total - remaining) by arithmetic() using { remaining <= total; to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
-  arithmetic() using {
+  have remaining <= total by solve() using { to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
+  have to_integer(5552u64) <= to_integer(total - remaining) by solve() using { remaining <= total; to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
+  solve() using {
    remaining <= total; to_integer(5552u64) <= to_integer(total - remaining);
    5552u64 <= total; total <= 22208u64;
    16u64 <= zlib_batch_remaining(n); zlib_batch_remaining(n) <= 5552u64;
@@ -168,15 +168,15 @@ theorem zlib_stream_batch_read_bound(total: uint64, remaining: uint64, n: uint32
  }
  ensures to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) < to_integer(total) by {
   apply(zlib_batch_nonempty_remaining(n)); apply(zlib_batch_remaining_limit(n));
-  have remaining <= total by arithmetic() using { to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
-  have to_integer(5552u64) <= to_integer(total - remaining) by arithmetic() using { remaining <= total; to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
-  arithmetic() using { remaining <= total; to_integer(5552u64) <= to_integer(total - remaining); 5552u64 <= total; total <= 22208u64; 16u64 <= zlib_batch_remaining(n); zlib_batch_remaining(n) <= 5552u64; };
+  have remaining <= total by solve() using { to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
+  have to_integer(5552u64) <= to_integer(total - remaining) by solve() using { remaining <= total; to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
+  solve() using { remaining <= total; to_integer(5552u64) <= to_integer(total - remaining); 5552u64 <= total; total <= 22208u64; 16u64 <= zlib_batch_remaining(n); zlib_batch_remaining(n) <= 5552u64; };
  }
  ensures to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n)) + 16u64) <= to_integer(total) by {
   apply(zlib_batch_nonempty_remaining(n)); apply(zlib_batch_remaining_limit(n));
-  have remaining <= total by arithmetic() using { to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
-  have to_integer(5552u64) <= to_integer(total - remaining) by arithmetic() using { remaining <= total; to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
-  arithmetic() using { remaining <= total; to_integer(5552u64) <= to_integer(total - remaining); 5552u64 <= total; total <= 22208u64; 16u64 <= zlib_batch_remaining(n); zlib_batch_remaining(n) <= 5552u64; };
+  have remaining <= total by solve() using { to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
+  have to_integer(5552u64) <= to_integer(total - remaining) by solve() using { remaining <= total; to_integer(remaining) <= to_integer(total - 5552u64); 5552u64 <= total; total <= 22208u64; };
+  solve() using { remaining <= total; to_integer(5552u64) <= to_integer(total - remaining); 5552u64 <= total; total <= 22208u64; 16u64 <= zlib_batch_remaining(n); zlib_batch_remaining(n) <= 5552u64; };
  }
 
 }
@@ -186,17 +186,17 @@ theorem zlib_native_cursor_join(base: const uint8*, first: uint64, second: uint6
  requires second <= 5552u64;
  requires to_integer(first + second) <= to_integer(22208u64);
  ensures base + first + second == base + (first + second) by {
-  have to_integer(first) + to_integer(second) <= 18446744073709551615 by arithmetic() using {
+  have to_integer(first) + to_integer(second) <= 18446744073709551615 by solve() using {
    to_integer(first) <= to_integer(22208u64); to_integer(second) <= to_integer(5552u64);
   };
-  have to_integer(first + second) == to_integer(first) + to_integer(second) by auto();
-  have second <= 22208u64 by arithmetic() using { second <= 5552u64; };
+  have to_integer(first + second) == to_integer(first) + to_integer(second);
+  have second <= 22208u64 by solve() using { second <= 5552u64; };
   apply(adler_count_observation(first)); apply(adler_count_bounds(first));
   apply(adler_count_observation(second)); apply(adler_count_bounds(second));
   apply(adler_count_observation(first + second));
-  have defined((int32)(uint32)first + (int32)(uint32)second) by simp();
-  have to_integer((int32)(uint32)first + (int32)(uint32)second) == to_integer((int32)(uint32)first) + to_integer((int32)(uint32)second) by auto();
-  have to_integer((int32)(uint32)(first + second)) == to_integer((int32)(uint32)first + (int32)(uint32)second) by arithmetic() using {
+  have defined((int32)(uint32)first + (int32)(uint32)second) by solve();
+  have to_integer((int32)(uint32)first + (int32)(uint32)second) == to_integer((int32)(uint32)first) + to_integer((int32)(uint32)second);
+  have to_integer((int32)(uint32)(first + second)) == to_integer((int32)(uint32)first + (int32)(uint32)second) by solve() using {
    to_integer((int32)(uint32)(first + second)) == to_integer(first + second);
    to_integer(first + second) == to_integer(first) + to_integer(second);
    to_integer((int32)(uint32)first) == to_integer(first);
@@ -224,18 +224,18 @@ theorem zlib_stream_batch_lane_bound(total: uint64, remaining: uint64, n: uint32
  ensures to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n)) + lane) < to_integer(total) by {
   apply(zlib_stream_batch_read_bound(total, remaining, n));
   apply(zlib_batch_remaining_limit(n));
-  have to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) <= to_integer(22208u64) by arithmetic() using {
+  have to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) <= to_integer(22208u64) by solve() using {
    to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) <= to_integer(total - 16u64);
    remaining <= total; to_integer(5552u64) <= to_integer(total - remaining);
    5552u64 <= total; total <= 22208u64; zlib_batch_remaining(n) <= 5552u64;
   };
-  have to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) + to_integer(lane) <= 18446744073709551615 by arithmetic() using {
+  have to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) + to_integer(lane) <= 18446744073709551615 by solve() using {
    to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) <= to_integer(22208u64); to_integer(lane) <= to_integer(15u64);
   };
-  have to_integer(((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) + lane) == to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) + to_integer(lane) by auto();
-  have to_integer(16u64) <= to_integer(total) by arithmetic() using { to_integer(5552u64) <= to_integer(total); };
-  have to_integer(total - 16u64) == to_integer(total) - to_integer(16u64) by auto();
-  have to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n)) + lane) < to_integer(total) by arithmetic() using {
+  have to_integer(((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) + lane) == to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) + to_integer(lane);
+  have to_integer(16u64) <= to_integer(total) by solve() using { to_integer(5552u64) <= to_integer(total); };
+  have to_integer(total - 16u64) == to_integer(total) - to_integer(16u64);
+  have to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n)) + lane) < to_integer(total) by solve() using {
    to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n)) + lane) == to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) + to_integer(lane);
    to_integer((total - remaining - 5552u64) + (5552u64 - zlib_batch_remaining(n))) <= to_integer(total - 16u64);
    to_integer(total - 16u64) == to_integer(total) - to_integer(16u64);
@@ -249,21 +249,21 @@ theorem zlib_stream_remaining_step(total: uint64, remaining: uint64, amount: uin
  requires remaining <= total;
  requires total <= 22208u64;
  requires amount <= remaining;
- ensures to_integer(remaining - amount) <= to_integer(total) by arithmetic() using { remaining <= total; total <= 22208u64; amount <= remaining; };
- ensures to_integer(total - (remaining - amount)) <= to_integer(22208u64) by arithmetic() using { remaining <= total; total <= 22208u64; amount <= remaining; };
+ ensures to_integer(remaining - amount) <= to_integer(total) by solve() using { remaining <= total; total <= 22208u64; amount <= remaining; };
+ ensures to_integer(total - (remaining - amount)) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 22208u64; amount <= remaining; };
  ensures to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount) by {
-  have to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount) by auto(); assumption();
+  have to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount); assumption();
  }
  ensures to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(zlib_prefix_count(total, remaining)) + to_integer(amount) by {
-  have to_integer(total - remaining) <= to_integer(22208u64) by arithmetic() using { remaining <= total; total <= 22208u64; };
-  have to_integer(remaining - amount) <= to_integer(total) by arithmetic() using { remaining <= total; total <= 22208u64; amount <= remaining; };
-  have to_integer(total - (remaining - amount)) <= to_integer(22208u64) by arithmetic() using { remaining <= total; total <= 22208u64; amount <= remaining; };
+  have to_integer(total - remaining) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 22208u64; };
+  have to_integer(remaining - amount) <= to_integer(total) by solve() using { remaining <= total; total <= 22208u64; amount <= remaining; };
+  have to_integer(total - (remaining - amount)) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 22208u64; amount <= remaining; };
   apply(zlib_prefix_observation(total, remaining));
   apply(zlib_prefix_observation(total, remaining - amount));
-  have to_integer(total - remaining) == to_integer(total) - to_integer(remaining) by auto();
-  have to_integer(total - (remaining - amount)) == to_integer(total) - to_integer(remaining - amount) by auto();
-  have to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount) by auto();
-  arithmetic() using {
+  have to_integer(total - remaining) == to_integer(total) - to_integer(remaining);
+  have to_integer(total - (remaining - amount)) == to_integer(total) - to_integer(remaining - amount);
+  have to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount);
+  solve() using {
    to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(total - (remaining - amount));
    to_integer(zlib_prefix_count(total, remaining)) == to_integer(total - remaining);
    to_integer(total - (remaining - amount)) == to_integer(total) - to_integer(remaining - amount);
@@ -282,12 +282,12 @@ theorem zlib_stream_prefix_step_defined(total: uint64, remaining: uint64, amount
  requires amount <= remaining;
  ensures defined(zlib_prefix_count(total, remaining) + (int32)(uint32)amount) by {
   apply(zlib_stream_remaining_step(total, remaining, amount));
-  have to_integer(total - remaining) <= to_integer(22208u64) by arithmetic() using { remaining <= total; total <= 22208u64; };
-  have amount <= 22208u64 by arithmetic() using { amount <= remaining; remaining <= total; total <= 22208u64; };
+  have to_integer(total - remaining) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 22208u64; };
+  have amount <= 22208u64 by solve() using { amount <= remaining; remaining <= total; total <= 22208u64; };
   apply(zlib_prefix_observation(total, remaining));
   apply(zlib_prefix_observation(total, remaining - amount));
   apply(adler_count_observation(amount)); apply(adler_count_bounds(amount));
-  simp();
+  solve();
  }
 }
 
@@ -298,14 +298,14 @@ theorem zlib_stream_prefix_step(total: uint64, remaining: uint64, amount: uint64
  requires defined(zlib_prefix_count(total, remaining) + (int32)(uint32)amount);
  ensures to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(zlib_prefix_count(total, remaining) + (int32)(uint32)amount) by {
   apply(zlib_stream_remaining_step(total, remaining, amount));
-  have to_integer(total - remaining) <= to_integer(22208u64) by arithmetic() using { remaining <= total; total <= 22208u64; };
-  have amount <= 22208u64 by arithmetic() using { amount <= remaining; remaining <= total; total <= 22208u64; };
+  have to_integer(total - remaining) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 22208u64; };
+  have amount <= 22208u64 by solve() using { amount <= remaining; remaining <= total; total <= 22208u64; };
   apply(zlib_prefix_observation(total, remaining));
   apply(zlib_prefix_observation(total, remaining - amount));
   apply(adler_count_observation(amount)); apply(adler_count_bounds(amount));
-  have defined(zlib_prefix_count(total, remaining) + (int32)(uint32)amount) by simp();
-  have to_integer(zlib_prefix_count(total, remaining) + (int32)(uint32)amount) == to_integer(zlib_prefix_count(total, remaining)) + to_integer((int32)(uint32)amount) by auto();
-  have to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(zlib_prefix_count(total, remaining) + (int32)(uint32)amount) by arithmetic() using {
+  have defined(zlib_prefix_count(total, remaining) + (int32)(uint32)amount) by solve();
+  have to_integer(zlib_prefix_count(total, remaining) + (int32)(uint32)amount) == to_integer(zlib_prefix_count(total, remaining)) + to_integer((int32)(uint32)amount);
+  have to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(zlib_prefix_count(total, remaining) + (int32)(uint32)amount) by solve() using {
    to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(zlib_prefix_count(total, remaining)) + to_integer(amount);
    to_integer((int32)(uint32)amount) == to_integer(amount);
    to_integer(zlib_prefix_count(total, remaining) + (int32)(uint32)amount) == to_integer(zlib_prefix_count(total, remaining)) + to_integer((int32)(uint32)amount);
@@ -321,28 +321,28 @@ theorem zlib_stream_capacity_step(n: uint32, remaining: uint64) {
  ensures to_integer(16u64 * (uint64)n + remaining) <= to_integer(22208u64)
      and to_integer(16u64 * (uint64)(n - 1u32) + remaining) == to_integer(16u64 * (uint64)n + remaining - 16u64)
      and to_integer(16u64 * (uint64)(n - 1u32) + remaining) <= to_integer(22208u64) by {
-  have to_integer(n - 1u32) == to_integer(n) - to_integer(1u32) by auto(); apply(zlib_batch_predecessor(n));
+  have to_integer(n - 1u32) == to_integer(n) - to_integer(1u32); apply(zlib_batch_predecessor(n));
   apply(zlib_batch_native_capacity_observation(n)); apply(zlib_batch_native_capacity_observation(n - 1u32));
-  have to_integer(16u64 * (uint64)n) <= 5552 by arithmetic() using { to_integer(16u64 * (uint64)n) == 16 * to_integer(n); to_integer(n) <= 347; };
-  have to_integer(16u64 * (uint64)(n - 1u32)) <= 5552 by arithmetic() using { to_integer(16u64 * (uint64)(n - 1u32)) == 16 * to_integer(n - 1u32); to_integer(n - 1u32) <= 347; };
-  have to_integer(16u64) <= to_integer(16u64 * (uint64)n) by arithmetic() using { to_integer(16u64 * (uint64)n) == 16 * to_integer(n); 1 <= to_integer(n); };
-  have to_integer(16u64 * (uint64)n) + to_integer(remaining) <= 18446744073709551615 by arithmetic() using { to_integer(16u64 * (uint64)n) <= 5552; to_integer(remaining) <= 16656; };
-  have to_integer(16u64 * (uint64)(n - 1u32)) + to_integer(remaining) <= 18446744073709551615 by arithmetic() using { to_integer(16u64 * (uint64)(n - 1u32)) <= 5552; to_integer(remaining) <= 16656; };
-  have to_integer((16u64 * (uint64)n) + remaining) == to_integer(16u64 * (uint64)n) + to_integer(remaining) by auto(); have to_integer((16u64 * (uint64)(n - 1u32)) + remaining) == to_integer(16u64 * (uint64)(n - 1u32)) + to_integer(remaining) by auto();
-  have to_integer(16u64 * (uint64)n + remaining) <= to_integer(22208u64) by arithmetic() using {
+  have to_integer(16u64 * (uint64)n) <= 5552 by solve() using { to_integer(16u64 * (uint64)n) == 16 * to_integer(n); to_integer(n) <= 347; };
+  have to_integer(16u64 * (uint64)(n - 1u32)) <= 5552 by solve() using { to_integer(16u64 * (uint64)(n - 1u32)) == 16 * to_integer(n - 1u32); to_integer(n - 1u32) <= 347; };
+  have to_integer(16u64) <= to_integer(16u64 * (uint64)n) by solve() using { to_integer(16u64 * (uint64)n) == 16 * to_integer(n); 1 <= to_integer(n); };
+  have to_integer(16u64 * (uint64)n) + to_integer(remaining) <= 18446744073709551615 by solve() using { to_integer(16u64 * (uint64)n) <= 5552; to_integer(remaining) <= 16656; };
+  have to_integer(16u64 * (uint64)(n - 1u32)) + to_integer(remaining) <= 18446744073709551615 by solve() using { to_integer(16u64 * (uint64)(n - 1u32)) <= 5552; to_integer(remaining) <= 16656; };
+  have to_integer((16u64 * (uint64)n) + remaining) == to_integer(16u64 * (uint64)n) + to_integer(remaining); have to_integer((16u64 * (uint64)(n - 1u32)) + remaining) == to_integer(16u64 * (uint64)(n - 1u32)) + to_integer(remaining);
+  have to_integer(16u64 * (uint64)n + remaining) <= to_integer(22208u64) by solve() using {
    to_integer(16u64 * (uint64)n + remaining) == to_integer(16u64 * (uint64)n) + to_integer(remaining);
    to_integer(16u64 * (uint64)n) <= 5552; to_integer(remaining) <= 16656;
   };
-  have to_integer(16u64 * (uint64)(n - 1u32) + remaining) <= to_integer(22208u64) by arithmetic() using {
+  have to_integer(16u64 * (uint64)(n - 1u32) + remaining) <= to_integer(22208u64) by solve() using {
    to_integer(16u64 * (uint64)(n - 1u32) + remaining) == to_integer(16u64 * (uint64)(n - 1u32)) + to_integer(remaining);
    to_integer(16u64 * (uint64)(n - 1u32)) <= 5552; to_integer(remaining) <= 16656;
   };
-  have to_integer(16u64) <= to_integer(16u64 * (uint64)n + remaining) by arithmetic() using {
+  have to_integer(16u64) <= to_integer(16u64 * (uint64)n + remaining) by solve() using {
    to_integer(16u64) <= to_integer(16u64 * (uint64)n); 0 <= to_integer(remaining);
    to_integer(16u64 * (uint64)n + remaining) == to_integer(16u64 * (uint64)n) + to_integer(remaining);
   };
-  have to_integer((16u64 * (uint64)n + remaining) - 16u64) == to_integer(16u64 * (uint64)n + remaining) - to_integer(16u64) by auto();
-  have to_integer(16u64 * (uint64)(n - 1u32) + remaining) == to_integer(16u64 * (uint64)n + remaining - 16u64) by arithmetic() using {
+  have to_integer((16u64 * (uint64)n + remaining) - 16u64) == to_integer(16u64 * (uint64)n + remaining) - to_integer(16u64);
+  have to_integer(16u64 * (uint64)(n - 1u32) + remaining) == to_integer(16u64 * (uint64)n + remaining - 16u64) by solve() using {
    to_integer(16u64 * (uint64)n) == 16 * to_integer(n);
    to_integer(16u64 * (uint64)(n - 1u32)) == 16 * to_integer(n - 1u32);
    to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
@@ -350,7 +350,7 @@ theorem zlib_stream_capacity_step(n: uint32, remaining: uint64) {
    to_integer(16u64 * (uint64)(n - 1u32) + remaining) == to_integer(16u64 * (uint64)(n - 1u32)) + to_integer(remaining);
    to_integer(16u64 * (uint64)n + remaining - 16u64) == to_integer(16u64 * (uint64)n + remaining) - to_integer(16u64);
   };
-  simp();
+  solve();
  }
 }
 
@@ -359,8 +359,8 @@ theorem zlib_stream_tail_read_bound(total: uint64, remaining: uint64, lane: uint
  requires total <= 22208u64;
  requires 16u64 <= remaining;
  requires lane <= 15u64;
- ensures to_integer(total - remaining) <= to_integer(22192u64) by arithmetic() using { remaining <= total; total <= 22208u64; 16u64 <= remaining; };
- ensures to_integer(total - remaining + lane) < to_integer(total) by arithmetic() using { remaining <= total; total <= 22208u64; 16u64 <= remaining; lane <= 15u64; };
+ ensures to_integer(total - remaining) <= to_integer(22192u64) by solve() using { remaining <= total; total <= 22208u64; 16u64 <= remaining; };
+ ensures to_integer(total - remaining + lane) < to_integer(total) by solve() using { remaining <= total; total <= 22208u64; 16u64 <= remaining; lane <= 15u64; };
 }
 
 theorem zlib_scalar_seeded_component_step(bytes: uint8[], n: int32, a: uint64, b: uint64, value: uint8, a0: uint64, b0: uint64) {
@@ -377,33 +377,33 @@ theorem zlib_scalar_seeded_component_step(bytes: uint8[], n: int32, a: uint64, b
      and to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b0) + to_integer(n + 1) * to_integer(a0) + adler_weighted_sum(bytes, n + 1, n + 1)
      and to_integer(a + (uint64)(uint32)value) <= 1500000 + 255 * to_integer(n + 1)
      and to_integer(b + (a + (uint64)(uint32)value)) <= 10000000000 + 1504080 * to_integer(n + 1) by {
-  have n <= 15 by arithmetic() using { n < 16; };
-  have n < 2147483647 by arithmetic() using { n < 16; };
-  have defined(n + 1) by simp();
-  have to_integer(n + 1) == to_integer(n) + to_integer(1) by auto();
+  have n <= 15 by solve() using { n < 16; };
+  have n < 2147483647 by solve() using { n < 16; };
+  have defined(n + 1) by solve();
+  have to_integer(n + 1) == to_integer(n) + to_integer(1);
   apply(zlib_byte_u64(value));
   apply(zlib_byte_integer_identity(value));
   apply(zlib_equal_byte_integers(value, bytes[n]));
   apply(zlib_component_step(bytes, n));
-  have to_integer(a) + to_integer((uint64)(uint32)value) <= 1504080 by arithmetic() using {
+  have to_integer(a) + to_integer((uint64)(uint32)value) <= 1504080 by solve() using {
    to_integer(a) <= 1500000 + 255 * to_integer(n);
    to_integer(n) <= 15;
    to_integer((uint64)(uint32)value) == to_integer((int32)value);
    to_integer((int32)value) <= 255;
   };
-  have to_integer(a) + to_integer((uint64)(uint32)value) <= 18446744073709551615 by arithmetic() using { to_integer(a) + to_integer((uint64)(uint32)value) <= 1504080; };
-  have to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value) by auto();
-  have to_integer(a + (uint64)(uint32)value) <= 1504080 by arithmetic() using {
+  have to_integer(a) + to_integer((uint64)(uint32)value) <= 18446744073709551615 by solve() using { to_integer(a) + to_integer((uint64)(uint32)value) <= 1504080; };
+  have to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
+  have to_integer(a + (uint64)(uint32)value) <= 1504080 by solve() using {
    to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
    to_integer(a) + to_integer((uint64)(uint32)value) <= 1504080;
   };
-  have to_integer(b) + to_integer(a + (uint64)(uint32)value) <= 18446744073709551615 by arithmetic() using {
+  have to_integer(b) + to_integer(a + (uint64)(uint32)value) <= 18446744073709551615 by solve() using {
    to_integer(b) <= 10000000000 + 1504080 * to_integer(n);
    to_integer(n) <= 15;
    to_integer(a + (uint64)(uint32)value) <= 1504080;
   };
-  have to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b) + to_integer(a + (uint64)(uint32)value) by auto();
-  have to_integer(a + (uint64)(uint32)value) == to_integer(a0) + adler_byte_sum(bytes, n + 1) by arithmetic() using {
+  have to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b) + to_integer(a + (uint64)(uint32)value);
+  have to_integer(a + (uint64)(uint32)value) == to_integer(a0) + adler_byte_sum(bytes, n + 1) by solve() using {
    to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
    to_integer(a) == to_integer(a0) + adler_byte_sum(bytes, n);
    to_integer((uint64)(uint32)value) == to_integer((int32)value);
@@ -417,27 +417,27 @@ theorem zlib_scalar_seeded_component_step(bytes: uint8[], n: int32, a: uint64, b
     integer_polynomial_identity bounds [] => (to_integer(n) + 1) * to_integer(a0) == to_integer(n) * to_integer(a0) + to_integer(a0); conclusion 0;
    }
   }
-  have to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b0) + to_integer(n + 1) * to_integer(a0) + adler_weighted_sum(bytes, n + 1, n + 1) by arithmetic() using {
+  have to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b0) + to_integer(n + 1) * to_integer(a0) + adler_weighted_sum(bytes, n + 1, n + 1) by solve() using {
    to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b) + to_integer(a + (uint64)(uint32)value);
    to_integer(b) == to_integer(b0) + to_integer(n) * to_integer(a0) + adler_weighted_sum(bytes, n, n);
    to_integer(a + (uint64)(uint32)value) == to_integer(a0) + adler_byte_sum(bytes, n + 1);
    adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n, n) + adler_byte_sum(bytes, n + 1);
    to_integer(n + 1) * to_integer(a0) == to_integer(n) * to_integer(a0) + to_integer(a0);
   };
-  have to_integer(a + (uint64)(uint32)value) <= 1500000 + 255 * to_integer(n + 1) by arithmetic() using {
+  have to_integer(a + (uint64)(uint32)value) <= 1500000 + 255 * to_integer(n + 1) by solve() using {
    to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
    to_integer(a) <= 1500000 + 255 * to_integer(n);
    to_integer((uint64)(uint32)value) == to_integer((int32)value);
    to_integer((int32)value) <= 255;
    to_integer(n + 1) == to_integer(n) + to_integer(1);
   };
-  have to_integer(b + (a + (uint64)(uint32)value)) <= 10000000000 + 1504080 * to_integer(n + 1) by arithmetic() using {
+  have to_integer(b + (a + (uint64)(uint32)value)) <= 10000000000 + 1504080 * to_integer(n + 1) by solve() using {
    to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b) + to_integer(a + (uint64)(uint32)value);
    to_integer(b) <= 10000000000 + 1504080 * to_integer(n);
    to_integer(a + (uint64)(uint32)value) <= 1504080;
    to_integer(n + 1) == to_integer(n) + to_integer(1);
   };
-  simp();
+  solve();
  }
 }
 
@@ -448,13 +448,13 @@ theorem zlib_stream_split_count_defined(total: uint64, middle: uint64, remaining
  requires middle <= total;
  requires total <= 22208u64;
  ensures defined(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) by {
-  have remaining <= total by arithmetic() using { remaining <= middle; middle <= total; total <= 22208u64; };
-  have middle <= 22208u64 by arithmetic() using { middle <= total; total <= 22208u64; };
-  have to_integer(total - middle) <= to_integer(22208u64) by arithmetic() using { middle <= total; total <= 22208u64; };
-  have to_integer(total - remaining) <= to_integer(22208u64) by arithmetic() using { remaining <= total; total <= 22208u64; };
-  have to_integer(middle - remaining) <= to_integer(22208u64) by arithmetic() using { remaining <= middle; middle <= 22208u64; };
+  have remaining <= total by solve() using { remaining <= middle; middle <= total; total <= 22208u64; };
+  have middle <= 22208u64 by solve() using { middle <= total; total <= 22208u64; };
+  have to_integer(total - middle) <= to_integer(22208u64) by solve() using { middle <= total; total <= 22208u64; };
+  have to_integer(total - remaining) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 22208u64; };
+  have to_integer(middle - remaining) <= to_integer(22208u64) by solve() using { remaining <= middle; middle <= 22208u64; };
   apply(zlib_prefix_observation(total, middle)); apply(zlib_prefix_observation(total, remaining)); apply(zlib_prefix_observation(middle, remaining));
-  simp();
+  solve();
  }
 }
 
@@ -464,16 +464,16 @@ theorem zlib_stream_split_count(total: uint64, middle: uint64, remaining: uint64
  requires total <= 22208u64;
  requires defined(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining));
  ensures to_integer(zlib_prefix_count(total, remaining)) == to_integer(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) by {
-  have remaining <= total by arithmetic() using { remaining <= middle; middle <= total; total <= 22208u64; };
-  have middle <= 22208u64 by arithmetic() using { middle <= total; total <= 22208u64; };
-  have to_integer(total - middle) <= to_integer(22208u64) by arithmetic() using { middle <= total; total <= 22208u64; };
-  have to_integer(total - remaining) <= to_integer(22208u64) by arithmetic() using { remaining <= total; total <= 22208u64; };
-  have to_integer(middle - remaining) <= to_integer(22208u64) by arithmetic() using { remaining <= middle; middle <= 22208u64; };
+  have remaining <= total by solve() using { remaining <= middle; middle <= total; total <= 22208u64; };
+  have middle <= 22208u64 by solve() using { middle <= total; total <= 22208u64; };
+  have to_integer(total - middle) <= to_integer(22208u64) by solve() using { middle <= total; total <= 22208u64; };
+  have to_integer(total - remaining) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 22208u64; };
+  have to_integer(middle - remaining) <= to_integer(22208u64) by solve() using { remaining <= middle; middle <= 22208u64; };
   apply(zlib_prefix_observation(total, middle)); apply(zlib_prefix_observation(total, remaining)); apply(zlib_prefix_observation(middle, remaining));
-  have to_integer(total - middle) == to_integer(total) - to_integer(middle) by auto(); have to_integer(total - remaining) == to_integer(total) - to_integer(remaining) by auto(); have to_integer(middle - remaining) == to_integer(middle) - to_integer(remaining) by auto();
-  have defined(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) by simp();
-  have to_integer(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) == to_integer(zlib_prefix_count(total, middle)) + to_integer(zlib_prefix_count(middle, remaining)) by auto();
-  have to_integer(zlib_prefix_count(total, remaining)) == to_integer(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) by arithmetic() using {
+  have to_integer(total - middle) == to_integer(total) - to_integer(middle); have to_integer(total - remaining) == to_integer(total) - to_integer(remaining); have to_integer(middle - remaining) == to_integer(middle) - to_integer(remaining);
+  have defined(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) by solve();
+  have to_integer(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) == to_integer(zlib_prefix_count(total, middle)) + to_integer(zlib_prefix_count(middle, remaining));
+  have to_integer(zlib_prefix_count(total, remaining)) == to_integer(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) by solve() using {
    to_integer(zlib_prefix_count(total, middle)) == to_integer(total - middle);
    to_integer(zlib_prefix_count(total, remaining)) == to_integer(total - remaining);
    to_integer(zlib_prefix_count(middle, remaining)) == to_integer(middle - remaining);
@@ -508,22 +508,22 @@ theorem zlib_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, length: int3
   }
   have to_integer(a % 65521u64) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, 1)) by {
    rewrite(adler_spec_a(bytes, prefix, 1) == to_integer(a0 % 65521u64));
-   arithmetic() using {
+   solve() using {
     to_integer(a % 65521u64) == adler_spec_a(bytes + prefix, length, to_integer(a0));
     adler_spec_a(bytes + prefix, length, to_integer(a0)) == adler_spec_a(bytes + prefix, length, to_integer(a0 % 65521u64));
    };
   }
   apply(adler_spec_a_concat(bytes, prefix, length, 1));
-  arithmetic() using { to_integer(a % 65521u64) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, 1)); adler_spec_a(bytes, prefix + length, 1) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, 1)); };
+  solve() using { to_integer(a % 65521u64) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, 1)); adler_spec_a(bytes, prefix + length, 1) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, 1)); };
  }
  ensures to_integer(b % 65521u64) == adler_spec_b(bytes, prefix + length, 1, 0) by {
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
   apply(integer::uint64_remainder_to_integer(a0, 65521u64)); apply(integer::uint64_remainder_to_integer(b0, 65521u64));
   apply(adler_weighted_nonnegative(bytes + prefix, length));
   have length <= 2147483647 by normalize();
-  have to_integer(a0) <= 549755879424 by arithmetic() using { to_integer(a0) <= 1500000; };
-  have 0 <= to_integer(length) by simp() using { to_integer(0) <= to_integer(length); };
-  have to_integer(length) <= 2147483647 by simp() using { to_integer(length) <= to_integer(2147483647); };
+  have to_integer(a0) <= 549755879424 by solve() using { to_integer(a0) <= 1500000; };
+  have 0 <= to_integer(length) by solve() using { to_integer(0) <= to_integer(length); };
+  have to_integer(length) <= 2147483647 by solve() using { to_integer(length) <= to_integer(2147483647); };
   apply(adler_residue_seed_update(to_integer(a0), to_integer(b0), to_integer(length), adler_weighted_sum(bytes + prefix, length, length)));
   have adler_spec_b(bytes + prefix, length, to_integer(a0), to_integer(b0)) == adler_spec_b(bytes + prefix, length, to_integer(a0 % 65521u64), to_integer(b0 % 65521u64)) by {
    unfold(adler_spec_b(bytes + prefix, length, to_integer(a0), to_integer(b0)));
@@ -534,13 +534,13 @@ theorem zlib_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, length: int3
   have to_integer(b % 65521u64) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, 1), adler_spec_b(bytes, prefix, 1, 0)) by {
    rewrite(adler_spec_a(bytes, prefix, 1) == to_integer(a0 % 65521u64));
    rewrite(adler_spec_b(bytes, prefix, 1, 0) == to_integer(b0 % 65521u64));
-   arithmetic() using {
+   solve() using {
     to_integer(b % 65521u64) == adler_spec_b(bytes + prefix, length, to_integer(a0), to_integer(b0));
     adler_spec_b(bytes + prefix, length, to_integer(a0), to_integer(b0)) == adler_spec_b(bytes + prefix, length, to_integer(a0 % 65521u64), to_integer(b0 % 65521u64));
    };
   }
   apply(adler_spec_b_concat(bytes, prefix, length, 1, 0));
-  arithmetic() using { to_integer(b % 65521u64) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, 1), adler_spec_b(bytes, prefix, 1, 0)); adler_spec_b(bytes, prefix + length, 1, 0) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, 1), adler_spec_b(bytes, prefix, 1, 0)); };
+  solve() using { to_integer(b % 65521u64) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, 1), adler_spec_b(bytes, prefix, 1, 0)); adler_spec_b(bytes, prefix + length, 1, 0) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, 1), adler_spec_b(bytes, prefix, 1, 0)); };
  }
 }
 
@@ -552,17 +552,17 @@ theorem zlib_components_pack(bytes: uint8[], length: int32, a: uint64, b: uint64
   apply(integer::uint64_remainder_to_integer(b, 65521u64));
   apply(integer::positive_divisor_remainder_upper(to_integer(a), 65521));
   apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
-  have to_integer(a % 65521u64) <= 65535 by arithmetic() using {
+  have to_integer(a % 65521u64) <= 65535 by solve() using {
    to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
    truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
   };
-  have to_integer(b % 65521u64) <= 65535 by arithmetic() using {
+  have to_integer(b % 65521u64) <= 65535 by solve() using {
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
    truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
   apply(integer::uint64_pack_uint16_to_integer(a % 65521u64, b % 65521u64));
   unfold(adler_spec_checksum(bytes, length, 1, 0));
-  arithmetic() using {
+  solve() using {
    to_integer((a % 65521u64) | ((b % 65521u64) << 16)) == to_integer(a % 65521u64) + 65536 * to_integer(b % 65521u64);
    to_integer(a % 65521u64) == adler_spec_a(bytes, length, 1);
    to_integer(b % 65521u64) == adler_spec_b(bytes, length, 1, 0);
@@ -573,17 +573,17 @@ theorem zlib_components_pack(bytes: uint8[], length: int32, a: uint64, b: uint64
 
 theorem zlib_stream_scalar_read_bound(total: uint64, remaining: uint64) {
  requires 1u64 <= remaining; requires remaining <= total; requires total <= 22208u64;
- ensures to_integer(total - remaining) < to_integer(total) by arithmetic() using { 1u64 <= remaining; remaining <= total; total <= 22208u64; };
- ensures to_integer(total - remaining) <= to_integer(22207u64) by arithmetic() using { 1u64 <= remaining; remaining <= total; total <= 22208u64; };
+ ensures to_integer(total - remaining) < to_integer(total) by solve() using { 1u64 <= remaining; remaining <= total; total <= 22208u64; };
+ ensures to_integer(total - remaining) <= to_integer(22207u64) by solve() using { 1u64 <= remaining; remaining <= total; total <= 22208u64; };
 }
 
 theorem zlib_stream_concat_bound(prefix: int32, count: int32) {
  requires 0 <= prefix; requires prefix <= 22208;
  requires 0 <= count; requires count <= 22208;
  ensures to_integer(prefix) <= to_integer(2147483647 - count) by {
-  have defined(2147483647 - count) by simp();
-  have to_integer(2147483647 - count) == to_integer(2147483647) - to_integer(count) by auto();
-  have to_integer(prefix) <= to_integer(2147483647 - count) by arithmetic() using { to_integer(prefix) <= 22208; to_integer(count) <= 22208; to_integer(2147483647 - count) == to_integer(2147483647) - to_integer(count); };
+  have defined(2147483647 - count) by solve();
+  have to_integer(2147483647 - count) == to_integer(2147483647) - to_integer(count);
+  have to_integer(prefix) <= to_integer(2147483647 - count) by solve() using { to_integer(prefix) <= 22208; to_integer(count) <= 22208; to_integer(2147483647 - count) == to_integer(2147483647) - to_integer(count); };
   assumption();
  }
 }

@@ -10,7 +10,7 @@ verifying "pointer_slot.c" as unit;
 void clear_slot() {
     owns unit::slot;
     ensures unit::slot == 0;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 ```expect
 pass

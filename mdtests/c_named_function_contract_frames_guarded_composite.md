@@ -48,7 +48,7 @@ int32 keep_first_guarded(int32 active, int32* first, int32* spare) {
     ensures result == active;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 apply_guarded_pair(
@@ -64,10 +64,10 @@ int32 apply_guarded_pair(
 } by {
     if active != 0 {
         execute();
-        simp();
+        solve();
     } else {
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -77,7 +77,7 @@ int32 guarded_pair_caller(int32* first, int32* spare) {
     ensures result == 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

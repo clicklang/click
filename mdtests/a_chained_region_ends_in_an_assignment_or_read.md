@@ -2,7 +2,7 @@
 
 `.assignment(x, j)` and `.read(j)` end a chained region, as `.call(f, j)`
 does: each counts, from zero, the statement's own atomic regions that assign
-local `x` or load from memory. `execute_until` stops before that region, and
+local `x` or load from memory. `step_until` stops before that region, and
 `at` reads its states. Here `statement(2).statement(1).read(0)` is the load
 `x = (int32)*p;` inside the `if`, and `statement(2).statement(2).assignment(y,
 0)` is the store `y = 2;` after it.

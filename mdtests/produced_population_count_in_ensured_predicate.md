@@ -49,10 +49,10 @@ void produce_population(struct owner* owner, int32 amount) {
     step();
     if 0 < amount {
         fold(amount of slot(owner));
-        execute(); simp();
+        execute(); solve();
     } else {
-        have amount == 0 by auto();
-        execute(); simp();
+        have amount == 0;
+        execute(); solve();
     }
 }
 
@@ -64,7 +64,7 @@ void produce_population_pipeline(struct owner* owner, int32 amount) {
     produces amount of slot(owner);
 
     ensures valid_capacity(owner);
-} by auto();
+}
 ```
 
 ```expect

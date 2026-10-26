@@ -2,7 +2,7 @@
 
 This checks the frontier proof shapes from the proof-workflow concept page:
 `have` before a loop sees the facts the preceding steps established,
-`step_until` (older spelling `execute_until`) pauses at a statement whose entry snapshot a later `have`
+`step_until` pauses at a statement whose entry snapshot a later `have`
 reads, and `mark` names the reached state for a later comparison.
 
 ```c filename=fill_zero.c

@@ -3,7 +3,7 @@
 This checks that modular execution across a verified loop records its unique
 exit state. The proof derives the loop result from the invariant and the false
 exit condition, then carries that fact through the return. Individual
-`step()` calls enter loop iterations; `execute_until(...)` deliberately
+`step()` calls enter loop iterations; `step_until(...)` deliberately
 applies the verified abstract loop rule.
 
 ```c filename=loop_exit_snapshot.c

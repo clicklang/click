@@ -1,8 +1,8 @@
-# `auto` opens a folded resource to store through it
+# The implicit tail opens a folded resource to store through it
 
 `bump` stores to `p->value`, which `flat(p)` holds folded. The proof is
-omitted, so `auto` executes the function. The store is refused while
-`flat(p)` is folded; `auto` unfolds that one resource, whose body holds
+omitted, so the implicit tail executes the function. The store is refused while
+`flat(p)` is folded; the implicit tail unfolds that one resource, whose body holds
 `p->value`, and retries the store. At exit the contract's resource transition
 folds `flat(p)` again. `click expand` writes the opening out as
 `unfold(flat(p));`, so the expanded proof is the simple script a person would

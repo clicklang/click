@@ -32,7 +32,7 @@ void user(int32* p) {
     ensures b.model == old(a.model);
 } by {
     let { b: b } = keep(p, { a: a });
-    execute(); simp();
+    execute(); solve();
 }
 ```
 

@@ -3,7 +3,7 @@
 The store writes `p[k]`. Explicit transport uses `i != k` to establish that
 `p[i]` retains its entry value. The next `have` uses only the trusted equality
 graph: `i == j` identifies the current reads, and the transported equality
-connects that value to the entry snapshot. The final `simp` closes the
+connects that value to the entry snapshot. The final `solve` closes the
 postcondition and returns ownership of the array.
 
 The graph does not infer that the store is disjoint, and equality of this one
@@ -43,7 +43,7 @@ void write_other(int32 p[], int32 n, int32 i, int32 j, int32 k) {
         normalize() using { };
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

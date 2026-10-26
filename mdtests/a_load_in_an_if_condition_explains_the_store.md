@@ -1,7 +1,7 @@
 # A load inside an `if` condition explains the store that may have changed it
 
 The fact reads `a[m]` only inside the `if` condition. Nothing says `m` and `i`
-differ, so `simp` cannot carry it past the store to `a[i]`, and the refusal
+differ, so `solve` cannot carry it past the store to `a[i]`, and the refusal
 still names the read, the store, and the inequality that would separate them,
 as it does when the load sits in a branch. The read collector used to visit
 only the branches of an `if`, so this refusal printed no explanation.

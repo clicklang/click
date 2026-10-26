@@ -2,10 +2,10 @@
 
 Consuming `pool_slot(pool)` makes the kernel record that the slot count at
 function entry is at least one. That count is an opaque entry symbol, which
-`auto` could not cite before it had a spelling; it is now spelled
+the implicit closer could not cite before it had a spelling; it is now spelled
 `old(count(pool_slot(pool)))`, so under Integer specification arithmetic the bound
 carries to Integer and the checkout's definedness and ledger facts follow by
-`auto()`.
+the omitted proof.
 
 ```c filename=a_consumed_member_bound_on_an_entry_count_is_cited.c
 struct pool {
@@ -43,16 +43,16 @@ void pool_checkout(struct pool* pool, struct object* object) {
     ensures pool->checked_out == old(pool->checked_out) + 1;
 } by {
     open(pool_control(pool)) {
-        have count(pool_slot(pool)) >= 1 by auto();
-        have defined(count(pool_object(pool, _)) + 1) by auto();
-        have defined(pool->checked_out + 1) by auto();
+        have count(pool_slot(pool)) >= 1;
+        have defined(count(pool_object(pool, _)) + 1);
+        have defined(pool->checked_out + 1);
         unfold(pool_slot(pool));
         step();
         fold(pool_object(pool, object));
-        have defined(old(pool->checked_out) + 1) by auto();
-        have to_integer(pool->checked_out) == to_integer(count(pool_object(pool, _))) by auto();
+        have defined(old(pool->checked_out) + 1);
+        have to_integer(pool->checked_out) == to_integer(count(pool_object(pool, _)));
         have to_integer(pool->capacity)
-            == to_integer(pool->checked_out) + to_integer(count(pool_slot(pool))) by auto();
+            == to_integer(pool->checked_out) + to_integer(count(pool_slot(pool)));
     }
     execute();
 }

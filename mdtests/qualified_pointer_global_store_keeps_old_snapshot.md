@@ -22,12 +22,12 @@ struct pair* exchange_global(struct pair* p) {
     owns unit::shared;
     ensures unit::shared == p;
     ensures result == old(unit::shared);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32* exchange_static(int32* p) {
     owns unit::exchange_static::slot;
     ensures unit::exchange_static::slot == p;
     ensures result == old(unit::exchange_static::slot);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 ```expect
 pass

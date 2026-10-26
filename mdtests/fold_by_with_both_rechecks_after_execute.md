@@ -2,7 +2,7 @@
 
 This is the expansion of
 `mdtests/unfold_names_a_witness_for_a_fold_body_fact.md`: the implicit
-`auto` proved the fold's open body fact with `both`. Checked again as
+closer proved the fold's open body fact with `both`. Checked again as
 written, each arm of the `both` is checked as its own script.
 
 ```c filename=fold_by_with_both_rechecks_after_execute.c

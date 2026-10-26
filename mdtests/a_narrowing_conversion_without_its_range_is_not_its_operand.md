@@ -14,7 +14,7 @@ verifying "not_widen.c";
 
 signed char narrow(int x) {
     ensures to_integer(result) == to_integer(x);
-} by { execute(); auto(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

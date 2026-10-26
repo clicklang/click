@@ -48,5 +48,5 @@ int32 run(int32 value) {
 ```
 
 ```expect
-fail: `simp` failed for `run.contract`
+fail: `solve` failed for `run.contract`
 ```

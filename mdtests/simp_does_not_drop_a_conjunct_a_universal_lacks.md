@@ -1,4 +1,4 @@
-# `simp` does not supply a conjunct a guarded universal lacks
+# `solve` does not supply a conjunct a guarded universal lacks
 
 Dropping conjuncts of a guarded universal yields only the conjuncts it
 states. A requirement that every byte is defined says nothing about the
@@ -24,5 +24,5 @@ void keep(uint8* dst) {
 ```
 
 ```expect
-fail: `simp` search did not retain a complete proof
+fail: `solve` search did not retain a complete proof
 ```

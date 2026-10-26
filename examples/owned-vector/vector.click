@@ -3,7 +3,7 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires second == third;
 
     ensures first == third by {
-        simp();
+        solve();
     }
 }
 
@@ -93,8 +93,8 @@ int32 vector_copy(
         invariant forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) };
         owns dst[0..length];
         initialize by {
-            have 0 <= i by auto();
-            have i <= length by auto();
+            have 0 <= i;
+            have i <= length;
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 intro();
                 intro();
@@ -106,10 +106,10 @@ int32 vector_copy(
         preserve by {
             step();
             step();
-            simp();
+            solve();
         }
     }
-    have i == length by auto();
+    have i == length;
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
         intro();
         intro();
@@ -174,12 +174,12 @@ int32 vector_grow(struct vector* owner) {
     step();
     have 0 <= old_capacity by {
         rewrite(old_capacity == owner->cap);
-        have 0 <= owner->cap by auto();
+        have 0 <= owner->cap;
         assumption();
     }
     have ((uint32)old_capacity) <= 1073741823u32 by {
         rewrite(old_capacity == owner->cap);
-        arithmetic() using {
+        solve() using {
             1 <= owner->cap;
             owner->cap <= 536870910;
         };
@@ -199,10 +199,10 @@ int32 vector_grow(struct vector* owner) {
             assumption();
         }
         fold(allocated_vector(owner));
-        have result == 0 by auto();
-        have result == 0 implies owner->cap == old(owner->cap) by auto();
-        have result == 0 implies owner->data == old(owner->data) by auto();
-        have result == 1 implies owner->cap == (old(owner->cap) + 1) by auto();
+        have result == 0;
+        have result == 0 implies owner->cap == old(owner->cap);
+        have result == 0 implies owner->data == old(owner->data);
+        have result == 1 implies owner->cap == (old(owner->cap) + 1);
         assumption();
         assumption();
         assumption();
@@ -218,12 +218,12 @@ int32 vector_grow(struct vector* owner) {
         step();
         step();
         step();
-        have owner->cap == at(region(9).entry, new_capacity) by auto();
-        have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by simp();
+        have owner->cap == at(region(9).entry, new_capacity);
+        have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by solve();
         fold(allocated_vector(owner));
-        have result == 0 implies owner->cap == old(owner->cap) by auto();
-        have result == 0 implies owner->data == old(owner->data) by auto();
-        have result == 1 implies owner->cap == (old(owner->cap) + 1) by auto();
+        have result == 0 implies owner->cap == old(owner->cap);
+        have result == 0 implies owner->data == old(owner->data);
+        have result == 1 implies owner->cap == (old(owner->cap) + 1);
         assumption();
         assumption();
         assumption();
@@ -256,10 +256,10 @@ int32 vector_push(struct vector* owner, int32 value) {
     step();
     step();
     have owner->data == old(owner->data) by {
-        simp();
+        solve();
     }
     have owner->data[old(owner->len)] == value by {
-        simp();
+        solve();
     }
     fold(vector_storage(owner));
     have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
@@ -274,7 +274,7 @@ int32 vector_push(struct vector* owner, int32 value) {
         };
         assumption();
     }
-    auto();
+    solve();
 }
 
 int32 allocated_vector_push(struct vector* owner, int32 value) {
@@ -387,7 +387,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 extract(owner->cap == (old(owner->cap) + 1));
                 assumption();
             }
-            have owner->len < owner->cap by auto();
+            have owner->len < owner->cap;
             fold(vector_storage(owner));
             step();
             have at(region(8).exit, owner->data[at(region(8).entry, owner->len)]) == at(region(8).exit, value) by {
@@ -428,13 +428,13 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 assumption();
             }
             have result == 0 implies owner->len == old(owner->len) by {
-                simp();
+                solve();
             }
             have result == 0 implies owner->cap == old(owner->cap) by {
-                simp();
+                solve();
             }
             have result == 0 implies owner->data == old(owner->data) by {
-                simp();
+                solve();
             }
             have at(region(8).entry, owner->len) == old(owner->len) by {
                 assumption();
@@ -533,7 +533,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             assumption();
         }
         have owner->len < owner->cap by {
-            have owner->len < owner->cap by auto();
+            have owner->len < owner->cap;
             assumption();
         }
         have old(owner->len) < old(owner->cap) by {
@@ -569,7 +569,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         have at(region(0).entry, 0) <= at(region(0).entry, owner->len) by {
             assumption();
         }
-        have at(region(0).entry, (owner->len + 1)) <= at(region(0).entry, owner->cap) by auto();
+        have at(region(0).entry, (owner->len + 1)) <= at(region(0).entry, owner->cap);
         have result == 1 by {
             normalize();
         }
@@ -577,13 +577,13 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             assumption();
         }
         have result == 0 implies owner->len == old(owner->len) by {
-            simp();
+            solve();
         }
         have result == 0 implies owner->cap == old(owner->cap) by {
-            simp();
+            solve();
         }
         have result == 0 implies owner->data == old(owner->data) by {
-            simp();
+            solve();
         }
         have result == 1 implies owner->len == (old(owner->len) + 1) by {
             intro();
@@ -647,7 +647,7 @@ int32 vector_init(struct vector* owner, int32 data[], int32 capacity) {
     step();
     step();
     fold(empty_vector(owner));
-    have result == 0 by auto();
+    have result == 0;
     assumption();
     assumption();
     assumption();
@@ -710,19 +710,19 @@ int32 vector_fill(struct vector* owner, int32 value) {
     unfold(nonempty_vector(owner));
     step();
     step();
-    have i >= 0 by auto();
-    have i <= owner->len by auto();
+    have i >= 0;
+    have i <= owner->len;
     loop as fill_cells {
         decreases owner->len - i;
         invariant i >= 0 and i <= owner->len;
         invariant owner->data == old(owner->data);
         owns owner->data[0..owner->len];
-        initialize by simp();
+        initialize by solve();
         preserve by {
             step();
             step();
             have 0 - at(region(3).entry, i) + owner->len - 1
-                < 0 - at(region(3).entry, i) + owner->len by auto();
+                < 0 - at(region(3).entry, i) + owner->len;
         }
     }
     step();
@@ -748,7 +748,7 @@ int32 vector_replace_if(
     step();
     branch {
         step();
-        have replace != 0 implies selected == replacement by auto();
+        have replace != 0 implies selected == replacement;
     } else {
         step();
         have replace != 0 implies selected == replacement by {
@@ -770,8 +770,8 @@ int32 vector_clear(struct vector* owner) {
     unfold(nonempty_vector(owner));
     step();
     step();
-    have owner->len == 0 by auto();
-    have 1 <= at(region(0).entry, owner->cap) by auto();
+    have owner->len == 0;
+    have 1 <= at(region(0).entry, owner->cap);
     transport(at(region(0).entry, 1) <= at(region(0).entry, owner->cap), 1 <= owner->cap) using {
         at(region(0).entry, 1) <= at(region(0).entry, owner->cap);
     };

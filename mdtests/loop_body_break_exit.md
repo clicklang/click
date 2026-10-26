@@ -115,13 +115,13 @@ int32 break_once(int32 n) {
         decreases i;
         invariant i >= 0;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             step();
         }
     }
     step();
-    simp();
+    solve();
 }
 
 int32 stop_at(int32 n) {
@@ -134,7 +134,7 @@ int32 stop_at(int32 n) {
         decreases i;
         invariant i >= 0;
 
-        initialize by simp();
+        initialize by solve();
         preserve by {
             if i == 3 {
                 step();
@@ -155,7 +155,7 @@ int32 stop_at(int32 n) {
         }
     }
     step();
-    simp();
+    solve();
 }
 
 int32 break_once_automatically(int32 n) {
@@ -169,7 +169,7 @@ int32 break_once_automatically(int32 n) {
         invariant i >= 0;
     }
     step();
-    simp();
+    solve();
 }
 
 int32 stop_at_automatically(int32 n) {
@@ -183,7 +183,7 @@ int32 stop_at_automatically(int32 n) {
         invariant i >= 0;
     }
     step();
-    simp();
+    solve();
 }
 ```
 

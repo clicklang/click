@@ -17,36 +17,36 @@ trait generic_state::Holder<T> {
 impl<T: Copy> generic_state::Holder<T> for generic_state::Wrap<T> {
     function held(self) -> T { self.value }
     fn put(&mut self, x: T) {
-    } by { execute(); simp(); }
+    } by { execute(); solve(); }
     fn get(&self) -> T {
-    } by { execute(); simp(); }
+    } by { execute(); solve(); }
 }
 
 fn generic_state::store<H: generic_state::Holder<u32>>(holder: &mut H, x: u32) -> u32 {
     ensures result == x;
     ensures held(holder) == x;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 fn generic_state::store_dyn(holder: &mut dyn generic_state::Holder<u32>, x: u32) -> u32 {
     ensures result == x;
     ensures held(holder) == x;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 fn generic_state::peek<H: generic_state::Holder<i32>>(holder: &H) -> i32 {
     ensures result == held(holder);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 // The callers lend a `Wrap<u32>` as the holder's object and get back a
 // struct whose `value` is the object's new state.
 fn generic_state::through(x: u32) -> u32 {
     ensures result == x;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 fn generic_state::through_dyn(x: u32) -> u32 {
     ensures result == x;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 // A shared `Wrap<i32>` keeps every field, `puts` included.
 fn generic_state::through_peek(level: i32) -> u32 {
     ensures result == 7;
-} by { execute(); simp(); }
+} by { execute(); solve(); }

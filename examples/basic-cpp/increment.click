@@ -7,5 +7,5 @@ int32 increment(int32& value) {
     ensures result == value;
 } by {
     execute();
-    simp();
+    solve();
 }

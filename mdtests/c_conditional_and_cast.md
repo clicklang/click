@@ -43,27 +43,27 @@ verifying "promote_byte.c";
 
 int32 choose_left(int32 condition, int32 left, int32 right) {
     requires condition != 0;
-    ensures selected_then: result == left by auto();
+    ensures selected_then: result == left;
 }
 
 int32 choose_right(int32 condition, int32 left, int32 right) {
     requires condition == 0;
-    ensures selected_else: result == right by auto();
+    ensures selected_else: result == right;
 }
 
 int32 conditional_short_circuit(int32 condition) {
     requires condition != 0;
-    ensures selected_without_evaluating_else: result == 7 by auto();
+    ensures selected_without_evaluating_else: result == 7;
 }
 
 uint8 cast_byte(int32 value) {
     requires value >= 0;
     requires value <= 255;
-    ensures checked_cast: result == value by auto();
+    ensures checked_cast: result == value;
 }
 
 int32 promote_byte(uint8 value) {
-    ensures promoted_cast: to_integer(result) == to_integer(value + 1) by auto();
+    ensures promoted_cast: to_integer(result) == to_integer(value + 1);
 }
 ```
 

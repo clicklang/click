@@ -318,7 +318,7 @@ for arithmetic bounds, memory safety, and postconditions.
 
 ## `solve` is a bounded search, not a general solver
 
-`solve` (older spelling `simp`) is a smart tactic: a bounded, deterministic
+`solve` is a smart tactic: a bounded, deterministic
 search over the ambient pure facts and a fixed set of proof rules, including
 equality rewriting, case splits on relevant disjunctions, and evidence for
 supported linear comparisons. A miss means the search found no proof within its budget, not that the claim is false.

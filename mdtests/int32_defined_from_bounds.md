@@ -14,17 +14,17 @@ listed premise must be a constant `int32` order or equality fact on one
 operand; the checker reads only those premises.
 
 `sum` and `difference` write the step out. `sum_by_simp`,
-`difference_by_simp`, and `sum_by_listed_simp` leave it to `simp` and
-`simp() using`, which cite the constant bounds on each operand: the facts
+`difference_by_simp`, and `sum_by_listed_simp` leave it to `solve` and
+`solve() using`, which cite the constant bounds on each operand: the facts
 indexed under that operand, or the listed ones. `sum_by_arithmetic` cites the
-listed ones through `arithmetic() using`.
+listed ones through `solve() using` as well.
 
 `bump` and `caller` are the `int32` form of
 [`guarded_postcondition_int64_bounds.md`](guarded_postcondition_int64_bounds.md):
 after the call the caller holds `defined(old(st.total) + got) implies
 st.total == old(st.total) + got`, and under `result == 1` the operands are
 bounded (`old(st.total) < 100`, `got == 1`). The smart closer proves the guard
-with a nested `simp`, whose certificate is the checked `int32_defined` rule
+with a nested `solve`, whose certificate is the checked `int32_defined` rule
 citing those two constant bounds; the expansion of `caller` re-verifies
 (`src/surface/tests/expansion_tests.rs`).
 
@@ -98,7 +98,7 @@ int32 sum(int32 a, int32 b) {
         }
     }
     execute();
-    simp();
+    solve();
 }
 
 int32 difference(int32 a, int32 b) {
@@ -117,7 +117,7 @@ int32 difference(int32 a, int32 b) {
         }
     }
     execute();
-    simp();
+    solve();
 }
 
 int32 sum_by_simp(int32 a, int32 b) {
@@ -126,10 +126,10 @@ int32 sum_by_simp(int32 a, int32 b) {
     ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
-        simp();
+        solve();
     }
     execute();
-    simp();
+    solve();
 }
 
 int32 difference_by_simp(int32 a, int32 b) {
@@ -139,10 +139,10 @@ int32 difference_by_simp(int32 a, int32 b) {
     ensures to_integer(result) == to_integer(a - b);
 } by {
     have defined(a - b) by {
-        simp();
+        solve();
     }
     execute();
-    simp();
+    solve();
 }
 
 int32 sum_by_listed_simp(int32 a, int32 b) {
@@ -151,13 +151,13 @@ int32 sum_by_listed_simp(int32 a, int32 b) {
     ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
-        simp() using {
+        solve() using {
             a < 100;
             b == 1;
         };
     }
     execute();
-    simp();
+    solve();
 }
 
 int32 sum_by_arithmetic(int32 a, int32 b) {
@@ -166,13 +166,13 @@ int32 sum_by_arithmetic(int32 a, int32 b) {
     ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
-        arithmetic() using {
+        solve() using {
             a < 100;
             b == 1;
         };
     }
     execute();
-    simp();
+    solve();
 }
 
 int32 bump(struct box* b) {
@@ -184,7 +184,7 @@ int32 bump(struct box* b) {
     let { total: n } = unfold(st);
     let st = fold(counted(b), { total: n + 1 });
     execute();
-    simp();
+    solve();
 }
 
 int32 caller(struct box* b) {
@@ -195,7 +195,7 @@ int32 caller(struct box* b) {
     step();
     step(bump, { st: st });
     execute();
-    simp();
+    solve();
 }
 ```
 

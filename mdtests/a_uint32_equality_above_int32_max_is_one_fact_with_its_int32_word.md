@@ -24,17 +24,17 @@ verifying "a_uint32_equality_above_int32_max_is_one_fact_with_its_int32_word.c";
 int is_max(unsigned u) {
     requires u == 4294967295u32;
     ensures result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int signed_view(unsigned u) {
     requires u == 4294967295u32;
     ensures result == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 unsigned stated(unsigned u) {
     requires u == 4294967295u32;
     ensures result == 4294967295u32;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

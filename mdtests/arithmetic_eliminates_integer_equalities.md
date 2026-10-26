@@ -1,6 +1,6 @@
 # arithmetic eliminates the listed Integer equalities
 
-Any number of listed `Integer` equalities may take part in one `arithmetic()`
+Any number of listed `Integer` equalities may take part in one `solve() using`
 step. They are eliminated, in the order they are written, each solved for the
 smallest atom it still mentions; the goal is then decided against what is left.
 Nothing is searched: the two-premise combination limit applies to the

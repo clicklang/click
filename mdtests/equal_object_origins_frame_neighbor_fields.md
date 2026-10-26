@@ -143,7 +143,7 @@ void inner(struct rb_node* node) {
             let { gs: gs, parent_tree: parent_tree, ns: ns } = unfold(state);
                     let { ps: ps } = unfold(parent_tree);
             step(); step(); step(); step();
-            have parent == p by { simp(); }
+            have parent == p by { solve(); }
             let parent_tree = fold(inner_node(g->rb_left), { model: InnerNode::At(p, g, old(state.pvalue)) }, { ps: ps });
             let state = fold(inner_state(node), { phase: InnerPhase::Before(g, p), gvalue: old(state.gvalue), pvalue: old(state.pvalue), nvalue: old(state.nvalue), parent_model: old(state.parent_model) }, { gs: gs, parent_tree: parent_tree, ns: ns });
             loop {
@@ -158,7 +158,7 @@ void inner(struct rb_node* node) {
                 invariant state.phase == InnerPhase::Before(g, p);
                 invariant old(state.phase) == InnerPhase::Before(g, p);
                 decreases 0;
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     let { gs: gs, parent_tree: parent_tree, ns: ns } = unfold(state);
                     let { ps: ps } = unfold(parent_tree);
@@ -186,7 +186,7 @@ void inner(struct rb_node* node) {
                     step();
                 }
             }
-            execute(); simp();
+            execute(); solve();
         },
     }
 }

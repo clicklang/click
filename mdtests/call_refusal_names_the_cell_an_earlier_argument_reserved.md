@@ -33,7 +33,7 @@ verifying "call_refusal_names_the_cell_an_earlier_argument_reserved.c";
 int32 wr(int32* p, int32* q) {
     owns p[0..1];
     owns q[0..1];
-    ensures result == 1 by auto();
+    ensures result == 1;
 }
 
 int32 caller(int32* x, int32 i, int32 j) {
@@ -42,7 +42,7 @@ int32 caller(int32* x, int32 i, int32 j) {
     requires i < j;
     requires j <= 4;
     owns x[0..4];
-    ensures result == 1 by auto();
+    ensures result == 1;
 }
 ```
 

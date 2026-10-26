@@ -86,7 +86,7 @@ void erase_mutating(struct node* node, struct node* parent,
         step();
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

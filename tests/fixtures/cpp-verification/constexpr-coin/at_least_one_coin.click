@@ -6,9 +6,9 @@ bool at_least_one_coin(const int64& value) {
 } by {
     if value >= 100000000i64 {
         execute();
-        simp();
+        solve();
     } else {
         execute();
-        simp();
+        solve();
     }
 }

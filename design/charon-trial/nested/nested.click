@@ -1,6 +1,6 @@
 verifying "nested.rs";
-fn array_len() -> usize { ensures result == 8u64; } by { execute(); simp(); }
-fn array_mut() -> u8 { ensures result == 9; } by { execute(); simp(); }
+fn array_len() -> usize { ensures result == 8u64; } by { execute(); solve(); }
+fn array_mut() -> u8 { ensures result == 9; } by { execute(); solve(); }
 
 fn nested(bytes: &[u8]) -> usize {
     requires bytes.len() == 8u64;
@@ -8,13 +8,13 @@ fn nested(bytes: &[u8]) -> usize {
     ensures result == 0u64;
     ensures forall (k: int32) { 0 <= k and k < 8 implies bytes[k] == old(bytes[k]) };
 } by {
-    execute_until(loop(0));
+    step_until(loop(0));
     have viewable(bytes[0..8]) by {
         transport(at(function.entry, viewable(bytes[0..8])), viewable(bytes[0..8])) using { at(function.entry, viewable(bytes[0..8])); };
     }
     have __rust_mir_8_remaining == 8u64;
-    have 8u64 - __rust_mir_8_remaining == 0u64 by { rewrite(__rust_mir_8_remaining == 8u64); simp(); }
-    have __rust_mir_8_cursor == bytes + (8u64 - __rust_mir_8_remaining) by { rewrite(8u64 - __rust_mir_8_remaining == 0u64); simp(); }
+    have 8u64 - __rust_mir_8_remaining == 0u64 by { rewrite(__rust_mir_8_remaining == 8u64); solve(); }
+    have __rust_mir_8_cursor == bytes + (8u64 - __rust_mir_8_remaining) by { rewrite(8u64 - __rust_mir_8_remaining == 0u64); solve(); }
     loop {
         decreases __rust_mir_8_remaining;
         views bytes[0..8];
@@ -28,39 +28,39 @@ fn nested(bytes: &[u8]) -> usize {
         invariant __rust_mir_17_live == 0;
         preserve by {
             have 4u64 <= __rust_mir_8_remaining;
-            have 8u64 - __rust_mir_8_remaining <= 4u64 by { arithmetic() using { 4u64 <= __rust_mir_8_remaining; __rust_mir_8_remaining <= 8u64; }; }
+            have 8u64 - __rust_mir_8_remaining <= 4u64 by { solve() using { 4u64 <= __rust_mir_8_remaining; __rust_mir_8_remaining <= 8u64; }; }
             mark outer;
-            execute_until(loop(1));
+            step_until(loop(1));
             have __rust_mir_8_remaining == at(outer, __rust_mir_8_remaining) - 4u64;
             have __rust_mir_8_remaining <= 4u64 by {
-                arithmetic() using { __rust_mir_8_remaining == at(outer, __rust_mir_8_remaining) - 4u64; 4u64 <= at(outer, __rust_mir_8_remaining); at(outer, __rust_mir_8_remaining) <= 8u64; };
+                solve() using { __rust_mir_8_remaining == at(outer, __rust_mir_8_remaining) - 4u64; 4u64 <= at(outer, __rust_mir_8_remaining); at(outer, __rust_mir_8_remaining) <= 8u64; };
             }
             have (at(outer, __rust_mir_8_remaining) - 4u64) % 4u64 == at(outer, __rust_mir_8_remaining % 4u64) by {
                 normalize() using { 4u64 <= at(outer, __rust_mir_8_remaining); };
             }
             have __rust_mir_8_remaining % 4u64 == 0u64 by {
                 rewrite(__rust_mir_8_remaining == at(outer, __rust_mir_8_remaining) - 4u64);
-                rewrite((at(outer, __rust_mir_8_remaining) - 4u64) % 4u64 == at(outer, __rust_mir_8_remaining % 4u64)); simp();
+                rewrite((at(outer, __rust_mir_8_remaining) - 4u64) % 4u64 == at(outer, __rust_mir_8_remaining % 4u64)); solve();
             }
             have at(outer, __rust_mir_8_cursor) + 4 == bytes + ((8u64 - at(outer, __rust_mir_8_remaining)) + 4u64) by {
-                arithmetic() using {
+                solve() using {
                     at(outer, __rust_mir_8_cursor) == bytes + (8u64 - at(outer, __rust_mir_8_remaining));
                     8u64 - at(outer, __rust_mir_8_remaining) <= 4u64;
                 };
             }
             have 8u64 - __rust_mir_8_remaining == (8u64 - at(outer, __rust_mir_8_remaining)) + 4u64 by {
-                arithmetic() using { __rust_mir_8_remaining == at(outer, __rust_mir_8_remaining) - 4u64; 4u64 <= at(outer, __rust_mir_8_remaining); at(outer, __rust_mir_8_remaining) <= 8u64; };
+                solve() using { __rust_mir_8_remaining == at(outer, __rust_mir_8_remaining) - 4u64; 4u64 <= at(outer, __rust_mir_8_remaining); at(outer, __rust_mir_8_remaining) <= 8u64; };
             }
             have __rust_mir_8_cursor == bytes + (8u64 - __rust_mir_8_remaining) by {
-                rewrite(8u64 - __rust_mir_8_remaining == (8u64 - at(outer, __rust_mir_8_remaining)) + 4u64); simp();
+                rewrite(8u64 - __rust_mir_8_remaining == (8u64 - at(outer, __rust_mir_8_remaining)) + 4u64); solve();
             }
-            have 4u64 <= 8u64 - __rust_mir_8_remaining by { arithmetic() using { __rust_mir_8_remaining <= 4u64; }; }
+            have 4u64 <= 8u64 - __rust_mir_8_remaining by { solve() using { __rust_mir_8_remaining <= 4u64; }; }
             have __rust_mir_17_remaining == 4u64;
             have (8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining == 8u64 - at(outer, __rust_mir_8_remaining) by {
-                arithmetic() using { __rust_mir_17_remaining == 4u64; __rust_mir_8_remaining == at(outer, __rust_mir_8_remaining) - 4u64; 4u64 <= at(outer, __rust_mir_8_remaining); at(outer, __rust_mir_8_remaining) <= 8u64; };
+                solve() using { __rust_mir_17_remaining == 4u64; __rust_mir_8_remaining == at(outer, __rust_mir_8_remaining) - 4u64; 4u64 <= at(outer, __rust_mir_8_remaining); at(outer, __rust_mir_8_remaining) <= 8u64; };
             }
             have __rust_mir_17_cursor == bytes + ((8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining) by {
-                rewrite((8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining == 8u64 - at(outer, __rust_mir_8_remaining)); simp();
+                rewrite((8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining == 8u64 - at(outer, __rust_mir_8_remaining)); solve();
             }
             have viewable(bytes[0..8]) by {
                 transport(at(outer, viewable(bytes[0..8])), viewable(bytes[0..8])) using { at(outer, viewable(bytes[0..8])); };
@@ -80,16 +80,16 @@ fn nested(bytes: &[u8]) -> usize {
                 preserve by {
                     have 2u64 <= __rust_mir_17_remaining;
                     have (8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining <= 6u64 by {
-                        arithmetic() using { 2u64 <= __rust_mir_17_remaining; __rust_mir_17_remaining <= 4u64; 4u64 <= 8u64 - __rust_mir_8_remaining; __rust_mir_8_remaining <= 4u64; };
+                        solve() using { 2u64 <= __rust_mir_17_remaining; __rust_mir_17_remaining <= 4u64; 4u64 <= 8u64 - __rust_mir_8_remaining; __rust_mir_8_remaining <= 4u64; };
                     }
                     have ((8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining) + 1u64 < 8u64 by {
-                        arithmetic() using { (8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining <= 6u64; };
+                        solve() using { (8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining <= 6u64; };
                     }
                     have (8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining < 8u64 by {
-                        arithmetic() using { (8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining <= 6u64; };
+                        solve() using { (8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining <= 6u64; };
                     }
                     mark inner;
-                    execute_until(back_edge());
+                    step_until(back_edge());
                     have viewable(bytes[0..8]) by {
                         transport(at(inner, viewable(bytes[0..8])), viewable(bytes[0..8])) using { at(inner, viewable(bytes[0..8])); };
                     }
@@ -99,28 +99,28 @@ fn nested(bytes: &[u8]) -> usize {
                     }
                     have __rust_mir_17_remaining % 2u64 == 0u64 by {
                         rewrite(__rust_mir_17_remaining == at(inner, __rust_mir_17_remaining) - 2u64);
-                        rewrite((at(inner, __rust_mir_17_remaining) - 2u64) % 2u64 == at(inner, __rust_mir_17_remaining % 2u64)); simp();
+                        rewrite((at(inner, __rust_mir_17_remaining) - 2u64) % 2u64 == at(inner, __rust_mir_17_remaining % 2u64)); solve();
                     }
                     have __rust_mir_17_remaining <= 4u64 by {
-                        arithmetic() using { __rust_mir_17_remaining == at(inner, __rust_mir_17_remaining) - 2u64; 2u64 <= at(inner, __rust_mir_17_remaining); at(inner, __rust_mir_17_remaining) <= 4u64; };
+                        solve() using { __rust_mir_17_remaining == at(inner, __rust_mir_17_remaining) - 2u64; 2u64 <= at(inner, __rust_mir_17_remaining); at(inner, __rust_mir_17_remaining) <= 4u64; };
                     }
                     have at(inner, __rust_mir_17_cursor) + 2 == bytes + (((8u64 - __rust_mir_8_remaining) - at(inner, __rust_mir_17_remaining)) + 2u64) by {
-                        arithmetic() using {
+                        solve() using {
                             at(inner, __rust_mir_17_cursor) == bytes + ((8u64 - __rust_mir_8_remaining) - at(inner, __rust_mir_17_remaining));
                             (8u64 - __rust_mir_8_remaining) - at(inner, __rust_mir_17_remaining) <= 6u64;
                         };
                     }
                     have (8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining == ((8u64 - __rust_mir_8_remaining) - at(inner, __rust_mir_17_remaining)) + 2u64 by {
-                        arithmetic() using {
+                        solve() using {
                             __rust_mir_17_remaining == at(inner, __rust_mir_17_remaining) - 2u64; 2u64 <= at(inner, __rust_mir_17_remaining); at(inner, __rust_mir_17_remaining) <= 4u64;
                             4u64 <= 8u64 - __rust_mir_8_remaining; __rust_mir_8_remaining <= 4u64;
                         };
                     }
                     have __rust_mir_17_cursor == bytes + ((8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining) by {
-                        rewrite((8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining == ((8u64 - __rust_mir_8_remaining) - at(inner, __rust_mir_17_remaining)) + 2u64); simp();
+                        rewrite((8u64 - __rust_mir_8_remaining) - __rust_mir_17_remaining == ((8u64 - __rust_mir_8_remaining) - at(inner, __rust_mir_17_remaining)) + 2u64); solve();
                     }
                     have __rust_mir_17_remaining < at(inner, __rust_mir_17_remaining) by {
-                        arithmetic() using { __rust_mir_17_remaining == at(inner, __rust_mir_17_remaining) - 2u64; 2u64 <= at(inner, __rust_mir_17_remaining); };
+                        solve() using { __rust_mir_17_remaining == at(inner, __rust_mir_17_remaining) - 2u64; 2u64 <= at(inner, __rust_mir_17_remaining); };
                     }
                     close_invariants();
                 }
@@ -128,31 +128,31 @@ fn nested(bytes: &[u8]) -> usize {
             have __rust_mir_17_remaining < 2u64 by {
                 cases {
                     not (0u64 < __rust_mir_17_remaining) => {
-                        arithmetic() using { not 0u64 < __rust_mir_17_remaining; };
+                        solve() using { not 0u64 < __rust_mir_17_remaining; };
                     }
                     not (2u64 <= __rust_mir_17_remaining) => { assumption(); }
                 }
             }
             have __rust_mir_17_remaining % 2u64 == __rust_mir_17_remaining by { normalize() using { __rust_mir_17_remaining < 2u64; }; }
             have __rust_mir_17_remaining == 0u64 by {
-                arithmetic() using { __rust_mir_17_remaining % 2u64 == __rust_mir_17_remaining; __rust_mir_17_remaining % 2u64 == 0u64; };
+                solve() using { __rust_mir_17_remaining % 2u64 == __rust_mir_17_remaining; __rust_mir_17_remaining % 2u64 == 0u64; };
             }
-            execute_until(back_edge());
+            step_until(back_edge());
             have viewable(bytes[0..8]) by {
                 transport(at(outer, viewable(bytes[0..8])), viewable(bytes[0..8])) using { at(outer, viewable(bytes[0..8])); };
             }
             have __rust_mir_8_remaining == at(outer, __rust_mir_8_remaining) - 4u64;
             have __rust_mir_8_remaining < at(outer, __rust_mir_8_remaining) by {
-                arithmetic() using { __rust_mir_8_remaining == at(outer, __rust_mir_8_remaining) - 4u64; 4u64 <= at(outer, __rust_mir_8_remaining); };
+                solve() using { __rust_mir_8_remaining == at(outer, __rust_mir_8_remaining) - 4u64; 4u64 <= at(outer, __rust_mir_8_remaining); };
             }
-            have __rust_mir_8_remaining <= 8u64 by { arithmetic() using { __rust_mir_8_remaining <= 4u64; }; }
+            have __rust_mir_8_remaining <= 8u64 by { solve() using { __rust_mir_8_remaining <= 4u64; }; }
             close_invariants();
         }
     }
     have __rust_mir_8_remaining < 4u64 by {
         cases {
             not (0u64 < __rust_mir_8_remaining) => {
-                arithmetic() using { not 0u64 < __rust_mir_8_remaining; };
+                solve() using { not 0u64 < __rust_mir_8_remaining; };
             }
             not (4u64 <= __rust_mir_8_remaining) => { assumption(); }
         }
@@ -161,15 +161,15 @@ fn nested(bytes: &[u8]) -> usize {
     have __rust_mir_8_remaining == 0u64;
     execute();
     have forall (k: int32) { 0 <= k and k < 8 implies bytes[k] == old(bytes[k]) } by {
-        intro(); intro(); simp();
+        intro(); intro(); solve();
     }
-    simp();
+    solve();
 }
 
-fn empty_array_len() -> usize { ensures result == 0u64; } by { execute(); simp(); }
-fn medium_array_len() -> usize { ensures result == 1024u64; } by { execute(); simp(); }
-fn large_array_len() -> usize { ensures result == 1000000u64; } by { execute(); simp(); }
+fn empty_array_len() -> usize { ensures result == 0u64; } by { execute(); solve(); }
+fn medium_array_len() -> usize { ensures result == 1024u64; } by { execute(); solve(); }
+fn large_array_len() -> usize { ensures result == 1000000u64; } by { execute(); solve(); }
 fn array_read(index: usize) -> u8 {
     requires index < 8u64;
     ensures result == 7;
-} by { execute(); simp(); }
+} by { execute(); solve(); }

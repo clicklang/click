@@ -29,7 +29,7 @@ Guard::Guard(int32& value) {
     owns this->saved;
     ensures this->slot == &value;
     ensures this->saved == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 Guard::~Guard() {
     owns this->slot;
     owns this->saved;
@@ -37,11 +37,11 @@ Guard::~Guard() {
     ensures this->slot == old(this->slot);
     ensures this->saved == old(this->saved);
     ensures this->slot[0] == old(this->saved);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 cleanup(int32& value) {
     owns value;
     ensures value == 1;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

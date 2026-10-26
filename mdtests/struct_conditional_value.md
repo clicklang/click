@@ -82,8 +82,6 @@ struct packet choose_packet(int32 choose_left, struct packet left, struct packet
     ensures choose_left != 0 implies result.inner.enabled == left.inner.enabled;
     ensures choose_left == 0 implies result.tail == right.tail;
     ensures choose_left != 0 implies result.tail == left.tail;
-} by {
-    auto();
 }
 
 int32 sum_packet(struct packet packet) {
@@ -92,15 +90,13 @@ int32 sum_packet(struct packet packet) {
     requires packet.tail >= -1000;
     requires packet.tail <= 1000;
     ensures to_integer(result) == to_integer(packet.tag + packet.inner.value + packet.inner.enabled + packet.tail);
-} by {
-    auto();
 }
 
 int32 struct_conditional_value() {
     ensures result == 289;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

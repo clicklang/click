@@ -3,10 +3,10 @@
 When the goal an `unfold` refreshes is already an available fact, the `unfold`
 closes it. A later step then has nothing to prove. Before this was refused, the
 script went on against the goal as written before the `unfold`, so the
-`arithmetic` below read `0 <= w2(a, b)` with `w2` still folded. It then
+`solve() using` below read `0 <= w2(a, b)` with `w2` still folded. It then
 reported that the listed premise, the unfolded goal verbatim, did not prove
 it. Naming the step that closed the goal points at the line to delete.
-`assumption`, `simp`, and `normalize` after a closed goal remain harmless.
+`assumption`, a bare `solve()`, and `normalize` after a closed goal remain harmless.
 
 ```click
 spec enum Ctx { Top, Up(Ctx) }
@@ -21,11 +21,11 @@ theorem bound_through_wrapper(a: Ctx, b: Ctx) {
     requires 0 <= d(a) + d(b);
     ensures 0 <= w2(a, b) by {
         unfold(w2(a, b));
-        arithmetic() using { 0 <= d(a) + d(b); };
+        solve() using { 0 <= d(a) + d(b); };
     }
 }
 ```
 
 ```expect
-fail: `arithmetic` follows a goal-closing tactic: `unfold` already closed this goal
+fail: `solve() using` follows a goal-closing tactic: `unfold` already closed this goal
 ```

@@ -1,7 +1,7 @@
-# auto spells a replaced value at function entry
+# The implicit closer spells a replaced value at function entry
 
 After `*p = *p - 1`, the new `*p` is the machine difference of the old value
-and `1`. To show it stays nonnegative, `auto` relates it to the Integer
+and `1`. To show it stays nonnegative, the implicit closer relates it to the Integer
 `to_integer(old(*p)) - 1` with `integer_operation_identity`; the operand is
 spelled `old(*p)`, the entry reading of the written `*p`. The requirement
 `*p >= 1` is a native bound, read as `1 <= to_integer(old(*p))`.

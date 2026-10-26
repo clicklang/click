@@ -1,9 +1,9 @@
-# `auto` closes each arm of a split that ends a proof
+# Each arm of a split that ends a proof closes its own claims
 
 A proof `if` after execution whose condition is open on the outcome path splits
-that path in two, and each arm finishes its own path. `auto();` written at the
-end of an arm closes that arm's goals: here `simp()` closes the first claim in
-each arm and `auto()` the rest.
+that path in two, and each arm finishes its own path, closing that arm's
+goals: here two `solve()` steps close the first two claims in
+each arm and the implicit closer the rest.
 
 ```c filename=auto_closes_each_arm_of_a_split_that_ends_a_proof.c
 int32 f(int32 n) {
@@ -22,10 +22,10 @@ int32 f(int32 n) {
     step_until(function.exit);
     if n < 5 {
         solve();
-        auto();
+        solve();
     } else {
         solve();
-        auto();
+        solve();
     }
 }
 ```

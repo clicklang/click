@@ -14,10 +14,10 @@ theorem packed_parent(p: int32*, word: uint64) {
     requires aligned(p, 8);
     ensures ((word & 1) | address(p)) == address(p) + (((word & 1) | address(p)) & 1) by {
         have (((word & 1) | address(p)) & 1) == (word & 1) by {
-            arithmetic() using { aligned(p, 8); };
+            solve() using { aligned(p, 8); };
         }
         rewrite((((word & 1) | address(p)) & 1) == (word & 1));
-        arithmetic() using { aligned(p, 8); };
+        solve() using { aligned(p, 8); };
     }
 }
 ```

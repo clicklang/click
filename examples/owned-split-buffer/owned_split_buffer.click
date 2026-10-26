@@ -5,7 +5,7 @@ theorem incremented_one_is_two(before: int32, after: int32) {
     ensures after == 2 by {
         rewrite(after == before + 1);
         rewrite(before == 1);
-        simp();
+        solve();
     }
 }
 
@@ -14,7 +14,7 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires second == third;
 
     ensures first == third by {
-        simp();
+        solve();
     }
 }
 
@@ -55,7 +55,7 @@ int32 owned_split_buffer_init(
 } by {
     execute();
     fold(owned_split_buffer(owner));
-    simp();
+    solve();
 }
 
 int32 owned_split_buffer_set_left(
@@ -80,7 +80,7 @@ int32 owned_split_buffer_set_left(
     ensures owner->data == old(owner->data);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 owned_split_buffer_set_right(
@@ -106,7 +106,7 @@ int32 owned_split_buffer_set_right(
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 
 int32 owned_split_buffer_move_right(struct owned_split_buffer* owner) {
@@ -121,7 +121,7 @@ int32 owned_split_buffer_move_right(struct owned_split_buffer* owner) {
 } by {
     step();
     step();
-    simp();
+    solve();
 }
 
 int32 owned_split_buffer_get_left(
@@ -132,7 +132,7 @@ int32 owned_split_buffer_get_left(
     requires index < owner->split;
     views owned_split_buffer(owner);
 
-    ensures result == owner->data[index] by auto();
+    ensures result == owner->data[index];
 }
 
 int32 owned_split_buffer_pipeline(

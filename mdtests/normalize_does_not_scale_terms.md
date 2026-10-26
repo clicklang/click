@@ -4,7 +4,7 @@
 them, for C machine values and for exact `Integer` terms, but a product is
 one opaque operand. Proving `2 * to_integer(x) == to_integer(x) +
 to_integer(x)` needs distributivity, so `normalize` refuses it within its
-documented behavior; `arithmetic()` proves it.
+documented behavior; `solve() using {}` proves it.
 
 ```c filename=normalize_does_not_scale_terms.c
 void unused(void) {}
@@ -14,7 +14,7 @@ void unused(void) {}
 verifying "normalize_does_not_scale_terms.c";
 
 theorem by_arithmetic(x: int32) {
-    ensures 2 * to_integer(x) == to_integer(x) + to_integer(x) by { arithmetic(); }
+    ensures 2 * to_integer(x) == to_integer(x) + to_integer(x) by { solve() using {}; }
 }
 
 theorem by_normalize(x: int32) {

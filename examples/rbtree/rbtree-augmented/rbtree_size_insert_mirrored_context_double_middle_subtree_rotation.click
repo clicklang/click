@@ -193,7 +193,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(sized_value(SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)));
                     unfold(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)));
                     apply(sized_double_middle_bounds(pv, nv, far, SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)));
-                    have to_integer(pv - 1) == to_integer(pv) - to_integer(1) by auto();
+                    have to_integer(pv - 1) == to_integer(pv) - to_integer(1);
                     let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, nv, SizedTree::Empty, SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)) }, { metadata: n_size, right: n_right, left: n_left });
                     mark before_inner_rotation;
                     have node->__rb_parent_color == address(p) + (node->__rb_parent_color & 1) by { assumption(); }
@@ -423,8 +423,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     let rotated = fold(sized_rotation_right_at(p, node), { model: SizedTree::Node(node, p, Color::Red, nv, SizedTree::Empty, SizedTree::Node(p, node, Color::Red, pv, SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right), far)) }, { metadata: n_size, demoted: demoted, other: other });
                     unfold(sized_right(SizedTree::Node(node, p, Color::Red, nv, SizedTree::Empty, SizedTree::Node(p, node, Color::Red, pv, SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right), far))));
-                    have -2147483648 <= to_integer(pv) by auto();
-                    have to_integer(pv) <= 2147483647 by auto();
+                    have -2147483648 <= to_integer(pv);
+                    have to_integer(pv) <= 2147483647;
                     have 0 <= to_integer(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) by {
                         solve() using {
                             0 <= to_integer(sized_value(SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)));

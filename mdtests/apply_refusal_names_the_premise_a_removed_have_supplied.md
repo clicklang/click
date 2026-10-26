@@ -2,7 +2,7 @@
 
 `head_nonnegative` requires `0 < n`. The contract gives only `n >= 0`, and
 the `have` states `n >= 0` again instead of the `0 < n` the lemma needs, so
-the `apply` has no premise to cite and `auto` cannot prove one. This is the
+the `apply` has no premise to cite and the implicit closer cannot prove one. This is the
 shape a proof takes when the `have` that supplied the premise is removed or
 restated.
 

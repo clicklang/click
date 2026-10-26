@@ -2,7 +2,7 @@
 
 A loop that stores its exit test in a local and breaks on it closes its back
 edge from that test's false branch: a negated comparison, `not (a >= b)`,
-which `arithmetic` reads as `a < b`
+which arithmetic reads as `a < b`
 ([`arithmetic_using_reads_a_negated_order_premise.md`](arithmetic_using_reads_a_negated_order_premise.md)).
 Rust lowers `if i >= n { break; }` this way.
 

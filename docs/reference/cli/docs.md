@@ -46,7 +46,7 @@ The class comes from the written tactic's form in the tactic table: written
 `apply(t(x))` is smart and `apply(t(x)) using { ... }` is simple. A C
 statement's open requirement is proved by the written smart tactic that
 reached the statement, such as `step_until`, or else by the implicit closer of
-a written step, which refusals name the implicit `auto`. That closer is smart,
+a written step. That closer is smart,
 and its refusal points at `click docs tracing`. A control tactic such as `have` prints only its
 entry, since its refusal comes from a tactic it contains.
 

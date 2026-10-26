@@ -1,7 +1,7 @@
 # A constructor getter uses the matched model equality
 
 The matched constructor and the owned model denote the same value, so the
-shared equality closure supplies the getter fact to `simp`.
+shared equality closure supplies the getter fact to `solve`.
 
 ```c filename=have_by_simp_misses_a_constructor_rewrite.c
 void touch(int32 n) {

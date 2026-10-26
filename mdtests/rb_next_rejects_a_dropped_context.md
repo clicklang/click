@@ -1557,11 +1557,11 @@ struct rb_node* rb_next(struct rb_node* node) {
             }
             let { left: entry_l, right: entry_r } = unfold(t);
             step();
-            have address(entry_parent) == (node->__rb_parent_color & ~3) by arithmetic() using {
+            have address(entry_parent) == (node->__rb_parent_color & ~3) by solve() using {
                 aligned(entry_parent, 8);
                 node->__rb_parent_color == address(entry_parent) + (node->__rb_parent_color & 1);
             };
-            have address(node) == (address(node) & ~3) by arithmetic() using {
+            have address(node) == (address(node) & ~3) by solve() using {
                 aligned(node, 8);
             };
             have node->__rb_parent_color != address(node) by {
@@ -1582,7 +1582,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                 RbTree::Node(right_identity, right_parent, right_color, right_left,
                     right_right) => {
                     have RbTree::Node(right_identity, right_parent, right_color, right_left,
-                        right_right) == entry_right by { simp(); }
+                        right_right) == entry_right by { solve(); }
                     have rb_parent_is(RbTree::Node(right_identity, right_parent, right_color,
                             right_left, right_right), node) == 1 by {
                         rewrite(RbTree::Node(right_identity, right_parent, right_color,
@@ -1630,7 +1630,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                 entry_parent, entry_color, entry_left, old(c.model)) },
                         { sibling: entry_l, up: c });
                     have ctx.model == Context::Right(node, entry_parent, entry_color,
-                        entry_left, old(c.model)) by { simp(); }
+                        entry_left, old(c.model)) by { solve(); }
                     match ctx.model {
                         Context::Top => { contradiction(ctx.model == Context::Top); },
                         Context::Left(first_identity, first_parent, first_color, first_right,
@@ -1697,7 +1697,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                     RbTree::Node(entry_identity, entry_parent, entry_color,
                                         entry_left, entry_right));
 
-                                initialize by simp();
+                                initialize by solve();
                                 preserve by {
                                     match t.model {
                                         RbTree::Empty => { contradiction(t.model
@@ -1760,7 +1760,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                     have left_model
                                                         == RbTree::Node(left_identity,
                                                         left_parent, left_color, left_left,
-                                                        left_right) by { simp(); }
+                                                        left_right) by { solve(); }
                                                     have rb_parent_is(RbTree::Node(left_identity,
                                                             left_parent, left_color, left_left,
                                                             left_right), node) == 1 by {
@@ -1895,7 +1895,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                     let rest = fold(rb_remainder_at(node),
                                         { model: Remainder::More });
                                     step();
-                                    simp();
+                                    solve();
                                 },
                             }
                         },
@@ -1949,7 +1949,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                         invariant rb_list_ends_with(rb_inorder(t.model), old(node)) == 1;
                         invariant plug(c.model, t.model) == plug(old(c.model), old(t.model));
 
-                        initialize by simp();
+                        initialize by solve();
                         preserve by {
                             match t.model {
                                 RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
@@ -2364,7 +2364,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                             let rest = fold(rb_remainder_at(parent),
                                 { model: Remainder::Whole(node, t.model) }, { whole: t });
                             step();
-                            simp();
+                            solve();
                         },
                         Context::Left(frame_identity, frame_parent, frame_color, frame_right,
                             above) => {
@@ -2470,7 +2470,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                 assumption();
                                             }
                                             step();
-                                            simp();
+                                            solve();
                                         },
                                         Context::Left(up_identity, up_parent, up_color, up_sibling, up_above) => {
                                             have plug(Context::Left(up_identity, up_parent, up_color, up_sibling, up_above), RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right)) == plug(old(c.model), old(t.model)) by {
@@ -2499,7 +2499,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                 assumption();
                                             }
                                             step();
-                                            simp();
+                                            solve();
                                         },
                                         Context::Right(up_identity, up_parent, up_color, up_sibling, up_above) => {
                                             have plug(Context::Right(up_identity, up_parent, up_color, up_sibling, up_above), RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right)) == plug(old(c.model), old(t.model)) by {
@@ -2528,7 +2528,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                 assumption();
                                             }
                                             step();
-                                            simp();
+                                            solve();
                                         },
                                     }
                                 },

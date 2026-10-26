@@ -1,4 +1,4 @@
-# `auto` proves a machine conservation equation
+# The implicit closer proves a machine conservation equation
 
 `capacity - amount == used + (available - amount)` over `int32` is proved
 through its `Integer` reading: the equality fact `capacity == used +
@@ -19,7 +19,7 @@ theorem shrink_conservation(capacity: int32, used: int32, available: int32, amou
     requires defined(used + available);
     requires defined(capacity - amount);
     ensures defined(available - amount) and defined(used + (available - amount)) and
-        capacity - amount == used + (available - amount) by auto();
+        capacity - amount == used + (available - amount);
 }
 
 theorem grow_conservation(capacity: int32, used: int32, available: int32, amount: int32) {
@@ -30,7 +30,7 @@ theorem grow_conservation(capacity: int32, used: int32, available: int32, amount
     requires defined(used + available);
     requires defined(capacity + amount);
     ensures defined(used + (available + amount)) and
-        capacity + amount == used + (available + amount) by auto();
+        capacity + amount == used + (available + amount);
 }
 ```
 

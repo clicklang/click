@@ -2412,8 +2412,11 @@ fn check_direct_pure_goal_with_proof(
             TacticTiming::new(claim_label, 0, 0, &ProofTactic::Simp, 0),
         )
     };
-    let _origin =
-        crate::surface::proof_trace::TraceOrigin::enter(Some(if auto { "auto" } else { "simp" }));
+    let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some(if auto {
+        "implicit tail"
+    } else {
+        "solve"
+    }));
     let (result, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| {
         if auto {
             root.try_auto_proof_closure()
@@ -3587,8 +3590,8 @@ mod tests {
     fn ordinary_pure_scripts_retain_completion_without_compatibility() {
         for body in [
             "normalize();",
-            "simp();",
-            "have x == x by { simp(); } assumption();",
+            "solve();",
+            "have x == x by { solve(); } assumption();",
             "if x == 0 { normalize(); } else { normalize(); }",
         ] {
             let source = format!("theorem ordinary(x: int32) {{ ensures x == x by {{ {body} }} }}");
@@ -3601,7 +3604,7 @@ mod tests {
             assert!(!verified.proof_certificate().unwrap().steps().is_empty());
         }
         let error = verify_instantiation_theorem(
-            "theorem bad(x: int32) { ensures x == 0 by { normalize(); simp(); } }",
+            "theorem bad(x: int32) { ensures x == 0 by { normalize(); solve(); } }",
         )
         .unwrap_err();
         assert!(

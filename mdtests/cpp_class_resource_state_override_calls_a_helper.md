@@ -55,15 +55,15 @@ void Boxed::write(int v) {
     let after = fold(cell(this->slot), { value: v });
 }
 void Boxed::set(int v) {
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void put(Store& store, int x) {
     ensures held(store) == x;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 void through(Boxed& boxed, int x) {
     owns boxed;
     owns state: cell(boxed.slot);
     ensures state.value == x;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```expect

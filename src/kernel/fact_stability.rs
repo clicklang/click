@@ -142,7 +142,7 @@ int32 id(int32 x) {
 } by {
     have x <= 10;
     execute();
-    simp();
+    solve();
 }
 "#;
         let lines = capture(|| {

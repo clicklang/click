@@ -15,14 +15,14 @@ contract const int *Readable(const int *p) {
 }
 theorem lift(callback: const int* (*)(const int*)) executes callback(const int* p) {
     requires Exact(callback);
-    ensures Readable(callback) by { step(Exact); simp(); }
+    ensures Readable(callback) by { step(Exact); solve(); }
 }
 verifying "main.c";
 int read_view(const int *(*f)(const int *), const int *p) {
     requires Exact(f);
     views p[0..1];
     ensures result == p[0];
-} by { apply(lift(f)); step(Readable); execute(); simp(); }
+} by { apply(lift(f)); step(Readable); execute(); solve(); }
 ```
 
 ```expect

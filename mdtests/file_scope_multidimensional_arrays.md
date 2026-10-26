@@ -43,7 +43,7 @@ verifying "reader.c";
 
 int32 definition_anchor() {
     requires values[0][1] == 2;
-    ensures result == 2 by auto();
+    ensures result == 2;
 }
 
 int32 read_values() {
@@ -51,14 +51,14 @@ int32 read_values() {
     owns flags[0][1..2];
     requires values[1][2] > -1000;
     requires values[1][2] < 1000;
-    ensures to_integer(result) == to_integer(values[1][2] + flags[0][1]) by auto();
+    ensures to_integer(result) == to_integer(values[1][2] + flags[0][1]);
 }
 
 int32 update_values() {
     requires values[0][1] == 2;
     owns values[1][0..1];
-    ensures result == 2 by auto();
-    ensures values[1][0] == 2 by auto();
+    ensures result == 2;
+    ensures values[1][0] == 2;
 }
 ```
 

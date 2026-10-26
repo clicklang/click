@@ -2,7 +2,7 @@
 
 This checks that folded composite-resource facts are visible, but contained
 write permission is still hidden until `unfold(...)`. The proof is a written
-`step()`, which never opens a resource; `auto` would open it.
+`step()`, which never opens a resource; the implicit tail would open it.
 
 ```c filename=write_flag_without_unfold.c
 int32 write_flag_without_unfold(int32* flag) {

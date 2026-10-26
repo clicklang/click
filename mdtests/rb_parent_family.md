@@ -128,7 +128,7 @@ struct rb_node* parent_of(struct rb_node* node) {
     unfold(linked(node));
     execute();
     fold(linked(node));
-    simp();
+    solve();
 }
 
 unsigned long color_of(struct rb_node* node) {
@@ -137,7 +137,7 @@ unsigned long color_of(struct rb_node* node) {
     ensures result == (node->__rb_parent_color & 1);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void set_parent(struct rb_node* node, struct rb_node* parent) {
@@ -147,7 +147,7 @@ void set_parent(struct rb_node* node, struct rb_node* parent) {
     ensures node->__rb_parent_color == address(parent) + (old(node->__rb_parent_color) & 1);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 void set_black_parent(struct rb_node* node, struct rb_node* parent) {
@@ -157,7 +157,7 @@ void set_black_parent(struct rb_node* node, struct rb_node* parent) {
     ensures node->__rb_parent_color == address(parent) + 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 struct rb_node* detach_black(struct rb_node* node) {
@@ -167,7 +167,7 @@ struct rb_node* detach_black(struct rb_node* node) {
     ensures result == 0;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 struct rb_node* red_parent_of(struct rb_node* red) {
@@ -179,7 +179,7 @@ struct rb_node* red_parent_of(struct rb_node* red) {
     unfold(linked(red));
     execute();
     fold(linked(red));
-    simp();
+    solve();
 }
 
 int32 cleared_is_empty(struct rb_node* node) {
@@ -188,7 +188,7 @@ int32 cleared_is_empty(struct rb_node* node) {
     ensures result == 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
@@ -200,10 +200,10 @@ int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
     ensures result == 0;
 } by {
     step();
-    have address(parent) == (node->__rb_parent_color & ~3) by arithmetic() using {
+    have address(parent) == (node->__rb_parent_color & ~3) by solve() using {
         aligned(parent, 8);
     };
-    have address(node) == (address(node) & ~3) by arithmetic() using {
+    have address(node) == (address(node) & ~3) by solve() using {
         aligned(node, 8);
     };
     have node->__rb_parent_color != address(node) by {
@@ -224,7 +224,7 @@ int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
         }
     }
     execute();
-    simp();
+    solve();
 }
 
 void link_node(struct rb_node* node, struct rb_node* parent, struct rb_node** rb_link) {
@@ -239,7 +239,7 @@ void link_node(struct rb_node* node, struct rb_node* parent, struct rb_node** rb
     ensures rb_link[0] == node;
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

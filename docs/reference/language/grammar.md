@@ -32,7 +32,7 @@ have a first-class string type.
 Call-style proof tactics require parentheses, including the no-argument
 call `solve()`. A single tactic call can follow `by` directly; braces enclose
 a sequence and may also enclose one call. An omitted proof runs the whole
-proof by automation; `by auto();` is its older spelling.
+proof by automation.
 
 ## Word index
 
@@ -69,19 +69,19 @@ documentation inventory keep the following accepted words synchronized.
 | `old`, `at`, `c` | Snapshot selection and embedded C-fragment forms. |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
 | `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source spelling is available. |
-| `by`, `auto`, `using` | Proof introduction, the older spelling of the omitted proof, and exact-premise syntax. |
-| `mark`, `step`, `step_until`, `execute`, `execute_until` | Execution tactics; `execute` is the older written form of the implicit tail, and `execute_until` the older spelling of `step_until`. |
+| `by`, `using` | Proof introduction and exact-premise syntax. |
+| `mark`, `step`, `step_until`, `execute` | Execution tactics; `execute` is the older written form of the implicit tail. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
 | `peel` | Range-fold tactic: `peel(f(args)) using { ... }` opens the range-fold law of an `Integer`-valued pure function whose body is a range fold, selected by the listed guards. |
 | `take`, `give`, `gather`, `scatter` | Iterated guarded-ownership tactics: move one element out of or into an iterated fact, and form or dissolve the whole fact. `forall` inside a resource body starts the iterated clause itself. |
 | `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `assumption`, `extract`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
-| `arithmetic` | Older spelling of `solve() using`: `arithmetic()` and `arithmetic() using { ... }` plan and check a bounded arithmetic certificate. |
 | `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |
+| `simp`, `auto`, `arithmetic`, `execute_until` | Removed tactic spellings. The parser refuses each with a diagnostic that names its replacement: `solve()` for `simp()`; the omitted proof for `by auto();` and `solve();` for a written `auto();`; `solve() using { ... }` for `arithmetic() using { ... }` and `solve() using {}` for bare `arithmetic()`; and `step_until` for `execute_until`. |
 | `split`, `left`, `right` | Retired tactic spellings. Unless a user-defined tactic has the name, the parser rejects each with a diagnostic that names `assumption()`. |
 | `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate rules { ... }`. Its step words are listed under [Arithmetic-certificate words](#arithmetic-certificate-words). |
-| `rewrite`, `transport`, `instantiate`, `solve`, `simp`, `induct`, `close_invariants` | Equality, snapshot, quantifier, closing, induction, and loop-proof tactics; `simp` is the older spelling of `solve`. |
+| `rewrite`, `transport`, `instantiate`, `solve`, `induct`, `close_invariants` | Equality, snapshot, quantifier, closing, induction, and loop-proof tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
 | `function`, `loop`, `region`, `statement`, `call`, `assignment`, `read`, `back_edge`, `entry`, `exit` | Program-region and program-point selectors. Each names a region. `region(N)` is the `N`th atomic region, one `step()` crosses; `statement(i)` is a statement as written, and a chain continues it with `.statement(j)` and ends it with `.region(j)`, `.call(f, j)`, `.assignment(x, j)` or `.read(j)`. Unchained `assignment(local, N)` and `read(N)`, and `back_edge()` or `loop(i).back_edge()`, are execution targets only. |
 

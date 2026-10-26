@@ -5,4 +5,4 @@ void FeeRateState::SetFee(int64 next) {
     views this->size;
     ensures this->fee == next;
     ensures this->size == old(this->size);
-} by { execute(); simp(); }
+} by { execute(); solve(); }

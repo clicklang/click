@@ -28,5 +28,5 @@ theorem unsound(callback: int32 (*)(int32*, int32))
 ```
 
 ```expect
-fail: simp
+fail: solve
 ```

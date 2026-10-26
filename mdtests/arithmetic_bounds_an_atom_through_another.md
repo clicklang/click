@@ -1,4 +1,4 @@
-# `arithmetic()` bounds an operand through another premise
+# `solve() using` bounds an operand through another premise
 
 `0 <= i` and `i < n` keep `n - i` inside `int32`: together they say `n >= 1`.
 The checker used to bound each operand only by premises naming that operand

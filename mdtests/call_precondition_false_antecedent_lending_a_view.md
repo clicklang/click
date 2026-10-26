@@ -6,7 +6,7 @@ requirement with `std::dynamic_extent` as the sentinel. `use_all` passes the
 sentinel, so the antecedent is `7u64 != 7u64` and the requirement holds
 without any fact about `k`. A call that lends a view refuses to recover it
 while a precondition is pending, so the probe retains the trivially true
-clause, the implicit `auto` proves it at the pre-state, and the call is
+clause, the implicit closer proves it at the pre-state, and the call is
 retried with that evidence. `call_precondition_true_antecedent_false_consequent`
 is the refusal when the antecedent holds.
 

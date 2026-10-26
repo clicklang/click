@@ -11,7 +11,7 @@ impl Drop for Guard {
         ensures *self.slot == old(self.saved);
     } by {
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -20,7 +20,7 @@ fn increment(x: u16) -> u16 {
     ensures result == x + 1;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 fn guarded_increment(x: u16, value: &mut i32, early: bool) -> u16 {
@@ -30,5 +30,5 @@ fn guarded_increment(x: u16, value: &mut i32, early: bool) -> u16 {
     ensures value[0] == old(value[0]);
 } by {
     execute();
-    simp();
+    solve();
 }

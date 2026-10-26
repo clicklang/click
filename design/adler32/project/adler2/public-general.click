@@ -18,8 +18,8 @@ impl adler2::Adler32 {
      execute();
      apply(adler_canonical_observation(self.a));
      apply(adler_canonical_observation(self.b));
-     have forall (k: uint64) { k < bytes.len() implies bytes[k] == old(bytes[k]) } by simp();
-     simp();
+     have forall (k: uint64) { k < bytes.len() implies bytes[k] == old(bytes[k]) } by solve();
+     solve();
     }
 }
 
@@ -28,14 +28,14 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
  ensures forall (k: uint64) { k < data.len() implies data[k] == old(data[k]) };
  ensures to_integer(result) == old(adler_spec_checksum_u64(data, data.len(), 1, 0));
 } by {
- execute_until(assignment(__rust_mir_4, 0));
- have h.a == 1 by simp();
- have h.b == 0 by simp();
+ step_until(assignment(__rust_mir_4, 0));
+ have h.a == 1 by solve();
+ have h.b == 0 by solve();
  have to_integer((h.a as u32)) == 1 by { rewrite(h.a == 1); normalize(); }
  have to_integer((h.b as u32)) == 0 by { rewrite(h.b == 0); normalize(); }
  mark canonical_seed;
- execute_until(assignment(__rust_mir_0, 0));
- have forall (k: uint64) { k < data.len() implies data[k] == old(data[k]) } by simp();
+ step_until(assignment(__rust_mir_0, 0));
+ have forall (k: uint64) { k < data.len() implies data[k] == old(data[k]) } by solve();
  have to_integer(h.a) == old(adler_spec_a_u64(data, data.len(), 1)) by {
   rewrite(1 == at(canonical_seed, to_integer((h.a as u32))));
   assumption();
@@ -49,14 +49,14 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
   unfold(adler_spec_checksum_u64(data, data.len(), 1, 0));
   rewrite(to_integer(h.a) == old(adler_spec_a_u64(data, data.len(), 1)));
   rewrite(to_integer(h.b) == old(adler_spec_b_u64(data, data.len(), 1, 0)));
-  simp();
+  solve();
  }
  step();
  have to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a);
- have to_integer(__rust_mir_0) == old(adler_spec_checksum_u64(data, data.len(), 1, 0)) by arithmetic() using {
+ have to_integer(__rust_mir_0) == old(adler_spec_checksum_u64(data, data.len(), 1, 0)) by solve() using {
    to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a);
    65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum_u64(data, data.len(), 1, 0));
   };
  execute();
- simp();
+ solve();
 }

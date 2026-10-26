@@ -72,7 +72,7 @@ void child_release_nonfinal(struct child* obj) {
     step();
     fold(child_control(obj));
     execute();
-    simp();
+    solve();
 }
 
 void parent_detach(struct parent* p) {
@@ -95,7 +95,7 @@ void parent_detach(struct parent* p) {
             unfold(link);
             execute();
             let out = fold(parent(p), { link: ParentLink::Empty });
-            simp();
+            solve();
         },
     }
 }

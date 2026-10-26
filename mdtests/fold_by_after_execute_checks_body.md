@@ -16,8 +16,8 @@ int32 probe(int32 n, int32 m) {
     ensures result == 0;
 } by {
     execute();
-    fold(either(n, m)) by { simp(); }
-    simp();
+    fold(either(n, m)) by { solve(); }
+    solve();
 }
 ```
 

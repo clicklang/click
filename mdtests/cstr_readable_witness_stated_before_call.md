@@ -30,19 +30,19 @@ uint64 fixed_string_length(uint8 bytes[]) {
 
     ensures result == 2u64;
 } by {
-    execute_until(region(1));
+    step_until(region(1));
     have forall (k: uint64) { 0u64 <= k and k < 2u64 implies bytes[k] != '\0' } by {
         enumerate();
     }
     have bytes[2u64] == '\0' by {
-        simp();
+        solve();
     }
     have forall (k: uint64) { 0u64 <= k and k < 2u64 + 1u64 implies defined(bytes[k]) } by {
         enumerate();
     }
     step(strlen, { n: 2u64 });
     execute();
-    simp();
+    solve();
 }
 ```
 

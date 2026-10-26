@@ -55,8 +55,6 @@ struct packet finish(struct packet value) {
     ensures result.count == 5;
     ensures result.state == 9;
     ensures result.tag == 3;
-} by {
-    auto();
 }
 
 int32 run_struct_by_value_enum() {

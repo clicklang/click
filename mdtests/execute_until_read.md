@@ -21,7 +21,7 @@ int32 loaded(const uint8* p) {
     views p[0..1];
     ensures 0 <= result and result <= 255;
 } by {
-    execute_until(read(0));
+    step_until(read(0));
     step();
     have 0 <= x and x <= 255;
     execute(); solve();

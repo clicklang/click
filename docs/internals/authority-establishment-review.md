@@ -180,11 +180,12 @@ lifetime and may establish its own authority. The anchor cannot be freed while
 any authority remains registered. Scope exit cannot silently discard authority, members, or anchor
 ownership. Moving these obligations to another owner is allowed.
 
-Exact count reads may use a proved pointer alias to select an already-owned
-population authority. The lookup examines only indexed aliases of the queried
-anchor and authenticates the selected authority against the live creation
+An exact count read selects the already-owned population authority of its
+anchor as written. Lowering does not respell the anchor through a proved
+pointer alias; a proof that counts through an alias rewrites it to the anchor
+first. The selected authority is authenticated against the live creation
 ledger. Pointer equality supplies neither authority ownership nor membership
-permission. The regression includes missing alias evidence, missing ownership,
+permission. The regression covers an alias that is refused, missing ownership,
 an unauthenticated authority head, and increasing unrelated authority contexts.
 
 A closed control resource packages authority along with its counter ownership

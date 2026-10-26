@@ -43,7 +43,7 @@ int32 walk(struct Rec* r, int32 n) {
             step();
             step();
             have p == &r->arr[0] + i by {
-                arithmetic() using {
+                solve() using {
                     at(region(5).entry, p) == at(region(5).entry, &r->arr[0] + i);
                     at(region(5).entry, i) < at(region(5).entry, n);
                 };

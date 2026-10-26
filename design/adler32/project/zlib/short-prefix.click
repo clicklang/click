@@ -49,7 +49,7 @@ theorem zlib_prefix_append(bytes: uint8[], total: uint64, remaining: uint64) {
 }
 theorem zlib_positive_count(value: int32) {
  requires 1 <= value;
- ensures 0 < value by { arithmetic() using { 1 <= value; }; }
+ ensures 0 < value by { solve() using { 1 <= value; }; }
 }
 theorem zlib_equal_byte_integers(left: uint8, right: uint8) {
  requires (int32)left == (int32)right;
@@ -69,9 +69,9 @@ theorem zlib_short_result(bytes: uint8[], length: int32, a: uint64, b: uint64) {
  requires 0 <= to_integer(b);
  requires to_integer(b) <= 57390;
  ensures to_integer(a | ((b % 65521u64) << 16)) == adler_spec_checksum(bytes, length, 1, 0) by {
-  have to_integer(a) <= 65520 by arithmetic() using { to_integer(a) <= 3826; };
-  have 0 <= to_integer(a) by arithmetic() using { 1 <= to_integer(a); };
-  have to_integer(a) == 0 * 65521 + to_integer(a) by arithmetic() using {};
+  have to_integer(a) <= 65520 by solve() using { to_integer(a) <= 3826; };
+  have 0 <= to_integer(a) by solve() using { 1 <= to_integer(a); };
+  have to_integer(a) == 0 * 65521 + to_integer(a) by solve() using {};
   apply(adler_residue_unique(to_integer(a), 0, to_integer(a)));
   have adler_spec_a(bytes, length, 1) == to_integer(a) by {
    unfold(adler_spec_a(bytes, length, 1));
@@ -80,22 +80,22 @@ theorem zlib_short_result(bytes: uint8[], length: int32, a: uint64, b: uint64) {
   }
   apply(integer::uint64_remainder_to_integer(b, 65521u64));
   apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
-  have to_integer(b % 65521u64) <= 65535 by arithmetic() using {
+  have to_integer(b % 65521u64) <= 65535 by solve() using {
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
    truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
-  have to_integer(a) <= 65535 by arithmetic() using { to_integer(a) <= 3826; };
+  have to_integer(a) <= 65535 by solve() using { to_integer(a) <= 3826; };
   apply(integer::uint64_pack_uint16_to_integer(a, b % 65521u64));
   have adler_spec_b(bytes, length, 1, 0) == to_integer(b % 65521u64) by {
    unfold(adler_spec_b(bytes, length, 1, 0));
-   have 0 + to_integer(length) * 1 + adler_weighted_sum(bytes, length, length) == to_integer(b) by arithmetic() using {
+   have 0 + to_integer(length) * 1 + adler_weighted_sum(bytes, length, length) == to_integer(b) by solve() using {
     to_integer(b) == to_integer(length) + adler_weighted_sum(bytes, length, length);
    };
    rewrite(0 + to_integer(length) * 1 + adler_weighted_sum(bytes, length, length) == to_integer(b));
-   simp() using { to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521); };
+   solve() using { to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521); };
   }
   unfold(adler_spec_checksum(bytes, length, 1, 0));
-  arithmetic() using {
+  solve() using {
    to_integer(a | ((b % 65521u64) << 16)) == to_integer(a) + 65536 * to_integer(b % 65521u64);
    adler_spec_a(bytes, length, 1) == to_integer(a);
    adler_spec_b(bytes, length, 1, 0) == to_integer(b % 65521u64);

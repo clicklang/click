@@ -61,8 +61,6 @@ struct packet finish(struct packet value) {
     ensures result.points[1].value == 7;
     ensures result.points[1].flag == 9;
     ensures result.tail == 6;
-} by {
-    auto();
 }
 
 int32 run_struct_by_value_embedded_array() {

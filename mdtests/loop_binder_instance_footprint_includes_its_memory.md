@@ -50,11 +50,11 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
     ensures start < 0;
 } by {
     let { next: n0 } = unfold(w);
-    have 0 <= start by simp();
-    have start < capacity by simp();
+    have 0 <= start by solve();
+    have start < capacity by solve();
     step();
     step();
-    have occupied[start] == 0 by simp();
+    have occupied[start] == 0 by solve();
     step();
     let w = fold(window(occupied, capacity, start, end), { next: start });
     mark pre;
@@ -62,18 +62,18 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
         owns w: window(occupied, capacity, start, end);
         invariant w.next == i;
         decreases end - i;
-        initialize by simp();
+        initialize by solve();
         preserve by {
             let { next: m } = unfold(w);
-            have m == i by simp();
-            have i < end by simp();
-            have start <= m by simp();
-            have 0 <= m by auto();
+            have m == i by solve();
+            have i < end by solve();
+            have start <= m by solve();
+            have 0 <= m;
             have 0 <= i by {
                 rewrite(i == m);
                 assumption();
             }
-            have i < capacity by auto();
+            have i < capacity;
             mark opened;
             step();
             step();
@@ -84,7 +84,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                 intro();
                 extract(to_integer(k) < to_integer(at(opened, i) + 1));
                 if k < at(opened, i) {
-                    have k < m by simp();
+                    have k < m by solve();
                     have at(opened, occupied[k]) == 1 by {
                         instantiate(forall (j: int32) {
                             at(opened, start) <= at(opened, j) and
@@ -96,7 +96,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                         };
                         assumption();
                     }
-                    have 0 <= k by simp();
+                    have 0 <= k by solve();
                     transport(at(opened, occupied[k]) == 1, occupied[k] == 1) using {
                         at(opened, occupied[k]) == 1;
                         k < at(opened, i);
@@ -105,8 +105,8 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                         at(opened, i) < capacity;
                     };
                 } else {
-                    have k <= at(opened, i) by auto();
-                    have k == at(opened, i) by auto();
+                    have k <= at(opened, i);
+                    have k == at(opened, i);
                     rewrite(k == at(opened, i));
                     normalize();
                 }
@@ -115,20 +115,20 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                 rewrite(at(opened, i) == m);
                 assumption();
             }
-            have to_integer(start) <= to_integer(at(opened, i) + 1) by auto();
-            have to_integer(at(opened, i) + 1) <= to_integer(end) by auto();
+            have to_integer(start) <= to_integer(at(opened, i) + 1);
+            have to_integer(at(opened, i) + 1) <= to_integer(end);
             let w = fold(window(occupied, capacity, start, end), {
                 next: at(opened, i) + 1
             });
             have 0 <= to_integer(end - at(opened, i) - 1) by {
-                arithmetic() using {
+                solve() using {
                     at(opened, i) < end;
                     0 <= at(opened, i);
                     end <= capacity;
                 };
             }
             have to_integer(end - at(opened, i) - 1) < to_integer(end - at(opened, i)) by {
-                arithmetic() using {
+                solve() using {
                     at(opened, i) < end;
                     0 <= at(opened, i);
                     end <= capacity;
@@ -147,13 +147,13 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             start < capacity;
         };
     }
-    have n == i by simp();
-    have n <= end by simp();
+    have n == i by solve();
+    have n <= end by solve();
     have not (n < end) by {
         rewrite(n == i);
         assumption();
     }
-    have n == end by auto();
+    have n == end;
     have start < n by {
         rewrite(n == end);
         assumption();
@@ -168,7 +168,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
         };
         assumption();
     }
-    have at(pre, occupied[start]) == 0 by simp();
+    have at(pre, occupied[start]) == 0 by solve();
     have occupied[start] == 0 by {
         rewrite(occupied[start] == at(pre, occupied[start]));
         assumption();
@@ -177,7 +177,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
         contradiction(occupied[start] == 1);
     }
     execute();
-    simp();
+    solve();
 }
 ```
 

@@ -98,7 +98,7 @@ void child_retain(struct child* obj) {
     fold(child_ref(obj));
     fold(child_control(obj));
     execute();
-    simp();
+    solve();
 }
 
 void child_release(struct child* obj) {
@@ -113,18 +113,18 @@ void child_release(struct child* obj) {
         unfold(child_ref(obj));
         unfold(authority(child_ref(obj)));
         execute();
-        simp();
+        solve();
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
-            arithmetic() using { 1 <= obj->refs; obj->refs != 1; };
+            solve() using { 1 <= obj->refs; obj->refs != 1; };
         }
         have to_integer(obj->refs - 1) >= 1;
         step();
         step();
         fold(child_control(obj));
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -142,7 +142,7 @@ void parent_attach(struct parent* p, struct child* kid) {
     step();
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
     execute();
-    simp();
+    solve();
 }
 
 int32 parent_read_payload(struct parent* p) {
@@ -163,7 +163,7 @@ int32 parent_read_payload(struct parent* p) {
             unfold(link);
             open(child_control(p->kid)) { execute(); }
             let link = fold(parent(p), { link: ParentLink::Linked(p->kid) });
-            simp();
+            solve();
         },
     }
 }
@@ -183,15 +183,15 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(entry_child) => {
             unfold(link);
-            have old(p->kid) == entry_child by simp();
+            have old(p->kid) == entry_child by solve();
             if p->kid->refs > 1 {
                 execute();
                 let out = fold(parent(p), { link: ParentLink::Empty });
-                simp();
+                solve();
             } else {
                 execute();
                 let out = fold(parent(p), { link: ParentLink::Empty });
-                simp();
+                solve();
             }
         },
     }
@@ -206,18 +206,18 @@ void caller(struct parent* first, struct parent* second, struct child* kid) {
     owns child_ref(kid);
 } by {
     let { link: first_link } = step(parent_attach, {});
-    have to_integer(count(child_ref(kid))) == 2 by simp();
+    have to_integer(count(child_ref(kid))) == 2 by solve();
     let { link: second_link } = step(parent_attach, {});
-    have count(child_ref(kid)) == 3 by simp();
+    have count(child_ref(kid)) == 3 by solve();
     step(child_release, {});
-    have to_integer(count(child_ref(kid))) == 2 by simp();
+    have to_integer(count(child_ref(kid))) == 2 by solve();
     let { out: first_out } = step(parent_detach, { link: first_link });
     step();
-    have to_integer(count(child_ref(kid))) == 2 by simp();
+    have to_integer(count(child_ref(kid))) == 2 by solve();
     step(parent_read_payload, { link: second_link });
     let { out: second_out } = step(parent_detach, { link: second_link });
     step();
-    simp();
+    solve();
 }
 ```
 

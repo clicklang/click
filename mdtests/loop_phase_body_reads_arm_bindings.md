@@ -16,8 +16,8 @@ the per-invariant entry planner, the automatic preservation walk, and the
 written `preserve` body.
 
 What is *not* a trigger, checked while reducing this: whether the loop is
-ranked, and whether an earlier `have` in the same body was proved by `simp`.
-A `simp`-proved `have` kept working only because its goal named no binding, and
+ranked, and whether an earlier `have` in the same body was proved by `solve`.
+A `solve`-proved `have` kept working only because its goal named no binding, and
 a `have` whose goal names none still works after one that does. The same `have`
 written beside the `loop` in the arm, rather than in a phase body, always
 worked. Both loops below carry a measure, as every loop must; they differ in
@@ -103,7 +103,7 @@ int spin(struct node* p, int n) {
 
                 initialize by {
                     have i >= 0 by normalize();
-                    have i <= n by auto();
+                    have i <= n;
                     have t.model == Tree::Node(id, value, left_model) by {
                         have head_value(Tree::Node(id, value, left_model)) == value by {
                             unfold(head_value(Tree::Node(id, value, left_model)));
@@ -118,14 +118,14 @@ int spin(struct node* p, int n) {
                         unfold(head_value(Tree::Node(id, value, left_model)));
                         normalize();
                     }
-                    have 0 <= to_integer(n - i - 1) by { arithmetic() using { i < n; i >= 0; n >= 0; }; }
-                    have to_integer(n - i - 1) < to_integer(n - i) by { arithmetic() using { i < n; i >= 0; n >= 0; }; }
+                    have 0 <= to_integer(n - i - 1) by { solve() using { i < n; i >= 0; n >= 0; }; }
+                    have to_integer(n - i - 1) < to_integer(n - i) by { solve() using { i < n; i >= 0; n >= 0; }; }
                     step();
                     close_invariants();
                 }
             }
             step();
-            simp();
+            solve();
         },
     }
 }
@@ -147,7 +147,7 @@ int spin_ranked(struct node* p, int n) {
                 invariant i >= 0;
                 invariant i <= n;
 
-                initialize by simp();
+                initialize by solve();
                 preserve by {
                     have head_value(Tree::Node(id, value, left_model)) == value by {
                         unfold(head_value(Tree::Node(id, value, left_model)));
@@ -158,7 +158,7 @@ int spin_ranked(struct node* p, int n) {
                 }
             }
             step();
-            simp();
+            solve();
         },
     }
 }

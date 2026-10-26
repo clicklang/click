@@ -9,7 +9,7 @@ Restore::Restore(int32* slot) {
     ensures slot[0] == 7;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 Restore::~Restore() {
@@ -22,7 +22,7 @@ Restore::~Restore() {
     ensures this->p[0] == old(this->saved);
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int32 restore_twice(bool early, int32& value) {
@@ -32,5 +32,5 @@ int32 restore_twice(bool early, int32& value) {
     ensures value == old(value);
 } by {
     execute();
-    simp();
+    solve();
 }

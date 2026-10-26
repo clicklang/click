@@ -3,7 +3,7 @@ verifying "nested_record.cpp";
 void FeeState::SetFee(int64 next) {
     owns this->fee;
     ensures this->fee == next;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 void FeeEnvelope::SetRightByMethod(int64 next) {
     owns this->state.right.fee;
@@ -12,4 +12,4 @@ void FeeEnvelope::SetRightByMethod(int64 next) {
     ensures this->state.right.fee == next;
     ensures this->state.left.fee == old(this->state.left.fee);
     ensures this->state.right.size == old(this->state.right.size);
-} by { execute(); simp(); }
+} by { execute(); solve(); }

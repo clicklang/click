@@ -28,13 +28,13 @@ int32 drain(int32 n) {
             assumption();
         }
         preserve by {
-            have 0 <= to_integer(n - 1) by auto();
+            have 0 <= to_integer(n - 1);
             step();
             close_invariants();
         }
     }
     step();
-    simp();
+    solve();
 }
 ```
 

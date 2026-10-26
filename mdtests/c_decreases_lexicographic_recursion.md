@@ -40,8 +40,8 @@ int32 ack(int32 m, int32 n) {
             m != 0;
         };
     }
-    have 0 <= to_integer(m - 1) by auto();
-    have to_integer(m - 1) < to_integer(m) by auto();
+    have 0 <= to_integer(m - 1);
+    have to_integer(m - 1) < to_integer(m);
     branch {
         step();
         step();
@@ -53,8 +53,8 @@ int32 ack(int32 m, int32 n) {
             n != 0;
         };
     }
-    have 0 <= to_integer(n - 1) by auto();
-    have to_integer(n - 1) < to_integer(n) by auto();
+    have 0 <= to_integer(n - 1);
+    have to_integer(n - 1) < to_integer(n);
 }
 ```
 

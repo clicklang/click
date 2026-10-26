@@ -88,7 +88,7 @@ void child_retain(struct child* obj) {
     fold(child_ref(obj));
     fold(child_control(obj));
     execute();
-    simp();
+    solve();
 }
 
 void child_release(struct child* obj) {
@@ -104,7 +104,7 @@ void child_release(struct child* obj) {
     step();
     fold(child_control(obj));
     execute();
-    simp();
+    solve();
 }
 
 void parent_attach(struct parent* p, struct child* kid) {
@@ -121,7 +121,7 @@ void parent_attach(struct parent* p, struct child* kid) {
     step();
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
     execute();
-    simp();
+    solve();
 }
 
 int32 parent_read_payload(struct parent* p) {
@@ -141,7 +141,7 @@ int32 parent_read_payload(struct parent* p) {
             unfold(link);
             open(child_control(p->kid)) { execute(); }
             let link = fold(parent(p), { link: ParentLink::Linked(p->kid) });
-            simp();
+            solve();
         },
     }
 }
@@ -164,14 +164,14 @@ void parent_detach(struct parent* p) {
             unfold(link);
             have 2 <= to_integer(old(count(child_ref(p->kid))));
             have to_integer(old(count(child_ref(p->kid)))) > 1 by {
-                simp() using { 2 <= to_integer(old(count(child_ref(p->kid)))); };
+                solve() using { 2 <= to_integer(old(count(child_ref(p->kid)))); };
             }
             step();
             step();
             step();
             let out = fold(parent(p), { link: ParentLink::Empty });
             execute();
-            simp();
+            solve();
         },
     }
 }
@@ -193,19 +193,19 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     step(parent_read_payload, { link: second_link });
     have second->kid == kid;
     have observed == kid->payload;
-    have observed == second->kid->payload by { rewrite(second->kid == kid); simp(); }
+    have observed == second->kid->payload by { rewrite(second->kid == kid); solve(); }
     mark detaching;
     let { out: second_out } = step(parent_detach, { link: second_link });
     have at(detaching, second->kid) == kid by assumption();
     have at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
     have observed == at(detaching, second->kid->payload) by assumption();
-    have kid == at(detaching, second->kid) by { simp() using { at(detaching, second->kid) == kid; }; }
+    have kid == at(detaching, second->kid) by { solve() using { at(detaching, second->kid) == kid; }; }
     have kid->payload == at(detaching, second->kid->payload) by {
         rewrite(kid == at(detaching, second->kid));
         assumption();
     }
     step();
-    simp();
+    solve();
 }
 ```
 

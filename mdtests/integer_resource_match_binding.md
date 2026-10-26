@@ -32,7 +32,7 @@ void keep() {
     unfold(c);
     execute();
     fold(c);
-    simp();
+    solve();
 }
 ```
 

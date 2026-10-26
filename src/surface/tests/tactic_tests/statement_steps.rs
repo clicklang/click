@@ -27,7 +27,7 @@ fn proof_step_supports_explicit_fact_transport() {
                     old(p[0]) == 7;
                 }
                 step();
-                simp();
+                solve();
             }
         "#;
 
@@ -92,7 +92,7 @@ fn explicit_fact_transport_can_certify_a_derived_source() {
                     old(p[0]) <= old(p[1]);
                 };
                 step();
-                simp();
+                solve();
             }
         "#;
 
@@ -180,7 +180,7 @@ fn smart_step_starts_each_source_tactic_with_an_empty_step_delta() {
                 unfold(ordered);
                 step();
                 step();
-                simp();
+                solve();
             }
         "#;
 
@@ -249,7 +249,7 @@ fn clone_field_stores_with_observed_source_resource_verify() {
             step();
             step();
             step();
-            simp();
+            solve();
         }
     "#;
 
@@ -699,7 +699,7 @@ fn execute_rest_return_certificate_omits_unused_ambient_facts() {
                 ensures result == x;
             } by {
                 execute();
-                simp();
+                solve();
             }
         "#;
 
@@ -775,7 +775,7 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
             int32 zero() {
                 ensures result == 0;
             } by {
-                execute_until(region(2));
+                step_until(region(2));
                 execute();
                 normalize();
             }
@@ -825,7 +825,7 @@ fn execute_step_omits_materialization_only_transport() {
                 }
                 step();
                 step();
-                simp();
+                solve();
             }
         "#;
 
@@ -899,7 +899,7 @@ fn execute_step_omits_materialized_mixed_snapshot_transport() {
                 unfold(first_less_than_second);
                 step();
                 step();
-                simp();
+                solve();
             }
         "#;
 
@@ -967,7 +967,7 @@ fn execute_step_omits_materialization_transport_across_statements() {
                 step();
                 step();
                 step();
-                simp();
+                solve();
             }
         "#;
 
@@ -1037,7 +1037,7 @@ fn execute_step_expands_call_assign_fact_from_internal_snapshot() {
             } by {
                 step();
                 step();
-                simp();
+                solve();
             }
 
             int32 call_set_seven(int32 p[1]) {
@@ -1047,7 +1047,7 @@ fn execute_step_expands_call_assign_fact_from_internal_snapshot() {
             } by {
                 step();
                 step();
-                simp();
+                solve();
             }
         "#;
 
@@ -1256,7 +1256,7 @@ fn bare_step_proves_an_open_obligation_by_implicit_auto() {
 
             int32 compare_self(uint8 bytes[]) {
                 views bytes[0..2];
-                ensures 1 == 1 by { step(); step(); simp(); }
+                ensures 1 == 1 by { step(); step(); solve(); }
             }
         "#;
     let (verified, planning_transitions) = collect_planning_statement_transitions(|| {
@@ -1306,13 +1306,13 @@ void change(struct node *g, struct node *source, struct node *t) {
             unfold(c); step(); step();
             have g->right == p by { normalize(); }
             let c = fold(child(t), { model: Model::Empty });
-            have c.model == old(c.model) by { simp(); }
+            have c.model == old(c.model) by { solve(); }
         },
         Model::Nonempty => {
             unfold(c); step(); step(); step();
             have g->right == p by { normalize(); }
             let c = fold(child(t), { model: Model::Nonempty });
-            have c.model == old(c.model) by { simp(); }
+            have c.model == old(c.model) by { solve(); }
         },
     }
     mark before_tag;
@@ -1322,7 +1322,7 @@ void change(struct node *g, struct node *source, struct node *t) {
     transport(at(before_tag, g->right == p), g->right == p) using {
         at(before_tag, g->right == p);
     };
-    step(); simp();
+    step(); solve();
 }
 "#;
     verify_c0_sources(click_source, &[("join.c", c_source)])

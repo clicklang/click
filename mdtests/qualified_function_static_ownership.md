@@ -30,12 +30,12 @@ uint32 increment() {
     ensures to_integer(counter_file::increment::calls) == to_integer(old(counter_file::increment::calls) + 1u32);
     ensures to_integer(result) == to_integer(old(counter_file::increment::calls) + 1u32);
     ensures result == counter_file::increment::calls;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 uint32 other() {
     owns counter_file::other::calls;
     ensures to_integer(counter_file::other::calls) == to_integer(old(counter_file::other::calls) + 1u32);
     ensures to_integer(result) == to_integer(old(counter_file::other::calls) + 1u32);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 uint32 twice() {
     owns counter_file::increment::calls;
     ensures to_integer(result) == to_integer((old(counter_file::increment::calls) + 1u32) + 1u32);
@@ -44,7 +44,7 @@ uint32 twice() {
     step();
     have to_integer(counter_file::increment::calls) == to_integer(old(counter_file::increment::calls) + 1u32);
     execute();
-    simp();
+    solve();
 }
 int main() {
     ensures counter_file::increment::calls == 7u32;
@@ -56,7 +56,7 @@ int main() {
     step();
     have counter_file::increment::calls == 7u32;
     execute();
-    simp();
+    solve();
 }
 ```
 

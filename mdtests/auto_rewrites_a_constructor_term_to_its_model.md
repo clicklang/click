@@ -1,8 +1,8 @@
-# `auto` rewrites a constructor term back to the model a match arm names
+# The implicit closer rewrites a constructor term back to the model a match arm names
 
 The arm knows `c.model == Walk::At(wd, rest)` and the requirement states
-`black(c.model) == 1`. `simp` misses the goal, which names the constructor term
-(`have_by_simp_misses_a_constructor_rewrite.md`). `auto` searches short chains
+`black(c.model) == 1`. `solve` misses the goal, which names the constructor term
+(`have_by_simp_misses_a_constructor_rewrite.md`). The implicit closer searches short chains
 of rewrites by the equalities connected to the goal, in either direction, and
 closes the rewritten goal by `assumption`. Each rewrite is a checked step, and
 `click expand` writes the chain it found as `rewrite` steps.
@@ -32,7 +32,7 @@ void touch(int32 n) {
 } by {
     match c.model {
         Walk::At(wd, rest) => {
-            have black(Walk::At(wd, rest)) == 1 by auto();
+            have black(Walk::At(wd, rest)) == 1;
             step();
             step();
             solve();

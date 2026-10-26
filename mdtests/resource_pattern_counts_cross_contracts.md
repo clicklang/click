@@ -70,13 +70,13 @@ void pool_checkout(struct pool* pool, int32 object) {
     have pool->checked_out == count(pool_object(pool, _));
     step();
     fold(pool_object(pool, object));
-    have count(pool_object(pool, _)) == old(count(pool_object(pool, _))) + 1 by auto();
+    have count(pool_object(pool, _)) == old(count(pool_object(pool, _))) + 1;
     have valid_pool(pool) by {
         unfold(valid_pool);
-        simp();
+        solve();
     }
     execute();
-    simp();
+    solve();
 }
 
 void pool_return(struct pool* pool, int32 object) {
@@ -91,11 +91,11 @@ void pool_return(struct pool* pool, int32 object) {
     unfold(valid_pool);
     have 1 <= pool->checked_out by {
         rewrite(pool->checked_out == count(pool_object(pool, _)));
-        arithmetic() using { count(pool_object(pool, _)) >= 1; };
+        solve() using { count(pool_object(pool, _)) >= 1; };
     }
     unfold(pool_object(pool, object));
     execute();
-    simp();
+    solve();
 }
 
 void pool_roundtrip(struct pool* pool, int32 object) {
@@ -111,7 +111,7 @@ void pool_roundtrip(struct pool* pool, int32 object) {
     step();
     step();
     execute();
-    simp();
+    solve();
 }
 ```
 

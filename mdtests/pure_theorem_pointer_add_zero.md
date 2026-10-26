@@ -1,6 +1,6 @@
 # pure pointer-offset identity certificates
 
-A pointer-arithmetic identity proved by smart `simp` must produce a pure
+A pointer-arithmetic identity proved by smart `solve` must produce a pure
 surface certificate: the int32 equality `offset == 0` rewrites inside the
 pointer-offset goal, and the rewritten goal closes from the pointer equality
 premise. The explicit spelling states the same certificate directly.

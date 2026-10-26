@@ -1,4 +1,4 @@
-# `arithmetic()` plans a `>=` goal over an int32 operation
+# `solve() using` plans a `>=` goal over an int32 operation
 
 `n - 1 >= 0` follows from `n >= 1`, and `n - 1 < n` from `n >= 0`; the second
 already verified while the first failed as unable to establish definedness.

@@ -38,7 +38,7 @@ int32 read_left(int32* p, int32* left, int32* right) {
     execute();
     let l = fold(tree(left), { model: Tree::Leaf(2) });
     let root = fold(tree(p), { model: old(root.model) }, { left: l, right: r });
-    simp();
+    solve();
 }
 
 void init(int32* p, int32* left, int32* right, int32 value) {
@@ -50,7 +50,7 @@ void init(int32* p, int32* left, int32* right, int32 value) {
 } by {
     execute();
     let root = fold(tree(p), { model: Tree::Branch(value, left, l.model, right, r.model) }, { left: l, right: r });
-    simp();
+    solve();
 }
 ```
 

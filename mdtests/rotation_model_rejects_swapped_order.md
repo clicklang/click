@@ -119,7 +119,7 @@ struct tree_node* rotate_left(struct tree_node* root) {
                             HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model))));
                         normalize();
                     }
-                    simp();
+                    solve();
                 },
             }
         },

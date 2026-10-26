@@ -1,4 +1,4 @@
-# `arithmetic()` prints a sharpened bound whose premises are spelled at different snapshots
+# `solve() using` prints a sharpened bound whose premises are spelled at different snapshots
 
 Inside a loop body, `at(region(3).entry, i)` and `at(region(6).entry, i)`
 name the same value when nothing between those statements writes `i`; they

@@ -27,7 +27,7 @@ int32 f(int32 n) {
         solve();
     } else {
         have n > 0 by solve();
-        have n >= 0 by { arithmetic() using { n > 0; }; }
+        have n >= 0 by { solve() using { n > 0; }; }
         loop {
             invariant n >= 0;
         }

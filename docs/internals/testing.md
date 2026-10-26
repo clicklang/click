@@ -823,9 +823,9 @@ typed simp closure as a closing probe, and much of that closure's cost was
 uncharged premise surface synthesis. The probe now asks the direct logical
 closer, and the synthesis is lazy and charged, so the heaviest arena `have`
 (`click profile`, after this calibration) is 488,691 units with every unit
-counted, and the heaviest smart tactic is the failing mdtest `simp`
-(1,040,194). The smart tactics near it are named
-in `TacticWorkLimits::default` (an mdtest `simp` and the arena proofs' heavy
+counted, and the heaviest smart tactic is the failing mdtest `solve`
+(1,040,194, then spelled `simp`). The smart tactics near it are named
+in `TacticWorkLimits::default` (an mdtest `solve` and the arena proofs' heavy
 `have`s); they are slow steps to reduce, not headroom. The same run's `run`
 rows calibrate the whole-run budget: the largest whole verification is
 `examples/arena/arena_cells.click` at 6,536,557 units, so
@@ -1061,8 +1061,8 @@ example, wall time, so its number moves with the corpus.
 ### The `auto` eval
 
 `evals/auto.py` measures, for a sample of the hand-written `have`
-statements in the examples, how many `auto` proves where they stand and how
-many can be deleted with the proof still verifying, against a committed
+statements in the examples, how many the omitted proof `have P;` proves where
+they stand and how many can be deleted with the proof still verifying, against a committed
 baseline. A change to the implicit closer, `solve` or what they rely on quotes its result,
 sites gained and lost, in the pull request. `evals/README.md`
 describes the corpus, the sampling and the baseline.

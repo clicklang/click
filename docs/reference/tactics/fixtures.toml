@@ -45,7 +45,7 @@ needle = "step(increment, { first: c });"
 [[form]]
 id = "step-by"
 path = "mdtests/step_by_proves_its_one_open_obligation.md"
-needle = "step() by { simp(); }"
+needle = "step() by { solve(); }"
 
 [[form]]
 id = "step-requires"
@@ -118,16 +118,6 @@ path = "mdtests/pure_induction_countdown_explicit.md"
 needle = "apply(ih(n - 1)) using {"
 
 [[form]]
-id = "arithmetic"
-path = "mdtests/pure_arithmetic_rejects_unbounded_overflow.md"
-needle = "arithmetic();"
-
-[[form]]
-id = "arithmetic-using"
-path = "mdtests/pure_arithmetic_affine.md"
-needle = "arithmetic() using {"
-
-[[form]]
 id = "arithmetic-certificate"
 path = "mdtests/arithmetic_certificate_surface.md"
 needle = "arithmetic_certificate {"
@@ -150,7 +140,7 @@ needle = "apply(three_bounds(x)) using {"
 [[form]]
 id = "have"
 path = "mdtests/post_execution_have_checks_each_path.md"
-needle = "have result == 1 by simp();"
+needle = "have result == 1 by solve();"
 
 [[form]]
 id = "open"

@@ -105,14 +105,14 @@ const PROOF: &str = r#"verifying "construction.c";
 struct Node factory(int32 input) {
  ensures result.self == &result.value;
  ensures result.value == input;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 struct Node forward(int32 input) {
  ensures result.self == &result.value;
  ensures result.value == input;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 int32 probe(int32 input) {
  ensures result == input;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 "#;
 
 #[test]
@@ -141,7 +141,7 @@ fn native_construction_return_contracts_forward_hidden_storage() {
             .find(|theorem| theorem.function_block.signature().name() == name)
             .unwrap();
         expanded = expanded.replacen(
-            "by { execute(); simp(); }",
+            "by { execute(); solve(); }",
             &theorem.expanded_proof_source().unwrap(),
             1,
         );
@@ -155,7 +155,7 @@ fn native_construction_return_member_addresses_bind_result() {
 struct Node factory(int32 input) {
     ensures address(result.self) == address(&result.value);
     ensures result.value == input;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 "#;
     let sources = context(true);
     let (verified, environment) =
@@ -171,7 +171,7 @@ struct Node factory(int32 input) {
     )
     .unwrap();
     let expanded = source.replacen(
-        "by { execute(); simp(); }",
+        "by { execute(); solve(); }",
         &verified[0].expanded_proof_source().unwrap(),
         1,
     );
@@ -203,7 +203,7 @@ fn native_construction_return_keeps_raw_offset_and_member_views_distinct() {
 #[test]
 fn native_construction_return_contracts_require_complete_initialization() {
     let safety_only = r#"verifying "construction.c";
-struct Node factory(int32 input) { ensures input == input; } by { execute(); simp(); }
+struct Node factory(int32 input) { ensures input == input; } by { execute(); solve(); }
 "#;
     let sources = context(true);
     verify_c0_sources_with_context(safety_only, &sources, None, None, None, None).unwrap();

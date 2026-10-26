@@ -1,6 +1,6 @@
 # count_to_n verifies a symbolic loop with invariants
 
-This checks the loop verification-condition path: `auto` proves a postcondition
+This checks the loop verification-condition path: `solve()` proves a postcondition
 for a symbolic loop bound using loop invariants instead of concrete unrolling.
 
 ```c filename=count_to_n_loop_invariant.c

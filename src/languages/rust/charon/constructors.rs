@@ -175,7 +175,7 @@ mod tests {
         let artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         let export = decode_fixture(&artifact).unwrap();
         let prepared = super::super::super::import::prepared_for_test(export).unwrap();
-        let proof = "verifying \"lib.rs\"; impl Default for demo::Value { fn default() -> demo::Value { ensures result.a == 1u32; ensures result.b == 0u32; } by { execute(); simp(); } } impl demo::Value { fn new() -> demo::Value { ensures result.a == 1u32; ensures result.b == 0u32; } by { execute(); simp(); } } fn demo::entry() -> u32 { ensures result == 1u32; } by { execute(); simp(); }";
+        let proof = "verifying \"lib.rs\"; impl Default for demo::Value { fn default() -> demo::Value { ensures result.a == 1u32; ensures result.b == 0u32; } by { execute(); solve(); } } impl demo::Value { fn new() -> demo::Value { ensures result.a == 1u32; ensures result.b == 0u32; } by { execute(); solve(); } } fn demo::entry() -> u32 { ensures result == 1u32; } by { execute(); solve(); }";
         crate::surface::C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
         assert!(
             crate::surface::C0VerificationSession::new_program_prepared(

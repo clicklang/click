@@ -48,7 +48,7 @@ theorem decrement_is_decrease() {
             both {
                 assumption();
             } and {
-                auto();
+                solve();
             }
         }
     }

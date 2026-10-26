@@ -1,4 +1,4 @@
-# `arithmetic()` adds a `>`-spelled premise
+# `solve() using` adds a `>`-spelled premise
 
 `a > 0` and `b >= 0` give `0 < a + b`. The printed certificate renders the sum
 by adding the two premises side by side, but only `>=` was rewritten into the

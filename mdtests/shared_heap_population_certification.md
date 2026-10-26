@@ -163,7 +163,7 @@ void child_init(struct child* obj, int32 payload) {
     fold(child_ref(obj));
     fold(child_storage(obj));
     execute();
-    simp();
+    solve();
 }
 
 void child_retain(struct child* obj) {
@@ -178,7 +178,7 @@ void child_retain(struct child* obj) {
     fold(child_ref(obj));
     fold(child_control(obj));
     execute();
-    simp();
+    solve();
 }
 
 void child_release(struct child* obj) {
@@ -196,18 +196,18 @@ void child_release(struct child* obj) {
         unfold(child_ref(obj));
         unfold(authority(child_ref(obj)));
         execute();
-        simp();
+        solve();
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
-            arithmetic() using { 1 <= obj->refs; obj->refs != 1; };
+            solve() using { 1 <= obj->refs; obj->refs != 1; };
         }
         have to_integer(obj->refs - 1) >= 1;
         step();
         step();
         fold(child_control(obj));
         execute();
-        simp();
+        solve();
     }
 }
 
@@ -225,7 +225,7 @@ void parent_attach(struct parent* p, struct child* kid) {
 } by {
     execute();
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
-    simp();
+    solve();
 }
 
 int32 parent_read_payload(struct parent* p) {
@@ -248,7 +248,7 @@ int32 parent_read_payload(struct parent* p) {
             have old(p->kid) == linked_child;
             open(child_control(p->kid)) { execute(); }
             let link = fold(parent(p), { link: ParentLink::Linked(linked_child) });
-            simp();
+            solve();
         },
     }
 }
@@ -275,10 +275,10 @@ void parent_detach(struct parent* p) {
             step();
             if linked_child->refs > 1 {
                 execute();
-                simp();
+                solve();
             } else {
                 execute();
-                simp();
+                solve();
             }
         },
     }

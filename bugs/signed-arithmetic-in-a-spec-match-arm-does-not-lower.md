@@ -37,7 +37,7 @@ fn value(amount: Amount) -> i32 {
         Amount::Credit(x) => x as i32,
         Amount::Debit(x) => 0i32 - x,
     };
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 ```
 
 ```text

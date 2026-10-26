@@ -34,5 +34,5 @@ void call(int32* anchor, int32* other) {
 ```
 
 ```expect
-fail: `simp` failed
+fail: `solve` failed
 ```

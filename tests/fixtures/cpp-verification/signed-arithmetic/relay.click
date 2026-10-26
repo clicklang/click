@@ -5,7 +5,7 @@ int64 quotient(int64 n, int64 d) {
     ensures result == n / d;
 } by {
     execute();
-    simp();
+    solve();
 }
 
 int64 relay(int64 n, int64 d, int32& untouched) {
@@ -15,5 +15,5 @@ int64 relay(int64 n, int64 d, int32& untouched) {
     ensures untouched == old(untouched);
 } by {
     execute();
-    simp();
+    solve();
 }

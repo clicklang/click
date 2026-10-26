@@ -1,8 +1,7 @@
-# an omitted theorem proof is auto
+# an omitted theorem proof runs the implicit closer
 
-Omitting a pure theorem's `ensures` proof uses the default prover, `auto`,
-the same closer `by auto();` runs: each claim below closes with its proof
-omitted, as it does with `by auto();`.
+Omitting a pure theorem's `ensures` proof uses the default prover, the
+implicit closer: each claim below closes with its proof omitted.
 
 ```click
 theorem omitted(left: int32, right: int32) {

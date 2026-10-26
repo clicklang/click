@@ -60,7 +60,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 if i < p {
                     assumption();
                 } else {
-                    have i == p by auto();
+                    have i == p;
                     have p <= i by {
                         rewrite(i == p);
                         normalize();
@@ -85,20 +85,20 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                     contradiction(occupied[i] == 1);
                 }
             }
-            have i + 1 <= p by auto();
-            have 0 <= i + 1 by auto();
+            have i + 1 <= p;
+            have 0 <= i + 1;
             step();
             have 0 <= i and i <= p;
             have 0 <= p by assumption();
             have 0 <= 0 - at(iteration, i) + p - 1 by {
-                arithmetic() using {
+                solve() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < p;
                     0 <= p;
                 };
             }
             have 0 - at(iteration, i) + p - 1 < 0 - at(iteration, i) + p by {
-                arithmetic() using {
+                solve() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < p;
                     0 <= p;
@@ -120,13 +120,13 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             }
             contradiction(occupied[i] == 1);
         } else {
-            have i == p by auto();
+            have i == p;
         }
     }
     mark before_store;
     step();
-    have p + 1 <= capacity by auto();
-    have 0 <= p + 1 by auto();
+    have p + 1 <= capacity;
+    have 0 <= p + 1;
     have forall (k: int32) {
         0 <= k and k < p + 1 implies occupied[k] == 1
     } by {
@@ -146,7 +146,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 };
                 assumption();
             }
-            have k != p by auto();
+            have k != p;
             have k != i by {
                 rewrite(i == p);
                 assumption();
@@ -156,8 +156,8 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 k != i;
             };
         } else {
-            have k <= p by auto();
-            have k == p by auto();
+            have k <= p;
+            have k == p;
             rewrite(k == p);
             solve();
         }
@@ -169,9 +169,9 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         intro();
         extract(p + 1 <= k);
         extract(k < capacity);
-        have p < p + 1 by auto();
-        have p < k by auto();
-        have p <= k by auto();
+        have p < p + 1;
+        have p < k;
+        have p <= k;
         have at(before_store, occupied[k]) == 0 by {
             instantiate(forall (j: int32) {
                 at(before_store, p) <= at(before_store, j) and
@@ -187,7 +187,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             rewrite(i == p);
             assumption();
         }
-        have i != k by auto();
+        have i != k;
         transport(at(before_store, occupied[k]) == 0, occupied[k] == 0) using {
             at(before_store, occupied[k]) == 0;
             i != k;

@@ -19,7 +19,7 @@ int32 execute_until_skipped_branch(int32 flag) {
 
     ensures result == 1 by {
         step();
-        execute_until(region(2));
+        step_until(region(2));
         execute();
         solve();
     }

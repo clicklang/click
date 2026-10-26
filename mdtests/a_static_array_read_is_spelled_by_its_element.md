@@ -5,7 +5,7 @@ step that cites the entry value of an element needs that read spelled
 (`docs/internals/spellability.md`). The speller writes an element of a
 `static` scalar array by its source name and declared subscripts,
 `old(batches[0][0])`, and a field of a `static` struct array as a typed read
-at the element's address. The closing `auto` here cites the entry reads in an
+at the element's address. The closing `solve()` here cites the entry reads in an
 `Integer` refutation: `result` is the sum the C code computed from the stored
 values, `old(calls) + 1` and `old(grid[0][0]) + 1`, while the `have` names the
 reads at the final state, and only spelled entry reads connect the two. This
@@ -49,8 +49,8 @@ int32 bump_grid() {
     ensures result == old(calls) + old(grid[0][0]) + 2;
 } by {
     step_until(function.exit);
-    have to_integer(calls + grid[0][0]) == to_integer(calls) + to_integer(grid[0][0]) by auto();
-    auto();
+    have to_integer(calls + grid[0][0]) == to_integer(calls) + to_integer(grid[0][0]);
+    solve();
 }
 
 int32 bump_counter() {
@@ -65,8 +65,8 @@ int32 bump_counter() {
     ensures result == old(calls) + old(counters[0].value) + 2;
 } by {
     step_until(function.exit);
-    have to_integer(calls + counters[0].value) == to_integer(calls) + to_integer(counters[0].value) by auto();
-    auto();
+    have to_integer(calls + counters[0].value) == to_integer(calls) + to_integer(counters[0].value);
+    solve();
 }
 ```
 

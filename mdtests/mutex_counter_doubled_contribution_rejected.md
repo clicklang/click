@@ -86,29 +86,29 @@ void* increment_counter(void* argument) {
     have count(credit(counter)) >= 1;
     have slack == count(credit(counter));
     have 1 <= slack;
-    have to_integer(1) <= to_integer(slack) by auto();
-    have to_integer(done) <= to_integer(1) by arithmetic() using {
+    have to_integer(1) <= to_integer(slack);
+    have to_integer(done) <= to_integer(1) by solve() using {
         to_integer(done) + to_integer(slack) == 2;
         to_integer(1) <= to_integer(slack);
     };
-    have done <= 1 by auto();
+    have done <= 1;
     have defined(done + 1);
     have defined(slack - 1);
-    have to_integer(done + 1) == to_integer(done) + to_integer(1) by auto();
-    have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by auto();
-    have to_integer(done + 1) + to_integer(slack - 1) == 2 by arithmetic() using {
+    have to_integer(done + 1) == to_integer(done) + to_integer(1);
+    have to_integer(slack - 1) == to_integer(slack) - to_integer(1);
+    have to_integer(done + 1) + to_integer(slack - 1) == 2 by solve() using {
         to_integer(done + 1) == to_integer(done) + to_integer(1);
         to_integer(slack - 1) == to_integer(slack) - to_integer(1);
         to_integer(done) + to_integer(slack) == 2;
     };
-    have to_integer(counter->value) + to_integer(1u32) <= 4294967295 by arithmetic() using {
+    have to_integer(counter->value) + to_integer(1u32) <= 4294967295 by solve() using {
         to_integer(counter->value) == to_integer(done);
         to_integer(done) <= to_integer(1);
     };
     have to_integer(counter->value + 1u32) == to_integer(counter->value) + to_integer(1u32) by {
         apply(integer::uint32_add_to_integer(counter->value, 1u32));
     }
-    have to_integer(counter->value + 1u32) == to_integer(done + 1) by arithmetic() using {
+    have to_integer(counter->value + 1u32) == to_integer(done + 1) by solve() using {
         to_integer(counter->value + 1u32) == to_integer(counter->value) + to_integer(1u32);
         to_integer(counter->value) == to_integer(done);
         to_integer(done + 1) == to_integer(done) + to_integer(1);
@@ -178,25 +178,25 @@ int32 increment_twice(struct mutex_counter* counter) {
     have done == 2;
     have done <= 2;
     have 2 <= done;
-    have to_integer(done) <= to_integer(2) by auto();
-    have to_integer(2) <= to_integer(done) by auto();
+    have to_integer(done) <= to_integer(2);
+    have to_integer(2) <= to_integer(done);
     have to_integer(2) == 2;
-    have to_integer(done) == 2 by arithmetic() using {
+    have to_integer(done) == 2 by solve() using {
         to_integer(done) <= to_integer(2);
         to_integer(2) <= to_integer(done);
         to_integer(2) == 2;
     };
     have to_integer(counter->value) == to_integer(done);
-    have to_integer(counter->value) == 2 by arithmetic() using {
+    have to_integer(counter->value) == 2 by solve() using {
         to_integer(counter->value) == to_integer(done);
         to_integer(done) == 2;
     };
     have to_integer(2u32) == 2;
-    have to_integer(counter->value) == to_integer(2u32) by arithmetic() using {
+    have to_integer(counter->value) == to_integer(2u32) by solve() using {
         to_integer(counter->value) == 2;
         to_integer(2u32) == 2;
     };
-    have counter->value == 2u32 by auto();
+    have counter->value == 2u32;
     unfold(contribution(counter));
     unfold(contribution(counter));
     step();

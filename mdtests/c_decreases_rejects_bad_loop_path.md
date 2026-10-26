@@ -23,13 +23,13 @@ int32 sometimes_stuck(int32 n, int32 choose) {
         invariant n >= 0;
         preserve by {
             if choose == 0 {
-                have 0 <= to_integer(n - 1) by auto();
+                have 0 <= to_integer(n - 1);
                 step(); step();
                 close_invariants() by {
-                    both { arithmetic() using { 0 <= n; }; }
+                    both { solve() using { 0 <= n; }; }
                     and {
-                        both { arithmetic() using { 0 <= n; }; }
-                        and { arithmetic() using { 0 <= n; }; }
+                        both { solve() using { 0 <= n; }; }
+                        and { solve() using { 0 <= n; }; }
                     }
                 }
             } else {

@@ -62,7 +62,7 @@ void countdown(int32 n) {
                         normalize();
                     }
                     have chain_len(rest_model) - 5 < chain_len(c.model) - 5 by {
-                        arithmetic() using {
+                        solve() using {
                             chain_len(c.model) == chain_len(rest_model) + 1;
                         };
                     }

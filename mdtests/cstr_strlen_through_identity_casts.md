@@ -28,7 +28,7 @@ uint64 through_const_char(uint8 bytes[]) {
     ensures bytes[result] == '\0';
 } by {
     execute();
-    simp();
+    solve();
 }
 
 uint64 through_unsigned_char(uint8 bytes[]) {
@@ -38,7 +38,7 @@ uint64 through_unsigned_char(uint8 bytes[]) {
     ensures bytes[result] == '\0';
 } by {
     execute();
-    simp();
+    solve();
 }
 ```
 

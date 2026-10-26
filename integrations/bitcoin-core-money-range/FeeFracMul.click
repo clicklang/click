@@ -28,5 +28,5 @@ static int128 FeeFrac::Mul(int64 a, int32 b) {
         }
     }
     execute();
-    simp();
+    solve();
 }

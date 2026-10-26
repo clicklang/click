@@ -1,7 +1,7 @@
 # Reflexive orderings prove through arithmetic after locals merge
 
 When an assignment merges two names into one variable, orderings between
-them are reflexive truths. `arithmetic()` proves `i >= p` and `i <= p`
+them are reflexive truths. `solve() using` proves `i >= p` and `i <= p`
 from the merged equality without further evidence.
 
 ```c filename=arithmetic_reflexive_order.c

@@ -1,6 +1,6 @@
 # `cases` after execution splits each outcome path
 
-After execution `cases` is a case split on each outcome path, as a proof `if` is: where no disjunct is decided, the path forks into one path per arm, and each arm receives exactly its own disjunct. Here the one outcome path forks three ways and `simp()` closes the claim in each arm.
+After execution `cases` is a case split on each outcome path, as a proof `if` is: where no disjunct is decided, the path forks into one path per arm, and each arm receives exactly its own disjunct. Here the one outcome path forks three ways and `solve()` closes the claim in each arm.
 
 ```c filename=cases_after_execution_splits_each_outcome_path.c
 int32 f(int32 x) {

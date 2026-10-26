@@ -35,31 +35,31 @@ unsigned long bump(struct counter *p) {
     ensures p->value == integer::uint64_wrapping_add(old(p->value), 1u64);
     ensures result == p->value;
     ensures result == integer::uint64_wrapping_add(old(p->value), 1u64);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 void reset(struct counter *p) {
     owns p->value;
     ensures p->value == 0u64;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 unsigned long left() {
     owns left_file::state.value;
     ensures left_file::state.value == integer::uint64_wrapping_add(old(left_file::state.value), 1u64);
     ensures result == left_file::state.value;
     ensures result == integer::uint64_wrapping_add(old(left_file::state.value), 1u64);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 void reset_left() {
     owns left_file::state.value;
     ensures left_file::state.value == 0u64;
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 unsigned long right() {
     owns right_file::state.value;
     ensures right_file::state.value == integer::uint64_wrapping_add(old(right_file::state.value), 1u64);
     ensures result == right_file::state.value;
     ensures result == integer::uint64_wrapping_add(old(right_file::state.value), 1u64);
-} by { execute(); simp(); }
+} by { execute(); solve(); }
 
 int main() {
     ensures result == 1;
@@ -69,17 +69,17 @@ int main() {
     have left_file::state.value == 7u64;
     have right_file::state.value == 40u64;
     step();
-    have left_file::state.value == 8u64 by { unfold(integer::uint64_wrapping_add(7u64, 1u64)); simp(); };
+    have left_file::state.value == 8u64 by { unfold(integer::uint64_wrapping_add(7u64, 1u64)); solve(); };
     step();
-    have left_file::state.value == 9u64 by { unfold(integer::uint64_wrapping_add(8u64, 1u64)); simp(); };
+    have left_file::state.value == 9u64 by { unfold(integer::uint64_wrapping_add(8u64, 1u64)); solve(); };
     step();
-    have right_file::state.value == 41u64 by { unfold(integer::uint64_wrapping_add(40u64, 1u64)); simp(); };
+    have right_file::state.value == 41u64 by { unfold(integer::uint64_wrapping_add(40u64, 1u64)); solve(); };
     step();
     have left_file::state.value == 0u64;
     step();
-    have left_file::state.value == 1u64 by { unfold(integer::uint64_wrapping_add(0u64, 1u64)); simp(); };
+    have left_file::state.value == 1u64 by { unfold(integer::uint64_wrapping_add(0u64, 1u64)); solve(); };
     step();
-    simp();
+    solve();
 }
 ```
 

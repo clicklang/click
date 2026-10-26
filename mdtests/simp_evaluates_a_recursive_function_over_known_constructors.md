@@ -1,6 +1,6 @@
-# simp evaluates a recursive function over known constructors
+# solve evaluates a recursive function over known constructors
 
-`simp` unfolds a recursive specification function applied to a known
+`solve` unfolds a recursive specification function applied to a known
 constructor, then keeps unfolding the recursive calls the definition exposes,
 to a fixed fuel (design-review P5, R3). An argument known only through an
 equation such as `u == Tree::Node(..)` is rewritten to its constructor first.
