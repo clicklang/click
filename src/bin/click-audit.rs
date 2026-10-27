@@ -685,24 +685,49 @@ fn prepare_audit(arguments: &Arguments, deadline: Instant) -> Result<AuditInvent
     let sources = without_excluded(audit_targets(&arguments.path)?, &arguments.exclude)?;
     println!("INVENTORY");
     let inventory_limit = arguments.limits.session.within(deadline)?;
-    let ((sources, mut sites), _) = run_phase("smart-site inventory", inventory_limit, || {
-        // Negative fixtures are not audit inputs: reject them before runtime
-        // discovery can prepare their imports or parse their invalid Click.
-        let sources = without_expected_failure_mdtests(sources)?;
-        for path in &sources {
-            let source = load_audit_source(path)?;
-            let runtime = match &source.project {
-                Some(project) => click::surface::selected_project_thread_runtime(project),
-                None => click::surface::selected_thread_runtime(&source.click_source),
+    let ((sources, mut sites, mut discovery_failures), _) =
+        run_phase("smart-site inventory", inventory_limit, || {
+            let mut ready = Vec::new();
+            let mut sites = Vec::new();
+            let mut failures = Vec::new();
+            for path in sources {
+                let inventory = (|| {
+                    // Negative fixtures must be skipped before preparing inputs.
+                    if is_expected_failure_mdtest(&path)? {
+                        return Ok(None);
+                    }
+                    let source = load_audit_source(&path)?;
+                    let runtime = match &source.project {
+                        Some(project) => click::surface::selected_project_thread_runtime(project),
+                        None => click::surface::selected_thread_runtime(&source.click_source),
+                    }
+                    .map_err(|error| error.report())?;
+                    if let Some(assumption) = runtime.assumption() {
+                        println!("  {} runtime assumption: {assumption}", path.display());
+                    }
+                    inventory_sites(std::slice::from_ref(&path)).map(Some)
+                })();
+                match inventory {
+                    Ok(Some(source_sites)) => {
+                        sites.extend(source_sites);
+                        ready.push(path);
+                    }
+                    Ok(None) => {}
+                    Err(message) => {
+                        if inventory_limit.deadline_exceeded() {
+                            return Err(RUN_LIMIT_EXHAUSTED.to_string());
+                        }
+                        let failure = format!("{}: {message}", path.display());
+                        if !arguments.keep_going {
+                            return Err(failure);
+                        }
+                        println!("  smart-site inventory FAILED: {failure}");
+                        failures.push(failure);
+                    }
+                }
             }
-            .map_err(|error| error.report())?;
-            if let Some(assumption) = runtime.assumption() {
-                println!("  {} runtime assumption: {assumption}", path.display());
-            }
-        }
-        let sites = inventory_sites(&sources)?;
-        Ok((sources, sites))
-    })?;
+            Ok((ready, sites, failures))
+        })?;
     let inventory_claims = sites
         .iter()
         .map(|site| (site.click_path.clone(), site.claim.clone()))
@@ -726,18 +751,20 @@ fn prepare_audit(arguments: &Arguments, deadline: Instant) -> Result<AuditInvent
     } else {
         sources.clone()
     };
-    let (implicit_sites, discovery_failures) = implicit_auto_sites(
+    let (implicit_sites, implicit_failures) = implicit_auto_sites(
         &discovery_sources,
         &sites,
         arguments.limits.session.within(deadline)?,
+        arguments.keep_going,
     )?;
-    for failure in &discovery_failures {
+    for failure in &implicit_failures {
         println!("  implicit-auto discovery FAILED: {failure}");
     }
     println!(
         "  {} claims proved by the implicit closer with no smart site",
         implicit_sites.len()
     );
+    discovery_failures.extend(implicit_failures);
     sites.extend(implicit_sites);
     sites.sort_by(|left, right| {
         (&left.click_path, left.position.line, left.position.column).cmp(&(
@@ -1345,6 +1372,7 @@ fn is_expected_failure_mdtest(path: &Path) -> Result<bool, String> {
     ))
 }
 
+#[cfg(test)]
 fn without_expected_failure_mdtests(sources: Vec<PathBuf>) -> Result<Vec<PathBuf>, String> {
     let mut kept = Vec::new();
     for source in sources {
@@ -1419,6 +1447,7 @@ fn implicit_auto_sites(
     sources: &[PathBuf],
     smart: &[AuditSite],
     limit: PhaseLimit,
+    keep_going: bool,
 ) -> Result<(Vec<AuditSite>, Vec<String>), String> {
     let smart_claims = smart
         .iter()
@@ -1430,75 +1459,107 @@ fn implicit_auto_sites(
         if limit.deadline_exceeded() {
             return Err(RUN_LIMIT_EXHAUSTED.to_string());
         }
-        let canonical_path = fs::canonicalize(source_path)
-            .map_err(|error| format!("failed to resolve `{}`: {error}", source_path.display()))?;
-        if is_expected_failure_mdtest(&canonical_path)? {
-            continue;
-        }
-        let source = load_audit_source(&canonical_path)?;
-        // The kernel's tables are thread-local, as in a session.
-        let discovered = thread::scope(|scope| {
-            thread::Builder::new()
-                .name("click-audit-implicit-auto".to_string())
-                .stack_size(SESSION_THREAD_STACK_BYTES)
-                .spawn_scoped(scope, || {
-                    run_phase("implicit-auto discovery", limit, || {
-                        let (verified, events) =
-                            click::instrumentation::collect(|| start_session(&source));
-                        verified?;
-                        Ok(events
-                            .into_iter()
-                            .filter_map(|event| match event {
-                                click::instrumentation::VerificationEvent::TacticStarted(
-                                    tactic,
-                                ) if tactic.tactic_name
-                                    == click::instrumentation::IMPLICIT_AUTO_TACTIC
-                                    || tactic.tactic_name
-                                        == click::instrumentation::IMPLICIT_TAIL_TACTIC =>
-                                {
-                                    Some(tactic.claim)
-                                }
-                                _ => None,
-                            })
-                            .collect::<BTreeSet<_>>())
-                    })
-                })
-                .map_err(|error| format!("failed to start implicit-auto discovery: {error}"))?
-                .join()
-                .map_err(|_| "implicit-auto discovery thread panicked".to_string())?
-        });
-        let claims = match discovered {
-            Ok((claims, _)) => claims,
-            // A source with smart sites is verified again by its session,
-            // which reports the failure; for one without, this is the check.
+        match implicit_auto_sites_in_source(source_path, &smart_claims, limit, keep_going) {
+            Ok((source_sites, source_failures)) => {
+                sites.extend(source_sites);
+                failures.extend(source_failures);
+            }
             Err(message) => {
                 if limit.deadline_exceeded() {
                     return Err(RUN_LIMIT_EXHAUSTED.to_string());
                 }
-                if !smart_claims.iter().any(|(path, _)| path == &canonical_path) {
-                    failures.push(format!("{}: {message}", canonical_path.display()));
+                if !keep_going {
+                    return Err(message);
                 }
-                continue;
+                failures.push(format!("{}: {message}", source_path.display()));
             }
-        };
-        for claim in claims {
-            if smart_claims.contains(&(canonical_path.clone(), claim.clone())) {
-                continue;
-            }
-            let click_position =
-                claim_source_position_for_source(&source, &source.click_source, &claim)?;
-            sites.push(AuditSite {
-                click_path: canonical_path.clone(),
-                position: SourcePosition {
-                    line: click_position.line + source.line_offset,
-                    column: click_position.column,
-                    origin: None,
-                },
-                click_position,
-                claim,
-                tactic_name: click::instrumentation::IMPLICIT_AUTO_TACTIC.to_string(),
-            });
         }
+    }
+    Ok((sites, failures))
+}
+
+fn implicit_auto_sites_in_source(
+    source_path: &Path,
+    smart_claims: &BTreeSet<(PathBuf, String)>,
+    limit: PhaseLimit,
+    keep_going: bool,
+) -> Result<(Vec<AuditSite>, Vec<String>), String> {
+    let mut sites = Vec::new();
+    let mut failures = Vec::new();
+    let canonical_path = fs::canonicalize(source_path)
+        .map_err(|error| format!("failed to resolve `{}`: {error}", source_path.display()))?;
+    if is_expected_failure_mdtest(&canonical_path)? {
+        return Ok((sites, failures));
+    }
+    let source = load_audit_source(&canonical_path)?;
+    // The kernel's tables are thread-local, as in a session.
+    let discovered = thread::scope(|scope| {
+        thread::Builder::new()
+            .name("click-audit-implicit-auto".to_string())
+            .stack_size(SESSION_THREAD_STACK_BYTES)
+            .spawn_scoped(scope, || {
+                run_phase("implicit-auto discovery", limit, || {
+                    let (verified, events) =
+                        click::instrumentation::collect(|| start_session(&source));
+                    verified?;
+                    Ok(events
+                        .into_iter()
+                        .filter_map(|event| match event {
+                            click::instrumentation::VerificationEvent::TacticStarted(tactic)
+                                if tactic.tactic_name
+                                    == click::instrumentation::IMPLICIT_AUTO_TACTIC
+                                    || tactic.tactic_name
+                                        == click::instrumentation::IMPLICIT_TAIL_TACTIC =>
+                            {
+                                Some(tactic.claim)
+                            }
+                            _ => None,
+                        })
+                        .collect::<BTreeSet<_>>())
+                })
+            })
+            .map_err(|error| format!("failed to start implicit-auto discovery: {error}"))?
+            .join()
+            .map_err(|_| "implicit-auto discovery thread panicked".to_string())?
+    });
+    let claims = match discovered {
+        Ok((claims, _)) => claims,
+        // A source with smart sites is verified again by its session,
+        // which reports the failure; for one without, this is the check.
+        Err(message) => {
+            if limit.deadline_exceeded() {
+                return Err(RUN_LIMIT_EXHAUSTED.to_string());
+            }
+            if !smart_claims.iter().any(|(path, _)| path == &canonical_path) {
+                failures.push(format!("{}: {message}", canonical_path.display()));
+            }
+            return Ok((sites, failures));
+        }
+    };
+    for claim in claims {
+        if smart_claims.contains(&(canonical_path.clone(), claim.clone())) {
+            continue;
+        }
+        let click_position =
+            match claim_source_position_for_source(&source, &source.click_source, &claim) {
+                Ok(position) => position,
+                Err(message) if keep_going => {
+                    failures.push(format!("{}: {message}", canonical_path.display()));
+                    continue;
+                }
+                Err(message) => return Err(message),
+            };
+        sites.push(AuditSite {
+            click_path: canonical_path.clone(),
+            position: SourcePosition {
+                line: click_position.line + source.line_offset,
+                column: click_position.column,
+                origin: None,
+            },
+            click_position,
+            claim,
+            tactic_name: click::instrumentation::IMPLICIT_AUTO_TACTIC.to_string(),
+        });
     }
     Ok((sites, failures))
 }
