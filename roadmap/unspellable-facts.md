@@ -104,8 +104,9 @@ should not land as one piece.
 - **Tests.** The unit tests that pinned the fold are updated, and there is a
   new mdtest, `a_read_of_a_stored_pointer_cell_stays_a_read.md`.
 
-**Status.** The unit phase has 15 failures. The fixture phase (mdtests and
-examples) has not run, because the gate stops after the unit phase.
+**Original checkpoint status.** The unit phase had the 15 failures below.
+Its fixture phase had not run because the gate stopped after the unit phase.
+See the integration checkpoint below for subsequent results.
 
 - **Nine Rust/Charon tests:**
   - `charon_box_fields_take_and_assign_through_self`
@@ -168,6 +169,71 @@ A refused exchange publishes none. These are internal read definitions, not
 new public proof-state facts. Both changes avoid fact-aware query fallbacks and
 have deterministic scaling coverage for selected chains and unrelated state.
 
+### Integration checkpoint (2026-10-27)
+
+The migration is continued on `codex/unspellable-free-investigation`, rebased
+onto `14aa465dd` (including the importer fix #2065 and read-definition fix
+#2073). The owned free-frame prototype remains on that branch; its frame
+facts are checked consequences of the free, not unconditional metadata.
+
+PR #2075 (`c4a8153a6`) moves the published return resource exchange inside
+the kernel operation and returns its constructed state and facts. The
+follow-up uses the retained C-body successor during final return certification
+instead of comparing it with a regenerated representation. Existing path
+premise checks still run; this does not remove all legacy trace replay.
+
+Abstract-value reads now participate in typed address congruence. Their
+pointer operands register through the common graph walk, and exact producer
+projection edges connect their snapshot names. Structural read naming also
+retains the original observation as a width-specific definition: naming had
+already justified that relation but discarded the original snapshot. The
+new graph edges change no lowered terms, scan no facts or memory history,
+and never cross an actual affecting store or mix read types or access widths.
+
+With these increments and the WIP full-pointer substitution correction, the
+unchanged generic Stack proof verifies end to end, including `push` and
+`pop`. Focused regressions check late aliases, nested pointer definitions,
+projection/origin relations, type and width separation, writes, and fact
+withdrawal. Deterministic scaling covers 8/16/32/64 reads and up to 256
+unrelated facts. The complete migration still needs a green gate and the
+remaining spellability/fact-stability acceptance work below.
+
+
+The integrated migration unit gate ran 6,620 tests: 6,609 passed and 11
+failed (five Rust container/drop tests and the six representation tests
+listed above). Box fields, generic Stack, and both held-resource trait tests
+now pass. The false-Stack-claims test still refuses verification, but earlier
+than its expected diagnostic at a concrete `Stack::pop` payload fold.
+
+The separately invoked fixture phase passed the C++ and sidecar aggregates.
+Eight examples failed: `arena`, `binary-tree`, `concurrency-fork-join`,
+`input-cursor`, `owned-segmented-buffer`, `owned-string`, `owned-vector`, and
+`perpetual-service`. The main mdtests reported nine failures and then remained
+in `rewrite_through_a_loaded_pointer_field.md`; that process was stopped
+at 416 seconds after all other main fixtures had finished. This is an
+unresolved migration tooling blocker, not a completed fixture verdict.
+The obsolete `execute()` in `a_read_of_a_stored_pointer_cell_stays_a_read.md`
+was subsequently replaced by `step_until(function.exit)` and passed in a
+focused rerun. The eight other reported failures are:
+
+- `aggregate_parameter_old_pointee.md`
+- `aggregate_parameter_pointee_expires.md`
+- `aggregate_parameter_pointee_contract.md`
+- `aggregate_parameter_pointee_resource.md`
+- `an_entry_view_names_the_entry_address.md`
+- `authority_ordinary_exit_aggregate_parameter_pointee.md`
+- `c_produced_resource_over_returned_struct_field.md`
+- `cpp_generic_class_state_in_a_resource.md`
+
+The isolated abstract-read follow-up passed `scripts/check.sh`: 6,620
+unit/API/import/scaling tests and all four fixture aggregates (13m41s,
+report-only ten-minute budget warning). The loaded-pointer fixture passed
+in 0.27 seconds there; the stall is reproduced on the broader migration.
+
+Do not resume migration feature work until the loaded-pointer rewrite stall
+has been reduced and fixed. No nightly suite was run; no new census or
+fact-stability acceptance result is claimed by this checkpoint.
+
 ### Decision: the free decides its frame from proven separation
 
 The user chose the executor to require separation, with the step recording
@@ -197,10 +263,10 @@ address-class access index. Unknown cells are forgotten; structurally distinct
 blocks remain untouched. The allocation-status helper is not a separation
 authority.
 
-Still to implement: record the supported frame equalities at the step and
-use them to restore the pointer-read branch's recursive-stack frames. Keep
-read names structural, and pin the added work with deterministic scaling
-regressions before landing that increment.
+The migration checkpoint records supported pointer-cell frame equalities at
+the free step, with deterministic full-step scaling coverage. That increment
+has not landed; remaining container and concrete recursive-drop failures must
+be resolved before the pointer-read migration is green.
 
 ### Also tried, and why it was dropped
 

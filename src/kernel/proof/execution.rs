@@ -7415,21 +7415,10 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                             rewrite.selected_children.as_deref(),
                         )
                         .map_err(|_| "return fold body is not justified on this execution path")?;
-                        let checked_state = checked.state;
-                        if !checked_state
-                            .resources
-                            .same_exchange_from(&rewrite.after_state.resources, &state.resources)
-                            || !checked_state.instance_field_scope.same_exchange_from(
-                                &rewrite.after_state.instance_field_scope,
-                                &state.instance_field_scope,
-                            )
-                            || checked_state.population_effects.creation
-                                != rewrite.after_state.population_effects.creation
-                        {
-                            return Err(
-                                "return fold does not match this path's checked resource exchange",
-                            );
-                        }
+                        // The event's successor was constructed by the kernel.
+                        // This pass binds its premises to the selected execution
+                        // path; it must not replace or compare that successor
+                        // with a newly chosen resource representation.
                         // Import only the selected body's rechecked facts, including
                         // its identical readability at the caller's cached snapshot.
                         // Do not import an arbitrary post-rewrite fact context.
