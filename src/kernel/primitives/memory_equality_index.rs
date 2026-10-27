@@ -420,6 +420,9 @@ pub(super) struct MemoryPairings {
     by_inputs:
         PersistentMap<crate::kernel::equality_graph::InputKey, std::sync::Arc<PairedMemoryIndex>>,
     published: Option<std::sync::Arc<PairedMemoryIndex>>,
+    // One producer-selected caller boundary, before temporary opening facts.
+    // It has no memory payload and is refreshed while the input remains empty.
+    empty_caller: Option<std::sync::Arc<PairedMemoryIndex>>,
 }
 
 /// A payload attached to typed address classes in the trusted graph. It has
@@ -1356,7 +1359,11 @@ impl ResourceContext {
     /// existing publication; this boundary never republishes an ambient frame.
     pub(in crate::kernel) fn capture_empty_memory_input(&self, assumptions: &PureFactContext) {
         if self.storage.index.memory_by_block.is_empty() {
-            self.synchronize_memory_equalities(assumptions);
+            let caller = self.pair_memory_equalities(assumptions, true, None);
+            self.memory_equalities
+                .lock()
+                .expect("memory equality index")
+                .empty_caller = Some(caller);
         }
     }
 
@@ -1453,11 +1460,24 @@ impl ResourceContext {
             .expect("memory equality index");
         if self.storage.index.memory_by_block.is_empty() {
             // No memory occurrences means no class-keyed IDs to rebase.
-            // Capture the already closed source in constant work. Older views
-            // need no payload preservation after the last occurrence is gone.
+            // Capture the already closed source in constant work. Retain only
+            // the producer-selected caller boundary alongside the current one;
+            // a temporary opening context must not discard their common prefix.
+            // Refresh its empty resource payload, so old resource history does
+            // not accumulate behind a checkpoint with no memory occurrences.
+            let caller = cache
+                .empty_caller
+                .as_ref()
+                .filter(|caller| caller.graph.input_key().root() == key.root())
+                .map(|caller| self.empty_memory_index(caller.graph.clone()));
+            let mut inputs = PersistentMap::default();
+            if let Some(caller) = &caller {
+                inputs = inputs.with_inserted(caller.graph.input_key(), caller.clone());
+            }
+            cache.empty_caller = caller;
             let root = self.empty_memory_index(source.input_root());
             let paired = self.empty_memory_index(source);
-            cache.by_inputs = PersistentMap::default()
+            cache.by_inputs = inputs
                 .with_inserted(key.root(), root)
                 .with_inserted(key, paired.clone());
             // Empty memory input is trivially complete, even on a cold query.
@@ -1597,6 +1617,7 @@ impl ResourceContext {
             // on a read-only lookup or carry obsolete occurrence IDs forward.
             cache.by_inputs = PersistentMap::default();
             cache.published = None;
+            cache.empty_caller = None;
         }
         if register_input {
             // Register both input boundaries directly. The current view shares

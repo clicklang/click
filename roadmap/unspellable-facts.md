@@ -285,6 +285,22 @@ the saved pre-fix and candidate binaries have identical failing work counts.
 The migration is not green, and its remaining fixture and acceptance audits
 have not been rerun for this increment.
 
+The child-resource scaling defect is now reduced to empty memory-index setup:
+a temporary opening context discarded the caller checkpoint. Once the index
+held two memory cells, the following fold replayed unrelated caller equality
+history from the root. The reduced test grows from 1,248 to 13,536 work units
+with 256 unrelated equalities before the fix. Resource opening now captures
+the caller's closed graph when its memory input is empty, and the index keeps
+that one selected checkpoint through later empty setup. Its empty payload is
+refreshed without retaining arbitrary old views or scanning resource history.
+
+The migration's complete ordinary scaling selection plus the new context
+isolation regression passes (973 tests). The isolation control checks that a
+weaker caller cannot consume memory using an alias held only in the opening
+context. Lowering and the free/frame rules are unchanged. This repairs the
+scaling blocker; it does not complete the generic-payload frame proof or the
+migration's remaining fixture and spellability acceptance work.
+
 ### Decision: the free decides its frame from proven separation
 
 The user chose the executor to require separation, with the step recording
