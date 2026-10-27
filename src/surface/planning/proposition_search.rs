@@ -1235,12 +1235,16 @@ impl PropositionSearch for PureFactContext {
         }
         let mut variables = BTreeSet::new();
         for fact in self.memory_loadable_fact_propositions(SearchPermission::new()) {
-            {
-                collect_proposition_bitvector_variables(fact, &mut variables);
+            if reasoning_interrupted() {
+                return None;
             }
+            collect_proposition_bitvector_variables(fact, &mut variables);
         }
         variables.remove(&var);
         for variable in variables {
+            if reasoning_interrupted() {
+                return None;
+            }
             let witness = Bitvector32Term::Variable(variable);
             let instantiated = substitute_bitvector_variable_in_proposition(body, var, &witness);
             let derivation = self.derive_proposition_using(&instantiated, false);

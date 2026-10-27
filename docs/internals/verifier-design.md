@@ -98,9 +98,9 @@ the "Fast-part scans" section of [the smart-tactics roadmap item](https://github
 condition, proposition and disjunction views require it. Checking can use
 indexed queries and explicit inputs without that capability. The smart
 closer's disjunction adapter keeps capability construction inside planning.
-Failure diagnostics receive a bounded sample (at most 32 facts) and a total
-count; they cannot obtain an ambient iterator. Loadability witness enumeration
-requires planner permission and charges every visited fact. Loadability
+The dedicated diagnostic API returns a bounded sample (at most 32 facts)
+and a total count; it exposes no ambient iterator. Viewability witness enumeration
+requires planner permission and charges every visited fact. Viewability
 diagnostics use the block-keyed candidate index.
 
 Every Cargo build runs `build_support/search_boundary.rs`. It follows Rust
