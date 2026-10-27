@@ -37,3 +37,6 @@ mod libcxx_functional;
 
 #[path = "../tests/rust_import.rs"]
 mod rust_import;
+
+#[path = "../tests/search_boundary.rs"]
+mod search_boundary;

@@ -450,9 +450,9 @@ fn consulted_premises(
     let mut total = 0;
     let mut shown = Vec::new();
     let conditions = assumptions
-        .condition_fact_pairs()
+        .diagnostic_condition_fact_pairs()
         .map(|(condition, value)| Proposition::ConditionIs(condition.clone(), value));
-    for premise in conditions.chain(assumptions.proposition_facts().cloned()) {
+    for premise in conditions.chain(assumptions.diagnostic_proposition_facts().cloned()) {
         total += 1;
         if shown.len() < PREMISE_LIMIT {
             let spelled = site.spell_proposition(&premise).map_or_else(

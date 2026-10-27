@@ -8559,8 +8559,7 @@ impl<'a> Proof<'a> {
             };
             assumptions.states_required_goal(&negated)
         };
-        let candidates = assumptions
-            .disjunction_fact_propositions()
+        let candidates = crate::surface::planning::disjunction_candidates(assumptions)
             .filter(|disjunction| {
                 let disjuncts = flattened_disjuncts(disjunction);
                 disjuncts.iter().any(|disjunct| **disjunct == goal)

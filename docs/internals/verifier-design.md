@@ -91,6 +91,31 @@ Operations in the fast part that scan today are listed, with the options for
 each, in
 the "Fast-part scans" section of [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 
+## Enforced search access
+
+`SearchPermission` is an opaque capability constructed only inside
+`surface::planning`. Ambient `scan_for_search` and the planner's atomic,
+condition, proposition and disjunction views require it. Checking can use
+indexed queries and explicit inputs without that capability. The smart
+closer's disjunction adapter keeps capability construction inside planning.
+Failure diagnostics have separate views; they do not grant search access.
+
+Every Cargo build runs `build_support/search_boundary.rs`. It follows Rust
+module declarations, skips test-only modules, and rejects kernel dependencies
+on Surface code. It also pins the functions and reference counts allowed to
+use diagnostic views and `scan_for_legacy_simp`. That transitional API serves
+the existing shared simp/certificate routines; it is not permission to add
+ambient scans. `tests/search_boundary.rs` checks rejected dependencies,
+aliases, method references, macro tokens, extra scans, and capability privacy.
+
+This is an incremental boundary, not a proof of complexity or a complete Rust
+dependency resolver. Mixed simp/certificate APIs still need an explicit-premise
+representation; upkeep APIs and ordinary collections still need auditing.
+Do not evade the boundary by relabelling a scan as upkeep, adding a re-export,
+or widening an allowance. Review any boundary change with the same design
+check as the reasoning it permits. Scaling tests remain necessary for indexed
+buckets and repeated work.
+
 ## The slow-part rule
 
 A slow-part search may scan, try alternatives, and recurse, under three

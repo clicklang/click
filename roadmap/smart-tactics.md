@@ -43,28 +43,24 @@ expansion is not expected to eliminate that semantic output.
 
 ## Enforce the checking/search API boundary
 
-Consolidate heuristic planning behind a clearly named search module and
-restrict the operations it can expose. A directory move alone is insufficient.
+Remaining migration after the capability and build-time boundary described in
+[Verifier design](../docs/internals/verifier-design.md#enforced-search-access):
 
-- Search may invoke checked operations; checked operations must not invoke
-  planners or acquire the authority to enumerate ambient facts for search.
-- Require a search capability, with restricted construction, for ambient
-  enumeration. Audit current `scan_for_search` callers and broad fact-view
-  APIs; a method name or comment alone does not enforce the boundary.
-- Represent explicitly supplied premises separately from ambient context so
-  checking can traverse the selected input without gaining ambient iteration.
-- Audit upkeep/rebuild APIs too: renaming a query scan as upkeep or explicit
-  input must not evade the restriction. Whole-context maintenance cannot run
-  repeatedly on a small step's hot path.
-- Preserve indexed checking and structural traversals of explicit input.
-  Do not require a search capability just to check a large certificate.
+- Separate the shared simp/certificate routines behind `scan_for_legacy_simp`
+  into planner access and an explicit-premise representation; remove their
+  pinned legacy allowances as each caller migrates.
+- Audit upkeep/rebuild APIs and other broad views, including loadability facts.
+  Relabelling a query as upkeep or explicit input must not evade the boundary.
+- Audit Surface checked drivers that import planning helpers. Move exact
+  checking helpers to the checking side and separate implicit closer calls;
+  extend dependency enforcement when those mixed modules are separated.
+- Keep planner capability construction private and avoid new re-exports or
+  adapters that expose enumeration to checking. Extend negative boundary
+  tests with each migrated API.
 
-Intended regression: a compile-time boundary test or dependency check rejects
-an attempted planner call or ambient search enumeration from checking code.
-Positive tests retain legal explicit-premise checking and planner access.
-Introduce the boundary incrementally without claiming that a token proves
-complexity: ordinary vectors and oversized indexed buckets still need scaling
-coverage.
+A token does not prove complexity: ordinary collections, oversized indexed
+buckets, repeated maintenance, and planner APIs reached through re-exports
+still require review and deterministic scaling coverage.
 
 ## Enforce growth and expansion regressions
 

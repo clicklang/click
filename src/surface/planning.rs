@@ -6,3 +6,14 @@
 //! planning bug can lose a proof but can never issue authority.
 
 pub(crate) mod proposition_search;
+
+mod permission;
+pub(crate) use permission::SearchPermission;
+
+/// Ambient disjunction candidates for the smart closer. The capability stays
+/// inside planning; callers still construct checked `cases` steps.
+pub(in crate::surface) fn disjunction_candidates(
+    context: &crate::kernel::PureFactContext,
+) -> impl Iterator<Item = &crate::kernel::Proposition> {
+    context.disjunction_fact_propositions(SearchPermission::new())
+}

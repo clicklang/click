@@ -64,7 +64,12 @@ fn wide_condition_index_construction_charges_its_variable_entries() {
                 PureFactContext::new().assume_condition(condition, true)
             })
         });
-        assert_eq!(context.condition_fact_pairs().count(), 1);
+        assert_eq!(
+            context
+                .condition_fact_pairs(crate::surface::planning::SearchPermission::new())
+                .count(),
+            1
+        );
         let index_work = events
             .into_iter()
             .filter_map(|event| {

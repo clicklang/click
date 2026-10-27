@@ -3046,17 +3046,18 @@ impl PureFactContext {
     /// premise context [`Self::proves_atomic_from_premises`].
     pub(crate) fn proves_condition_from_facts(
         &self,
+        permission: crate::SearchPermission,
         condition: &ConditionTerm,
         value: bool,
     ) -> bool {
         self.condition_facts
-            .scan_for_search()
+            .scan_for_search(&permission)
             .any(|(fact_condition, fact_value)| {
                 fact_value == &value && self.condition_matches(fact_condition, condition)
             })
             || self
                 .prop_facts
-                .scan_for_search()
+                .scan_for_search(&permission)
                 .any(|proposition| self.proposition_proves_condition(proposition, condition, value))
             || self.proves_condition_from_derived_order_facts(condition, value)
     }
@@ -3100,7 +3101,7 @@ impl PureFactContext {
         // Only `simp` reaches this.
         for proposition in self
             .atomic_quantified_facts
-            .scan_for_search()
+            .scan_for_legacy_simp()
             .map(|fact| fact.as_ref())
         {
             for instance in self.forall_instantiations_for_condition(proposition, condition) {

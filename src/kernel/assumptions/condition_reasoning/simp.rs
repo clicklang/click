@@ -289,7 +289,7 @@ impl PureFactContext {
             == Some(false)
             || self
                 .condition_facts
-                .scan_for_search()
+                .scan_for_legacy_simp()
                 .any(|(condition, value)| {
                     if *value {
                         return false;
@@ -371,11 +371,11 @@ impl PureFactContext {
         // A slow-part scan: only `simp` reaches this, and a certificate
         // runs it again over the step's retained premises alone.
         self.condition_facts
-            .scan_for_search()
+            .scan_for_legacy_simp()
             .any(|(fact, fact_value)| {
                 *fact_value == value && self.condition_matches_for_simp(fact, condition)
             })
-            || self.prop_facts.scan_for_search().any(|proposition| {
+            || self.prop_facts.scan_for_legacy_simp().any(|proposition| {
                 self.proposition_proves_condition_for_simp(proposition, condition, value)
             })
     }
@@ -720,7 +720,7 @@ impl PureFactContext {
         // syntactic so certificate selection cannot recurse into memory or
         // alias resolution.
         addend == 1
-            && self.condition_facts.scan_for_search().any(|(condition, value)| {
+            && self.condition_facts.scan_for_legacy_simp().any(|(condition, value)| {
                 matches!(
                     (condition, value),
                     (
@@ -737,8 +737,8 @@ impl PureFactContext {
             })
     }
 
-    /// The unique constant this term resolves to through equality facts
-    /// (with per-load snapshot bridging), if any. Bounded and fuel-free.
+    /// The unique constant this term resolves to through established equality
+    /// facts, if any. Does not search other snapshots for a constant.
     pub(in crate::kernel) fn known_signed_constant_after_normalization(
         &self,
         term: &Bitvector32Term,
@@ -772,7 +772,7 @@ impl PureFactContext {
         }
 
         self.condition_facts
-            .scan_for_search()
+            .scan_for_legacy_simp()
             .any(|(condition, value)| {
                 let (
                     ConditionTerm::Compare {
