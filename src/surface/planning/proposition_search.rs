@@ -1234,13 +1234,17 @@ impl PropositionSearch for PureFactContext {
             return None;
         }
         let mut variables = BTreeSet::new();
-        for fact in self.memory_loadable_fact_propositions() {
-            {
-                collect_proposition_bitvector_variables(fact, &mut variables);
+        for fact in self.memory_loadable_fact_propositions(SearchPermission::new()) {
+            if reasoning_interrupted() {
+                return None;
             }
+            collect_proposition_bitvector_variables(fact, &mut variables);
         }
         variables.remove(&var);
         for variable in variables {
+            if reasoning_interrupted() {
+                return None;
+            }
             let witness = Bitvector32Term::Variable(variable);
             let instantiated = substitute_bitvector_variable_in_proposition(body, var, &witness);
             let derivation = self.derive_proposition_using(&instantiated, false);
@@ -2469,4 +2473,10 @@ mod atomic_reduction_tests {
             "../../scaling_tests/surface/planning/proposition_search/atomic_reduction_tests.rs"
         );
     }
+}
+
+#[cfg(test)]
+mod loadability_view_scaling_tests {
+    use super::*;
+    include!("../../scaling_tests/surface/planning/proposition_search/loadability_view_tests.rs");
 }

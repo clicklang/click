@@ -418,3 +418,10 @@ fn one_outer_parenthesis_pair_is_dropped_and_a_composed_one_is_kept() {
     let bare = ContractExpression::CFragment(CExpression::Variable("a".to_string()));
     assert_eq!(spelled_alone(&bare), "a");
 }
+
+mod scaling_tests {
+    use super::*;
+    include!(
+        "../../../../scaling_tests/surface/proof/fixed_state_proofs/conversion_conditions/tests.rs"
+    );
+}
