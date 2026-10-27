@@ -302,6 +302,19 @@ an Integer miss cost 16, 64 and 256 units and a hit cost 18, 66 and 258.
 Exact-only hits and misses now cost one unit at every size; exact compound
 32-bit comparisons also cost one unit.
 
+The same map also answers the matcher's fixed syntactic symmetries: reversed
+32-bit orders, swapped equality operands, signed/unsigned 32-bit equality,
+and swapped offset equalities. These hits need at most two lookups, even
+for compound operands. Scaling tests grow unrelated and shared-operand facts;
+misses still use the existing route because operands may be memory-equivalent
+without having identical syntax.
+`symmetric_memory_condition_matches_ignore_other_facts` and
+`equivalent_equality_spellings_use_bounded_lookups` cover 8, 16 and 32 facts,
+both truth values and withdrawal. The original reversed compound-equality
+reproduction cost 539/2,003/7,859 units at 8/32/128 unrelated facts; the same
+probe costs two units after the lookup. The gate keeps the smaller sizes to
+stay below its per-test time budget.
+
 **Fixed: the exact check is exact.** Measured across the gate, the
 condition scan `settles_exactly` fell into (`proves_condition_from_facts`)
 ran 18,636 times in fast code and found a fact 27 times, none of which a
@@ -909,6 +922,8 @@ whole suite (counted 2026-10-26):
   60 facts, 15 hits in the original census. Partial progress (2026-10-27):
   exact hits and exact-only kinds (`IntegerEqual`, pointer equalities,
   64-bit comparisons and Bool applications) now use the condition fact map.
+  Reversed 32-bit comparisons and offset equalities, and the other signedness
+  spelling of 32-bit equality, also use direct lookups when operands match.
   The remaining non-exact 32-bit and offset matches include loaded variables,
   sums, applications and scalar spellings tied to 64-bit facts; those still
   need complete keys for memory equivalence.
