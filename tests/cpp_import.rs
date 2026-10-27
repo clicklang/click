@@ -9352,10 +9352,11 @@ int32 helper(bool should_throw) throws int32 { ensures result == 5; exceptional 
 int32 relay(bool should_throw) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
-    let hostile = source.replace(
-        "exceptional ensures exception == 7 by",
-        "exceptional ensures exception == 8 by",
-    );
+    let (before, after) = source
+        .rsplit_once("exceptional ensures exception == 7;")
+        .expect("caller has an exceptional postcondition");
+    let hostile = format!("{before}exceptional ensures exception == 8;{after}");
+    assert_ne!(hostile, source);
     fs::write(project.directory.join("bad.click"), &hostile).unwrap();
     let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
     assert!(verify_program_prepared_project(&parsed, &import).is_err());
@@ -15193,10 +15194,11 @@ fn locked_header_graph_preserves_scalar_exception_contracts_offline() {
     int32 choose(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
     "#;
     check_selected_claim_certificate(&project, &import, sidecar);
-    let hostile = sidecar.replace(
-        "exceptional ensures exception == 7 by",
-        "exceptional ensures exception == 8 by",
-    );
+    let (before, after) = sidecar
+        .rsplit_once("exceptional ensures exception == 7;")
+        .expect("caller has an exceptional postcondition");
+    let hostile = format!("{before}exceptional ensures exception == 8;{after}");
+    assert_ne!(hostile, sidecar);
     let path = project.directory.join("hostile.click");
     fs::write(&path, &hostile).unwrap();
     assert!(
@@ -15541,7 +15543,11 @@ int32 helper(bool fail) throws int32 { ensures result == 5; exceptional ensures 
 int64 relay(bool fail) throws int32 { ensures result == 5i64; exceptional ensures exception == 7; }
 "#;
     check_return_call_sidecar(&project, &import, source);
-    let hostile = source.replace("exception == 7 by", "exception == 8 by");
+    let (before, after) = source
+        .rsplit_once("exceptional ensures exception == 7;")
+        .expect("caller has an exceptional postcondition");
+    let hostile = format!("{before}exceptional ensures exception == 8;{after}");
+    assert_ne!(hostile, source);
     let path = project.directory.join("hostile.click");
     fs::write(&path, &hostile).unwrap();
     assert!(
@@ -15835,7 +15841,11 @@ int32 helper(bool fail) throws int32 { ensures result == 5; exceptional ensures 
 int64 relay(bool fail) throws int32 { ensures result == 5i64; exceptional ensures exception == 7; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
-    let hostile = source.replace("exception == 7 by", "exception == 8 by");
+    let (before, after) = source
+        .rsplit_once("exceptional ensures exception == 7;")
+        .expect("caller has an exceptional postcondition");
+    let hostile = format!("{before}exceptional ensures exception == 8;{after}");
+    assert_ne!(hostile, source);
     let path = project.directory.join("hostile.click");
     fs::write(&path, &hostile).unwrap();
     assert!(
