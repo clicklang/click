@@ -442,7 +442,7 @@ int32 probe(int32 input) {
 "#;
     check_first_claim_certificate(&project, &import, proof);
     let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
-    for label in ["Node::Node.contract", "probe.contract"] {
+    for label in ["Node::Node.contract", "probe.ensures_0"] {
         let expanded =
             expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
                 .unwrap();
@@ -17364,7 +17364,7 @@ int32 probe(int32 input) {
     let expanded = expand_project_claim_source_by_label(
         &parsed,
         &ProgramInputs::program(&import),
-        "probe.contract",
+        "probe.ensures_0",
     )
     .unwrap();
     verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
@@ -18699,7 +18699,7 @@ fn cpp_lambdas_passed_for_a_function_pointer_meet_its_named_contract() {
         verify_program_prepared_project(&parsed, &import).map(|_| parsed)
     };
     let parsed = verify(LAMBDA_SIDECAR).unwrap_or_else(|error| panic!("{}", error.message()));
-    for label in ["caller::(lambda#0).contract", "caller.contract"] {
+    for label in ["caller::(lambda#0).contract", "caller.ensures_0"] {
         let expanded =
             expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
                 .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
