@@ -392,8 +392,15 @@ fn an_expansion_that_does_more_work_fails_the_comparison_deterministically() {
         "by {{\n        step();\n{}        assumption();\n    }}",
         "        have result == 1 by {\n            normalize();\n        }\n".repeat(300)
     );
-    let lean = original.replacen("by solve();", explicit, 1);
-    let heavy = original.replacen("by solve();", &redundant, 1);
+    let with_proof = |proof: &str| {
+        original.replacen(
+            "ensures arithmetic_result: result == 1;",
+            &format!("ensures arithmetic_result: result == 1 {proof}"),
+            1,
+        )
+    };
+    let lean = with_proof(explicit);
+    let heavy = with_proof(&redundant);
     assert_ne!(lean, original);
     assert_ne!(heavy, original);
     let limits = AuditLimits::default();
