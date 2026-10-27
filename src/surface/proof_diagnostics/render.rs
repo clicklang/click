@@ -2000,9 +2000,16 @@ impl Renderer<'_> {
             return;
         }
         self.depth += 1;
-        // A specification `bool` is read as the term it names.
-        if let Some(application) = crate::kernel::spec_bool_term(v) {
-            self.bitvector(application);
+        // Rule C1: a specification `Bool` travels as its cast to `uint8`,
+        // which reads as the `Bool` itself.
+        if let Bitvector32Term::BoolCast { to, value } = v {
+            if *to == crate::kernel::MachineIntegerType::UInt8 {
+                self.condition(value);
+            } else {
+                self.push("(");
+                self.condition(value);
+                self.fmt(format_args!(") as {to:?}"));
+            }
             self.depth -= 1;
             return;
         }

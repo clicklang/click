@@ -1940,9 +1940,13 @@ pub(crate) fn connected_equalities(
                     | ConditionTerm::PointerEqual(..)
                     | ConditionTerm::PointerOffsetEqual(..)
                     | ConditionTerm::IntegerEqual(..)
-                    | ConditionTerm::AlgebraicEqual(..),
+                    | ConditionTerm::AlgebraicEqual(..)
+                    | ConditionTerm::BoolEqual(..),
                 true
             )
+            // A `Bool` application's claim is its equality with a literal
+            // (Stage 5): `f(x)` is `f(x) == true`.
+            | Proposition::ConditionIs(ConditionTerm::BoolApplication(_), _)
         ) {
             equalities.push(fact);
         }

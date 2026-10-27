@@ -25,7 +25,7 @@ _Bool f(void) {
 verifying "freed_bool_return.c";
 
 bool f() {
-    ensures result == 1 or result == 0;
+    ensures result == true or result == false;
 }
 ```
 

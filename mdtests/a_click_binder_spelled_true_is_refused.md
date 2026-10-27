@@ -1,6 +1,6 @@
 # A Click binder spelled `true` is refused
 
-Inside Click, `true` and `false` are the `bool` literals, so a quantifier,
+Inside Click, `true` and `false` are the `Bool` literals, so a quantifier,
 `let`, or Click parameter of that spelling could never be read. It is
 refused where it is declared. Only a C name keeps those spellings (see
 `a_c_name_spelled_true_keeps_its_c_meaning.md`).
@@ -12,5 +12,5 @@ theorem every_value(x: int32) {
 ```
 
 ```expect
-fail: `true` is a `bool` literal and cannot name a Click binder
+fail: `true` is a `Bool` literal and cannot name a Click binder
 ```

@@ -1667,6 +1667,7 @@ fn validate_comparison_expression_types(
     let left_type = infer_spec_value_type(left, variables, click_functions, context)?;
     let right_type = infer_spec_value_type(right, variables, click_functions, context)?;
     refuse_bool_literal_comparison(left, &left_type, right, &right_type, context)?;
+    refuse_bool_integer_comparison(left, &left_type, operator, right, &right_type, context)?;
     match (left_type, right_type) {
         (SpecValueType::Scalar(element), SpecValueType::Sequence(sequence))
             if operator == ComparisonOperator::In =>
@@ -1785,7 +1786,11 @@ pub(super) fn refuse_bool_literal_comparisons(
     while let Some((proposition, scoped)) = pending.pop() {
         let scope = scoped.as_ref().unwrap_or(variables);
         match proposition {
-            ClickProposition::Comparison { left, right, .. } => {
+            ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            } => {
                 let infer = |expression: &ContractExpression| {
                     if crate::surface::bool_literal_value(expression).is_some() {
                         return SpecValueType::Scalar(Some(C0Type::Bool));
@@ -1794,7 +1799,16 @@ pub(super) fn refuse_bool_literal_comparisons(
                         .map(SpecValueType::Scalar)
                         .unwrap_or(SpecValueType::Scalar(None))
                 };
-                refuse_bool_literal_comparison(left, &infer(left), right, &infer(right), context)?;
+                let (left_type, right_type) = (infer(left), infer(right));
+                refuse_bool_literal_comparison(left, &left_type, right, &right_type, context)?;
+                refuse_bool_integer_comparison(
+                    left,
+                    &left_type,
+                    *operator,
+                    right,
+                    &right_type,
+                    context,
+                )?;
             }
             ClickProposition::And(left, right)
             | ClickProposition::Or(left, right)
@@ -1839,6 +1853,81 @@ pub(super) fn refuse_bool_literal_comparisons(
     Ok(())
 }
 
+/// Decision D2 (Stage 5, `design/machine-integers.md`): a `Bool` has no
+/// integer value and no order. A `Bool` compared with an integer, or two
+/// `Bool`s ordered, is refused here when both types are known; lowering
+/// refuses the rest.
+fn refuse_bool_integer_comparison(
+    left: &ContractExpression,
+    left_type: &SpecValueType,
+    operator: ComparisonOperator,
+    right: &ContractExpression,
+    right_type: &SpecValueType,
+    context: &str,
+) -> Result<(), ClickError> {
+    let is_bool = |value_type: &SpecValueType| {
+        matches!(value_type, SpecValueType::Scalar(Some(C0Type::Bool)))
+    };
+    let is_integer = |expression: &ContractExpression, value_type: &SpecValueType| match value_type
+    {
+        SpecValueType::Scalar(Some(C0Type::Bool)) => false,
+        SpecValueType::Scalar(Some(c_type)) => {
+            type_is_arithmetic(*c_type) && !type_is_float(*c_type)
+        }
+        SpecValueType::Integer => true,
+        SpecValueType::Scalar(None) => is_untyped_integer_literal_expression(expression),
+        _ => false,
+    };
+    let describe = crate::surface::diagnostics::describe_contract_expression;
+    let ordered = !matches!(
+        operator,
+        ComparisonOperator::Equal | ComparisonOperator::NotEqual | ComparisonOperator::In
+    );
+    if ordered && (is_bool(left_type) || is_bool(right_type)) {
+        let operand = if is_bool(left_type) { left } else { right };
+        return Err(ClickError::new(format!(
+            "`{}` is a `Bool`, which has no order, in {context}; compare `Bool` values with `==` or `!=`, or write `{} as int32`",
+            describe(operand),
+            describe(operand),
+        )));
+    }
+    for (boolean, boolean_type, other, other_type) in [
+        (left, left_type, right, right_type),
+        (right, right_type, left, left_type),
+    ] {
+        if is_bool(boolean_type) && is_integer(other, other_type) {
+            return Err(ClickError::new(format!(
+                "`{}` is a `Bool` and `{}` an integer in {context}; a `Bool` has no integer value: write `{} as int32`, or compare `{}` with `true` or `false`",
+                describe(boolean),
+                describe(other),
+                describe(boolean),
+                describe(boolean),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Decision D2 (Stage 5): a `Bool` operand of contract arithmetic, an
+/// implicit promotion included, is refused; its integer value is the
+/// written cast `b as int32`. Reads the operand types already inferred.
+fn refuse_bool_arithmetic_operands(
+    operands: [(&ContractExpression, Option<C0Type>); 2],
+    context: &str,
+) -> Result<(), ClickError> {
+    for (operand, operand_type) in operands {
+        if operand_type == Some(C0Type::Bool)
+            || crate::surface::bool_literal_value(operand).is_some()
+        {
+            let operand = crate::surface::diagnostics::describe_contract_expression(operand);
+            return Err(ClickError::new(format!(
+                "`{operand}` is a `Bool` in arithmetic in {context}; a `Bool` has no integer value: write `{operand} as int32`"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// `true` and `false` are `bool` values, so they compare only with `bool`
 /// values. A value written alone as a proposition is the comparison
 /// `value == true`, so this is also what refuses `requires count;` for an
@@ -1861,7 +1950,7 @@ fn refuse_bool_literal_comparison(
             other_type => describe_spec_value_type(other_type),
         };
         return Err(ClickError::new(format!(
-            "`{}` has type {other_type}, not bool, so it is not compared with `{literal}` and is \
+            "`{}` has type {other_type}, not Bool, so it is not compared with `{literal}` and is \
              not a proposition on its own in {context}; write a comparison such as `{} != 0`",
             crate::surface::diagnostics::describe_contract_expression(other),
             crate::surface::diagnostics::describe_contract_expression(other),
@@ -2556,7 +2645,9 @@ pub(in crate::surface) fn describe_c0_type(c_type: C0Type) -> String {
         C0Type::Int128 => "int128".to_string(),
         C0Type::UInt128 => "uint128".to_string(),
 
-        C0Type::Bool => "bool".to_string(),
+        // Click's logical sort (Stage 5); a head's own spelling is its
+        // language's.
+        C0Type::Bool => "Bool".to_string(),
         C0Type::Void => "void".to_string(),
         C0Type::VoidPointer => "void*".to_string(),
         C0Type::VoidPointerPointer => "void**".to_string(),
@@ -2952,16 +3043,26 @@ pub(super) fn infer_contract_expression_type(
             infer_subtract_expression_type(left, right, variables, click_functions, context)
         }
         ContractExpression::Multiply(left, right) | ContractExpression::Divide(left, right) => {
+            let (left_expression, right_expression) = (left, right);
             let left = infer_contract_expression_type(left, variables, click_functions, context)?;
             let right = infer_contract_expression_type(right, variables, click_functions, context)?;
+            refuse_bool_arithmetic_operands(
+                [(left_expression, left), (right_expression, right)],
+                context,
+            )?;
             Ok(arithmetic_result_type(left, right))
         }
         ContractExpression::Remainder(left, right)
         | ContractExpression::BitwiseAnd(left, right)
         | ContractExpression::BitwiseOr(left, right)
         | ContractExpression::BitwiseXor(left, right) => {
+            let (left_expression, right_expression) = (left, right);
             let left = infer_contract_expression_type(left, variables, click_functions, context)?;
             let right = infer_contract_expression_type(right, variables, click_functions, context)?;
+            refuse_bool_arithmetic_operands(
+                [(left_expression, left), (right_expression, right)],
+                context,
+            )?;
             Ok(match (left, right) {
                 (Some(left), Some(right)) if type_is_scalar(left) && type_is_scalar(right) => {
                     Some(scalar_arithmetic_result_type(left, right))
@@ -2974,8 +3075,13 @@ pub(super) fn infer_contract_expression_type(
             infer_contract_shift_type(left, right, variables, click_functions, context)
         }
         ContractExpression::BitwiseNot(expression) => {
+            let operand = expression.as_ref();
             let expression =
                 infer_contract_expression_type(expression, variables, click_functions, context)?;
+            refuse_bool_arithmetic_operands(
+                [(operand, expression), (operand, expression)],
+                context,
+            )?;
             Ok(expression
                 .filter(|c_type| type_is_scalar(*c_type))
                 .map(|c_type| scalar_arithmetic_result_type(c_type, c_type)))
@@ -3469,8 +3575,13 @@ fn infer_add_expression_type(
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<Option<C0Type>, ClickError> {
+    let (left_expression, right_expression) = (left, right);
     let left = infer_contract_expression_type(left, variables, click_functions, context)?;
     let right = infer_contract_expression_type(right, variables, click_functions, context)?;
+    refuse_bool_arithmetic_operands(
+        [(left_expression, left), (right_expression, right)],
+        context,
+    )?;
     Ok(pointer_arithmetic_type(left, right).or_else(|| arithmetic_result_type(left, right)))
 }
 
@@ -3481,8 +3592,13 @@ fn infer_subtract_expression_type(
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<Option<C0Type>, ClickError> {
+    let (left_expression, right_expression) = (left, right);
     let left = infer_contract_expression_type(left, variables, click_functions, context)?;
     let right = infer_contract_expression_type(right, variables, click_functions, context)?;
+    refuse_bool_arithmetic_operands(
+        [(left_expression, left), (right_expression, right)],
+        context,
+    )?;
     Ok(match (left, right) {
         (Some(left), Some(right)) if type_is_data_pointer(left) && type_is_scalar(right) => {
             Some(left)

@@ -447,6 +447,9 @@ impl PureFactContext {
                     return Some(value);
                 }
             }
+            if let Some(value) = self.decide_by_bool_equation_partners(condition) {
+                return Some(value);
+            }
         }
         if condition.is_bool_value_form() {
             return self.decide_bool_value(condition);
@@ -1162,6 +1165,21 @@ impl PureFactContext {
             ConditionTerm::BoolEqual(left, right) => Some(decide(left)? == decide(right)?),
             _ => None,
         }
+        .or_else(|| self.decide_by_bool_equation_partners(condition))
+    }
+
+    /// Rule L-Eq read through a `Bool` equality fact: when `a == b` has
+    /// truth `t` and `b` is decided, `a` is `b`'s truth if `t` and its
+    /// negation otherwise. One lookup of the operand's partners.
+    fn decide_by_bool_equation_partners(&self, condition: &ConditionTerm) -> Option<bool> {
+        let partners = self.bool_equation_partners.get(condition)?;
+        partners.iter().find_map(|(partner, equal)| {
+            let truth = match partner {
+                ConditionTerm::Constant(value) => *value,
+                partner => self.decide(partner)?,
+            };
+            Some(truth == *equal)
+        })
     }
 
     pub(in crate::kernel) fn decide_intrinsically(condition: &ConditionTerm) -> Option<bool> {
@@ -2201,6 +2219,11 @@ impl PureFactContext {
                         .collect(),
                 }
             }
+            // Rule C1: a decided `Bool` casts to 1 or 0.
+            Bitvector32Term::BoolCast { value, .. } => match self.decide(value) {
+                Some(value) => Bitvector32Term::Constant(u32::from(value)),
+                None => term.clone(),
+            },
             Bitvector32Term::ClickFunctionApplication { .. }
             | Bitvector32Term::AlgebraicMatch { .. }
             | Bitvector32Term::IntegerToMachine { .. } => term.clone(),

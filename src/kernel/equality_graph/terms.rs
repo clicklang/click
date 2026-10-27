@@ -345,6 +345,9 @@ enum Node {
     BoolFunction(crate::kernel::SharedPureApplication, usize),
     BoolIf,
     BoolRead((u32, u32)),
+    /// The head of rule C1's cast `b as F` (Stage 5), applied to `b`'s
+    /// class.
+    BoolCast(crate::kernel::MachineIntegerType),
 }
 
 // Operand IDs in an application are structural; in a signature they are
@@ -467,6 +470,15 @@ impl Clone for RootLookupCache {
     }
 }
 
+/// One cast of rule C1 in the term classes: its condition node and the
+/// classes of the constants 0 and 1 at its format.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct BoolCastLink {
+    condition: u64,
+    zero: u64,
+    one: u64,
+}
+
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
     scalar_witnesses: constants::ScalarWitnesses,
@@ -504,6 +516,16 @@ pub(super) struct TermClasses {
     // starts with it and the answer does not depend on the order facts were
     // admitted in. One entry per binder fact; nothing reads it but interning.
     bool_binder_truth: PersistentMap<crate::kernel::Variable, u8>,
+    // Rule C1's link (Stage 5): each class holding a cast `b as F` names
+    // `b`'s condition node and the classes of the constants 0 and 1 at `F`;
+    // each condition class names its casts. A truth reaching the condition
+    // merges the cast with its constant, and a constant reaching the cast
+    // gives the condition its truth. Two links per cast, nothing scanned.
+    bool_cast_links: PersistentMap<u64, BoolCastLink>,
+    condition_casts: PersistentMap<u64, PersistentSet<u64>>,
+    // Unions a truth asked for while a merge was running, made once it ends.
+    pending_cast_unions: Vec<(u64, u64)>,
+    closing: bool,
     // Constant signed int32 bounds belong to a value class, not a spelling.
     // A class union intersects two intervals in constant local work.
     signed_int32_intervals: PersistentMap<u64, (i64, i64)>,
@@ -2140,7 +2162,126 @@ impl TermClasses {
         self.scalar_constant_conflict |= combined == 3;
         if combined != previous {
             self.condition_truth.insert(root, combined);
+            if combined == 2 {
+                self.cast_disequality_truth(id);
+            }
+            // Rule C1: a decided `Bool`'s casts are its constant.
+            if matches!(combined, 1 | 2)
+                && let Some(casts) = self.condition_casts.get(&root).cloned()
+            {
+                for cast in casts.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if let Some(link) = self.bool_cast_links.get(&self.root(*cast)).copied() {
+                        let constant = if combined == 1 { link.one } else { link.zero };
+                        self.pending_cast_unions.push((*cast, constant));
+                    }
+                }
+                self.flush_cast_unions();
+            }
         }
+    }
+
+    /// Rule C1: link the cast node `cast` of `b as F` with `b`'s condition
+    /// node and the constants 0 and 1 at `F`, and pass on whatever either
+    /// side already knows.
+    pub(super) fn link_bool_cast(&mut self, cast: u64, condition: u64, zero: u64, one: u64) {
+        let cast_root = self.root(cast);
+        let condition_root = self.root(condition);
+        match self.bool_cast_links.get(&cast_root).copied() {
+            // Two casts in one class: `a as F == b as F` holds exactly when
+            // `a` and `b` have the same truth.
+            Some(link) if self.root(link.condition) != condition_root => {
+                self.pending_cast_unions.push((link.condition, condition));
+            }
+            Some(_) => {}
+            None => {
+                self.bool_cast_links.insert(
+                    cast_root,
+                    BoolCastLink {
+                        condition,
+                        zero,
+                        one,
+                    },
+                );
+            }
+        }
+        let casts = self
+            .condition_casts
+            .get(&condition_root)
+            .cloned()
+            .unwrap_or_default()
+            .with_value(cast);
+        self.condition_casts.insert(condition_root, casts);
+        match self.condition_truth.get(&condition_root).copied() {
+            Some(1) => self.pending_cast_unions.push((cast, one)),
+            Some(2) => self.pending_cast_unions.push((cast, zero)),
+            _ => {}
+        }
+        self.cast_value_truth(cast_root);
+        if let Some(uses) = self.uses.get(&cast_root).cloned() {
+            for application in uses.iter() {
+                if self.condition_truth.get(&self.root(*application)) == Some(&2) {
+                    self.cast_disequality_truth(*application);
+                }
+            }
+        }
+        self.flush_cast_unions();
+    }
+
+    /// Rule C1: a cast class that holds a constant decides its `Bool`: 1 is
+    /// true, 0 false, and any other value a contradiction.
+    fn cast_value_truth(&mut self, class: u64) {
+        let Some(link) = self.bool_cast_links.get(&class).copied() else {
+            return;
+        };
+        let value = self
+            .int32_constants
+            .get(&class)
+            .map(|value| i128::from(*value))
+            .or_else(|| {
+                self.uint64_constants
+                    .get(&class)
+                    .map(|value| i128::from(*value))
+            });
+        match value {
+            Some(1) => self.retain_condition_truth(link.condition, 1),
+            Some(0) => self.retain_condition_truth(link.condition, 2),
+            Some(_) => self.scalar_constant_conflict = true,
+            None => {}
+        }
+    }
+
+    /// Rule C1 read through a disequality: a cast is 0 or 1, so `b as F`
+    /// unequal to 0 makes `b` true, and unequal to 1 makes it false. `node`
+    /// is a false equality's condition node; one lookup per operand.
+    fn cast_disequality_truth(&mut self, node: u64) {
+        let Some(Application::Condition(
+            congruence::ConditionKind::Int32Eq | congruence::ConditionKind::UInt64Eq,
+            left,
+            right,
+        )) = self.applications.get(&node).copied()
+        else {
+            return;
+        };
+        for (cast, other) in [(left, right), (right, left)] {
+            let Some(link) = self.bool_cast_links.get(&self.root(cast)).copied() else {
+                continue;
+            };
+            let other = self.root(other);
+            if other == self.root(link.zero) {
+                self.retain_condition_truth(link.condition, 1);
+            } else if other == self.root(link.one) {
+                self.retain_condition_truth(link.condition, 2);
+            }
+        }
+    }
+
+    fn flush_cast_unions(&mut self) {
+        if self.closing || self.pending_cast_unions.is_empty() {
+            return;
+        }
+        let unions = std::mem::take(&mut self.pending_cast_unions);
+        self.close(unions);
     }
 
     fn reindex_application(&mut self, id: u64, pending: &mut PendingUnions) {
@@ -2159,6 +2300,11 @@ impl TermClasses {
         // predicate. A disequality becomes contradictory when those operands
         // meet, including after a late congruence merge. Parent-use indexing
         // brings only affected predicates here.
+        if matches!(signature, Application::Condition(..))
+            && self.condition_truth.get(&self.root(id)) == Some(&2)
+        {
+            self.cast_disequality_truth(id);
+        }
         if let Application::Condition(kind, left, right) = signature
             && left == right
         {
@@ -2333,7 +2479,16 @@ impl TermClasses {
 
     fn close_pending(&mut self, mut pending: PendingUnions) -> bool {
         let mut changed = false;
-        while let Some((left, right, definitional)) = pending.0.pop() {
+        let was_closing = std::mem::replace(&mut self.closing, true);
+        loop {
+            pending.0.extend(
+                self.pending_cast_unions
+                    .drain(..)
+                    .map(|(left, right)| (left, right, false)),
+            );
+            let Some((left, right, definitional)) = pending.0.pop() else {
+                break;
+            };
             crate::instrumentation::record_deterministic_work(1);
             let mut kept = self.root(left);
             let mut moved = self.root(right);
@@ -2429,6 +2584,26 @@ impl TermClasses {
                 self.signed_int32_intervals
                     .insert(kept, (lower.max(kept_lower), upper.min(kept_upper)));
             }
+            // Rule C1's links follow their classes.
+            if let Some(moved_casts) = self.condition_casts.get(&moved).cloned() {
+                self.condition_casts.remove(&moved);
+                let mut kept_casts = self.condition_casts.get(&kept).cloned().unwrap_or_default();
+                for cast in moved_casts.iter() {
+                    kept_casts = kept_casts.with_value(*cast);
+                }
+                self.condition_casts.insert(kept, kept_casts);
+            }
+            if let Some(link) = self.bool_cast_links.get(&moved).copied() {
+                self.bool_cast_links.remove(&moved);
+                match self.bool_cast_links.get(&kept).copied() {
+                    Some(kept_link) => self
+                        .pending_cast_unions
+                        .push((kept_link.condition, link.condition)),
+                    None => {
+                        self.bool_cast_links.insert(kept, link);
+                    }
+                }
+            }
             if let Some(truth) = self.condition_truth.get(&moved).copied() {
                 self.condition_truth.remove(&moved);
                 self.retain_condition_truth(kept, truth);
@@ -2487,6 +2662,8 @@ impl TermClasses {
                 }
             }
             self.int32_constants.remove(&moved);
+            // Rule C1: a cast class that learned a constant decides its `Bool`.
+            self.cast_value_truth(kept);
             self.merge_scalar_witnesses(moved, kept, kept_was_settled, &mut pending);
             if let Some(moved_literal_uses) = self.constant_uses.get(&moved).cloned() {
                 self.constant_uses.remove(&moved);
@@ -2522,6 +2699,7 @@ impl TermClasses {
             }
             changed = true;
         }
+        self.closing = was_closing;
         changed
     }
 }

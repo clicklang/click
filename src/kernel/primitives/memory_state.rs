@@ -474,6 +474,11 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         *left,
                         *right,
                     ),
+                    Bitvector32Term::BoolCast { to, value } => {
+                        let _ = write!(identity, "tbcast{to:?}(");
+                        tasks.push(HavocIdentityTask::Text(")"));
+                        tasks.push(HavocIdentityTask::Condition(*value));
+                    }
                     Bitvector32Term::If {
                         condition,
                         then_term,

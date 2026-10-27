@@ -1789,11 +1789,18 @@ impl<'a> Proof<'a> {
                 let mut steps = vec![ProofStep::UnfoldFunction(refutation.application.clone())];
                 steps.extend(unfolds.iter().cloned().map(ProofStep::UnfoldFunction));
                 steps.push(ProofStep::NormalizeUsing(using));
-                let refuted = self
-                    .apply_step(have(refutation.differs.clone(), steps))
-                    .and_then(|next| {
-                        next.apply_step(ProofStep::Contradiction(refutation.fact.clone()))
-                    });
+                let refute = |steps: Vec<ProofStep>| {
+                    self.apply_step(have(refutation.differs.clone(), steps))
+                        .and_then(|next| {
+                            next.apply_step(ProofStep::Contradiction(refutation.fact.clone()))
+                        })
+                };
+                // The unfolds alone can decide a `Bool` end (Stage 5): the
+                // refreshed goal is then a cited condition, and the
+                // `normalize` after them has nothing left to prove.
+                let mut unfolded = steps.clone();
+                unfolded.pop();
+                let refuted = refute(steps).or_else(|error| refute(unfolded).map_err(|_| error));
                 Ok(refuted.ok().filter(Proof::focused_discharged))
             }
             DefinitionPlan::Split {

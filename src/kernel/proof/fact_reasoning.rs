@@ -486,6 +486,36 @@ pub(crate) fn normalize_using_conditions(
             }
         }
     }
+    // Rule L-Eq through a cited `Bool` equality (Stage 5): `a == b` with
+    // truth `t` and `a` cited or constant gives `b`, and the other way. One
+    // pass over the cited premises; nothing ambient is read.
+    let cited_equations = admission_order
+        .iter()
+        .filter_map(|(condition, value)| match condition {
+            ConditionTerm::BoolEqual(left, right) => {
+                Some((left.as_ref().clone(), right.as_ref().clone(), *value))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for (left, right, equal) in cited_equations {
+        let truth =
+            |operand: &ConditionTerm,
+             conditions: &std::collections::HashMap<ConditionTerm, bool>| {
+                match operand {
+                    ConditionTerm::Constant(value) => Some(*value),
+                    operand => conditions.get(operand).copied(),
+                }
+            };
+        for (known, other) in [(&left, &right), (&right, &left)] {
+            if let Some(known) = truth(known, &conditions)
+                && truth(other, &conditions).is_none()
+            {
+                conditions.insert(other.clone(), known == equal);
+                admission_order.push((other.clone(), known == equal));
+            }
+        }
+    }
     // A goal that is itself one cited condition, in any of the spellings
     // recorded above, is decided by it. This is the only route for an
     // algebraic equality goal, which is an equality of terms rather than a

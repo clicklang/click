@@ -20,7 +20,7 @@ theorem successor_or_self_exceeds_predecessor(n: Integer, k: int32) {
     }
 }
 
-theorem equal_branches_are_one_value(x: Integer, y: Integer, c: bool) {
+theorem equal_branches_are_one_value(x: Integer, y: Integer, c: Bool) {
     requires x == y;
     ensures (if c { x } else { y }) == x;
 }

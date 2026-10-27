@@ -7,7 +7,7 @@ literal condition the conditional is its branch, so `pick(n, true)` is
 the proof splits on its condition.
 
 ```click
-function pick(n: Integer, c: bool) -> Integer { if c { n + 1 } else { n } }
+function pick(n: Integer, c: Bool) -> Integer { if c { n + 1 } else { n } }
 
 theorem pick_true(n: Integer) {
     ensures pick(n, true) == n + 1 by {
@@ -16,7 +16,7 @@ theorem pick_true(n: Integer) {
     }
 }
 
-theorem pick_is_at_least_its_argument(n: Integer, c: bool) {
+theorem pick_is_at_least_its_argument(n: Integer, c: Bool) {
     ensures pick(n, c) >= n by {
         unfold(pick(n, c));
         if c {

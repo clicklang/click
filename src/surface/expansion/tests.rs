@@ -14,10 +14,10 @@ function singleton(node: struct node*) -> List<struct node*> {
 function singleton_return(node: struct node*) -> List<struct node*> {
     List::Cons(keep_node(node), List::Nil)
 }
-function singleton_contains(node: struct node*) -> bool {
+function singleton_contains(node: struct node*) -> Bool {
     list::contains(singleton(node), node)
 }
-function singleton_contains_return(node: struct node*) -> bool {
+function singleton_contains_return(node: struct node*) -> Bool {
     list::contains(singleton(node), keep_node(node))
 }
 predicate typed_contains(nodes: List<struct node*>, node: struct node*) {

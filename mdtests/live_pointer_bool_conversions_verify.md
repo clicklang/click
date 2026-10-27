@@ -48,13 +48,13 @@ int passed(void) {
 verifying "live_bool.c";
 
 int present(bool flag) {
-    requires flag == 1;
+    requires flag as int32 == 1;
     ensures result == 1;
 }
 
 bool returned(int *p) {
     requires p != 0;
-    ensures result == 1;
+    ensures result;
 }
 
 int passed() {

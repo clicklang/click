@@ -135,45 +135,6 @@ pub fn bool_value(bits: impl Into<Bitvector32Term>) -> CValue {
     ))
 }
 
-/// A specification `bool` value over an opaque term: a `bool` pure
-/// function's application or a `bool` theorem parameter. It is C's
-/// conversion of the term to `bool`, so the value is exactly `0` or `1`
-/// whatever the term is. The comparison is spelled `0 == term`, with the
-/// constant first, which tells it apart from a conversion a C program or a
-/// contract wrote; [`spec_bool_term`] reads it back, so the proof surface can
-/// treat the value as the one `bool` it names.
-pub(crate) fn spec_bool_value(term: Bitvector32Term) -> CValue {
-    CValue::Bool(Bitvector32Term::if_then_else(
-        ConditionTerm::equal(Bitvector32Term::Constant(0), term),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
-    ))
-}
-
-/// The opaque term inside a value built by [`spec_bool_value`].
-pub(crate) fn spec_bool_term(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
-    let Bitvector32Term::If {
-        condition,
-        then_term,
-        else_term,
-    } = term
-    else {
-        return None;
-    };
-    if then_term.as_const() != Some(0) || else_term.as_const() != Some(1) {
-        return None;
-    }
-    match condition.as_ref() {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left: zero,
-            right: inner,
-        } if zero.as_const() == Some(0) && inner.as_const().is_none() => Some(inner),
-        _ => None,
-    }
-}
-
 /// The range fact `value == 0 or value == 1` of a `_Bool` rvalue, when its
 /// term is structurally normalized.
 ///
@@ -2042,6 +2003,16 @@ pub(crate) fn c_expression_has_pointer_type(state: &CState, expression: &CExpres
     super::eval::c_expression_pointee_type(state, expression).is_some()
 }
 
+/// Whether `expression` is a C `bool` value this state can type: a `bool`
+/// constant, or a read of a `bool` object. A branch on it is the `Bool`
+/// claim on the value itself (Stage 5), not its comparison with an integer.
+pub(crate) fn c_expression_has_bool_type(state: &CState, expression: &CExpression) -> bool {
+    match expression {
+        CExpression::Value(value) => value.c_type() == CType::Bool,
+        expression => super::eval::c_expression_lvalue_type(state, expression) == Some(CType::Bool),
+    }
+}
+
 pub fn c_variable(name: impl Into<String>) -> CExpression {
     CExpression::Variable(name.into())
 }
@@ -3197,6 +3168,11 @@ impl From<LoweringRefusal> for String {
 /// holding a `fold` with an unowned model field nothing they could act on.
 /// The classified variants say what happened; everything else names its
 /// budget through the one table, [`ExecutionLimit::describe`].
+/// The refusal of decision D2 (Stage 5, `design/machine-integers.md`): a
+/// `Bool` is not a number.
+pub(crate) const BOOL_HAS_NO_INTEGER_VALUE: &str =
+    "a `Bool` has no integer value; write `b as int32`, or compare it with `true` or `false`";
+
 fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
     match limit {
         ExecutionLimit::UnsupportedIntegerExistentialBody => {
@@ -3234,6 +3210,15 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
             "count(...) requires owning authority for that population, which an outstanding worker holds until its pthread_join".to_string()
         }
         ExecutionLimit::AuthorityCountOverflows => "the population count exceeds int32".to_string(),
+        ExecutionLimit::BoolComparedWithInteger => BOOL_HAS_NO_INTEGER_VALUE.to_string(),
+        ExecutionLimit::BoolArithmetic => BOOL_HAS_NO_INTEGER_VALUE.to_string(),
+        ExecutionLimit::BoolOrdered => {
+            "`Bool` has no order; compare `Bool` values with `==` or `!=`, or write `b as int32`"
+                .to_string()
+        }
+        ExecutionLimit::MixedBoolArms => {
+            "a conditional's arms have one type: one is an integer and the other a `Bool`; write `b as int32`, or use `true` and `false` arms".to_string()
+        }
         ExecutionLimit::DisjunctionRightUndefined => {
             "the right side of `or` is undefined wherever its left side is false, the only case in which it is read".to_string()
         }
@@ -8733,6 +8718,7 @@ fn rewrite_int32_term_by_exact_equality(
         | Bitvector32Term::Binary { .. }
         | Bitvector32Term::Unary { .. }
         | Bitvector32Term::RangeFold { .. }
+        | Bitvector32Term::BoolCast { .. }
         | Bitvector32Term::IntegerToMachine { .. } => term.clone(),
         term => match (term.as_binary(), term.as_unary()) {
             (Some((op, left, right)), _) => op.build_raw(

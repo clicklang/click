@@ -3350,7 +3350,7 @@ mod contract_name_tests {
             } else {
                 let error = result.unwrap_err();
                 assert!(
-                    error.message().contains("not bool"),
+                    error.message().contains("not Bool"),
                     "{clause}: {}",
                     error.message()
                 );

@@ -114,7 +114,8 @@ impl Bitvector32Term {
             | Self::UInt64FromInt64(_)
             | Self::Float32Negate(_)
             | Self::Float64Negate(_)
-            | Self::MachineIntegerCast { .. } => None,
+            | Self::MachineIntegerCast { .. }
+            | Self::BoolCast { .. } => None,
         }
     }
 
@@ -163,7 +164,8 @@ impl Bitvector32Term {
             | Self::IntegerToMachine { .. }
             | crate::kernel::binary_machine_term!(_, _)
             | Self::Float32Binary { .. }
-            | Self::Float64Binary { .. } => None,
+            | Self::Float64Binary { .. }
+            | Self::BoolCast { .. } => None,
         }
     }
 }

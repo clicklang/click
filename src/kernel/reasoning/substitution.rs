@@ -3146,6 +3146,9 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
         | Bitvector32Term::Float64Negate(value) => {
             collect_bitvector_bound_variables(value, variables);
         }
+        Bitvector32Term::BoolCast { value, .. } => {
+            collect_condition_bound_variables(value, variables)
+        }
         Bitvector32Term::If {
             condition,
             then_term,
@@ -5054,6 +5057,11 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
                 right, from, to,
             )),
         ),
+        // A `Bool` binder (Stage 5) instantiated with a `bool` value's word
+        // takes that value's truth.
+        ConditionTerm::Variable(variable) if *variable == from => {
+            ConditionTerm::truth_of_bool_word(to)
+        }
         ConditionTerm::Variable(variable) => ConditionTerm::Variable(*variable),
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
@@ -5245,6 +5253,10 @@ pub(crate) fn substitute_bitvector_variable(
             substitute_through_load_variable(*variable, from, to)
                 .unwrap_or(Bitvector32Term::Variable(*variable))
         }
+        Bitvector32Term::BoolCast { to: format, value } => Bitvector32Term::bool_cast(
+            *format,
+            substitute_bitvector_variable_in_condition(value, from, to),
+        ),
         Bitvector32Term::If {
             condition,
             then_term,

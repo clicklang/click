@@ -3147,12 +3147,12 @@ fn require_scalar_return_leaf(
             if expected == &ClickType::C(C0Type::Bool) {
                 if actual == SpecValueType::Scalar(None) {
                     return Err(ClickError::new(format!(
-                        "{context} returns bool, but its body can produce `{}`, whose type is not known to be bool",
+                        "{context} returns Bool, but its body can produce `{}`, whose type is not known to be Bool",
                         crate::surface::diagnostics::describe_contract_expression(value)
                     )));
                 }
                 return Err(ClickError::new(format!(
-                    "{context} returns bool, but its body can produce `{}` of type {}; a `bool` body's values are `true`, `false`, comparisons and other `bool` values",
+                    "{context} returns Bool, but its body can produce `{}` of type {}; a `Bool` body's values are `true`, `false`, comparisons and other `Bool` values",
                     crate::surface::diagnostics::describe_contract_expression(value),
                     actual_description
                 )));

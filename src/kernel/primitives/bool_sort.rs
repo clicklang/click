@@ -44,9 +44,6 @@ impl ConditionTerm {
     }
 
     /// The application of the `-> Bool` pure function `name`.
-    // Built by the kernel's tests until the specification `Bool` (Stage 5,
-    // next step) lowers to these forms.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn bool_application(name: &str, arguments: Vec<PureFunctionArgument>) -> Self {
         Self::BoolApplication(SharedPureApplication::intern(name.to_owned(), arguments))
     }
@@ -54,9 +51,6 @@ impl ConditionTerm {
     /// `if condition { then } else { else }` over `Bool`, folded where its
     /// shape decides it: a constant condition selects its branch, and equal
     /// branches are that branch. Neither fold reads a fact.
-    // Built by the kernel's tests until the specification `Bool` (Stage 5,
-    // next step) lowers to these forms.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn bool_if(condition: Self, then_condition: Self, else_condition: Self) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         match condition {
@@ -65,6 +59,14 @@ impl ConditionTerm {
             condition if then_condition == else_condition => {
                 let _ = condition;
                 then_condition
+            }
+            // Rule L-If at constant branches: `if c { true } else { false }`
+            // is `c`.
+            condition
+                if then_condition == Self::Constant(true)
+                    && else_condition == Self::Constant(false) =>
+            {
+                condition
             }
             condition => Self::BoolIf {
                 condition: Box::new(condition),
@@ -76,9 +78,6 @@ impl ConditionTerm {
 
     /// The logical equality `left == right` of two `Bool` values. A value
     /// is equal to itself, so equal operands fold to `true`.
-    // Built by the kernel's tests until the specification `Bool` (Stage 5,
-    // next step) lowers to these forms.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn bool_equal(left: Self, right: Self) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         if left == right {
@@ -88,8 +87,8 @@ impl ConditionTerm {
     }
 
     /// The read of the one-byte `bool` cell at `pointer` in `memory`.
-    // Built by the kernel's tests until the specification `Bool` (Stage 5,
-    // next step) lowers to these forms.
+    // Built by the kernel's tests until a front end reads `bool` cells
+    // (Stage 5, PR5) or a proof step asks for them.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn bool_load(memory: SharedCMemory, pointer: Pointer) -> Self {
         Self::BoolLoad(memory, Box::new(pointer))
@@ -101,8 +100,8 @@ impl ConditionTerm {
     /// (ConditionIs(c, false) and ConditionIs(b, value))`.
     /// `None` for every other condition. It opens one level; the branches
     /// stay as they are, so the work is constant.
-    // Built by the kernel's tests until the specification `Bool` (Stage 5,
-    // next step) lowers to these forms.
+    // Built by the kernel's tests until a front end reads `bool` cells
+    // (Stage 5, PR5) or a proof step asks for them.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn open_bool_if(&self, value: bool) -> Option<Proposition> {
         let Self::BoolIf {
@@ -131,8 +130,8 @@ impl ConditionTerm {
 
     /// Rule L-Unfold: the defining equation `application == body` of a
     /// `-> Bool` pure function's application, as the fact unfolding files.
-    // Built by the kernel's tests until the specification `Bool` (Stage 5,
-    // next step) lowers to these forms.
+    // Built by the kernel's tests until a front end reads `bool` cells
+    // (Stage 5, PR5) or a proof step asks for them.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn bool_unfold_equation(
         application: SharedPureApplication,
@@ -196,5 +195,53 @@ impl ConditionTerm {
             }
             _ => return None,
         })
+    }
+}
+
+impl crate::kernel::Bitvector32Term {
+    /// Rule C1: the integer value of the `Bool` `value` at format `to`,
+    /// `value as to`. A constant folds to its word, 1 or 0; nothing else is
+    /// read.
+    pub(crate) fn bool_cast(to: crate::kernel::MachineIntegerType, value: ConditionTerm) -> Self {
+        crate::instrumentation::record_deterministic_work(1);
+        match value {
+            ConditionTerm::Constant(value) => Self::Constant(u32::from(value)),
+            value => Self::BoolCast {
+                to,
+                value: Box::new(value),
+            },
+        }
+    }
+
+    /// The `Bool` whose integer value this term is (rule C1), or `None`.
+    pub(crate) fn bool_cast_operand(&self) -> Option<&ConditionTerm> {
+        match self {
+            Self::BoolCast { value, .. } => Some(value),
+            _ => None,
+        }
+    }
+}
+
+impl ConditionTerm {
+    /// The `Bool` a `CValue::Bool` word carries. A specification `Bool`
+    /// travels as its cast `b as uint8` (rule C1), whose operand is `b`; a
+    /// constant is its truth; and any other word, a C `bool` value this
+    /// stage still holds as an integer, reaches `Bool` by C's test
+    /// `w != 0`.
+    pub(crate) fn truth_of_bool_word(word: &crate::kernel::Bitvector32Term) -> Self {
+        use crate::kernel::Bitvector32Term;
+        if let Some(value) = word.bool_cast_operand() {
+            return value.clone();
+        }
+        match word {
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                Self::Constant(*value != 0)
+            }
+            word => Self::bool_if(
+                Self::equal(word.clone(), Bitvector32Term::Constant(0)),
+                Self::Constant(false),
+                Self::Constant(true),
+            ),
+        }
     }
 }

@@ -2052,6 +2052,9 @@ fn collect_bitvector_integer_variables_seen(
             }
             collect_bitvector_integer_variables_seen(right, variables, seen);
         }
+        Bitvector32Term::BoolCast { value, .. } => {
+            collect_condition_integer_variables(value, variables, seen)
+        }
         Bitvector32Term::If {
             condition,
             then_term,
@@ -2756,6 +2759,9 @@ pub(crate) fn collect_bitvector_variables(
         crate::kernel::unary_machine_term!(value) => {
             collect_bitvector_variables(value, variables);
         }
+        Bitvector32Term::BoolCast { value, .. } => {
+            collect_condition_bitvector_variables(value, variables)
+        }
         Bitvector32Term::If {
             condition,
             then_term,
@@ -2849,6 +2855,9 @@ fn collect_bitvector_capture_variables_seen(
         }
         crate::kernel::unary_machine_term!(value) => {
             collect_bitvector_capture_variables_seen(value, variables, integer_seen)
+        }
+        Bitvector32Term::BoolCast { value, .. } => {
+            collect_condition_capture_variables(value, variables, integer_seen)
         }
         Bitvector32Term::If {
             condition,
@@ -3624,6 +3633,9 @@ fn collect_bitvector_scope_summary(
         crate::kernel::unary_machine_term!(value) => {
             collect_bitvector_scope_summary(value, summaries)
         }
+        Bitvector32Term::BoolCast { value, .. } => {
+            collect_condition_scope_summary(value, summaries)
+        }
         Bitvector32Term::If {
             condition,
             then_term,
@@ -4268,6 +4280,12 @@ fn collect_bitvector_binder_variables_seen(
                 integer_seen,
             );
         }
+        Bitvector32Term::BoolCast { value, .. } => collect_condition_binder_variables(
+            value,
+            integer_variables,
+            bitvector_variables,
+            integer_seen,
+        ),
         Bitvector32Term::If {
             condition,
             then_term,

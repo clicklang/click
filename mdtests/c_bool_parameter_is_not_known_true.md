@@ -1,7 +1,8 @@
 # A `_Bool` parameter's range does not decide its value
 
-The range fact a `bool` parameter carries is `flag == 0 or flag == 1`; it
-does not make the parameter true. Without `requires flag == 1`, the claim
+The range fact a `bool` parameter carries is `flag == 0 or flag == 1`, of
+its integer value; it does not make the parameter true. Without
+`requires flag;`, the claim
 `result == 1` stays unproved: the `flag == 0` case is a counterexample. See
 `c_bool_parameter_range.md` for the claims the range does support.
 

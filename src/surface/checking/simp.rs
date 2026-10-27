@@ -655,6 +655,10 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
 pub(in crate::surface) fn simp_bitvector_const(term: &Bitvector32Term) -> Option<u32> {
     match term {
         Bitvector32Term::MachineIntegerCast { .. } => None,
+        // Rule C1: a decided `Bool` casts to 1 or 0.
+        Bitvector32Term::BoolCast { value, .. } => {
+            Some(u32::from(simp_condition_without_assumptions(value)?))
+        }
 
         Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => Some(*value),
         Bitvector32Term::Variable(_)
@@ -767,6 +771,12 @@ pub(in crate::surface) fn simp_bitvector(term: &Bitvector32Term) -> Bitvector32T
         | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Variable(_) => term.clone(),
         Bitvector32Term::IntegerToMachine { .. } => term.clone(),
+        Bitvector32Term::BoolCast { value, .. } => {
+            match simp_condition_without_assumptions(value) {
+                Some(value) => Bitvector32Term::Constant(u32::from(value)),
+                None => term.clone(),
+            }
+        }
         Bitvector32Term::Add(left, right) => {
             bitvector32_add(simp_bitvector(left), simp_bitvector(right))
         }

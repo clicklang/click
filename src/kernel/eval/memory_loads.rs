@@ -3323,6 +3323,7 @@ fn substitute_load_variables(
         RebuildBinary(BitvectorBinaryOp),
         RebuildUnary(BitvectorUnaryOp),
         RebuildIf,
+        RebuildBoolCast(MachineIntegerType),
         RebuildPureFunction {
             name: String,
             argument_count: usize,
@@ -3384,6 +3385,10 @@ fn substitute_load_variables(
                         tasks.push(Task::VisitTerm(else_term));
                         tasks.push(Task::VisitTerm(then_term));
                         tasks.push(Task::VisitCondition(condition));
+                    }
+                    Bitvector32Term::BoolCast { to, value } => {
+                        tasks.push(Task::RebuildBoolCast(*to));
+                        tasks.push(Task::VisitCondition(value));
                     }
                     // A fold is a binder boundary: loads in its body can mention
                     // bound variables and therefore do not have a global load
@@ -3533,6 +3538,13 @@ fn substitute_load_variables(
                     op.build(value)
                 } else {
                     op.build_raw(value)
+                });
+            }
+            Task::RebuildBoolCast(to) => {
+                let value = condition_results.pop().expect("visited cast operand");
+                term_results.push(Bitvector32Term::BoolCast {
+                    to,
+                    value: Box::new(value),
                 });
             }
             Task::RebuildIf => {
@@ -3695,6 +3707,7 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
             .iter()
             .any(|arm| term_mentions_a_memory_load(&arm.body)),
         Bitvector32Term::IntegerToMachine { .. } => true,
+        Bitvector32Term::BoolCast { value, .. } => condition_mentions_a_memory_load(value),
         term => {
             if let Some((_, left, right)) = term.as_binary() {
                 term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)

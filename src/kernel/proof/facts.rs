@@ -36,6 +36,21 @@ mod constant_truth_tests {
             assert!(!true_branch.pure_assumption_available(requested));
         }
     }
+
+    #[test]
+    fn either_false_polarity_is_a_contradiction() {
+        let positive_false = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+        let negative_true = Proposition::ConditionIs(ConditionTerm::Constant(true), false);
+        let root = ProofFacts::from_ordered(&[]);
+        for held in [&positive_false, &negative_true] {
+            let branch = root.with_fact(held.clone());
+            for cited in [&positive_false, &negative_true] {
+                assert!(branch.contradicts(cited));
+            }
+        }
+        assert!(!root.contradicts(&positive_false));
+        assert!(!root.contradicts(&negative_true));
+    }
 }
 
 #[cfg(test)]
@@ -912,11 +927,17 @@ impl ProofFacts {
     fn available_as_written(&self, fact: &Proposition) -> bool {
         self.contains(fact)
             || self.assumptions.contains_known(fact)
-            // Introduction and normalization can retain opposite constant
-            // polarities for the same truth claim. This is one equivalent
-            // fact, not a search for an arbitrary contradiction.
-            || matches!(fact, Proposition::ConditionIs(ConditionTerm::Constant(value), truth)
-                if self.contains(&Proposition::ConditionIs(ConditionTerm::Constant(!value), !truth)))
+            || self.contains_opposite_constant_polarity(fact)
+    }
+
+    /// Introduction and normalization can retain opposite constant
+    /// polarities for the same truth claim: `false` holds, or `true` does
+    /// not, as the infeasible arm of a case split on a decided condition
+    /// states it. This is one equivalent fact, one exact lookup, not a search
+    /// for an arbitrary contradiction.
+    fn contains_opposite_constant_polarity(&self, fact: &Proposition) -> bool {
+        matches!(fact, Proposition::ConditionIs(ConditionTerm::Constant(value), truth)
+            if self.contains(&Proposition::ConditionIs(ConditionTerm::Constant(!value), !truth)))
     }
 
     pub(crate) fn contains_top_level(&self, fact: &Proposition) -> bool {
@@ -1222,6 +1243,7 @@ impl ProofFacts {
         let mut conjuncts = Vec::new();
         super::fact_reasoning::atomic_conjuncts(fact, &mut conjuncts);
         self.contains(fact)
+            || self.contains_opposite_constant_polarity(fact)
             || super::fact_reasoning::order_claim_forms(fact)
                 .iter()
                 .any(|form| self.contains(form))
@@ -2961,6 +2983,7 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
             collect_bitvector_atoms(right, atoms);
         }
         crate::kernel::unary_machine_term!(value) => collect_bitvector_atoms(value, atoms),
+        Bitvector32Term::BoolCast { value, .. } => collect_condition_bitvector_atoms(value, atoms),
         Bitvector32Term::If {
             condition,
             then_term,

@@ -4725,6 +4725,9 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
                 crate::kernel::unary_machine_term!(value) => {
                     pending.push(Node::Term(value, depth + 1));
                 }
+                Bitvector32Term::BoolCast { value, .. } => {
+                    pending.push(Node::Condition(value, depth + 1));
+                }
                 Bitvector32Term::If {
                     condition,
                     then_term,
@@ -5298,8 +5301,10 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                             tasks.push(AtomicCanonicalizationTask::Visit(argument));
                         }
                     }
+                    // A `Bool`'s cast is kept as built, as the `Bool` forms are.
                     Bitvector32Term::ClickFunctionApplication { .. }
                     | Bitvector32Term::AlgebraicMatch { .. }
+                    | Bitvector32Term::BoolCast { .. }
                     | Bitvector32Term::IntegerToMachine { .. } => results.push(term.clone()),
                     term => match (term.as_binary(), term.as_unary()) {
                         (Some((op, left, right)), _) => {
@@ -6005,6 +6010,7 @@ fn collect_bitvector_memories(term: &Bitvector32Term, memories: &mut Vec<SharedC
         }
         Bitvector32Term::ClickFunctionApplication { .. } => {}
         Bitvector32Term::IntegerToMachine { .. } => {}
+        Bitvector32Term::BoolCast { value, .. } => collect_condition_memories(value, memories),
         Bitvector32Term::AlgebraicMatch { arms, .. } => {
             for arm in arms {
                 collect_bitvector_memories(&arm.body, memories);
@@ -6316,6 +6322,14 @@ fn transport_framed_atomic_bitvector(
                     .collect::<Option<Vec<_>>>()?,
             }
         }
+        Bitvector32Term::BoolCast { to, value } => Bitvector32Term::BoolCast {
+            to: *to,
+            value: Box::new(transport_framed_atomic_condition(
+                value,
+                after,
+                assumptions,
+            )?),
+        },
         Bitvector32Term::ClickFunctionApplication { .. }
         | Bitvector32Term::AlgebraicMatch { .. }
         | Bitvector32Term::IntegerToMachine { .. } => term.clone(),
@@ -6607,7 +6621,9 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                         tasks.push(ExactLoadNormalizationTask::Visit(*else_term));
                         tasks.push(ExactLoadNormalizationTask::Visit(*then_term));
                     }
-                    Bitvector32Term::RangeFold { .. } => results.push(term),
+                    Bitvector32Term::RangeFold { .. } | Bitvector32Term::BoolCast { .. } => {
+                        results.push(term)
+                    }
                     Bitvector32Term::PureFunctionApplication { name, arguments } => {
                         let argument_count = arguments.len();
                         tasks.push(ExactLoadNormalizationTask::RebuildPureFunction {

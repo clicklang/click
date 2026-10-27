@@ -1656,11 +1656,11 @@ fn unreachable_builtin_requires_an_unreachable_execution_path_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let source = "verifying \"unreachable.cpp\";\nint32 probe(bool enter) { requires enter == 0; ensures result == 0; }\n";
+    let source = "verifying \"unreachable.cpp\";\nint32 probe(bool enter) { requires not enter; ensures result == 0; }\n";
     check_selected_claim_certificate(&project, &import, source);
     for hostile in [
-        source.replace("requires enter == 0;", ""),
-        source.replace("enter == 0", "enter == 1"),
+        source.replace("requires not enter;", ""),
+        source.replace("not enter", "enter"),
     ] {
         let path = project.directory.join("bad.click");
         fs::write(&path, &hostile).unwrap();
@@ -11272,7 +11272,7 @@ int64 relay(int64 value) { ensures result == value; }
 #[test]
 fn wide_intermediates_reject_false_high_bit_and_narrowing_claims() {
     for (name, return_type, expected) in [
-        ("product_truth", "bool", "0"),
+        ("product_truth", "bool", "false"),
         ("product_low", "uint64", "1u64"),
     ] {
         let project = Project::with_fixture("wide.cpp", name, WIDE_INTERMEDIATES_SOURCE);

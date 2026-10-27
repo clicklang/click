@@ -3158,17 +3158,23 @@ for the kernel rule.
 
 ## Booleans
 
-`bool` is the specification boolean type. Its values are the C `bool` values,
-exactly `0` and `1`, written `true` and `false`; there is no separate kernel
-sort. A C `bool` parameter or result, a `bool` parameter of a pure function or
-theorem, and a `bool` pure function's application are all `bool` values.
+`Bool` is Click's logical sort, written capitalized like `Integer`. Its
+values are `true` and `false`; it has no integer value and no order. A
+`Bool` pure function's application, a `Bool` parameter of a pure function or
+theorem, and a proposition used as a value are `Bool` values, and so is a C,
+C++ or Rust `bool`: a function head keeps its language's spelling (`bool` or
+`_Bool` in C, `bool` in C++ and Rust), and each means `Bool`. In Click's own
+code, `function`, `predicate` and `theorem` signatures, `let` annotations,
+fields and type arguments, the type is written `Bool`; a lowercase `bool`
+there is an error ("`bool` is not a Click type; write `Bool`"). A Rust
+sidecar writes Rust's `bool` in those positions, as it writes `i32`.
 
 <!-- verified-example: mdtests/a_bool_pure_function_states_a_claim.md -->
 ```click
-function positive(x: int32) -> bool { x > 0 }
-function in_range(x: int32) -> bool { x > 0 and x < 10 }
-function outside(x: int32) -> bool { not in_range(x) }
-function choose(flag: bool, x: int32) -> bool {
+function positive(x: int32) -> Bool { x > 0 }
+function in_range(x: int32) -> Bool { x > 0 and x < 10 }
+function outside(x: int32) -> Bool { not in_range(x) }
+function choose(flag: Bool, x: int32) -> Bool {
     if flag { positive(x) } else { false }
 }
 
@@ -3187,46 +3193,55 @@ theorem three_is_in_range() {
   (`mdtests/a_c_name_spelled_true_keeps_its_c_meaning.md`). A Click binder
   (a Click parameter, `let`, or quantifier variable) may not use either
   spelling (`mdtests/a_click_binder_spelled_true_is_refused.md`).
-- **Typing.** A `bool` literal compares only with a `bool` value. Comparing
-  an integer, pointer or other non-`bool` value with `true` or `false` is a
-  type error; compare an integer with `0` or `1` instead. A `bool` value
-  compared with an integer follows C's promotion, so `flag == 1` is
-  `flag == true`.
-- **A `bool` value as a claim.** A value written alone where a proposition
-  is expected means `value == true`: `requires flag;`, `ensures result;` for
-  a C function returning `bool`, and `ensures in_range(3);` for a call of a
-  `bool` pure function. The value must be a `bool`; an integer is not read
-  with C's nonzero truth, so `requires count;` for an `int` is refused
+- **Typing.** `Bool` has equality and nothing else. Two `Bool` values are
+  equal when they have the same truth. A `Bool` compared with an integer,
+  ordered, or used in arithmetic, an implicit promotion included, is an
+  error that suggests `b as int32` or a comparison with `true` or `false`:
+  `flag == 1` for a C `bool` is refused, and is written `flag` or
+  `flag as int32 == 1` (`mdtests/c_bool_parameter_range.md`). A `bool`
+  literal compares only with a `Bool`; comparing an integer, pointer or
+  other value with `true` or `false` is a type error.
+- **`b as F`.** The cast of a `Bool` to an integer format `F` is 1 when `b`
+  holds and 0 otherwise (rule C1 of `design/machine-integers.md`). So
+  `b as int32 == 1` is `b`, `b as int32 == 0` is `not b`, and a cast known
+  to be unequal to 0 is 1. A C function that returns its `bool` parameter as
+  an `int` is specified `ensures result == flag as int32;`.
+- **A `Bool` value as a claim.** A value written alone where a proposition
+  is expected is the claim that it holds: `requires flag;`, `ensures result;`
+  for a C function returning `bool`, and `ensures in_range(3);` for a call
+  of a `Bool` pure function. `b == true` and `b != false` are the same
+  claim, and `not b`, `b == false` and `b != true` are its negation, with no
+  lemma between the spellings
+  (`mdtests/bool_negation_and_disequality_agree.md`). The value must be a
+  `Bool`; an integer is not read with C's nonzero truth, so `requires count;`
+  for an `int` is refused
   (`mdtests/an_integer_value_is_not_a_proposition.md`). A bare call of a
   pure function is read this way; a predicate call is unchanged.
-- **`bool` pure functions.** A `-> bool` body is a `bool` value: `true`,
-  `false`, a `bool` parameter or binding, a call of a `bool` function, a
+- **`Bool` pure functions.** A `-> Bool` body is a `Bool` value: `true`,
+  `false`, a `Bool` parameter or binding, a call of a `Bool` function, a
   comparison, `and`, `or`, `not` or `implies` of such values, or an `if`,
   `match` or `let` whose results all are. A proposition written as the value
-  is its truth value: `x > 0` is `if x > 0 { true } else { false }`, and a
-  connective opens into conditionals that each test one comparison, so
-  `p and q` is `if p { if q { true } else { false } } else { false }`. Only
-  this body, and the branches of its `if`, `match` and `let`, read a
-  proposition as a value; everywhere else a comparison is a proposition, and
-  C fragments keep C's `int` comparisons. A quantifier or predicate call is
-  not a `bool` value. An integer anywhere the body can produce a value is a
-  type error (`mdtests/an_integer_body_for_a_bool_function_is_refused.md`).
-- **Exactly `0` or `1`.** The kernel reads a `bool` function's application
-  through C's conversion to `bool`, so its value is `0` or `1` whatever its
-  definition says. For that reason `b != false`, `b == true` and `b` are one
-  claim, and `not b`, `b != true` and `b == false` are one claim, for a
-  `bool` application or a `bool` parameter of a pure theorem: no lemma moves
-  between the spellings (`mdtests/bool_negation_and_disequality_agree.md`).
-  The range `b == true or b == false` is a disjunction, proved like any other
-  with a case split such as `if b { ... } else { ... }`.
-- **A C or C++ `bool` is tested against zero.** A C or C++ `bool`
-  parameter, load or conversion compared with `true` is the test `b != 0`
-  that `if (b)` makes, and with `false` is `b == 0`. So
-  `ensures early implies result == 7;` meets the branch the code took
-  without a comparison with zero
+  is its truth value: `x > 0` is `if x > 0 { true } else { false }`, which
+  is `x > 0` itself, and a connective opens into conditionals that each test
+  one comparison. Only this body, and the branches of its `if`, `match` and
+  `let`, read a proposition as a value; everywhere else a comparison is a
+  proposition, and C fragments keep C's `int` comparisons. A quantifier or
+  predicate call is not a `Bool` value. An integer anywhere the body can
+  produce a value is a type error
+  (`mdtests/an_integer_body_for_a_bool_function_is_refused.md`).
+- **Reasoning.** A `Bool` application is a term of the kernel's logical sort:
+  `unfold(f(x))` files `f(x) == body`, `rewrite` with a `Bool` equality
+  replaces one side by the other wherever a `Bool` is read, and a `Bool`
+  conditional is opened only when its condition is decided. The range
+  `b == true or b == false` is a disjunction, proved like any other with a
+  case split such as `if b { ... } else { ... }`.
+- **A C or C++ `bool` is tested against zero.** A C or C++ `bool` value
+  reaches `Bool` by C's own test: `b` claims `b != 0`, the test `if (b)`
+  makes, and `not b` claims `b == 0`. So `ensures early implies result == 7;`
+  meets the branch the code took without a comparison with zero
   (`mdtests/a_c_bool_parameter_is_a_claim.md`).
 - **Rust.** A Rust sidecar spells the type `bool` as Rust does, and a
-  parenthesized comparison there is a `bool` value, `result == (x > 3)`
+  parenthesized comparison there is a `Bool` value, `result == (x > 3)`
   ([Rust](../rust.md#signatures-in-rust-syntax)). In a C or C++ sidecar
   that operand is refused
   (`mdtests/a_parenthesized_comparison_is_a_value_only_in_rust.md`).
