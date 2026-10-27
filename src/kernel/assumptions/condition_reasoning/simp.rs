@@ -423,6 +423,9 @@ impl PureFactContext {
     ///
     /// Every exact hit is a direct lookup. `MemoryMatchOperands::Exact` kinds
     /// can only match by identity, so their misses are direct lookups too.
+    /// Compound queries first ask the facts under their canonical key. A
+    /// successful memory match closes them; a miss retains the scan, since
+    /// other memory-equivalent spellings may have different canonical keys.
     /// The remaining families pair sides by memory-resolution equality. For a query
     /// whose sides are both atoms (a constant, or a variable no load names),
     /// an atom side of a fact is memory-resolution equal to a query side only
@@ -489,14 +492,30 @@ impl PureFactContext {
             }
             _ => false,
         };
-        let (left, right) = match memory_match_operands(condition) {
-            MemoryMatchOperands::Words(_, _, left, right) => (left, right),
-            _ => return None,
-        };
-        if !atom(left) || !atom(right) {
-            return None;
-        }
         let key = crate::kernel::assumptions::condition_match_key(condition)?;
+        let matches = |facts: &crate::persistent::PersistentMap<ConditionTerm, bool>| {
+            facts.iter().any(|(fact, fact_value)| {
+                crate::instrumentation::record_deterministic_work(1);
+                *fact_value == value && self.condition_matches_for_simp(fact, condition)
+            })
+        };
+        let atom_query = matches!(
+            memory_match_operands(condition),
+            MemoryMatchOperands::Words(_, _, left, right) if atom(left) && atom(right)
+        );
+        if !atom_query {
+            // Loads and their registered variables (including inside sums
+            // and scaled offsets) share a canonical key. It selects candidates,
+            // not a verdict: retain the memory matcher's snapshot checks.
+            crate::instrumentation::record_deterministic_work(1);
+            // A miss is inconclusive: other memory-equivalent spellings may
+            // live under different keys, so the caller retains its fallback.
+            return self
+                .condition_facts_by_sides
+                .get(&key)
+                .is_some_and(matches)
+                .then_some(true);
+        }
         let spellings = |term: &Bitvector32Term| {
             let mut terms = BTreeSet::from([term.clone()]);
             terms.extend(self.bitvector_equality_class(term));
@@ -540,12 +559,6 @@ impl PureFactContext {
             &right_spellings,
             || crate::instrumentation::record_deterministic_work(1),
         );
-        let matches = |facts: &crate::persistent::PersistentMap<ConditionTerm, bool>| {
-            facts.iter().any(|(fact, fact_value)| {
-                crate::instrumentation::record_deterministic_work(1);
-                *fact_value == value && self.condition_matches_for_simp(fact, condition)
-            })
-        };
         Some(
             keys.iter().any(|key| {
                 crate::instrumentation::record_deterministic_work(1);
@@ -914,6 +927,58 @@ mod memory_condition_match_tests {
                 value,
             );
             assert!(!signed.has_matching_condition_fact_for_memory_resolution(&goal, value));
+        }
+    }
+
+    #[test]
+    fn compound_memory_condition_candidates_preserve_snapshots_and_withdrawal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let pointer = Pointer::symbolic(Variable(999_000));
+        let load = |memory: &CMemory| {
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(memory),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Int32,
+            )
+        };
+        let raw = load(&memory);
+        let named =
+            Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_term(&raw).unwrap().0);
+        let changed = memory
+            .clone()
+            .store(pointer.clone(), CValue::Int32(9u32.into()));
+        let condition = |kind, term| {
+            let left = Bitvector32Term::add(term, 1u32.into());
+            let right = Bitvector32Term::Variable(Variable(999_001));
+            match kind {
+                0 => ConditionTerm::signed_less_than(left, right),
+                1 => ConditionTerm::unsigned_less_than(left, right),
+                _ => ConditionTerm::pointer_offset_equal(
+                    PointerOffsetTerm::scale_int32(left, 4),
+                    PointerOffsetTerm::scale_int32(right, 4),
+                ),
+            }
+        };
+        for kind in 0..3 {
+            let source = condition(kind, named.clone());
+            let goal = condition(kind, raw.clone());
+            for value in [false, true] {
+                let held = PureFactContext::new().assume_condition(source.clone(), value);
+                assert_eq!(
+                    held.indexed_matching_condition_fact_for_memory_resolution(&goal, value),
+                    Some(true)
+                );
+                assert!(held.has_matching_condition_fact_for_memory_resolution(&goal, value));
+                assert!(!held.has_matching_condition_fact_for_memory_resolution(&goal, !value));
+                assert!(!held.has_matching_condition_fact_for_memory_resolution(
+                    &condition(kind, load(&changed)),
+                    value
+                ));
+                let withdrawn =
+                    held.without_exact_fact(&Proposition::ConditionIs(source.clone(), value));
+                assert!(!withdrawn.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            }
         }
     }
 

@@ -311,3 +311,57 @@ fn unsigned_memory_condition_matches_ignore_unrelated_facts() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn compound_load_condition_hits_ignore_other_facts() {
+    for unsigned in [false, true] {
+        for related in [false, true] {
+            let mut samples = Vec::new();
+            for size in [8u64, 32, 128] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let var = |id| Bitvector32Term::Variable(Variable(id));
+                let raw = Bitvector32Term::MemoryLoad(
+                    crate::kernel::intern_c_memory(CMemory::new()),
+                    Box::new(Pointer::symbolic(Variable(997_000))),
+                    crate::kernel::LoadKind::Int32,
+                );
+                let named = Bitvector32Term::Variable(
+                    crate::kernel::eval::load_variable_for_term(&raw).unwrap().0,
+                );
+                let compound = |term| Bitvector32Term::add(term, 1u32.into());
+                let condition = |left, right| {
+                    if unsigned {
+                        ConditionTerm::unsigned_less_than(left, right)
+                    } else {
+                        ConditionTerm::signed_less_than(left, right)
+                    }
+                };
+                let mut facts = PureFactContext::new();
+                for id in 0..size {
+                    let left = if related {
+                        compound(named.clone())
+                    } else {
+                        var(id)
+                    };
+                    facts = facts.assume_condition(condition(left, var(id + 10_000)), true);
+                }
+                let source = condition(compound(named), var(998_000));
+                let goal = condition(compound(raw), var(998_000));
+                assert_ne!(source, goal);
+                for value in [false, true] {
+                    let held = facts.clone().assume_condition(source.clone(), value);
+                    let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+                        held.has_matching_condition_fact_for_memory_resolution(&goal, value)
+                    });
+                    assert!(found);
+                    samples.push(work);
+                }
+            }
+            eprintln!("compound load unsigned={unsigned}, related={related}: {samples:?}");
+            assert!(
+                samples.iter().all(|work| *work == samples[0]),
+                "{samples:?}"
+            );
+        }
+    }
+}
