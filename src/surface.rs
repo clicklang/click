@@ -326,7 +326,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "same_object",
     "scatter",
     "separate",
-    "solve",
     "sizeof",
     "solve",
     "sorry",
