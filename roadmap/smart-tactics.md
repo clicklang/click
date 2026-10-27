@@ -65,10 +65,29 @@ but charges only N + 1 units. This is a reduced kernel-query reproduction,
 not a remeasurement of the historical full call fixture. A direct-store
 prototype did not reproduce the issue: read-over-write normalization removed
 the candidates. The existing positive control
-`constant_normalization_bridges_a_load_across_a_call` passes, demonstrating
-coverage that a removal would intentionally narrow. No behavior fix has been
-chosen; the failing regression is retained on the investigation branch for
-discussion, not submitted to the merge queue.
+`constant_normalization_bridges_a_load_across_a_call` passes in both modes
+below: its name does not establish reliance on this particular fallback.
+No behavior fix has been chosen; the failing regression is retained on the
+investigation branch for discussion, not submitted to the merge queue.
+
+Dependency experiment (same base, no proof edits): temporarily disable both
+load-bridge loops in `constant_class_resolution`, keeping exact class lookup,
+conditional resolution and arithmetic folding. The synthetic query then costs
+one unit at every size. All 57 regular example projects (including `arena`)
+and 4,851 enabled Markdown proofs pass. Of 6,325 enabled non-gate unit tests,
+6,324 pass; the sole failure is the source-policy test rejecting the temporary
+environment switch. After removing the probe from source, that policy test
+passes too. The existing positive bridge test and the targeted nightly
+`counter_call_chain_ensure_lowering_stays_flat_per_call` both pass with the
+fallback disabled. No regular-suite proof dependency was observed.
+
+`authority_pool_control_two_members.md` fails at the same `checkout` arithmetic
+certificate with bridging enabled and disabled; it remains an unrelated
+baseline failure and does not measure reliance in its later calls. The full
+nightly suite was not run, including the four nightly-only example projects
+(`rbtree-insert`, `rbtree-erase`, `rbtree-augmented`, `string-get-size`). This
+experiment establishes regular-corpus compatibility, not universal
+completeness or a timing speedup. The production source is restored.
 
 Remaining regression coverage before a chosen fix:
 
