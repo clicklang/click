@@ -153,3 +153,52 @@ fn a_fact_aware_cell_walk_resumes_the_memoized_version_walk() {
         "repeated cell walk work: {samples:?}"
     );
 }
+
+#[test]
+fn retained_cell_stops_scale_with_new_steps_and_ignore_other_names() {
+    let mut samples = Vec::new();
+    for size in [8, 16, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = at(block("global:g"), 0);
+        let mut memory = entry_memory().store(cell.clone(), one());
+        let expected = last_same_named_cell(&cell, 4, &point(&memory)).unwrap();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for i in 0..size {
+                memory = memory.clone().store(
+                    at(block("local:f:i"), 0),
+                    CValue::Int32(Bitvector32Term::Constant(i)),
+                );
+                let here = point(&memory);
+                assert_eq!(
+                    last_same_named_cell(&cell, 4, &here),
+                    Some(expected.clone())
+                );
+                let (again, repeat_work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        last_same_named_cell(&cell, 4, &here)
+                    });
+                assert_eq!(again, Some(expected.clone()));
+                assert_eq!(repeat_work, 0);
+            }
+        });
+        samples.push(work);
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1] <= 2 * pair[0] + 32, "retained stops: {samples:?}");
+    }
+    for size in [0, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = entry_memory();
+        for i in 0..size {
+            last_same_named_cell(&at(block("global:g"), i * 4), 4, &point(&memory));
+        }
+        let cell = at(block("global:h"), 0);
+        let here = point(&memory);
+        let expected = last_same_named_cell(&cell, 4, &here);
+        let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+            last_same_named_cell(&cell, 4, &here)
+        });
+        assert_eq!(answer, expected);
+        assert_eq!(work, 0, "unrelated names: {size}");
+    }
+}

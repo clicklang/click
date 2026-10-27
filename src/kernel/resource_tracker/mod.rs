@@ -62,7 +62,6 @@ pub(in crate::kernel) mod step_effect;
 
 use crate::kernel::memory_provenance::with_extended_dag_bridging;
 use crate::kernel::primitives::*;
-use cell_source::{MemoryDagCell, memory_dag_cell_source};
 
 /// A point on the current proof path, named by the memory snapshot the
 /// kernel had reached there: `entry`, a `mark`ed label, or "here".
@@ -577,19 +576,12 @@ pub(crate) fn last_same_point(resource: Resource<'_>, at: &ProgramPoint) -> Opti
     }
 }
 
-/// [`last_same_point`] with the stop information the naming path discards.
-///
-/// The walk itself is the same one; only the classification of where it
-/// stopped is new, and it is computed here rather than recorded, so that the
-/// naming path does no extra work.
+/// [`last_same_point`] with the reason the resource walk stopped.
+/// Cell naming retains that decision alongside its endpoint; querying it
+/// must not re-run the effect check that produced it.
 pub(crate) fn last_same(resource: Resource<'_>, at: &ProgramPoint) -> Option<LastSame> {
     match resource {
-        Resource::Cell { pointer, bytes } => {
-            let cell = cell_source_for_naming(at.snapshot(), pointer, bytes)?;
-            let point = ProgramPoint(cell.node().clone());
-            let stopped_by = Stop::at_point(&point, resource);
-            Some(LastSame { point, stopped_by })
-        }
+        Resource::Cell { pointer, bytes } => last_same_named_cell(pointer, bytes, at),
         Resource::Block(block) => {
             let point = ProgramPoint(block_last_same_point(at.snapshot(), block));
             let stopped_by = Stop::at_point(&point, resource);
@@ -597,6 +589,31 @@ pub(crate) fn last_same(resource: Resource<'_>, at: &ProgramPoint) -> Option<Las
         }
         Resource::Ranges(_) | Resource::AnyMemory | Resource::ModelField { .. } => None,
     }
+}
+
+/// [`last_same`] for a cell, from the memoized naming walk
+/// ([`last_same_point`]): the point a read there is named at, and why the
+/// walk stopped there. A caller asking about a cell a read was just named
+/// for pays no second walk.
+pub(crate) fn last_same_named_cell(
+    pointer: &Pointer,
+    bytes: u32,
+    at: &ProgramPoint,
+) -> Option<LastSame> {
+    let version = cell_last_same_version(at.snapshot(), pointer, bytes)?;
+    let change = version
+        .memory
+        .derivation()
+        .map_or(Change::BeginningOfHistory, |edge| {
+            Change::of_derivation(&edge)
+        });
+    Some(LastSame {
+        point: ProgramPoint(version.memory),
+        stopped_by: Stop {
+            change,
+            reason: version.reason,
+        },
+    })
 }
 
 /// Whether the resource is known to hold the same version at both points.
@@ -1045,7 +1062,18 @@ pub(super) fn memoized_cell_last_same_point(
     bytes: u32,
 ) -> Option<Option<SharedCMemory>> {
     let key = (memory.unchanged_bytes_source(), pointer.clone(), bytes);
-    CELL_VERSION_MEMO.with(|memo| memo.borrow().get(&key).cloned())
+    CELL_VERSION_MEMO.with(|memo| {
+        memo.borrow()
+            .get(&key)
+            .cloned()
+            .map(|version| version.map(|version| version.memory))
+    })
+}
+
+#[derive(Clone)]
+struct NamedCellVersion {
+    memory: SharedCMemory,
+    reason: StopReason,
 }
 
 pub(super) fn cell_last_same_point(
@@ -1053,6 +1081,14 @@ pub(super) fn cell_last_same_point(
     pointer: &Pointer,
     bytes: u32,
 ) -> Option<SharedCMemory> {
+    cell_last_same_version(memory, pointer, bytes).map(|version| version.memory)
+}
+
+fn cell_last_same_version(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+) -> Option<NamedCellVersion> {
     // Assumption-free and a function of the interned snapshot, the pointer,
     // the access width and the recorded edges, so the answer is memoized per
     // query. The width is part of the key because it is part of the
@@ -1065,9 +1101,10 @@ pub(super) fn cell_last_same_point(
     if let Some(hit) = CELL_VERSION_MEMO.with(|memo| memo.borrow().get(&key).cloned()) {
         return hit;
     }
-    // Naming needs only the endpoint, not a retained path. Reuse a cached
-    // prefix and memoize each newly visited node, so the next statement pays
-    // for its own memory delta rather than the entire execution history.
+    // Retain the endpoint and the decision that stopped this walk, not its
+    // path. Consumers must not re-run that decision: read registration can
+    // already hold the naming context's equality graph lock. Reuse a cached
+    // prefix so the next statement pays only for its own memory delta.
     crate::instrumentation::measure_operation(
         "kernel",
         "canonical form",
@@ -1096,7 +1133,10 @@ pub(super) fn cell_last_same_point(
                         break None;
                     };
                     let Some(derivation) = current.derivation() else {
-                        break Some(current);
+                        break Some(NamedCellVersion {
+                            memory: current,
+                            reason: StopReason::HistoryEnds,
+                        });
                     };
                     match step_effect::affects(
                         &derivation,
@@ -1107,7 +1147,29 @@ pub(super) fn cell_last_same_point(
                         step_effect::StepEffect::Separate(step_effect::Separation::Cell(_)) => {
                             current = derivation.base().unchanged_bytes_source()
                         }
-                        _ => break Some(current),
+                        step_effect::StepEffect::Affected => {
+                            break Some(NamedCellVersion {
+                                memory: current,
+                                reason: StopReason::Affected,
+                            });
+                        }
+                        step_effect::StepEffect::NotShownSeparate(reason) => {
+                            break Some(NamedCellVersion {
+                                memory: current,
+                                reason: StopReason::NotShownSeparate(reason),
+                            });
+                        }
+                        step_effect::StepEffect::Separate(_) => {
+                            // A cell can cross only a cell separation.
+                            let reason = step_effect::separation_check(
+                                &derivation,
+                                Resource::Cell { pointer, bytes },
+                            );
+                            break Some(NamedCellVersion {
+                                memory: current,
+                                reason: StopReason::NotShownSeparate(reason),
+                            });
+                        }
                     }
                 };
                 CELL_VERSION_MEMO.with(|memo| {
@@ -1130,24 +1192,6 @@ pub(super) fn cell_last_same_point(
             })
         },
     )
-}
-
-/// The cell walk exactly as naming runs it: no ambient facts, and loop havoc
-/// never crossed. Declaring a block, forgetting cached cells, or allocating
-/// another block writes nothing; a name must not change across them, so the
-/// naming walk crosses those edges unconditionally.
-///
-/// Every tracker answer about a cell goes through here, so a diagnostic
-/// explains the name the term actually got rather than a walk run under
-/// different flags.
-fn cell_source_for_naming(
-    memory: &SharedCMemory,
-    pointer: &Pointer,
-    bytes: u32,
-) -> Option<MemoryDagCell> {
-    with_extended_dag_bridging(|| {
-        memory_dag_cell_source(memory, pointer, bytes, &naming_context(), false)
-    })
 }
 
 /// The value one cell holds at `at` on the querying path, when its recorded
@@ -1182,7 +1226,7 @@ thread_local! {
     static CELL_VERSION_MEMO: std::cell::RefCell<
         std::collections::HashMap<
             (crate::kernel::SharedCMemory, Pointer, u32),
-            Option<crate::kernel::SharedCMemory>,
+            Option<NamedCellVersion>,
         >,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
