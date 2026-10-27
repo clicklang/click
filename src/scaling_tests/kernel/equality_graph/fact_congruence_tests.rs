@@ -290,3 +290,64 @@ fn simplified_pointer_read_retention_ignores_unrelated_facts() {
         "{samples:?}"
     );
 }
+
+fn later_pointer_read_definition_work(count: u32, unrelated: u64) -> usize {
+    let _session = VerificationSession::enter();
+    let cell = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let other = Pointer {
+        block: PointerBlock::Heap(986_001),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let mut memory =
+        intern_c_memory(CMemory::new().store(other.clone(), CValue::UInt32(0u32.into())));
+    let name = |memory: &SharedCMemory, cell: &Pointer| {
+        Pointer::loaded_value(
+            &crate::kernel::memory_provenance::canonical_value_load_memory(memory, cell, 8),
+            cell,
+        )
+    };
+    let named = name(&memory, &cell);
+    let context = PureFactContext::new();
+    assert!(context.pointers_known_equal(&named, &Pointer::loaded_value(&memory, &cell)));
+    for index in 0..unrelated {
+        let address = Pointer::symbolic(Variable(986_100 + index));
+        let _ = name(&memory, &address);
+    }
+    let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+        for index in 1..=count {
+            memory = intern_c_memory(
+                memory
+                    .memory()
+                    .clone()
+                    .store(other.clone(), CValue::UInt32(index.into())),
+            );
+            assert_eq!(named, name(&memory, &cell));
+            assert!(context.pointers_known_equal(&named, &Pointer::loaded_value(&memory, &cell)));
+        }
+    });
+    work
+}
+
+#[test]
+fn later_pointer_read_definitions_scale_with_observations() {
+    let samples = [8, 16, 32, 64].map(|count| later_pointer_read_definition_work(count, 0));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 64),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn later_pointer_read_definitions_ignore_unrelated_names() {
+    let samples =
+        [0, 16, 64, 256].map(|unrelated| later_pointer_read_definition_work(8, unrelated));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}

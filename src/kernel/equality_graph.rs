@@ -398,6 +398,12 @@ struct LogicalPointerReads {
 static NEXT_LOGICAL_READ_GENERATION: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
+/// Shared clock for checked read equations and structural read definitions.
+/// A later definition can invalidate a previously memoized equality miss.
+pub(in crate::kernel) fn next_read_definition_generation() -> u64 {
+    NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 thread_local! {
     // Session-local term definitions, like the kernel's load-variable
     // interner. Context reconstruction may not forget how a logical term was
@@ -545,6 +551,10 @@ struct EqualityGraphState {
     terms: terms::TermClasses,
     input_history: Option<std::sync::Arc<inputs::History>>,
     logical_values: crate::persistent::PersistentSet<Pointer>,
+    /// Definitions consumed for this selected read. New observations may
+    /// name an existing version; seeing the value once does not freeze them.
+    logical_pointer_sources:
+        crate::persistent::PersistentMap<Pointer, [Option<crate::kernel::SharedCMemory>; 3]>,
     /// Compound query dependencies already registered at this metadata
     /// generation. Later producer definitions invalidate a miss lazily.
     logical_query_dependencies: crate::persistent::PersistentMap<Pointer, u64>,
@@ -644,7 +654,9 @@ impl EqualityGraph {
             .lock()
             .expect("equality graph")
             .checked_read_generation;
-        definitions.max(checked)
+        definitions
+            .max(checked)
+            .max(crate::kernel::prelude::load_definition_generation())
     }
 
     /// Admit an equality checked by a read producer into this branch's graph.
@@ -713,26 +725,52 @@ impl EqualityGraph {
         let reads = self.logical_reads.lock().expect("logical pointer reads");
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut definitions = Vec::new();
+        let mut read_domains = Vec::new();
         while let Some(value) = pending.pop() {
-            if state.logical_values.contains(&value) {
+            let direct_read = value.as_loaded_value();
+            let sources = direct_read.as_ref().map(|load| {
+                [
+                    crate::kernel::prelude::canonical_load_projection_source(
+                        &load.defining_memory,
+                        &load.defining_address,
+                    ),
+                    crate::kernel::prelude::value_load_origin(
+                        &load.defining_memory,
+                        &load.defining_address,
+                        crate::kernel::C_POINTER_BYTE_WIDTH,
+                    ),
+                    crate::kernel::prelude::value_load_name(
+                        &load.defining_memory,
+                        &load.defining_address,
+                        crate::kernel::C_POINTER_BYTE_WIDTH,
+                    ),
+                ]
+            });
+            if state.logical_values.contains(&value)
+                && sources.as_ref().is_none_or(|sources| {
+                    state.logical_pointer_sources.get(&value) == Some(sources)
+                })
+            {
                 continue;
             }
             // Direct pointer-read names carry their own definition instead
             // of a scalar-load entry. Their projection edge is the same
             // unconditional producer metadata used below for scalar names.
-            if let Some(load) = value.as_loaded_value() {
+            if let Some(load) = direct_read {
                 state.logical_values = state.logical_values.with_value(value.clone());
                 pending.push(load.defining_address.clone());
-                if let Some(source) = crate::kernel::prelude::canonical_load_projection_source(
-                    &load.defining_memory,
-                    &load.defining_address,
-                ) {
+                let sources = sources.expect("a direct read has source metadata");
+                state.logical_pointer_sources = state
+                    .logical_pointer_sources
+                    .with_inserted(value.clone(), sources.clone());
+                for source in sources.into_iter().flatten() {
                     let source_read = Pointer::loaded_value(&source, &load.defining_address);
                     let application = Pointer {
                         block: source_read.block,
-                        offset: load.displacement,
+                        offset: load.displacement.clone(),
                     };
                     pending.push(application.clone());
+                    read_domains.push((value.clone(), application.clone()));
                     definitions.push((value.clone(), application));
                 }
                 crate::instrumentation::record_deterministic_work(1);
@@ -791,6 +829,9 @@ impl EqualityGraph {
             let value = state.register_pointer_address(value);
             let application = state.register_pointer_address(application);
             state.terms.add_address_equality(value, application);
+        }
+        for (read, source) in read_domains {
+            state.terms.merge_pointer_read_domains(&read, &source);
         }
         state.close(definitions);
     }

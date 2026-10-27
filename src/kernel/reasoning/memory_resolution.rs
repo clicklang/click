@@ -161,6 +161,12 @@ thread_local! {
     static VALUE_LOAD_ORIGINS: std::cell::RefCell<
         std::collections::HashMap<(super::SharedCMemory, Pointer, u32), super::SharedCMemory>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
+    /// Reverse definitions select a name from the exact observation. Keeping
+    /// this direction preserves earlier observations when a name is reused.
+    static VALUE_LOAD_NAMES: std::cell::RefCell<
+        std::collections::HashMap<(super::SharedCMemory, Pointer, u32), super::SharedCMemory>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+    static LOAD_DEFINITION_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Every exact producer-known projection triple. Evidence checks this
     /// durable set rather than requiring its selected source to remain the
     /// preferred source if an older equivalent producer is registered later.
@@ -265,6 +271,18 @@ pub(crate) fn clear_canonical_memory_cache() {
     CANONICAL_LOAD_PROJECTION_SOURCES.with(|sources| sources.borrow_mut().clear());
     CANONICAL_LOAD_PROJECTIONS.with(|projections| projections.borrow_mut().clear());
     VALUE_LOAD_ORIGINS.with(|origins| origins.borrow_mut().clear());
+    VALUE_LOAD_NAMES.with(|names| names.borrow_mut().clear());
+    advance_load_definition_generation();
+}
+
+fn advance_load_definition_generation() {
+    LOAD_DEFINITION_GENERATION.with(|generation| {
+        generation.set(crate::kernel::equality_graph::next_read_definition_generation());
+    });
+}
+
+pub(in crate::kernel) fn load_definition_generation() -> u64 {
+    LOAD_DEFINITION_GENERATION.with(std::cell::Cell::get)
 }
 
 /// Records the exact source used when load canonicalization constructs a
@@ -286,15 +304,22 @@ pub(in crate::kernel) fn record_canonical_load_projection(
             .borrow_mut()
             .insert((source.clone(), projected.clone(), pointer.clone()));
     });
-    CANONICAL_LOAD_PROJECTION_SOURCES.with(|sources| {
+    let changed = CANONICAL_LOAD_PROJECTION_SOURCES.with(|sources| {
         let mut sources = sources.borrow_mut();
-        let preferred = sources
-            .entry((projected.clone(), pointer.clone()))
-            .or_insert_with(|| source.clone());
-        if source.arena_id() < preferred.arena_id() {
-            *preferred = source.clone();
+        let key = (projected.clone(), pointer.clone());
+        if sources
+            .get(&key)
+            .is_none_or(|preferred| source.arena_id() < preferred.arena_id())
+        {
+            sources.insert(key, source.clone());
+            true
+        } else {
+            false
         }
     });
+    if changed {
+        advance_load_definition_generation();
+    }
 }
 
 /// Retain the selected-width equation already established by structural
@@ -307,11 +332,23 @@ pub(in crate::kernel) fn record_value_load_origin(
     bytes: u32,
 ) {
     if origin != named {
-        VALUE_LOAD_ORIGINS.with(|origins| {
+        let changed_origin = VALUE_LOAD_ORIGINS.with(|origins| {
             origins
                 .borrow_mut()
-                .insert((named.clone(), pointer.clone(), bytes), origin.clone());
+                .insert((named.clone(), pointer.clone(), bytes), origin.clone())
+                .as_ref()
+                != Some(origin)
         });
+        let changed_name = VALUE_LOAD_NAMES.with(|names| {
+            names
+                .borrow_mut()
+                .insert((origin.clone(), pointer.clone(), bytes), named.clone())
+                .as_ref()
+                != Some(named)
+        });
+        if changed_origin || changed_name {
+            advance_load_definition_generation();
+        }
     }
 }
 
@@ -324,6 +361,20 @@ pub(in crate::kernel) fn value_load_origin(
         origins
             .borrow()
             .get(&(named.clone(), pointer.clone(), bytes))
+            .cloned()
+    })
+}
+
+/// The structurally chosen name for this exact observation and width.
+pub(in crate::kernel) fn value_load_name(
+    origin: &super::SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+) -> Option<super::SharedCMemory> {
+    VALUE_LOAD_NAMES.with(|names| {
+        names
+            .borrow()
+            .get(&(origin.clone(), pointer.clone(), bytes))
             .cloned()
     })
 }
