@@ -414,6 +414,9 @@ pub(in crate::surface::proof) enum RewriteClosers<'p> {
     /// `assumption`, `normalize`, the direct logical closer, then a
     /// bounded nested `simp`: the context's facts.
     Ambient,
+    /// The early goal-local route: direct/typed closure and optional
+    /// function unfolding, without restarting all of `simp` before arithmetic.
+    GoalLocal { allow_function_unfold: bool },
     /// The direct logical closer, `simp`'s typed atomic closer and
     /// `normalize`, for `simp`'s own premises: no nested `simp`, which
     /// would select the same premises and search them again.
@@ -1099,6 +1102,7 @@ impl<'a> Proof<'a> {
     /// included. Each rewrite is an ordinary checked step.
     pub(in crate::surface::proof) fn try_connected_equality_chain_closure(
         &self,
+        closers: RewriteClosers<'_>,
     ) -> Result<Option<Self>, ClickError> {
         use crate::kernel::proof::equality_rewrite::{equality_rewrite_applies, reverse_equality};
         let Some(goal) = self.goal() else {
@@ -1156,7 +1160,7 @@ impl<'a> Proof<'a> {
             REWRITE_DEPTH,
             &mut seen,
             &mut budget,
-            RewriteClosers::Ambient,
+            closers,
         )
     }
 
@@ -1848,6 +1852,23 @@ impl<'a> Proof<'a> {
             return Ok(self
                 .try_typed_atomic_simp_from_selected_premises(premise_pairs)
                 .filter(closes));
+        }
+        if let RewriteClosers::GoalLocal {
+            allow_function_unfold,
+        } = closers
+        {
+            if let Some(closed) = self
+                .try_direct_logical_closure()?
+                .or_else(|| self.try_typed_atomic_simp_closure())
+                .or_else(|| self.apply_step(ProofStep::Normalize).ok().filter(closes))
+            {
+                return Ok(Some(closed));
+            }
+            if !allow_function_unfold || budget.simp_closures == 0 {
+                return Ok(None);
+            }
+            budget.simp_closures -= 1;
+            return self.try_function_unfold_simp_closure(&[]);
         }
         if let RewriteClosers::Selected = closers {
             let closed = self

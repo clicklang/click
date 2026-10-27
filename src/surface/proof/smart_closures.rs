@@ -4023,7 +4023,7 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_single_rewrite_closure()? {
             return Ok(Some(closed));
         }
-        if let Some(closed) = self.try_connected_equality_chain_closure()? {
+        if let Some(closed) = self.try_connected_equality_chain_closure(RewriteClosers::Ambient)? {
             return Ok(Some(closed));
         }
         self.try_constructor_join_closure()
@@ -4447,7 +4447,12 @@ impl<'a> Proof<'a> {
             "surface",
             "simp closure",
             "simp closure: goal equality rewrite",
-            || self.try_goal_equality_rewrite_closure_excluding(exclude_exact_goal),
+            || {
+                self.try_goal_equality_rewrite_closure_excluding(
+                    exclude_exact_goal,
+                    allow_function_unfold,
+                )
+            },
         )? {
             return Ok(Some(rewritten));
         }
@@ -5227,7 +5232,7 @@ impl<'a> Proof<'a> {
     /// `unfold` step. The recursive simplification attempt disables further
     /// function unfolding, so recursive definitions cannot turn this smart
     /// tactic into unbounded evaluation.
-    fn try_function_unfold_simp_closure(
+    pub(super) fn try_function_unfold_simp_closure(
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
@@ -7522,7 +7527,7 @@ impl<'a> Proof<'a> {
     /// also when this entry point is reached after a split or an unfold.
     #[cfg(test)]
     pub(super) fn try_goal_equality_rewrite_closure(&self) -> Option<Self> {
-        self.try_goal_equality_rewrite_closure_excluding(false)
+        self.try_goal_equality_rewrite_closure_excluding(false, true)
             .ok()
             .flatten()
     }
@@ -7530,10 +7535,18 @@ impl<'a> Proof<'a> {
     fn try_goal_equality_rewrite_closure_excluding(
         &self,
         exclude_goal_fact: bool,
+        allow_function_unfold: bool,
     ) -> Result<Option<Self>, ClickError> {
         match self.try_indexed_direct_equality_rewrite(exclude_goal_fact) {
             std::ops::ControlFlow::Break(closed) => Ok(closed),
-            std::ops::ControlFlow::Continue(()) => self.try_connected_fact_closure(),
+            std::ops::ControlFlow::Continue(()) => {
+                let Some(_scope) = SimpFallbackScope::enter(SimpFallback::ConnectedFacts) else {
+                    return Ok(None);
+                };
+                self.try_connected_equality_chain_closure(RewriteClosers::GoalLocal {
+                    allow_function_unfold,
+                })
+            }
         }
     }
 

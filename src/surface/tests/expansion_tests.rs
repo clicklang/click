@@ -3166,6 +3166,21 @@ fn equality_search_expands_loop_ranking_with_previous_entry_fact() {
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
+#[test]
+#[ignore = "nightly: tree rotation expansion and cold project verification"]
+fn equality_search_expands_tree_rotation() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples/modeled-binary-tree/modeled_binary_tree.click");
+    let source = std::fs::read_to_string(&path).unwrap();
+    let sources = crate::cli::read_verifying_sources(&path, &source).unwrap();
+    let sources = crate::cli::source_refs(&sources);
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "tree_rotate_left.ensures_0")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(expanded.contains("rewrite("), "{expanded}");
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
 /// A theorem with a type parameter is checked at a rigid type standing for
 /// any type. Expanding one of its tactics verifies that theorem alone, and
 /// must check it the same way; without the rigid type the proof cannot be

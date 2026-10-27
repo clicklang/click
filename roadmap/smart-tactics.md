@@ -893,7 +893,9 @@ Fix each with a scaling test that shows it growing.
 
 The indexed goal-local route now keeps only its one-rewrite/direct-closure
 shortcut. Longer chains use the same bounded `rewrite_search` as connected,
-selected and listed equalities. The shared route is available inside split
+selected and listed equalities. Its early entry point keeps direct/typed
+closers and optional function unfolding, so it does not restart full `simp`
+before arithmetic has its turn. The shared route is available inside split
 and unfold continuations, and spells execution equalities at the frontier
 that owns the goal, preserving the previous loop entry's snapshot name.
 This covers `examples/modeled-binary-tree` and
@@ -1015,6 +1017,9 @@ verdict change.
    anchor at a loop back edge. This covers the tree rotation and historical
    loop ranking cases above. Existing depth, candidate and attempt budgets
    are unchanged; selected/listed closer restrictions remain unchanged.
+   The early goal-local entry point uses direct/typed closers and optional
+   function unfolding rather than the late chain's nested `simp`, preserving
+   arithmetic's turn and the `arena` proof's work budget.
 8. **Move definition-condition reading and constructor join into `simp`.**
    Done: both are part of `simp`'s last strategy over the connected facts
    (`try_connected_fact_closure`), definition reading first and constructor
