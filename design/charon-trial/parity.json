@@ -20,6 +20,11 @@
     "diagnostic": ""
   },
   {
+    "sidecar": "examples/rust-bools/bools.click",
+    "outcome": "verified",
+    "diagnostic": ""
+  },
+  {
     "sidecar": "examples/rust-byte-sum/sum.click",
     "outcome": "proof-gap",
     "diagnostic": "local `i` has no value at this frontier",

@@ -159,7 +159,7 @@ fn charon_parity_migrated_proof_inventory_is_explicit() {
     );
     assert_eq!(
         entries.iter().filter(|e| e.outcome == "verified").count(),
-        12
+        13
     );
     assert_eq!(
         entries

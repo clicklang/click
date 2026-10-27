@@ -143,7 +143,7 @@ fn canonical_charon_examples_verify_locked_inputs() {
         run_example_in_thread(directory).unwrap_or_else(|error| panic!("{error}"));
         checked += 1;
     }
-    assert_eq!(checked, 17);
+    assert_eq!(checked, 18);
 }
 
 /// Examples the ten-minute gate leaves to the nightly run, with the

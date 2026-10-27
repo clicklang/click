@@ -239,6 +239,19 @@ fn indexed_element_type(element: CType) -> Option<Type> {
         _ => return None,
     })
 }
+/// A branch's or loop's condition: a `bool` value written as a condition is
+/// the comparison it tests, which the branch splits on (Stage 5, D5).
+fn branch_condition(condition: CExpression) -> CExpression {
+    match condition {
+        CExpression::Cast {
+            expression,
+            integer_mode: CIntegerCastMode::BoolValue,
+            ..
+        } => *expression,
+        condition => condition,
+    }
+}
+
 fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
     if crate::kernel::MachineIntegerType::from_c_type(target).is_some() {
         c_integer_cast_modulo(value, target)
@@ -873,7 +886,11 @@ impl Context<'_> {
                 if !simple_guard(condition) {
                     return Err("Rust while conditions currently require scalar comparisons without calls, indexing or arithmetic".into());
                 }
-                Ok(c_while(self.expr(condition)?, Vec::new(), self.body(body)?))
+                Ok(c_while(
+                    branch_condition(self.expr(condition)?),
+                    Vec::new(),
+                    self.body(body)?,
+                ))
             }
             S::If {
                 condition,
@@ -883,7 +900,11 @@ impl Context<'_> {
                 let (checks, condition) = self.prepared_expr(condition)?;
                 Ok(c_seq(
                     checks,
-                    c_if(condition, self.body(then_body)?, self.body(else_body)?),
+                    c_if(
+                        branch_condition(condition),
+                        self.body(then_body)?,
+                        self.body(else_body)?,
+                    ),
                 ))
             }
             S::Return {
@@ -1850,6 +1871,11 @@ impl Context<'_> {
             _ => Err("unsupported Rust memory place type".into()),
         }
     }
+    /// `e` as a branch's or loop's condition ([`branch_condition`]).
+    fn condition(&mut self, e: &E) -> Result<CExpression, String> {
+        self.expr(e).map(branch_condition)
+    }
+
     fn expr(&mut self, e: &E) -> Result<CExpression, String> {
         match e {
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
