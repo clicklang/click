@@ -1,18 +1,12 @@
-//! Literal values and selected conditional/load witnesses on shared term roots.
+//! Literal values and selected conditional witnesses on shared term roots.
 use super::{MachineAtom, PendingUnions, TermClasses};
-use crate::kernel::assumptions::{SignedConstantResolution, memory_blind_pointer_fingerprint};
+use crate::kernel::assumptions::SignedConstantResolution;
 use crate::kernel::prelude::*;
 
 #[derive(Clone, Default)]
 pub(super) struct ScalarWitnesses {
     conditionals:
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<MachineAtom>>,
-    loads: crate::persistent::PersistentMap<
-        u64,
-        crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<MachineAtom>>,
-    >,
-    settled:
-        crate::persistent::PersistentMap<u64, crate::persistent::PersistentMap<MachineAtom, u64>>,
     inverse_bytes: crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<u64>>,
 }
 
@@ -32,31 +26,6 @@ impl TermClasses {
                 self.scalar_witnesses
                     .conditionals
                     .insert(root, terms.with_value(key.clone()));
-            }
-        }
-        if let Some((fingerprint, _)) = load_key(term) {
-            let mut loads = self
-                .scalar_witnesses
-                .loads
-                .get(&root)
-                .cloned()
-                .unwrap_or_default();
-            let terms = loads.get(&fingerprint).cloned().unwrap_or_default();
-            if !terms.contains(&key) {
-                self.weights.insert(root, self.weight(root) + 1);
-                loads.insert(fingerprint, terms.with_value(key.clone()));
-                self.scalar_witnesses.loads.insert(root, loads);
-            }
-            if self.int32_constants.contains_key(&root) {
-                let settled = self
-                    .scalar_witnesses
-                    .settled
-                    .get(&fingerprint)
-                    .cloned()
-                    .unwrap_or_default();
-                self.scalar_witnesses
-                    .settled
-                    .insert(fingerprint, settled.with_inserted(key, node));
             }
         }
     }
@@ -159,48 +128,7 @@ impl TermClasses {
             }
             self.scalar_witnesses.inverse_bytes.insert(kept, bytes);
         }
-        let new_loads = self.scalar_witnesses.loads.get(&moved).cloned();
-        self.scalar_witnesses.loads.remove(&moved);
-        if let Some(moved_loads) = &new_loads {
-            let mut loads = self
-                .scalar_witnesses
-                .loads
-                .get(&kept)
-                .cloned()
-                .unwrap_or_default();
-            for (key, members) in moved_loads.iter() {
-                let mut bucket = loads.get(key).cloned().unwrap_or_default();
-                for member in members.iter() {
-                    bucket = bucket.with_value(member.clone());
-                }
-                loads.insert(*key, bucket);
-            }
-            self.scalar_witnesses.loads.insert(kept, loads);
-        }
-        // A class reaches a literal once. Existing settled members retain
-        // their immutable node IDs, so later merges need no relabelling scan.
         if self.int32_constants.contains_key(&kept) {
-            let newly_settled = if kept_was_settled {
-                new_loads
-            } else {
-                self.scalar_witnesses.loads.get(&kept).cloned()
-            };
-            if let Some(loads) = newly_settled {
-                for (key, members) in loads.iter() {
-                    let mut settled = self
-                        .scalar_witnesses
-                        .settled
-                        .get(key)
-                        .cloned()
-                        .unwrap_or_default();
-                    for member in members.iter() {
-                        if !settled.contains_key(member) {
-                            settled.insert(member.clone(), kept);
-                        }
-                    }
-                    self.scalar_witnesses.settled.insert(*key, settled);
-                }
-            }
             if !kept_was_settled {
                 self.inverse_byte_values(kept, None, pending);
             } else if let Some(bytes) = new_inverse_bytes.as_ref() {
@@ -234,38 +162,6 @@ impl TermClasses {
             .flat_map(|members| members.iter())
             .map(|term| term.value().clone())
             .collect()
-    }
-    pub(in crate::kernel::equality_graph) fn scalar_settled_loads_at(
-        &self,
-        key: u64,
-    ) -> Vec<(Bitvector32Term, u64)> {
-        self.scalar_witnesses
-            .settled
-            .get(&key)
-            .into_iter()
-            .flat_map(|members| members.iter())
-            .map(|(term, node)| (term.value().clone(), self.root(*node)))
-            .collect()
-    }
-    pub(in crate::kernel::equality_graph) fn scalar_bridgeable_loads(
-        &self,
-        id: u64,
-    ) -> Vec<(Bitvector32Term, Bitvector32Term, u64)> {
-        let root = self.root(id);
-        let mut result = Vec::new();
-        if let Some(loads) = self.scalar_witnesses.loads.get(&root) {
-            for (key, members) in loads.iter() {
-                for (candidate, node) in self.scalar_settled_loads_at(*key) {
-                    if node == root {
-                        continue;
-                    }
-                    for member in members.iter() {
-                        result.push((member.value().clone(), candidate.clone(), node));
-                    }
-                }
-            }
-        }
-        result
     }
 }
 
@@ -358,16 +254,6 @@ pub(in crate::kernel) fn fold_arithmetic(
             None => SignedConstantResolution::Unknown,
         },
     }
-}
-
-/// The memory-blind fingerprint of the pointer a load term reads, if the
-/// term is a load or a registered load variable.
-pub(in crate::kernel) fn load_key(term: &Bitvector32Term) -> Option<(u64, Bitvector32Term)> {
-    let viewed = crate::kernel::eval::viewed_as_memory_load(term)?;
-    let Bitvector32Term::MemoryLoad(_, pointer, _) = &viewed else {
-        return None;
-    };
-    Some((memory_blind_pointer_fingerprint(pointer), viewed))
 }
 
 impl TermClasses {

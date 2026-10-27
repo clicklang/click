@@ -538,8 +538,14 @@ compound terms that use one of its members; a constant only rises, so each
 term is re-folded a bounded number of times along a path. Signed byte reads
 of byte loads are kept per class and inverted into the byte's class on a rise
 ([byte representation](byte-representation.md#character-reads-of-one-byte-cells)).
-Only a class without a settled constant does query-time work
-(`counter_call_chain_ensure_lowering_stays_flat_per_call`).
+Only a class without a settled constant resolves its conditional members at
+query time; unregistered arithmetic folds from its operands. Constant lookup
+never pairs loads from different snapshots or searches memory history for a
+constant. Missing relations must already be established in the equality
+context. `constant_queries_ignore_other_snapshot_candidates` covers misses,
+explicit-equality hits and repeated queries as related and unrelated snapshot
+reads grow; `counter_call_chain_ensure_lowering_stays_flat_per_call` covers
+repeated calls.
 
 The condition-premise oracle follows a persistent variable-to-fact adjacency
 index; each reachable variable and fact is expanded once

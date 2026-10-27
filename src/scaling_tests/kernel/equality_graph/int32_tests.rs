@@ -571,84 +571,86 @@ fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
     }
 }
 
-/// Investigation: a fixed constant query must not materialize a Cartesian
-/// product of same-address loads before checking whether any bridge exists.
-/// Expected to fail until the checking/search boundary is repaired; this
-/// investigation is retained locally pending the fix discussion.
+/// Unknown-class reads must not be paired with settled reads at other
+/// snapshots. With N reads in each group, one refused query used to allocate
+/// N squared pairs and cost 95*N*N + 1 units (97,281 at N=32).
 #[test]
-fn constant_bridge_candidate_pairs_scale_with_selected_input() {
-    let mut samples = Vec::new();
-    for size in [4u64, 8, 16, 32] {
-        let _session = VerificationSession::enter();
-        let pointer = Pointer {
-            block: "constant-bridge-scale".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let query = var(880_000);
-        let mut context = PureFactContext::new();
-        let mut memory = CMemory::new().with_block("constant-bridge-scale", 4);
-        for index in 0..size {
-            memory = memory.with_call_memory_havoc(
-                Variable(881_000 + index),
-                &[CMemoryRange::new_with_element_width(
-                    pointer.clone(),
-                    0u32.into(),
-                    1u32.into(),
-                    4,
-                )],
-                &PureFactContext::new(),
-                None,
+fn constant_queries_ignore_other_snapshot_candidates() {
+    for same_address in [true, false] {
+        let mut samples = Vec::new();
+        for size in [4u64, 8, 16, 32] {
+            let _session = VerificationSession::enter();
+            let pointer = Pointer {
+                block: "constant-bridge-scale".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let query = var(880_000);
+            let mut context = PureFactContext::new();
+            let mut memory =
+                CMemory::new().with_block("constant-bridge-scale", 4 * (size as u32 + 1));
+            let mut unknown_reads = Vec::new();
+            // Every snapshot is separated by a call that may write the cell.
+            // The postconditions can consistently equate the first N reads to
+            // an unknown value and the later reads to different constants.
+            for index in 0..2 * size {
+                let mut address = pointer.clone();
+                if !same_address && index >= size {
+                    address.offset = PointerOffsetTerm::Constant(4 * (index - size + 1) as i64);
+                }
+                memory = memory.with_call_memory_havoc(
+                    Variable(881_000 + index),
+                    &[CMemoryRange::new_with_element_width(
+                        address.clone(),
+                        0u32.into(),
+                        1u32.into(),
+                        4,
+                    )],
+                    &PureFactContext::new(),
+                    None,
+                );
+                let load = Bitvector32Term::MemoryLoad(
+                    intern_c_memory(memory.clone()),
+                    Box::new(address),
+                    LoadKind::Int32,
+                );
+                if index < size {
+                    context = context.assume_condition(eq(&load, &query), true);
+                    unknown_reads.push(load);
+                } else {
+                    context = context.assume_condition(
+                        eq(&load, &Bitvector32Term::Constant((index - size + 1) as u32)),
+                        true,
+                    );
+                }
+            }
+            let (answer, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.known_signed_constant_after_normalization(&query)
+            });
+            assert_eq!(answer, None, "havocs separate the snapshots");
+            // Distinct queries, not repeated hits in one query's memo.
+            let ((), repeated_work) = crate::instrumentation::measure_deterministic_work(|| {
+                for load in &unknown_reads {
+                    assert_eq!(
+                        context.known_signed_constant_after_normalization(load),
+                        None
+                    );
+                }
+            });
+            let explicit = context.assume_condition(eq(&query, &37u32.into()), true);
+            let (answer, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
+                explicit.known_signed_constant_after_normalization(&query)
+            });
+            assert_eq!(
+                answer,
+                Some(37),
+                "an explicit equality supplies the constant"
             );
-            let load = Bitvector32Term::MemoryLoad(
-                intern_c_memory(memory.clone()),
-                Box::new(pointer.clone()),
-                LoadKind::Int32,
-            );
-            context = context.assume_condition(eq(&load, &query), true);
+            samples.push((size, miss_work, repeated_work, hit_work));
+            assert!(miss_work <= 8 && hit_work <= 8, "{samples:?}");
+            assert!(repeated_work <= 8 * size as usize, "{samples:?}");
         }
-        for index in 0..size {
-            let value = Bitvector32Term::Constant(index as u32 + 1);
-            memory = memory.with_call_memory_havoc(
-                Variable(882_000 + index),
-                &[CMemoryRange::new_with_element_width(
-                    pointer.clone(),
-                    0u32.into(),
-                    1u32.into(),
-                    4,
-                )],
-                &PureFactContext::new(),
-                None,
-            );
-            let load = Bitvector32Term::MemoryLoad(
-                intern_c_memory(memory.clone()),
-                Box::new(pointer.clone()),
-                LoadKind::Int32,
-            );
-            context = context.assume_condition(eq(&load, &value), true);
-        }
-        let (class, constant) = context
-            .equality_graph
-            .scalar_constant_class(&query)
-            .unwrap();
-        assert_eq!(
-            constant,
-            crate::kernel::assumptions::SignedConstantResolution::Unknown
+        eprintln!(
+            "constant queries (same_address={same_address}; size, miss, repeated, hit): {samples:?}"
         );
-        let (pairs, construction_work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.equality_graph.scalar_bridgeable_loads(class).len()
-        });
-        let (answer, query_work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.known_signed_constant_after_normalization(&query)
-        });
-        assert_eq!(answer, None, "havocs separate the snapshots");
-        samples.push((size, pairs, construction_work, query_work));
     }
-    eprintln!("constant bridge (size, pairs, construction units, query units): {samples:?}");
-    assert!(samples[0].1 > 0, "fixture must reach the candidate route");
-    let first = samples.first().unwrap();
-    let last = samples.last().unwrap();
-    assert!(
-        last.1 <= first.1 * (last.0 / first.0) as usize * 2,
-        "candidate construction must not grow quadratically: {samples:?}"
-    );
 }

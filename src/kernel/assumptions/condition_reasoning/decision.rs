@@ -2427,13 +2427,10 @@ impl PureFactContext {
         }
     }
 
-    /// A term's constant after equality normalization, read from the
-    /// shared equality service. A settled class answers by
-    /// lookup. An `Unknown` class additionally decides its conditional
-    /// members under this context and compares its loads with the loads of
-    /// settled classes at the same address, the equalities memory reasoning
-    /// proves without a fact. A term no fact mentions folds from its
-    /// operands, and a load among them is compared in the same way.
+    /// Read a settled constant from the equality class, or resolve its
+    /// conditional members. Unregistered arithmetic folds from its operands.
+    /// Do not search other snapshots for equal loads here: a missing relation
+    /// must be established before this fast checking query.
     fn constant_class_resolution(
         &self,
         term: &Bitvector32Term,
@@ -2452,31 +2449,15 @@ impl PureFactContext {
             for conditional in classes.scalar_conditional_members(id) {
                 result = result.merge(self.conditional_constant_resolution(&conditional, visiting));
             }
-            for (member, candidate, candidate_class) in classes.scalar_bridgeable_loads(id) {
-                if self.loads_bridge(&member, &candidate) {
-                    result = result.merge(classes.scalar_constant_of_class(candidate_class));
-                }
-            }
             visiting.remove(&id);
             return result;
         }
-        let mut result = match term {
+        match term {
             Bitvector32Term::If { .. } => self.conditional_constant_resolution(term, visiting),
             _ => crate::kernel::equality_graph::fold_arithmetic(term, |operand| {
                 self.constant_class_resolution(operand, visiting)
             }),
-        };
-        if result == SignedConstantResolution::Unknown
-            && let Some((key, _)) = crate::kernel::equality_graph::load_key(term)
-        {
-            for (candidate, candidate_class) in classes.scalar_settled_loads_at(key) {
-                crate::instrumentation::record_deterministic_work(1);
-                if self.loads_bridge(term, &candidate) {
-                    result = result.merge(classes.scalar_constant_of_class(candidate_class));
-                }
-            }
         }
-        result
     }
 
     fn conditional_constant_resolution(
@@ -2497,27 +2478,6 @@ impl PureFactContext {
                 .constant_class_resolution(if condition { then_term } else { else_term }, visiting),
             None => SignedConstantResolution::Unknown,
         }
-    }
-
-    /// Whether two loads of one memory-blind address are proved equal: the
-    /// same pointer structurally, and the snapshots proved to agree there.
-    fn loads_bridge(&self, left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
-        let (Some(left_view), Some(right_view)) = (
-            crate::kernel::eval::viewed_as_memory_load(left),
-            crate::kernel::eval::viewed_as_memory_load(right),
-        ) else {
-            return false;
-        };
-        let (
-            Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
-            Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
-        ) = (&left_view, &right_view)
-        else {
-            return false;
-        };
-        left_kind == right_kind
-            && pointers_equal_ignoring_memories(left_pointer, right_pointer)
-            && self.bitvector_terms_proven_equal(left, right)
     }
 
     pub(in crate::kernel) fn decide_signed_comparison_from_equal_constants(

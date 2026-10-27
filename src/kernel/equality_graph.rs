@@ -94,7 +94,7 @@ mod separation;
 #[cfg(test)]
 mod separation_tests;
 mod terms;
-pub(in crate::kernel) use terms::constants::{fold_arithmetic, load_key};
+pub(in crate::kernel) use terms::constants::fold_arithmetic;
 
 /// A retained, interned machine atom. Equality and ordering use the stable
 /// ID; the original term is retained for exact premise support and spelling
@@ -2628,42 +2628,12 @@ impl EqualityGraph {
         }
     }
 
-    pub(in crate::kernel) fn scalar_constant_of_class(
-        &self,
-        id: u64,
-    ) -> crate::kernel::assumptions::SignedConstantResolution {
-        self.state
-            .lock()
-            .expect("equality graph")
-            .terms
-            .scalar_constant_of_class(id)
-    }
     pub(in crate::kernel) fn scalar_conditional_members(&self, id: u64) -> Vec<Bitvector32Term> {
         self.state
             .lock()
             .expect("equality graph")
             .terms
             .scalar_conditional_members(id)
-    }
-    pub(in crate::kernel) fn scalar_bridgeable_loads(
-        &self,
-        id: u64,
-    ) -> Vec<(Bitvector32Term, Bitvector32Term, u64)> {
-        self.state
-            .lock()
-            .expect("equality graph")
-            .terms
-            .scalar_bridgeable_loads(id)
-    }
-    pub(in crate::kernel) fn scalar_settled_loads_at(
-        &self,
-        key: u64,
-    ) -> Vec<(Bitvector32Term, u64)> {
-        self.state
-            .lock()
-            .expect("equality graph")
-            .terms
-            .scalar_settled_loads_at(key)
     }
 }
 
