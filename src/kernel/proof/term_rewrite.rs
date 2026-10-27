@@ -2908,8 +2908,33 @@ impl<'a> TermRewrite<'a> {
             AlgebraicTermNode::MemoryLoad { memory, pointer } => {
                 let carrier = AlgebraicTermNode::memory_load_carrier_value(memory, pointer);
                 match self.field(&carrier) {
-                    AlgebraicValue::C(value) => AlgebraicTermNode::memory_load_from_carrier(&value)
-                        .unwrap_or_else(|| term.node.clone()),
+                    AlgebraicValue::C(value) => {
+                        let rewritten = AlgebraicTermNode::memory_load_from_carrier(&value)
+                            .unwrap_or_else(|| term.node.clone());
+                        match rewritten {
+                            AlgebraicTermNode::MemoryLoad {
+                                memory: moved_memory,
+                                pointer: moved_pointer,
+                            } if moved_memory == *memory && moved_pointer != *pointer => {
+                                // A projection names the original selected cell.
+                                // Moving the read names the substituted cell at
+                                // its recorded observation, as lowering does.
+                                let origin = crate::kernel::prelude::value_load_origin(
+                                    memory,
+                                    pointer,
+                                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                )
+                                .unwrap_or_else(|| memory.clone());
+                                AlgebraicTermNode::MemoryLoad {
+                                    memory: crate::kernel::memory_provenance::canonical_value_load_memory(
+                                        &origin, &moved_pointer, crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                    ),
+                                    pointer: moved_pointer,
+                                }
+                            }
+                            other => other,
+                        }
+                    }
                     _ => term.node.clone(),
                 }
             }
@@ -7333,6 +7358,51 @@ mod tests {
 #[cfg(test)]
 mod pointer_integer_rewrite_tests {
     use super::*;
+
+    #[test]
+    fn a_generic_read_rewrite_keeps_the_substituted_cells_version_name() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = CPointerValue::new(
+            Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CType::Int32Pointer,
+        );
+        let to = CPointerValue::new(Pointer::symbolic(Variable(996_021)), CType::Int32Pointer);
+        let parameter = TypeParameterName::intern("RewriteReadT");
+        let stored = CValue::Parameter(Box::new(AlgebraicTerm {
+            algebraic_type: parameter.algebraic_type(),
+            node: AlgebraicTermNode::Variable(Variable(996_022)),
+        }));
+        let memory = crate::kernel::intern_c_memory(CMemory::new().store(
+            Pointer {
+                block: PointerBlock::Heap(996_023),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            stored.clone(),
+        ));
+        let read =
+            AlgebraicTermNode::parameter_load(memory.clone(), from.pointer().clone(), parameter);
+        // A separate four-byte observation must not replace the generic
+        // read's eight-byte origin when the same version name is reused.
+        let partial = crate::kernel::intern_c_memory(memory.memory().clone().store(
+            Pointer {
+                block: PointerBlock::Heap(996_023),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CValue::UInt32(7u32.into()),
+        ));
+        let _ = crate::kernel::memory_provenance::canonical_value_load_memory(
+            &partial,
+            from.pointer(),
+            4,
+        );
+        let expected = AlgebraicTermNode::parameter_load(memory, to.pointer().clone(), parameter);
+        assert_ne!(expected, stored, "a rewritten logical read stays a read");
+        let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
+        assert_eq!(rewritten, expected);
+    }
 
     #[test]
     fn numeric_rewriting_retains_the_existing_record_without_creating_one() {
