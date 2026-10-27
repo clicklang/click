@@ -339,6 +339,17 @@ the same linear measurements above. Compound unsigned facts retain their
 own open-fact bucket; signed facts cannot satisfy unsigned order queries,
 and withdrawing a fact removes it from both indexes.
 
+Compound queries now try their canonical condition key before the general
+scan. This catches a load and its registered variable inside a sum or a
+scaled offset; the existing memory matcher still checks each indexed
+candidate. A miss retains the scan because different canonical forms can
+still be memory-equivalent. At 8/32/128 facts,
+`compound_load_condition_hits_ignore_other_facts` measured true hits at
+159/615/2,439 units before this lookup; hits now cost seven units at every
+size, for both truth values and signednesses, with unrelated facts or facts
+sharing one operand. Separate checks retain scaled-offset matching,
+withdrawal and refusal after the loaded cell changes.
+
 **Fixed: the exact check is exact.** Measured across the gate, the
 condition scan `settles_exactly` fell into (`proves_condition_from_facts`)
 ran 18,636 times in fast code and found a fact 27 times, none of which a
@@ -952,6 +963,8 @@ whole suite (counted 2026-10-26):
   than multiplying both operands' alias classes.
   This indexed atom route includes unsigned 32-bit orders, in a separate
   family from signed orders, with their own compound-fact fallback bucket.
+  Compound queries try their canonical-key candidates first; successful
+  load/registered-variable matches avoid the scan, while misses retain it.
   The remaining non-exact 32-bit and offset matches include loaded variables,
   sums, applications and scalar spellings tied to 64-bit facts; those still
   need complete keys for memory equivalence.
