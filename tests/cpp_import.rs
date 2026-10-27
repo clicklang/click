@@ -3688,7 +3688,7 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
             .iter()
             .map(|site| site.tactic_name.as_str())
             .collect::<Vec<_>>(),
-        vec!["execute", "solve"]
+        vec![click::instrumentation::IMPLICIT_TAIL_TACTIC]
     );
     let execute = project_tactic_source_position(
         &click_project,
@@ -4006,7 +4006,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
             .iter()
             .map(|site| site.tactic_name.as_str())
             .collect::<Vec<_>>(),
-        vec!["execute", "solve", "execute", "solve"]
+        vec![click::instrumentation::IMPLICIT_TAIL_TACTIC; 2]
     );
     let execute = project_tactic_source_position(
         &click_project,
@@ -5999,7 +5999,7 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
             .iter()
             .map(|site| site.tactic_name.as_str())
             .collect::<Vec<_>>(),
-        vec!["execute", "solve"]
+        vec![click::instrumentation::IMPLICIT_TAIL_TACTIC]
     );
     let execute = project_tactic_source_position(
         &click_project,
