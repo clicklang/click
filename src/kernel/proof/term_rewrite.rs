@@ -125,6 +125,15 @@ fn c_value_variable(value: &CValue) -> Option<Variable> {
     match value {
         CValue::PointerInteger(record) => c_value_variable(&record.numeric),
         CValue::Int8(Bitvector32Term::Variable(variable)) => Some(*variable),
+        // A `Bool` binder (Stage 5), carried as its cast.
+        CValue::Bool(Bitvector32Term::BoolCast { value, .. })
+            if matches!(value.as_ref(), crate::kernel::ConditionTerm::Variable(_)) =>
+        {
+            match value.as_ref() {
+                crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
+                _ => None,
+            }
+        }
         CValue::Bool(Bitvector32Term::Variable(variable))
         | CValue::Int16(Bitvector32Term::Variable(variable))
         | CValue::UInt8(Bitvector32Term::Variable(variable))
@@ -222,54 +231,63 @@ fn typed_binding_variable(
     }
 }
 
-/// `term` as C's conversion of an operand to `bool` ([`bool_value`]), the
-/// operand.
+/// The integer a `bool` value converts, `w` in C's conversion `w != 0`
+/// (Stage 5: the cast of the `Bool` `not (w == 0)`), or `None`.
 fn bool_operand(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
-    let Bitvector32Term::If {
+    // A `bool` cell's read is still C's conversion of its byte written as a
+    // conditional, `if b == 0 { 0 } else { 1 }`.
+    if let Bitvector32Term::If {
         condition,
         then_term,
         else_term,
     } = term
-    else {
-        return None;
-    };
+        && matches!(
+            (then_term.as_ref(), else_term.as_ref()),
+            (Bitvector32Term::Constant(0), Bitvector32Term::Constant(1))
+        )
+        && let ConditionTerm::Compare {
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            relation: CompareRelation::Equal,
+            left: operand,
+            right: zero,
+        } = condition.as_ref()
+        && matches!(zero.as_ref(), Bitvector32Term::Constant(0))
+    {
+        return Some(operand.as_ref());
+    }
+    let condition = term.bool_cast_operand()?.bool_negation_operand()?;
     let ConditionTerm::Compare {
         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
         relation: CompareRelation::Equal,
         left: operand,
         right: zero,
-    } = condition.as_ref()
+    } = condition
     else {
         return None;
     };
-    matches!(
-        (zero.as_ref(), then_term.as_ref(), else_term.as_ref()),
-        (
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1)
-        )
-    )
-    .then_some(operand.as_ref())
+    matches!(zero.as_ref(), Bitvector32Term::Constant(0)).then_some(operand.as_ref())
 }
 
-/// The variable of a `bool` match binder, which is C's conversion of a fresh
-/// variable to `bool`.
+/// The variable of a `bool` match binder: a `Bool` binder carried as its
+/// cast (Stage 5), or C's conversion of a fresh variable to `bool`.
 fn bool_binder_variable(value: &CValue) -> Option<Variable> {
-    match value {
-        CValue::Bool(term) => match bool_operand(term)? {
-            Bitvector32Term::Variable(variable) => Some(*variable),
-            _ => None,
-        },
+    let CValue::Bool(term) = value else {
+        return None;
+    };
+    if let Some(ConditionTerm::Variable(variable)) = term.bool_cast_operand() {
+        return Some(*variable);
+    }
+    match bool_operand(term)? {
+        Bitvector32Term::Variable(variable) => Some(*variable),
         _ => None,
     }
 }
 
 /// What the variable of match binder `binding` is replaced by for constructor
-/// field `field`. A `bool` binder converts its variable to `bool`, so the
-/// variable takes the operand of a field that is itself a conversion, or a
-/// `0` or `1` field, and the arm reads exactly the field; any other `bool`
-/// field is refused.
+/// field `field`. A `Bool` binder takes the field's `Bool`, whose word it is
+/// replaced by. A binder that converts its variable to `bool` takes the
+/// operand of a field that is itself a conversion, or a `0` or `1` field, so
+/// the arm reads exactly the field; any other `bool` field is refused.
 fn typed_field_replacement(binding: &AlgebraicValue, field: &CValue) -> Option<TypedCReplacement> {
     if let AlgebraicValue::C(binding) = binding
         && bool_binder_variable(binding).is_some()
@@ -277,6 +295,11 @@ fn typed_field_replacement(binding: &AlgebraicValue, field: &CValue) -> Option<T
         let CValue::Bool(term) = field else {
             return None;
         };
+        if let CValue::Bool(binder) = binding
+            && matches!(binder.bool_cast_operand(), Some(ConditionTerm::Variable(_)))
+        {
+            return Some(TypedCReplacement::Bitvector(term.clone()));
+        }
         let operand = match term {
             Bitvector32Term::Constant(0 | 1) => term,
             _ => bool_operand(term)?,
@@ -290,6 +313,15 @@ fn c_value_declaration_variable(value: &CValue) -> Option<Variable> {
     match value {
         CValue::PointerInteger(record) => c_value_declaration_variable(&record.numeric),
         CValue::Int8(Bitvector32Term::Variable(variable)) => Some(*variable),
+        // A `Bool` binder (Stage 5), carried as its cast.
+        CValue::Bool(Bitvector32Term::BoolCast { value, .. })
+            if matches!(value.as_ref(), crate::kernel::ConditionTerm::Variable(_)) =>
+        {
+            match value.as_ref() {
+                crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
+                _ => None,
+            }
+        }
         CValue::Bool(Bitvector32Term::Variable(variable))
         | CValue::Int16(Bitvector32Term::Variable(variable))
         | CValue::UInt8(Bitvector32Term::Variable(variable))
@@ -4754,6 +4786,20 @@ impl<'a> TermRewrite<'a> {
                         .cloned(),
                 ),
                 _ => {}
+            }
+        }
+        // A `Bool` binder (Stage 5) is renamed with its scope and replaced
+        // by the truth of the `Bool` word it is instantiated with.
+        if let ConditionTerm::Variable(variable) = v {
+            if let Some(mapped) = self.scope.c.get(variable) {
+                return ConditionTerm::Variable(*mapped);
+            }
+            if let Some(replacements) = &self.typed_variables
+                && let Some(TypedCReplacement::Bitvector(replacement)) =
+                    replacements.c.get(variable)
+            {
+                self.changed = true;
+                return ConditionTerm::truth_of_bool_word(replacement);
             }
         }
         let result = match v {

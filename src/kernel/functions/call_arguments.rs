@@ -393,7 +393,9 @@ pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue 
             node: AlgebraicTermNode::Variable(variable),
         })),
         CType::Void => CValue::Void,
-        CType::Bool => crate::kernel::bool_value(Bitvector32Term::Variable(variable)),
+        // A `bool` is a binder of the kernel sort `Bool` (Stage 5), carried
+        // as its cast (rule C1), so the binder is the parameter's own name.
+        CType::Bool => CValue::of_bool(crate::kernel::ConditionTerm::Variable(variable)),
         CType::VoidPointer | CType::VoidPointerPointer => {
             CValue::typed_pointer(Pointer::symbolic(variable), c_type)
         }

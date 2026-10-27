@@ -126,56 +126,81 @@ pub fn int32(bits: impl Into<Bitvector32Term>) -> CValue {
     CValue::Int32(bits.into())
 }
 
+/// The C `bool` value of the 32-bit word `bits`: C's conversion to `bool`,
+/// the `Bool` `bits != 0` (Stage 5), carried as its cast (rule C1).
 pub fn bool_value(bits: impl Into<Bitvector32Term>) -> CValue {
-    let bits = bits.into();
-    CValue::Bool(Bitvector32Term::if_then_else(
-        ConditionTerm::equal(bits, Bitvector32Term::Constant(0)),
+    CValue::of_bool(ConditionTerm::bool_not(ConditionTerm::equal(
+        bits.into(),
         Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
-    ))
+    )))
 }
 
-/// The range fact `value == 0 or value == 1` of a `_Bool` rvalue, when its
-/// term is structurally normalized.
+/// Rule C1b: the range of a `Bool`'s integer cast, `0 <= c`, `c <= 1` and
+/// `c == 0 or c == 1`, filed where a C value is introduced (an entry value, a
+/// read), beside a narrow integer's range.
 ///
-/// A C `_Bool` object holds only `0` or `1`, and a `_Bool` value built by
-/// [`bool_value`] or by a symbolic `_Bool` load is a conditional whose arms
-/// are exactly those constants. Neither disjunct is provable alone, so without
-/// this fact a proof would need an explicit case split to state the type's
-/// own range. The fact is returned only when every leaf of the term is the
-/// constant `0` or `1`, so it is context-free true by construction and never
-/// trusts the `CValue::Bool` invariant. A constant has nothing left to state
-/// and yields `None`. The walk is bounded by the term's conditional spine.
-pub(crate) fn c_bool_range_fact(value: &CValue) -> Option<Proposition> {
-    fn leaves_are_zero_or_one(term: &Bitvector32Term) -> bool {
-        match term {
-            Bitvector32Term::Constant(0 | 1) => true,
-            Bitvector32Term::If {
-                then_term,
-                else_term,
-                ..
-            } => leaves_are_zero_or_one(then_term) && leaves_are_zero_or_one(else_term),
-            _ => false,
+/// The cast of a `Bool` is 1 when it holds and 0 otherwise, so each fact is
+/// true by C1 alone. The disjunction is stated beside the bounds because
+/// neither disjunct is provable alone, and the closers do not derive it from
+/// the bounds. A `Bool` value states the range of its cast to `int32`, the
+/// format C's promotion and an `int` result read it at; an integer value
+/// that is a cast states its own. `None` for a constant, which has nothing
+/// left to state, and for every other value.
+pub(crate) fn c_bool_cast_range_facts(value: &CValue) -> Option<Vec<Proposition>> {
+    let cast = match value.numeric_value() {
+        CValue::Bool(word) => {
+            Bitvector32Term::bool_cast(MachineIntegerType::Int32, word.bool_cast_operand()?.clone())
         }
-    }
-    let CValue::Bool(term) = value else {
+        crate::kernel::integer64_c_value!(term) if term.bool_cast_operand().is_some() => {
+            term.clone()
+        }
+        _ => return None,
+    };
+    let Bitvector32Term::BoolCast { to, .. } = &cast else {
         return None;
     };
-    if !matches!(term, Bitvector32Term::If { .. }) || !leaves_are_zero_or_one(term) {
-        return None;
-    }
-    let equals = |constant| {
+    let wide = to.format().bits() == 64;
+    let (zero, one) = if wide {
+        if to.format().is_signed() {
+            (
+                Bitvector32Term::Int64Constant(0),
+                Bitvector32Term::Int64Constant(1),
+            )
+        } else {
+            (
+                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::UInt64Constant(1),
+            )
+        }
+    } else {
+        (Bitvector32Term::Constant(0), Bitvector32Term::Constant(1))
+    };
+    let equals = |constant: &Bitvector32Term| {
         Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: Box::new(term.clone()),
-                right: Box::new(Bitvector32Term::Constant(constant)),
+            if wide {
+                if to.format().is_signed() {
+                    ConditionTerm::int64_equal(cast.clone(), constant.clone())
+                } else {
+                    ConditionTerm::uint64_equal(cast.clone(), constant.clone())
+                }
+            } else {
+                ConditionTerm::equal(cast.clone(), constant.clone())
             },
             true,
         )
     };
-    Some(Proposition::Or(Box::new(equals(0)), Box::new(equals(1))))
+    let disjunction = Proposition::Or(Box::new(equals(&zero)), Box::new(equals(&one)));
+    if wide {
+        return Some(vec![disjunction]);
+    }
+    Some(vec![
+        Proposition::ConditionIs(
+            ConditionTerm::signed_greater_equal(cast.clone(), zero),
+            true,
+        ),
+        Proposition::ConditionIs(ConditionTerm::signed_less_equal(cast.clone(), one), true),
+        disjunction,
+    ])
 }
 
 /// The range `[lower, upper]` every value of a narrow C integer type lies
@@ -1744,11 +1769,11 @@ fn abstract_c_state_for_join_across_with_policy(
         } else {
             match c_type {
                 CType::Void => continue,
-                CType::Bool => CValue::Bool(Bitvector32Term::if_then_else(
-                    ConditionTerm::Variable(join_variable(&mut variables, &mut budget)?),
-                    Bitvector32Term::Constant(1),
-                    Bitvector32Term::Constant(0),
-                )),
+                // A `Bool` the arms disagree on is a fresh `Bool` binder.
+                CType::Bool => CValue::of_bool(ConditionTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
                 CType::Int8 => int8(Bitvector32Term::Variable(join_variable(
                     &mut variables,
                     &mut budget,

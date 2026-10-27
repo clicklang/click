@@ -854,6 +854,12 @@ impl Printer<'_> {
                 let call = self.call(application.name(), application.arguments(), depth)?;
                 return Some(if polarity { call } else { negation(call) });
             }
+            // A negation, `if c { false } else { true }`, is `not c`: an
+            // integer converted to `Bool` prints `x != 0`.
+            ConditionTerm::BoolIf { .. } if condition.bool_negation_operand().is_some() => {
+                let operand = condition.bool_negation_operand()?;
+                return self.condition(operand, !polarity, depth);
+            }
             ConditionTerm::BoolIf {
                 condition,
                 then_condition,
@@ -1510,6 +1516,19 @@ impl Printer<'_> {
                 if *to == crate::kernel::MachineIntegerType::UInt8 {
                     Some(condition)
                 } else {
+                    // A cast of a comparison, `(x != 0) as int32`, keeps the
+                    // comparison together.
+                    let condition = if matches!(
+                        value.as_ref(),
+                        ConditionTerm::Variable(_)
+                            | ConditionTerm::Constant(_)
+                            | ConditionTerm::BoolApplication(_)
+                            | ConditionTerm::BoolLoad(..)
+                    ) {
+                        condition
+                    } else {
+                        atom(format!("({})", condition.text))
+                    };
                     Some(cast(machine_type_spelling(*to), condition))
                 }
             }

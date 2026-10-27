@@ -129,8 +129,12 @@ fn promote_c_bool_scalar_operands(left: CValue, right: CValue) -> (CValue, CValu
     if scalar_width(&left, &right).is_none() {
         return (left, right);
     }
+    // Rule C1: the promoted `Bool` is its cast to `int32`.
     let promote = |value| match value {
-        CValue::Bool(bits) => CValue::Int32(bits),
+        CValue::Bool(bits) => CValue::Int32(Bitvector32Term::bool_word_as(
+            MachineIntegerType::Int32,
+            &bits,
+        )),
         value => value,
     };
     (promote(left), promote(right))

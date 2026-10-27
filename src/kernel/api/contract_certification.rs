@@ -989,9 +989,8 @@ fn format_loan_operation(operation: crate::kernel::LoanRefusalOperation) -> &'st
 /// Where one fact of a function's contract entry comes from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CContractEntryFactOrigin {
-    /// The `0 or 1` range of a `_Bool` parameter.
-    BoolRange,
-    /// The type range of a narrow integer parameter.
+    /// The type range of a narrow integer parameter, and the range of a
+    /// `bool` parameter's cast (rule C1).
     NarrowRange,
     /// A fact the lowering of `requires` clause `index` produced beside it.
     RequirementLowering(usize),
@@ -1305,23 +1304,13 @@ fn c_function_contract_entry_facts(
             }
         }
     }
-    // A `_Bool` parameter holds `0` or `1`. Its entry value is a normalized
-    // conditional over those constants, so the range disjunction is
-    // context-free true; `c_bool_range_fact` checks that shape.
-    for (parameter, argument) in function.parameters().iter().zip(arguments) {
-        if parameter.c_type() == CType::Bool
-            && let CExpression::Value(value) = argument
-            && let Some(fact) = c_bool_range_fact(value)
-        {
-            assumptions =
-                entry_facts.assume(assumptions, CContractEntryFactOrigin::BoolRange, fact);
-        }
-    }
     // A narrow integer parameter holds a value of its type: the argument was
-    // converted to it, and that conversion lands in the range.
+    // converted to it, and that conversion lands in the range. A `bool`
+    // parameter's cast holds 0 or 1 (rule C1b).
     for argument in arguments {
         if let CExpression::Value(value) = argument
-            && let Some(facts) = c_narrow_integer_range_facts(value)
+            && let Some(facts) =
+                c_narrow_integer_range_facts(value).or_else(|| c_bool_cast_range_facts(value))
         {
             for fact in facts {
                 assumptions =

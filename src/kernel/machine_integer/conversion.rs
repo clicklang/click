@@ -191,13 +191,15 @@ pub(crate) fn convert_term(
 pub(crate) fn convert_value(value: CValue, destination: MachineIntegerType) -> Option<CValue> {
     crate::instrumentation::record_deterministic_work(1);
     let value = value.numeric_value().clone();
-    // Boolean values are normalized 0/1 and have their own storage type.
-    // Integer conversion observes that numeric value without retagging
-    // arbitrary bytes as a Boolean.
-    let value = match value {
-        CValue::Bool(term) => CValue::UInt8(term),
-        value => value,
-    };
+    // Rule C1: a `Bool` converted to an integer is its cast at the
+    // destination's format, 1 when it holds and 0 otherwise. It owes
+    // nothing under either policy.
+    if let CValue::Bool(word) = &value {
+        return CValue::from_bitvector_term(
+            destination.c_type(),
+            crate::kernel::Bitvector32Term::bool_word_as(destination, word),
+        );
+    }
     let source = MachineIntegerType::from_c_type(value.c_type())?;
     let wide = source.format().bits() == 128 || destination.format().bits() == 128;
     if !wide {

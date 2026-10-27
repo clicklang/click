@@ -7193,22 +7193,7 @@ pub(super) fn integer_machine_bounds(
 }
 
 fn c_value_from_bitvector_term(c_type: CType, term: Bitvector32Term) -> Option<CValue> {
-    Some(match c_type {
-        CType::Bool => CValue::Bool(term),
-        CType::Int8 => CValue::Int8(term),
-        CType::Int16 => CValue::Int16(term),
-        CType::Int32 => CValue::Int32(term),
-        CType::UInt8 => CValue::UInt8(term),
-        CType::UInt16 => CValue::UInt16(term),
-        CType::UInt32 => crate::kernel::uint32(term),
-        CType::Int64 => CValue::Int64(term),
-        CType::UInt64 => CValue::UInt64(term),
-        CType::Int128 => CValue::Int128(term),
-        CType::UInt128 => CValue::UInt128(term),
-        CType::Float32 => CValue::Float32(term),
-        CType::Float64 => CValue::Float64(term),
-        _ => return None,
-    })
+    CValue::from_bitvector_term(c_type, term)
 }
 
 fn evaluate_spec_pointer_offset_paths_in(
@@ -8253,7 +8238,7 @@ fn bool_word_truth_proposition(word: &CValue, value: bool) -> Option<Proposition
         return None;
     };
     if let Some(condition) = term.bool_cast_operand() {
-        return Some(Proposition::ConditionIs(condition.clone(), value));
+        return Some(condition.truth_claim(value));
     }
     c_value_comparison_proposition(
         word,
@@ -8270,9 +8255,9 @@ fn bool_word_truth_proposition(word: &CValue, value: bool) -> Option<Proposition
 /// nothing else, and is not an integer (decision D2): an order, or a
 /// comparison with an integer, is refused. Two `Bool` values are equal when
 /// they have the same truth (rule L-Eq), and a comparison with `true` or
-/// `false` is the claim on the other operand. Two C `bool` words with no
-/// literal between them keep their word equality (`None`): this stage still
-/// holds C values as integers.
+/// `false` is the claim on the other operand. Two `Bool` words of which one
+/// is not a cast (a `match` whose arms are `Bool` values) keep their word
+/// equality (`None`), which is the same claim by rule C1c.
 fn bool_comparison_proposition(
     left: &CValue,
     operator: CComparisonOperator,
@@ -8317,7 +8302,11 @@ fn bool_comparison_proposition(
         }
         (None, None) => {}
     }
-    if left_term.bool_cast_operand().is_none() && right_term.bool_cast_operand().is_none() {
+    // A `Bool` word that is not a cast, such as a `match` whose arms are
+    // `Bool` values, is compared as the word it is: every `Bool` word is the
+    // canonical 1 or 0 (rule C1c), so two are equal exactly when their
+    // truths are, and the word keeps the `match` for its reduction.
+    if left_term.bool_cast_operand().is_none() || right_term.bool_cast_operand().is_none() {
         return None;
     }
     Some(Ok(Proposition::ConditionIs(

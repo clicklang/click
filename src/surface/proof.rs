@@ -1858,11 +1858,23 @@ pub(super) fn initial_claim_context(
     ))
 }
 
-/// The surface spelling `name == 0 or name == 1` of a `_Bool` parameter's
-/// range entry fact.
+/// The surface spelling `name as int32 == 0 or name as int32 == 1` of a
+/// `bool` parameter's range entry fact (rule C1).
 fn bool_range_surface(name: &str) -> ClickProposition {
+    let cast = ContractExpression::CUnary {
+        operand: Box::new(ContractExpression::CBinding(name.to_string())),
+        lowered: CExpression::Cast {
+            expression: Box::new(CExpression::Variable(name.to_string())),
+            target_type: crate::kernel::CType::Int32,
+            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        },
+    };
     let equals = |constant: &str| ClickProposition::Comparison {
-        left: ContractExpression::CBinding(name.to_string()),
+        left: cast.clone(),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::IntegerLiteral(constant.to_string()),
     };
@@ -2048,23 +2060,23 @@ pub(super) fn initial_claim_context_with_caller_owner(
             None => EntryFactOrigin::Derived,
         });
     }
-    // Each `_Bool` parameter's range, `flag == 0 or flag == 1`, is a
-    // derived entry fact the kernel certifies from the parameter's normalized
-    // value; without it a disjunction such as `result == 0 or result == 1`
-    // would need an explicit case split on the parameter. Its surface
-    // spelling is recorded below so a proof search can case on it.
+    // Each `bool` parameter's cast has the range `flag as int32 == 0 or
+    // flag as int32 == 1` (rule C1), filed below with the narrow ranges;
+    // without it a disjunction such as `result == 0 or result == 1` would
+    // need an explicit case split on the parameter. Its surface spelling is
+    // recorded below so a proof search can case on it.
     let bool_range_facts = parsed_function
         .parameters()
         .iter()
         .zip(&arguments)
         .filter(|(parameter, _)| matches!(parameter.c_type(), syntax::C0Type::Bool))
         .filter_map(|(parameter, argument)| match argument {
-            CExpression::Value(value) => crate::kernel::c_bool_range_fact(value)
+            CExpression::Value(value) => crate::kernel::c_bool_cast_range_facts(value)
+                .and_then(|facts| facts.last().cloned())
                 .map(|fact| (bool_range_surface(parameter.name()), fact)),
             _ => None,
         })
         .collect::<Vec<_>>();
-    requirement_pure_facts.extend(bool_range_facts.iter().map(|(_, fact)| fact.clone()));
     // Each narrow integer parameter's type range, such as `0 <= x` and
     // `x <= 255` for a `uint8`, is likewise a derived entry fact the kernel
     // states from the parameter's value. It is filed here once, where the
@@ -2072,6 +2084,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
     for argument in &arguments {
         if let CExpression::Value(value) = argument
             && let Some(facts) = crate::kernel::c_narrow_integer_range_facts(value)
+                .or_else(|| crate::kernel::c_bool_cast_range_facts(value))
         {
             requirement_pure_facts.extend(facts);
         }

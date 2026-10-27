@@ -84,6 +84,19 @@ fn widened_word(term: &Bitvector32Term) -> &Bitvector32Term {
     }
 }
 
+/// The binder a parameter's value is, if it is one: a scalar's variable, or
+/// a `Bool` binder carried as its cast (Stage 5).
+fn value_binder(term: &Bitvector32Term) -> Option<Variable> {
+    match widened_word(term) {
+        Bitvector32Term::Variable(variable) => Some(*variable),
+        Bitvector32Term::BoolCast { value, .. } => match value.as_ref() {
+            crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 impl SnapshotLabels {
     pub(crate) fn source_type(&mut self, variable: Variable, c_type: crate::kernel::CType) {
         self.source_types.insert(variable, c_type);
@@ -165,7 +178,8 @@ impl SnapshotLabels {
                 | crate::kernel::CValue::Float64(term) => term,
                 _ => continue,
             };
-            if let Bitvector32Term::Variable(variable) = widened_word(term) {
+            if let Some(variable) = value_binder(term) {
+                let variable = &variable;
                 labels.source_name(
                     *variable,
                     crate::surface::diagnostics::rust_variable_spelling(parameter.name())

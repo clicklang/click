@@ -277,9 +277,10 @@ fn input_arguments(
                     parameter.name()
                 )));
             }
+            // A `Bool` parameter is a binder of the kernel sort (Stage 5).
             C0Type::Bool => {
-                arguments.push(CExpression::Value(crate::kernel::bool_value(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
+                arguments.push(CExpression::Value(crate::kernel::CValue::of_bool(
+                    crate::kernel::ConditionTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
             C0Type::VoidPointer | C0Type::VoidPointerPointer => {
