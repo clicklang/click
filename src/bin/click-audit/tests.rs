@@ -1101,6 +1101,7 @@ int32 compare_smart(uint8 bytes[]) {
         std::slice::from_ref(&click_path),
         &smart,
         AuditLimits::default().session,
+        false,
     )
     .unwrap();
     assert!(failures.is_empty(), "{failures:?}");
@@ -2130,5 +2131,83 @@ fn audit_mixed_mdtests_checks_positive_sources() {
     assert!(
         error.contains("Click writes conjunction as `and`"),
         "{error}"
+    );
+}
+
+#[test]
+fn keep_going_audits_other_files_after_an_inventory_failure() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(
+        directory.path().join("broken.md"),
+        "```click\ntheorem bad() { ensures true && true by solve(); }\n```\n```expect\npass\n```\n",
+    )
+    .unwrap();
+    let healthy = directory.path().join("healthy.md");
+    fs::write(
+        &healthy,
+        "```click\ntheorem healthy() { ensures 0 == 0 by solve(); }\n```\n```expect\npass\n```\n",
+    )
+    .unwrap();
+    let arguments = || {
+        parse_arguments([
+            "--keep-going".to_string(),
+            directory.path().display().to_string(),
+        ])
+        .unwrap()
+    };
+    let inventory = prepare_audit(&arguments(), Instant::now() + Duration::from_secs(30))
+        .expect("a broken file must not abort the inventory");
+    assert_eq!(inventory.discovery_failures.len(), 1);
+    assert!(inventory.discovery_failures[0].contains("broken.md"));
+    assert!(inventory.discovery_failures[0].contains("Click writes conjunction as `and`"));
+    assert_eq!(inventory.scoped_sites.len(), 1);
+    assert_eq!(
+        inventory.scoped_sites[0].click_path,
+        fs::canonicalize(healthy).unwrap()
+    );
+    assert_eq!(
+        run_audit(arguments()).unwrap_err(),
+        "1 expansion audit check(s) failed"
+    );
+}
+
+#[test]
+fn keep_going_audits_other_claims_after_implicit_discovery_cannot_locate_a_proof() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("mixed.md");
+    fs::write(
+        &path,
+        "```c filename=mixed.c\nint32 read_byte(uint8 *p) { return p[0]; }\n```\n```click\nverifying \"mixed.c\";\nint32 read_byte(uint8 *p) { views p[0..1]; }\ntheorem healthy() { ensures 0 == 0 by solve(); }\n```\n```expect\npass\n```\n",
+    )
+    .unwrap();
+    let arguments =
+        || parse_arguments(["--keep-going".to_string(), path.display().to_string()]).unwrap();
+    let inventory = prepare_audit(&arguments(), Instant::now() + Duration::from_secs(30))
+        .expect("a missing implicit proof location must not abort discovery");
+    assert_eq!(
+        inventory.discovery_failures.len(),
+        2,
+        "{:?}",
+        inventory.discovery_failures
+    );
+    assert!(inventory.discovery_failures[0].contains("read_byte.body_safety"));
+    assert!(inventory.discovery_failures[0].contains("mixed.md"));
+    assert!(inventory.discovery_failures[1].contains("read_byte.ensures_0"));
+    assert_eq!(inventory.scoped_sites.len(), 1);
+    assert_eq!(inventory.scoped_sites[0].claim, "healthy.ensures_0");
+    assert_eq!(
+        run_audit(arguments()).unwrap_err(),
+        "2 expansion audit check(s) failed"
+    );
+    let error = run_audit(parse_arguments([path.display().to_string()]).unwrap()).unwrap_err();
+    assert!(
+        error.contains("could not locate source proof `read_byte.body_safety`"),
+        "{error}"
+    );
+    assert!(
+        prepare_audit(&arguments(), Instant::now())
+            .err()
+            .expect("the deadline must still stop discovery")
+            .contains(RUN_LIMIT_EXHAUSTED)
     );
 }

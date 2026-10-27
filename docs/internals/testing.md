@@ -1730,10 +1730,15 @@ click audit --session-work-limit 100000000 --expansion-work-limit 50000000 \
 
 `--start-at` is inclusive, so fixing a failure and running the suggested
 command retests that same site before continuing. The cursor also skips
-session initialization for preceding files. `--keep-going` requests the older
-failure-collecting behavior. Use `--max-sites` only for a deliberately partial
-diagnostic run; it prints the next cursor when the bound is reached. A release
-or expansion-boundary audit should omit it and finish one complete pass.
+session initialization for preceding files. `--keep-going` collects failures
+and continues, including per-file input/runtime/inventory errors and implicit
+proof-location errors during discovery. Each failed file or claim is reported
+and counted in the final failure verdict; other files and discoverable claims
+are still audited. Invalid command selections and the whole-run deadline still
+stop the run. The nightly audit uses this mode. Use `--max-sites` only for a
+deliberately partial diagnostic run; it prints the next cursor when the bound
+is reached. A release or expansion-boundary audit should omit it and finish
+one complete pass.
 
 Every site starts from the unchanged baseline source, so an earlier rewrite
 cannot hide or cause a later failure. With `--keep-going`, a failed session is
