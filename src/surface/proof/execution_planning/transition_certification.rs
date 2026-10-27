@@ -397,7 +397,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                         if exact_fact_is_available(obligation.proposition(), pure_facts)
                             || matches!(
                                 normalize_proposition(obligation.proposition()),
-                                SimpProposition::True
+                                NormalizedProposition::True
                             )
                         {
                         } else {
@@ -750,7 +750,7 @@ fn certified_transitions_from_execution(
                             || exact_fact_is_available(proposition, pure_facts)
                             || directly_matching_separation_fact(proposition, pure_facts).is_some()
                             || directly_covering_loadability_fact(proposition, pure_facts).is_some()
-                            || matches!(normalize_proposition(proposition), SimpProposition::True)
+                            || matches!(normalize_proposition(proposition), NormalizedProposition::True)
                         {
                             None
                         } else {
@@ -857,7 +857,7 @@ fn certified_transitions_from_execution(
                             // retain even a trivially true pending clause so
                             // implicit auto proves it at the pre-state, then
                             // retries the call with that checked evidence.
-                            || (matches!(normalize_proposition(proposition), SimpProposition::True)
+                            || (matches!(normalize_proposition(proposition), NormalizedProposition::True)
                                 && !(matches!(prerequisite_policy, StatementPrerequisitePolicy::Fast)
                                     && obligation.call_requirement_site().is_some()
                                     && rejected_contract_call))

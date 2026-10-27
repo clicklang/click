@@ -102,7 +102,7 @@ pub(in crate::surface) fn plan_arithmetic(
                 };
             // A refutation that misses from the listed premises alone is
             // planned once more with the type range of each machine value
-            // they and the goal observe, as `simp`'s refutation is: that
+            // they and the goal observe, as `solve`'s refutation is: that
             // `k < x` and `x == 0u64` leave no unsigned `k` is the range,
             // not a premise. A range enters the certificate as a checked
             // `TypeRange` node, not as a fact.

@@ -155,7 +155,7 @@ const NIGHTLY: &[&str] = &[
     "fork_join_worker_direct_contract.md",                                     // 4.9s
     "global_array_resource_element_types.md",                                  // 0.5s
     "guarded_quantified_postcondition_after_loop_expands.md",                  // 0.6s
-    "have_body_simp_using_names_an_arm_binding.md",                            // 0.6s
+    "have_body_solve_using_names_an_arm_binding.md",                           // 0.6s
     "heap_free_matching_allocation_authority.md",                              // 0.7s
     "holder_drop_exchanges_two_separately_held_references.md",                 // 1.2s
     "initialized_aggregate_static_arrays.md",                                  // 0.8s
@@ -602,7 +602,7 @@ fn run_mdtest_attempt(path: &Path) -> Result<(), String> {
     if !budgets_disabled
         && path
             .file_name()
-            .is_some_and(|name| name == "simp_false_list_position_is_prompt.md")
+            .is_some_and(|name| name == "solve_false_list_position_is_prompt.md")
     {
         return instrumentation::with_tactic_work_limits(
             instrumentation::TacticWorkLimits {

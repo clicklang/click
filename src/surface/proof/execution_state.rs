@@ -1479,11 +1479,11 @@ pub(super) enum PostExecutionTactic {
         source: Arc<ProofMatch>,
         arms: Vec<DeferredArm>,
     },
-    /// `auto` closing the pending claims: `simp`, then the rest of
-    /// `auto`'s search on each claim `simp` leaves open.
+    /// `auto` closing the pending claims: `solve`, then the rest of
+    /// `auto`'s search on each claim `solve` leaves open.
     AutoClose,
-    Simp,
-    SimpUsing(ProofSimpUsing),
+    Solve,
+    SolveUsing(ProofSolveUsing),
 }
 
 /// One arm of a deferred control tactic. A terminal join nests the arms it
@@ -1824,14 +1824,14 @@ pub(super) fn post_execution_tactic_timing(
         PostExecutionTactic::Apply(_) => ("apply", "smart"),
         PostExecutionTactic::Have(have) => (
             "have",
-            if smart_simp_unfold_prefix(&have.proof).is_some() {
+            if smart_solve_unfold_prefix(&have.proof).is_some() {
                 "smart"
             } else {
                 "control"
             },
         ),
         PostExecutionTactic::Transport { .. } => ("transport", "smart"),
-        PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_) => ("solve", "smart"),
+        PostExecutionTactic::Solve | PostExecutionTactic::SolveUsing(_) => ("solve", "smart"),
         PostExecutionTactic::AutoClose => ("implicit tail", "smart"),
         // `arithmetic()` searches for its certificate.
         PostExecutionTactic::Leaf(tactic @ ProofTactic::ArithmeticUsing(_)) => {

@@ -4099,7 +4099,7 @@ fn select_source_tactic_entry<'e>(
     line: usize,
     column: Option<usize>,
 ) -> Result<&'e SourceTacticEntry, SmartTacticSelectionError> {
-    // A smart tactic written inside a smart site that owns it (the `simp`
+    // A smart tactic written inside a smart site that owns it (the `solve`
     // of a smart `have`) is an alias of that site; the line lists the site
     // once.
     let starting_on_line = || {
@@ -4592,7 +4592,7 @@ fn proof_tactic_entries(
 fn smart_tactic_name(tactic: SmartTactic) -> &'static str {
     match tactic {
         SmartTactic::Auto => "implicit tail",
-        SmartTactic::Simp => "solve",
+        SmartTactic::Solve => "solve",
     }
 }
 

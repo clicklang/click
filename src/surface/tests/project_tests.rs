@@ -531,7 +531,7 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
 /// needs no snapshot transport and rewrites from the remaining premise.
 #[test]
 #[ignore = "nightly: 1.6s in the parallel gate"]
-fn snapshot_bridged_simp_premises_expand_to_checked_offset_equality() {
+fn snapshot_bridged_solve_premises_expand_to_checked_offset_equality() {
     let init_c = r#"
 struct box {
     int32 value;
@@ -627,13 +627,13 @@ int32 box_pipeline(struct box* owner, int32 data[]) {
     ];
 
     verify_c0_sources(click_source, &sources)
-        .expect("the snapshot-bridged restricted simp certificate should check");
+        .expect("the snapshot-bridged restricted solve certificate should check");
 
     let selected = click_source.find("have owner->data == data by {").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("the snapshot-bridged restricted simp should expand");
+            .expect("the snapshot-bridged restricted solve should expand");
     // The calls explicitly establish equalities between the load snapshots.
     // Their transitive chain now closes through the trusted offset fragment,
     // retaining the cited snapshot forms for the simple normalization check.
@@ -1110,11 +1110,11 @@ int32 caller(int32 x) {
 }
 "#;
     let sources = [("callee.c", callee_c), ("caller.c", caller_c)];
-    let caller_simp = click_source.rfind("solve();").unwrap();
-    let position = expansion::position_at_offset(click_source, caller_simp);
+    let caller_solve = click_source.rfind("solve();").unwrap();
+    let position = expansion::position_at_offset(click_source, caller_solve);
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("caller simp should expand");
+            .expect("caller solve should expand");
     let expanded_position =
         c0_tactic_source_position(&expanded, &sources, "caller.contract", 0).unwrap();
     // Expansion verifies on fresh kernel tables, so it runs before the

@@ -653,7 +653,7 @@ int32 example() {
         c0_tactic_source_position(click_source, &sources, "example.contract", 1).unwrap();
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("redundant trailing simp should expand away");
+            .expect("redundant trailing solve should expand away");
     assert!(!expanded.contains("solve();"));
 
     let source = AuditSource {
@@ -851,7 +851,7 @@ int32 write_selected(int32 p[2], int32 flag) {
 fn infeasible_branch_arm_site_audits_instead_of_reporting_a_missing_tactic() {
     // Reduced from `tree_contains` in `examples/modeled-binary-tree`, whose
     // first `branch` guards a C path the contract rules out. Checked
-    // execution drops that arm, so its `simp` never runs; audit used to fail
+    // execution drops that arm, so its `solve` never runs; audit used to fail
     // the site with `has no source tactic 2` while `click verify` passed the
     // same sidecar. The site must audit: it expands by removal, the rewrite
     // verifies, and re-expansion is a fixed point.
@@ -887,7 +887,7 @@ int32 flag(int32 x) {
     let site = sites
         .iter()
         .find(|site| site.position.line == 6)
-        .expect("the dropped arm's simp should be an auditable site");
+        .expect("the dropped arm's solve should be an auditable site");
     let expanded = expand_location(&format_location(&site_location(site)))
         .expect("a smart tactic on a dropped C path should expand");
     assert!(!expanded.contains("step(); solve();"), "{expanded}");
@@ -1786,9 +1786,9 @@ fn result_parameter_postconditions_audit_every_site() {
 
 #[test]
 fn a_claims_rewrites_combine_into_one_source() {
-    let original = "step;\nsimp;\nstep;\nauto;\nstep;\n";
+    let original = "step;\nsolve;\nstep;\nauto;\nstep;\n";
     let first = "step;\nrewrite(a);\nassumption();\nstep;\nauto;\nstep;\n";
-    let second = "step;\nsimp;\nstep;\nstep;\n";
+    let second = "step;\nsolve;\nstep;\nstep;\n";
     assert_eq!(
         combine_rewrites(original, &[second, first]).as_deref(),
         Some("step;\nrewrite(a);\nassumption();\nstep;\nstep;\n"),
@@ -1798,7 +1798,7 @@ fn a_claims_rewrites_combine_into_one_source() {
 
 #[test]
 fn rewrites_of_the_same_text_do_not_combine() {
-    let original = "step;\nsimp;\nstep;\n";
+    let original = "step;\nsolve;\nstep;\n";
     let first = "step;\nrewrite(a);\nstep;\n";
     let second = "step;\nrewrite(b);\nstep;\n";
     assert_eq!(combine_rewrites(original, &[first, second]), None);
@@ -2011,7 +2011,7 @@ mod scaling_tests {
     include!("../../scaling_tests/bin/click-audit/tests.rs");
 }
 
-/// A selected `simp` leaves the earlier steps' implicit automation intact.
+/// A selected `solve` leaves the earlier steps' implicit automation intact.
 /// A whole-claim candidate that omits that automation must be refused instead.
 #[test]
 #[ignore = "nightly: partial and whole claim cold-verification policy"]

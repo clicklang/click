@@ -4252,7 +4252,10 @@ fn fold_composite_resources_on_outcome_with_facts(
             // A body fact reading a stored cell can hold by evaluation of the
             // value stored there (the read-over-write authority).
             let open = !exactly_available
-                && !matches!(normalize_proposition(&required), SimpProposition::True)
+                && !matches!(
+                    normalize_proposition(&required),
+                    NormalizedProposition::True
+                )
                 && !crate::kernel::holds_by_read_over_write(&required);
             // A witness the proof cannot name has no source expression, so
             // its body fact has no requirement spelling and the fold refuses

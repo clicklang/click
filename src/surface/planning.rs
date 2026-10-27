@@ -6,6 +6,7 @@
 //! planning bug can lose a proof but can never issue authority.
 
 pub(crate) mod proposition_search;
+pub(in crate::surface) mod solve;
 
 mod permission;
 pub(crate) use permission::SearchPermission;

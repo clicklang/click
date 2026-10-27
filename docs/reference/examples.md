@@ -78,9 +78,9 @@ authorities.
 - `mdtests/result_expression.md`: result expression support.
 - `mdtests/default_prover.md`: an omitted proof clause is the implicit tail
   alone.
-- `mdtests/simp_postconditions.md`: straight-line postconditions closed by
+- `mdtests/solve_postconditions.md`: straight-line postconditions closed by
   deterministic normalization in an omitted proof.
-- `mdtests/simp_equality_order_transport.md`: deterministic equality rewriting,
+- `mdtests/solve_equality_order_transport.md`: deterministic equality rewriting,
   discrete integer-bound normalization, and equality-linked arithmetic.
 - `mdtests/tactic_execute.md`: an omitted proof whose implicit tail runs
   from function entry to function exit and closes the postcondition.

@@ -10,7 +10,7 @@ language. A tactic is either **smart**, **simple**, or **control**:
   the elided forms whose search fills one argument a simple form writes:
   `apply(theorem(args))`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
   are the tactics that `click profile` may recommend expanding. The parser
-  refuses the removed spellings `simp()`, `auto()`, `arithmetic()`,
+  refuses the removed spellings `auto()`, `arithmetic()`,
   `execute()` and `execute_until` and names each replacement.
 - Simple tactics request one deterministic checked operation without heuristic
   planning or search. They may use indexed ambient context when that context is
@@ -169,7 +169,7 @@ rewrites whose rewritten goals the direct closers and a nested `solve` try.
 Last, it states the equation between two constructor applications that facts
 equate to one value, and reads the fields' equalities, or the constructors'
 mismatch, from it
-(`mdtests/simp_reads_definitions_and_constructor_equations.md`).
+(`mdtests/solve_reads_definitions_and_constructor_equations.md`).
 Written
 as a step of a script, `solve();` closes the first open goal
 (`mdtests/a_written_auto_closes_one_goal.md`). A
@@ -585,7 +585,7 @@ instance. `views` and `consumes` clauses make no claim. A closer (`assumption`,
 open goal, and a refusal names that goal; it does not look further down the
 list for a claim it could close
 (`mdtests/a_closer_after_execution_acts_on_the_first_open_claim.md`,
-`mdtests/simp_after_execution_acts_on_the_first_open_claim.md`). The implicit
+`mdtests/solve_after_execution_acts_on_the_first_open_claim.md`). The implicit
 closer is the catch-all: it closes every goal still open.
 `assumption()` closes a resource goal whose instance the path holds
 (`mdtests/closers_after_execution_close_a_resource_goal_first.md`). A closer
@@ -609,7 +609,7 @@ another way would drop the witness.
 A written closer that closes no goal it acts on is refused, `solve` and
 `solve() using` included; only the implicit closer at the end of the script
 leaves an open claim to the report that names it
-(`mdtests/a_written_simp_that_closes_nothing_is_refused.md`).
+(`mdtests/a_written_solve_that_closes_nothing_is_refused.md`).
 
 ### Execution to a program point
 
@@ -1051,7 +1051,7 @@ expansion preserves both bodies with their checked steps.
 the same proof state, followed like every script by the implicit tail. A
 `solve()` written before execution has reached the function exit is refused
 with the frontier it stands at; the end of a body is one `step()` of its own
-(`mdtests/simp_before_exit_in_arm_names_the_frontier.md`).
+(`mdtests/solve_before_exit_in_arm_names_the_frontier.md`).
 
 Inside a `have` body, a tactic that already closed the goal (an `unfold`
 whose refreshed goal is an available fact, a `transport` onto the goal, a
@@ -1196,8 +1196,7 @@ state. Expansion preserves both certificates.
 
 **Form:** `solve()`
 
-`solve()` closes one goal and runs no C. The parser refuses the removed
-spelling `simp()` and names `solve()`, and refuses a written `auto();`, naming
+`solve()` closes one goal and runs no C. The parser refuses a written `auto();`, naming
 `solve();` for it and the omitted proof for `by auto();`. `by solve();` restates what an omitted proof of a
 `have` or a pure theorem's `ensures` does, but it is accepted: it marks a place
 to write a different tactic later.
@@ -1215,7 +1214,7 @@ An equality of two `uint32`, `int64` or `uint64` values closes from the two
 opposite order facts on its operands, `a <= b` and `b <= a` in any spelling
 (`a >= b`, `not (a < b)`), looked up exactly and cited by one `solve()
 using` step
-([`simp_closes_an_equality_from_opposite_bounds_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_closes_an_equality_from_opposite_bounds_at_every_width.md)).
+([`solve_closes_an_equality_from_opposite_bounds_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_closes_an_equality_from_opposite_bounds_at_every_width.md)).
 An unsigned `x == 0` needs only `x <= 0`, since no unsigned value is below zero.
 
 A loop bundle closer's members cite only the loop head and the contract instead.
@@ -1249,30 +1248,30 @@ definition exposes while their arguments select one arm, rewriting an argument
 by a constructor equation (a supplied premise or a connected fact such as
 `u == Tree::Node(..)`) when that exposes one, for at most eight checked steps.
 An argument nothing fixes stays folded
-([`simp_evaluates_a_recursive_function_over_known_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_evaluates_a_recursive_function_over_known_constructors.md),
-[`simp_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md)).
+([`solve_evaluates_a_recursive_function_over_known_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_evaluates_a_recursive_function_over_known_constructors.md),
+[`solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md)).
 
 A disequality between an algebraic value and a constructor closes from an exact
 equality fixing that value to a different constructor: the equality rewrites the
 goal and normalization decides the constructors differ
-([`simp_constructor_disequality_from_produced_field.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_constructor_disequality_from_produced_field.md)).
+([`solve_constructor_disequality_from_produced_field.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_constructor_disequality_from_produced_field.md)).
 
 An `int32` or `int64` definedness goal whose operand is a sum with a summand an
 exact equality fixes to `0`, such as a count `A + n` with `A == 0`, first proves
 the operand equal to the sum without it by `solve`, then the restated goal from
 its bounds
-([`simp_defined_count_after_a_zero_summand.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_defined_count_after_a_zero_summand.md)).
+([`solve_defined_count_after_a_zero_summand.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_defined_count_after_a_zero_summand.md)).
 
 When the goal also carries an operand's own definedness, such as a field read
 through a resource, `solve` proves `defined(operand)` as a `have` and cites it in
 the `int32_defined` step
-([`simp_defined_read_through_a_produced_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_defined_read_through_a_produced_resource.md)).
+([`solve_defined_read_through_a_produced_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_defined_read_through_a_produced_resource.md)).
 
 A goal that reads one cell at two snapshots, such as `owner->cell[0] ==
 owner->phase` right after a store wrote the first side from the second, is
 proved by `transport` from the cell's reflexive equality at a recently recorded
 point, with the frame evidence the transport selects as its `using` list
-([`simp_frames_a_read_across_a_separate_store.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_frames_a_read_across_a_separate_store.md)).
+([`solve_frames_a_read_across_a_separate_store.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_frames_a_read_across_a_separate_store.md)).
 
 A goal that reads memory and held at the function's entry or at one of the 8
 most recently recorded points is proved by one `transport` from that point,
@@ -1286,7 +1285,7 @@ A fact from an older point needs an explicit `transport`.
 A goal that is one disjunct of an available disjunction whose every other
 disjunct an exact fact refutes is proved by `cases` over that disjunction, the
 refuted arms closing by `contradiction`
-([`simp_disjunctive_syllogism.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_disjunctive_syllogism.md)).
+([`solve_disjunctive_syllogism.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_disjunctive_syllogism.md)).
 
 A goal that an available implication (or chain) concludes whose antecedents are
 exactly available, such as a call guarantee `r == 0 implies X` inside the branch
@@ -1300,10 +1299,10 @@ indexed lookup of the conjuncts guarded universals conclude. The proof is `intro
 for the binder and each guard, `instantiate` at the introduced binder, and
 `assumption()`, so `memset`'s `defined(..) and` value postcondition supplies
 `bytes::all_equal`
-([`simp_drops_a_conjunct_of_a_guarded_memset_postcondition.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_drops_a_conjunct_of_a_guarded_memset_postcondition.md)).
+([`solve_drops_a_conjunct_of_a_guarded_memset_postcondition.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_drops_a_conjunct_of_a_guarded_memset_postcondition.md)).
 A different guard or an unstated conjunct is not supplied
-([`simp_does_not_weaken_a_guarded_universal_to_a_wider_range.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_does_not_weaken_a_guarded_universal_to_a_wider_range.md),
-[`simp_does_not_drop_a_conjunct_a_universal_lacks.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_does_not_drop_a_conjunct_a_universal_lacks.md)).
+([`solve_does_not_weaken_a_guarded_universal_to_a_wider_range.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_weaken_a_guarded_universal_to_a_wider_range.md),
+[`solve_does_not_drop_a_conjunct_a_universal_lacks.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_drop_a_conjunct_a_universal_lacks.md)).
 
 Case splits consider only disjunctions sharing a variable with the goal, nested
 at most twice. Equality rewriting chains through the goal's equalities,
@@ -1319,7 +1318,7 @@ A bounded miss leaves the goal open and reports the target. Click checks the
 chosen operations; expansion prints its proof steps, and profiling reports
 search plus leaves.
 
-**Checked examples:** [`simp_postconditions.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_postconditions.md)
+**Checked examples:** [`solve_postconditions.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_postconditions.md)
 
 ### Simplification with selected premises
 
@@ -3237,7 +3236,7 @@ introduced.
 Click checks that transport only; expansion is unchanged, and profiling charges
 the named evidence.
 
-**Checked examples:** [`field_derived_precise_effect_after_metadata_write.md`](https://github.com/clicklang/click/blob/master/mdtests/field_derived_precise_effect_after_metadata_write.md), [`have_viewable_prefix_of_a_range.md`](https://github.com/clicklang/click/blob/master/mdtests/have_viewable_prefix_of_a_range.md), [`sweep_maintains_a_zero_unmarked_count.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_maintains_a_zero_unmarked_count.md), [`sweep_prefix_survives_its_endpoint_store_by_simp.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md), [`quantified_frame_carries_a_fact_past_the_excluded_store.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_carries_a_fact_past_the_excluded_store.md), [`quantified_frame_preserves_uint64_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_preserves_uint64_equality.md), [`memcpy_then_terminator_keeps_copied_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_then_terminator_keeps_copied_bytes.md), [`a_guarded_memset_value_claim_crosses_a_disjoint_store.md`](https://github.com/clicklang/click/blob/master/mdtests/a_guarded_memset_value_claim_crosses_a_disjoint_store.md), [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md)
+**Checked examples:** [`field_derived_precise_effect_after_metadata_write.md`](https://github.com/clicklang/click/blob/master/mdtests/field_derived_precise_effect_after_metadata_write.md), [`have_viewable_prefix_of_a_range.md`](https://github.com/clicklang/click/blob/master/mdtests/have_viewable_prefix_of_a_range.md), [`sweep_maintains_a_zero_unmarked_count.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_maintains_a_zero_unmarked_count.md), [`sweep_prefix_survives_its_endpoint_store_by_solve.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_prefix_survives_its_endpoint_store_by_solve.md), [`quantified_frame_carries_a_fact_past_the_excluded_store.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_carries_a_fact_past_the_excluded_store.md), [`quantified_frame_preserves_uint64_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_preserves_uint64_equality.md), [`memcpy_then_terminator_keeps_copied_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_then_terminator_keeps_copied_bytes.md), [`a_guarded_memset_value_claim_crosses_a_disjoint_store.md`](https://github.com/clicklang/click/blob/master/mdtests/a_guarded_memset_value_claim_crosses_a_disjoint_store.md), [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md)
 
 ### Unfolding predicates
 

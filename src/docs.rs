@@ -289,7 +289,7 @@ pub fn lookup(name: &str) -> Result<String, String> {
     // The parser refuses these older spellings; their docs are the
     // replacement's.
     let name = match name {
-        "simp" | "arithmetic" => "solve",
+        "arithmetic" => "solve",
         "execute_until" => "step_until",
         "auto" | "execute" => "implicit",
         name => name,
@@ -596,8 +596,8 @@ mod tests {
             )),
             "{apply}"
         );
-        let simp = lookup("simp").unwrap();
-        assert!(!simp.contains(SEARCH_MISS_MEANING), "{simp}");
+        let solve = lookup("solve").unwrap();
+        assert!(!solve.contains(SEARCH_MISS_MEANING), "{solve}");
     }
 
     #[test]

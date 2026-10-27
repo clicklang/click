@@ -2343,7 +2343,7 @@ pub(super) fn validate_pure_theorem_proof(
 ) -> Result<(), ClickError> {
     match proof {
         SourceProof::Default => Ok(()),
-        SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => Ok(()),
+        SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Solve) => Ok(()),
         SourceProof::Script(tactics) => validate_pure_theorem_tactics(theorem_name, tactics),
     }
 }
@@ -2380,7 +2380,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Witness(_)
             | ProofTactic::LetSatisfy(_)
             | ProofTactic::Choose(_)
-            | ProofTactic::Simp
+            | ProofTactic::Solve
             | ProofTactic::AutoClose
             // `transport(P, Q) using { ... }` names its source, its target,
             // and every premise, so it needs no state: the explicit facts
@@ -2388,7 +2388,7 @@ fn validate_pure_theorem_tactics(
             // belong here, because it selects its premises from a fixed
             // state's ambient facts.
             | ProofTactic::TransportUsing { .. }
-            | ProofTactic::SimpUsing(_) => {}
+            | ProofTactic::SolveUsing(_) => {}
             ProofTactic::Match(proof_match) => {
                 for arm in &proof_match.arms {
                     validate_pure_theorem_tactics(theorem_name, &arm.tactics)?;
@@ -2508,9 +2508,9 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Rewrite(_) => "rewrite",
         ProofTactic::Transport { .. } | ProofTactic::TransportUsing { .. } => "transport",
         ProofTactic::InstantiateUsing { .. } => "instantiate",
-        ProofTactic::Simp => "solve",
+        ProofTactic::Solve => "solve",
         ProofTactic::AutoClose => "implicit tail",
-        ProofTactic::SimpUsing(_) => "solve",
+        ProofTactic::SolveUsing(_) => "solve",
         ProofTactic::ArithmeticCertificate(_) => "arithmetic_certificate",
     }
 }

@@ -2496,7 +2496,7 @@ fn index_bitvector_equality_fact(
         }
         // An Integer equality over machine observations, such as a premise
         // `to_integer(count(r)) == 0`, is filed under the machine operands
-        // it observes, so a goal over those operands selects it as `simp`
+        // it observes, so a goal over those operands selects it as `solve`
         // selects their native equalities.
         Proposition::ConditionIs(
             condition @ (ConditionTerm::PointerEqual(_, _)

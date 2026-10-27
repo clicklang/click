@@ -11,41 +11,9 @@ fn test_only(attrs: &[syn::Attribute]) -> bool {
     })
 }
 
-// These are the legacy mixed simp/certificate scans, not permission to add
-// more. Each entry pins a function and its current number of references.
+// Failure diagnostics have narrowly reviewed entry points.
 fn allowance(path: &str, function: &str, name: &str) -> usize {
     match (path, function, name) {
-        ("src/kernel/fact_collections.rs", "scan_for_legacy_simp", "scan_for_legacy_simp") => 3,
-        (
-            "src/kernel/assumptions/condition_reasoning/simp.rs",
-            "has_exact_bitvector_inequality_after_cancellation",
-            "scan_for_legacy_simp",
-        ) => 1,
-        (
-            "src/kernel/assumptions/condition_reasoning/simp.rs",
-            "proves_condition_from_facts_for_simp",
-            "scan_for_legacy_simp",
-        ) => 2,
-        (
-            "src/kernel/assumptions/condition_reasoning/simp.rs",
-            "positive_offset_is_proven_above_for_simp",
-            "scan_for_legacy_simp",
-        ) => 1,
-        (
-            "src/kernel/assumptions/condition_reasoning/simp.rs",
-            "bitvector_terms_equal_for_simp",
-            "scan_for_legacy_simp",
-        ) => 1,
-        (
-            "src/kernel/assumptions/condition_reasoning/bounds.rs",
-            "condition_order_facts",
-            "scan_for_legacy_simp",
-        ) => 1,
-        (
-            "src/kernel/assumptions/proposition_reasoning.rs",
-            "collect_quantified_order_facts_for_condition",
-            "scan_for_legacy_simp",
-        ) => 1,
         (
             "src/kernel/assumptions.rs",
             "diagnostic_condition_fact_pairs",
@@ -87,9 +55,7 @@ impl Boundary<'_> {
         }
         if matches!(
             name,
-            "scan_for_legacy_simp"
-                | "diagnostic_condition_fact_pairs"
-                | "diagnostic_proposition_facts"
+            "diagnostic_condition_fact_pairs" | "diagnostic_proposition_facts"
         ) {
             *self
                 .counts

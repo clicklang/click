@@ -38,7 +38,7 @@ including `solve()`.
 refused: execution has not reached function exit. Omit the proof, or step to
 exit first:
 
-<!-- verified-example: mdtests/proof_script_execute_and_simp_using.md -->
+<!-- verified-example: mdtests/proof_script_execute_and_solve_using.md -->
 ```click
 ensures result == x by {
     step_until(function.exit);
@@ -82,7 +82,7 @@ Simple tactics request one deterministic checked operation without planning or
 search, and their checkers must be fast and output-sensitive. Paired operations
 use `using` to mark that boundary:
 
-<!-- verified-example: mdtests/proof_script_execute_and_simp_using.md -->
+<!-- verified-example: mdtests/proof_script_execute_and_solve_using.md -->
 ```click
 solve() using {
     i >= 0;
@@ -211,7 +211,7 @@ at unchanged function entry, after executed statements, and inside a loop's
 An arm's bindings are in scope in every term the arm writes: `have` goals,
 theorem arguments and `using` premises, `instantiate`, `extract`, `rewrite`,
 `normalize() using`, the premises of a `solve() using` or `normalize() using`
-inside a `have` body (`mdtests/have_body_simp_using_names_an_arm_binding.md`),
+inside a `have` body (`mdtests/have_body_solve_using_names_an_arm_binding.md`),
 the clauses of a `loop` written inside the arm
 (`mdtests/loop_clause_reads_arm_bindings.md`), and that loop's `initialize` and
 `preserve` bodies (`mdtests/loop_phase_body_reads_arm_bindings.md`). A name that a `have` goal can see is a theorem

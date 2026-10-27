@@ -4,7 +4,7 @@ A whole-contract proof script that stops before closing every claim ends
 with the implicit closer, as an omitted proof does: `solve` on each open claim, then the
 rest of the implicit closer's search. Here the claim needs the requirement
 `c.model == Walk::At(to_integer(n), Walk::Done)` as a rewrite from right to
-left, which the implicit closer finds and `solve` does not (`a_contract_script_ending_in_simp_does_not_search.md`). `click expand`
+left, which the implicit closer finds and `solve` does not (`a_contract_script_ending_in_solve_does_not_search.md`). `click expand`
 writes the closer out as checked steps at the end of the script.
 
 ```c filename=a_contract_script_without_a_closer_ends_with_auto.c

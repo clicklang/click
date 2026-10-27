@@ -115,7 +115,7 @@ fn execution_tactic_in_a_have_names_the_proposition_context() {
 }
 
 #[test]
-fn failed_simp_reports_actual_cell_queries_separately_from_history_explanations() {
+fn failed_solve_reports_actual_cell_queries_separately_from_history_explanations() {
     let c = "void f(int *p, int i) { p[i] = 9; }";
     let source = r#"verifying "f.c"; void f(int32* p, int32 i) {
         owns p[0..2]; requires 0 <= i; requires i < 2;
@@ -721,7 +721,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
 /// the two bases folded into the index. When the index has no source name —
 /// `cur` has since been reassigned, so its store-time value is a term only the
 /// lowering names — both spellings read `name[…]`, and the shorter text used
-/// to win: a `simp` refusal about `visited[k]` named "the store to `next[…]`".
+/// to win: a `solve` refusal about `visited[k]` named "the store to `next[…]`".
 /// The address belongs to the base its bare index is taken from.
 #[test]
 fn an_unnamed_store_index_is_spelled_through_its_own_base() {
@@ -964,7 +964,7 @@ fn exhausted_work_budget_outweighs_missing_path_goal_diagnostic() {
 }
 
 #[test]
-fn simp_uses_assumed_compound_proposition() {
+fn solve_uses_assumed_compound_proposition() {
     let proposition = Proposition::Or(
         Box::new(Proposition::Predicate {
             name: "left".to_string(),
@@ -978,13 +978,13 @@ fn simp_uses_assumed_compound_proposition() {
     let assumptions = PureFactContext::new().assume_proposition(proposition.clone());
 
     assert_eq!(
-        simp_proposition(&proposition, &assumptions),
-        SimpProposition::True
+        solve_proposition(&proposition, &assumptions),
+        NormalizedProposition::True
     );
 }
 
 #[test]
-fn failed_algebraic_simp_reports_claim_without_internal_schema_dump() {
+fn failed_algebraic_solve_reports_claim_without_internal_schema_dump() {
     let source = r#"
         spec enum Maybe<T> { None, Some(T) }
         theorem false_reconstruction(value: Maybe<int32>) {
@@ -1012,11 +1012,11 @@ fn failed_algebraic_simp_reports_claim_without_internal_schema_dump() {
 
 /// A goal whose shape has no prepared sentence used to fall through to the
 /// kernel proposition's `Debug`, which carries every variant of every
-/// reachable datatype family for each occurrence of a value, and the `simp`
+/// reachable datatype family for each occurrence of a value, and the `solve`
 /// report printed the goal twice.  The bounded printer renders the same claim
 /// in its source vocabulary, once.
 #[test]
-fn failed_compound_algebraic_simp_renders_the_goal_once_without_a_debug_dump() {
+fn failed_compound_algebraic_solve_renders_the_goal_once_without_a_debug_dump() {
     let source = r#"
         spec enum Color { Red, Black }
         spec enum RbTree { Empty, Node(int32, Color, RbTree, RbTree) }
@@ -2920,7 +2920,7 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
                     simple: 1_000_000,
                     // Enough for the `have`, whose nested script searches
                     // and so is charged to the smart budget, to lower its
-                    // read of the stored cell by name before `simp` exhausts
+                    // read of the stored cell by name before `solve` exhausts
                     // the budget.
                     smart: if nested { 160 } else { 128 },
                     control: if nested { 160 } else { 1_000_000 },
@@ -3206,7 +3206,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
 /// Native prefix proofs retain the source view and its coverage bound even
 /// when unrelated bounds exceed the general premise-reduction budget.
 #[test]
-fn native_view_simp_selects_only_coverage_premises() {
+fn native_view_solve_selects_only_coverage_premises() {
     let extra_bounds = 63;
     for body in [
         "solve();",
@@ -3227,7 +3227,7 @@ fn native_view_simp_selects_only_coverage_premises() {
 }
 
 #[test]
-fn native_view_simp_distinguishes_a_rejected_kernel_query() {
+fn native_view_solve_distinguishes_a_rejected_kernel_query() {
     let source = "target \"x86_64-unknown-linux-gnu\"; theorem false_view(p: uint8[], n: uint64) { views p[0u64..n]; requires n == 0u64; ensures viewable(p[0u64..1u64]) by { solve(); } }";
     let error = verify_c0_sources(source, &[]).expect_err("an empty view cannot cover one byte");
     let report = error.concise_report();
@@ -3236,7 +3236,7 @@ fn native_view_simp_distinguishes_a_rejected_kernel_query() {
         "{report}"
     );
     assert!(
-        report.contains("simp view derivation selection"),
+        report.contains("solve view derivation selection"),
         "{report}"
     );
     assert!(!report.contains("accepted by the kernel"), "{report}");

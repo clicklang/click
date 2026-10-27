@@ -141,7 +141,7 @@ impl Default for TacticWorkLimits {
     ///   (a slow simple tactic is a Click engine bug), so it stays an order
     ///   of magnitude above the corpus and no higher.
     /// - smart: 12,200 tactics, p95 = 3,162, p99 = 21,899, second-largest =
-    ///   957,192, max = 1,069,444 (the `simp` of
+    ///   957,192, max = 1,069,444 (the `solve` of
     ///   an_unfolded_constant_composite_range_is_one_run_negative.md:29, and
     ///   the arena `have` at arena_cells.click:3846). 2,000,000 gives the
     ///   maximum 1.87x, down from 3.0x at the 2026-09-25 calibration (max

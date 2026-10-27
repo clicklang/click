@@ -1084,7 +1084,7 @@ mod tests {
 
     fn unspelled_test_failure(premises: &[Proposition]) -> ProofSearchFailure {
         ProofSearchFailure {
-            strategy: "simp premise spelling".into(),
+            strategy: "solve premise spelling".into(),
             reason: "selected premises were omitted: ".into(),
             kind: "NotApplicable".into(),
             diagnostic: None,

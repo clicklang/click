@@ -12251,12 +12251,8 @@ impl RetainedPremises {
     }
 
     /// A context holding exactly the cited propositions and nothing else.
-    pub(crate) fn context(&self) -> PureFactContext {
-        self.propositions
-            .iter()
-            .fold(PureFactContext::new(), |context, premise| {
-                context.assume_proposition(premise.clone())
-            })
+    pub(crate) fn context(&self) -> crate::kernel::SelectedFacts<'static> {
+        crate::kernel::SelectedFacts::from_propositions(&self.propositions)
     }
 }
 
@@ -12266,7 +12262,7 @@ pub(crate) enum PropositionDerivationRule {
     ContextualAtomic {
         premises: RetainedPremises,
         premises_id: u64,
-        for_simp: bool,
+        extended_rules: bool,
         evidence: AtomicPropositionDerivationEvidence,
     },
     Explosion {

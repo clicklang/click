@@ -378,7 +378,7 @@ step 2 is deferred.
    `mdtests/memcpy_then_terminator_keeps_copied_bytes.md` and
    `memcpy_then_terminator_keeps_copied_unsigned_bytes.md` keep the
    pattern; `a_store_inside_the_copy_does_not_keep_copied_bytes.md` refuses
-   a store at `dst[n - 1]`. A smart `simp()` proves the claim stated over the
+   a store at `dst[n - 1]`. A smart `solve()` proves the claim stated over the
    count but not over `result`, which only function exit can name
    (`copied_bytes_through_result_need_an_explicit_transport.md`).
 5. Done: in `src/surface/tests/expansion_tests.rs`, the `read_terminator`

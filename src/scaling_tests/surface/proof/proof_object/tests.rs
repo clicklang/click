@@ -66,7 +66,7 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
             .filter(|event| {
                 matches!(event,
                     crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                        if name == "simp premise surface at recorded snapshots"
+                        if name == "solve premise surface at recorded snapshots"
                 )
             })
             .count();
@@ -372,7 +372,7 @@ fn both_and_scopes_are_isolated_check_provenance_and_scale() {
 
 #[test]
 #[ignore = "nightly: 5.7s in the parallel gate"]
-fn loop_entry_simp_keeps_checked_unspellable_assumptions_and_scales() {
+fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
     let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
     let state = CState::new();
     let result = int32(0);
@@ -428,7 +428,7 @@ fn loop_entry_simp_keeps_checked_unspellable_assumptions_and_scales() {
             .begin_loop_entry_goal(surface.clone(), &obligation)
             .unwrap();
         let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
-            scope.try_simp_closure().unwrap().unwrap()
+            scope.try_solve_closure().unwrap().unwrap()
         });
         assert_eq!(
             checked.body().certificate().steps(),
@@ -1723,7 +1723,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
             .filter(|event| {
                 matches!(event,
             crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if *name == "simp premise surface at recorded snapshots")
+                if *name == "solve premise surface at recorded snapshots")
             })
             .count();
         assert_eq!(
@@ -2128,7 +2128,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             .filter(|event| {
                 matches!(event,
             crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if *name == "simp premise surface at recorded snapshots")
+                if *name == "solve premise surface at recorded snapshots")
             })
             .count();
         assert_eq!(
@@ -2146,8 +2146,8 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         assert!(
             direct_events.iter().all(|event| !matches!(event,
                 crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                    if *name == "simp premise surface at recorded snapshots"
-                        || *name == "simp premise surface across recorded snapshots"
+                    if *name == "solve premise surface at recorded snapshots"
+                        || *name == "solve premise surface across recorded snapshots"
             )),
             "direct premise resolution searched unrelated history"
         );
@@ -2369,7 +2369,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
         );
         assert!(
             unreachable
-                .try_simp_closure()
+                .try_solve_closure()
                 .ok()
                 .flatten()
                 .is_some_and(|proof| proof.is_complete()),
@@ -2426,7 +2426,7 @@ fn deferred_terminal_tactics_share_ambient_bindings_without_map_work() {
                 execution.presentation.defer_post_execution(
                     index,
                     index,
-                    PostExecutionTactic::Simp,
+                    PostExecutionTactic::Solve,
                     Some(bindings.clone()),
                 );
             }

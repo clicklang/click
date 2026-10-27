@@ -164,15 +164,6 @@ impl<K: Ord, V> FactMap<K, V> {
         self.scan()
     }
 
-    /// Transitional shared simp/certificate scan. The build-time boundary
-    /// check pins its reviewed callers; new checking code may not use it.
-    #[track_caller]
-    pub(crate) fn scan_for_legacy_simp(
-        &self,
-    ) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
-        self.scan()
-    }
-
     /// Every entry of a context that is itself a step's explicit input, such
     /// as the premises a certificate names. The work is the input's
     /// size, which the step's author wrote.
@@ -260,15 +251,6 @@ impl<T: Clone + Ord> FactSet<T> {
     pub(crate) fn scan_for_search(
         &self,
         _permission: &crate::SearchPermission,
-    ) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
-        self.scan()
-    }
-
-    /// Transitional shared simp/certificate scan. The build-time boundary
-    /// check pins its reviewed callers; new checking code may not use it.
-    #[track_caller]
-    pub(crate) fn scan_for_legacy_simp(
-        &self,
     ) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
         self.scan()
     }
@@ -400,15 +382,6 @@ impl<T: Ord> ScanSet<T> {
         &'a self,
         _permission: &crate::SearchPermission,
     ) -> ChargedIter<impl DoubleEndedIterator<Item = &'a T> + ExactSizeIterator + use<'a, T>> {
-        self.scan()
-    }
-
-    /// Transitional shared simp/certificate scan. The build-time boundary
-    /// check pins its reviewed callers; new checking code may not use it.
-    #[track_caller]
-    pub(crate) fn scan_for_legacy_simp(
-        &self,
-    ) -> ChargedIter<impl DoubleEndedIterator<Item = &T> + ExactSizeIterator> {
         self.scan()
     }
 }

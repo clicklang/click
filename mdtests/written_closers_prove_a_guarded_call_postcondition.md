@@ -9,7 +9,7 @@ omitted proof closes it.
 ```c filename=written_closers_prove_a_guarded_call_postcondition.c
 int helper(int x);
 int by_auto(int x) { return helper(x); }
-int by_simp(int x) { return helper(x); }
+int by_solve(int x) { return helper(x); }
 ```
 
 ```click
@@ -21,7 +21,7 @@ int32 by_auto(int32 x) {
     ensures result == x + 1;
 }
 
-int32 by_simp(int32 x) {
+int32 by_solve(int32 x) {
     ensures result == x + 1;
 }
 ```

@@ -603,7 +603,7 @@ fn parses_execute_until_proof_tactic() {
             [
                 ProofTactic::ExecuteUntil(CodeRegionRef::Region(1)),
                 ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
-                ProofTactic::Simp,
+                ProofTactic::Solve,
             ]
             .as_slice()
         )
@@ -625,7 +625,7 @@ fn parses_unfold_proof_tactic() {
             [
                 ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
                 ProofTactic::UnfoldPredicate("sorted".to_string()),
-                ProofTactic::Simp,
+                ProofTactic::Solve,
             ]
             .as_slice()
         )
@@ -650,7 +650,7 @@ fn parses_apply_theorem_proof_tactic() {
                     name: "nonnegative".to_string(),
                     arguments: vec![current_var("result")],
                 }),
-                ProofTactic::Simp,
+                ProofTactic::Solve,
             ]
             .as_slice()
         )
@@ -726,11 +726,11 @@ fn parses_and_classifies_simple_and_smart_tactics() {
         TacticClass::Simple(SimpleTactic::Normalize)
     ));
     assert!(matches!(
-        ProofTactic::Simp.class(),
+        ProofTactic::Solve.class(),
         TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Solve))
     ));
     assert!(matches!(
-        ProofTactic::SimpUsing(ProofSimpUsing {
+        ProofTactic::SolveUsing(ProofSolveUsing {
             premises: Vec::new(),
         })
         .class(),
@@ -948,7 +948,7 @@ fn proof_certificate_round_trips_nested_surface_steps() {
 
 #[test]
 fn proof_certificate_has_no_smart_step_variant() {
-    let smart = ProofCertificate::from_proof_tactics(&[ProofTactic::Simp])
+    let smart = ProofCertificate::from_proof_tactics(&[ProofTactic::Solve])
         .expect_err("smart tactics cannot appear in a proof certificate");
     assert_eq!(
         smart.tactic_class(),
@@ -975,7 +975,7 @@ fn tactic_certificate_accepts_only_simple_tactics() {
 
 #[test]
 fn tactic_certificate_rejects_a_direct_smart_tactic() {
-    let error = ProofCertificate::from_proof_tactics(&[ProofTactic::Simp])
+    let error = ProofCertificate::from_proof_tactics(&[ProofTactic::Solve])
         .expect_err("a smart tactic cannot be a certificate leaf");
 
     assert_eq!(
@@ -1003,7 +1003,7 @@ fn tactic_certificate_rejects_smart_tactics_in_nested_control_tactics() {
                     operator: ComparisonOperator::Equal,
                     right: current_var("x"),
                 },
-                proof: SourceProof::Script(vec![ProofTactic::Simp]),
+                proof: SourceProof::Script(vec![ProofTactic::Solve]),
             })],
             else_tactics: vec![ProofTactic::Normalize],
         })],
@@ -1040,7 +1040,7 @@ fn tactic_certificate_checks_structural_induction_arms() {
             type_name: "List".to_string(),
             variant: "Nil".to_string(),
             bindings: Vec::new(),
-            tactics: vec![ProofTactic::Simp],
+            tactics: vec![ProofTactic::Solve],
         }],
     }];
 
@@ -1172,7 +1172,7 @@ const ORDERED_PAIR_CLICK: &str = r#"
 
 #[test]
 fn smart_have_splits_an_unfolded_predicate_conjunction_goal() {
-    // The `have`'s smart `simp` closes a predicate body that unfolds to a
+    // The `have`'s smart `solve` closes a predicate body that unfolds to a
     // conjunction of scalar bounds. The constructed certificate must split
     // the conjunction into per-conjunct `have` certificates; before the
     // split, the whole-conjunction goal had no explicit simple certificate.
@@ -1251,8 +1251,8 @@ fn fixed_state_have_certifies_a_post_call_fact_across_a_later_store() {
 }
 
 #[test]
-fn grouped_outcome_simp_splits_an_unfold_active_conjunction_ensure() {
-    // The final `simp` certifies `ordered_pair(pair)` while `unfold` is
+fn grouped_outcome_solve_splits_an_unfold_active_conjunction_ensure() {
+    // The final `solve` certifies `ordered_pair(pair)` while `unfold` is
     // active, so the kernel goal is already the body conjunction while the
     // surface goal is the predicate call. The certificate must unfold the
     // surface goal in step and split the conjunction.

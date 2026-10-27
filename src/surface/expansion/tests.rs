@@ -227,10 +227,10 @@ fn retained_caller_expansion_preserves_declared_object_return_evidence() {
 
 #[test]
 fn grouped_expansion_keeps_postexecution_closers_in_source_order() {
-    let path = std::path::Path::new("simp_after_execution_acts_on_the_first_open_claim.md");
+    let path = std::path::Path::new("solve_after_execution_acts_on_the_first_open_claim.md");
     let fixture = crate::cli::parse_mdtest(
         path,
-        include_str!("../../../mdtests/simp_after_execution_acts_on_the_first_open_claim.md"),
+        include_str!("../../../mdtests/solve_after_execution_acts_on_the_first_open_claim.md"),
     )
     .unwrap();
     let source = fixture.click_source.as_deref().unwrap();
@@ -594,9 +594,9 @@ fn tactic_line_disambiguation_uses_columns_only_for_shared_lines() {
 
     let nested = "theorem t(n: int32) { ensures true by {\n    have n <= n by { solve(); }\n} }\n";
     let have = position_at_offset(nested, nested.find("have").unwrap());
-    let simp = position_at_offset(nested, nested.find("solve").unwrap());
+    let solve = position_at_offset(nested, nested.find("solve").unwrap());
     assert!(!multiple(nested, &have));
-    assert!(multiple(nested, &simp));
+    assert!(multiple(nested, &solve));
 }
 
 #[test]
@@ -1273,7 +1273,7 @@ int32 increment_selected(int32 x) {
 }
 
 #[test]
-fn expands_deferred_simp_after_frontier_branch() {
+fn expands_deferred_solve_after_frontier_branch() {
     let c_source = r#"
 int32 positive_after_branch(int32 x) {
     int32 y;
@@ -1309,7 +1309,7 @@ int32 positive_after_branch(int32 x) {
 "#;
     let selected_offset = click_source
         .find("        solve();")
-        .expect("simp should exist")
+        .expect("solve should exist")
         + 8;
     let position = position_at_offset(click_source, selected_offset);
     let expanded = expand_c0_tactic_source_at(
@@ -1318,10 +1318,10 @@ int32 positive_after_branch(int32 x) {
         position.line,
         position.column,
     )
-    .expect("deferred simp should expand");
+    .expect("deferred solve should expand");
 
     verify_c0_sources(&expanded, &[("positive.c", c_source)]).unwrap_or_else(|error| {
-        panic!("expanded deferred simp should check:\n{error:?}\n{expanded}")
+        panic!("expanded deferred solve should check:\n{error:?}\n{expanded}")
     });
 }
 
@@ -1352,7 +1352,7 @@ int32 same_after_branch(int32 x, int32 flag) {
 "#;
     let selected_offset = click_source
         .find("        solve();")
-        .expect("simp should exist")
+        .expect("solve should exist")
         + 8;
     let position = position_at_offset(click_source, selected_offset);
     let expanded = expand_c0_tactic_source_at(
@@ -1395,7 +1395,7 @@ int32 clamp_nonnegative(int32 x) {
 "#;
     let selected_offset = click_source
         .rfind("        solve();")
-        .expect("common simp should exist")
+        .expect("common solve should exist")
         + 8;
     let position = position_at_offset(click_source, selected_offset);
     let expanded = expand_c0_tactic_source_at(
@@ -1404,7 +1404,7 @@ int32 clamp_nonnegative(int32 x) {
         position.line,
         position.column,
     )
-    .expect("reachable continuation simp should expand");
+    .expect("reachable continuation solve should expand");
 
     verify_c0_sources(&expanded, &[("returning.c", c_source)]).unwrap_or_else(|error| {
         panic!("returning-arm deferred expansion should check:\n{error:?}\n{expanded}")
@@ -1412,7 +1412,7 @@ int32 clamp_nonnegative(int32 x) {
 }
 
 #[test]
-fn expands_deferred_simp_after_nested_frontier_branches() {
+fn expands_deferred_solve_after_nested_frontier_branches() {
     let c_source = r#"
 int32 nested_nonnegative(int32 x, int32 flag) {
     int32 y;
@@ -1473,7 +1473,7 @@ int32 nested_nonnegative(int32 x, int32 flag) {
 
     let selected_offset = click_source
         .find("        solve();")
-        .expect("common simp should exist")
+        .expect("common solve should exist")
         + 8;
     let position = position_at_offset(click_source, selected_offset);
     let expanded = expand_c0_tactic_source_at(
@@ -1482,7 +1482,7 @@ int32 nested_nonnegative(int32 x, int32 flag) {
         position.line,
         position.column,
     );
-    let expanded = expanded.expect("nested deferred simp should expand");
+    let expanded = expanded.expect("nested deferred solve should expand");
 
     verify_c0_sources(&expanded, &[("nested.c", c_source)]).unwrap_or_else(|error| {
         panic!("nested deferred expansion should check:\n{error:?}\n{expanded}")
@@ -1673,10 +1673,10 @@ int32 caller() {
         ("passthrough.c", passthrough_c),
         ("caller.c", caller_c),
     ];
-    let final_simp = click_source
+    let final_solve = click_source
         .rfind("solve();")
-        .expect("caller final simp should exist");
-    let position = position_at_offset(click_source, final_simp);
+        .expect("caller final solve should exist");
+    let position = position_at_offset(click_source, final_solve);
 
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
@@ -1690,7 +1690,7 @@ int32 caller() {
 }
 
 #[test]
-fn grouped_simp_distinguishes_c_local_result_from_contract_result() {
+fn grouped_solve_distinguishes_c_local_result_from_contract_result() {
     let zero_c = "int32 zero() { return 0; }";
     let caller_c = "int32 caller() { int32 result; result = zero(); return result; }";
     let click_source = r#"
@@ -1712,14 +1712,14 @@ int32 caller() {
 }
 "#;
     let sources = [("zero.c", zero_c), ("caller.c", caller_c)];
-    let final_simp = click_source
+    let final_solve = click_source
         .rfind("solve();")
-        .expect("caller final simp should exist");
-    let position = position_at_offset(click_source, final_simp);
+        .expect("caller final solve should exist");
+    let position = position_at_offset(click_source, final_solve);
 
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("the grouped simp should expand across the local result assignment");
+            .expect("the grouped solve should expand across the local result assignment");
 
     verify_c0_sources(&expanded, &sources)
         .expect("the explicit C result binding should check without aliasing contract result");
@@ -1785,7 +1785,7 @@ int32 caller() {
 }
 
 #[test]
-fn grouped_simp_expansion_closes_only_the_first_open_claim() {
+fn grouped_solve_expansion_closes_only_the_first_open_claim() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let click_source = r#"
 verifying "identity.c";
@@ -1801,7 +1801,7 @@ int32 identity(int32 x) {
 "#;
     let sources = [("identity.c", c_source)];
 
-    // `simp` acts on the first open goal, so each `simp` expands to the
+    // `solve` acts on the first open goal, so each `solve` expands to the
     // closure of one claim and the second still has its own goal.
     let expanded = expand_top_level_tactic_for_test(
         click_source,
@@ -1810,16 +1810,16 @@ int32 identity(int32 x) {
         CProofClaim::Grouped,
         1,
     )
-    .expect("grouped simp should expand");
+    .expect("grouped solve should expand");
 
     assert_eq!(
         expanded.matches("\n    assumption();").count(),
         1,
-        "the first simp should close only its own claim:\n{expanded}"
+        "the first solve should close only its own claim:\n{expanded}"
     );
     assert!(expanded.contains("\n    solve();"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
-        .expect("the second simp should still have its goal after expansion");
+        .expect("the second solve should still have its goal after expansion");
 }
 
 #[test]
@@ -1853,7 +1853,7 @@ int32 f(int32* p) {
 }
 
 #[test]
-fn grouped_simp_expansion_preserves_resource_scalar_and_quantified_transitions() {
+fn grouped_solve_expansion_preserves_resource_scalar_and_quantified_transitions() {
     let c_source = "int32 inspect(int32 p[1], int32 x) { return 0; }";
     let click_source = r#"
 verifying "inspect.c";
@@ -1881,7 +1881,7 @@ int32 inspect(int32 p[1], int32 x) {
         CProofClaim::Grouped,
         1,
     )
-    .expect("grouped simp should capture every newly closed claim");
+    .expect("grouped solve should capture every newly closed claim");
 
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
@@ -1889,7 +1889,7 @@ int32 inspect(int32 p[1], int32 x) {
 }
 
 #[test]
-fn grouped_simp_expansion_uses_explicit_frame_consequences() {
+fn grouped_solve_expansion_uses_explicit_frame_consequences() {
     let c_source = r#"
 int32 increment_and_return_old(int32 p[1]) {
     int32 result;
@@ -1919,7 +1919,7 @@ int32 increment_and_return_old(int32 p[1]) {
         CProofClaim::Grouped,
         1,
     )
-    .expect("grouped simp should capture frame-dependent claims");
+    .expect("grouped solve should capture frame-dependent claims");
 
     assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -2055,7 +2055,7 @@ int32 contains(uint8 p[], int32 n) {
     )
     .expect("uint8 proposition should expand");
 
-    // The `simp` closes the proof the `witness` opened, so it expands to
+    // The `solve` closes the proof the `witness` opened, so it expands to
     // that one step rather than restating the claim.
     assert!(
         expanded.contains("witness { k: found };\n        assumption();"),
@@ -2453,7 +2453,7 @@ int32 inspect(uint8 p[], uint64 len) {
 
     assert!(expanded.contains("apply(cstr::len_has_terminator(p, len)) using"));
     verify_c0_sources(&expanded, &[("inspect.c", c_source)])
-        .expect("explicit apply conclusions should remain available to the trailing simp");
+        .expect("explicit apply conclusions should remain available to the trailing solve");
 }
 
 #[test]
@@ -2567,7 +2567,7 @@ int32 nested(int32 x) {
             }
         }
     });
-    let expanded = expanded.expect("selected nested-branch simp should expand");
+    let expanded = expanded.expect("selected nested-branch solve should expand");
     assert_eq!(expansion_flat_units, 1, "nested expansion split its Proof");
 
     assert_eq!(expanded.matches("solve();").count(), 2);
@@ -2829,7 +2829,7 @@ fn pure_theorem_expansion_is_certificate_backed_and_idempotent() {
         expand_pure_theorem_source(&expanded_once, &[], "incremented_zero_is_one", 0)
             .expect("expanded theorem certificate should expand again");
 
-    assert!(!expanded_once.contains("simp"));
+    assert!(!expanded_once.contains("solve"));
     assert_eq!(expanded_once, expanded_twice);
     let verified =
         verify_click_theorems(&expanded_once).expect("expanded theorem should re-verify");
@@ -2910,7 +2910,7 @@ fn pure_mixed_linear_smart_script_expands_the_retained_proof_object_path() {
             ensures x >= 0;
         }
 
-        theorem applied_then_simp(x: int32) {
+        theorem applied_then_solve(x: int32) {
             requires (x >= 0) and (x <= 10);
             ensures (x >= 0) and (x >= 0) by {
                 extract(x >= 0);
@@ -2919,10 +2919,10 @@ fn pure_mixed_linear_smart_script_expands_the_retained_proof_object_path() {
             }
         }
     "#;
-    let expanded = expand_pure_theorem_source(source, &[], "applied_then_simp", 0)
+    let expanded = expand_pure_theorem_source(source, &[], "applied_then_solve", 0)
         .expect("the checked pure theorem path should expand");
     let selected = &expanded[expanded
-        .find("theorem applied_then_simp")
+        .find("theorem applied_then_solve")
         .expect("expanded source should retain the selected theorem")..];
     assert!(
         selected.contains("apply(required(x)) using {"),
@@ -3253,8 +3253,8 @@ theorem pick_nonzero(r: int32) {
         vec![(1, "have"), (2, "have"), (3, "solve")],
         "{sites:?}"
     );
-    let final_simp = "solve();\n    }\n}";
-    for (index, needle) in [(1, "have r > 0"), (2, "have r < 0"), (3, final_simp)] {
+    let final_solve = "solve();\n    }\n}";
+    for (index, needle) in [(1, "have r > 0"), (2, "have r < 0"), (3, final_solve)] {
         let position = c0_tactic_source_position(source, &[], "pick_nonzero.ensures_0", index)
             .unwrap_or_else(|error| panic!("site {index} has no source position: {error:?}"));
         assert_eq!(
@@ -3263,7 +3263,7 @@ theorem pick_nonzero(r: int32) {
             "site {index}"
         );
     }
-    let after = position_at_offset(source, source.find(final_simp).unwrap());
+    let after = position_at_offset(source, source.find(final_solve).unwrap());
     let expanded = expand_c0_tactic_source_at(source, &[], after.line, after.column)
         .expect("the smart tactic after `cases` expands");
     verify_c0_sources(&expanded, &[]).expect("the expanded `cases` proof re-verifies");

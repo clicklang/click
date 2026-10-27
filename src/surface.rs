@@ -326,7 +326,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "same_object",
     "scatter",
     "separate",
-    "simp",
     "sizeof",
     "solve",
     "sorry",
@@ -4517,13 +4516,13 @@ pub enum ProofTactic {
         argument: ContractExpression,
         premises: Option<Vec<ClickProposition>>,
     },
-    Simp,
+    Solve,
     /// The closer `auto` ends a proof with: each pending claim is tried by
-    /// `simp`, then by the rest of `auto`'s search. It has no source
+    /// `solve`, then by the rest of `auto`'s search. It has no source
     /// spelling; `by auto();`, an omitted proof, and a script that ends with
     /// claims still open use it.
     AutoClose,
-    SimpUsing(ProofSimpUsing),
+    SolveUsing(ProofSolveUsing),
     ArithmeticCertificate(ArithmeticCertificate),
     /// Dev-only proof hole. Closes the enclosing proof unit without checking
     /// anything. Parses only while `verification::with_allow_sorry` is active
@@ -5160,7 +5159,7 @@ impl ProofTactic {
             Self::SmartExecute | Self::ExecuteUntil(_) => {
                 TacticClass::smart(SmartTacticKind::Execute)
             }
-            Self::Simp | Self::SimpUsing(_) => TacticClass::smart(SmartTacticKind::Solve),
+            Self::Solve | Self::SolveUsing(_) => TacticClass::smart(SmartTacticKind::Solve),
             Self::AutoClose => TacticClass::Smart(SmartSite::Implicit),
             Self::Have(_) => TacticClass::Control(ControlTactic::Have),
             Self::Open(_) => TacticClass::Control(ControlTactic::Open),
@@ -5182,7 +5181,7 @@ impl SmartTactic {
     pub fn site(self) -> SmartSite {
         match self {
             Self::Auto => SmartSite::Implicit,
-            Self::Simp => SmartSite::Engine(SmartTacticKind::Solve),
+            Self::Solve => SmartSite::Engine(SmartTacticKind::Solve),
         }
     }
 }
@@ -5227,13 +5226,13 @@ pub struct ProofHave {
 }
 
 impl ProofHave {
-    /// Check the short forms as the same single simp step as the block form,
+    /// Check the short forms as the same single solve step as the block form,
     /// so a failed step retains its diagnostic. Keep the written source proof
     /// unchanged for inventory, capture, and source locations.
     fn checking_proof(&self) -> std::borrow::Cow<'_, SourceProof> {
         match &self.proof {
-            SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
-                std::borrow::Cow::Owned(SourceProof::Script(vec![ProofTactic::Simp]))
+            SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
+                std::borrow::Cow::Owned(SourceProof::Script(vec![ProofTactic::Solve]))
             }
             _ => std::borrow::Cow::Borrowed(&self.proof),
         }
@@ -5529,7 +5528,7 @@ pub struct ProofCallOutcomes {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProofSimpUsing {
+pub struct ProofSolveUsing {
     premises: Vec<ClickProposition>,
 }
 
@@ -6184,7 +6183,7 @@ pub enum ProofFactSource {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SmartTactic {
     Auto,
-    Simp,
+    Solve,
 }
 
 /// The fixed state a proposition is evaluated in: the entry state, the
@@ -6972,7 +6971,7 @@ pub enum VerifiedClaim {
 pub enum ProofKind {
     Axiom,
     Pure,
-    Simp,
+    Solve,
     TacticScript,
     LoopVerification,
 }
@@ -9171,7 +9170,7 @@ impl ClickError {
         if let Some(failures) = &self.search_failures {
             for failure in failures
                 .iter()
-                .filter(|failure| failure.strategy.starts_with("simp view "))
+                .filter(|failure| failure.strategy.starts_with("solve view "))
                 .take(8)
             {
                 context.push(format!(

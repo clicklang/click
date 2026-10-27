@@ -654,25 +654,25 @@ fn checked_surface_comparison_fact_in_state_with_availability(
     )))
 }
 
-fn have_proof_is_smart_simp(proof: &SourceProof) -> bool {
+fn have_proof_is_smart_solve(proof: &SourceProof) -> bool {
     match proof {
-        SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => true,
+        SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Solve) => true,
         SourceProof::Script(tactics) => matches!(
             tactics.as_slice(),
-            [ProofTactic::Simp] | [ProofTactic::SimpUsing(_)]
+            [ProofTactic::Solve] | [ProofTactic::SolveUsing(_)]
         ),
     }
 }
 
-pub(super) fn smart_simp_unfold_prefix(proof: &SourceProof) -> Option<Vec<String>> {
-    if have_proof_is_smart_simp(proof) {
+pub(super) fn smart_solve_unfold_prefix(proof: &SourceProof) -> Option<Vec<String>> {
+    if have_proof_is_smart_solve(proof) {
         return Some(Vec::new());
     }
     let SourceProof::Script(tactics) = proof else {
         return None;
     };
     let (last, prefix) = tactics.split_last()?;
-    if !matches!(last, ProofTactic::Simp | ProofTactic::SimpUsing(_)) {
+    if !matches!(last, ProofTactic::Solve | ProofTactic::SolveUsing(_)) {
         return None;
     }
     prefix

@@ -938,7 +938,7 @@ mod tests {
     }
 
     // Simple claim closers must perform the same checked return exchange as
-    // simp, including a consuming contract with no returned resource claim.
+    // solve, including a consuming contract with no returned resource claim.
     #[test]
     #[ignore = "nightly: 10s in the parallel gate"]
     fn shared_population_release_expansion_retains_lifetime() {
@@ -957,8 +957,12 @@ mod tests {
         fs::write(&sidecar, source).unwrap();
         entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
         let release_end = source.find("void parent_attach(").unwrap();
-        let simp = source[..release_end].rfind("        solve();").unwrap();
-        let line = source[..simp].bytes().filter(|byte| *byte == b'\n').count() + 1;
+        let solve = source[..release_end].rfind("        solve();").unwrap();
+        let line = source[..solve]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count()
+            + 1;
         entry([
             "expand".to_string(),
             "--in-place".to_string(),

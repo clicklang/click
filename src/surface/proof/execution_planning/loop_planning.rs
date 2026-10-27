@@ -216,7 +216,7 @@ fn initialize_script_layout<'a>(
         })
         && rest[invariant_items.len()..]
             .iter()
-            .all(|tactic| matches!(tactic, ProofTactic::Assumption | ProofTactic::Simp));
+            .all(|tactic| matches!(tactic, ProofTactic::Assumption | ProofTactic::Solve));
     let mut grouped: Vec<Vec<(usize, &SourceProof)>> = Vec::new();
     let mut consumed = 0;
     for item in invariant_items {
@@ -236,7 +236,7 @@ fn initialize_script_layout<'a>(
     let names_every_invariant = grouped.len() == invariant_items.len()
         && rest[consumed..]
             .iter()
-            .all(|tactic| matches!(tactic, ProofTactic::Assumption | ProofTactic::Simp));
+            .all(|tactic| matches!(tactic, ProofTactic::Assumption | ProofTactic::Solve));
     let invariant_bodies = names_every_invariant.then_some(grouped);
     // Only a `solve()` that stands for what is left of the phase is a
     // whole-phase closer. A `solve()` written before the steps it closes
@@ -250,7 +250,7 @@ fn initialize_script_layout<'a>(
         .iter()
         .copied()
         .zip(&tactics[closer_start.min(tactics.len())..])
-        .filter(|(_, tactic)| matches!(tactic, ProofTactic::Simp))
+        .filter(|(_, tactic)| matches!(tactic, ProofTactic::Solve))
         .map(|(index, _)| index)
         .collect();
     InitializeScriptLayout {
@@ -580,8 +580,8 @@ fn check_initialization_body<'a>(
 ) -> Result<proof_object::ProofScope<'a>, ClickError> {
     let checked = match source {
         SourceProof::Tactic(SmartTactic::Auto) => scope.try_auto_fact_closure()?,
-        SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
-            scope.try_simp_closure()?
+        SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
+            scope.try_solve_closure()?
         }
         SourceProof::Script(tactics) => match sites {
             Some(sites) => scope.try_addressed_linear_script(tactics, sites)?,
@@ -1316,7 +1316,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             })
             .collect::<Vec<_>>();
         let source_tactics = leaf.path_certificate()?.to_proof_tactics();
-        let region_simp = context_execution.presentation.region_simp;
+        let region_solve = context_execution.presentation.region_solve;
         let proof_site = leaf.execution_view()?.context.constants.proof_site.clone();
         let invariants_close_requested = context_execution.core.region_invariants_close_requested;
         // A path that left through `break` is an exit, not a back edge: it
@@ -1346,10 +1346,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     "close_invariants",
                     "simple",
                 )
-            } else if let Some((tactic_index, source_index)) = region_simp {
+            } else if let Some((tactic_index, source_index)) = region_solve {
                 (tactic_index, source_index, "solve", "smart")
             } else {
-                // The implicit bundle closer plans a default `simp` body.
+                // The implicit bundle closer plans a default `solve` body.
                 // Its premise selection is smart work even when the first
                 // checked member happens to close by assumption.
                 (tactics.len(), tactics.len(), "solve", "smart")
@@ -1393,7 +1393,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             }
         });
         let bundle_checkpoint = leaf.checkpoint();
-        // A region-level `simp` is a Surface planner. Establish each named
+        // A region-level `solve` is a Surface planner. Establish each named
         // invariant through the checked proposition Proof before asking the
         // kernel to close the bundle. In particular, upper-bound extension
         // now becomes a nested proof `if` here instead of recursive search in
@@ -1406,7 +1406,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             // it before skipping preplanning; a source close request alone
             // is not evidence. Adding further `have`s would stale the body.
             leaf.validate_loop_invariant_bundle(invariant_checks, ranking_measures)?;
-        } else if region_simp.is_some() {
+        } else if region_solve.is_some() {
             if invariant_surfaces.len() != invariant_checks.len() {
                 return Err(leaf.step_error(
                     "surface invariants do not align with the lowered invariant bundle",
@@ -1415,7 +1415,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             for (index, invariant) in invariant_surfaces.iter().enumerate() {
                 let scope = leaf.begin_have(invariant.clone())?;
                 let Some(proved) =
-                    scope.try_simp_closure_with_surfaces(&invariant_premise_surfaces[..=index])?
+                    scope.try_solve_closure_with_surfaces(&invariant_premise_surfaces[..=index])?
                 else {
                     continue;
                 };
@@ -1552,7 +1552,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                         lexical_bindings: None,
                         tactic_index: environment.frontier_loop_source.loop_tactic_index,
                         source_index: environment.frontier_loop_source.loop_source_index,
-                        tactic: PostExecutionTactic::Simp,
+                        tactic: PostExecutionTactic::Solve,
                     });
                 }
                 return_proofs.push(Arc::new(LoopReturnProof {
@@ -1684,8 +1684,8 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             .preserve_source_index
             .is_none();
         if !omitted_frontier_preservation
-            && region_simp.is_some_and(|(_, source_index)| {
-                // Region simp is deferred by the preservation driver, so it
+            && region_solve.is_some_and(|(_, source_index)| {
+                // Region solve is deferred by the preservation driver, so it
                 // never opens an active tactic capture. Match its selected
                 // source occurrence just as the driver's explicit steps do.
                 proof_site.as_ref().is_some_and(|site| {
@@ -1701,9 +1701,9 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 ..ProofCertificateBuilder::default()
             };
             // A region whose invariants are already closed has a
-            // legitimately empty closer: the selected `simp` contributes no
+            // legitimately empty closer: the selected `solve` contributes no
             // surface tactics and its exact expansion removes it.
-            if let Some(selected) = region_simp.map(|(_, source)| source)
+            if let Some(selected) = region_solve.map(|(_, source)| source)
                 && let Some(outer) = expansion_capture.as_deref_mut()
                 && let Some(batch) = &mut outer.batch
             {

@@ -46,9 +46,6 @@ expansion is not expected to eliminate that semantic output.
 Remaining migration after the capability and build-time boundary described in
 [Verifier design](../docs/internals/verifier-design.md#enforced-search-access):
 
-- Separate the shared simp/certificate routines behind `scan_for_legacy_simp`
-  into planner access and an explicit-premise representation; remove their
-  pinned legacy allowances as each caller migrates.
 - Audit upkeep/rebuild APIs and other broad views, including loadability facts.
   Relabelling a query as upkeep or explicit input must not evade the boundary.
 - Audit Surface checked drivers that import planning helpers. Move exact

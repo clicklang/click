@@ -2154,7 +2154,7 @@ fn typed_canonical_projection_load_equality_evidence(
 // The extended DAG bridging (crossing block-declaration and cell-forgetting
 // edges, range-certificate store hops, stored-value pinning, and the
 // order-path load matching in assumptions.rs) runs ONLY inside the loadable
-// prover. Everywhere else — execution pruning, load canonicalization, simp
+// prover. Everywhere else — execution pruning, load canonicalization, solve
 // planning — behavior must stay byte-identical to the pre-arc path, because
 // certified forms and case-split structure check against it. The flag
 // is scoped, not global, so generation and check of the same query always

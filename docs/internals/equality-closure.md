@@ -40,7 +40,7 @@ sides must match; coordinate keys only nominate candidates. This avoids
 repeatedly proving restricted subsets of a connected component merely to
 rediscover the address alias, and withdrawing the named premise invalidates
 the derivation. The scaling control
-`simp_retains_common_base_pointer_equality_for_load_congruence` covers a field
+`solve_retains_common_base_pointer_equality_for_load_congruence` covers a field
 displacement and increasing connected aliases.
 
 The bridge registers only the selected addresses and offsets. It neither

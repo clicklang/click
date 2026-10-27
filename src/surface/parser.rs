@@ -571,8 +571,8 @@ fn is_builtin_tactic_spelling(name: &str) -> bool {
 /// as an explicit `have P by solve();`. Out of line to keep recursive frames small.
 #[inline(never)]
 fn have_proof_as_written_in_full(proof: SourceProof) -> SourceProof {
-    if proof == SourceProof::Tactic(SmartTactic::Simp) {
-        SourceProof::Script(vec![ProofTactic::Simp])
+    if proof == SourceProof::Tactic(SmartTactic::Solve) {
+        SourceProof::Script(vec![ProofTactic::Solve])
     } else {
         proof
     }
@@ -585,7 +585,6 @@ fn is_tactic_name(name: &str) -> bool {
 /// The refusal of a removed tactic spelling, naming what replaced it.
 fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
     Some(match name {
-        "simp" => "`simp()` is now `solve()`, which closes the first open goal",
         "auto" => {
             "`auto()` is removed: a `by auto();` proof is the omitted proof, so delete it, and a written `auto();` is `solve();`"
         }
@@ -8432,9 +8431,9 @@ impl Parser {
         let proof = self.parse_by_clause()?;
         // A lone phase `solve()` owns the generated execution and closure steps,
         // with either brace spelling. Keep it out of per-step source capture.
-        if matches!(&proof, SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::Simp]))
+        if matches!(&proof, SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::Solve]))
         {
-            Ok(SourceProof::Tactic(SmartTactic::Simp))
+            Ok(SourceProof::Tactic(SmartTactic::Solve))
         } else {
             Ok(proof)
         }
@@ -9151,16 +9150,16 @@ impl Parser {
     fn parse_have_after_name(&mut self) -> Result<ProofTactic, ClickError> {
         let proposition = self.parse_proposition()?;
         // A `have` states a fact at the current point, so an omitted
-        // proof is `simp` here; it never executes C to reach the fact.
+        // proof is `solve` here; it never executes C to reach the fact.
         if self.peek() == Some(&Token::Semicolon) {
             self.position += 1;
             return Ok(ProofTactic::Have(ProofHave {
                 proposition,
-                proof: have_proof_as_written_in_full(SourceProof::Tactic(SmartTactic::Simp)),
+                proof: have_proof_as_written_in_full(SourceProof::Tactic(SmartTactic::Solve)),
             }));
         }
         // `have P by auto();` proves the fact where it is stated: with no C
-        // to run toward the fact, `auto` is `simp`.
+        // to run toward the fact, `auto` is `solve`.
         let proof = self.parse_by_clause()?;
         self.skip_redundant_semicolon();
         // `have P;`, `have P by solve();` and `have P by { solve(); }` are
@@ -9937,9 +9936,9 @@ impl Parser {
                 if self.peek_ident() == Some("using") {
                     let premises = self.parse_exact_premises()?;
                     self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::SimpUsing(ProofSimpUsing { premises }));
+                    return Ok(ProofTactic::SolveUsing(ProofSolveUsing { premises }));
                 }
-                ProofTactic::Simp
+                ProofTactic::Solve
             }
             "fold" => {
                 self.expect(Token::LParen)?;
@@ -11489,7 +11488,7 @@ impl Parser {
 
     fn parse_tactic(&mut self) -> Result<SmartTactic, ClickError> {
         let tactic = match self.next() {
-            Some(Token::Ident(name)) if name == "solve" => SmartTactic::Simp,
+            Some(Token::Ident(name)) if name == "solve" => SmartTactic::Solve,
             Some(Token::Ident(name)) if let Some(refusal) = removed_tactic_refusal(&name) => {
                 self.position -= 1;
                 return Err(self.error(refusal));

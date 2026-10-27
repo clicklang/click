@@ -773,7 +773,7 @@ fn rbtree_erase_uses_the_unchanged_pinned_unlink() {
     );
 }
 
-/// Expanding the last exit's closing `simp` writes explicit closers that
+/// Expanding the last exit's closing `solve` writes explicit closers that
 /// still return the outcome resource; the expansion cold verifies.
 #[test]
 #[ignore = "nightly: 41 s to expand and recheck the general unlink in a release build (2026-10-14)"]

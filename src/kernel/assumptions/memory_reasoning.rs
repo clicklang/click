@@ -491,7 +491,7 @@ impl PureFactContext {
         // The loadable prover is the one consumer of the extended DAG
         // bridging: a loadability fact carrying one memory snapshot must
         // discharge a load carrying another. Scoping the power here
-        // keeps execution pruning and simp planning byte-identical to the
+        // keeps execution pruning and solve planning byte-identical to the
         // pre-arc path (see api.rs).
         let proved = crate::kernel::api::with_extended_dag_bridging(|| {
             self.proves_memory_loadable_inner(memory, base, bytes)

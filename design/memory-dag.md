@@ -162,10 +162,10 @@ nobody had recorded:
 **The critical scoping lesson:** the new edges plus the stronger
 walks (separation-strength `Store`-hop crossing, stored-value pinning,
 order-path DAG matching) CANNOT be enabled globally. Distinctness and
-equality answers feed execution pruning, canonical forms of loads, and simp
+equality answers feed execution pruning, canonical forms of loads, and solve
 case-split structure, all of which certified sidecars check
 byte-for-byte; unscoped enabling broke owned-string's later functions
-(pop_preserves_first: "planned simp context premise is not an
+(pop_preserves_first: "planned solve context premise is not an
 available source fact") and drifted Return-value spellings through
 shared-fuel exhaustion. The power is therefore gated behind
 `with_extended_dag_bridging`, entered ONLY by
@@ -265,5 +265,5 @@ marker blocks — that would launder freshness) and `CellsForgotten`
 previously disjoint DAG components. The extended bridging power that
 uses them is scoped via `with_extended_dag_bridging` to
 `PureFactContext::proves_memory_loadable` only — enabling it globally
-measurably changes certified spellings and simp case-split structure
+measurably changes certified spellings and solve case-split structure
 elsewhere.

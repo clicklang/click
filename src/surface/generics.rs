@@ -920,7 +920,7 @@ fn instantiate_proof_tactic(
                 })
                 .transpose()?,
         },
-        ProofTactic::SimpUsing(using) => ProofTactic::SimpUsing(ProofSimpUsing {
+        ProofTactic::SolveUsing(using) => ProofTactic::SolveUsing(ProofSolveUsing {
             premises: using
                 .premises
                 .iter()

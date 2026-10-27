@@ -988,8 +988,8 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &prefix,
             &format!("contradiction({});", source_click_proposition(fact)),
         ),
-        ProofTactic::SimpUsing(simp) => {
-            write_using_premises(output, "solve()", &simp.premises, indent)
+        ProofTactic::SolveUsing(solve) => {
+            write_using_premises(output, "solve()", &solve.premises, indent)
         }
         ProofTactic::ArithmeticCertificate(certificate) => {
             write_arithmetic_certificate(output, certificate, indent)
@@ -1052,7 +1052,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         }
         ProofTactic::SmartExecute
         | ProofTactic::ExecuteUntil(_)
-        | ProofTactic::Simp
+        | ProofTactic::Solve
         | ProofTactic::AutoClose => {
             unreachable!("certificate validation rejects this tactic")
         }

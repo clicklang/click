@@ -78,62 +78,6 @@ impl PureFactContext {
         LOWER_BOUND_CANDIDATE_VISITS.with(std::cell::Cell::get)
     }
 
-    /// Every order fact, for `simp`'s order search (`has_order_path_for_simp`,
-    /// `increment_preserves_order_for_simp`). Fast walks read
-    /// `OrderFactsByLower` instead.
-    pub(in crate::kernel) fn condition_order_facts(&self) -> std::rc::Rc<Vec<OrderFact>> {
-        // Ambient scope id when live, content id otherwise — the same
-        // hash-once-per-distinct-fact-set policy `decide` pays at its entry.
-        // A miss reads only the order facts (`order_condition_facts`), not
-        // every condition fact, so a growing context of other facts does
-        // not make each new context's collection grow with it.
-        let memo_id = super::super::dag_memo_assumptions_id(self);
-        if let Some(hit) = ORDER_FACTS_MEMO.with(|memo| memo.borrow().get(&memo_id).cloned()) {
-            // One checkpoint keeps a run of memo hits responsive to the
-            // cooperative deadline without rescanning the fact set.
-            crate::kernel::assumptions::reasoning_interrupted();
-            return hit;
-        }
-        let mut facts = Vec::new();
-        let mut complete = true;
-        for (condition, value) in self.order_condition_facts.scan_for_legacy_simp() {
-            if crate::kernel::assumptions::reasoning_interrupted() {
-                complete = false;
-                break;
-            }
-            if let Some(fact) = condition_as_order_fact(condition, *value) {
-                facts.push(fact);
-            }
-        }
-        #[cfg(debug_assertions)]
-        if complete {
-            crate::instrumentation::uncharged_debug_check(|| {
-                let scanned = self
-                    .condition_facts
-                    .scan_for_upkeep()
-                    .filter_map(|(condition, value)| condition_as_order_fact(condition, *value))
-                    .collect::<Vec<_>>();
-                assert_eq!(
-                    facts, scanned,
-                    "the order-fact index disagrees with the condition facts"
-                );
-            });
-        }
-        let facts = std::rc::Rc::new(facts);
-        // A scan cut short by the deadline is not this fact set's collection;
-        // only complete scans are shared.
-        if complete {
-            ORDER_FACTS_MEMO.with(|memo| {
-                let mut memo = memo.borrow_mut();
-                if memo.len() >= ORDER_FACTS_MEMO_LIMIT {
-                    memo.clear();
-                }
-                memo.insert(memo_id, facts.clone());
-            });
-        }
-        facts
-    }
-
     /// Collect the order facts one *named* proposition states outright.
     ///
     /// The walk is structural: conjunction splits, and a guard is consumed
@@ -817,5 +761,63 @@ impl PureFactContext {
             base.clone(),
         )) == Some(true)
             && self.nonnegative_offset_is_proven_at_or_above(&base, offset_term)
+    }
+}
+
+impl SelectedFacts<'_> {
+    /// Every order fact, for `solve`'s order search (`has_selected_order_path`,
+    /// `selected_increment_preserves_order`). Fast walks read
+    /// `OrderFactsByLower` instead.
+    pub(in crate::kernel) fn condition_order_facts(&self) -> std::rc::Rc<Vec<OrderFact>> {
+        // Ambient scope id when live, content id otherwise — the same
+        // hash-once-per-distinct-fact-set policy `decide` pays at its entry.
+        // A miss reads only the order facts (`order_condition_facts`), not
+        // every condition fact, so a growing context of other facts does
+        // not make each new context's collection grow with it.
+        let memo_id = super::super::dag_memo_assumptions_id(self);
+        if let Some(hit) = ORDER_FACTS_MEMO.with(|memo| memo.borrow().get(&memo_id).cloned()) {
+            // One checkpoint keeps a run of memo hits responsive to the
+            // cooperative deadline without rescanning the fact set.
+            crate::kernel::assumptions::reasoning_interrupted();
+            return hit;
+        }
+        let mut facts = Vec::new();
+        let mut complete = true;
+        for (condition, value) in self.order_condition_facts.scan_explicit_input() {
+            if crate::kernel::assumptions::reasoning_interrupted() {
+                complete = false;
+                break;
+            }
+            if let Some(fact) = condition_as_order_fact(condition, *value) {
+                facts.push(fact);
+            }
+        }
+        #[cfg(debug_assertions)]
+        if complete {
+            crate::instrumentation::uncharged_debug_check(|| {
+                let scanned = self
+                    .condition_facts
+                    .scan_for_upkeep()
+                    .filter_map(|(condition, value)| condition_as_order_fact(condition, *value))
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    facts, scanned,
+                    "the order-fact index disagrees with the condition facts"
+                );
+            });
+        }
+        let facts = std::rc::Rc::new(facts);
+        // A scan cut short by the deadline is not this fact set's collection;
+        // only complete scans are shared.
+        if complete {
+            ORDER_FACTS_MEMO.with(|memo| {
+                let mut memo = memo.borrow_mut();
+                if memo.len() >= ORDER_FACTS_MEMO_LIMIT {
+                    memo.clear();
+                }
+                memo.insert(memo_id, facts.clone());
+            });
+        }
+        facts
     }
 }

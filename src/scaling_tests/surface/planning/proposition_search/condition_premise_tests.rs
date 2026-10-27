@@ -22,11 +22,11 @@ fn refused_integer_equality_does_not_rebuild_connected_order_facts() {
                 true,
             );
         }
-        // `simp` is slow part, and its condition match reads each fact a
+        // `solve` is slow part, and its condition match reads each fact a
         // bounded number of times; rebuilding the connected order facts per
         // fact would be quadratic.
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_simp_proposition(&goal)
+            context.derive_solve_proposition(&goal)
         });
         assert!(derivation.is_none());
         let bound = 512 + 4 * size as usize;
@@ -297,7 +297,7 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
             wide: false,
         };
         let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_simp_atomic_proposition(&goal).unwrap()
+            context.derive_solve_atomic_proposition(&goal).unwrap()
         });
         assert_eq!(proof.context_premises(), vec![source]);
         samples.push(work);

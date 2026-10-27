@@ -336,9 +336,9 @@ impl<'a> Proof<'a> {
                                     branch_skeleton: skeleton.clone(),
                                     can_expand_execution_prefix: matches!(
                                         &tactic,
-                                        PostExecutionTactic::Simp
+                                        PostExecutionTactic::Solve
                                             | PostExecutionTactic::AutoClose
-                                            | PostExecutionTactic::SimpUsing(_)
+                                            | PostExecutionTactic::SolveUsing(_)
                                             | PostExecutionTactic::Have(_)
                                     ),
                                 },
@@ -397,9 +397,9 @@ impl<'a> Proof<'a> {
                     branch_skeleton: Arc::new(branch_skeleton()?),
                     can_expand_execution_prefix: matches!(
                         &tactic,
-                        PostExecutionTactic::Simp
+                        PostExecutionTactic::Solve
                             | PostExecutionTactic::AutoClose
-                            | PostExecutionTactic::SimpUsing(_)
+                            | PostExecutionTactic::SolveUsing(_)
                             | PostExecutionTactic::Have(_)
                     ),
                 })

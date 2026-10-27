@@ -81,9 +81,10 @@ it as it is and say so.
 
 Ambient search views require `SearchPermission`, constructed only in
 `surface::planning`. The Cargo build checks kernel dependencies and pins
-legacy simp/diagnostic scan callers in `build_support/search_boundary.rs`.
+diagnostic scan callers in `build_support/search_boundary.rs`.
 Do not fix a boundary failure by widening its allowance or relabelling a query
-as upkeep. Move the search into planning or use explicitly selected premises;
+as upkeep. Move the search into planning or use `SelectedFacts::from_propositions` for
+explicitly selected premises;
 if a legacy API needs migration, describe that migration and test its boundary.
 Run the boundary regressions with `test(gate_tests::search_boundary::)` in the
 fast-gate binary. This enforcement does not replace deterministic scaling tests.

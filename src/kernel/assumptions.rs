@@ -621,7 +621,7 @@ pub(in crate::kernel) fn equality_graph_term_key(term: &Bitvector32Term) -> Bitv
 }
 
 thread_local! {
-    static SIMP_FACT_CONDITIONS_IN_PROGRESS: RefCell<BTreeSet<(ConditionTerm, bool)>> =
+    static SOLVE_FACT_CONDITIONS_IN_PROGRESS: RefCell<BTreeSet<(ConditionTerm, bool)>> =
         const { RefCell::new(BTreeSet::new()) };
     static CONDITION_DECISIONS_IN_PROGRESS: RefCell<BTreeSet<ConditionTerm>> =
         const { RefCell::new(BTreeSet::new()) };
@@ -947,7 +947,7 @@ thread_local! {
         std::collections::HashMap<(u64, Bitvector32Term), (i64, i64)>,
     > = RefCell::new(std::collections::HashMap::new());
     /// Keyed by `atomic_derivation_memo_key`: the premises, whether the
-    /// query is for `simp`, and the DAG modes the derivation reads.
+    /// query is for `solve`, and the DAG modes the derivation reads.
     static ATOMIC_DERIVATION_MEMO: RefCell<
         std::collections::HashMap<
             (u64, bool, bool, bool),
@@ -1228,29 +1228,29 @@ pub(crate) fn reasoning_interrupted() -> bool {
 }
 
 /// Whether the verification deadline has passed, noted as a truncation so
-/// the memo layers do not cache an answer the deadline cut short. A simp
+/// the memo layers do not cache an answer the deadline cut short. A solve
 /// derivation has no step budget of its own: its decisions are memoized
 /// per condition and cycle-cut, its recursion follows the proposition, and
 /// its premise selection is bounded by the candidate facts, so its work is
 /// bounded by the goal and the facts the goal names.
-pub(crate) fn simp_reasoning_interrupted() -> bool {
+pub(crate) fn solve_reasoning_interrupted() -> bool {
     reasoning_interrupted()
 }
 
-/// Marks a condition whose fact-based simp proof is in progress. Proving a
+/// Marks a condition whose fact-based solve proof is in progress. Proving a
 /// condition from the proposition facts can decide other conditions, which
 /// consult the facts again; a condition met again while its own proof is
 /// in progress is a cycle through the facts and proves nothing on that
 /// path. Distinct conditions nest freely, bounded by the conditions the
 /// facts connect to the query.
-struct SimpFactReasoningGuard {
+struct SelectedFactReasoningGuard {
     key: (ConditionTerm, bool),
 }
 
-impl SimpFactReasoningGuard {
+impl SelectedFactReasoningGuard {
     fn enter(condition: &ConditionTerm, value: bool) -> Option<Self> {
         let key = (condition.clone(), value);
-        let entered = SIMP_FACT_CONDITIONS_IN_PROGRESS
+        let entered = SOLVE_FACT_CONDITIONS_IN_PROGRESS
             .with(|conditions| conditions.borrow_mut().insert(key.clone()));
         if !entered {
             // Refusing the repeated query makes any enclosing negative
@@ -1262,9 +1262,9 @@ impl SimpFactReasoningGuard {
     }
 }
 
-impl Drop for SimpFactReasoningGuard {
+impl Drop for SelectedFactReasoningGuard {
     fn drop(&mut self) {
-        SIMP_FACT_CONDITIONS_IN_PROGRESS.with(|conditions| {
+        SOLVE_FACT_CONDITIONS_IN_PROGRESS.with(|conditions| {
             conditions.borrow_mut().remove(&self.key);
         });
     }
@@ -1275,7 +1275,7 @@ impl Drop for SimpFactReasoningGuard {
 /// conditions nest.
 #[cfg(test)]
 #[test]
-fn simp_fact_reasoning_guard_refuses_reentry_and_keeps_the_outer_proof() {
+fn solve_fact_reasoning_guard_refuses_reentry_and_keeps_the_outer_proof() {
     let first = ConditionTerm::equal(
         Bitvector32Term::Variable(Variable(7_400_000)),
         Bitvector32Term::Constant(1),
@@ -1285,9 +1285,9 @@ fn simp_fact_reasoning_guard_refuses_reentry_and_keeps_the_outer_proof() {
         Bitvector32Term::Constant(2),
     );
     let epoch_before = incomplete_reasoning_epoch();
-    let outer = SimpFactReasoningGuard::enter(&first, true).expect("the first proof registers");
+    let outer = SelectedFactReasoningGuard::enter(&first, true).expect("the first proof registers");
     assert!(
-        SimpFactReasoningGuard::enter(&first, true).is_none(),
+        SelectedFactReasoningGuard::enter(&first, true).is_none(),
         "re-entering the condition is a cycle"
     );
     assert_eq!(
@@ -1295,15 +1295,15 @@ fn simp_fact_reasoning_guard_refuses_reentry_and_keeps_the_outer_proof() {
         epoch_before + 1,
         "the cycle makes an enclosing negative answer unsafe to memoize"
     );
-    let nested = SimpFactReasoningGuard::enter(&second, true);
+    let nested = SelectedFactReasoningGuard::enter(&second, true);
     assert!(nested.is_some(), "a distinct condition nests");
     assert!(
-        SimpFactReasoningGuard::enter(&first, false).is_some(),
+        SelectedFactReasoningGuard::enter(&first, false).is_some(),
         "the other polarity is a distinct proof"
     );
     drop(nested);
     assert!(
-        SimpFactReasoningGuard::enter(&first, true).is_none(),
+        SelectedFactReasoningGuard::enter(&first, true).is_none(),
         "the refused re-entry left the outer proof registered"
     );
     assert_eq!(
@@ -1312,7 +1312,7 @@ fn simp_fact_reasoning_guard_refuses_reentry_and_keeps_the_outer_proof() {
         "each refused query advances the incompleteness epoch"
     );
     drop(outer);
-    assert!(SimpFactReasoningGuard::enter(&first, true).is_some());
+    assert!(SelectedFactReasoningGuard::enter(&first, true).is_some());
 }
 
 struct ConditionDecisionGuard {
@@ -8089,14 +8089,14 @@ impl PropositionDerivation {
             PropositionDerivationRule::ContextualAtomic {
                 premises,
                 premises_id,
-                for_simp,
+                extended_rules,
                 evidence,
             } => {
                 let premises = premises.context();
                 (id_scope.id == *premises_id || available.includes(&premises))
                     && premises.checks_atomic_derivation(
                         &self.conclusion,
-                        *for_simp,
+                        *extended_rules,
                         *premises_id,
                         evidence,
                     )
@@ -11800,3 +11800,6 @@ fn with_adjusted_member<K: Ord + Clone, V: Ord + Clone>(
         map.with_inserted(key.clone(), bucket)
     }
 }
+
+mod selected_facts;
+pub(crate) use selected_facts::SelectedFacts;

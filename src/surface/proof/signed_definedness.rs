@@ -24,7 +24,7 @@ use crate::kernel::proof::arithmetic_special::{
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl<'a> Proof<'a> {
-    /// `simp` on an `int32` or `int64` definedness goal: cite the constant
+    /// `solve` on an `int32` or `int64` definedness goal: cite the constant
     /// bounds the context indexes under each operand.
     pub(in crate::surface::proof) fn try_signed_definedness_closure(
         &self,
@@ -90,7 +90,7 @@ impl<'a> Proof<'a> {
     /// A definedness goal that lowers to a conjunction with its operands'
     /// own definedness, such as `defined(pool->capacity - 1)` over a read
     /// through a resource view: each written operand's `defined(..)` is
-    /// proved as a `have` by `simp` and cited beside the operands' bounds,
+    /// proved as a `have` by `solve` and cited beside the operands' bounds,
     /// which the `int32_defined` / `int64_defined` rule accepts for the
     /// conjuncts beyond the operation's overflow.
     fn try_signed_definedness_with_operand_definedness(
@@ -116,7 +116,7 @@ impl<'a> Proof<'a> {
             let Ok(scope) = proof.begin_have(defined.clone()) else {
                 return Ok(None);
             };
-            let Some(scope) = scope.try_simp_closure()? else {
+            let Some(scope) = scope.try_solve_closure()? else {
                 return Ok(None);
             };
             proof = scope.join()?;
@@ -127,7 +127,7 @@ impl<'a> Proof<'a> {
 
     /// An operand whose summands are fixed by exact constant equalities,
     /// such as a count `A + n` with `A == 0`, is first restated without
-    /// them: `count == n` is proved as a `have` by `simp`, `defined(n + 1)`
+    /// them: `count == n` is proved as a `have` by `solve`, `defined(n + 1)`
     /// as a `have` from the bounds of `n`, and the goal, rewritten by the
     /// first, closes from both. Each summand is a keyed lookup; nothing
     /// scans the context.
@@ -167,7 +167,7 @@ impl<'a> Proof<'a> {
             let Ok(scope) = proof.begin_have(equality.clone()) else {
                 return Ok(None);
             };
-            let Some(scope) = scope.try_simp_closure()? else {
+            let Some(scope) = scope.try_solve_closure()? else {
                 return Ok(None);
             };
             proof = scope.join()?;

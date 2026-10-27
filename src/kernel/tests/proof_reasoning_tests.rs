@@ -154,13 +154,13 @@ fn checked_algebraic_constructor_rules_are_sound() {
     let injectivity_context =
         PureFactContext::new().assume_proposition(constructor_equality.clone());
     let injectivity = injectivity_context
-        .derive_simp_proposition(&field_equality)
+        .derive_solve_proposition(&field_equality)
         .expect("a checked same-constructor equality entails its field equality");
     assert!(injectivity.check(&injectivity_context));
 
     let congruence_context = PureFactContext::new().assume_proposition(field_equality);
     let congruence = congruence_context
-        .derive_simp_proposition(&constructor_equality)
+        .derive_solve_proposition(&constructor_equality)
         .expect("checked field equalities entail equality of their constructors");
     assert!(congruence.check(&congruence_context));
 
@@ -178,7 +178,7 @@ fn checked_algebraic_constructor_rules_are_sound() {
     );
     assert!(
         PureFactContext::new()
-            .derive_simp_proposition(&malformed)
+            .derive_solve_proposition(&malformed)
             .is_none(),
         "constructor rules must reject terms that do not match the retained schema"
     );
@@ -342,7 +342,7 @@ fn algebraic_symbolic_reflexivity_checks_well_formed_terms() {
         assert!(crate::kernel::proof::fact_reasoning::normalizes_context_free(&goal));
         assert!(
             context
-                .derive_simp_proposition(&goal)
+                .derive_solve_proposition(&goal)
                 .unwrap()
                 .check(&context)
         );
@@ -374,7 +374,7 @@ fn algebraic_symbolic_reflexivity_checks_well_formed_terms() {
     for term in [malformed_call, malformed_match] {
         let goal = equality(&term, &term);
         assert!(!crate::kernel::proof::fact_reasoning::normalizes_context_free(&goal));
-        assert!(context.derive_simp_proposition(&goal).is_none());
+        assert!(context.derive_solve_proposition(&goal).is_none());
     }
 }
 
@@ -565,7 +565,7 @@ fn int32_le_and_not_lt_equality_derivation_retains_both_exact_premises() {
         .assume_proposition(not_less_than.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("<= plus not-< should derive int32 equality");
     assert_eq!(
         derivation.int32_le_and_not_lt_implies_equality_premises(),
@@ -595,7 +595,7 @@ fn int32_ge_and_not_gt_equality_derivation_retains_both_exact_premises() {
         .assume_proposition(not_greater_than.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect(">= plus not-> should derive int32 equality");
     assert_eq!(
         derivation.int32_ge_and_not_gt_implies_equality_premises(),
@@ -621,7 +621,7 @@ fn int32_positive_is_nonnegative_derivation_retains_its_exact_premise() {
     let assumptions = PureFactContext::new().assume_proposition(positive.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("0 < value should derive 0 <= value");
     assert_eq!(
         derivation
@@ -637,7 +637,7 @@ fn int32_positive_is_nonnegative_derivation_retains_its_exact_premise() {
         true,
     );
     let reversed = assumptions
-        .derive_simp_proposition(&reversed_goal)
+        .derive_solve_proposition(&reversed_goal)
         .expect("0 < value should derive value >= 0");
     assert_eq!(
         reversed
@@ -662,7 +662,7 @@ fn int32_negated_strict_successor_bound_retains_its_exact_premise() {
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("not (value < 2) should derive value >= 1");
     let step = derivation
         .int32_negated_strict_successor_bound_step()
@@ -689,7 +689,7 @@ fn int32_successor_le_implies_lt_retains_its_exact_premise() {
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("2 <= value should derive 1 < value");
     let step = derivation
         .int32_successor_le_implies_lt_step()
@@ -721,7 +721,7 @@ fn int32_constant_lower_bound_weakening_retains_its_exact_premise() {
     for premise in [lower, reversed] {
         let assumptions = PureFactContext::new().assume_proposition(premise.clone());
         let derivation = assumptions
-            .derive_simp_proposition(&goal)
+            .derive_solve_proposition(&goal)
             .expect("3 <= value should derive 0 <= value");
         let step = derivation
             .int32_constant_lower_bound_weakening_step()
@@ -751,7 +751,7 @@ fn int32_le_and_neq_strict_derivation_retains_both_exact_premises() {
         .assume_proposition(not_equal.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("<= plus != should derive strict int32 order");
     assert_eq!(
         derivation.int32_le_and_neq_implies_strict_premises(),
@@ -1568,7 +1568,7 @@ fn signed_order_derivation_retains_its_exact_edge_path() {
         .assume_proposition(second.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("the signed-order chain should derive its conclusion");
     let path = derivation
         .signed_order_path()
@@ -1600,7 +1600,7 @@ fn signed_order_derivation_retains_the_exact_negative_polarity_premise() {
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("the negated non-strict bound should derive reversed strict order");
     let path = derivation
         .signed_order_path()
@@ -1631,7 +1631,7 @@ fn increment_upper_bound_derivation_retains_its_exact_strict_premise() {
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("the strict bound should derive the increment upper bound");
     let step = derivation
         .int32_increment_upper_bound_step()
@@ -1676,7 +1676,7 @@ fn increment_upper_bound_uses_only_an_exact_direct_strict_edge() {
     for premise in premises {
         let assumptions = PureFactContext::new().assume_proposition(premise.clone());
         let derivation = assumptions
-            .derive_simp_proposition(&goal)
+            .derive_solve_proposition(&goal)
             .expect("each normalized strict edge derives the increment bound");
         let step = derivation
             .int32_increment_upper_bound_step()
@@ -1696,7 +1696,11 @@ fn increment_upper_bound_uses_only_an_exact_direct_strict_edge() {
             .exact_direct_order_step(&value, &upper, true)
             .is_none()
     );
-    assert!(!indirect.proves_atomic_for_derivation(&goal, true));
+    assert!(
+        !indirect
+            .selected_for_test()
+            .proves_atomic_for_derivation(&goal, true)
+    );
 }
 
 #[test]
@@ -1721,7 +1725,7 @@ fn increment_constant_upper_bound_retains_its_exact_nonstrict_premise() {
     for premise in [direct, reversed] {
         let assumptions = PureFactContext::new().assume_proposition(premise.clone());
         let derivation = assumptions
-            .derive_simp_proposition(&goal)
+            .derive_solve_proposition(&goal)
             .expect("value <= 3 should derive value + 1 <= 5");
         let step = derivation
             .int32_increment_constant_upper_bound_step()
@@ -1753,7 +1757,7 @@ fn increment_strictly_increases_derivation_retains_its_exact_strict_premise() {
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("the strict upper bound should prove that the increment increases");
     let step = derivation
         .int32_increment_strictly_increases_step()
@@ -1785,7 +1789,7 @@ fn increment_definedness_derivation_retains_its_exact_max_bound() {
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("the strict maximum bound should prove increment definedness");
     let step = derivation
         .int32_increment_below_max_is_defined_step()
@@ -1825,7 +1829,7 @@ fn one_plus_rules_retain_their_exact_max_bound_and_operand_order() {
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
     let defined = assumptions
-        .derive_simp_proposition(&defined_goal)
+        .derive_solve_proposition(&defined_goal)
         .expect("the maximum bound should prove one-plus definedness");
     let defined_step = defined
         .int32_one_plus_below_max_is_defined_step()
@@ -1837,7 +1841,7 @@ fn one_plus_rules_retain_their_exact_max_bound_and_operand_order() {
     assert!(defined.check(&assumptions));
 
     let strict = assumptions
-        .derive_simp_proposition(&strict_goal)
+        .derive_solve_proposition(&strict_goal)
         .expect("the maximum bound should prove one-plus strict increase");
     let strict_step = strict
         .int32_one_plus_strictly_increases_step()
@@ -1879,7 +1883,7 @@ fn symbolic_add_definedness_retains_both_exact_named_theorem_bounds() {
         .assume_proposition(within_headroom.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("the two named-theorem bounds should prove symbolic addition definedness");
     let (nonnegative_step, headroom_step) = derivation
         .int32_nonnegative_add_within_max_steps()
@@ -1922,7 +1926,7 @@ fn symbolic_subtract_definedness_retains_both_exact_named_theorem_bounds() {
         .assume_proposition(within_value.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("the two named-theorem bounds should prove symbolic subtraction definedness");
     let (nonnegative_step, within_value_step) = derivation
         .int32_nonnegative_subtract_within_value_steps()
@@ -1964,7 +1968,7 @@ fn increment_lower_bound_derivation_retains_both_exact_bounds() {
         .assume_proposition(upper_premise.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("the two exact bounds should prove the increment lower bound");
     let (lower_bound, upper_bound) = derivation
         .int32_increment_lower_bound_steps()
@@ -2017,7 +2021,7 @@ fn remaining_increment_bound_derivations_retain_both_exact_bounds() {
 
     for (index, goal) in goals.iter().enumerate() {
         let derivation = assumptions
-            .derive_simp_proposition(goal)
+            .derive_solve_proposition(goal)
             .expect("the two exact bounds should prove each remaining increment rule");
         let (lower_bound, upper_bound) = match index {
             0 => derivation.int32_increment_greater_equal_lower_bound_steps(),
@@ -2063,7 +2067,7 @@ fn strict_lower_increment_derivation_retains_both_exact_strict_bounds() {
         .assume_proposition(upper_premise.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("the two strict bounds should prove the incremented strict lower bound");
     let (lower_bound, upper_bound) = derivation
         .int32_increment_strict_greater_from_strict_lower_steps()
@@ -2108,7 +2112,7 @@ fn predecessor_derivations_retain_their_exact_named_rule_premises() {
         true,
     );
     let nonnegative_derivation = positive_assumptions
-        .derive_simp_proposition(&nonnegative_goal)
+        .derive_solve_proposition(&nonnegative_goal)
         .expect("strict positivity should prove a nonnegative predecessor");
     let nonnegative_step = nonnegative_derivation
         .int32_positive_predecessor_is_nonnegative_step()
@@ -2124,7 +2128,7 @@ fn predecessor_derivations_retain_their_exact_named_rule_premises() {
         true,
     );
     let decrease_derivation = positive_assumptions
-        .derive_simp_proposition(&decrease_goal)
+        .derive_solve_proposition(&decrease_goal)
         .expect("strict positivity should prove predecessor decrease");
     let decrease_step = decrease_derivation
         .int32_positive_predecessor_strictly_decreases_step()
@@ -2140,7 +2144,7 @@ fn predecessor_derivations_retain_their_exact_named_rule_premises() {
         true,
     );
     let bounded_derivation = bounded_assumptions
-        .derive_simp_proposition(&bounded_goal)
+        .derive_solve_proposition(&bounded_goal)
         .expect("the two exact bounds should prove the predecessor bound");
     let (nonnegative_step, bounded_step) = bounded_derivation
         .int32_nonnegative_predecessor_upper_bound_steps()
@@ -2162,7 +2166,7 @@ fn predecessor_derivations_retain_their_exact_named_rule_premises() {
     let one_le_assumptions = PureFactContext::new().assume_proposition(one_le.clone());
     for (goal, nonnegative_result) in [(&nonnegative_goal, true), (&decrease_goal, false)] {
         let derivation = one_le_assumptions
-            .derive_simp_proposition(goal)
+            .derive_solve_proposition(goal)
             .expect("one at most the value should prove the predecessor conclusion");
         let step = if nonnegative_result {
             derivation.int32_one_le_predecessor_is_nonnegative_step()
@@ -2204,7 +2208,7 @@ fn predecessor_derivation_retains_equal_one_path_instead_of_a_derived_bound() {
         ),
     ] {
         let derivation = assumptions
-            .derive_simp_proposition(&goal)
+            .derive_solve_proposition(&goal)
             .expect("equality to one should prove the predecessor conclusion");
         let path = if nonnegative_result {
             derivation.int32_equal_one_predecessor_is_nonnegative_path()
@@ -2242,7 +2246,7 @@ fn predecessor_zero_derivation_retains_its_equal_one_path() {
         ),
     ] {
         let derivation = assumptions
-            .derive_simp_proposition(&goal)
+            .derive_solve_proposition(&goal)
             .expect("equality to one should prove that the predecessor is zero");
         let path = derivation
             .int32_equal_one_predecessor_is_zero_path()
@@ -2270,7 +2274,7 @@ fn bitvector_equality_derivation_retains_its_exact_oriented_path() {
         .assume_proposition(second.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("the exact equality chain should derive its conclusion");
     let path = derivation
         .bitvector_equality_path()
@@ -2286,7 +2290,7 @@ fn bitvector_equality_derivation_retains_its_exact_oriented_path() {
 }
 
 #[test]
-fn scalar_graph_literal_evaluation_supplies_checkable_simp_equality() {
+fn scalar_graph_literal_evaluation_supplies_checkable_solve_equality() {
     let left = Bitvector32Term::Variable(Variable(218));
     let right = Bitvector32Term::Variable(Variable(219));
     let one = Bitvector32Term::Constant(1);
@@ -2318,7 +2322,7 @@ fn scalar_graph_literal_evaluation_supplies_checkable_simp_equality() {
     assert_checkable_derivation(&assumptions, &goal);
     assert!(
         PureFactContext::new()
-            .derive_simp_proposition(&goal)
+            .derive_solve_proposition(&goal)
             .is_none()
     );
     assert!(!assumptions.int32_values_known_equal(
@@ -2575,7 +2579,7 @@ fn proposition_derivation_proves_implication_from_false_antecedent() {
     let assumptions = PureFactContext::new().assume_condition(condition, true);
 
     let derivation = assumptions
-        .derive_simp_proposition(&conclusion)
+        .derive_solve_proposition(&conclusion)
         .expect("a false antecedent should prove an implication");
     assert!(derivation.check(&assumptions));
 }
@@ -3365,7 +3369,7 @@ fn quantified_signed_condition_fact_certifies_a_symbolic_index() {
     );
 
     let derivation = assumptions
-        .derive_simp_proposition(&target)
+        .derive_solve_proposition(&target)
         .expect("a universal with symbolic bounds should specialize at the target index");
     let (selected, argument, guards) = derivation
         .forall_int32_instantiation()
@@ -3439,7 +3443,7 @@ fn quantified_atomic_derivation_retains_its_specialization_and_guards() {
         .assume_proposition(exit_guard.clone());
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("the selected universal instance should prove the concrete cell");
     let (selected, argument, guards) = derivation
         .forall_int32_instantiation()
@@ -3511,7 +3515,7 @@ fn a_quantified_instantiation_guard_needing_a_derivation_is_refused() {
         .assume_proposition(derivable_guard_source);
 
     let retained = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .and_then(|derivation| derivation.forall_int32_instantiation().map(|_| ()));
     assert!(
         retained.is_none(),
@@ -3713,7 +3717,7 @@ fn proposition_derivation_check_requires_its_context() {
     );
     let assumptions = PureFactContext::new().assume_proposition(proposition.clone());
     let derivation = assumptions
-        .derive_simp_proposition(&proposition)
+        .derive_solve_proposition(&proposition)
         .expect("exact fact should produce a derivation");
 
     assert!(derivation.check(&assumptions));
@@ -3730,7 +3734,7 @@ fn implication_derivation_context_excludes_its_local_antecedent() {
     let goal = Proposition::Implies(Box::new(antecedent.clone()), Box::new(antecedent));
     let assumptions = PureFactContext::new();
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("an implication may use its own antecedent");
 
     assert!(derivation.check(&assumptions));
@@ -3822,7 +3826,7 @@ fn singleton_substitution_derivation_records_only_its_bound_premises() {
         .assume_proposition(upper.clone())
         .assume_proposition(unrelated);
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("singleton bounds should establish equality");
 
     assert!(matches!(
@@ -3897,7 +3901,7 @@ fn successor_order_derivation_needs_only_an_upper_bound() {
             arguments: Vec::new(),
         });
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("an int32 value below another int32 value cannot overflow when incremented");
 
     assert!(derivation.check(&assumptions));
@@ -4286,7 +4290,7 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
     );
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("quantified order instance should produce a simplifier derivation");
     assert_eq!(derivation.conclusion(), &goal);
     assert!(derivation.check(&assumptions));
@@ -5340,7 +5344,7 @@ fn assumptions_prove_implication_with_refuted_antecedent() {
 }
 
 #[test]
-fn simp_derives_vacuous_implication_before_searching_large_consequent() {
+fn solve_derives_vacuous_implication_before_searching_large_consequent() {
     fn unknown_tree(depth: usize, index: usize) -> Proposition {
         if depth == 0 {
             return Proposition::Predicate {
@@ -5364,13 +5368,13 @@ fn simp_derives_vacuous_implication_before_searching_large_consequent() {
     let assumptions = PureFactContext::new().assume_condition(condition, false);
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("a refuted antecedent should close before inspecting the consequent");
     assert!(derivation.check(&assumptions));
 }
 
 #[test]
-fn simp_derives_implication_body_before_refuting_known_antecedent() {
+fn solve_derives_implication_body_before_refuting_known_antecedent() {
     let antecedent_condition = ConditionTerm::equal(
         Bitvector32Term::Variable(Variable(94)),
         Bitvector32Term::Constant(0),
@@ -5388,7 +5392,7 @@ fn simp_derives_implication_body_before_refuting_known_antecedent() {
         .assume_condition(consequent_condition, true);
 
     let derivation = assumptions
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("a known antecedent should use the available consequent directly");
     assert!(derivation.check(&assumptions));
 }
@@ -5540,7 +5544,7 @@ fn equality_rewrites_through_matching_decrement() {
     assert!(
         PureFactContext::new()
             .assume_proposition(equality)
-            .derive_simp_proposition(&goal)
+            .derive_solve_proposition(&goal)
             .is_some()
     );
 }
@@ -5629,8 +5633,8 @@ fn repeated_order_fact_collections_share_one_scan() {
         PureFactContext::new().assume_condition(ConditionTerm::signed_less_than(left, right), true);
     let _scope = assumptions.enter_id_scope();
 
-    let first = assumptions.condition_order_facts();
-    let second = assumptions.condition_order_facts();
+    let first = assumptions.selected_for_test().condition_order_facts();
+    let second = assumptions.selected_for_test().condition_order_facts();
 
     assert_eq!(first.len(), 1, "the order fact should be collected");
     assert!(
@@ -5964,10 +5968,10 @@ fn constant_normalization_follows_equality_chains_of_any_length() {
     }
 }
 
-/// A simp derivation has no step budget: a balanced conjunction of any
+/// A solve derivation has no step budget: a balanced conjunction of any
 /// width whose parts are exact facts derives, its work following the goal.
 #[test]
-fn simp_derivations_have_no_step_budget() {
+fn solve_derivations_have_no_step_budget() {
     for width in [64u64, 128, 256, 512] {
         let variable = |index: u64| Bitvector32Term::Variable(Variable(7_500_000 + index));
         let condition = |index: u64| {
@@ -5993,7 +5997,7 @@ fn simp_derivations_have_no_step_budget() {
                 .collect();
         }
         assert!(
-            assumptions.derive_simp_proposition(&parts[0]).is_some(),
+            assumptions.derive_solve_proposition(&parts[0]).is_some(),
             "a conjunction of {width} exact facts derives"
         );
     }
@@ -7343,7 +7347,7 @@ fn singleton_bound_through_an_exact_constant_equality_retains_its_premises() {
         .assume_proposition(upper.clone())
         .assume_proposition(pinned.clone());
     let proof = facts
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("typed singleton equality");
     assert!(proof.check(&facts));
     assert!(proof.is_int32_pinned_constant_equality());
@@ -7357,7 +7361,7 @@ fn singleton_bound_through_an_exact_constant_equality_retains_its_premises() {
     for missing in [lower, upper, pinned] {
         let restricted = facts.without_exact_fact(&missing);
         assert!(!proof.check(&restricted));
-        assert!(restricted.derive_simp_proposition(&goal).is_none());
+        assert!(restricted.derive_solve_proposition(&goal).is_none());
     }
 }
 
@@ -8578,9 +8582,14 @@ fn bounded_byte_pointer_association_uses_checked_signed_addition() {
             &left, &right, &facts
         )
     );
-    assert_eq!(facts.decide_condition_for_simp(&condition), Some(true));
+    assert_eq!(
+        facts
+            .selected_for_test()
+            .decide_selected_condition(&condition),
+        Some(true)
+    );
     let proof = facts
-        .derive_simp_proposition(&goal)
+        .derive_solve_proposition(&goal)
         .expect("exact bounded pointer association");
     assert!(proof.check(&facts));
 }
@@ -9628,7 +9637,9 @@ fn atomic_derivation_memo_is_keyed_by_the_dag_modes() {
         )
     };
 
-    let (outside, id) = assumptions.proves_atomic_for_derivation_with_id(&goal, false);
+    let (outside, id) = assumptions
+        .selected_for_test()
+        .proves_atomic_for_derivation_with_id(&goal, false);
     assert!(outside.is_some());
     assert!(memoized(id));
     crate::kernel::api::with_extended_dag_bridging(|| {
@@ -9636,7 +9647,9 @@ fn atomic_derivation_memo_is_keyed_by_the_dag_modes() {
             !memoized(id),
             "an answer from outside the scope is not reused inside it"
         );
-        let (inside, inside_id) = assumptions.proves_atomic_for_derivation_with_id(&goal, false);
+        let (inside, inside_id) = assumptions
+            .selected_for_test()
+            .proves_atomic_for_derivation_with_id(&goal, false);
         assert!(inside.is_some());
         assert_eq!(inside_id, id);
         assert!(memoized(id));
