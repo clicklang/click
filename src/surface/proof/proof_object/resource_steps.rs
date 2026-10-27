@@ -1307,6 +1307,46 @@ impl<'a> Proof<'a> {
             .collect::<Vec<_>>();
         facts = facts.with_kernel_checked_fact(equality.clone());
 
+        // Unfold constructed this equation under the pre-step facts. Retain
+        // that completed judgment on its return path, so a later `have` or
+        // resource fold does not treat the equation as an ambient assumption.
+        // No checker runs again over the equation produced above.
+        if let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() {
+            let branch_state = &self.focused_branch().expect("focused branch exists").state;
+            let root = KernelProofObject::root(
+                self.state().locals().clone(),
+                OpenBranch::surface_proposition_at_outcome(
+                    branch_state.clone(),
+                    goal.data.clone(),
+                    equality,
+                    checked_equality,
+                ),
+            );
+            let completion = root
+                .publish_checked_result(self.state().locals().clone(), None, Vec::new(), Vec::new())
+                .map_err(|_| self.step_error("checked unfold lost its proposition judgment"))?
+                .completed_proposition()
+                .ok_or_else(|| self.step_error("checked unfold did not close its proposition"))?;
+            let mut execution = branch_state
+                .execution
+                .as_ref()
+                .ok_or_else(|| self.step_error("return unfold lost its execution evidence"))?
+                .as_ref()
+                .clone();
+            execution
+                .core
+                .record_return_proposition(goal.path_index, completion, self.facts())
+                .map_err(|message| self.step_error(message))?;
+            let mut state = self.refined_branch_state(facts);
+            state.execution = Some(Arc::new(execution));
+            return Ok(CheckedFocusedTransition::replacing(
+                self.state().locals().clone(),
+                Some(OpenBranch::function_outcome(goal.clone(), state)),
+                added_facts.clone(),
+                added_facts,
+            ));
+        }
+
         let branch = match self.focused_obligation() {
             Some(Obligation::Proposition(goal)) => {
                 let mut original_surface = goal.surface.as_deref().cloned();
