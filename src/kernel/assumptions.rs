@@ -6561,17 +6561,6 @@ impl PureFactContext {
         self.store_owners.as_deref().map(Vec::as_slice)
     }
 
-    /// The compositions store separation reads: the store owners alone when
-    /// the writer stated them, every stated composition otherwise.
-    pub(in crate::kernel) fn store_compositions(
-        &self,
-    ) -> Box<dyn Iterator<Item = &ResourceContext> + '_> {
-        match &self.store_owners {
-            Some(owners) => Box::new(owners.iter()),
-            None => Box::new(self.resource_compositions.scan_unindexed()),
-        }
-    }
-
     /// A context holding only this context's resource compositions: what
     /// ownership alone proves, independent of any condition or other fact.
     pub(crate) fn compositions_only(&self) -> Self {

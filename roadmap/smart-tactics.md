@@ -365,19 +365,28 @@ shallow and through the fact graph, shallow range separation, and range
 against pointer when deciding which memory facts survive a store
 (`shallow_owned_separation_ignores_unrelated_compositions`, and
 `heap_object_stores_and_releases_cost_the_same_at_every_position`, which
-charging made fail on the old scans). Still `scan_unindexed`, each over
-every composition:
+charging made fail on the old scans). Still `scan_unindexed`:
 
 - the composite frame frontier (`frame_frontier_compositions`), now over
   the compositions owning a composite only (`composite_owning_compositions`,
   read from each composition's own count; a composition without one
   expands to nothing). Its gate once walked
   every fact of every composition on each store's cell drop
-  (`frame_frontier_ignores_compositions_without_composites`);
-- `store_compositions` when the writer stated no store owners: the
-  owned store footprint collects the member of every composition holding
-  the cell, so its output is as large as the compositions that restate
-  it.
+  (`frame_frontier_ignores_compositions_without_composites`).
+
+**Fixed (2026-10-27):** ownerless store separation no longer builds a
+footprint by scanning every stated composition. It retains the write's base
+spellings, then reads `CompositionMemberIndex` under both accesses' bases
+when the cached read is known. Both keys matter: a later composition can
+add the read while restating the write. Each selected composition's write
+membership is retained for the store, so multiple cached cells do not repeat
+its containment check. Explicit current store owners keep
+their existing once-per-store footprint. The parameter-partition shortcut
+selects any owner of the write through its own keys. The deterministic
+regression `ownerless_store_separation_ignores_unrelated_composition_history`
+covers separate compositions and a growing partition at 8, 32 and 128
+compositions, with successful and refused queries. The old separate-history
+query cost 43, 114 and 402 work units.
 
 **Fixed:** the composition range cover in `proves_resource_separate_inner`
 while the path states a containment fact with a non-memory parent, as
@@ -878,16 +887,19 @@ whole suite (counted 2026-10-26):
   60 facts, 15 hits. Its query shapes are load variables, sums,
   `IntegerEqual`, pointer equalities and pure function applications; an
   index needs keys for those.
-- `store_compositions` with no store owners (`assumptions.rs`): 1,435
-  calls, at most 2 compositions. `composition_members` lists candidates
-  only for pairs, and the store footprint is built before the second
-  access is known, so the member lookup must move to the pair question.
 - `frame_frontier_compositions` (`memory_reasoning.rs`): 328 calls, at most
   7 composite-owning compositions. Needs a by-block index of them.
 - Item 21's wide-separation bucket (separations with a wide side share one
   bucket every query reads).
 
 Fix each with a scaling test that shows it growing.
+
+Completed 2026-10-27: the ownerless `store_compositions` scan (1,435 calls,
+at most 2 compositions in the census). A deterministic scaling reproduction
+showed growth beyond the corpus sizes. Store separation now selects
+compositions from both accesses' base keys at the pair question; explicit
+store owners retain their existing path. See the compositions discussion above and the
+`ownerless_store_separation_ignores_unrelated_composition_history` regression.
 
 ### 3. Completed (2026-10-27): shared equality-chain search
 
