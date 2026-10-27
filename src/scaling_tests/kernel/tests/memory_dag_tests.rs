@@ -4,6 +4,33 @@
 
 use super::*;
 
+/// The justification the step rule gives for crossing `edge`'s own derivation
+/// with a `bytes`-wide read at `pointer`, which the edge must not write.
+fn seeded_edge_justification(
+    edge: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+) -> MemoryDagHopJustification {
+    let derivation = edge.derivation().expect("a seeded edge");
+    let crate::kernel::resource_tracker::step_effect::StepEffect::Separate(
+        crate::kernel::resource_tracker::step_effect::Separation::Cell(justification),
+    ) = crate::kernel::resource_tracker::step_effect::affects(
+        &derivation,
+        edge,
+        crate::kernel::resource_tracker::Resource::Cell { pointer, bytes },
+        &crate::kernel::resource_tracker::step_effect::Evidence {
+            assumptions,
+            cross_loop_havoc: false,
+        },
+    )
+    else {
+        panic!("the seeded edge is separate from the read");
+    };
+    assert!(justification.checks(&derivation, pointer, bytes, assumptions));
+    justification
+}
+
 #[test]
 fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
     use crate::kernel::proof::ProofFacts;
@@ -559,22 +586,31 @@ fn seeded_scalar_loads_frame_unknown_cells_with_constant_work() {
             panic!("naming must not invent a stored value for the other address");
         };
         assert_eq!(node, original);
-        assert_eq!(path.len(), 2);
-        for hop in path {
+        // The version walk crosses both seeded edges by itself: one hop.
+        assert!(matches!(
+            path.as_slice(),
+            [hop] if hop.justification == MemoryDagHopJustification::SameVersion {
+                oldest: original.clone(),
+            }
+        ));
+        let mut edge = current.clone();
+        while let Some(derivation) = edge.derivation() {
             assert_eq!(
-                hop.justification,
+                seeded_edge_justification(&edge, &other, 4, &assumptions),
                 MemoryDagHopJustification::SeededLoadsOfBase
             );
-            assert!(
-                hop.justification
-                    .checks(&hop.derivation, &other, 4, &assumptions)
-            );
+            edge = derivation.base().clone();
         }
         assert!(work < 100, "size={size}, work={work}");
+        // The first read also walks the shared empty base; later ones find
+        // it memoized, so the work never grows with the run.
         if let Some(previous) = previous_work {
-            assert_eq!(work, previous, "framing work must not grow with the run");
+            assert!(
+                work <= previous,
+                "framing work must not grow with the run: size={size}: {work} > {previous}"
+            );
         }
-        previous_work = Some(work);
+        previous_work.get_or_insert(work);
     }
 }
 
@@ -606,21 +642,23 @@ fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
             panic!("partial scalar cache slots cannot supply a whole pointer");
         };
         assert_eq!(node, original);
-        assert_eq!(path.len(), 1);
-        let hop = &path[0];
+        assert!(matches!(
+            path.as_slice(),
+            [hop] if hop.justification == MemoryDagHopJustification::SameVersion {
+                oldest: original.clone(),
+            }
+        ));
         assert_eq!(
-            hop.justification,
+            seeded_edge_justification(&current, &pointer, 8, &assumptions),
             MemoryDagHopJustification::SeededLoadsOfBase
         );
-        assert!(
-            hop.justification
-                .checks(&hop.derivation, &pointer, 8, &assumptions)
-        );
         assert!(work < 100, "count={count}, work={work}");
+        // The first read also walks the shared empty base; later ones find
+        // it memoized, so the work never grows with the run.
         if let Some(previous) = previous_work {
-            assert_eq!(work, previous);
+            assert!(work <= previous, "count={count}: {work} > {previous}");
         }
-        previous_work = Some(work);
+        previous_work.get_or_insert(work);
 
         // A real four-byte overwrite of the pointer's upper half must still
         // stop the wide read, even after the resulting bytes are cached.
