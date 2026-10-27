@@ -6864,6 +6864,9 @@ pub struct ExecutionBudget {
     /// count says nothing about why. Diagnostic only: no evaluation reads it
     /// back.
     pub(super) dropped_fold_body: Option<DroppedFoldBody>,
+    /// A comparison the requested operator could not build for its operands.
+    /// Diagnostic only; it never changes which paths or terms are produced.
+    pub(super) dropped_comparison: Option<(CType, CComparisonOperator, CType)>,
     /// Set when a stated resource relation was dropped because this context
     /// already proves one of its memory ranges is not a valid byte extent.
     /// Unlike [`Self::dropped_range_extent`] the endpoints here need not be

@@ -1460,6 +1460,7 @@ impl ExecutionBudget {
             dropped_relation_range_extent: false,
             dropped_refuted_range_extent: None,
             dropped_fold_body: None,
+            dropped_comparison: None,
             c_byte_order: None,
         }
     }

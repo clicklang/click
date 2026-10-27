@@ -8,6 +8,8 @@ mod move_regressions;
 mod moves;
 #[cfg(test)]
 mod owned_parameter_regressions;
+#[cfg(test)]
+mod record_pointer_fields_tests;
 mod scalar_leases;
 mod shared_arrays;
 use crate::kernel::*;
@@ -271,6 +273,15 @@ pub(crate) fn lower_with_identity(
                 Ok((
                     f.name.clone(),
                     record_field_type(&f.value_type)?,
+                    match &f.value_type {
+                        Type::Reference { pointee, .. }
+                        | Type::Box { pointee }
+                        | Type::OptionBox { pointee } => match pointee.as_ref() {
+                            Type::Record { name } => Some(name.clone()),
+                            _ => None,
+                        },
+                        _ => None,
+                    },
                     f.offset,
                     record_field_type(&f.value_type)?
                         .to_kernel_type()
@@ -280,9 +291,15 @@ pub(crate) fn lower_with_identity(
             .collect::<Result<Vec<_>, String>>()?;
         // Rust may reorder fields; declaration order still selects constructor
         // operands, while layout validation consumes physical offset order.
-        layout_fields.sort_by_key(|f| f.2);
-        let layout =
-            C0StructLayout::from_explicit_fields(layout_fields, record.size, record.alignment)?;
+        layout_fields.sort_by_key(|f| f.3);
+        // Pointer fields keep their nominal pointee for chained field reads.
+        // They do not embed its layout, so recursive records need no traversal.
+        let layout = C0StructLayout::from_explicit_fields_with_structs(
+            layout_fields,
+            record.size,
+            record.alignment,
+            &BTreeMap::new(),
+        )?;
         if layouts.insert(record.name.clone(), layout).is_some() {
             return Err("duplicate Rust record".into());
         }

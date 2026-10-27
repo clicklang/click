@@ -149,6 +149,16 @@ At exit, `self.head` is a version name. To match the owned
 cannot show the freed block (a pointer read) separate from `self`. The old
 fold crossed it through facts inside lowering.
 
+A separate import defect obscured a diagnostic probe: Rust record pointer
+fields lost their nominal pointee name, so `self.head.next` fell back to an
+untyped load at offset zero instead of the declared eight-byte pointer field
+at offset eight. Comparing `self.head` with `old(self.head.next)` then paired
+a pointer with `int32`; the rejected comparison reported only "0 paths".
+Retaining the field's pointee layout restores the typed nested read. Rejected
+specification comparisons now retain their operand types and operator for
+the proof diagnostic. This fixes the probe's lowering, not the remaining
+nested frame equality.
+
 ### Decision: the free decides its frame from proven separation
 
 The user chose the executor to require separation, with the step recording
