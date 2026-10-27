@@ -173,16 +173,6 @@ impl<K: Ord, V> FactMap<K, V> {
         self.scan()
     }
 
-    /// Every entry, in fast code that should read an index instead: a known
-    /// violation of the fast-part rule, listed in `roadmap/smart-tactics.md`.
-    /// Do not add uses; each one is removed by indexing its query.
-    #[track_caller]
-    pub(crate) fn scan_unindexed(
-        &self,
-    ) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
-        self.scan()
-    }
-
     #[cfg(test)]
     #[track_caller]
     pub(crate) fn iter(&self) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
@@ -391,15 +381,6 @@ impl<T: Ord> ScanSet<T> {
     ) -> ChargedIter<impl DoubleEndedIterator<Item = &T> + ExactSizeIterator> {
         self.scan()
     }
-
-    /// Every element, in fast code that should read an index; see
-    /// [`FactMap::scan_unindexed`].
-    #[track_caller]
-    pub(crate) fn scan_unindexed(
-        &self,
-    ) -> ChargedIter<impl DoubleEndedIterator<Item = &T> + ExactSizeIterator> {
-        self.scan()
-    }
 }
 
 #[cfg(test)]
@@ -419,7 +400,7 @@ mod tests {
         });
         assert_eq!(lookups, 0);
         let (visited, work) = crate::instrumentation::measure_deterministic_work(|| {
-            map.scan_for_upkeep().count() + map.scan_unindexed().count() + set.iter().count()
+            map.scan_for_upkeep().count() + map.scan_explicit_input().count() + set.iter().count()
         });
         assert_eq!((visited, work), (80, 80));
         let sites = take_scan_sites();

@@ -2337,21 +2337,12 @@ fn returned_scalar_and_bytewise_padding_rejoin_over_symbolic_objects() {
     );
 }
 
-/// The frame check opens each owned composite of a published composition
-/// exactly one level, the boundary a composite lend uses. A cell in the
-/// frontier is framed by ownership; a cell below it, inside a nested
-/// composite, is not: the kernel does not read inside a folded body. The
-/// query's work is charged per head, never per nested level.
+/// Frame queries never open recorded composites. Authors can expose the
+/// selected owners explicitly; both refusal and that indexed success ignore
+/// other folded compositions, even ones sharing the queried pointer argument.
 #[test]
-fn frame_check_opens_owned_composites_one_level_and_charges_per_head() {
-    let pointer = |index: u64| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(
-            Bitvector32Term::Variable(Variable(910_000 + index)),
-            4,
-        ),
-    };
-    let cell = CCompositeResourceDefinition::new(
+fn frame_queries_ignore_folded_compositions_until_explicitly_opened() {
+    let definition = CCompositeResourceDefinition::new(
         "cell",
         vec![c_parameter("p", CType::Int32Pointer)],
         None,
@@ -2367,81 +2358,96 @@ fn frame_check_opens_owned_composites_one_level_and_charges_per_head() {
         })],
         Vec::new(),
     );
-    // `wrap1(p)` owns `cell(p)`, `wrap2(p)` owns `wrap1(p)`, and so on.
-    let wrap_name = |depth: usize| format!("wrap{depth}");
-    let mut definitions = vec![cell];
-    for depth in 1..=8 {
-        let inner = if depth == 1 {
-            "cell".to_string()
-        } else {
-            wrap_name(depth - 1)
-        };
-        definitions.push(CCompositeResourceDefinition::new(
-            wrap_name(depth),
-            vec![c_parameter("p", CType::Int32Pointer)],
-            None,
-            false,
-            vec![CResourceSpec::composite(
-                CResourceAccessMode::Own,
-                inner,
-                vec![c_variable("p")],
-                vec![CType::Int32Pointer],
-            )],
-            Vec::new(),
-        ));
+    let definitions = vec![definition.clone()];
+    let _armed = crate::kernel::arm_frame_composite_definitions(definitions.clone());
+    for related in [false, true] {
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let pointer = |index| Pointer::symbolic(Variable(910_000 + index));
+            let head = |index| {
+                CResourceFact::own_composite("cell".into(), vec![CValue::pointer(pointer(index))])
+            };
+            let composition = |left, right| {
+                ResourceContext::new().unchecked_with_facts([head(left), head(right)])
+            };
+            let mut facts = PureFactContext::new();
+            for index in 0..size {
+                facts = facts.assume_proposition(Proposition::CResourceComposition(composition(
+                    if related { 0 } else { 2 * index + 2 },
+                    2 * index + 3,
+                )));
+            }
+            let selected = composition(0, 1);
+            facts = facts.assume_proposition(Proposition::CResourceComposition(selected.clone()));
+            let written = memory_range(pointer(1), 0, 1);
+            let memory = CMemory::new();
+            let produced = crate::kernel::intern_c_memory(memory.clone().with_call_memory_havoc(
+                Variable(919_000),
+                std::slice::from_ref(&written),
+                &facts,
+                None,
+            ));
+            let derivation = produced
+                .derivation()
+                .expect("the call records its write set");
+            let query = |facts: &PureFactContext, read: &Pointer| {
+                use crate::kernel::resource_tracker::step_effect::{Evidence, StepEffect, affects};
+                matches!(
+                    affects(
+                        &derivation,
+                        &produced,
+                        crate::kernel::resource_tracker::Resource::Cell {
+                            pointer: read,
+                            bytes: 4
+                        },
+                        &Evidence {
+                            assumptions: facts,
+                            cross_loop_havoc: false
+                        },
+                    ),
+                    StepEffect::Separate(_)
+                )
+            };
+            let (found, miss) =
+                crate::instrumentation::measure_deterministic_work(|| query(&facts, &pointer(0)));
+            assert!(
+                !found,
+                "a recorded folded body is not automatic frame evidence"
+            );
+
+            // Open exactly the two selected heads, as explicit unfolding does,
+            // then publish their composition. No other recorded head is read.
+            let mut opened = selected;
+            for index in [0, 1] {
+                opened = crate::kernel::functions::expand_composite_resource_fact(
+                    &opened,
+                    &head(index),
+                    &definitions,
+                    &memory,
+                    &facts,
+                )
+                .expect("the selected cell body opens");
+            }
+            let explicit = facts.assume_proposition(Proposition::CResourceComposition(opened));
+            let (found, hit) = crate::instrumentation::measure_deterministic_work(|| {
+                query(&explicit, &pointer(0))
+            });
+            assert!(found, "explicitly exposed owned ranges supply separation");
+            assert!(
+                !query(&explicit, &pointer(1)),
+                "exposing a composition never frames an overlapping write"
+            );
+            samples.push((miss, hit));
+        }
+        eprintln!(
+            "frame query beside 8/32/128 folded compositions, related={related}: {samples:?}"
+        );
+        assert!(
+            samples.iter().all(|sample| *sample == samples[0]),
+            "{samples:?}"
+        );
     }
-    let _armed = crate::kernel::arm_frame_composite_definitions(definitions);
-    let havoc_range = memory_range(pointer(1), 0, 1);
-    let composition = |name: &str| {
-        ResourceContext::new().unchecked_with_facts([
-            CResourceFact::own_composite(name.to_string(), vec![CValue::pointer(pointer(0))]),
-            CResourceFact::own_composite("cell".to_string(), vec![CValue::pointer(pointer(1))]),
-        ])
-    };
-    let query = |name: &str| {
-        let assumptions = PureFactContext::new()
-            .assume_proposition(Proposition::CResourceComposition(composition(name)));
-        crate::instrumentation::measure_deterministic_work(|| {
-            assumptions.ranges_proven_disjoint_from_pointer_for_frame(
-                std::slice::from_ref(&havoc_range),
-                &pointer(0),
-                &CMemory::new(),
-            )
-        })
-    };
-
-    // Depth one: `cell(a)` and `cell(b)` open to two owned ranges, so the
-    // havoc over `b` is disjoint from `a` by ownership.
-    let (frontier, _) = query("cell");
-    assert!(frontier, "a frontier cell is framed by ownership");
-
-    // Below the frontier: `wrap1(a)` opens to a folded `cell(a)`, which owns
-    // no range the check may read; the answer is refused, not guessed.
-    let (nested, _) = query("wrap1");
-    assert!(
-        !nested,
-        "a cell inside a nested composite is not framed by the kernel"
-    );
-
-    let samples = [1_usize, 2, 4, 8]
-        .into_iter()
-        .map(|depth| {
-            let (proved, work) = query(&wrap_name(depth));
-            assert!(!proved, "depth {depth}: nested composites stay folded");
-            (depth, work)
-        })
-        .collect::<Vec<_>>();
-    eprintln!("one-level frame query samples: {samples:?}");
-    // `wrap1` exposes a frontier cell; deeper heads expose another folded
-    // wrapper. Compare identical selected-head shapes at depths 2, 4 and 8:
-    // their work must be exactly independent of the hidden nesting depth.
-    let (_, folded_head_work) = samples[1];
-    assert!(
-        samples[1..]
-            .iter()
-            .all(|(_, work)| *work == folded_head_work),
-        "frame query work grew with hidden nesting depth: {samples:?}"
-    );
 }
 
 /// A contract section whose clauses all evaluate on the first pass needs no

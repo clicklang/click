@@ -53,7 +53,6 @@ pub(in crate::kernel) use separation_classes::SeparatedAddressIndex;
 mod memory_reasoning;
 pub(in crate::kernel) use memory_reasoning::additive_base_spellings;
 pub(crate) use memory_reasoning::arm_frame_composite_definitions;
-pub(crate) use memory_reasoning::clear_frame_expansion_memo;
 pub(in crate::kernel) use memory_reasoning::parameter_alias_bucket;
 pub(in crate::kernel) use memory_reasoning::parameter_partition_root;
 pub(in crate::kernel) use memory_reasoning::parameter_partition_variable;
@@ -670,17 +669,6 @@ impl Drop for ReasoningProvenanceCollectionGuard {
             });
         }
     }
-}
-
-/// Runs a debug-build cross-check without recording reasoning provenance:
-/// the check re-asks questions the release build skips, and a premise it
-/// recorded would make a debug run's certificates differ from release's.
-#[cfg(debug_assertions)]
-pub(super) fn without_reasoning_provenance<R>(body: impl FnOnce() -> R) -> R {
-    let previous = RECORDING_REASONING_PROVENANCE.with(|recording| recording.replace(true));
-    let result = body();
-    RECORDING_REASONING_PROVENANCE.with(|recording| recording.set(previous));
-    result
 }
 
 struct ReasoningProvenanceRecordingGuard;
@@ -5161,7 +5149,6 @@ impl PureFactContext {
         self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
         self.algebraic_variable_variant_evidence = crate::persistent::PersistentMap::default();
         self.resource_compositions = Default::default();
-        self.composite_owning_compositions = Default::default();
         self.store_owners = None;
         self.composition_members = Default::default();
         self.composition_object_resources = Default::default();
@@ -6309,11 +6296,6 @@ impl PureFactContext {
             if !self.resource_compositions.contains(&resources) {
                 self.resource_compositions =
                     self.resource_compositions.with_value(resources.clone());
-                if resources.owns_composite() {
-                    self.composite_owning_compositions = self
-                        .composite_owning_compositions
-                        .with_value(resources.clone());
-                }
                 self.composition_members.admit(&resources);
                 self.composition_object_resources.admit(&resources);
                 self.composition_object_resources

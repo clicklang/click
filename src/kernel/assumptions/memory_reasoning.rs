@@ -7,22 +7,9 @@ thread_local! {
 }
 
 thread_local! {
-    /// Composite resource definitions available to internal frame evidence.
-    ///
-    /// Frame reasoning asks whether a call's mutable ranges or a store's
-    /// written cell can touch a loaded pointer. When the pointer sits inside
-    /// a composite's footprint, answering needs the composite's definition —
-    /// but publishing that expansion as an ambient fact would also make a
-    /// user's `separate(...)` goal provable without the `observe(...)` chain
-    /// the language requires for nested composites (pinned by
-    /// `mdtests/composite_resource_nested_observe_not_automatic.md`).
-    ///
-    /// Separation is a property, not an authority grant: consulting the
-    /// definitions here decides disjointness for framing without making any
-    /// resource usable, so this channel is deliberately readable only by
-    /// frame evidence: the prover in this module, and a store opening the
-    /// folded instances it holds one body layer
-    /// (`functions::store_opened_instance_composition`).
+    /// Definitions used when a store opens selected live resource instances
+    /// whose arguments name cached cells. Recorded compositions remain folded;
+    /// frame queries consult only the facts their indexes already expose.
     static FRAME_COMPOSITE_DEFINITIONS: std::cell::RefCell<
         Vec<std::sync::Arc<Vec<CCompositeResourceDefinition>>>,
     > = const { std::cell::RefCell::new(Vec::new()) };
@@ -96,20 +83,6 @@ pub fn arm_frame_composite_definitions(
     FRAME_COMPOSITE_DEFINITIONS
         .with(|armed| armed.borrow_mut().push(std::sync::Arc::new(definitions)));
     FrameCompositeDefinitionsGuard { _private: () }
-}
-
-thread_local! {
-    /// Composite expansions keyed by composition storage address and
-    /// interned memory id; see `frame_frontier_compositions`.
-    static EXPANSION_MEMO: std::cell::RefCell<
-        std::collections::HashMap<(usize, (u32, u32)), (ResourceContext, Option<ResourceContext>)>,
-    > = std::cell::RefCell::new(std::collections::HashMap::new());
-}
-
-/// Empties the frame-expansion memo at a verification boundary: its keys
-/// carry arena ids, which a fresh arena reuses.
-pub(crate) fn clear_frame_expansion_memo() {
-    EXPANSION_MEMO.with(|memo| memo.borrow_mut().clear());
 }
 
 pub(in crate::kernel) fn frame_composite_definitions()
@@ -4637,58 +4610,6 @@ impl PureFactContext {
         false
     }
 
-    /// [`Self::ranges_proven_disjoint_from_pointer`] for internal frame
-    /// evidence, which may also look through composite definitions.
-    ///
-    /// A pointer inside a composite's footprint is invisible to the ordinary
-    /// prover, because a composite own carries no memory range of its own.
-    /// Framing may consult the definition to decide the disjointness;
-    /// nothing is published, so a user's `separate(...)` goal over a nested
-    /// composite still needs its `observe(...)` chain. Deliberately kept off
-    /// the ordinary prover, whose per-cell store-drop callers must not pay
-    /// for an expansion they never need.
-    pub(in crate::kernel) fn ranges_proven_disjoint_from_pointer_for_frame(
-        &self,
-        ranges: &[CMemoryRange],
-        pointer: &Pointer,
-        memory: &CMemory,
-    ) -> bool {
-        if self.ranges_proven_disjoint_from_pointer(ranges, pointer) {
-            return true;
-        }
-        if self.pointer_overlaps_one_of_ranges(ranges, pointer) {
-            return false;
-        }
-        let expanded = self.frame_frontier_compositions(memory);
-        if expanded.is_empty() {
-            return false;
-        }
-        ranges.iter().all(|range| {
-            expanded.iter().any(|resources| {
-                resources.proves_owned_range_separate_from_pointer_with(
-                    range,
-                    pointer,
-                    self,
-                    |range, available| {
-                        memory_range_shallowly_contained_with_facts(range, available, self)
-                            || self.memory_range_contained_by_decided_endpoints(range, available)
-                    },
-                    |pointer, available| {
-                        (available.wide_bounds().is_none()
-                            && self.pointer_in_range_by_shallow_fact_graph_with_width(
-                                pointer,
-                                available.base(),
-                                available.start(),
-                                available.end(),
-                                available.element_width(),
-                            ))
-                            || self.pointer_directly_in_memory_range(pointer, available)
-                    },
-                )
-            })
-        })
-    }
-
     pub(in crate::kernel) fn ranges_proven_disjoint_from_pointer(
         &self,
         ranges: &[CMemoryRange],
@@ -4972,94 +4893,6 @@ impl PureFactContext {
     /// segments this answers for are the ones whose addresses do not depend
     /// on field values, and a body that needs a live snapshot simply does
     /// not expand here.
-    /// `range` inside `available` by one bounded decision per endpoint: the
-    /// bases share an element index and the indexed bounds decide
-    /// `available.start <= range.start` and `range.end <= available.end`.
-    fn memory_range_contained_by_decided_endpoints(
-        &self,
-        range: &CMemoryRange,
-        available: &CMemoryRange,
-    ) -> bool {
-        // With a wide range on either side the endpoints are compared as
-        // unsigned 64-bit values, at one base.
-        if range.wide_bounds().is_some() || available.wide_bounds().is_some() {
-            return crate::kernel::primitives::wide_memory_range_covers(available, range, self);
-        }
-        let Some(base_index) = range
-            .base()
-            .element_index_from_base_with_width(available.base(), available.element_width())
-        else {
-            return false;
-        };
-        let range_start = Bitvector32Term::add(base_index.clone(), range.start().clone());
-        let range_end = Bitvector32Term::add(base_index, range.end().clone());
-        self.decide(&ConditionTerm::signed_less_equal(
-            available.start().clone(),
-            range_start,
-        )) == Some(true)
-            && self.decide(&ConditionTerm::signed_less_equal(
-                range_end,
-                available.end().clone(),
-            )) == Some(true)
-    }
-
-    /// The compositions with each owned composite opened exactly one level
-    /// over `memory`: a composite's frontier is the regions its body denotes
-    /// at the snapshot the composition holds at, named with the same load
-    /// variables the live facts use. Nested composites stay folded, so a
-    /// cell below the frontier is framed only through a live observation or
-    /// an unfold, never by the kernel reading inside a folded body.
-    fn frame_frontier_compositions(&self, memory: &CMemory) -> Vec<ResourceContext> {
-        // Cheap gate first: this runs on the store cell-drop path, and only
-        // a composition owning a composite has anything to look through (a
-        // composition without one expands to nothing).
-        if self.composite_owning_compositions.is_empty() {
-            return Vec::new();
-        }
-        let Some(definitions) = frame_composite_definitions() else {
-            return Vec::new();
-        };
-        if definitions.is_empty() {
-            return Vec::new();
-        }
-        // Keyed by the composition's storage identity, not its contents: a
-        // structural key would re-walk the whole context on every query, and
-        // this runs on the store cell-drop path. Retaining the keyed context
-        // keeps its allocation alive, so an address cannot be recycled under
-        // a stale entry.
-        const EXPANSION_MEMO_LIMIT: usize = 10_000;
-        let memory_id = crate::kernel::intern_c_memory_ref(memory).arena_id();
-        let mut expanded = Vec::new();
-        for composition in self.composite_owning_compositions.scan_unindexed() {
-            let key = (
-                std::sync::Arc::as_ptr(&composition.storage) as usize,
-                memory_id,
-            );
-            if let Some(hit) =
-                EXPANSION_MEMO.with(|memo| memo.borrow().get(&key).map(|(_, value)| value.clone()))
-            {
-                expanded.extend(hit);
-                continue;
-            }
-            let computed =
-                crate::kernel::functions::expand_owned_composite_resource_facts_one_level(
-                    composition,
-                    &definitions,
-                    memory,
-                    &PureFactContext::new(),
-                );
-            EXPANSION_MEMO.with(|memo| {
-                let mut memo = memo.borrow_mut();
-                if memo.len() >= EXPANSION_MEMO_LIMIT {
-                    memo.clear();
-                }
-                memo.insert(key, (composition.clone(), computed.clone()));
-            });
-            expanded.extend(computed);
-        }
-        expanded
-    }
-
     fn range_proven_disjoint_from_pointer(&self, range: &CMemoryRange, pointer: &Pointer) -> bool {
         if range.base.blocks_proven_distinct(pointer) {
             return true;
@@ -5668,31 +5501,6 @@ mod shallow_composition_separation_tests {
             "shallow owned separation grew with unrelated compositions: {samples:?}"
         );
     }
-    /// The frame frontier expands only compositions that own a composite,
-    /// read from their own set. Its gate once walked every fact of every
-    /// stated composition on each store's cell drop.
-    #[test]
-    fn frame_frontier_ignores_compositions_without_composites() {
-        let work = [8u64, 32, 128]
-            .into_iter()
-            .map(|size| {
-                let _session = crate::kernel::VerificationSession::enter();
-                let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
-                    facts.assume_proposition(owner_of(&[at(&format!("frontier-{index}"))]))
-                });
-                let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    facts.frame_frontier_compositions(&CMemory::new())
-                });
-                assert!(expanded.is_empty());
-                work
-            })
-            .collect::<Vec<_>>();
-        assert!(
-            work.windows(2).all(|pair| pair[0] == pair[1]),
-            "compositions without composites changed the frame frontier's work: {work:?}"
-        );
-    }
-
     /// A pointer's own block, which may alias any other pointer's.
     fn symbolic(variable: u64) -> Pointer {
         Pointer {

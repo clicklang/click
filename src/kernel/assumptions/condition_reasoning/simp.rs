@@ -385,58 +385,20 @@ impl PureFactContext {
         condition: &ConditionTerm,
         value: bool,
     ) -> bool {
-        let Some(indexed) =
-            self.indexed_matching_condition_fact_for_memory_resolution(condition, value)
-        else {
-            return self.scanned_matching_condition_fact_for_memory_resolution(condition, value);
-        };
-        #[cfg(debug_assertions)]
-        crate::instrumentation::uncharged_debug_check(|| {
-            let scanned = crate::kernel::assumptions::without_reasoning_provenance(|| {
-                self.scanned_matching_condition_fact_for_memory_resolution(condition, value)
-            });
-            assert_eq!(
-                indexed, scanned,
-                "the indexed memory-resolution fact match disagrees with the full scan for \
-                 {condition:?} = {value}"
-            );
-        });
-        indexed
+        self.indexed_matching_condition_fact_for_memory_resolution(condition, value)
+            .unwrap_or(false)
     }
 
-    fn scanned_matching_condition_fact_for_memory_resolution(
-        &self,
-        condition: &ConditionTerm,
-        value: bool,
-    ) -> bool {
-        self.condition_facts
-            .scan_unindexed()
-            .any(|(fact, fact_value)| {
-                crate::instrumentation::record_deterministic_work(1);
-                *fact_value == value && self.condition_matches_for_simp(fact, condition)
-            })
-    }
-
-    /// The memory-resolution match read from the condition-match index
-    /// instead of a scan of every condition fact, or `None` where the index
-    /// cannot be shown to hold every fact the scan could match.
+    /// Look for a memory-equivalent fact using the supported indexed routes.
+    /// `None` means the query falls outside those routes, not that its
+    /// negation holds. The caller deliberately declines instead of searching
+    /// the whole ambient context. Explicit proof steps can establish the
+    /// required spelling before a call.
     ///
-    /// Every exact hit is a direct lookup. `MemoryMatchOperands::Exact` kinds
-    /// can only match by identity, so their misses are direct lookups too.
-    /// Compound queries first ask the facts under their canonical key. A
-    /// successful memory match closes them; a miss retains the scan, since
-    /// other memory-equivalent spellings may have different canonical keys.
-    /// The remaining families pair sides by memory-resolution equality. For a query
-    /// whose sides are both atoms (a constant, or a variable no load names),
-    /// an atom side of a fact is memory-resolution equal to a query side only
-    /// by identity, through the equality graph, by an exact constant pin
-    /// (itself an equality-graph edge), or through an exact
-    /// `PointerOffsetEqual` fact of their byte scalings; those are the
-    /// spellings read here. A fact with a non-atom side is filed among the
-    /// family's open facts and is always asked. The 64-bit equalities pin a
-    /// term to a constant outside the 32-bit equality graph. Only sources
-    /// naming a selected scalar spelling require the ordinary fallback. Debug builds compare every indexed
-    /// answer with the scan.
+    /// Exact identities and syntactic symmetries use direct lookups. Compound
+    /// queries check candidates under their canonical key. Atom queries use
+    /// equality/byte-offset spellings and the family's existing open-fact
+    /// bucket. Every candidate still passes the memory matcher's checks.
     fn indexed_matching_condition_fact_for_memory_resolution(
         &self,
         condition: &ConditionTerm,
@@ -508,8 +470,8 @@ impl PureFactContext {
             // and scaled offsets) share a canonical key. It selects candidates,
             // not a verdict: retain the memory matcher's snapshot checks.
             crate::instrumentation::record_deterministic_work(1);
-            // A miss is inconclusive: other memory-equivalent spellings may
-            // live under different keys, so the caller retains its fallback.
+            // Other memory-equivalent spellings may live under different
+            // keys. This fast path deliberately does not search for them.
             return self
                 .condition_facts_by_sides
                 .get(&key)
@@ -978,6 +940,42 @@ mod memory_condition_match_tests {
                 let withdrawn =
                     held.without_exact_fact(&Proposition::ConditionIs(source.clone(), value));
                 assert!(!withdrawn.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            }
+        }
+    }
+
+    #[test]
+    fn compound_memory_condition_miss_requires_the_explicit_spelling() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let var = |id| Bitvector32Term::Variable(Variable(id));
+        let condition = |kind, id| {
+            let left = Bitvector32Term::add(var(id), 1u32.into());
+            let right = var(999_012);
+            match kind {
+                0 => ConditionTerm::signed_less_than(left, right),
+                1 => ConditionTerm::unsigned_less_than(left, right),
+                _ => ConditionTerm::pointer_offset_equal(
+                    PointerOffsetTerm::scale_int32(left, 4),
+                    PointerOffsetTerm::scale_int32(right, 4),
+                ),
+            }
+        };
+        for kind in 0..3 {
+            let source = condition(kind, 999_010);
+            let goal = condition(kind, 999_011);
+            for value in [false, true] {
+                let facts = PureFactContext::new()
+                    .assume_condition(ConditionTerm::equal(var(999_010), var(999_011)), true)
+                    .assume_condition(source.clone(), value);
+                // The old ambient scan found this equivalent spelling. The
+                // fast path deliberately declines; selected-premise reasoning
+                // can still establish it before the call needs the exact fact.
+                assert!(facts.condition_matches_for_simp(&source, &goal));
+                assert!(facts.proves_condition_from_facts_for_simp(&goal, value));
+                assert!(!facts.has_matching_condition_fact_for_memory_resolution(&goal, value));
+                let explicit = facts.assume_condition(goal.clone(), value);
+                assert!(explicit.has_matching_condition_fact_for_memory_resolution(&goal, value));
+                assert!(!explicit.has_matching_condition_fact_for_memory_resolution(&goal, !value));
             }
         }
     }

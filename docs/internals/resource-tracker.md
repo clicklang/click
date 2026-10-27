@@ -563,7 +563,7 @@ that a fix lands in one of them rather than beside it.
 | --- | --- |
 | `PointerBlock::proven_distinct`, `may_alias`, `observable_by_load`; `Pointer::blocks_proven_distinct`; `block_is_never_address_taken_local` | `src/kernel/primitives.rs` |
 | `pointers_proven_distinct_for_memory_resolution`, `pointers_distinct_through_one_exact_alias`, `never_address_taken_local_versus_pointer_value`, `pointer_offsets_with_common_base_proven_distinct` and its `_distinctness_condition`, `cell_disjoint_from_load_by_constant_offset`, `cell_is_observable_by_load`, `local_block_no_pointer_can_reach` | `src/kernel/reasoning/memory_resolution.rs` |
-| `range_proven_disjoint_from_pointer`, `ranges_proven_disjoint_from_pointer`, `ranges_directly_disjoint_from_pointer`, `ranges_proven_disjoint_from_pointer_for_frame`, `frame_frontier_compositions`, `pointers_directly_disjoint_by_range`, `pointers_proven_disjoint_by_explicit_range_for_memory_resolution`, `pointers_proven_disjoint_by_shallow_explicit_range` | `src/kernel/assumptions/memory_reasoning.rs` |
+| `range_proven_disjoint_from_pointer`, `ranges_proven_disjoint_from_pointer`, `ranges_directly_disjoint_from_pointer`, `pointers_directly_disjoint_by_range`, `pointers_proven_disjoint_by_explicit_range_for_memory_resolution`, `pointers_proven_disjoint_by_shallow_explicit_range` | `src/kernel/assumptions/memory_reasoning.rs` |
 | `typed_store_separated_ranges_evidence`, `typed_range_disjoint_from_pointer_evidence`, `typed_ranges_disjoint_from_pointer_evidence`, `heap_allocation_proven_separate_from_pointer`, `owned_composition_store_separated_evidence` | `src/kernel/memory_provenance.rs` |
 | `memory_block_may_alias`, `memory_range_overlaps_pointer`, `memory_ranges_overlap`, `proves_resource_separate`, `proves_owned_range_separate_from_pointer_with`, `resources_structurally_separate` | `src/kernel/primitives/resource_algebra.rs` |
 | `MemoryLoadAliasCache::resolution_distinct` | `src/kernel/eval/memory_loads.rs` — a per-load memo over the first of these, not a rule of its own |
@@ -951,9 +951,9 @@ decides `c_contract_executes_acquire`, and it is not optional: once a store has
 dropped a cell, the two snapshots differ *at the read's own address*, and no
 later framing route can recover it. It is kept beside
 `pointers_directly_disjoint_by_range`, which is at that site for the same
-reason, and it does **not** expand composites — `frame_frontier_compositions`
-stays off this path, which is what the comment on
-`ranges_proven_disjoint_from_pointer_for_frame` asks for.
+reason, and it does **not** expand recorded composites. Call and loop frame
+queries likewise use the ordinary indexed range/pointer separation route;
+there is no whole-composition expansion fallback.
 
 Cost: an emptiness gate first, then two block-bucket lookups per composition
 held, no pair materialization and no expansion.

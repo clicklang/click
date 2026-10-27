@@ -2634,9 +2634,8 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
 ///
 /// **Cost.** Exact bases and their indexed one-hop aliases are tried first,
 /// followed by the existing interior block-bucket lookup. There is no expansion:
-/// `frame_frontier_compositions` is not consulted, so a composite that is
-/// still folded simply does not answer. This runs as the last disjunct of a
-/// load-framing ladder, after every cheaper check has failed.
+/// a composite that is still folded simply does not answer. This runs as the
+/// last disjunct of a load-framing ladder, after every cheaper check has failed.
 pub(in crate::kernel) fn owned_composition_store_separated_evidence(
     write: &Pointer,
     write_bytes: u32,
@@ -4167,9 +4166,8 @@ fn c_memory_load_is_directly_unchanged(
                     mutable_ranges,
                 } => {
                     // The direct check decides most disjointness
-                    // structurally; ranges owned through composites need the
-                    // bounded deep prover, exactly as the mutates-only arm's
-                    // per-write distinctness already does.
+                    // structurally; the remaining route reads indexed
+                    // separation facts and exposed composition members.
                     effect_before == before
                         && memories_directly_match_for_pointer_load(
                             effect_after,
@@ -4179,11 +4177,8 @@ fn c_memory_load_is_directly_unchanged(
                         )
                         && (assumptions
                             .ranges_directly_disjoint_from_pointer(mutable_ranges, pointer)
-                            || assumptions.ranges_proven_disjoint_from_pointer_for_frame(
-                                mutable_ranges,
-                                pointer,
-                                before,
-                            ))
+                            || assumptions
+                                .ranges_proven_disjoint_from_pointer(mutable_ranges, pointer))
                 }
                 Proposition::CHeapAllocationFreed {
                     before: effect_before,
@@ -7900,9 +7895,6 @@ mod borrow_partition_tests {
         // Retain the candidate index but withdraw its authority.
         let mut withdrawn = context.clone();
         withdrawn.resource_compositions = withdrawn.resource_compositions.without_value(&bound);
-        withdrawn.composite_owning_compositions = withdrawn
-            .composite_owning_compositions
-            .without_value(&bound);
         assert!(!witness.checks(&step, read.base(), 4, &withdrawn));
         assert!(
             typed_store_separated_ranges_evidence(write.base(), 4, read.base(), 4, &withdrawn)

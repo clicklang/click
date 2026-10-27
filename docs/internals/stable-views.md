@@ -285,10 +285,13 @@ the bytes, and the folded facts would outlive the values they describe
 (`mdtests/fold_cannot_view_memory_its_context_owns.md`). A body without
 facts of its own may observe its context's owner. A valid context is a partition: distinct owned occurrences are
 bytewise disjoint, composites included, and the kernel does not reason
-inside a folded composite beyond its one-level frontier. The frame check
-that keeps a loaded cell's name across a call or loop havoc obeys the same
-boundary: it opens each owned composite of a published composition one
-level and frames a cell only from an owned range that opening exposes. The
+inside a folded composite beyond its one-level frontier. Frame queries
+that keep a loaded cell's name across a call or loop havoc read indexed
+separation facts and exposed owned-memory members. They do not open recorded
+composites automatically; expose the selected ownership with explicit
+observation or unfolding when the existing facts do not establish the frame.
+The separate store path may open selected live instances through its cached-cell
+argument index. The
 viewed pieces of an observed population family, or of more than one unit, are
 observations rather than escaping loans.
 
@@ -402,7 +405,7 @@ between compiler-checked borrow legality and Click's functional claims.
 | Locals and empty views | `active_stable_loan_rejects_direct_local_assignment_and_alias_store`, `candidate_local_array_view_out_of_bounds_is_refused`, `mdtests/empty_view_authorizes_nothing.md` |
 | Entry footprint | `field_derived_view_does_not_retarget_after_a_pointer_write` |
 | Composites | `composite_loan_protects_primitive_frontier_and_restores_head_once`, `projection_extends_permitted_descriptions_without_a_transition`, `candidate_composite_with_unstable_facts_is_refused`, `candidate_composite_view_is_backed_by_a_covering_owned_composite`, `mdtests/produced_composite_body_overlapping_a_held_owner.md` |
-| Frame check at the frontier | `frame_check_opens_owned_composites_one_level_and_charges_per_head`, `mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md` |
+| Explicit frame evidence | `frame_queries_ignore_folded_compositions_until_explicitly_opened`, `mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md` |
 | Open and close | `mdtests/rb_augment_callbacks_helper_mutates_body_stepwise.md` (a viewed open closes the same way from a step as from `step_until(function.exit)`), `execution_open_scope_owns_entry_body_and_close_transactionally` |
 | Escaping borrows | `a_hold_blocks_ending_the_scope_and_changes_identity`, `escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed`, `consuming_the_composite_recovers_the_owner`, `mdtests/borrowing_composite_survives_an_owning_call.md`, `examples/input-cursor` |
 | Effects | `candidate_rejects_mutable_effect_overlapping_a_composite_view_piece`, `candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence` |

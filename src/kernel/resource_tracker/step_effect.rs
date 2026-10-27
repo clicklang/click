@@ -127,8 +127,8 @@ pub(in crate::kernel) struct Evidence<'a> {
     pub(in crate::kernel) cross_loop_havoc: bool,
 }
 
-/// Whether `step` — the derivation of `produced` — can have changed
-/// `resource`, and what justifies the answer.
+/// Whether the recorded `step` can have changed `resource`, and what
+/// justifies the answer.
 ///
 /// The answers, by step kind:
 ///
@@ -160,12 +160,12 @@ pub(in crate::kernel) struct Evidence<'a> {
 /// itself carries.
 pub(in crate::kernel) fn affects(
     step: &CMemoryDerivation,
-    produced: &SharedCMemory,
+    _produced: &SharedCMemory,
     resource: Resource<'_>,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
     match resource {
-        Resource::Cell { pointer, bytes } => cell_effect(step, produced, pointer, bytes, evidence),
+        Resource::Cell { pointer, bytes } => cell_effect(step, pointer, bytes, evidence),
         // The block arm is handed no evidence, which is how "assumption-free"
         // is enforced rather than remembered: it has no parameter a fact
         // could arrive through.
@@ -294,7 +294,6 @@ pub(in crate::kernel) fn separation_check(
 /// verdict from the same premises.
 fn cell_effect(
     step: &CMemoryDerivation,
-    produced: &SharedCMemory,
     pointer: &Pointer,
     bytes: u32,
     evidence: &Evidence<'_>,
@@ -532,11 +531,7 @@ fn cell_effect(
                 Some((range.clone(), first, last))
             }) {
                 hop(MemoryDagHopJustification::CallHavocKeptRange { range, first, last })
-            } else if assumptions.ranges_proven_disjoint_from_pointer_for_frame(
-                mutable_ranges,
-                pointer,
-                produced.memory(),
-            ) {
+            } else if assumptions.ranges_proven_disjoint_from_pointer(mutable_ranges, pointer) {
                 hop(MemoryDagHopJustification::AssumptionDependent(
                     MemoryDagAssumptionKind::CallHavocRangeSeparation,
                 ))
@@ -570,11 +565,7 @@ fn cell_effect(
                 assumptions,
             ) {
                 hop(MemoryDagHopJustification::LoopHavocRanges { ranges })
-            } else if assumptions.ranges_proven_disjoint_from_pointer_for_frame(
-                mutable_ranges,
-                pointer,
-                produced.memory(),
-            ) {
+            } else if assumptions.ranges_proven_disjoint_from_pointer(mutable_ranges, pointer) {
                 hop(MemoryDagHopJustification::AssumptionDependent(
                     MemoryDagAssumptionKind::LoopHavocRangeSeparation,
                 ))
