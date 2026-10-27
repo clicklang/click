@@ -5193,6 +5193,7 @@ impl PureFactContext {
         self.memory_containers = crate::persistent::PersistentMap::default();
         self.separation_facts = crate::kernel::fact_collections::ScanSet::default();
         self.separation_facts_by_block = crate::persistent::PersistentMap::default();
+        self.wide_separation_facts_by_block = crate::persistent::PersistentMap::default();
         self.separated_address_classes = Default::default();
         self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
         self.separated_anchor_pointers = crate::persistent::PersistentMap::default();
@@ -5796,22 +5797,27 @@ impl PureFactContext {
         )
     }
 
-    /// The memory separations a shallow containment can use when one queried
-    /// range or pointer is in one of `blocks`: those with a side in one of
-    /// them and those with a wide side (`separation_facts_by_block`), in
-    /// `separation_facts` order, so a `find` chooses the fact a scan of every
-    /// separation would. A wide queried range can be covered from another
-    /// block, so a caller with one scans `separation_facts` instead.
+    /// Memory separations selected by the caller's containment blocks.
+    /// Callers additionally name pointers whose related roots and affine
+    /// block classes a wide side may cover. A translated window may have no
+    /// exact alias at its shifted address, but retains its base's block class.
+    /// Results retain proposition order, so a `find`
+    /// selects the same witness as the full scan.
     pub(in crate::kernel) fn memory_separations_near<'a, 'b>(
         &'a self,
         blocks: impl IntoIterator<Item = &'b PointerBlock>,
+        wide_pointers: impl IntoIterator<Item = &'b Pointer>,
     ) -> std::collections::BTreeSet<&'a Proposition> {
-        let mut candidates = std::collections::BTreeSet::new();
-        let mut visit = |key: Option<PointerBlock>| {
+        let blocks = blocks.into_iter().cloned().collect::<BTreeSet<_>>();
+        let mut candidates = BTreeSet::new();
+        let mut visit = |index: &'a crate::persistent::PersistentMap<
+            PointerBlock,
+            crate::persistent::PersistentSet<Proposition>,
+        >,
+                         block: &PointerBlock| {
             crate::instrumentation::record_deterministic_work(1);
-            for fact in self
-                .separation_facts_by_block
-                .get(&key)
+            for fact in index
+                .get(block)
                 .into_iter()
                 .flat_map(crate::persistent::PersistentSet::iter)
             {
@@ -5819,9 +5825,20 @@ impl PureFactContext {
                 candidates.insert(fact);
             }
         };
-        visit(None);
-        for block in blocks {
-            visit(Some(block.clone()));
+        for block in &blocks {
+            visit(&self.separation_facts_by_block, block);
+        }
+        if !self.wide_separation_facts_by_block.is_empty() {
+            let mut wide_blocks = blocks;
+            for pointer in wide_pointers {
+                wide_blocks.extend(self.equality_graph.pointer_class_blocks(&pointer.block));
+                wide_blocks.extend(crate::kernel::primitives::related_pointer_root_blocks(
+                    pointer, self,
+                ));
+            }
+            for block in wide_blocks {
+                visit(&self.wide_separation_facts_by_block, &block);
+            }
         }
         candidates
     }
@@ -6004,7 +6021,10 @@ impl PureFactContext {
                     crate::kernel::primitives::related_pointer_root_blocks(range.base(), self)
                 })
                 .collect::<BTreeSet<_>>();
-            separations.extend(self.memory_separations_near(blocks.iter()));
+            separations.extend(self.memory_separations_near(
+                blocks.iter(),
+                memory_parents.iter().map(|range| range.base()),
+            ));
             separations.extend(self.nonmemory_separation_facts.iter().inspect(|_| {
                 crate::instrumentation::record_deterministic_work(1);
             }));
@@ -6096,6 +6116,7 @@ impl PureFactContext {
                 |index, fact| index.with_value(fact.clone()),
             );
         self.separation_facts_by_block = crate::persistent::PersistentMap::default();
+        self.wide_separation_facts_by_block = crate::persistent::PersistentMap::default();
         self.separated_address_classes = Default::default();
         let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
         for proposition in facts {
@@ -6109,37 +6130,32 @@ impl PureFactContext {
         self.rebuild_separated_anchor_offsets();
     }
 
-    /// Files or withdraws a memory separation under each block its sides
-    /// name, or under `None` when a side is wide
-    /// (`separation_facts_by_block`).
+    /// Files or withdraws a memory separation under each endpoint block,
+    /// in the narrow or wide index according to its bounds.
     fn adjust_separation_block_fact(&mut self, proposition: &Proposition, insert: bool) {
         let Some((left, right)) = proposition.memory_separation() else {
             return;
         };
-        let keys = if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
-            vec![None]
+        let index = if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
+            &mut self.wide_separation_facts_by_block
         } else {
-            let mut blocks = vec![Some(left.base().block.clone())];
-            if right.base().block != left.base().block {
-                blocks.push(Some(right.base().block.clone()));
-            }
-            blocks
+            &mut self.separation_facts_by_block
         };
-        for key in keys {
-            let bucket = self
-                .separation_facts_by_block
-                .get(&key)
-                .cloned()
-                .unwrap_or_default();
+        let mut blocks = vec![left.base().block.clone()];
+        if right.base().block != left.base().block {
+            blocks.push(right.base().block.clone());
+        }
+        for key in blocks {
+            let bucket = index.get(&key).cloned().unwrap_or_default();
             let bucket = if insert {
                 bucket.with_value(proposition.clone())
             } else {
                 bucket.without_value(proposition)
             };
-            self.separation_facts_by_block = if bucket.is_empty() {
-                self.separation_facts_by_block.without_key(&key)
+            *index = if bucket.is_empty() {
+                index.without_key(&key)
             } else {
-                self.separation_facts_by_block.with_inserted(key, bucket)
+                index.with_inserted(key, bucket)
             };
         }
     }

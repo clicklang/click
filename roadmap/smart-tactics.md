@@ -446,10 +446,13 @@ are `ScanSet`s too:
   (`ranges_directly_disjoint_from_access`) or a pointer
   (`range_proven_disjoint_from_pointer`), and the directed pass of range
   separation, read `memory_separations_near`: the memory separations filed
-  under the blocks their sides name, plus those with a wide side, whose
-  cover can cross a base equality. A shallow containment of a narrow range
-  needs the side in the range's own block, and a direct one a block of the
-  pointer's affine class (`pointer_class_blocks`), so the candidates hold
+  under the blocks their sides name. Wide-sided separations have their own
+  endpoint-block index; shallow callers also select it under their pointers'
+  related roots and affine block classes because wide coverage can cross a
+  base equality, including a translated window. Narrow-only contexts skip
+  that additional alias lookup. A shallow containment of a narrow range in a
+  narrow side needs the side in the range's own block, and a direct one a
+  block of the pointer's affine class (`pointer_class_blocks`), so the candidates hold
   every fact the scan could use, visited in the scan's order
   (`pointer_separation_ignores_unrelated_separations`).
 
@@ -730,12 +733,18 @@ four times the work at a quarter of it.
     Range separation's two scans are now a lookup: the separations filed
     under the blocks related to either queried base by proven equality
     (`related_pointer_root_blocks`), the blocks memory resolution can
-    reach, and those with a wide side, which still share one bucket. Debug
-    builds compare every answer with the scan
+    reach. Completed 2026-10-27: wide-sided facts now also use an endpoint-block
+    index, replacing their global bucket. Callers select wide facts through
+    related pointer roots and affine block classes, including translated
+    aliases; narrow-only contexts retain their ordinary block lookup. The regression grows unrelated wide facts at 8, 32 and 128
+    entries: the old query cost 1,335, 4,623 and 17,775 work units; the indexed
+    query costs 147 at every size. Related alias chains and translated windows
+    cost 370, 418 and 610 units at 4, 16 and 64 aliases per side. Fact withdrawal
+    preserves context forks. Debug builds compare every range-separation answer with the scan
     (`explicit_separation_lookup_reads_only_related_blocks`).
     Non-memory resource separation no longer falls back to every
     separation when a side sits inside memory: it reads the separations
-    filed under that memory's related blocks, the wide bucket and the
+    filed under that memory's related blocks, including wide sides, and the
     residual non-memory list, and debug builds compare it with the scan
     (`a_token_inside_memory_finds_its_separation_without_scanning`).
     Still listed: all compositions at `4280` and `4563` (index:
@@ -889,8 +898,6 @@ whole suite (counted 2026-10-26):
   index needs keys for those.
 - `frame_frontier_compositions` (`memory_reasoning.rs`): 328 calls, at most
   7 composite-owning compositions. Needs a by-block index of them.
-- Item 21's wide-separation bucket (separations with a wide side share one
-  bucket every query reads).
 
 Fix each with a scaling test that shows it growing.
 
@@ -900,6 +907,14 @@ showed growth beyond the corpus sizes. Store separation now selects
 compositions from both accesses' base keys at the pair question; explicit
 store owners retain their existing path. See the compositions discussion above and the
 `ownerless_store_separation_ignores_unrelated_composition_history` regression.
+
+Completed 2026-10-27: item 21's global wide-separation bucket. Wide facts are
+filed under their endpoint blocks and selected through the query's related
+pointer roots and affine block classes.
+`wide_separation_lookup_ignores_unrelated_wide_facts` measures
+successful alias queries and refusals beside growing unrelated wide facts;
+`wide_separation_lookup_scales_with_its_related_alias_chain` covers related
+growth and translated windows.
 
 ### 3. Completed (2026-10-27): shared equality-chain search
 

@@ -12869,13 +12869,17 @@ pub struct PureFactContext {
     /// separation query by block pair scan these instead of every
     /// proposition fact, and a `find` here chooses the same fact.
     pub(super) separation_facts: crate::kernel::fact_collections::ScanSet<Proposition>,
-    /// The memory separations among `separation_facts`, filed under each
-    /// block a side names, and under `None` when a side is wide. A shallow
-    /// containment of a narrow range in a narrow side needs the side in the
-    /// range's own block; a wide side's cover can reach another block
-    /// through a base equality, so those are always candidates.
+    /// Narrow memory separations, filed under each endpoint's block.
     pub(super) separation_facts_by_block: crate::persistent::PersistentMap<
-        Option<PointerBlock>,
+        PointerBlock,
+        crate::persistent::PersistentSet<Proposition>,
+    >,
+    /// Separations with a wide side, also filed under their endpoint blocks.
+    /// Wide containment can follow a base equality even for a narrow query,
+    /// so shallow callers select these under the queried pointers' related
+    /// blocks in addition to their ordinary narrow-containment keys.
+    pub(super) wide_separation_facts_by_block: crate::persistent::PersistentMap<
+        PointerBlock,
         crate::persistent::PersistentSet<Proposition>,
     >,
     pub(super) content_fingerprint: u64,

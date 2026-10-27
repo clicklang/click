@@ -2696,9 +2696,12 @@ impl PureFactContext {
         // Each certificate shape has one shallow side, which a narrow query
         // range meets only in its own block.
         if if left.wide_bounds().is_none() && right.wide_bounds().is_none() {
-            self.memory_separations_near([&left.base().block, &right.base().block])
-                .into_iter()
-                .any(directed)
+            self.memory_separations_near(
+                [&left.base().block, &right.base().block],
+                [left.base(), right.base()],
+            )
+            .into_iter()
+            .any(directed)
         } else {
             self.separation_facts_related_to(left, right, directed)
         } {
@@ -2722,7 +2725,7 @@ impl PureFactContext {
     /// contain `left` and `right`. A side contains a queried range only up
     /// to memory resolution, which reaches a block through a proven base
     /// equality, so the candidates are the separations filed under the
-    /// blocks related to either queried base, and those with a wide side
+    /// blocks related to either queried base, including wide sides
     /// (`memory_separations_near`). Debug builds compare every answer with
     /// the scan of every separation.
     fn separation_facts_related_to(
@@ -2736,7 +2739,7 @@ impl PureFactContext {
             .flat_map(|base| crate::kernel::primitives::related_pointer_root_blocks(base, self))
             .collect::<BTreeSet<_>>();
         let indexed = self
-            .memory_separations_near(blocks.iter())
+            .memory_separations_near(blocks.iter(), [left.base(), right.base()])
             .into_iter()
             .any(&certifies);
         #[cfg(debug_assertions)]
@@ -4797,7 +4800,7 @@ impl PureFactContext {
             let mut blocks = self.equality_graph.pointer_class_blocks(&pointer.block);
             blocks.push(range.base().block.clone());
             blocks.push(pointer.block.clone());
-            let candidates = self.memory_separations_near(blocks.iter());
+            let candidates = self.memory_separations_near(blocks.iter(), [range.base(), pointer]);
             if let Some(proposition) = candidates.into_iter().find(|proposition| match proposition
                 .memory_separation()
             {
@@ -5110,7 +5113,8 @@ impl PureFactContext {
         }
         // `range` is narrow here, and both certificate shapes contain it
         // shallowly in one side, so that side is in its block.
-        let candidates = self.memory_separations_near([&range.base().block]);
+        let candidates =
+            self.memory_separations_near([&range.base().block], [range.base(), pointer]);
         if let Some(proposition) =
             candidates
                 .into_iter()
@@ -5975,5 +5979,40 @@ mod shallow_composition_separation_tests {
             samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
             "pointer separation grew with unrelated separations: {samples:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod wide_separation_index_tests {
+    use super::*;
+
+    #[test]
+    fn wide_separation_withdrawal_and_context_forks_preserve_authority() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = |id: u64| Pointer::symbolic(Variable(9_993_000 + id));
+        let wide = |base| {
+            CMemoryRange::new_wide(
+                base,
+                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::UInt64Constant(8),
+                4,
+            )
+        };
+        let left = wide(pointer(0));
+        let right = wide(pointer(1));
+        let fact = Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(left.clone())),
+            right: Box::new(CResource::Memory(right.clone())),
+        };
+        let parent = PureFactContext::new().assume_proposition(fact.clone());
+        let child = parent.without_exact_fact(&fact);
+        let separate = |context: &PureFactContext| {
+            context.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                &left, &right,
+            )
+        };
+        assert!(separate(&parent));
+        assert!(!separate(&child));
+        assert!(separate(&child.assume_proposition(fact)));
     }
 }
