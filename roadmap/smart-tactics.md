@@ -898,9 +898,13 @@ closers and optional function unfolding, so it does not restart full `simp`
 before arithmetic has its turn. The shared route is available inside split
 and unfold continuations, and spells execution equalities at the frontier
 that owns the goal, preserving the previous loop entry's snapshot name.
-This covers `examples/modeled-binary-tree` and
-`mdtests/loop_old_parameter_resource_argument.md` without changing their
-proofs. Refuted scalar offsets stop before connected search; the indexed
+This covers `examples/modeled-binary-tree`,
+`mdtests/loop_old_parameter_resource_argument.md` and
+`mdtests/c_named_function_contract_refines_vacuous_guarded_clause.md` without
+changing their proofs. The goal-local mode also retains a native rewrite
+form with explicit carrier casts before its Integer observation, preserving
+a structural source goal in a named contract's abstract post-state and
+round-tripping through expansion. Refuted scalar offsets stop before connected search; the indexed
 shortcut retains goal-local candidate lookup and metadata filtering.
 
 ### 4. Noted, not filed

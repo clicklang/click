@@ -3181,6 +3181,26 @@ fn equality_search_expands_tree_rotation() {
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
+#[test]
+#[ignore = "nightly: guarded contract refinement expansion and cold verification"]
+fn equality_search_expands_guarded_contract_refinement() {
+    let (click, sources) =
+        mdtest_sources("mdtests/c_named_function_contract_refines_vacuous_guarded_clause.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(
+        &click,
+        &sources,
+        "increment_is_guarded_progress.ensures_0",
+    )
+    .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(expanded.contains("rewrite("), "{expanded}");
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
 /// A theorem with a type parameter is checked at a rigid type standing for
 /// any type. Expanding one of its tactics verifies that theorem alone, and
 /// must check it the same way; without the rigid type the proof cannot be

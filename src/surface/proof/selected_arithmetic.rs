@@ -497,6 +497,53 @@ fn oriented_forms(
     std::iter::once((kernel, surface)).chain(reverse).collect()
 }
 
+/// Preserve a native equality's carrier without turning it into an Integer
+/// observation. This also makes arithmetic in a recorded source round-trip.
+fn explicit_native_rewrite_equality(
+    kernel: &Proposition,
+    surface: &ClickProposition,
+) -> Option<ClickProposition> {
+    let Proposition::ConditionIs(ConditionTerm::Compare { format, .. }, _) = kernel else {
+        return None;
+    };
+    fn cast(
+        operand: &ContractExpression,
+        format: crate::kernel::MachineIntegerType,
+    ) -> ContractExpression {
+        ContractExpression::CUnary {
+            operand: Box::new(operand.clone()),
+            lowered: CExpression::Cast {
+                expression: Box::new(CExpression::Value(int32(0))),
+                target_type: format.c_type(),
+                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            },
+        }
+    }
+    match surface {
+        ClickProposition::Comparison {
+            left,
+            operator,
+            right,
+        } => Some(ClickProposition::Comparison {
+            left: cast(left, *format),
+            operator: *operator,
+            right: cast(right, *format),
+        }),
+        ClickProposition::At {
+            selector,
+            proposition,
+        } => Some(ClickProposition::At {
+            selector: selector.clone(),
+            proposition: Box::new(explicit_native_rewrite_equality(kernel, proposition)?),
+        }),
+        _ => None,
+    }
+}
+
 /// `l == r` for an equality spelled `at(S, l) == at(S, r)` or `at(S, l == r)`.
 fn unanchored_equality(surface: &ClickProposition) -> Option<ClickProposition> {
     match surface {
@@ -1124,6 +1171,27 @@ impl<'a> Proof<'a> {
                     .is_some_and(|reverse| equality_rewrite_applies(goal, &reverse))
         };
         equalities.sort_by_key(|equality| !applies(equality));
+        let forms = |kernel: Proposition, surface: ClickProposition| {
+            let mut forms = oriented_forms(kernel.clone(), surface.clone());
+            if matches!(closers, RewriteClosers::GoalLocal { .. })
+                && forms
+                    .first()
+                    .is_some_and(|(_, observed)| observed != &surface)
+                && let Some(native) = explicit_native_rewrite_equality(&kernel, &surface)
+            {
+                // A native rewrite preserves a structural successor in an
+                // abstract contract post-state where its Integer observation
+                // can change the goal's carrier. Casts keep that native
+                // arithmetic explicit when the certificate is reparsed.
+                let reverse = reverse_equality(&kernel)
+                    .zip(super::fixed_state_proofs::reverse_surface_equality(&native));
+                let mut native_forms = vec![(kernel, native)];
+                native_forms.extend(reverse);
+                native_forms.append(&mut forms);
+                return native_forms;
+            }
+            forms
+        };
         let mut candidates: Vec<Vec<(Proposition, ClickProposition)>> = Vec::new();
         for equality in &equalities {
             check_verification_deadline()?;
@@ -1142,9 +1210,9 @@ impl<'a> Proof<'a> {
                 && let Ok(lowered) =
                     self.lower_surface_proposition(&unanchored, "`solve` rewrite equality")
             {
-                candidates.push(oriented_forms(lowered, unanchored));
+                candidates.push(forms(lowered, unanchored));
             }
-            candidates.push(oriented_forms(kernel, surface));
+            candidates.push(forms(kernel, surface));
         }
         if candidates.is_empty() {
             return Ok(None);
