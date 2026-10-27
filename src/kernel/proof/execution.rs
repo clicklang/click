@@ -645,8 +645,8 @@ struct CheckedReturnPresentation {
 #[derive(Clone)]
 struct ReturnResourceObservation {
     context: Arc<CheckedReturnContext>,
-    before: CState,
     after: CState,
+    semantic_facts: Vec<Proposition>,
 }
 
 /// A checked establish or retirement of source population authority. This is
@@ -1955,6 +1955,43 @@ impl CheckedResourceRewrite {
         )
     }
 
+    fn check_instance_definition(
+        function: &CFunction,
+        definition: &CCompositeResourceDefinition,
+    ) -> Result<(), String> {
+        if definition.reaches_population() {
+            let memory_only = |spec: &crate::kernel::CResourceSpec| {
+                matches!(
+                    spec.term(),
+                    crate::kernel::CResourceTerm::Memory(_)
+                        | crate::kernel::CResourceTerm::Token { .. }
+                        | crate::kernel::CResourceTerm::PopulationAuthority { .. }
+                )
+            };
+            // A named child is admitted when its own definition reaches no
+            // population, so it cannot hide a member or an authority; the
+            // exchange then moves only memory, tokens, and this body's own
+            // authority, which the ledger equality below checks.
+            let ordinary_child = |child: &crate::kernel::CResourceChildSpec| {
+                function
+                    .proof_composite_resource_definition(&child.resource)
+                    .is_some_and(|child| !child.reaches_population())
+            };
+            if !definition.children.iter().all(ordinary_child)
+                || !definition.contains().iter().all(memory_only)
+                || definition.matched.as_ref().is_some_and(|body| {
+                    body.arms.iter().any(|arm| {
+                        !arm.children.iter().all(ordinary_child)
+                            || !arm.contains.iter().all(memory_only)
+                    })
+                })
+            {
+                return Err("named resource rewrite requires an ordinary memory body".into());
+            }
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn check_with_return_observation(
         function: &CFunction,
@@ -2396,36 +2433,7 @@ impl CheckedResourceRewrite {
             // through this path: those require ledger evidence. An exact owned
             // authority may move into or out of a control instance; the
             // creation-ledger equality below proves that no population changed.
-            if definition.reaches_population() {
-                let memory_only = |spec: &crate::kernel::CResourceSpec| {
-                    matches!(
-                        spec.term(),
-                        crate::kernel::CResourceTerm::Memory(_)
-                            | crate::kernel::CResourceTerm::Token { .. }
-                            | crate::kernel::CResourceTerm::PopulationAuthority { .. }
-                    )
-                };
-                // A named child is admitted when its own definition reaches no
-                // population, so it cannot hide a member or an authority; the
-                // exchange then moves only memory, tokens, and this body's own
-                // authority, which the ledger equality below checks.
-                let ordinary_child = |child: &crate::kernel::CResourceChildSpec| {
-                    function
-                        .proof_composite_resource_definition(&child.resource)
-                        .is_some_and(|child| !child.reaches_population())
-                };
-                if !definition.children.iter().all(ordinary_child)
-                    || !definition.contains().iter().all(memory_only)
-                    || definition.matched.as_ref().is_some_and(|body| {
-                        body.arms.iter().any(|arm| {
-                            !arm.children.iter().all(ordinary_child)
-                                || !arm.contains.iter().all(memory_only)
-                        })
-                    })
-                {
-                    return Err("named resource rewrite requires an ordinary memory body".into());
-                }
-            }
+            Self::check_instance_definition(function, definition)?;
             let unfold = before_state
                 .resources()
                 .owned_instance(instance.identity())
@@ -2504,22 +2512,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 "instance rewrite facts do not descend from their input".to_string()
             })?;
             let observed_facts = if let Some(observation) = &return_observation {
-                let observed = crate::kernel::rewrite_resource_instance_selecting_children(
-                    &observation.before,
-                    instance,
-                    definition,
-                    function.composite_resource_definitions(),
-                    assumptions,
-                    unfold,
-                    selected_children.as_deref(),
-                )
-                .map_err(|refusal| refusal.describe())?;
-                if observed.state != observation.after {
-                    return Err(
-                        "return observation changed state outside its resource exchange".into(),
-                    );
-                }
-                observed.semantic_facts
+                observation.semantic_facts.clone()
             } else {
                 Vec::new()
             };
@@ -7507,33 +7500,9 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                                 "return resource observation belongs to a different execution path",
                             );
                         }
-                        let instance = rewrite
-                            .instance
-                            .as_ref()
-                            .ok_or("return resource observation requires a named instance")?;
-                        let unfold = observation
-                            .before
-                            .resources()
-                            .owned_instance(instance.identity())
-                            .is_some();
-                        let observed = crate::kernel::rewrite_resource_instance_selecting_children(
-                            &observation.before,
-                            instance,
-                            &rewrite.definition,
-                            function.composite_resource_definitions(),
-                            executed_under,
-                            unfold,
-                            rewrite.selected_children.as_deref(),
-                        )
-                        .map_err(|_| "return resource observation is not justified on this path")?;
-                        if observed.state != observation.after {
-                            return Err(
-                                "return resource observation has a different checked exchange",
-                            );
-                        }
-                        for fact in observed.semantic_facts {
+                        for fact in &observation.semantic_facts {
                             *executed_under =
-                                std::mem::take(executed_under).assume_proposition(fact);
+                                std::mem::take(executed_under).assume_proposition(fact.clone());
                         }
                     }
                     **state = rewrite.after_state.clone();
@@ -10477,7 +10446,60 @@ impl ExecutionProofCore {
         Ok(())
     }
 
-    pub(crate) fn record_return_resource_rewrite_with_children(
+    /// Construct the published exchange and retain its exact output. The
+    /// surface supplies a checked outcome, never a proposed successor or facts.
+    pub(crate) fn rewrite_return_resource_instance_with_children(
+        &mut self,
+        function: &CFunction,
+        path_index: usize,
+        before_facts: &ProofFacts,
+        before: &CState,
+        instance: &crate::kernel::ResourceInstance,
+        unfold: bool,
+        selected_children: Option<Arc<[(String, Variable)]>>,
+    ) -> Result<
+        (
+            crate::kernel::functions::ResourceInstanceRewriteResult,
+            ProofFacts,
+        ),
+        crate::kernel::ResourceRewriteRefusal,
+    > {
+        let definition = function
+            .proof_composite_resource_definition(instance.name())
+            .ok_or("instance definition is not registered on the function")?;
+        let _capture = crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
+            &self.checked_call_events,
+        );
+        let result = crate::kernel::rewrite_resource_instance_selecting_children(
+            before,
+            instance,
+            definition,
+            function.composite_resource_definitions(),
+            before_facts.assumptions(),
+            unfold,
+            selected_children.as_deref(),
+        )?;
+        let facts = result
+            .semantic_facts
+            .iter()
+            .fold(before_facts.clone(), |facts, fact| {
+                facts.with_kernel_checked_fact(fact.clone())
+            });
+        self.record_return_resource_rewrite_with_children(
+            function,
+            path_index,
+            before_facts,
+            &CResourceFact::own(CResource::Instance(instance.clone())),
+            &facts,
+            unfold,
+            selected_children,
+            Some((before, &result)),
+        )
+        .map_err(|error| crate::kernel::ResourceRewriteRefusal::OwnedMessage(error.message))?;
+        Ok((result, facts))
+    }
+
+    fn record_return_resource_rewrite_with_children(
         &mut self,
         function: &CFunction,
         path_index: usize,
@@ -10486,7 +10508,10 @@ impl ExecutionProofCore {
         after_facts: &ProofFacts,
         unfold: bool,
         selected_children: Option<Arc<[(String, Variable)]>>,
-        observed: Option<(&CState, &CState)>,
+        observed: Option<(
+            &CState,
+            &crate::kernel::functions::ResourceInstanceRewriteResult,
+        )>,
     ) -> Result<(), ResourceRewriteCheckError> {
         self.flush_return_propositions(path_index)?;
         if !self.evidence_completed {
@@ -10541,8 +10566,8 @@ impl ExecutionProofCore {
             }
             Some(Arc::new(ReturnResourceObservation {
                 context,
-                before: before.clone(),
-                after: after.clone(),
+                after: after.state.clone(),
+                semantic_facts: after.semantic_facts.clone(),
             }))
         } else {
             None
@@ -10597,7 +10622,8 @@ impl ExecutionProofCore {
         };
         // Compute the exchange in the retained C-body state, not the
         // caller-side projection used by postcondition expressions.
-        let after_state = crate::kernel::rewrite_resource_instance_selecting_children(
+        CheckedResourceRewrite::check_instance_definition(function, definition)?;
+        let retained = crate::kernel::rewrite_resource_instance_selecting_children(
             &before_state,
             instance,
             definition,
@@ -10606,20 +10632,20 @@ impl ExecutionProofCore {
             unfold,
             selected_children.as_deref(),
         )
-        .map_err(|refusal| refusal.describe())?
-        .state;
-        let mut rewrite = CheckedResourceRewrite::check_with_return_observation(
-            function,
-            &before_state,
-            before_facts,
-            selected,
-            &after_state,
-            after_facts,
-            &self.checked_call_events,
+        .map_err(|refusal| refusal.describe())?;
+        let mut rewrite = CheckedResourceRewrite {
+            before_state,
+            after_state: retained.state,
+            before_facts: before_facts.clone(),
+            after_facts: after_facts.clone(),
+            definition: definition.clone(),
+            consumption_contract: None,
+            return_context: None,
+            instance: Some(instance.clone()),
             selected_children,
-            observation,
-            &[],
-        )?;
+            return_observation: observation,
+            return_presentation: None,
+        };
         if self.frontier.execution().is_some() {
             rewrite.return_context = Some(self.return_context_for_path(path_index)?);
         }
