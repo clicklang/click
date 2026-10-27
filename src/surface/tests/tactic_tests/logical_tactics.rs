@@ -27,7 +27,7 @@ fn auto_composite_machine_equalities_require_defined_operations() {
 }
 
 #[test]
-fn fixed_state_simp_closes_from_false_without_leaking_into_other_contracts() {
+fn fixed_state_solve_closes_from_false_without_leaking_into_other_contracts() {
     let c_source = "int32 f(int32 x) { return x; }\n";
     let source = r#"
         verifying "f.c";
@@ -62,7 +62,7 @@ fn fixed_state_simp_closes_from_false_without_leaking_into_other_contracts() {
 }
 
 #[test]
-fn simp_rewrites_constructor_equality_before_disequality() {
+fn solve_rewrites_constructor_equality_before_disequality() {
     let click_source = r#"
             spec enum Mark { Clear, Set }
 
@@ -75,17 +75,17 @@ fn simp_rewrites_constructor_equality_before_disequality() {
         "#;
 
     verify_c0_sources(click_source, &[])
-        .expect("simp should rewrite a constructor equality before proving disequality");
+        .expect("solve should rewrite a constructor equality before proving disequality");
     let without_equality =
         click_source.replace("                requires value == Mark::Set;\n", "");
     assert!(
         verify_c0_sources(&without_equality, &[]).is_err(),
-        "simp must not prove a constructor disequality without the equality premise"
+        "solve must not prove a constructor disequality without the equality premise"
     );
 }
 
 #[test]
-fn simp_orients_pure_function_equality_inside_constructor_goal() {
+fn solve_orients_pure_function_equality_inside_constructor_goal() {
     let click_source = r#"
             spec enum Shape {
                 Empty,
@@ -109,14 +109,14 @@ fn simp_orients_pure_function_equality_inside_constructor_goal() {
         "#;
 
     verify_c0_sources(click_source, &[])
-        .expect("simp should orient a pure-function equality inside a constructor");
+        .expect("solve should orient a pure-function equality inside a constructor");
     let without_equality = click_source.replace(
         "                requires shape_left(value) == middle;\n",
         "",
     );
     assert!(
         verify_c0_sources(&without_equality, &[]).is_err(),
-        "simp must not prove the constructor equality without its function premise"
+        "solve must not prove the constructor equality without its function premise"
     );
 }
 
@@ -434,13 +434,13 @@ fn parses_local_have_proof_tactic() {
         ProofTactic::Have(ProofHave {
             proof: SourceProof::Script(script),
             ..
-        }) if script.as_slice() == [ProofTactic::Simp]
+        }) if script.as_slice() == [ProofTactic::Solve]
     ));
     assert_eq!(
         &tactics[1..],
         &[
             ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
-            ProofTactic::Simp
+            ProofTactic::Solve
         ]
     );
 }
@@ -590,8 +590,8 @@ fn parses_proof_if_tactic() {
             then_tactics,
             else_tactics,
             ..
-        }) if then_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Simp]
-            && else_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Simp]
+        }) if then_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Solve]
+            && else_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Solve]
     ));
 }
 
@@ -621,7 +621,7 @@ fn parses_existential_proof_tactics() {
             )
         ))
     );
-    assert!(matches!(tactics[3], ProofTactic::Simp));
+    assert!(matches!(tactics[3], ProofTactic::Solve));
 }
 
 #[test]
@@ -659,13 +659,13 @@ fn parses_unnamed_ensure_clause() {
 }
 
 #[test]
-fn parses_simp_tactic() {
+fn parses_solve_tactic() {
     let source = FILL3_CLICK.replace("== 2;", "== 2 by solve();");
     let file = parse(&source).expect("sidecar should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
     assert!(
-        matches!(ensure.proof(), SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::Simp]))
+        matches!(ensure.proof(), SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::Solve]))
     );
 }
 
@@ -1126,7 +1126,7 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
             [
                 ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
                 ProofTactic::UnfoldPredicate("sorted_pair".to_string()),
-                ProofTactic::Simp,
+                ProofTactic::Solve,
             ]
             .as_slice()
         )
@@ -1256,20 +1256,20 @@ fn verifies_click_proposition_logic() {
 }
 
 #[test]
-fn single_simp_call_and_block_have_the_same_frontier_semantics() {
+fn single_solve_call_and_block_have_the_same_frontier_semantics() {
     let c_source = "int32 identity(int32 x) { return x; }";
-    let simp_errors = ["by solve();", "by { solve(); }"].map(|proof| {
+    let solve_errors = ["by solve();", "by { solve(); }"].map(|proof| {
         let source = format!(
             "verifying \"identity.c\"; int32 identity(int32 x) {{ ensures result == x {proof} }}"
         );
         verify_c0_sources(&source, &[("identity.c", c_source)])
-            .expect_err("simp at function entry should not execute")
+            .expect_err("solve at function entry should not execute")
             .message()
             .to_string()
     });
-    assert_eq!(simp_errors[0], simp_errors[1]);
+    assert_eq!(solve_errors[0], solve_errors[1]);
     assert!(
-        simp_errors[0].contains("closes the outcome claims at function exit and does not execute")
+        solve_errors[0].contains("closes the outcome claims at function exit and does not execute")
     );
 }
 
@@ -1309,7 +1309,7 @@ fn every_claim_proof_form_retains_expandable_provenance() {
 }
 
 #[test]
-fn mid_execution_witness_simp_have_expands_to_a_simple_certificate() {
+fn mid_execution_witness_solve_have_expands_to_a_simple_certificate() {
     let c_source = "int32 current_have(int32 x) { return x; }";
     let click_source = r#"
             verifying "current_have.c";
@@ -1327,10 +1327,10 @@ fn mid_execution_witness_simp_have_expands_to_a_simple_certificate() {
         "#;
 
     let verified = verify_c0_sources(click_source, &[("current_have.c", c_source)]);
-    let verified = verified.expect("a witness/simp have should verify");
+    let verified = verified.expect("a witness/solve have should verify");
     let expanded = verified[0].expanded_proof_tactics().unwrap_or_else(|| {
         panic!(
-            "a mid-execution witness/simp have should expand: {:?}",
+            "a mid-execution witness/solve have should expand: {:?}",
             verified[0].expansion_blocker()
         )
     });
@@ -1347,8 +1347,8 @@ fn mid_execution_witness_simp_have_expands_to_a_simple_certificate() {
     assert!(
         !body
             .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::Simp)),
-        "the expanded have body should replace its smart simp: {body:?}"
+            .any(|tactic| matches!(tactic, ProofTactic::Solve)),
+        "the expanded have body should replace its smart solve: {body:?}"
     );
     assert!(
         matches!(
@@ -1358,7 +1358,7 @@ fn mid_execution_witness_simp_have_expands_to_a_simple_certificate() {
         "the expansion should be the exact checked witness/normalize path: {body:?}"
     );
     ProofCertificate::from_proof_tactics(&expanded)
-        .expect("the witness/simp have expansion should be a surface certificate");
+        .expect("the witness/solve have expansion should be a surface certificate");
 
     let have_offset = click_source
         .find("have exists (j: int32)")
@@ -1376,13 +1376,13 @@ fn mid_execution_witness_simp_have_expands_to_a_simple_certificate() {
         + 1;
     let rewritten =
         expand_c0_tactic_source_at(click_source, &[("current_have.c", c_source)], line, column)
-            .expect("the checked witness/simp path should expand at its source site");
+            .expect("the checked witness/solve path should expand at its source site");
     verify_c0_sources(&rewritten, &[("current_have.c", c_source)])
         .expect("the serialized witness/normalize path should independently verify");
 }
 
 #[test]
-fn mid_execution_choose_witness_simp_retains_the_checked_proof_path() {
+fn mid_execution_choose_witness_solve_retains_the_checked_proof_path() {
     let c_source = "int32 choose_witness(int32 x) { return x; }";
     let click_source = r#"
             verifying "choose_witness.c";
@@ -1404,7 +1404,7 @@ fn mid_execution_choose_witness_simp_retains_the_checked_proof_path() {
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
         verify_c0_sources(click_source, &[("choose_witness.c", c_source)])
     });
-    let verified = verified.expect("a choose/witness/simp have should verify through Proof");
+    let verified = verified.expect("a choose/witness/solve have should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
     let expanded = verified[0]
         .expanded_proof_tactics()
@@ -1502,7 +1502,7 @@ fn explicit_mid_execution_witness_certificate_checks_and_expands() {
 }
 
 #[test]
-fn fixed_state_witness_retains_a_structural_surface_goal_for_simp() {
+fn fixed_state_witness_retains_a_structural_surface_goal_for_solve() {
     let c_source = "int32 witness_pair(int32 x, int32 y) { return x; }";
     let click_source = r#"
             verifying "witness_pair.c";
@@ -1522,7 +1522,7 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_simp() {
         "#;
 
     let verified = verify_c0_sources(click_source, &[("witness_pair.c", c_source)]);
-    verified.expect("witness followed by structural simp should stay on Proof");
+    verified.expect("witness followed by structural solve should stay on Proof");
 
     let have_offset = click_source
         .find("have exists (j: int32)")
@@ -1596,7 +1596,7 @@ fn mid_execution_proof_if_have_expands_to_a_simple_certificate() {
         })
         .expect("the expansion should retain the have");
     assert!(
-        !format!("{have:?}").contains("Simp"),
+        !format!("{have:?}").contains("Solve"),
         "the expanded have cases should close with simple tactics: {have:?}"
     );
     ProofCertificate::from_proof_tactics(&expanded)
@@ -1876,7 +1876,7 @@ fn pure_have_certificate_uses_checked_proof_scope() {
 }
 
 #[test]
-fn pure_unfold_then_simp_retains_the_checked_proof_path() {
+fn pure_unfold_then_solve_retains_the_checked_proof_path() {
     let click_source = r#"
         predicate reflexive(x: int32) {
             x == x
@@ -1891,7 +1891,7 @@ fn pure_unfold_then_simp_retains_the_checked_proof_path() {
     "#;
 
     verify_c0_sources(click_source, &[])
-        .expect("pure unfold-then-simp should search on the unfolded Proof successor");
+        .expect("pure unfold-then-solve should search on the unfolded Proof successor");
 }
 
 #[test]
@@ -2519,7 +2519,7 @@ fn enumerate_requires_a_constant_bounded_universal_goal() {
 }
 
 #[test]
-fn disjunctive_premise_simp_expands_to_a_cases_certificate() {
+fn disjunctive_premise_solve_expands_to_a_cases_certificate() {
     let c_source = r#"
         int32 select_first(int32* left, int32* right, int32 choose_left) {
             int32* selected;
@@ -2566,7 +2566,7 @@ fn disjunctive_premise_simp_expands_to_a_cases_certificate() {
         .expect("the disjunctive-premise postcondition should verify");
     let expanded = verified[0].expanded_proof_tactics().unwrap_or_else(|| {
         panic!(
-            "the disjunctive-premise simp should expand: {:?}",
+            "the disjunctive-premise solve should expand: {:?}",
             verified[0].expansion_blocker()
         )
     });
@@ -2583,7 +2583,7 @@ fn disjunctive_premise_simp_expands_to_a_cases_certificate() {
     let cases = find_cases(&expanded)
         .expect("the expansion should eliminate the disjunctive premise with `cases`");
     assert!(
-        !format!("{cases:?}").contains("Simp"),
+        !format!("{cases:?}").contains("Solve"),
         "both written branches should close with simple tactics: {cases:?}"
     );
     ProofCertificate::from_proof_tactics(&expanded)
@@ -3017,8 +3017,8 @@ fn parses_outcomes_arms_in_either_order() {
         ProofTactic::CallOutcomes(ProofCallOutcomes {
             returned_tactics,
             threw_tactics,
-        }) if returned_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Simp]
-            && threw_tactics == &[ProofTactic::Simp]
+        }) if returned_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Solve]
+            && threw_tactics == &[ProofTactic::Solve]
     ));
 
     let duplicate = FILL3_CLICK.replace(

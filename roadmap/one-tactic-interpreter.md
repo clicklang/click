@@ -31,8 +31,8 @@ maintainability, not a known wrong verdict.
   before each closer.
 - `assumption` and the normalizing closers (`normalize`, `normalize using`,
   `arithmetic using`, an arithmetic certificate, `both`) close the main claim
-  through one arm of `finish_ordered_proof`, and `simp`, `simp() using` and
-  `auto` through `close_post_execution_claims_with_simp`
+  through one arm of `finish_ordered_proof`, and `solve`, `solve() using` and
+  `auto` through `close_post_execution_claims_with_solve`
   (`src/surface/proof/claim_proofs.rs`). `finish_ordered_proof` is about
   2,800 lines, down from 3,900.
 - Expansion records the `certificate_since` delta of each checked step
@@ -67,15 +67,15 @@ These still interpret written tactics on their own:
   (`src/surface/proof/execution_state.rs`) and the per-path dispatch in
   `finish_ordered_proof`.
 
-`simp` in an execution arm is refused before the function exit, while a
-`preserve` body has its own `simp` handler.
+`solve` in an execution arm is refused before the function exit, while a
+`preserve` body has its own `solve` handler.
 
-The largest remaining piece is the grouped `simp` and `auto` closer in
-`close_post_execution_claims_with_simp`. It focuses a grouped proof's claims
+The largest remaining piece is the grouped `solve` and `auto` closer in
+`close_post_execution_claims_with_solve`. It focuses a grouped proof's claims
 together on each outcome path, closes ownership claims by exact resource
 checks, falls back to each claim on its own, and keeps the bookkeeping that
 lets `click expand` print the group's closers. The step that proves one
-focused goal is already the shared `try_simp_closure`; the scoping around it
+focused goal is already the shared `try_solve_closure`; the scoping around it
 is post-execution only.
 
 ## Case splits
@@ -98,7 +98,7 @@ frontier `match` driver, on the facts every outcome path shares.
 
 Add mdtests that write the same tactic in each context where the language
 admits it and expect the same verdict and the same expansion: a written
-`transport`, a nested `have` whose body misses, and `simp`, at the linear
+`transport`, a nested `have` whose body misses, and `solve`, at the linear
 frontier, in a focused arm, in an `open` scope, in a pure theorem script and
 after execution. Each remaining difference becomes either an agreeing pair or
 a documented refusal with a diagnostic that names the context. Keep every
@@ -112,7 +112,7 @@ existing expansion round-trip regression.
   `SourceContext`.
 - `PostExecutionTactic` is removed, or each remaining variant is justified
   in this file.
-- The grouped `simp`/`auto` closer focuses claims through the same claim
+- The grouped `solve`/`auto` closer focuses claims through the same claim
   path as the single-step closers, and `finish_ordered_proof` shrinks to the
   context-specific setup and teardown.
 - `docs/reference/tactics/index.md` states any remaining context-specific

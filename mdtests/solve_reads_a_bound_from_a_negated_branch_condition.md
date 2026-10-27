@@ -1,0 +1,29 @@
+# the implicit closer reads a bound from a negated branch condition
+
+On the fall-through path of `if (x > 100) return 0;` the path fact is
+`x > 100` is false. The implicit closer reads it from `x`'s indexed bound bucket as the
+upper bound `x <= 100`, which with `x >= 0` keeps `x + 1` in range, so the
+whole function closes with the omitted proof and no hand-written branch.
+
+```c filename=solve_reads_a_bound_from_a_negated_branch_condition.c
+int32 add_one(int32 x) {
+    if (x > 100) {
+        return 0;
+    }
+    return x + 1;
+}
+```
+
+```click
+verifying "solve_reads_a_bound_from_a_negated_branch_condition.c";
+
+int32 add_one(int32 x) {
+    requires x >= 0;
+    ensures result >= 0;
+    ensures result <= 101;
+}
+```
+
+```expect
+pass
+```

@@ -1344,7 +1344,7 @@ fn begin_outcome_existence_proof<'a>(
 /// reach, is a miss; only a deadline is an error.
 /// The implicit closer of a proposition claim: the claim goal is the
 /// kernel's lowering of the contract ensure at the outcome, closed by the
-/// direct logical closure or, when that does not apply, by the smart `simp`
+/// direct logical closure or, when that does not apply, by the smart `solve`
 /// search whose certificate is checked like an explicit one. Either way the
 /// completion is what claim certification matches. When neither closes the
 /// claim the reason names what stood in the way: the goal's lowering, a
@@ -1359,9 +1359,9 @@ enum ClaimClosureSearch<'p> {
     None,
     /// `solve() using`: only the listed premises.
     Restricted(&'p [ClickProposition]),
-    /// The direct logical closure, then `simp`.
-    Simp,
-    /// `simp`, then the rest of `auto`'s search.
+    /// The direct logical closure, then `solve`.
+    Solve,
+    /// `solve`, then the rest of `auto`'s search.
     Auto,
 }
 
@@ -1451,7 +1451,7 @@ fn close_claim_directly_from_outcome<'a>(
     }
     let mut search = super::attempt::search_scope("claim outcome closure");
     if let ClaimClosureSearch::Restricted(premises) = closure_search {
-        let selected = proof.try_restricted_simp_closure(premises);
+        let selected = proof.try_restricted_solve_closure(premises);
         check_verification_deadline()?;
         if let Some(completed) = selected
             && completed.is_complete()
@@ -1466,7 +1466,7 @@ fn close_claim_directly_from_outcome<'a>(
             search.succeed();
             return Ok(Ok(completed));
         }
-        if let Some(completed) = proof.try_simp_closure()?
+        if let Some(completed) = proof.try_solve_closure()?
             && completed.is_complete()
         {
             search.succeed();
@@ -1951,14 +1951,14 @@ fn fold_produced_resources<'a>(
     Ok(())
 }
 
-/// Closes claims after execution with a written `simp`, `solve() using` or
+/// Closes claims after execution with a written `solve`, `solve() using` or
 /// `auto`, or with the implicit `auto` that ends a proof: a claim proof the
 /// earlier tactics opened, a divergent path's claims, the claims of a
 /// grouped proof together, and then each claim on its own. `Ok(())` means
 /// the path's tactics continue after this closer; a closer that leaves a
 /// claim it acts on open is refused.
 #[allow(clippy::too_many_arguments)]
-fn close_post_execution_claims_with_simp<'a, 'e>(
+fn close_post_execution_claims_with_solve<'a, 'e>(
     post_tactic: &PostExecutionTactic,
     deferred: &DeferredPostExecutionTactic,
     tactic_index: &usize,
@@ -1993,7 +1993,7 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
     path_deferred_capture_tactics: &mut Vec<ProofTactic>,
 ) -> Result<(), ClickError> {
     let restricted_premises = match post_tactic {
-        PostExecutionTactic::SimpUsing(simp) => Some(simp.premises.as_slice()),
+        PostExecutionTactic::SolveUsing(solve) => Some(solve.premises.as_slice()),
         _ => None,
     };
     let closer_name = if restricted_premises.is_some() {
@@ -2003,9 +2003,9 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
     } else {
         "solve"
     };
-    // `auto` tries `simp` first on each pending
+    // `auto` tries `solve` first on each pending
     // claim, then the rest of its search on a claim
-    // `simp` leaves open.
+    // `solve` leaves open.
     let auto_closer = matches!(post_tactic, PostExecutionTactic::AutoClose);
     // The closer an omitted one stands for has
     // nothing to do on a path whose own tactics
@@ -2013,7 +2013,7 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
     if auto_closer && closures.iter().all(|closure| closure.is_closed()) {
         return Ok(());
     }
-    // `simp` acts on the first open goal;
+    // `solve` acts on the first open goal;
     // `auto` is the catch-all that closes every
     // goal still open.
     let main_claim = main_goal_claim(outcome_proof, closures, claims)?;
@@ -2084,21 +2084,21 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
             let proof = opened
                 .proof
                 .refresh_outcome_from(required_outcome(outcome_proof)?)?;
-            // The tactics before this `simp` opened the
-            // claim's proof; what `simp` itself adds is
+            // The tactics before this `solve` opened the
+            // claim's proof; what `solve` itself adds is
             // only what follows them.
-            let before_simp = proof.checkpoint();
+            let before_solve = proof.checkpoint();
             let selected = if let Some(premises) = restricted_premises {
-                let selected = proof.try_restricted_simp_closure(premises);
+                let selected = proof.try_restricted_solve_closure(premises);
                 check_verification_deadline()?;
                 selected
             } else if let Some(completed) = proof.try_direct_logical_closure()? {
                 Some(completed)
             } else {
-                proof.try_simp_closure()?
+                proof.try_solve_closure()?
             };
             match selected {
-                Some(completed) => Some((claim_index, before_simp, completed)),
+                Some(completed) => Some((claim_index, before_solve, completed)),
                 None if opened.falls_back_on_miss() => {
                     *opened_claim = Some(opened.with_proof(proof));
                     None
@@ -2112,25 +2112,25 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
             }
         }
     };
-    if let Some((claim_index, before_simp, completed)) = opened_closure {
+    if let Some((claim_index, before_solve, completed)) = opened_closure {
         if !completed.is_complete() {
             return Err(ClickError::new(format!(
                 "`{proof_label}` path {path_index}, tactic {tactic_index}: retained existential Proof remained incomplete after `solve`"
             )));
         }
         // The steps are checked inside the proof
-        // the earlier tactics opened, so `simp`
+        // the earlier tactics opened, so `solve`
         // stands for what it adds there, in the
         // claim's surface proof and in its own
         // expansion alike.
         let added = completed
-            .certificate_since(&before_simp)?
+            .certificate_since(&before_solve)?
             .to_proof_tactics();
         if capturing_this_tactic {
             path_deferred_capture_tactics.extend(added.iter().cloned());
         }
         // A grouped proof's expansion is written
-        // from the path's closers, so what `simp`
+        // from the path's closers, so what `solve`
         // added to the opened claim belongs there
         // too; otherwise the expanded proof stops
         // at the tactic that opened the claim.
@@ -2184,7 +2184,7 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
         }
         return Ok(());
     }
-    // A trailing `simp` after execution may have
+    // A trailing `solve` after execution may have
     // no contract work left (for example, a
     // resource-only release whose `frame` already
     // discharged every obligation).  Treat that as
@@ -2335,7 +2335,7 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
             let mut selected = true;
             // A top-level predicate outcome is opaque until the
             // corresponding checked `unfold` transition refines
-            // this evolving outcome Proof. Smart `simp` tries
+            // this evolving outcome Proof. Smart `solve` tries
             // those named operations before opening its claim
             // scopes; a rejected unfold is only a candidate miss
             // and leaves the persistent root unchanged.
@@ -2442,13 +2442,13 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
                 }
                 let (selected_scope, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| -> Result<_, ClickError> {
                     Ok(if let Some(premises) = restricted_premises {
-                    let selected = scope.try_restricted_simp_closure(premises);
+                    let selected = scope.try_restricted_solve_closure(premises);
                     check_verification_deadline()?;
                     selected
                 } else if let Some(scope) = scope.try_direct_logical_closure()? {
                     Some(scope)
                 } else {
-                    scope.try_simp_closure()?
+                    scope.try_solve_closure()?
                 })
                 });
                 let selected_scope = selected_scope.map_err(|error| error.with_check_observations(checks.clone()))?;
@@ -2717,12 +2717,12 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
     // kernel goal, with the facts the kernel
     // lowered it under, as the implicit closer at
     // the end of the proof tries it. A restricted
-    // `simp` still cites only its listed premises.
+    // `solve` still cites only its listed premises.
     if !require_explicit_closers {
         let search = match restricted_premises {
             Some(premises) => ClaimClosureSearch::Restricted(premises),
             None if auto_closer => ClaimClosureSearch::Auto,
-            None => ClaimClosureSearch::Simp,
+            None => ClaimClosureSearch::Solve,
         };
         for (claim_index, claim) in claims.iter().enumerate() {
             if closures[claim_index].is_closed() || !acts_on(claim_index) {
@@ -3608,7 +3608,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         proof_execution.presentation.surface_propositions.clone();
                     // The ordered surface equalities each claim's goal was
                     // rewritten through, parallel to `rewritten_claim_proofs`.
-                    // The direct Simp path checks them inside its checked
+                    // The direct Solve path checks them inside its checked
                     // `have` scope, preserving the original claim's
                     // checked completion through each rewrite.
                     let mut rewrite_claim_equalities: Vec<Vec<ClickProposition>> =
@@ -3636,7 +3636,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // until its invariant has been proved.
                     let mut resource_transition_applied = false;
                     // Why the contract's resource transition did not apply at
-                    // the closing `simp`, reported when a claim then stays open.
+                    // the closing `solve`, reported when a claim then stays open.
                     let mut pending_resource_transition_error: Option<String> = None;
                     drop(_path_preparation_timing);
                     let _post_execution_timing = crate::instrumentation::OperationTiming::new(
@@ -3664,7 +3664,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         source_index: usize::MAX,
                         tactic: PostExecutionTactic::AutoClose,
                     };
-                    // Only an ordered drain that has no closing `simp` and no
+                    // Only an ordered drain that has no closing `solve` and no
                     // further resource operation of its own needs the
                     // transition up front. A control node defers the transition
                     // to the reached closer, since earlier tactics can decide
@@ -3676,9 +3676,9 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::If { .. }
                                 | PostExecutionTactic::CallOutcomes { .. }
                                 | PostExecutionTactic::Match { .. }
-                                | PostExecutionTactic::Simp
+                                | PostExecutionTactic::Solve
                                 | PostExecutionTactic::AutoClose
-                                | PostExecutionTactic::SimpUsing(_)
+                                | PostExecutionTactic::SolveUsing(_)
                                 | PostExecutionTactic::Leaf(
                                     ProofTactic::FoldResource(_)
                                         | ProofTactic::UnfoldResource(_)
@@ -3694,7 +3694,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         // hands a produced or returned resource to a resource
                         // ensure, so every ordered closer sees the same transitioned
                         // context. A body that still has to fold an open composite
-                        // does not satisfy the guard here; the closing `simp` runs
+                        // does not satisfy the guard here; the closing `solve` runs
                         // the same transition once that fold has happened.
                         if matches!(outcome, CFunctionOutcome::Return { .. })
                             && crate::kernel::c_function_return_resources_definitionally_established(
@@ -3736,7 +3736,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // Consecutive assumption closers only discharge claims;
                     // they do not change the outcome or its ambient facts.
                     // A failed whole-contract transition must not be retried
-                    // once per returned member in an expanded simp proof.
+                    // once per returned member in an expanded solve proof.
                     let mut assumption_transition_attempted = false;
                     // Exact closers discharge claims without changing the ambient
                     // outcome or facts. Share their lazily prepared return views,
@@ -4058,7 +4058,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::Have(have) => {
                                 // A throw outcome is proved like a return: its
                                 // `exceptional ensures` names the thrown value
-                                // `exception`, which smart `simp` already
+                                // `exception`, which smart `solve` already
                                 // scopes with the same checked `have`.
                                 let (CFunctionOutcome::Return { .. }
                                 | CFunctionOutcome::Throw { .. }) = &outcome
@@ -4363,12 +4363,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let mut closed_any = false;
                                 // A contract resource claim is visible only
                                 // through the contract's checked resource
-                                // transition, which `simp` applies before
+                                // transition, which `solve` applies before
                                 // closing claims against the outcome. The
-                                // closure `simp` records for such a claim is
+                                // closure `solve` records for such a claim is
                                 // spelled `assumption`, so the same reading of
                                 // the outcome has to be available here: without
-                                // it an expanded `simp` cannot reproduce the
+                                // it an expanded `solve` cannot reproduce the
                                 // claim its own certificate reports closed.
                                 if assumption
                                     && !resource_transition_applied
@@ -4821,10 +4821,10 @@ pub(super) fn finish_ordered_proof<'a>(
                             | PostExecutionTactic::Match { .. } => unreachable!(
                                 "post-execution branch selection must flatten control nodes before checking leaf tactics"
                             ),
-                            PostExecutionTactic::Simp
+                            PostExecutionTactic::Solve
                             | PostExecutionTactic::AutoClose
-                            | PostExecutionTactic::SimpUsing(_) => {
-                                close_post_execution_claims_with_simp(
+                            | PostExecutionTactic::SolveUsing(_) => {
+                                close_post_execution_claims_with_solve(
                                     post_tactic,
                                     deferred,
                                     tactic_index,
@@ -4966,7 +4966,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // `assumption` closer would trigger it. After all open
                     // bodies and deferred invariants have been checked, give
                     // every completed path the same checked exit transition
-                    // that a closing `simp` would perform.
+                    // that a closing `solve` would perform.
                     if !resource_transition_applied
                         && matches!(outcome, CFunctionOutcome::Return { .. })
                         && crate::kernel::c_function_return_resources_definitionally_established(
@@ -5262,7 +5262,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     }
                     // Resource closers carry the same checked claim
                     // evidence, whether written as assumption or selected by
-                    // simp. Validate their jointly returned units rather than
+                    // solve. Validate their jointly returned units rather than
                     // relying on the presentation certificate's spelling.
                     // Borrowed outputs participate too: one surviving unit
                     // cannot discharge both a borrow and a produced unit.

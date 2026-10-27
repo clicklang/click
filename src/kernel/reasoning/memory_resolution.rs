@@ -563,7 +563,7 @@ thread_local! {
 /// every snapshot that holds the goal's cells unchanged lowers it to the same
 /// source, so the same failing questions -- the goal's frame across the step
 /// the proof could not see past -- ran once per such snapshot, and again for
-/// each of simp's strategies that reaches the closure. The key is the
+/// each of solve's strategies that reaches the closure. The key is the
 /// question's whole input: its propositions (source, target, and any listed
 /// facts, in order), the memory it lands in, the content id of its fact set,
 /// its transition facts, the memory-DAG generation, the DAG scope modes, and

@@ -3746,7 +3746,7 @@ impl<'a> Proof<'a> {
     }
 
     /// Report the actual native checker result separately from source proof
-    /// construction. Search-stage failures are retained by the simp driver;
+    /// construction. Search-stage failures are retained by the solve driver;
     /// absence of a certificate is not evidence of a missing extent premise.
     pub(in crate::surface::proof) fn unproved_loadable_range_goal_reason(&self) -> Option<String> {
         let goal = self.surface_goal()?;

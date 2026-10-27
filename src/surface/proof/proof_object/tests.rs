@@ -1,3 +1,4 @@
+use crate::surface::planning::solve::{SolveEvidence, plan_solve_certificate};
 // The proposition search these tests exercise is Surface planning now; see
 // `src/surface/planning/proposition_search.rs`. The kernel itself never
 // calls it, so the tests import the planner explicitly.
@@ -83,7 +84,7 @@ fn is_one_arithmetic_certificate_over(steps: &[ProofStep], expected: &[ClickProp
     )
 }
 
-/// Typed simp cites only premises it can spell as Click source, and a bare
+/// Typed solve cites only premises it can spell as Click source, and a bare
 /// kernel value prints as no source name. The typed-rule fixtures therefore
 /// state their int32 premises over named parameters `x0`, `x1`, ..., bound
 /// to the kernel `terms` in order; any other term stays a literal value.
@@ -419,7 +420,7 @@ fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
     let assumptions = PureFactContext::new()
         .assume_proposition(pairs[0].0.clone())
         .assume_proposition(pairs[1].0.clone());
-    let derivation = assumptions.derive_simp_proposition(&goal).unwrap();
+    let derivation = assumptions.derive_solve_proposition(&goal).unwrap();
     assert!(derivation.check(&assumptions));
     assert_eq!(derivation.context_premises().len(), 2);
     // An alternate derivation selects two premises, but the goal is also an
@@ -538,7 +539,7 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 &[],
             );
             let (_, stale_derivation, _) = stale
-                .selected_simp_derivation(false)
+                .selected_solve_derivation(false)
                 .expect("the old resource leaf should be selected from its conjunction");
             let selected_pairs = vec![(old_leaf.clone(), surface.clone())];
             assert!(
@@ -567,7 +568,7 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
             )
             .expect("the selected surface anchors at function entry");
             let anchored = stale
-                .try_typed_atomic_simp_closure()
+                .try_typed_atomic_solve_closure()
                 .expect("the entry-anchored spelling of the old leaf should extract it");
             assert!(anchored.is_complete());
             assert_eq!(
@@ -603,7 +604,7 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
             );
             let sibling = exact.clone();
             let closed = exact
-                .try_typed_atomic_simp_closure()
+                .try_typed_atomic_solve_closure()
                 .expect("the exact selected leaf should extract and close the goal");
             assert!(closed.is_complete());
             assert_eq!(closed.certificate().steps(), &[ProofStep::Extract(surface)]);
@@ -1052,7 +1053,7 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
         "the guard child cannot be silently omitted"
     );
     let smart = root
-        .try_simp_closure()
+        .try_solve_closure()
         .expect("hidden-guard simplification should remain bounded")
         .expect("both normalized children should close");
     assert!(smart.is_complete());
@@ -1931,13 +1932,13 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("constant equality should lower");
-    let smart_body = [ProofTactic::Simp];
+    let smart_body = [ProofTactic::Solve];
     let missing_body = [
         ProofTactic::ApplyTheorem(TheoremApplication {
             name: "missing".to_string(),
             arguments: Vec::new(),
         }),
-        ProofTactic::Simp,
+        ProofTactic::Solve,
     ];
 
     for size in LOCAL_PROOF_FACT_SIZES {
@@ -1974,7 +1975,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
         let selected = scope
             .try_authoritative_linear_script(&smart_body)
             .expect("nested smart search should not fail")
-            .expect("simp should close the constant equality");
+            .expect("solve should close the constant equality");
         let enclosing = selected
             .join()
             .expect("the completed nested proof should join");
@@ -3738,7 +3739,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
             .apply_step(ProofStep::Rewrite(equality.clone()))
             .expect("the exact equality should produce a checked rewrite successor");
         let closed = rewritten
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("the rewritten Surface conjunction should retain both child proofs");
         let allocations = fact_node_allocations() - before;
@@ -4418,7 +4419,7 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
     let cold = root
         .begin_have(have.clone())
         .expect("the retained have should be independently reopenable");
-    assert!(cold.try_simp_closure().unwrap().is_some());
+    assert!(cold.try_solve_closure().unwrap().is_some());
 
     // This injected requirement is already present in the fixture's fact
     // context, so the test intentionally checks retention mechanics and exact
@@ -4959,7 +4960,7 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
     let cold = root
         .begin_have(proposition.clone())
         .expect("retained qualified Have should reopen cold");
-    assert!(cold.try_simp_closure().unwrap().is_some());
+    assert!(cold.try_solve_closure().unwrap().is_some());
 }
 
 #[test]
@@ -5578,13 +5579,13 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
         let tactics = [
             ProofTactic::Extract(premise.clone()),
             ProofTactic::ApplyTheorem(application.clone()),
-            ProofTactic::Simp,
+            ProofTactic::Solve,
         ];
         let before_apply = fact_node_allocations();
         let complete = root
             .try_authoritative_linear_script(&tactics)
             .expect("mixed linear search should not fail")
-            .expect("extract, smart apply, and simp should close the goal");
+            .expect("extract, smart apply, and solve should close the goal");
         let allocations = fact_node_allocations() - before_apply;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
         let allocation_bound = 64 * logarithmic_height + 256;
@@ -5684,7 +5685,7 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
         let complete = root
             .try_authoritative_linear_script(have_tactics)
             .expect("result-aware theorem search should not fail")
-            .expect("result-aware theorem application and simp should close the goal");
+            .expect("result-aware theorem application and solve should close the goal");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
         let allocation_bound = 64 * logarithmic_height + 256;
@@ -5959,7 +5960,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
 
 #[test]
 #[ignore = "nightly: 2.9s in the parallel gate"]
-fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates() {
+fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -5990,7 +5991,7 @@ fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates(
     let surface_goal = comparison(0, ComparisonOperator::LessThan, 3);
     let lower = |surface: &ClickProposition| {
         lower_pure_theorem_proposition(
-            "persistent signed-order simp",
+            "persistent signed-order solve",
             surface,
             ContractEnvironment::new(&named_values, &BTreeMap::new()),
             &memory,
@@ -6023,7 +6024,7 @@ fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates(
             surface_requirements: surface_requirements.clone(),
         };
         let root = Proof::for_pure_goal(
-            "persistent signed-order simp",
+            "persistent signed-order solve",
             &requires,
             goal.clone(),
             &theorem_context,
@@ -6033,7 +6034,7 @@ fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates(
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let closed = root
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("the typed path should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
@@ -6043,7 +6044,7 @@ fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates(
         let allocation_bound = base_allocations * logarithmic_height / base_height;
         assert!(
             allocations <= allocation_bound,
-            "size {size} signed-order simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} signed-order solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(is_one_arithmetic_certificate_over(
@@ -6083,7 +6084,7 @@ fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates(
             .expect("the signed-order have should open a nested proof");
         let before = fact_node_allocations();
         let selected = scope
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("nested smart search must not exceed its deadline")
             .expect("the exact goal should have an independent theorem path");
         let allocations = fact_node_allocations() - before;
@@ -6107,7 +6108,7 @@ fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates(
 
 #[test]
 #[ignore = "nightly: 1.4s in the parallel gate"]
-fn pure_equality_refinement_simp_applies_one_rewrite_with_logarithmic_local_updates() {
+fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_updates() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -6135,7 +6136,7 @@ fn pure_equality_refinement_simp_applies_one_rewrite_with_logarithmic_local_upda
     };
     let lower = |surface: &ClickProposition| {
         lower_pure_theorem_proposition(
-            "persistent equality-refinement simp",
+            "persistent equality-refinement solve",
             surface,
             ContractEnvironment::new(&named_values, &BTreeMap::new()),
             &memory,
@@ -6164,7 +6165,7 @@ fn pure_equality_refinement_simp_applies_one_rewrite_with_logarithmic_local_upda
             surface_requirements: surface_requirements.clone(),
         };
         let root = Proof::for_pure_goal(
-            "persistent equality-refinement simp",
+            "persistent equality-refinement solve",
             &requires,
             goal.clone(),
             &theorem_context,
@@ -6174,7 +6175,7 @@ fn pure_equality_refinement_simp_applies_one_rewrite_with_logarithmic_local_upda
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let closed = root
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("one selected equality should refine and close the Proof");
         let allocations = fact_node_allocations() - before;
@@ -6182,7 +6183,7 @@ fn pure_equality_refinement_simp_applies_one_rewrite_with_logarithmic_local_upda
         let allocation_bound = 64 * logarithmic_height + 256;
         assert!(
             allocations <= allocation_bound,
-            "size {size} equality-refinement simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} equality-refinement solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(matches!(
@@ -6430,20 +6431,20 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
 
 #[test]
 #[ignore = "nightly: 1.5s in the parallel gate"]
-fn fixed_state_predecessor_simp_builds_checked_scope_with_logarithmic_local_updates() {
-    check_fixed_state_predecessor_simp(&[16, 64, 256, 1024, 4096]);
+fn fixed_state_predecessor_solve_builds_checked_scope_with_logarithmic_local_updates() {
+    check_fixed_state_predecessor_solve(&[16, 64, 256, 1024, 4096]);
 }
 
 /// The predecessor closer once cited a bridge lemma; with `arithmetic()
 /// using` in its place it needed a goal source form the fixed state lacks,
-/// failed silently, and simp fell through to a costlier search. One small
+/// failed silently, and solve fell through to a costlier search. One small
 /// context keeps its certificate in the gate.
 #[test]
-fn fixed_state_predecessor_simp_closes_with_one_arithmetic_certificate() {
-    check_fixed_state_predecessor_simp(&[16]);
+fn fixed_state_predecessor_solve_closes_with_one_arithmetic_certificate() {
+    check_fixed_state_predecessor_solve(&[16]);
 }
 
-fn check_fixed_state_predecessor_simp(sizes: &[u32]) {
+fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -6509,7 +6510,7 @@ fn check_fixed_state_predecessor_simp(sizes: &[u32]) {
         facts.push(kernel_equality.clone());
         facts.push(kernel_upper_bound.clone());
         let root = Proof::for_fixed_state_goal(
-            "persistent fixed-state predecessor simp",
+            "persistent fixed-state predecessor solve",
             0,
             &facts,
             goal.clone(),
@@ -6526,7 +6527,7 @@ fn check_fixed_state_predecessor_simp(sizes: &[u32]) {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let closed = root
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("the predecessor search should retain one structured descendant");
         let allocations = fact_node_allocations() - before;
@@ -6534,7 +6535,7 @@ fn check_fixed_state_predecessor_simp(sizes: &[u32]) {
         let allocation_bound = 128 * logarithmic_height + 512;
         assert!(
             allocations <= allocation_bound,
-            "size {size} fixed-state predecessor simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} fixed-state predecessor solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         // `have 0 <= x` by rewriting with `x == 1`, then one arithmetic
@@ -6559,7 +6560,7 @@ fn check_fixed_state_predecessor_simp(sizes: &[u32]) {
 
 #[test]
 #[ignore = "nightly: 1.5s in the parallel gate"]
-fn fixed_state_equality_simp_builds_its_recorded_path_with_logarithmic_local_updates() {
+fn fixed_state_equality_solve_builds_its_recorded_path_with_logarithmic_local_updates() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -6611,7 +6612,7 @@ fn fixed_state_equality_simp_builds_its_recorded_path_with_logarithmic_local_upd
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend(premises.iter().cloned());
         let root = Proof::for_fixed_state_goal(
-            "persistent fixed-state equality simp",
+            "persistent fixed-state equality solve",
             0,
             &facts,
             goal.clone(),
@@ -6628,7 +6629,7 @@ fn fixed_state_equality_simp_builds_its_recorded_path_with_logarithmic_local_upd
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let closed = root
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("the typed equality path should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
@@ -6636,7 +6637,7 @@ fn fixed_state_equality_simp_builds_its_recorded_path_with_logarithmic_local_upd
         let allocation_bound = 128 * logarithmic_height + 512;
         assert!(
             allocations <= allocation_bound,
-            "size {size} fixed-state equality simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} fixed-state equality solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(
@@ -6707,7 +6708,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend(premises.iter().cloned());
         let root = Proof::for_fixed_state_goal(
-            "persistent fixed-state arithmetic rewrite simp",
+            "persistent fixed-state arithmetic rewrite solve",
             0,
             &facts,
             goal.clone(),
@@ -6724,7 +6725,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let closed = root
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("the retained equality paths should close the arithmetic goal");
         let allocations = fact_node_allocations() - before;
@@ -6732,7 +6733,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
         let allocation_bound = 128 * logarithmic_height + 512;
         assert!(
             allocations <= allocation_bound,
-            "size {size} arithmetic rewrite simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} arithmetic rewrite solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(
@@ -6747,7 +6748,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
 
 #[test]
 #[ignore = "nightly: 1.5s in the parallel gate"]
-fn fixed_state_order_simp_builds_its_theorem_path_with_logarithmic_local_updates() {
+fn fixed_state_order_solve_builds_its_theorem_path_with_logarithmic_local_updates() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -6800,7 +6801,7 @@ fn fixed_state_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend(premises.iter().cloned());
         let root = Proof::for_fixed_state_goal(
-            "persistent fixed-state order simp",
+            "persistent fixed-state order solve",
             0,
             &facts,
             goal.clone(),
@@ -6817,7 +6818,7 @@ fn fixed_state_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let closed = root
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("the typed order path should build one checked fixed-state Proof descendant");
         let allocations = fact_node_allocations() - before;
@@ -6825,7 +6826,7 @@ fn fixed_state_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
         let allocation_bound = 128 * logarithmic_height + 512;
         assert!(
             allocations <= allocation_bound,
-            "size {size} fixed-state order simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} fixed-state order solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         // The selected three-premise chain is one arithmetic certificate.
@@ -6841,17 +6842,17 @@ fn fixed_state_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
 
 #[test]
 #[ignore = "nightly: 9s in the parallel gate"]
-fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
-    check_fixed_state_single_premise_arithmetic_simps(&LOCAL_PROOF_FACT_SIZES, None);
+fn fixed_state_single_premise_arithmetic_solves_retain_indexed_theorem_steps() {
+    check_fixed_state_single_premise_arithmetic_solves(&LOCAL_PROOF_FACT_SIZES, None);
 }
 
-/// The goals [`fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps`]
+/// The goals [`fixed_state_single_premise_arithmetic_solves_retain_indexed_theorem_steps`]
 /// lost when their bridge lemmas became arithmetic certificates: a
 /// definedness goal is the `int32_defined` rule, and a negated premise names
 /// its operands. One small context keeps them in the gate.
 #[test]
-fn fixed_state_definedness_and_negated_premise_simps_print_arithmetic_certificates() {
-    check_fixed_state_single_premise_arithmetic_simps(
+fn fixed_state_definedness_and_negated_premise_solves_print_arithmetic_certificates() {
+    check_fixed_state_single_premise_arithmetic_solves(
         &LOCAL_PROOF_FACT_SIZES[..1],
         Some(&[
             "increment definedness",
@@ -6861,7 +6862,7 @@ fn fixed_state_definedness_and_negated_premise_simps_print_arithmetic_certificat
     );
 }
 
-fn check_fixed_state_single_premise_arithmetic_simps(sizes: &[u32], labels: Option<&[&str]>) {
+fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Option<&[&str]>) {
     #[derive(Clone, Copy)]
     enum ArithmeticProofShape {
         Direct,
@@ -7107,7 +7108,7 @@ fn check_fixed_state_single_premise_arithmetic_simps(sizes: &[u32], labels: Opti
             let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
             facts.push(kernel_premise.clone());
             let root = Proof::for_fixed_state_goal(
-                "persistent fixed-state increment-bound simp",
+                "persistent fixed-state increment-bound solve",
                 0,
                 &facts,
                 goal.clone(),
@@ -7124,9 +7125,9 @@ fn check_fixed_state_single_premise_arithmetic_simps(sizes: &[u32], labels: Opti
             let retained_root = root.clone();
             let before = fact_node_allocations();
             let closed = root
-                .try_simp_closure()
+                .try_solve_closure()
                 .expect("smart search must not exceed its deadline")
-                .unwrap_or_else(|| panic!("fixed-state simp should prove the {label} goal"));
+                .unwrap_or_else(|| panic!("fixed-state solve should prove the {label} goal"));
             let allocations = fact_node_allocations() - before;
             let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
             let allocation_bound = match shape {
@@ -7136,7 +7137,7 @@ fn check_fixed_state_single_premise_arithmetic_simps(sizes: &[u32], labels: Opti
             };
             assert!(
                 allocations <= allocation_bound,
-                "size {size} fixed-state {label} simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+                "size {size} fixed-state {label} solve allocated {allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(closed.is_complete());
             assert!(
@@ -7161,7 +7162,7 @@ fn check_fixed_state_single_premise_arithmetic_simps(sizes: &[u32], labels: Opti
                 surface_requirements: surface_propositions.clone(),
             };
             let pure_root = Proof::for_pure_goal(
-                "persistent restricted increment-bound simp",
+                "persistent restricted increment-bound solve",
                 &facts,
                 goal.clone(),
                 &theorem_context,
@@ -7170,20 +7171,20 @@ fn check_fixed_state_single_premise_arithmetic_simps(sizes: &[u32], labels: Opti
             );
             let retained_pure_root = pure_root.clone();
             assert!(
-                pure_root.try_restricted_simp_closure(&[]).is_none(),
+                pure_root.try_restricted_solve_closure(&[]).is_none(),
                 "omitting the named premise must reject the restricted candidate"
             );
             assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
             let before_restricted = fact_node_allocations();
             let pure_closed = pure_root
-                .try_restricted_simp_closure(std::slice::from_ref(surface_premise))
+                .try_restricted_solve_closure(std::slice::from_ref(surface_premise))
                 .unwrap_or_else(|| {
-                    panic!("restricted simp should retain the checked typed {label} rule")
+                    panic!("restricted solve should retain the checked typed {label} rule")
                 });
             let restricted_allocations = fact_node_allocations() - before_restricted;
             assert!(
                 restricted_allocations <= allocation_bound,
-                "size {size} restricted {label} simp allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
+                "size {size} restricted {label} solve allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(pure_closed.is_complete());
             assert!(
@@ -7265,7 +7266,7 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend([kernel_lower.clone(), kernel_upper.clone()]);
         let root = Proof::for_fixed_state_goal(
-            "branch-exported premise outcome simp",
+            "branch-exported premise outcome solve",
             0,
             &facts,
             goal.clone(),
@@ -7282,7 +7283,7 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let closed = root
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("the selected anchor should retain the two-premise theorem step");
         let allocations = fact_node_allocations() - before;
@@ -7290,12 +7291,12 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
         let allocation_bound = 96 * logarithmic_height + 384;
         assert!(
             allocations <= allocation_bound,
-            "size {size} anchored branch outcome simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} anchored branch outcome solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(
             is_one_arithmetic_certificate_over(closed.certificate().steps(), &expected_premises),
-            "size {size} anchored branch outcome simp retained unexpected steps: {:#?}",
+            "size {size} anchored branch outcome solve retained unexpected steps: {:#?}",
             closed.certificate().steps()
         );
         assert!(root.state.shares_state_with(&retained_root.state));
@@ -7403,7 +7404,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         facts.extend([kernel_lower.clone(), kernel_upper.clone()]);
         for (goal, label) in &goals {
             let root = Proof::for_fixed_state_goal(
-                "persistent fixed-state increment-bound-family simp",
+                "persistent fixed-state increment-bound-family solve",
                 0,
                 &facts,
                 goal.clone(),
@@ -7420,7 +7421,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             let retained_root = root.clone();
             let before = fact_node_allocations();
             let closed = root
-                .try_simp_closure()
+                .try_solve_closure()
                 .expect("smart search must not exceed its deadline")
                 .expect("the typed two-premise rule should build one checked Proof descendant");
             let allocations = fact_node_allocations() - before;
@@ -7436,7 +7437,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             };
             assert!(
                 allocations <= allocation_bound,
-                "size {size} fixed-state {label} simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+                "size {size} fixed-state {label} solve allocated {allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(closed.is_complete());
             assert!(
@@ -7444,7 +7445,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                     closed.certificate().steps(),
                     &selected_premises
                 ),
-                "size {size} fixed-state {label} simp retained unexpected steps: {:#?}",
+                "size {size} fixed-state {label} solve retained unexpected steps: {:#?}",
                 closed.certificate().steps()
             );
             assert!(root.state.shares_state_with(&retained_root.state));
@@ -7461,7 +7462,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 surface_requirements: surface_propositions.clone(),
             };
             let pure_root = Proof::for_pure_goal(
-                "persistent restricted increment-bound-family simp",
+                "persistent restricted increment-bound-family solve",
                 &facts,
                 goal.clone(),
                 &theorem_context,
@@ -7474,19 +7475,19 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 std::slice::from_ref(&upper_premise),
             ] {
                 assert!(
-                    pure_root.try_restricted_simp_closure(omitted).is_none(),
+                    pure_root.try_restricted_solve_closure(omitted).is_none(),
                     "omitting either theorem premise must reject the restricted candidate"
                 );
                 assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
             }
             let before_restricted = fact_node_allocations();
             let pure_closed = pure_root
-                .try_restricted_simp_closure(&selected_premises)
-                .expect("restricted simp should retain the checked two-premise rule");
+                .try_restricted_solve_closure(&selected_premises)
+                .expect("restricted solve should retain the checked two-premise rule");
             let restricted_allocations = fact_node_allocations() - before_restricted;
             assert!(
                 restricted_allocations <= allocation_bound,
-                "size {size} restricted {label} simp allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
+                "size {size} restricted {label} solve allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(pure_closed.is_complete());
             assert!(
@@ -7494,7 +7495,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                     pure_closed.certificate().steps(),
                     &selected_premises
                 ),
-                "size {size} restricted {label} simp retained unexpected steps: {:#?}",
+                "size {size} restricted {label} solve retained unexpected steps: {:#?}",
                 pure_closed.certificate().steps()
             );
             assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
@@ -7527,7 +7528,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend([kernel_strict_lower.clone(), kernel_upper.clone()]);
         let root = Proof::for_fixed_state_goal(
-            "persistent fixed-state strict increment-bound simp",
+            "persistent fixed-state strict increment-bound solve",
             0,
             &facts,
             strict_goal.clone(),
@@ -7544,7 +7545,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let closed = root
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("the strict-lower increment path should advance one Proof");
         let allocations = fact_node_allocations() - before;
@@ -7552,7 +7553,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         let allocation_bound = 96 * logarithmic_height + 2048;
         assert!(
             allocations <= allocation_bound,
-            "size {size} fixed-state strict-lower simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} fixed-state strict-lower solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(
@@ -7560,7 +7561,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 closed.certificate().steps(),
                 &strict_selected_premises
             ),
-            "size {size} fixed-state strict-lower simp retained unexpected steps: {:#?}",
+            "size {size} fixed-state strict-lower solve retained unexpected steps: {:#?}",
             closed.certificate().steps()
         );
         assert!(root.state.shares_state_with(&retained_root.state));
@@ -7577,7 +7578,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             surface_requirements: strict_surface_propositions.clone(),
         };
         let pure_root = Proof::for_pure_goal(
-            "persistent restricted strict increment-bound simp",
+            "persistent restricted strict increment-bound solve",
             &facts,
             strict_goal.clone(),
             &theorem_context,
@@ -7589,17 +7590,17 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             std::slice::from_ref(&strict_lower_premise),
             std::slice::from_ref(&upper_premise),
         ] {
-            assert!(pure_root.try_restricted_simp_closure(omitted).is_none());
+            assert!(pure_root.try_restricted_solve_closure(omitted).is_none());
             assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
         }
         let before_restricted = fact_node_allocations();
         let pure_closed = pure_root
-            .try_restricted_simp_closure(&strict_selected_premises)
-            .expect("restricted strict-lower simp should advance one Proof");
+            .try_restricted_solve_closure(&strict_selected_premises)
+            .expect("restricted strict-lower solve should advance one Proof");
         let restricted_allocations = fact_node_allocations() - before_restricted;
         assert!(
             restricted_allocations <= allocation_bound,
-            "size {size} restricted strict-lower simp allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} restricted strict-lower solve allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(pure_closed.is_complete());
         assert!(
@@ -7607,7 +7608,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 pure_closed.certificate().steps(),
                 &strict_selected_premises
             ),
-            "size {size} restricted strict-lower simp retained unexpected steps: {:#?}",
+            "size {size} restricted strict-lower solve retained unexpected steps: {:#?}",
             pure_closed.certificate().steps()
         );
         assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
@@ -7617,7 +7618,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
 
 #[test]
 #[ignore = "nightly: 2.9s in the parallel gate"]
-fn le_and_not_lt_equality_simp_retains_one_indexed_arithmetic_certificate() {
+fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -7674,7 +7675,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_arithmetic_certificate() {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend([kernel_less_equal.clone(), kernel_not_less_than.clone()]);
         let root = Proof::for_fixed_state_goal(
-            "persistent fixed-state <=/not-< equality simp",
+            "persistent fixed-state <=/not-< equality solve",
             0,
             &facts,
             kernel_equality.clone(),
@@ -7691,7 +7692,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_arithmetic_certificate() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let closed = root
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("the typed equality rule should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
@@ -7699,7 +7700,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_arithmetic_certificate() {
         let allocation_bound = 96 * logarithmic_height + 384;
         assert!(
             allocations <= allocation_bound,
-            "size {size} fixed-state equality simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} fixed-state equality solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(is_one_arithmetic_certificate_over(
@@ -7713,7 +7714,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_arithmetic_certificate() {
             .iter()
             .map(|surface| {
                 lower_pure_theorem_proposition(
-                    "persistent restricted <=/not-< equality simp",
+                    "persistent restricted <=/not-< equality solve",
                     surface,
                     ContractEnvironment::new(&named_values, &BTreeMap::new()),
                     state.memory(),
@@ -7740,7 +7741,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_arithmetic_certificate() {
             surface_requirements: surface_propositions.clone(),
         };
         let pure_root = Proof::for_pure_goal(
-            "persistent restricted <=/not-< equality simp",
+            "persistent restricted <=/not-< equality solve",
             &pure_facts,
             kernel_equality.clone(),
             &theorem_context,
@@ -7752,15 +7753,15 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_arithmetic_certificate() {
             std::slice::from_ref(&less_equal),
             std::slice::from_ref(&not_less_than),
         ] {
-            assert!(pure_root.try_restricted_simp_closure(omitted).is_none());
+            assert!(pure_root.try_restricted_solve_closure(omitted).is_none());
             assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
         }
-        let restricted_derivation = plan_simp_certificate(
+        let restricted_derivation = plan_solve_certificate(
             &kernel_equality,
             &assumptions_from_propositions(&restricted_kernels),
         )
         .expect("the restricted equality facts should produce a derivation");
-        let SimpEvidence::Derivation(restricted_derivation) = restricted_derivation else {
+        let SolveEvidence::Derivation(restricted_derivation) = restricted_derivation else {
             panic!("the equality rule should be contextual")
         };
         assert!(
@@ -7789,8 +7790,8 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_arithmetic_certificate() {
             .expect("the named equality plan should close through checked Proof operations");
         assert!(planned_closed.is_complete());
         let pure_closed = pure_root
-            .try_restricted_simp_closure(&selected)
-            .expect("restricted simp should retain the checked equality theorem");
+            .try_restricted_solve_closure(&selected)
+            .expect("restricted solve should retain the checked equality theorem");
         assert!(is_one_arithmetic_certificate_over(
             pure_closed.certificate().steps(),
             &selected,
@@ -7801,7 +7802,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_arithmetic_certificate() {
 
 #[test]
 #[ignore = "nightly: 1.5s in the parallel gate"]
-fn ge_and_not_gt_equality_simp_retains_one_indexed_theorem_application() {
+fn ge_and_not_gt_equality_solve_retains_one_indexed_theorem_application() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -7860,7 +7861,7 @@ fn ge_and_not_gt_equality_simp_retains_one_indexed_theorem_application() {
             kernel_not_greater_than.clone(),
         ]);
         let root = Proof::for_fixed_state_goal(
-            "persistent fixed-state >=/not-> equality simp",
+            "persistent fixed-state >=/not-> equality solve",
             0,
             &facts,
             kernel_equality.clone(),
@@ -7877,7 +7878,7 @@ fn ge_and_not_gt_equality_simp_retains_one_indexed_theorem_application() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let closed = root
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("the typed >=/not-> rule should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
@@ -7885,12 +7886,12 @@ fn ge_and_not_gt_equality_simp_retains_one_indexed_theorem_application() {
         let allocation_bound = 96 * logarithmic_height + 384;
         assert!(
             allocations <= allocation_bound,
-            "size {size} fixed-state >=/not-> equality simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} fixed-state >=/not-> equality solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(
             is_one_arithmetic_certificate_over(closed.certificate().steps(), &selected),
-            "size {size} fixed-state >=/not-> equality simp retained unexpected steps: {:#?}",
+            "size {size} fixed-state >=/not-> equality solve retained unexpected steps: {:#?}",
             closed.certificate().steps()
         );
         assert!(root.state.shares_state_with(&retained_root.state));
@@ -7900,7 +7901,7 @@ fn ge_and_not_gt_equality_simp_retains_one_indexed_theorem_application() {
 
 #[test]
 #[ignore = "nightly: 1.6s in the parallel gate"]
-fn le_and_neq_strict_simp_retains_one_indexed_arithmetic_certificate() {
+fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_certificate() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -7956,7 +7957,7 @@ fn le_and_neq_strict_simp_retains_one_indexed_arithmetic_certificate() {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend([kernel_less_equal.clone(), kernel_not_equal.clone()]);
         let root = Proof::for_fixed_state_goal(
-            "persistent fixed-state <=/!= strict-order simp",
+            "persistent fixed-state <=/!= strict-order solve",
             0,
             &facts,
             kernel_strict.clone(),
@@ -7973,7 +7974,7 @@ fn le_and_neq_strict_simp_retains_one_indexed_arithmetic_certificate() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let closed = root
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("the typed <=/!= rule should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
@@ -7981,7 +7982,7 @@ fn le_and_neq_strict_simp_retains_one_indexed_arithmetic_certificate() {
         let allocation_bound = 96 * logarithmic_height + 384;
         assert!(
             allocations <= allocation_bound,
-            "size {size} fixed-state <=/!= strict-order simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} fixed-state <=/!= strict-order solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(is_one_arithmetic_certificate_over(
@@ -8087,7 +8088,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
             let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
             facts.extend(kernel_premises.iter().cloned());
             let root = Proof::for_fixed_state_goal(
-                "persistent fixed-state symbolic arithmetic simp",
+                "persistent fixed-state symbolic arithmetic solve",
                 0,
                 &facts,
                 kernel_goal.clone(),
@@ -8104,7 +8105,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
             let retained_root = root.clone();
             let before = fact_node_allocations();
             let closed = root
-                .try_simp_closure()
+                .try_solve_closure()
                 .expect("smart search must not exceed its deadline")
                 .expect(
                     "the typed symbolic arithmetic rule should build one checked Proof descendant",
@@ -8114,7 +8115,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
             let allocation_bound = 96 * logarithmic_height + 384;
             assert!(
                 allocations <= allocation_bound,
-                "size {size} fixed-state {label} simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+                "size {size} fixed-state {label} solve allocated {allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(closed.is_complete());
             assert!(matches!(
@@ -8137,7 +8138,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
                 surface_requirements: surface_propositions.clone(),
             };
             let pure_root = Proof::for_pure_goal(
-                "persistent restricted symbolic arithmetic simp",
+                "persistent restricted symbolic arithmetic solve",
                 &facts,
                 kernel_goal.clone(),
                 &theorem_context,
@@ -8149,17 +8150,17 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
                 std::slice::from_ref(&selected[0]),
                 std::slice::from_ref(&selected[1]),
             ] {
-                assert!(pure_root.try_restricted_simp_closure(omitted).is_none());
+                assert!(pure_root.try_restricted_solve_closure(omitted).is_none());
                 assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
             }
             let before_restricted = fact_node_allocations();
             let pure_closed = pure_root
-                .try_restricted_simp_closure(selected)
-                .expect("restricted simp should retain the symbolic arithmetic theorem");
+                .try_restricted_solve_closure(selected)
+                .expect("restricted solve should retain the symbolic arithmetic theorem");
             let restricted_allocations = fact_node_allocations() - before_restricted;
             assert!(
                 restricted_allocations <= allocation_bound,
-                "size {size} restricted {label} simp allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
+                "size {size} restricted {label} solve allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(matches!(
                 pure_closed.certificate().steps(),
@@ -8175,7 +8176,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
 
 #[test]
 #[ignore = "nightly: 1.5s in the parallel gate"]
-fn selected_disjunction_simp_retains_checked_cases_and_scales() {
+fn selected_disjunction_solve_retains_checked_cases_and_scales() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -8227,7 +8228,7 @@ fn selected_disjunction_simp_retains_checked_cases_and_scales() {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(kernel_disjunction.clone());
         let root = Proof::for_fixed_state_goal(
-            "persistent fixed-state disjunction simp",
+            "persistent fixed-state disjunction solve",
             0,
             &facts,
             kernel_goal.clone(),
@@ -8249,7 +8250,7 @@ fn selected_disjunction_simp_retains_checked_cases_and_scales() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let closed = root
-            .try_simp_closure()
+            .try_solve_closure()
             .expect("smart search must not exceed its deadline")
             .expect("the selected disjunction should close both checked Proof arms");
         let allocations = fact_node_allocations() - before;
@@ -8257,7 +8258,7 @@ fn selected_disjunction_simp_retains_checked_cases_and_scales() {
         let allocation_bound = 160 * logarithmic_height + 640;
         assert!(
             allocations <= allocation_bound,
-            "size {size} disjunction simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} disjunction solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(matches!(
@@ -8285,7 +8286,7 @@ fn selected_disjunction_simp_retains_checked_cases_and_scales() {
 
 #[test]
 #[ignore = "nightly: 4.3s in the parallel gate"]
-fn surface_structural_simp_retains_recursive_child_proofs_and_scales() {
+fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -8386,7 +8387,7 @@ fn surface_structural_simp_retains_recursive_child_proofs_and_scales() {
             let mut facts = unrelated.clone();
             facts.extend_from_slice(selected_facts);
             let root = Proof::for_fixed_state_surface_goal(
-                "persistent surface structural simp",
+                "persistent surface structural solve",
                 0,
                 &facts,
                 lower(surface_goal),
@@ -8429,13 +8430,13 @@ fn surface_structural_simp_retains_recursive_child_proofs_and_scales() {
             }
             let before = fact_node_allocations();
             let closed = root
-                .try_simp_closure()
+                .try_solve_closure()
                 .expect("smart search must not exceed its deadline")
                 .unwrap_or_else(|| panic!("the {label} should retain its recursive proof"));
             let allocations = fact_node_allocations() - before;
             assert!(
                 allocations <= allocation_bound,
-                "size {size} {label} simp allocated {allocations} persistent nodes (bound {allocation_bound})"
+                "size {size} {label} solve allocated {allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(closed.is_complete());
             let retained_steps = closed.certificate();
@@ -8478,7 +8479,7 @@ fn surface_structural_simp_retains_recursive_child_proofs_and_scales() {
 
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
-fn predecessor_simps_retain_indexed_named_rule_premises() {
+fn predecessor_solves_retain_indexed_named_rule_premises() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -8610,7 +8611,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
             let mut facts = unrelated_facts.clone();
             facts.extend(selected.iter().map(&lower_surface));
             let root = Proof::for_fixed_state_goal(
-                "persistent fixed-state predecessor simp",
+                "persistent fixed-state predecessor solve",
                 0,
                 &facts,
                 goal.clone(),
@@ -8627,7 +8628,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
             let retained_root = root.clone();
             let before = fact_node_allocations();
             let closed = root
-                .try_simp_closure()
+                .try_solve_closure()
                 .expect("smart search must not exceed its deadline")
                 .unwrap_or_else(|| {
                     panic!(
@@ -8661,7 +8662,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
                 surface_requirements: surface_propositions.clone(),
             };
             let pure_root = Proof::for_pure_goal(
-                "persistent restricted predecessor simp",
+                "persistent restricted predecessor solve",
                 &facts,
                 goal.clone(),
                 &theorem_context,
@@ -8677,15 +8678,15 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
                     .map(|(_, premise)| premise.clone())
                     .collect::<Vec<_>>();
                 assert!(
-                    pure_root.try_restricted_simp_closure(&omitted).is_none(),
+                    pure_root.try_restricted_solve_closure(&omitted).is_none(),
                     "omitting a theorem premise must reject the restricted candidate"
                 );
                 assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
             }
             let before_restricted = fact_node_allocations();
             let pure_closed = pure_root
-                .try_restricted_simp_closure(selected)
-                .expect("restricted simp should retain the checked predecessor rule");
+                .try_restricted_solve_closure(selected)
+                .expect("restricted solve should retain the checked predecessor rule");
             let restricted_allocations = fact_node_allocations() - before_restricted;
             assert!(
                 restricted_allocations <= allocation_bound,
@@ -8814,7 +8815,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
         let complete = root
             .try_authoritative_linear_script(&[
                 ProofTactic::ApplyTheorem(application.clone()),
-                ProofTactic::Simp,
+                ProofTactic::Solve,
             ])
             .expect("linear pure search should not fail")
             .expect("the checked conclusion should close the conjunction");

@@ -284,7 +284,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                                     .collect::<Vec<_>>();
                                 let first_generated_tactic_index = tactics.len();
                                 tactics.extend(body_certificate.to_proof_tactics().iter().cloned());
-                                tactics.push(ProofTactic::Simp);
+                                tactics.push(ProofTactic::Solve);
                                 (tactics, first_generated_tactic_index)
                             };
                         // While the planned body is checked, a failure to
@@ -400,7 +400,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 if let Some(preserve_source_index) = source.preserve_source_index
                     && matches!(
                         loop_clause.and_then(StructuralClause::preserve_proof),
-                        Some(SourceProof::Tactic(SmartTactic::Simp))
+                        Some(SourceProof::Tactic(SmartTactic::Solve))
                     )
                     && let Some(site) = source.proof_site.as_ref()
                     && capture_selects_source(

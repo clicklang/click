@@ -129,7 +129,7 @@ accounting; baseline acceptance alone cannot establish that judgment.
 | [owned-split-buffer](../examples/owned-split-buffer/owned_split_buffer.click) | call transfer: native span lacks exact unresolved/loaded identity | Reduce and attribute; preserve original positive, expansion and retained checks |
 | [owned-string](../examples/owned-string/owned_string.click) | stored-element postcondition unavailable to `assumption` | Reduce and attribute; preserve original positive, expansion and retained checks |
 | [owned-vector](../examples/owned-vector/vector.click) | stored-element and pointer-field frame postconditions unavailable | Reduce and attribute; preserve original positive, expansion and retained checks |
-| [rbtree-augmented](../examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click) | `rb_erase_augmented`: `simp` did not retain a complete ensure proof | Reduce and attribute; preserve original positive, expansion and retained checks |
+| [rbtree-augmented](../examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click) | `rb_erase_augmented`: `solve` did not retain a complete ensure proof | Reduce and attribute; preserve original positive, expansion and retained checks |
 | [refcount](../examples/refcount/refcount.click) | `refcount_pipeline`: `auto` cannot prove `amount < obj->refs` | Reduce and attribute; preserve original positive, expansion and retained checks |
 | [ring-buffer](../examples/ring-buffer/ring_buffer.click) | `ring_buffer_pipeline`: `normalize` does not establish the goal | Reduce and attribute; preserve original positive, expansion and retained checks |
 | [rust-byte-sum](../examples/rust-byte-sum/sum.click) | deterministic smart-work budget exhausted at statement 63 | Reduce the work curve; retain the existing budget and original proof claim |
@@ -692,7 +692,7 @@ All 133 selected recovery load/index/designation/span/loop/borrow controls pass
 (9.77s harness), including plain-proposition and missing-ownership rejection,
 sibling isolation, and a test restoring an older naming registry. The unchanged
 C reduction now admits both writes. Its regression proof adds one explicit
-`have owner->data[0] == value by { simp(); }` for the stored-value postcondition;
+`have owner->data[0] == value by { solve(); }` for the stored-value postcondition;
 C and claims remain unchanged. This positive passes fresh, expansion, rewritten
 and retained checking, with a freshly rebuilt/relinked library. A wrong-value
 postcondition is rejected. Temporary instrumentation is removed.
@@ -723,7 +723,7 @@ helper relink. The final filtered nightly-fixture rerun passes (1.02s harness).
 
 Following PR #1023, `owned_string_set` and `vector_push` can discharge their
 original contracts by explicitly proving relevant equalities before folding
-their resources. The setter proves its stored value with `simp`; vector push
+their resources. The setter proves its stored value with `solve`; vector push
 proves the unchanged backing pointer and the stored value. The existing final
 `assumption` steps then consume those checked facts. C, claims, resource
 contracts and kernel rules are unchanged.
@@ -753,7 +753,7 @@ or nightly suite was run locally.
 
 PR #1027 merged, and its final pushed commit `bd36007a1` is verified in upstream
 history. The next proof-only adjustment explicitly checks string push's unchanged
-backing pointer and proves the unfolded zero terminator with `simp` instead of
+backing pointer and proves the unfolded zero terminator with `solve` instead of
 requiring it to be an exact available fact. No C, contract, resource or kernel
 changes are involved.
 
@@ -1052,7 +1052,7 @@ importer test.
 
 The next small delivery retains the unchanged vector-push C body, storage
 resource and contract, with a caller that exports its prefix guarantee. The
-caller uses `simp` to bridge the callee's returned read observations; exact
+caller uses `solve` to bridge the callee's returned read observations; exact
 `assumption` alone is insufficient. Fresh verification, expansion, rewritten
 verification and retained rechecking pass on current upstream. The same control
 passes all four modes in recovery checkpoint `417678854`. This is a shared C

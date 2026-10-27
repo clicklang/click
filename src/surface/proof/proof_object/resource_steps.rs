@@ -1640,7 +1640,7 @@ impl<'a> Proof<'a> {
                 continue;
             }
             if !exact_fact_is_available(premise, &available)
-                && !matches!(normalize_proposition(premise), SimpProposition::True)
+                && !matches!(normalize_proposition(premise), NormalizedProposition::True)
             {
                 append_missing.push(premise.clone());
             }
@@ -2907,7 +2907,7 @@ fn discharge_restated_fold_law(
     collect_conjunctive_premises(guard, &mut required);
     for premise in required {
         if !exact_fact_is_available(premise, available)
-            && !matches!(normalize_proposition(premise), SimpProposition::True)
+            && !matches!(normalize_proposition(premise), NormalizedProposition::True)
         {
             missing.push(premise.clone());
         }

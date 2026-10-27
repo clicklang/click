@@ -28,7 +28,7 @@ target/release/click verify examples/rbtree/rbtree-erase/rbtree_erase_augmented.
 ```
 
 ```text
-`simp` failed for `__rb_erase_augmented.contract`
+`solve` failed for `__rb_erase_augmented.contract`
 could not establish `child->rb_right == at(transplant, child->rb_right)`
 ```
 
@@ -54,7 +54,7 @@ closes line 694. The same refusal then appears at line 738
 
 The same cause probably explains two rbtree-augmented sidecars that already
 failed before #1806 but now fail earlier:
-`rbtree_size_insert_context_double_far_rotation.click` (a `simp` for
+`rbtree_size_insert_context_double_far_rotation.click` (a `solve` for
 `node->rb_right == 0` at line 269, which `rewrite` plus `assumption` closed
 before) and `rbtree_size_insert_mirrored_context_double_rotation.click`
 (line 205). This is unconfirmed.

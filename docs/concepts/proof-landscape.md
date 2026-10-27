@@ -32,7 +32,7 @@ Click should borrow ordinary ideas from existing systems rather than inventing
 new proof workflow concepts too early.
 
 - Interactive proof assistants: Lean, Coq, Isabelle.
-  Relevant tactics include `simp`, `rewrite`, `cases`, `induction`,
+  Relevant tactics include `solve`, `rewrite`, `cases`, `induction`,
   `specialize`, `exact`, `have`, and solver-backed automation.
 - Auto-active verifiers: Dafny, F*, Why3.
   Relevant concepts include preconditions, postconditions, assertions,
@@ -58,7 +58,7 @@ new proof workflow concepts too early.
 | Intermediate facts | Lean/Dafny/F* proof scripts | pure goals at the current execution frontier | `have ... by { ... }`, `assumption`, `extract` | `mdtests/count_to_three_loop_invariants.md`, `mdtests/count_to_three_bad_assert.md` |
 | Proposition syntax | Lean/Isabelle/Dafny/F* specifications | kernel `And`, `Or`, `Not`, `Implies`, `ForAll`, `Exists` propositions | `and`, `or`, `not`, `implies`, `forall`, `exists` | `mdtests/click_proposition_logic.md`, `mdtests/forall_array_segment.md`, `mdtests/forall_array_segment_rejects_overwritten_cell.md`, `mdtests/exists_and_symbolic_any.md` |
 | Existential proof | Lean `exists`/`cases`, Coq `exists`/`destruct`, Dafny witnesses | proof-local existential introduction and elimination | `witness { k: expr }`, `obtain (k: T) { P }` | `mdtests/witness_and_choose.md` |
-| Rewriting and simplification | Lean `simp`, Isabelle simplifier | explicit equality substitution, structural conjunction elimination, named theorem rules, and simplification | `rewrite`, `extract`, `normalize`, `solve` | `mdtests/simple_tactics.md`, `mdtests/simp_postconditions.md`, `mdtests/pure_click_functions.md` |
+| Rewriting and simplification | Lean and Isabelle simplifiers | explicit equality substitution, structural conjunction elimination, named theorem rules, and simplification | `rewrite`, `extract`, `normalize`, `solve` | `mdtests/simple_tactics.md`, `mdtests/solve_postconditions.md`, `mdtests/pure_click_functions.md` |
 | Bitvector arithmetic | SMT, CBMC, hardware-oriented provers | bitvector32 solver/normalizer | omitted proof, `solve()` | `mdtests/c_bitwise.md`, `mdtests/c_shifts.md`, `mdtests/c_shift_uint8_promoted.md` |
 | Frame reasoning | separation logic, C verifiers | pre/post memory evaluation with symbolic initial cells and loop write footprints | omitted proof, contract `owns`/`views`, loop `owns` clauses | `mdtests/write_second_old_keeps_first.md`, `mdtests/write_second_old_rejects_overwritten_cell.md`, `mdtests/fill_n_loop_mutable_segment.md`, `mdtests/shifted_loop_effect_preserves_prefix.md` |
 | C array and struct surface syntax | C frontends, C verifiers | parameter-array lowering, local stack blocks, LP64 struct field loads/stores, and retained struct-pointer field types | ordinary C/Click signatures plus explicit ranges for multi-field structs | `mdtests/fill3_array_loop.md`, `mdtests/copy3_array_demo.md`, `mdtests/local_array.md`, `mdtests/local_array_loop.md`, `mdtests/struct_multifield_explicit_permissions.md`, `mdtests/struct_pointer_field_explicit_permissions.md`, `mdtests/jsonc_refcount_getter.md`, `mdtests/jsonc_refcount_setter.md`, `mdtests/jsonc_refcount_increment.md` |

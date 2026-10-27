@@ -198,7 +198,7 @@ fn wide_equality_bounds_keep_width_sign_and_exact_premises() {
     );
     assert!(facts.proves(&narrowed));
     assert!(facts.derive_atomic_proposition(&narrowed).is_some());
-    assert!(facts.derive_simp_atomic_proposition(&narrowed).is_some());
+    assert!(facts.derive_solve_atomic_proposition(&narrowed).is_some());
     // A 32-bit equality is not evidence about all 64 bits of a wide term.
     let narrow_facts = PureFactContext::new()
         .assume_condition(ConditionTerm::equal(x, Bitvector32Term::Constant(0)), true);
@@ -2909,7 +2909,7 @@ fn nonnegative_successor_requires_no_overflow_evidence() {
     );
     assert!(
         assumptions
-            .derive_simp_proposition(&Proposition::ConditionIs(
+            .derive_solve_proposition(&Proposition::ConditionIs(
                 ConditionTerm::signed_greater_equal(successor, Bitvector32Term::Constant(0),),
                 true,
             ))
@@ -3065,7 +3065,7 @@ fn equality_transports_signed_order_facts_in_both_directions() {
 }
 
 #[test]
-fn simp_combines_equality_with_discrete_integer_bounds() {
+fn solve_combines_equality_with_discrete_integer_bounds() {
     let length = Bitvector32Term::Variable(Variable(87_100));
     let owner_length = Bitvector32Term::Variable(Variable(87_101));
     let assumptions = PureFactContext::new()
@@ -3076,16 +3076,15 @@ fn simp_combines_equality_with_discrete_integer_bounds() {
         .assume_condition(ConditionTerm::equal(owner_length.clone(), length), true);
 
     assert_eq!(
-        assumptions.decide_condition_for_simp(&ConditionTerm::signed_less_than(
-            Bitvector32Term::Constant(1),
-            owner_length,
-        )),
+        assumptions.selected_for_test().decide_selected_condition(
+            &ConditionTerm::signed_less_than(Bitvector32Term::Constant(1), owner_length,)
+        ),
         Some(true)
     );
 }
 
 #[test]
-fn simp_evaluates_equality_arithmetic_chains() {
+fn solve_evaluates_equality_arithmetic_chains() {
     let old_split = Bitvector32Term::Variable(Variable(87_102));
     let split = Bitvector32Term::Variable(Variable(87_103));
     let assumptions = PureFactContext::new()
@@ -3102,10 +3101,9 @@ fn simp_evaluates_equality_arithmetic_chains() {
         );
 
     assert_eq!(
-        assumptions.decide_condition_for_simp(&ConditionTerm::signed_less_than(
-            Bitvector32Term::Constant(1),
-            split,
-        )),
+        assumptions.selected_for_test().decide_selected_condition(
+            &ConditionTerm::signed_less_than(Bitvector32Term::Constant(1), split,)
+        ),
         Some(true)
     );
 }
@@ -3428,10 +3426,9 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
         true,
     );
     assert_eq!(
-        assumptions.decide_condition_for_simp(&ConditionTerm::signed_greater_than(
-            load.clone(),
-            Bitvector32Term::Constant(1)
-        )),
+        assumptions.selected_for_test().decide_selected_condition(
+            &ConditionTerm::signed_greater_than(load.clone(), Bitvector32Term::Constant(1))
+        ),
         Some(true)
     );
     assert_eq!(
@@ -3459,10 +3456,9 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
     );
     for unrelated in [changed_load, other_load] {
         assert_ne!(
-            assumptions.decide_condition_for_simp(&ConditionTerm::signed_greater_than(
-                unrelated,
-                Bitvector32Term::Constant(1)
-            )),
+            assumptions.selected_for_test().decide_selected_condition(
+                &ConditionTerm::signed_greater_than(unrelated, Bitvector32Term::Constant(1))
+            ),
             Some(true)
         );
     }
@@ -3481,7 +3477,12 @@ fn exact_signed_constant_bounds_check_signed_endpoints() {
         } else {
             ConditionTerm::signed_less_than(value.clone(), Bitvector32Term::Constant(bound as u32))
         };
-        assert_eq!(empty.decide_condition_for_simp(&condition), Some(expected));
+        assert_eq!(
+            empty
+                .selected_for_test()
+                .decide_selected_condition(&condition),
+            Some(expected)
+        );
     }
     let at_max = PureFactContext::new().assume_condition(
         ConditionTerm::signed_greater_equal(
@@ -3491,10 +3492,12 @@ fn exact_signed_constant_bounds_check_signed_endpoints() {
         true,
     );
     assert_eq!(
-        at_max.decide_condition_for_simp(&ConditionTerm::signed_greater_than(
-            value.clone(),
-            Bitvector32Term::Constant((i32::MAX - 1) as u32)
-        )),
+        at_max
+            .selected_for_test()
+            .decide_selected_condition(&ConditionTerm::signed_greater_than(
+                value.clone(),
+                Bitvector32Term::Constant((i32::MAX - 1) as u32)
+            )),
         Some(true)
     );
     let at_min = PureFactContext::new().assume_condition(
@@ -3502,10 +3505,12 @@ fn exact_signed_constant_bounds_check_signed_endpoints() {
         true,
     );
     assert_eq!(
-        at_min.decide_condition_for_simp(&ConditionTerm::signed_less_than(
-            value,
-            Bitvector32Term::Constant((i32::MIN + 1) as u32)
-        )),
+        at_min
+            .selected_for_test()
+            .decide_selected_condition(&ConditionTerm::signed_less_than(
+                value,
+                Bitvector32Term::Constant((i32::MIN + 1) as u32)
+            )),
         Some(true)
     );
 }

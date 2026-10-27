@@ -314,7 +314,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     };
     let concrete_source_is_true = matches!(
         normalize_proposition(&ordinary_source),
-        SimpProposition::True
+        NormalizedProposition::True
     );
     let explicit_assumptions = assumptions_from_propositions(&explicit_premises);
     // The target form is paired with an already-lowered focused goal, so
@@ -567,7 +567,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         //
         // The rule is a checked simple step and answers the same for every
         // caller: an explicit `transport ... using`, a planned transport, and
-        // `simp`'s snapshot transport closure all ask it the same question.
+        // `solve`'s snapshot transport closure all ask it the same question.
         let fold_frame = crate::instrumentation::measure_operation(
             "surface",
             "fact transport",

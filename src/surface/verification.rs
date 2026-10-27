@@ -2769,7 +2769,7 @@ fn verify_c0_sources_in_context(
                         error
                     }
                 })?,
-                SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
+                SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
                     return Err(ClickError::new(format!(
                         "grouped proof for `{}` must be an explicit `by {{ ... }}` proof script; omit it to prove the claims with the implicit tail",
                         function_block.signature().name()
@@ -2805,7 +2805,7 @@ fn verify_c0_sources_in_context(
                             function_source_registry.clone(),
                         )?
                     }
-                    SourceProof::Tactic(SmartTactic::Simp) => prove_claim_by_simp(
+                    SourceProof::Tactic(SmartTactic::Solve) => prove_claim_by_solve(
                         expansion_capture.as_deref_mut(),
                         source_path,
                         &function_block,
@@ -7854,7 +7854,7 @@ pub(in crate::surface) fn validate_loop_initialization_tactics(
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
             | ProofTactic::Rewrite(_)
-            | ProofTactic::Simp => {}
+            | ProofTactic::Solve => {}
             ProofTactic::If(proof_if) => {
                 validate_loop_initialization_tactics(&proof_if.then_tactics)?;
                 validate_loop_initialization_tactics(&proof_if.else_tactics)?;

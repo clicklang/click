@@ -6,9 +6,9 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 #[test]
-fn nested_simp_derivations_keep_rule_temporaries_off_the_recursive_stack() {
+fn nested_solve_derivations_keep_rule_temporaries_off_the_recursive_stack() {
     std::thread::Builder::new()
-        .name("nested-simp-small-stack".into())
+        .name("nested-solve-small-stack".into())
         .stack_size(1792 * 1024)
         .spawn(|| {
             let samples = [1, 2, 4, 8].map(|depth| {
@@ -55,7 +55,7 @@ fn nested_simp_derivations_keep_rule_temporaries_off_the_recursive_stack() {
                 let (proof, planning_work) =
                     crate::instrumentation::measure_deterministic_work(|| {
                         assumptions
-                            .derive_simp_proposition(&goal)
+                            .derive_solve_proposition(&goal)
                             .expect("nested quantified proof")
                     });
                 let (checked, checking_work) =
@@ -110,7 +110,7 @@ fn algebraic_constructor_injectivity_ignores_unrelated_facts() {
                 });
             }
             let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                assumptions.derive_simp_proposition(&goal)
+                assumptions.derive_solve_proposition(&goal)
             });
             assert!(derivation.is_some());
             (size, work)

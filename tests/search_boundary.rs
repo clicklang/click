@@ -10,10 +10,10 @@ fn checking_rejects_planner_dependencies_and_enumeration_escape_hatches() {
         "fn check() { crate::surface::hidden!(); }",
         "fn check() { include!(\"hidden.rs\"); }",
         "fn check() { crate::surface::planning::search(); }",
-        "fn check(c: C) { c.scan_for_legacy_simp(); }",
+        "fn check(c: C) { c.diagnostic_condition_fact_pairs(); }",
         "fn check(c: C) { c.diagnostic_proposition_facts(); }",
-        "fn check(c: C) { let f = C::scan_for_legacy_simp; f(c); }",
-        "fn check(c: C) { invoke!(c.r#scan_for_legacy_simp()); }",
+        "fn check(c: C) { let f = C::diagnostic_condition_fact_pairs; f(c); }",
+        "fn check(c: C) { invoke!(c.r#diagnostic_condition_fact_pairs()); }",
         "macro_rules! hidden { () => { crate::surface::planning::search() } }",
     ] {
         assert!(
@@ -26,25 +26,16 @@ fn checking_rejects_planner_dependencies_and_enumeration_escape_hatches() {
 #[test]
 fn checking_accepts_indexed_and_explicit_input_work_and_test_dependencies() {
     let source = r#"
-        // surface::planning and scan_for_legacy_simp are comments, not code.
+        // surface::planning and diagnostic_condition_fact_pairs are comments, not code.
         fn check(c: C) {
             let surface = 1;
-            let message = "scan_for_legacy_simp";
+            let message = "diagnostic_condition_fact_pairs";
             c.get(&surface);
             c.scan_explicit_input();
         }
         #[cfg(test)] mod tests { use crate::surface::planning::proposition_search::PropositionSearch; }
     "#;
     assert!(boundary::check_source("src/kernel/checker.rs", source).is_ok());
-}
-
-#[test]
-fn a_reviewed_legacy_function_cannot_add_another_scan() {
-    let path = "src/kernel/assumptions/condition_reasoning/simp.rs";
-    let once = "fn bitvector_terms_equal_for_simp(c: C) { c.scan_for_legacy_simp(); }";
-    let twice = "fn bitvector_terms_equal_for_simp(c: C) { c.scan_for_legacy_simp(); c.scan_for_legacy_simp(); }";
-    assert!(boundary::check_source(path, once).is_ok());
-    assert!(boundary::check_source(path, twice).is_err());
 }
 
 #[test]
@@ -108,5 +99,79 @@ fn only_planning_can_construct_search_permission() {
         if !succeeds {
             assert!(String::from_utf8_lossy(&output.stderr).contains("private"));
         }
+    }
+}
+
+#[test]
+fn selected_reasoning_requires_explicit_premises_or_planner_permission() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let permission = root.join("src/surface/planning/permission.rs");
+    let selected = root.join("src/kernel/assumptions/selected_facts.rs");
+    for (body, succeeds) in [
+        ("let _ = SelectedFacts::from_propositions(&[1, 2]);", true),
+        (
+            "let _ = SelectedFacts { context: PureFactContext::new() };",
+            false,
+        ),
+        (
+            "let _ = SelectedFacts::for_search(&PureFactContext::new(), SearchPermission::new());",
+            false,
+        ),
+        (
+            "let _: SelectedFacts = PureFactContext::new().into();",
+            false,
+        ),
+        (
+            "let mut facts = SelectedFacts::from_propositions(&[]); *facts = PureFactContext::new();",
+            false,
+        ),
+    ] {
+        // Compile the actual constructor module, with a minimal fact store.
+        // No cfg(test): production must not gain the test-only adapter.
+        let source = format!(
+            r#"
+            #![allow(dead_code, unused_imports)]
+            mod planning {{
+                #[path = {permission:?}] mod permission;
+                pub(crate) use permission::SearchPermission;
+                pub(crate) fn search() {{
+                    let _ = crate::kernel::SelectedFacts::for_search(
+                        &crate::kernel::PureFactContext::new(), SearchPermission::new());
+                }}
+            }}
+            use planning::SearchPermission;
+            mod kernel {{
+                pub(crate) type Proposition = u8;
+                #[derive(Clone)] pub(crate) struct PureFactContext;
+                impl PureFactContext {{
+                    pub(crate) fn new() -> Self {{ Self }}
+                    fn assume_proposition(self, _: Proposition) -> Self {{ self }}
+                }}
+                pub(crate) fn clone_proposition_iteratively(p: &Proposition) -> Proposition {{ *p }}
+                #[path = {selected:?}] mod selected_facts;
+                pub(crate) use selected_facts::SelectedFacts;
+            }}
+            mod checking {{
+                use crate::{{kernel::{{SelectedFacts, PureFactContext}}, SearchPermission}};
+                fn check() {{ {body} }}
+            }}
+        "#
+        );
+        let file = temp.path().join("probe.rs");
+        std::fs::write(&file, source).unwrap();
+        let output = std::process::Command::new("rustc")
+            .args(["--edition=2024", "--crate-type=lib", "--emit=metadata"])
+            .arg(&file)
+            .arg("--out-dir")
+            .arg(temp.path())
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.success(),
+            succeeds,
+            "{body}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

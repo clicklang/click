@@ -22,7 +22,7 @@ Every success is turned into ordinary checked proof steps, which
 
 - Quantifiers, recursive definitions, nonlinear arithmetic beyond opaque
   atoms, and bit-level reasoning. These come in later stages.
-- Changing `simp`. That waits for the stage-1 measurements.
+- Changing `solve`. That waits for the stage-1 measurements.
 - Search completeness. The procedure is complete for its stated fragment
   within budget, and nothing more is promised.
 
@@ -54,7 +54,7 @@ constructors.
   (`src/surface/checking/integer_affine_planner.rs`) matches premises,
   pairs (by Cramer's rule) and triples, and eliminates equalities. It is
   not simplex, and it only sees listed premises.
-- **`simp`.** It selects premises through a connected component of atomic
+- **`solve`.** It selects premises through a connected component of atomic
   facts that the frozen kernel decider must first decide
   (`smart_closures.rs:1918`). The decider is deliberately weak on `Integer`
   goals, so non-trivial `Integer` goals need `using`.
@@ -219,7 +219,7 @@ current goal by any means.
 
 - **At a function proof's frontier**, the goal is to reach exit with every
   obligation met. `auto` executes the remaining C, then tries the solver on
-  each remaining obligation before the current `simp` ladder. The fallback
+  each remaining obligation before the current `solve` ladder. The fallback
   keeps every existing proof working.
 - **On a proposition**, such as `have P by auto;` or a theorem body, there
   is no C to execute, so `auto` is the solver alone. Today `auto` is refused
@@ -235,7 +235,7 @@ from its own terms, and `arithmetic() using { ... }` proves it from the
 listed premises.
 
 Whether `have P;` with no proof should mean `have P by auto;` instead of
-`have P by simp;` is part of the `simp` question. That question waits for the
+`have P by solve;` is part of the `solve` question. That question waits for the
 stage-1 measurements.
 
 **Expansion.** `auto` expands into the steps the solver
@@ -311,7 +311,7 @@ Each milestone is one PR, green and useful on its own.
    one arm of `rbtree_erase_color_flips_red_all.click` and record its size
    and time. The first step, landed, is a bounded search for a chain of
    checked `rewrite` steps over the connected equalities, closed by
-   `assumption`, `normalize` or a budgeted `simp`; the numbers are under
+   `assumption`, `normalize` or a budgeted `solve`; the numbers are under
    Results. Congruence closure, injectivity and
    disjointness, and the combination with the simplex remain.
 5. **`auto` integration.** Make the solver the first closer in `auto`.
@@ -326,7 +326,7 @@ Each milestone is one PR, green and useful on its own.
   for `click expand`. `integer_plan_to_surface_certificate` already reports
   rendering gaps; the solver treats such a gap as a failure, not as a proof
   that cannot be printed.
-- **Sharing with the existing ladder.** The existing `simp` ladder stays as
+- **Sharing with the existing ladder.** The existing `solve` ladder stays as
   the fallback. If both are kept, a goal may be closed by different routes
   as the code evolves, which makes expansions less stable. Stage 1's
   measurements decide whether the ladder's `Integer` and signed planners

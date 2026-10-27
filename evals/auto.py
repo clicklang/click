@@ -11,7 +11,7 @@ block. Each site is measured twice, in a scratch copy of the project:
 
 - deletable: with the whole statement deleted, the proof unit that contained
   it still verifies. The proof's own automation (`auto` at the claims,
-  `simp`, the steps after it) finds the fact, and no later step names it.
+  `solve`, the steps after it) finds the fact, and no later step names it.
 - by solve(): with its justification replaced by `by solve();`, the proof unit
   still verifies. `auto` proves the fact where it is stated, whether or not
   later steps cite it.

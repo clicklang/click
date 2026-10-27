@@ -2613,9 +2613,9 @@ mod tests {
                 elapsed: Duration::from_millis(700),
                 work: 0,
             },
-            VerificationEvent::TacticStarted(tactic(1, "simp", "smart")),
+            VerificationEvent::TacticStarted(tactic(1, "solve", "smart")),
             VerificationEvent::TacticFinished {
-                tactic: tactic(1, "simp", "smart"),
+                tactic: tactic(1, "solve", "smart"),
                 elapsed: Duration::from_millis(1_900),
                 work: 0,
             },

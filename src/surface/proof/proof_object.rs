@@ -562,7 +562,7 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// Where a smart region-level invariant closer was written. Like the
     /// explicit closer above, this is expansion and timing attribution only;
     /// the kernel-owned invariant-closure flag carries semantic authority.
-    pub(in crate::surface::proof) region_simp: Option<(usize, usize)>,
+    pub(in crate::surface::proof) region_solve: Option<(usize, usize)>,
     /// Whether this execution lineage has explicitly unfolded a composite
     /// resource. Only that checked operation opts a frontier `have` into
     /// materializing one selected relation from the compact composition;
@@ -782,7 +782,7 @@ impl ExecutionProofState {
                 call_outcome_edges: None,
                 surface_record: SurfaceRecord::default(),
                 invariant_closer_step: Default::default(),
-                region_simp: None,
+                region_solve: None,
                 resource_unfolded: false,
                 expansion: ExpansionCursor::default(),
                 branch_path,

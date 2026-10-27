@@ -14,5 +14,5 @@ theorem wrong_cell(p: int32[]) {
 ```
 
 ```expect
-fail: simp
+fail: solve
 ```

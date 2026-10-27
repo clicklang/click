@@ -111,7 +111,7 @@ facts about their snapshots; the framed application equality is the bridge.
 Because the rule is a checked simple step that answers the same for every
 caller, a smart tactic composing the checked transport reaches it too: `solve`
 closes
-`mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md`, and
+`mdtests/sweep_prefix_survives_its_endpoint_store_by_solve.md`, and
 `click expand` rewrites it into the explicit transport.
 
 ## Automatic reuse is not implemented
@@ -141,7 +141,7 @@ nested folds, and recursion each need separate evidence from real proofs.
   `src/scaling_tests/surface/tests/scaling_tests.rs`.
 - The `mdtests/fold_read_transport_*.md` fixtures (positive and refused
   forms), `mdtests/sweep_maintains_a_zero_unmarked_count.md`,
-  `mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md`, and the `mdtests/array_fact_does_not_survive_*.md` attacks,
+  `mdtests/sweep_prefix_survives_its_endpoint_store_by_solve.md`, and the `mdtests/array_fact_does_not_survive_*.md` attacks,
   which state a fact reading a cell the step may write and are refused by
   both the whole-block version and the fold read frame.
 

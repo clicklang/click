@@ -13,8 +13,8 @@ when the exact sum or difference of the two ranges stays inside `int32`. Each
 listed premise must be a constant `int32` order or equality fact on one
 operand; the checker reads only those premises.
 
-`sum` and `difference` write the step out. `sum_by_simp`,
-`difference_by_simp`, and `sum_by_listed_simp` leave it to `solve` and
+`sum` and `difference` write the step out. `sum_by_solve`,
+`difference_by_solve`, and `sum_by_listed_solve` leave it to `solve` and
 `solve() using`, which cite the constant bounds on each operand: the facts
 indexed under that operand, or the listed ones. `sum_by_arithmetic` cites the
 listed ones through `solve() using` as well.
@@ -49,15 +49,15 @@ int difference(int a, int b) {
     return a - b;
 }
 
-int sum_by_simp(int a, int b) {
+int sum_by_solve(int a, int b) {
     return a + b;
 }
 
-int difference_by_simp(int a, int b) {
+int difference_by_solve(int a, int b) {
     return a - b;
 }
 
-int sum_by_listed_simp(int a, int b) {
+int sum_by_listed_solve(int a, int b) {
     return a + b;
 }
 
@@ -116,7 +116,7 @@ int32 difference(int32 a, int32 b) {
     }
 }
 
-int32 sum_by_simp(int32 a, int32 b) {
+int32 sum_by_solve(int32 a, int32 b) {
     requires a < 100;
     requires b == 1;
     ensures to_integer(result) == to_integer(a + b);
@@ -126,7 +126,7 @@ int32 sum_by_simp(int32 a, int32 b) {
     }
 }
 
-int32 difference_by_simp(int32 a, int32 b) {
+int32 difference_by_solve(int32 a, int32 b) {
     requires -5 <= a;
     requires 0 <= b;
     requires not (b > 7);
@@ -137,7 +137,7 @@ int32 difference_by_simp(int32 a, int32 b) {
     }
 }
 
-int32 sum_by_listed_simp(int32 a, int32 b) {
+int32 sum_by_listed_solve(int32 a, int32 b) {
     requires a < 100;
     requires b == 1;
     ensures to_integer(result) == to_integer(a + b);

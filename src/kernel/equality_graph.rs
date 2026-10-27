@@ -2893,7 +2893,7 @@ mod tests {
     }
 
     #[test]
-    fn affine_offset_equality_reaches_same_block_simp() {
+    fn affine_offset_equality_reaches_same_block_solve() {
         let base = symbolic(11_080);
         let x = PointerOffsetTerm::Variable(Variable(11_081));
         let nested = PointerOffsetTerm::Add(
@@ -2920,18 +2920,22 @@ mod tests {
                 .are_offsets_equal(&reordered, &nested)
         );
         assert_eq!(
-            context.decide_condition_for_simp(&ConditionTerm::pointer_equal(
-                at_offset(base.clone(), nested.clone()),
-                at_offset(base.clone(), reordered.clone()),
-            )),
+            context
+                .selected_for_test()
+                .decide_selected_condition(&ConditionTerm::pointer_equal(
+                    at_offset(base.clone(), nested.clone()),
+                    at_offset(base.clone(), reordered.clone()),
+                )),
             Some(true)
         );
         assert!(!context.equality_graph.are_offsets_equal(&nested, &wrong));
         assert_ne!(
-            context.decide_condition_for_simp(&ConditionTerm::pointer_equal(
-                at_offset(base.clone(), nested),
-                at_offset(base, wrong),
-            )),
+            context
+                .selected_for_test()
+                .decide_selected_condition(&ConditionTerm::pointer_equal(
+                    at_offset(base.clone(), nested),
+                    at_offset(base, wrong),
+                )),
             Some(true)
         );
     }

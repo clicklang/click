@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
+use crate::surface::planning::solve::plan_explicit_equality_rewrites_from;
 
 pub(super) fn surface_logical_children(
     goal: &ClickProposition,
@@ -728,7 +729,7 @@ pub(super) fn plan_explicit_loadability_transport(
     });
     if sources.is_empty() {
         super::attempt::record_search_note(
-            "simp view transport planning",
+            "solve view transport planning",
             format!(
                 "no memory-view premise has a checked source spelling ({} resolved premises)",
                 premise_pairs.len()
@@ -753,12 +754,12 @@ pub(super) fn plan_explicit_loadability_transport(
                 .map(|(kernel, _)| kernel.clone())
                 .collect::<Vec<_>>();
             assumptions_from_propositions(&propositions)
-                .derive_simp_proposition(goal)
+                .derive_solve_proposition(goal)
                 .is_some()
         };
         if !proves_goal(&selected) {
             super::attempt::record_search_note(
-                "simp view transport planning",
+                "solve view transport planning",
                 format!(
                     "the resolved memory-view and condition premises do not produce a retained-premise derivation of the requested view ({} resolved transport premises)",
                     selected.len()
@@ -3713,7 +3714,7 @@ mod selected_premise_tests {
         // Repeating that query in a debug assertion then exhausts the budget.
         let (derivation, work) = measure_deterministic_work(|| {
             assumptions_from_propositions(std::slice::from_ref(&goal))
-                .derive_simp_proposition(&goal)
+                .derive_solve_proposition(&goal)
         });
         assert!(derivation.is_some());
         assert!(work > 0);

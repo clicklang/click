@@ -837,7 +837,7 @@ impl<'a> Proof<'a> {
             // so the proof and its report are the run's without it.
             let scope = crate::surface::proof::attempt::search_scope("spellability census");
             let spelled = crate::instrumentation::without_charging(|| {
-                next.resolve_simp_premises(std::slice::from_ref(fact), &[])
+                next.resolve_solve_premises(std::slice::from_ref(fact), &[])
                     .is_some_and(|spelled| spelled.len() == 1)
             });
             drop(scope.finish());

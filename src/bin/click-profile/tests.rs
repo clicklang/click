@@ -144,8 +144,8 @@ fn accounting_splits_the_run_into_exclusive_class_time() {
     let output = r#"
 click timing: source examples/sample.click
 click timing: started tactic example.contract 0 have class control statement 1 source 0
-click timing: started tactic example.contract 1 simp class smart statement 1 source 1
-click timing: tactic example.contract 1 simp class smart statement 1 source 1 3.000000s
+click timing: started tactic example.contract 1 solve class smart statement 1 source 1
+click timing: tactic example.contract 1 solve class smart statement 1 source 1 3.000000s
 click timing: started tactic example.contract 2 close_invariants class simple statement 1 source 2
 click timing: tactic example.contract 2 close_invariants class simple statement 1 source 2 4.000000s
 click timing: tactic example.contract 0 have class control statement 1 source 0 8.000000s
@@ -201,8 +201,8 @@ fn function_and_claim_attribution_reconciles_exclusive_time_once() {
     let output = r#"
 click timing: source examples/sample.click
 click timing: started tactic alpha.ensures_0 0 have class control statement 1 source 0
-click timing: started tactic alpha.ensures_0 1 simp class smart statement 1 source 1
-click timing: tactic alpha.ensures_0 1 simp class smart statement 1 source 1 3.000000s
+click timing: started tactic alpha.ensures_0 1 solve class smart statement 1 source 1
+click timing: tactic alpha.ensures_0 1 solve class smart statement 1 source 1 3.000000s
 click timing: started tactic alpha.ensures_0 2 close_invariants class simple statement 1 source 2
 click timing: tactic alpha.ensures_0 2 close_invariants class simple statement 1 source 2 4.000000s
 click timing: tactic alpha.ensures_0 0 have class control statement 1 source 0 8.000000s
@@ -254,8 +254,8 @@ click timing: function beta 4.000000s
 fn profile_distinguishes_one_smart_site_from_two_dynamic_attempts() {
     let output = r#"
 click timing: source examples/sample.click
-click timing: tactic alpha.ensures_0 0 simp class smart statement 1 source 0 0.010000s
-click timing: tactic alpha.ensures_0 0 simp class smart statement 1 source 0 0.020000s
+click timing: tactic alpha.ensures_0 0 solve class smart statement 1 source 0 0.010000s
+click timing: tactic alpha.ensures_0 0 solve class smart statement 1 source 0 0.020000s
 click timing: function alpha 0.030000s
 "#;
     let mut profile = parse_profile("sample", output, Thresholds::default(), false).unwrap();
@@ -282,7 +282,7 @@ click timing: function alpha 0.030000s
 fn function_residual_is_reported_as_verifier_core() {
     let output = r#"
 click timing: source examples/sample.click
-click timing: tactic example.contract 0 simp class smart statement 1 source 0 1.000000s
+click timing: tactic example.contract 0 solve class smart statement 1 source 0 1.000000s
 click timing: function example_function 20.000s
 "#;
     let profile = parse_profile("sample", output, Thresholds::default(), false)
@@ -305,7 +305,7 @@ click timing: function example_function 20.000s
 fn a_failed_run_still_reports_its_class_split() {
     let output = r#"
 click timing: source examples/sample.click
-click timing: tactic example.contract 0 simp class smart statement 1 source 0 6.000000s
+click timing: tactic example.contract 0 solve class smart statement 1 source 0 6.000000s
 click timing: tactic example.contract 1 fold class simple statement 1 source 1 2.000000s
 "#;
     let mut profile = parse_profile("sample", output, Thresholds::default(), false)
@@ -962,7 +962,7 @@ click timing: phase environment 0.010000s
 click timing: tactic example.contract 0 step class simple statement 1 source 0 0.100000s
 click timing: tactic example.contract 1 fold class simple statement 1 source 1 0.100000s
 click timing: tactic example.contract 2 unfold class simple statement 1 source 2 0.100000s
-click timing: tactic example.contract 3 simp class smart statement 1 source 3 3.000000s
+click timing: tactic example.contract 3 solve class smart statement 1 source 3 3.000000s
 click timing: contract execution example_function 1.000000s
 click timing: contract claims example_function 1.000000s
 click timing: claim paths example_function prepared 1 in 0.100000s
@@ -990,9 +990,9 @@ click timing: function example_function 5.300s
 fn diagnoses_large_healthy_aggregate_as_volume() {
     let output = r#"
 click timing: source examples/sample.click
-click timing: tactic example.contract 0 simp class smart statement 1 source 0 0.400000s
-click timing: tactic example.contract 1 simp class smart statement 1 source 1 0.400000s
-click timing: tactic example.contract 2 simp class smart statement 1 source 2 0.400000s
+click timing: tactic example.contract 0 solve class smart statement 1 source 0 0.400000s
+click timing: tactic example.contract 1 solve class smart statement 1 source 1 0.400000s
+click timing: tactic example.contract 2 solve class smart statement 1 source 2 0.400000s
 click timing: function example_function 1.200s
 "#;
     let profile = parse_profile("sample", output, Thresholds::default(), false)
@@ -1010,9 +1010,9 @@ click timing: function example_function 1.200s
 fn slow_failed_smart_search_is_not_an_expansion_candidate() {
     let output = r#"
 click timing: source examples/sample.click
-click timing: started tactic example.contract 0 simp class smart statement 1 source 0
-click timing: tactic example.contract 0 simp class smart statement 1 source 0 3.000000s
-click timing: failed tactic example.contract 0 simp class smart statement 1 source 0
+click timing: started tactic example.contract 0 solve class smart statement 1 source 0
+click timing: tactic example.contract 0 solve class smart statement 1 source 0 3.000000s
+click timing: failed tactic example.contract 0 solve class smart statement 1 source 0
 "#;
     let mut profile = parse_profile("sample", output, Thresholds::default(), false)
         .expect("a failed tactic outcome should parse");

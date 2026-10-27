@@ -826,7 +826,10 @@ impl<'a> Proof<'a> {
 
         let mut premises = Vec::new();
         for (requirement_index, requirement) in requirements.into_iter().enumerate() {
-            if matches!(normalize_proposition(&requirement), SimpProposition::True) {
+            if matches!(
+                normalize_proposition(&requirement),
+                NormalizedProposition::True
+            ) {
                 continue;
             }
             let matched = self
@@ -1121,7 +1124,10 @@ impl<'a> Proof<'a> {
             // discharge without evidence. Broader context-free planning can
             // prove constructor inequalities, but dropping their written
             // facts here leaves `apply using` with an unchecked premise.
-            if matches!(normalize_proposition(&requirement), SimpProposition::True) {
+            if matches!(
+                normalize_proposition(&requirement),
+                NormalizedProposition::True
+            ) {
                 continue;
             }
             let source_surface =

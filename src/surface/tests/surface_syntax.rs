@@ -59,7 +59,7 @@ fn integer_constant_aliases_are_bounded_before_a_tactic_starts() {
 }
 
 #[test]
-fn integer_simp_expansion_rechecks_without_smart_search() {
+fn integer_solve_expansion_rechecks_without_smart_search() {
     for (parameters, requires, claim, proof) in [
         ("x: Integer", "", "2 * x + 1 > x + x", "solve();"),
         (
@@ -75,7 +75,7 @@ fn integer_simp_expansion_rechecks_without_smart_search() {
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
         assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-        assert!(!expanded.contains("simp"), "{expanded}");
+        assert!(!expanded.contains("solve"), "{expanded}");
         let rechecked = source.replace(&format!("by {{ {proof} }}"), &expanded);
         verify_click_theorems(&rechecked)
             .unwrap_or_else(|error| panic!("{rechecked}: {}", error.message()));
@@ -748,10 +748,10 @@ fn parses_expanded_typed_loads_and_old_loadability() {
     else {
         panic!("expected a proof script");
     };
-    let ProofTactic::SimpUsing(simp_using) = &tactics[0] else {
+    let ProofTactic::SolveUsing(solve_using) = &tactics[0] else {
         panic!("expected a solve() using tactic");
     };
-    let premises = &simp_using.premises;
+    let premises = &solve_using.premises;
     assert!(matches!(
         &premises[0],
         ClickProposition::Loadable { segment }
@@ -1276,11 +1276,11 @@ fn parses_and_prints_arithmetic_certificates() {
     };
     assert!(matches!(
         have_tactics.as_slice(),
-        [ProofTactic::SimpUsing(solve)] if solve.premises.is_empty()
+        [ProofTactic::SolveUsing(solve)] if solve.premises.is_empty()
     ));
     assert!(matches!(
         &tactics[1],
-        ProofTactic::SimpUsing(solve) if solve.premises.len() == 1
+        ProofTactic::SolveUsing(solve) if solve.premises.len() == 1
     ));
 
     let printed = super::printing::format_partial_tactic_sequence(tactics);
@@ -2246,7 +2246,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
 }
 
 #[test]
-fn pure_simp_exposes_an_explicit_arithmetic_certificate() {
+fn pure_solve_exposes_an_explicit_arithmetic_certificate() {
     let source = r#"
         theorem positive_is_nonnegative(x: int32) {
             requires 0 < x;
@@ -2254,7 +2254,7 @@ fn pure_simp_exposes_an_explicit_arithmetic_certificate() {
         }
     "#;
 
-    let verified = verify_click_theorems(source).expect("simp theorem should verify");
+    let verified = verify_click_theorems(source).expect("solve theorem should verify");
     assert!(matches!(
         verified[0].proof_tactics().as_deref(),
         Some([ProofTactic::ArithmeticCertificate(_)])
@@ -2262,7 +2262,7 @@ fn pure_simp_exposes_an_explicit_arithmetic_certificate() {
 }
 
 #[test]
-fn pure_simp_after_unfold_exposes_an_explicit_certificate() {
+fn pure_solve_after_unfold_exposes_an_explicit_certificate() {
     let source = r#"
         predicate equality_chain(x: int32, y: int32, z: int32) {
             x == y and y == z
@@ -2277,10 +2277,10 @@ fn pure_simp_after_unfold_exposes_an_explicit_certificate() {
         }
     "#;
 
-    let verified = verify_click_theorems(source).expect("unfolded simp theorem should verify");
+    let verified = verify_click_theorems(source).expect("unfolded solve theorem should verify");
     let tactics = verified[0]
         .proof_tactics()
-        .expect("unfolded simp should commit a surface certificate");
+        .expect("unfolded solve should commit a surface certificate");
     assert!(tactics.iter().any(
         |tactic| matches!(tactic, ProofTactic::UnfoldPredicate(name) if name == "equality_chain")
     ));
@@ -2292,7 +2292,7 @@ fn pure_simp_after_unfold_exposes_an_explicit_certificate() {
 }
 
 #[test]
-fn branching_pure_simp_exposes_explicit_branch_certificates() {
+fn branching_pure_solve_exposes_explicit_branch_certificates() {
     let source = r#"
         theorem equality_is_decidable(x: int32) {
             ensures x == 0 or not (x == 0) by {
@@ -2305,10 +2305,10 @@ fn branching_pure_simp_exposes_explicit_branch_certificates() {
         }
     "#;
 
-    let verified = verify_click_theorems(source).expect("branching simp theorem should verify");
+    let verified = verify_click_theorems(source).expect("branching solve theorem should verify");
     let tactics = verified[0]
         .proof_tactics()
-        .expect("branching simp should commit a surface certificate");
+        .expect("branching solve should commit a surface certificate");
     let [ProofTactic::If(proof_if)] = tactics.as_slice() else {
         panic!("expected one explicit case split, got {tactics:?}");
     };
@@ -3337,7 +3337,7 @@ fn parses_memory_separate_requirement() {
 }
 
 #[test]
-fn restricted_simp_premises_retain_declared_resource_argument_types() {
+fn restricted_solve_premises_retain_declared_resource_argument_types() {
     let source = r#"
         resource wrapper(owner: int32*) {}
 
@@ -3351,7 +3351,7 @@ fn restricted_simp_premises_retain_declared_resource_argument_types() {
             }
         }
     "#;
-    let file = parse(source).expect("restricted simp resource premise should parse");
+    let file = parse(source).expect("restricted solve resource premise should parse");
     let SourceProof::Script(tactics) = file.function_blocks()[0].grouped_proof().unwrap() else {
         panic!("expected grouped proof script");
     };
@@ -3362,8 +3362,8 @@ fn restricted_simp_premises_retain_declared_resource_argument_types() {
     else {
         panic!("expected have proof");
     };
-    let ProofTactic::SimpUsing(ProofSimpUsing { premises }) = &have_tactics[0] else {
-        panic!("expected restricted simp");
+    let ProofTactic::SolveUsing(ProofSolveUsing { premises }) = &have_tactics[0] else {
+        panic!("expected restricted solve");
     };
     assert!(matches!(
         &premises[0],
@@ -3804,7 +3804,7 @@ fn parses_block_by_clause() {
 
     assert_eq!(
         ensure.proof().tactics(),
-        Some([ProofTactic::Simp].as_slice())
+        Some([ProofTactic::Solve].as_slice())
     );
 }
 

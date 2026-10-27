@@ -17,7 +17,7 @@ One explicit `transport` carries the entry invariant across `visited[i] = 1`.
 read frame equates the two applications without a frame lemma or a per-cell
 quantified transport. The enlarged prefix after `i++` still needs the fold's
 append law, which `peel` opens. An omitted proof reaches the same
-transport (`sweep_prefix_survives_its_endpoint_store_by_simp.md`).
+transport (`sweep_prefix_survives_its_endpoint_store_by_solve.md`).
 
 ```c filename=sweep_maintains_a_zero_unmarked_count.c
 void sweep(int32 visited[], int32 n) {

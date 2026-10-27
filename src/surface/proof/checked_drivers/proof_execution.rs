@@ -915,9 +915,9 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
             source: source.clone(),
             target: target.clone(),
         }),
-        ProofTactic::Simp => Some(PostExecutionTactic::Simp),
+        ProofTactic::Solve => Some(PostExecutionTactic::Solve),
         ProofTactic::AutoClose => Some(PostExecutionTactic::AutoClose),
-        ProofTactic::SimpUsing(simp) => Some(PostExecutionTactic::SimpUsing(simp.clone())),
+        ProofTactic::SolveUsing(solve) => Some(PostExecutionTactic::SolveUsing(solve.clone())),
         _ => None,
     }
 }
@@ -1071,7 +1071,7 @@ fn deferred_post_execution_if_is_explicit_path_cursor(
     fn explicit_tree(tactics: &[DeferredPostExecutionTactic], depth: usize) -> bool {
         depth < MAX_CHECKED_EXECUTION_REGION_DEPTH
             && tactics.iter().all(|deferred| match &deferred.tactic {
-                PostExecutionTactic::Simp
+                PostExecutionTactic::Solve
                 | PostExecutionTactic::AutoClose
                 | PostExecutionTactic::Match { .. } => false,
                 PostExecutionTactic::If {
@@ -1133,7 +1133,7 @@ fn apply_frontier_source_tactic<'a>(
     let _origin = crate::surface::proof::timing::trace_origin(&indexed.tactic);
     let checkpoint = proof.checkpoint();
     let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
-        proof.apply_close_invariants_body(&[ProofTactic::Simp])?
+        proof.apply_close_invariants_body(&[ProofTactic::Solve])?
     } else if let Some(step) = SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic) {
         proof
             .apply_step_at(step, indexed.source_index)
@@ -2350,8 +2350,8 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
             || -> Result<_, ClickError> {
                 Ok(match source_proof.as_ref() {
                     SourceProof::Tactic(SmartTactic::Auto) => nested.try_auto_fact_closure()?,
-                    SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
-                        nested.try_simp_closure()?
+                    SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
+                        nested.try_solve_closure()?
                     }
                     SourceProof::Script(body) => {
                         // An explicit script is checked by its proof steps alone: a
@@ -2408,7 +2408,7 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
     let selected = selected.filter(ProofScope::is_complete);
     if selected.is_none() {
         check_verification_deadline()?;
-        *failed_check = Some(body.simp_failure().with_check_observations(checks));
+        *failed_check = Some(body.solve_failure().with_check_observations(checks));
     }
     Ok(selected)
 }
@@ -2783,7 +2783,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                     }
                     let handled_by_linear_driver = !matches!(
                         indexed.tactic,
-                        ProofTactic::Loop(_) | ProofTactic::Simp | ProofTactic::Step
+                        ProofTactic::Loop(_) | ProofTactic::Solve | ProofTactic::Step
                     );
                     if handled_by_linear_driver {
                         let segment = InternalProofNode::Linear {
@@ -2864,11 +2864,12 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                                 indexed.source_index,
                             )?;
                         }
-                        ProofTactic::Simp => {
-                            // The region simp's semantic content is the bundle
+                        ProofTactic::Solve => {
+                            // The region solve's semantic content is the bundle
                             // closer certified at the boundary; its capture
                             // completes with that closer.
-                            proof = proof.defer_region_simp(indexed.index, indexed.source_index)?;
+                            proof =
+                                proof.defer_region_solve(indexed.index, indexed.source_index)?;
                         }
                         tactic => {
                             return Err(ClickError::new(format!(
@@ -3443,8 +3444,8 @@ fn advance_focused_execution_arm<'a>(
             continue;
         }
         if !SourceContext::ExecutionFrontier.admits(&indexed.tactic) {
-            if matches!(indexed.tactic, ProofTactic::Simp) {
-                return Err(proof.step_error(simp_before_exit_reason(&proof)));
+            if matches!(indexed.tactic, ProofTactic::Solve) {
+                return Err(proof.step_error(solve_before_exit_reason(&proof)));
             }
             return decline();
         }
@@ -4876,7 +4877,7 @@ fn advance_linear_open_scope<'a>(
             return decline();
         }
         // After execution reached function exit inside the scope, an ordered
-        // outcome operation (`simp`, `fold`, a `have` naming `result`, ...)
+        // outcome operation (`solve`, `fold`, a `have` naming `result`, ...)
         // is deferred on the scope body and follows the scope's join.
         //
         // A `have` written here is such an operation: only the outcome binds
@@ -5459,9 +5460,9 @@ pub(in crate::surface::proof) fn add_proof_branch_path(
     error
 }
 
-/// Why `simp` cannot run at an execution frontier that has not reached the
+/// Why `solve` cannot run at an execution frontier that has not reached the
 /// function exit: what still lies ahead, and the two ways to get there.
-fn simp_before_exit_reason(proof: &Proof<'_>) -> String {
+fn solve_before_exit_reason(proof: &Proof<'_>) -> String {
     format!(
         "`solve` closes the outcome claims at function exit and does not execute: {}. Step to the exit first with `step_until(function.exit)` or `step()` (the end of the body is one step), or omit the proof, whose implicit tail runs the C and closes the claims.",
         frontier_ahead_of_exit(proof)
@@ -5535,12 +5536,12 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
 
 /// The diagnostic for a function-exit tactic written before execution
 /// reached function exit.
-/// `simp` gets the same diagnostic here as in an execution arm.
+/// `solve` gets the same diagnostic here as in an execution arm.
 fn pre_exit_outcome_tactic_error(proof: &Proof<'_>, tactic: &ProofTactic) -> Option<String> {
     let name = match tactic {
         ProofTactic::Witness(_) => "witness",
         ProofTactic::Choose(_) => "choose",
-        ProofTactic::Simp => return Some(simp_before_exit_reason(proof)),
+        ProofTactic::Solve => return Some(solve_before_exit_reason(proof)),
         // Any other tactic that only works on the outcome claims, such as a
         // closer: execution has to reach function exit before it has a goal.
         _ if flat_post_execution_tactic(tactic).is_some() => {

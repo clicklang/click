@@ -102,7 +102,7 @@ fn exact_signed_constant_bound_lookup_ignores_unrelated_facts() {
             );
         }
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            assumptions.decide_condition_for_simp(&query)
+            assumptions.selected_for_test().decide_selected_condition(&query)
         });
         assert_eq!(result, Some(true));
         samples.push(work);

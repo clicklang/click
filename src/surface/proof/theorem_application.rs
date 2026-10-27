@@ -102,7 +102,8 @@ pub(super) fn missing_theorem_extent_guard(
     crate::kernel::stated_loadable_extent_guards(requirement)
         .into_iter()
         .find(|guard| {
-            !available(guard) && !matches!(normalize_proposition(guard), SimpProposition::True)
+            !available(guard)
+                && !matches!(normalize_proposition(guard), NormalizedProposition::True)
         })
 }
 
@@ -372,7 +373,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         if !crate::kernel::listed_premise_holds(&lowered, |premise| {
             exact_fact_is_available(premise, available)
         }) && !mirrored_order_listed()
-            && !matches!(normalize_proposition(&lowered), SimpProposition::True)
+            && !matches!(normalize_proposition(&lowered), NormalizedProposition::True)
         {
             return Err(theorem_application_error(
                 claim_label,
@@ -395,7 +396,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         // over the element count, which is the spelling a proof can write.
         for guard in crate::kernel::stated_loadable_extent_guards(&lowered) {
             if exact_fact_is_available(&guard, available)
-                || matches!(normalize_proposition(&guard), SimpProposition::True)
+                || matches!(normalize_proposition(&guard), NormalizedProposition::True)
             {
                 continue;
             }
@@ -647,7 +648,7 @@ fn instantiate_integer_range_fold_theorem_application(
     collect_conjunctive_guard_facts(guard, &mut required);
     for premise in required {
         if !exact_fact_is_available(premise, available)
-            && !matches!(normalize_proposition(premise), SimpProposition::True)
+            && !matches!(normalize_proposition(premise), NormalizedProposition::True)
         {
             return Err(error(format!(
                 "required exact fold guard is unavailable: {}",

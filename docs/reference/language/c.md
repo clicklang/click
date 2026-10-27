@@ -2026,7 +2026,7 @@ implementation.
 <!-- verified-example: mdtests/c_named_function_contract_frames_guarded_composite.md -->
 <!-- verified-example: mdtests/c_named_function_contract_borrows_guarded_composite.md -->
 <!-- verified-example: mdtests/c_named_function_contract_rejects_weaker_guarded_footprint.md -->
-<!-- verified-example: mdtests/c_named_function_contract_refinement_simp_guarded_postcondition.md -->
+<!-- verified-example: mdtests/c_named_function_contract_refinement_solve_guarded_postcondition.md -->
 <!-- verified-example: mdtests/c_named_function_contract_refinement_theorem_rejects_false_claim.md -->
 <!-- verified-example: mdtests/c_named_function_contract_refinement_theorem_requires_unfold.md -->
 <!-- verified-example: mdtests/c_named_contract_refinement_rejects_weaker_source_postcondition.md -->
@@ -2034,9 +2034,9 @@ implementation.
 <!-- verified-example: mdtests/c_named_contract_refinement_unfolds_stateful_predicate.md -->
 <!-- verified-example: mdtests/c_named_contract_refinement_unfolds_predicates_on_both_sides.md -->
 <!-- verified-example: mdtests/c_named_contract_refinement_unfolds_old_current_predicate.md -->
-<!-- verified-example: mdtests/c_named_contract_refinement_simp_unfolds_predicate.md -->
+<!-- verified-example: mdtests/c_named_contract_refinement_solve_unfolds_predicate.md -->
 <!-- verified-example: mdtests/c_named_contract_refinement_predicate_not_implicit.md -->
-<!-- verified-example: mdtests/c_named_contract_refinement_simp_after_unused_unfold.md -->
+<!-- verified-example: mdtests/c_named_contract_refinement_solve_after_unused_unfold.md -->
 <!-- verified-example: mdtests/c_named_contract_refinement_unfolded_predicate_rejects_weak_guarantee.md -->
 <!-- verified-example: mdtests/c_named_contract_refinement_predicate_unfold_before_cases.md -->
 <!-- verified-example: mdtests/c_named_contract_refines_symbolic_resource_quantity.md -->

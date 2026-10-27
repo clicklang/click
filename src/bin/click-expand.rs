@@ -751,7 +751,7 @@ mod tests {
     fn c_mdtest_expansion_sees_an_imported_local_module() {
         // `unmarked` is declared only in the imported `unmarked_count_lemmas.click`.
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md");
+            .join("mdtests/sweep_prefix_survives_its_endpoint_store_by_solve.md");
         let arguments = parse_arguments(
             ["--claim", "sweep.contract", path.to_str().unwrap()].map(str::to_string),
         )
@@ -761,7 +761,7 @@ mod tests {
     }
 
     #[test]
-    fn resource_pattern_exit_simp_expansion_checks() {
+    fn resource_pattern_exit_solve_expansion_checks() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/resource_pattern_counts_cross_contracts.md");
         let mdtest = read_mdtest(&path).expect("fixture should parse");
@@ -773,14 +773,14 @@ mod tests {
             .lines()
             .enumerate()
             .find(|(_, line)| *line == "    solve();")
-            .expect("fixture should contain an exit simp");
+            .expect("fixture should contain an exit solve");
         let markdown_line = mdtest.click_start_line + line_index;
         let column = line.find("solve()").unwrap() + 1;
         let selection = format!("{}:{markdown_line}:{column}", path.display());
         let arguments = parse_arguments([selection]).expect("fixture selection should parse");
         // Use the artifact loader so the C inputs survive both expansion and
         // certificate verification.
-        let expanded = run(&arguments).expect("exit simp should generate a checked certificate");
+        let expanded = run(&arguments).expect("exit solve should generate a checked certificate");
         cli::parse_mdtest(&path, &expanded).expect("the expanded mdtest should parse");
     }
 
@@ -1032,7 +1032,7 @@ int32 bad(int32 x) {
     }
 
     /// A smart `have` nested in a proof `branch` arm is one site, selected by
-    /// its `have` keyword or by the `simp` written in its body; both select
+    /// its `have` keyword or by the `solve` written in its body; both select
     /// the same checked expansion.
     #[test]
     #[ignore = "nightly: 0.7s in the parallel gate"]
@@ -1045,8 +1045,8 @@ int32 bad(int32 x) {
             .position(|line| line == "        have st.live == 1 by {")
             .expect("fixture should contain the nested smart have")
             + 1;
-        let simp = markdown.lines().nth(have_line).unwrap();
-        assert_eq!(simp.trim(), "solve() using {", "{simp}");
+        let solve = markdown.lines().nth(have_line).unwrap();
+        assert_eq!(solve.trim(), "solve() using {", "{solve}");
         let run_at = |line: usize, column: usize| {
             run(&Arguments {
                 click_path: path.clone(),
@@ -1060,19 +1060,19 @@ int32 bad(int32 x) {
             })
         };
 
-        let from_simp = run_at(have_line + 1, simp.find("solve").unwrap() + 1)
-            .expect("the nested simp should select its smart have");
+        let from_solve = run_at(have_line + 1, solve.find("solve").unwrap() + 1)
+            .expect("the nested solve should select its smart have");
         let from_have = run_at(have_line, 9).expect("the have keyword should select it");
 
-        assert_eq!(from_simp, from_have);
+        assert_eq!(from_solve, from_have);
         assert!(
-            from_simp
+            from_solve
                 .contains("extract(to_integer(st.live) == to_integer((at(m, st.live) + got)));"),
-            "{from_simp}"
+            "{from_solve}"
         );
         assert!(
-            !from_simp.contains("solve() using {\n                    defined(1 + got)"),
-            "{from_simp}"
+            !from_solve.contains("solve() using {\n                    defined(1 + got)"),
+            "{from_solve}"
         );
     }
 
@@ -1117,7 +1117,7 @@ int32 bad(int32 x) {
         assert!(parse_arguments(["example.click:0".to_string()]).is_err());
     }
 
-    /// Inside a proof `branch` arm: the line of the `simp` in a smart
+    /// Inside a proof `branch` arm: the line of the `solve` in a smart
     /// `have` body selects that `have`, as its keyword and any column
     /// inside it do; a line that starts no smart tactic selects nothing.
     #[test]
@@ -1208,20 +1208,20 @@ int32 bad(int32 x) {
         }
     }
 
-    /// A close bundle is one smart site: a column on the `simp` written in
+    /// A close bundle is one smart site: a column on the `solve` written in
     /// one of its `both` arms selects the whole bundle.
     #[test]
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn a_column_inside_a_close_bundle_selects_the_bundle() {
         let path = mdtest_path("loop_invariant_body.md");
         assert_eq!(markdown_line(&path, 35).trim(), "both { solve(); }");
-        let from_simp = run_location(&path, "35:24").unwrap();
+        let from_solve = run_location(&path, "35:24").unwrap();
         let from_bundle = run_location(&path, "34:13").unwrap();
-        assert_eq!(from_simp, from_bundle);
-        assert!(!from_simp.contains("both { solve(); }"), "{from_simp}");
+        assert_eq!(from_solve, from_bundle);
+        assert!(!from_solve.contains("both { solve(); }"), "{from_solve}");
     }
 
-    /// Call outcomes: the `simp` closing the `returned` arm is selected by
+    /// Call outcomes: the `solve` closing the `returned` arm is selected by
     /// its line, and only that arm is rewritten.
     #[test]
     #[ignore = "nightly: 1.1s in the parallel gate"]
@@ -1418,7 +1418,7 @@ int32 f(int32 a, int32 b) {
         assert!(by_label.ends_with(&click_source[end..]), "{by_label}");
         let phase = &by_label[start..by_label.len() - (click_source.len() - end)];
         assert!(phase.starts_with("initialize by {"), "{phase}");
-        assert!(!phase.contains("simp"), "{phase}");
+        assert!(!phase.contains("solve"), "{phase}");
         let line = click_source[..start].lines().count();
         let by_line = expand(format!("{}:{line}", click_path.display()))
             .expect("a line of the phase should select it");

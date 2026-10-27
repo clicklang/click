@@ -164,15 +164,12 @@ fn binary_splits_require_then_exactly_when_they_have_an_interface() {
     }
 }
 
-/// `simp`, `auto`, `arithmetic` and `execute_until` are removed spellings:
+/// `auto`, `arithmetic` and `execute_until` are removed spellings:
 /// in each place a tactic or a one-tactic proof stands, the parser refuses
 /// them and names what replaced them.
 #[test]
 fn removed_tactic_spellings_name_their_replacement() {
     for (proof, replacement) in [
-        ("by simp();", "`solve()`"),
-        ("by { simp(); }", "`solve()`"),
-        ("by { normalize(); simp() using { x == 7; }; }", "`solve()`"),
         ("by auto();", "the omitted proof"),
         ("by { auto(); }", "the omitted proof"),
         (

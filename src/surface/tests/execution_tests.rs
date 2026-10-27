@@ -1671,15 +1671,15 @@ fn observed_cursor_facts_produce_checkable_surface_certificates() {
         ("input_cursor_peek.c", c_source),
         ("input_cursor_take.c", take_c_source),
     ];
-    let final_simp = click_source
+    let final_solve = click_source
         .rfind("solve();")
-        .expect("final simp should exist");
-    let position = expansion::position_at_offset(click_source, final_simp);
+        .expect("final solve should exist");
+    let position = expansion::position_at_offset(click_source, final_solve);
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("the grouped simp should emit a non-circular surface certificate");
+            .expect("the grouped solve should emit a non-circular surface certificate");
     verify_c0_sources(&expanded, &sources)
-        .expect("the grouped simp surface certificate should check from fresh source");
+        .expect("the grouped solve surface certificate should check from fresh source");
 }
 
 #[test]
@@ -1935,7 +1935,7 @@ fn decrement_contract_checks_nonnegative_and_equality_certificates() {
 /// A source tactic inside a checked branch arm, including the continuation
 /// that follows a `branch`, is its own source operation: the profiler must
 /// time it under its source site. Untimed, its work was reported as the
-/// function's shared verifier work, which made a smart `simp` look like
+/// function's shared verifier work, which made a smart `solve` look like
 /// kernel core cost.
 #[test]
 fn branch_continuation_tactics_are_timed_as_source_operations() {
@@ -2327,7 +2327,7 @@ fn algebraic_constructor_field_metadata_cannot_prove_a_false_postcondition() {
 }
 
 #[test]
-fn simp_keeps_valid_integer_offset_function_goals() {
+fn solve_keeps_valid_integer_offset_function_goals() {
     let source = r#"
         function plus(value: Integer) -> Integer { value + 1 }
         verifying "offset.c";

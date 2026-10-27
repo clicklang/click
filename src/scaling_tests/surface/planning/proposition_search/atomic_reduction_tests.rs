@@ -7,7 +7,7 @@ fn repeated_atomic_reduction_does_not_rebuild_its_selected_facts() {
     let mut samples = Vec::new();
     for size in [8usize, 16, 32, 64] {
         let (context, goal, id) = selection(size, Variable(785_003));
-        with_simp_atomic_reduction_cache(|| {
+        with_solve_atomic_reduction_cache(|| {
             let (first, first_work) =
                 crate::instrumentation::measure_deterministic_work(|| reduce(&context, &goal, id));
             let (again, repeated_work) =
@@ -15,8 +15,7 @@ fn repeated_atomic_reduction_does_not_rebuild_its_selected_facts() {
             assert_eq!(first.0.pure_facts(), again.0.pure_facts());
             assert!(
                 first
-                    .0
-                    .proves_atomic_for_derivation_with_id(&goal, true)
+                    .0.selected_for_test().proves_atomic_for_derivation_with_id(&goal, true)
                     .0
                     .is_some()
             );
@@ -89,18 +88,18 @@ fn repeated_unsigned_and_integer_reductions_reuse_selected_evidence() {
                     arguments: vec![argument.clone()],
                 });
             }
-            let (evidence, id) = context.proves_atomic_for_derivation_with_id(&goal, true);
+            let (evidence, id) = context.selected_for_test().proves_atomic_for_derivation_with_id(&goal, true);
             let evidence = evidence
                 .unwrap_or_else(|| panic!("scalar case {case} must have a valid selected proof"));
-            with_simp_atomic_reduction_cache(|| {
-                let first = reduce_simp_atomic_premises(
+            with_solve_atomic_reduction_cache(|| {
+                let first = reduce_solve_atomic_premises(
                     &goal,
                     true,
                     (context.clone(), id, evidence.clone()),
                 )
                 .unwrap();
                 let (again, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    reduce_simp_atomic_premises(
+                    reduce_solve_atomic_premises(
                         &goal,
                         true,
                         (context.clone(), id, evidence.clone()),
@@ -121,7 +120,7 @@ fn repeated_unsigned_and_integer_reductions_reuse_selected_evidence() {
                     PropositionDerivationRule::ContextualAtomic {
                         premises,
                         premises_id: again.1,
-                        for_simp: true,
+                        extended_rules: true,
                         evidence: again.2,
                     },
                 );

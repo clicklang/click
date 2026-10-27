@@ -22,7 +22,7 @@ impl PureFactContext {
             return None;
         };
         let pinned = |term: &Bitvector32Term| {
-            if simp_reasoning_interrupted() {
+            if solve_reasoning_interrupted() {
                 return None;
             }
             if let Some(value) = signed_bitvector_constant(term) {
@@ -314,7 +314,7 @@ impl PureFactContext {
     }
 
     fn decide_unrecorded(&self, condition: &ConditionTerm) -> Option<bool> {
-        if simp_reasoning_interrupted() {
+        if solve_reasoning_interrupted() {
             return None;
         }
         // The difference graph is read first: what it decides follows from

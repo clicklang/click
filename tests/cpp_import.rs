@@ -1473,7 +1473,7 @@ fn declared_macro_definitions_keep_expansion_locations_and_locks_offline() {
 
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
-fn reference_result_claim_and_simp_expansion_preserve_address_and_value_spelling() {
+fn reference_result_claim_and_solve_expansion_preserve_address_and_value_spelling() {
     let project = Project::with_fixture(
         "reference.cpp",
         "probe",

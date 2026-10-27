@@ -580,7 +580,7 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
-    /// Runs the migrated `simp` search inside the nested proof and retains
+    /// Runs the migrated `solve` search inside the nested proof and retains
     /// the accepted descendant directly.
     /// Whether execution inside the scope reached function exit.
     pub(in crate::surface::proof) fn is_at_function_exit(&self) -> bool {
@@ -630,8 +630,8 @@ impl<'a> ProofScope<'a> {
         Some(next)
     }
 
-    pub(in crate::surface::proof) fn try_simp_closure(&self) -> Result<Option<Self>, ClickError> {
-        let Some(mut body) = self.body.try_simp_closure()? else {
+    pub(in crate::surface::proof) fn try_solve_closure(&self) -> Result<Option<Self>, ClickError> {
+        let Some(mut body) = self.body.try_solve_closure()? else {
             return Ok(None);
         };
         // At an outcome or in a pure proof a bare assumption may cite an ambient
@@ -647,7 +647,7 @@ impl<'a> ProofScope<'a> {
             && matches!(body.node.step.as_deref(), Some(ProofStep::Assumption))
             && !mid_execution
             && self.loop_entry_goal.is_none()
-            && let Some(checkable) = self.body.try_simp_closure_after_direct(true)?
+            && let Some(checkable) = self.body.try_solve_closure_after_direct(true)?
         {
             body = checkable;
         }
@@ -669,11 +669,11 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
-    /// `auto` on a stated fact: it executes no C, so it is `simp`.
+    /// `auto` on a stated fact: it executes no C, so it is `solve`.
     pub(in crate::surface::proof) fn try_auto_fact_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        self.try_simp_closure()
+        self.try_solve_closure()
     }
 
     /// Selected-premise arithmetic without operation identities, for the bounds and
@@ -700,23 +700,23 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
-    pub(in crate::surface::proof) fn try_restricted_simp_closure(
+    pub(in crate::surface::proof) fn try_restricted_solve_closure(
         &self,
         surfaces: &[ClickProposition],
     ) -> Option<Self> {
-        let body = self.body.try_restricted_simp_closure(surfaces)?;
+        let body = self.body.try_restricted_solve_closure(surfaces)?;
         let mut next = self.clone();
         next.body = body;
         Some(next)
     }
 
-    pub(in crate::surface::proof) fn try_simp_closure_with_surfaces(
+    pub(in crate::surface::proof) fn try_solve_closure_with_surfaces(
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
         let Some(body) = self
             .body
-            .try_simp_closure_with_surfaces(introduced_surfaces)?
+            .try_solve_closure_with_surfaces(introduced_surfaces)?
         else {
             return Ok(None);
         };
@@ -938,7 +938,7 @@ impl<'a> ProofScope<'a> {
                     // A `have` inside a proposition scope (under `intro`, or
                     // a nested `have`) is spelled for the premise lookups
                     // later steps of that scope make, exactly as one at the
-                    // scope's outcome or frontier is: a later `simp` can then
+                    // scope's outcome or frontier is: a later `solve` can then
                     // cite it by its written form. The spelling is an index
                     // entry, not authority; a lookup still requires the kernel
                     // fact to be present.

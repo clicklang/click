@@ -6,7 +6,7 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
-fn simp_retains_recorded_equality_edges_instead_of_connected_aliases() {
+fn solve_retains_recorded_equality_edges_instead_of_connected_aliases() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64, 128] {
         let term = |index| Bitvector32Term::Variable(Variable(9_320_000 + index));
@@ -31,7 +31,7 @@ fn simp_retains_recorded_equality_edges_instead_of_connected_aliases() {
             context = context.assume_proposition(equality(1, 10 + index as u64));
         }
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_simp_proposition(&goal).unwrap()
+            context.derive_solve_proposition(&goal).unwrap()
         });
         let premises = derivation.context_premises();
         assert_eq!(premises.len(), 2, "count {count}");
@@ -47,10 +47,10 @@ fn simp_retains_recorded_equality_edges_instead_of_connected_aliases() {
     }
 }
 
-// Connected pointer aliases used to make simp spell every historical
+// Connected pointer aliases used to make solve spell every historical
 // premise even though the checked equality uses just these two links.
 #[test]
-fn simp_reduces_connected_pointer_premises_before_spelling() {
+fn solve_reduces_connected_pointer_premises_before_spelling() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64, 128] {
         let pointer = |index| Pointer::symbolic(Variable(index));
@@ -69,10 +69,10 @@ fn simp_reduces_connected_pointer_premises_before_spelling() {
             context =
                 context.assume_proposition(equality(middle.clone(), pointer(10 + index as u64)));
         }
-        let (evidence, id) = context.proves_atomic_for_derivation_with_id(&goal, true);
+        let (evidence, id) = context.selected_for_test().proves_atomic_for_derivation_with_id(&goal, true);
         let evidence = evidence.expect("the alias chain proves the goal");
         let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
-            reduce_simp_atomic_premises(&goal, true, (context, id, evidence)).unwrap()
+            reduce_solve_atomic_premises(&goal, true, (context, id, evidence)).unwrap()
         });
         let (reduced, id, evidence) = selected;
         let premises = RetainedPremises::from_context(&reduced);
@@ -84,7 +84,7 @@ fn simp_reduces_connected_pointer_premises_before_spelling() {
             PropositionDerivationRule::ContextualAtomic {
                 premises,
                 premises_id: id,
-                for_simp: true,
+                extended_rules: true,
                 evidence,
             },
         );
@@ -104,7 +104,7 @@ fn simp_reduces_connected_pointer_premises_before_spelling() {
 }
 
 #[test]
-fn simp_retains_recorded_load_address_equality_premises() {
+fn solve_retains_recorded_load_address_equality_premises() {
     let mut samples = Vec::new();
     for count in [8u64, 16, 32, 64, 128] {
         let term = |index: u64| Bitvector32Term::Variable(Variable(9_330_000 + index));
@@ -142,7 +142,7 @@ fn simp_retains_recorded_load_address_equality_premises() {
         }
         let goal = equality(indexed, first);
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_simp_proposition(&goal).unwrap()
+            context.derive_solve_proposition(&goal).unwrap()
         });
         assert!(derivation.load_address_congruence_paths().is_some());
         assert_eq!(derivation.context_premises(), vec![required.clone()]);
@@ -189,7 +189,7 @@ fn native_view_prefix_retains_only_its_order_path() {
                 context.assume_proposition(le(n.clone(), Bitvector32Term::UInt64Constant(bound)));
         }
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_simp_atomic_proposition(&goal).unwrap()
+            context.derive_solve_atomic_proposition(&goal).unwrap()
         });
         let premises = derivation.context_premises();
         assert_eq!(premises.len(), 3);
@@ -206,7 +206,7 @@ fn native_view_prefix_retains_only_its_order_path() {
 }
 
 #[test]
-fn simp_retains_common_base_pointer_equality_for_load_congruence() {
+fn solve_retains_common_base_pointer_equality_for_load_congruence() {
     let mut samples = Vec::new();
     for count in [8u64, 16, 32, 64, 128] {
         let pointer = |index| Pointer {
@@ -246,7 +246,7 @@ fn simp_retains_common_base_pointer_equality_for_load_congruence() {
             true,
         );
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_simp_proposition(&goal).unwrap()
+            context.derive_solve_proposition(&goal).unwrap()
         });
         assert!(derivation.load_address_congruence_paths().is_some());
         assert_eq!(derivation.context_premises(), vec![required.clone()]);

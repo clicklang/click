@@ -1137,7 +1137,7 @@ fn implicitly_closed_population_entry_completes_without_a_body_rerun() {
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
     verify_c0_sources(click_source, &[("inspect_counts.c", c_source)])
-        .expect("populations closed by the outcome simp should verify");
+        .expect("populations closed by the outcome solve should verify");
     assert_eq!(
         crate::kernel::take_checked_function_body_execution_count(),
         0,
@@ -1422,12 +1422,12 @@ fn grouped_calls_keep_contract_transitions_on_proof() {
 
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
-fn outcome_simp_spells_a_call_postcondition_across_two_snapshots() {
+fn outcome_solve_spells_a_call_postcondition_across_two_snapshots() {
     // `touch` may write both fields and certifies `p->x == old(p->x)`: after
     // each call the caller's `p->x` is a fresh cell related to its previous
     // value only by that certified fact, and no single frontier position
     // denotes both operands. Two calls make the caller's outcome a chain of
-    // two such facts, so the outcome `simp` must cite them as premises,
+    // two such facts, so the outcome `solve` must cite them as premises,
     // spelled with one anchor per operand, and close through the checked
     // linear search, never the planner.
     let touch_source = r#"
@@ -2266,7 +2266,7 @@ fn ordinary_verification_stops_at_the_tactic_work_budget() {
         "the interrupted tactic should be named"
     );
     assert!(
-        !started.contains(&"simp"),
+        !started.contains(&"solve"),
         "later tactics must not start after an exhausted budget: {started:?}"
     );
 }
@@ -2294,7 +2294,7 @@ fn verifies_omitted_proof_with_default_prover() {
 }
 
 #[test]
-fn simp_rejects_loop_backed_claims() {
+fn solve_rejects_loop_backed_claims() {
     let c_source = r#"
             int32 count_to_three() {
                 int32 i;
@@ -2314,7 +2314,7 @@ fn simp_rejects_loop_backed_claims() {
         "#;
 
     let error = verify_c0_sources(click_source, &[("count_to_three.c", c_source)])
-        .expect_err("simp should not run loop verification");
+        .expect_err("solve should not run loop verification");
 
     assert!(
         error

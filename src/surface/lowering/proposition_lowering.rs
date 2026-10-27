@@ -163,13 +163,13 @@ pub(in crate::surface) fn spec_range_membership_proposition(
 pub(in crate::surface) fn promoted_int32_term(value: &CValue) -> Option<Bitvector32Term> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Int8(bits) => Some(simp_bitvector(bits)),
+        CValue::Int8(bits) => Some(normalize_bitvector(bits)),
         CValue::Bool(bits)
         | CValue::Int16(bits)
         | CValue::Int32(bits)
         | CValue::UInt8(bits)
         | CValue::UInt16(bits)
-        | CValue::UInt32(bits) => Some(simp_bitvector(bits)),
+        | CValue::UInt32(bits) => Some(normalize_bitvector(bits)),
         CValue::Int128(_)
         | CValue::UInt128(_)
         | CValue::Void

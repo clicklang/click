@@ -916,7 +916,7 @@ impl PureFactContext {
     /// chain `left` up to `right`. Each step keeps the proposition the context holds, as
     /// [`Self::exact_signed_order_path_evidence`] does for `int32`. The chain
     /// meets `right` at the same canonical term; a constant connection is
-    /// left to other rules, since `simp` writes no lemma for it.
+    /// left to other rules, since `solve` writes no lemma for it.
     pub(in crate::kernel) fn exact_wide_order_path_evidence(
         &self,
         left: &Bitvector32Term,
@@ -2647,7 +2647,10 @@ mod slice_index_tests {
             Bitvector32Term::Constant(0),
             Bitvector32Term::uint32_from_64(value),
         );
-        assert_eq!(context.decide_condition_for_simp(&goal), Some(true));
+        assert_eq!(
+            context.selected_for_test().decide_selected_condition(&goal),
+            Some(true)
+        );
     }
 
     #[cfg(test)]
@@ -2720,7 +2723,7 @@ mod exact_order_path_tests {
         right: &Bitvector32Term,
         require_strict: bool,
     ) -> bool {
-        let order_facts = context.condition_order_facts();
+        let order_facts = context.selected_for_test().condition_order_facts();
         let mut stack = vec![(left.clone(), false)];
         let mut seen = BTreeSet::new();
         while let Some((current, strict_so_far)) = stack.pop() {

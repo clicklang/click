@@ -41,7 +41,7 @@ removed, so it has to stay small.
 | Simple tactics | Apply one checked step to a persistent proof state | fast | `src/kernel/proof/object.rs`, `src/surface/proof/proof_object/`, `src/surface/proof/checked_drivers/` |
 | Certificates | Check explicit arithmetic certificates and contract claims | fast | `src/kernel/proof/{integer_arithmetic,signed_arithmetic,arithmetic_special}.rs`, `src/surface/proof_certificate.rs` |
 | Termination | Plan recursion heights over the call graph, then check them | fast | `src/kernel/termination.rs` |
-| Smart tactics | `solve`, `step_until`, the implicit tail and its closer | slow | `src/surface/checking/{arithmetic_engine,simp,simplex}.rs`, `src/surface/proof/{smart_closures,smart_execution,selected_arithmetic}.rs` |
+| Smart tactics | `solve`, `step_until`, the implicit tail and its closer | slow | `src/surface/checking/{arithmetic_engine,simplex}.rs`, `src/surface/proof/{smart_closures,smart_execution,selected_arithmetic}.rs` |
 | Search helpers | Fill an elided premise, fact, resource instance, or guard | slow | `src/surface/planning/proposition_search.rs`, `src/surface/proof/fixed_state_proofs/` |
 | Expansion and printing | Write a slow-part result as fast-part tactics, and print source | tools | `src/surface/expansion.rs`, `src/surface/printing.rs` |
 | Tools and budgets | `profile`, `audit`, traces, work accounting, and budgets | tools | `src/bin/`, `src/instrumentation.rs` |
@@ -103,14 +103,17 @@ Failure diagnostics have separate views; they do not grant search access.
 Every Cargo build runs `build_support/search_boundary.rs`. It follows Rust
 module declarations, skips test-only modules, and rejects kernel dependencies
 on Surface code. It also pins the functions and reference counts allowed to
-use diagnostic views and `scan_for_legacy_simp`. That transitional API serves
-the existing shared simp/certificate routines; it is not permission to add
-ambient scans. `tests/search_boundary.rs` checks rejected dependencies,
-aliases, method references, macro tokens, extra scans, and capability privacy.
+use diagnostic views. `SelectedFacts` separates atomic reasoning from the
+ambient fact store: checking constructs it from an explicit proposition list;
+planning may reuse a persistent context through `for_search`, which requires
+`SearchPermission`. The type has no mutable dereference or unchecked context
+constructor. Retained certificate leaves construct it from their named premises.
+Normalization lives in `surface/checking/normalization.rs`.
+`tests/search_boundary.rs` checks rejected dependencies, aliases, method
+references, macro tokens, extra diagnostic scans, and capability privacy.
 
 This is an incremental boundary, not a proof of complexity or a complete Rust
-dependency resolver. Mixed simp/certificate APIs still need an explicit-premise
-representation; upkeep APIs and ordinary collections still need auditing.
+dependency resolver. Upkeep APIs and ordinary collections still need auditing.
 Do not evade the boundary by relabelling a scan as upkeep, adding a re-export,
 or widening an allowance. Review any boundary change with the same design
 check as the reasoning it permits. Scaling tests remain necessary for indexed
