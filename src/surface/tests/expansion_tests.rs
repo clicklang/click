@@ -1120,7 +1120,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
         click_source,
         &sources,
         "read_terminator",
-        CProofClaim::Grouped,
+        CProofClaim::Ensure(0),
     )
     .expect("the source-identity retry should expand into source");
     assert!(
@@ -1645,12 +1645,19 @@ fn ranked_loops_with_no_invariant_expand_and_reverify() {
 #[test]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn multidimensional_array_field_expands_with_every_subscript() {
-    let anchor = "ensures p->words[1][1] == value by ";
-    let expanded = expand_mdtest_site_and_reverify(
-        "mdtests/struct_wide_integer_arrays.md",
-        anchor,
-        anchor.len(),
-    );
+    let (click_source, c_sources) = mdtest_sources("mdtests/struct_wide_integer_arrays.md");
+    let c_sources = c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&click_source, &c_sources)
+        .expect("the original wide-array proof should verify");
+    // Both postconditions belong to the omitted grouped proof.
+    let expanded = expand_checked_grouped_claim(&click_source, &verified, "update")
+        .expect("the wide-array grouped proof should expand");
+    assert_ne!(expanded, click_source);
+    verify_c0_sources(&expanded, &c_sources)
+        .expect("the expanded wide-array proof should re-verify");
     assert!(
         expanded.contains("have p->words[1][1] == value by {"),
         "{expanded}"
