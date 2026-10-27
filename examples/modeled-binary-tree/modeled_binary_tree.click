@@ -441,7 +441,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
     owns t: tree_at(root);
     decreases t;
     ensures t.model == old(t.model);
-    ensures result == heap_member(old(t.model), target);
+    ensures result == heap_member(old(t.model), target) as int32;
 } by {
     match t.model {
         HeapTree::Empty => {
@@ -478,22 +478,22 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                 let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
                 solve();
             } else {}
-            have heap_member(left_model, target) == 0 by {
+            have not heap_member(left_model, target) by {
                 solve() using {
                     found_left == 0;
-                    found_left == heap_member(left_model, target);
+                    found_left == heap_member(left_model, target) as int32;
                 };
             }
             let { result: found_right } = step(tree_contains, { t: r });
             step();
             let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
-            have result == heap_member(old(t.model), target) by {
+            have result == heap_member(old(t.model), target) as int32 by {
                 rewrite(old(t.model)
                     == HeapTree::Node(node, value, left_model, right_model));
                 unfold(heap_member(
                     HeapTree::Node(node, value, left_model, right_model), target));
                 rewrite(heap_member(left_model, target) == false);
-                rewrite(result == heap_member(right_model, target));
+                rewrite(result == heap_member(right_model, target) as int32);
                 normalize() using { not(address(node) == address(target)); };
             }
             solve();

@@ -27,7 +27,7 @@ int forwards_range(bool b) { return in_range(b); }
 verifying "bool_parameter.c";
 
 int32 present(bool flag) {
-    ensures result == flag;
+    ensures result == flag as int32;
 }
 
 int32 in_range(bool flag) {
@@ -39,7 +39,7 @@ int32 in_range_reversed(bool flag) {
 }
 
 int32 auto_equal(bool flag) {
-    ensures result == flag;
+    ensures result == flag as int32;
 }
 
 int32 auto_range(bool flag) {
@@ -47,7 +47,7 @@ int32 auto_range(bool flag) {
 }
 
 int32 forwards(bool b) {
-    ensures result == b;
+    ensures result == b as int32;
 }
 
 int32 converts() {

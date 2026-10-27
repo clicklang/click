@@ -658,6 +658,20 @@ Progress:
   runs of one binary. Kernel tests are in `src/kernel/assumptions/bool_sort_tests.rs`,
   with scaling regressions at 4, 8, 16 and 32 for nested conditionals and
   equality chains.
+- Specification `Bool` (2026-10-27). Click writes the type `Bool`; a
+  lowercase `bool` in a Click position is an error, and a C, C++ or Rust
+  head keeps its language's spelling. A `-> Bool` application, a `Bool`
+  binder, a `Bool` conditional and a `Bool` equality lower to the kernel
+  sort, carried in a `CValue::Bool` as their cast to `uint8` (rule C1,
+  brought forward from the conversions step, with its e-graph link). C and
+  C++ `bool` values are still words and reach `Bool` by `w != 0`. Decision
+  D2's refusals apply: a `Bool` compared with an integer, ordered, used in
+  arithmetic or joined with an integer arm is an error suggesting
+  `b as int32` or `true`/`false`. The spec-bool helpers (`spec_bool_value`
+  and its `0 == term` spelling, the complement equation and the C zero-test
+  rewrites) are gone. Generics at `Bool` need no new form, since the cast
+  is an ordinary `CValue`. Fifteen claims were rewritten (`b as int32`, or
+  `true`/`false` arms); no C, C++ or Rust source changed.
 
 ## Risks
 

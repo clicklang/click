@@ -30,7 +30,7 @@ int f(void) {
 verifying "freed_bool_argument.c";
 
 int present(bool flag) {
-    ensures result == flag;
+    ensures result == flag as int32;
 }
 
 int f() {

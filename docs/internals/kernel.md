@@ -746,9 +746,10 @@ the widths a rule supports; it asks the module
 | Narrow-cast word (K7) | `representation::narrow_carrier_mask`; the e-graph's `narrow_cast_node` | the word of `Cast(S -> F, x)` into an 8- or 16-bit `F` is `w & m`, or `((w & m) ^ s) - s` for a signed `F`, with `w` the operand's word or low word |
 | `Bool` conditional (L-If) | `ConditionTerm::open_bool_if`; `PureFactContext::decide_bool_value` | `if c { a } else { b }` holds exactly when `(c and a) or (not c and b)`; opened only when the conditional itself is decided or split |
 | `Bool` equality (L-Eq) | the e-graph's `bool_node`, `admit_bool_condition`, `knows_bool_condition` | a true `a == b` merges the classes of `a` and `b`, which share their truth; a false one contradicts the merge; applications of one function to equal arguments are one class |
-| `Bool` unfolding (L-Unfold) | `ConditionTerm::bool_unfold_equation` | unfolding a `-> Bool` function's application files `application == body` |
+| `Bool` unfolding (L-Unfold) | `ConditionTerm::bool_unfold_equation`; `unfold` lowers `f(args) == body` to `BoolEqual` | unfolding a `-> Bool` function's application files `application == body` |
+| `Bool` to integer (C1) | `Bitvector32Term::BoolCast`, `bool_cast`; the e-graph's `link_bool_cast`, `cast_value_truth`, `cast_disequality_truth` | `b as F` is 1 when `b` holds and 0 otherwise: a decided `b` merges the cast's class with that constant, the constant 1 or 0 decides `b`, any other constant is a contradiction, a cast unequal to 0 or to 1 decides `b`, and two casts in one class have equal `Bool`s |
 
-The last three rows are the logic of Click `Bool` (Stage 5 of
+The last four rows are the logic of Click `Bool` (Stage 5 of
 `design/machine-integers.md`, decision of 2026-10-26), which is the
 condition sort: a `Bool` term is a `ConditionTerm`. Besides the literals
 (`Constant`), binders (`Variable`) and comparisons it has four value forms
@@ -764,8 +765,19 @@ of the conditional's head on its three classes; the condition node
 class), so each subterm is interned once and a merge moves truth in
 constant work. A binder's facts are kept by binder (`bool_binder_truth`)
 until a `Bool` value interns it, so the answer does not depend on which
-fact was filed first. Nothing outside the kernel's tests builds the four
-forms yet.
+fact was filed first. The specification lowers `-> Bool` applications to
+`BoolApplication`, `Bool` binders to `Variable`, `Bool` conditionals to
+`BoolIf` and `Bool` equalities to `BoolEqual`; no front end builds
+`BoolLoad` yet. A specification `Bool` travels in a `CValue::Bool` as its
+cast to `uint8`, `BoolCast { to: UInt8, value }`, the byte a `bool` cell
+holds, and its truth is `value`
+(`ConditionTerm::truth_of_bool_word`). A C or C++ `bool` value is still a
+word in this stage and reaches `Bool` by `w != 0`. A `Bool` binder
+instantiated with a word takes that word's truth (substitution of a
+condition variable). A `Bool` equality fact is filed under both operands
+(`PureFactContext::bool_equation_partners`), so a decided operand decides
+the other (L-Eq) in one lookup. Soundness of C1: `b` is two-valued, so its
+cast takes exactly the values 1 and 0, which lie in every format.
 
 Rule K7 (decision of 2026-10-26, `design/machine-integers.md`). For `F` of
 `b` = 8 or 16 bits, `m = 2^b - 1`, `s = 2^(b-1)`, and `S` of at most 64
