@@ -328,6 +328,17 @@ for a miss and 28 for a hit beside 8/32/128 unrelated facts, and checks
 reversed order, both truth values and withdrawal. This fixes candidate
 generation in the indexed path; the general fallback below it remains.
 
+Unsigned 32-bit orders now have their own condition-match key family and
+use the same atom-query index. They previously scanned every condition fact
+even for plain variables. At 8/32/128 unrelated facts, the
+`unsigned_memory_condition_matches_ignore_unrelated_facts` regression's
+miss cost 46/166/646 units and its true hit cost 56/176/656; both truth
+values now cost 17 units for a miss and 28 for a hit at every size.
+The two-alias-class regression covers both signed and unsigned orders with
+the same linear measurements above. Compound unsigned facts retain their
+own open-fact bucket; signed facts cannot satisfy unsigned order queries,
+and withdrawing a fact removes it from both indexes.
+
 **Fixed: the exact check is exact.** Measured across the gate, the
 condition scan `settles_exactly` fell into (`proves_condition_from_facts`)
 ran 18,636 times in fast code and found a fact 27 times, none of which a
@@ -939,6 +950,8 @@ whole suite (counted 2026-10-26):
   spelling of 32-bit equality, also use direct lookups when operands match.
   Atom queries select existing keys through the shared side index rather
   than multiplying both operands' alias classes.
+  This indexed atom route includes unsigned 32-bit orders, in a separate
+  family from signed orders, with their own compound-fact fallback bucket.
   The remaining non-exact 32-bit and offset matches include loaded variables,
   sums, applications and scalar spellings tied to 64-bit facts; those still
   need complete keys for memory equivalence.
