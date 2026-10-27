@@ -15,7 +15,9 @@ fn repeated_atomic_reduction_does_not_rebuild_its_selected_facts() {
             assert_eq!(first.0.pure_facts(), again.0.pure_facts());
             assert!(
                 first
-                    .0.selected_for_test().proves_atomic_for_derivation_with_id(&goal, true)
+                    .0
+                    .selected_for_test()
+                    .proves_atomic_for_derivation_with_id(&goal, true)
                     .0
                     .is_some()
             );
@@ -88,7 +90,9 @@ fn repeated_unsigned_and_integer_reductions_reuse_selected_evidence() {
                     arguments: vec![argument.clone()],
                 });
             }
-            let (evidence, id) = context.selected_for_test().proves_atomic_for_derivation_with_id(&goal, true);
+            let (evidence, id) = context
+                .selected_for_test()
+                .proves_atomic_for_derivation_with_id(&goal, true);
             let evidence = evidence
                 .unwrap_or_else(|| panic!("scalar case {case} must have a valid selected proof"));
             with_solve_atomic_reduction_cache(|| {

@@ -169,18 +169,43 @@ fn uint64_slice_remainder_bounds_ignore_unrelated_facts() {
             true,
         );
         let (_, used) = crate::instrumentation::measure_deterministic_work(|| {
-            assert_eq!(context.selected_for_test().decide_selected_condition(&positive), Some(true));
-            assert_eq!(context.selected_for_test().decide_selected_condition(&bounded), Some(true));
+            assert_eq!(
+                context
+                    .selected_for_test()
+                    .decide_selected_condition(&positive),
+                Some(true)
+            );
+            assert_eq!(
+                context
+                    .selected_for_test()
+                    .decide_selected_condition(&bounded),
+                Some(true)
+            );
         });
         work.push(used);
     }
     assert!(work.iter().all(|used| *used == work[0]), "{work:?}");
     let unbounded = PureFactContext::new();
-    assert_ne!(unbounded.selected_for_test().decide_selected_condition(&positive), Some(true));
-    assert_ne!(unbounded.selected_for_test().decide_selected_condition(&bounded), Some(true));
+    assert_ne!(
+        unbounded
+            .selected_for_test()
+            .decide_selected_condition(&positive),
+        Some(true)
+    );
+    assert_ne!(
+        unbounded
+            .selected_for_test()
+            .decide_selected_condition(&bounded),
+        Some(true)
+    );
     let underflow = PureFactContext::new()
         .assume_condition(ConditionTerm::uint64_greater_than(midpoint, length), true);
-    assert_ne!(underflow.selected_for_test().decide_selected_condition(&bounded), Some(true));
+    assert_ne!(
+        underflow
+            .selected_for_test()
+            .decide_selected_condition(&bounded),
+        Some(true)
+    );
 }
 
 #[test]

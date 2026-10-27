@@ -69,7 +69,9 @@ fn solve_reduces_connected_pointer_premises_before_spelling() {
             context =
                 context.assume_proposition(equality(middle.clone(), pointer(10 + index as u64)));
         }
-        let (evidence, id) = context.selected_for_test().proves_atomic_for_derivation_with_id(&goal, true);
+        let (evidence, id) = context
+            .selected_for_test()
+            .proves_atomic_for_derivation_with_id(&goal, true);
         let evidence = evidence.expect("the alias chain proves the goal");
         let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
             reduce_solve_atomic_premises(&goal, true, (context, id, evidence)).unwrap()
