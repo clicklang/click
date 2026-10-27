@@ -14,25 +14,16 @@ fn test_only(attrs: &[syn::Attribute]) -> bool {
 // Failure diagnostics have narrowly reviewed entry points.
 fn allowance(path: &str, function: &str, name: &str) -> usize {
     match (path, function, name) {
-        (
-            "src/kernel/assumptions.rs",
-            "diagnostic_condition_fact_pairs",
-            "diagnostic_condition_fact_pairs",
-        ) => 1,
-        (
-            "src/kernel/assumptions.rs",
-            "diagnostic_proposition_facts",
-            "diagnostic_proposition_facts",
-        ) => 1,
+        ("src/kernel/assumptions.rs", "diagnostic_fact_sample", "diagnostic_fact_sample") => 1,
         (
             "src/kernel/api/contract_certification/contract_claims.rs",
             "unproved_contract_path_condition",
-            "diagnostic_condition_fact_pairs" | "diagnostic_proposition_facts",
+            "diagnostic_fact_sample",
         ) => 1,
         (
             "src/surface/proof/fixed_state_proofs/conversion_conditions.rs",
             "consulted_premises",
-            "diagnostic_condition_fact_pairs" | "diagnostic_proposition_facts",
+            "diagnostic_fact_sample",
         ) => 1,
         _ => 0,
     }
@@ -53,10 +44,7 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
-        if matches!(
-            name,
-            "diagnostic_condition_fact_pairs" | "diagnostic_proposition_facts"
-        ) {
+        if matches!(name, "diagnostic_fact_sample") {
             *self
                 .counts
                 .entry((self.function.clone(), name.into()))

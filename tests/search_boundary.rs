@@ -10,10 +10,9 @@ fn checking_rejects_planner_dependencies_and_enumeration_escape_hatches() {
         "fn check() { crate::surface::hidden!(); }",
         "fn check() { include!(\"hidden.rs\"); }",
         "fn check() { crate::surface::planning::search(); }",
-        "fn check(c: C) { c.diagnostic_condition_fact_pairs(); }",
-        "fn check(c: C) { c.diagnostic_proposition_facts(); }",
-        "fn check(c: C) { let f = C::diagnostic_condition_fact_pairs; f(c); }",
-        "fn check(c: C) { invoke!(c.r#diagnostic_condition_fact_pairs()); }",
+        "fn check(c: C) { c.diagnostic_fact_sample(12, 0); }",
+        "fn check(c: C) { let f = C::diagnostic_fact_sample; f(c); }",
+        "fn check(c: C) { invoke!(c.r#diagnostic_fact_sample()); }",
         "macro_rules! hidden { () => { crate::surface::planning::search() } }",
     ] {
         assert!(
@@ -26,10 +25,10 @@ fn checking_rejects_planner_dependencies_and_enumeration_escape_hatches() {
 #[test]
 fn checking_accepts_indexed_and_explicit_input_work_and_test_dependencies() {
     let source = r#"
-        // surface::planning and diagnostic_condition_fact_pairs are comments, not code.
+        // surface::planning and diagnostic_fact_sample are comments, not code.
         fn check(c: C) {
             let surface = 1;
-            let message = "diagnostic_condition_fact_pairs";
+            let message = "diagnostic_fact_sample";
             c.get(&surface);
             c.scan_explicit_input();
         }

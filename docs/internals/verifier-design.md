@@ -98,12 +98,15 @@ the "Fast-part scans" section of [the smart-tactics roadmap item](https://github
 condition, proposition and disjunction views require it. Checking can use
 indexed queries and explicit inputs without that capability. The smart
 closer's disjunction adapter keeps capability construction inside planning.
-Failure diagnostics have separate views; they do not grant search access.
+Failure diagnostics receive a bounded sample (at most 32 facts) and a total
+count; they cannot obtain an ambient iterator. Loadability witness enumeration
+requires planner permission and charges every visited fact. Loadability
+diagnostics use the block-keyed candidate index.
 
 Every Cargo build runs `build_support/search_boundary.rs`. It follows Rust
 module declarations, skips test-only modules, and rejects kernel dependencies
 on Surface code. It also pins the functions and reference counts allowed to
-use diagnostic views. `SelectedFacts` separates atomic reasoning from the
+use the diagnostic sampler. `SelectedFacts` separates atomic reasoning from the
 ambient fact store: checking constructs it from an explicit proposition list;
 planning may reuse a persistent context through `for_search`, which requires
 `SearchPermission`. The type has no mutable dereference or unchecked context

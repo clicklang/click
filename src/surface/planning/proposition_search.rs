@@ -1234,7 +1234,7 @@ impl PropositionSearch for PureFactContext {
             return None;
         }
         let mut variables = BTreeSet::new();
-        for fact in self.memory_loadable_fact_propositions() {
+        for fact in self.memory_loadable_fact_propositions(SearchPermission::new()) {
             {
                 collect_proposition_bitvector_variables(fact, &mut variables);
             }
@@ -2469,4 +2469,10 @@ mod atomic_reduction_tests {
             "../../scaling_tests/surface/planning/proposition_search/atomic_reduction_tests.rs"
         );
     }
+}
+
+#[cfg(test)]
+mod loadability_view_scaling_tests {
+    use super::*;
+    include!("../../scaling_tests/surface/planning/proposition_search/loadability_view_tests.rs");
 }

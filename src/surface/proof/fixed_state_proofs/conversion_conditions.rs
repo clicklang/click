@@ -447,21 +447,17 @@ fn consulted_premises(
     site: &StatedSite<'_>,
     labels: &mut render::SnapshotLabels,
 ) -> (Vec<String>, usize) {
-    let mut total = 0;
-    let mut shown = Vec::new();
-    let conditions = assumptions
-        .diagnostic_condition_fact_pairs()
-        .map(|(condition, value)| Proposition::ConditionIs(condition.clone(), value));
-    for premise in conditions.chain(assumptions.diagnostic_proposition_facts().cloned()) {
-        total += 1;
-        if shown.len() < PREMISE_LIMIT {
+    let (premises, total) = assumptions.diagnostic_fact_sample(PREMISE_LIMIT, 0);
+    let shown = premises
+        .into_iter()
+        .map(|premise| {
             let spelled = site.spell_proposition(&premise).map_or_else(
                 || render::render_proposition_labeled(&premise, labels),
                 |surface| crate::surface::diagnostics::describe_click_proposition(&surface),
             );
-            shown.push(format!("`{spelled}`"));
-        }
-    }
+            format!("`{spelled}`")
+        })
+        .collect();
     (shown, total)
 }
 
@@ -484,7 +480,7 @@ fn loadability_explanation(
     // the reader believes covers the cell, and the one the kernel wants index
     // bounds for.
     let covering = assumptions
-        .memory_loadable_fact_propositions()
+        .memory_loadable_candidates(&base.block)
         .find(|fact| match fact {
             Proposition::CMemoryLoadable {
                 base: range_base,

@@ -5678,7 +5678,7 @@ impl PureFactContext {
     }
 
     /// The loadable facts whose base is in `block`, charged one unit each.
-    pub(in crate::kernel) fn memory_loadable_candidates(
+    pub(crate) fn memory_loadable_candidates(
         &self,
         block: &PointerBlock,
     ) -> impl Iterator<Item = &Proposition> {
@@ -7808,18 +7808,34 @@ impl PureFactContext {
         self.prop_facts.scan_for_search(&permission)
     }
 
-    /// Full context only for failure diagnostics, not proof selection.
-    pub(crate) fn diagnostic_condition_fact_pairs(
+    /// A bounded sample and the total cardinality, in condition-then-proposition
+    /// index order. At most 32 facts are visited or cloned, regardless of the
+    /// requested sizes. Entries shared by the prefix and suffix appear once.
+    pub(crate) fn diagnostic_fact_sample(
         &self,
-    ) -> impl Iterator<Item = (&ConditionTerm, bool)> {
-        self.condition_facts
-            .scan_for_upkeep()
-            .map(|(condition, value)| (condition, *value))
-    }
-
-    /// Full context only for failure diagnostics, not proof selection.
-    pub(crate) fn diagnostic_proposition_facts(&self) -> impl Iterator<Item = &Proposition> {
-        self.prop_facts.scan_for_upkeep()
+        first: usize,
+        last: usize,
+    ) -> (Vec<Proposition>, usize) {
+        let first = first.min(crate::kernel::fact_collections::DIAGNOSTIC_FACT_LIMIT);
+        let last = last.min(crate::kernel::fact_collections::DIAGNOSTIC_FACT_LIMIT - first);
+        let (conditions, propositions) = self.fact_counts();
+        let first_conditions = first.min(conditions);
+        let first_propositions = (first - first_conditions).min(propositions);
+        let last_propositions = last.min(propositions - first_propositions);
+        let last_conditions = (last - last_propositions).min(conditions - first_conditions);
+        let facts = self
+            .condition_facts
+            .diagnostic_sample(first_conditions, last_conditions)
+            .into_iter()
+            .map(|(condition, value)| Proposition::ConditionIs(condition.clone(), *value))
+            .chain(
+                self.prop_facts
+                    .diagnostic_sample(first_propositions, last_propositions)
+                    .into_iter()
+                    .cloned(),
+            )
+            .collect();
+        (facts, conditions + propositions)
     }
 
     /// Answers whether a requirement is already stated in this context.
@@ -7916,11 +7932,16 @@ impl PureFactContext {
         restricted
     }
 
-    /// The loadability facts of this context, in the index's own order.
-    pub fn memory_loadable_fact_propositions(&self) -> impl Iterator<Item = &Proposition> {
+    /// Ambient loadability facts for planner witness selection, charged per visit.
+    /// Diagnostics use the block-keyed candidate view instead.
+    pub(crate) fn memory_loadable_fact_propositions(
+        &self,
+        _permission: crate::SearchPermission,
+    ) -> impl Iterator<Item = &Proposition> {
         self.memory_loadable_facts
             .values()
             .flat_map(|facts| facts.iter())
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
     /// The disjunction facts of this context, in the index's own order, for
@@ -11803,3 +11824,64 @@ fn with_adjusted_member<K: Ord + Clone, V: Ord + Clone>(
 
 mod selected_facts;
 pub(crate) use selected_facts::SelectedFacts;
+
+#[cfg(test)]
+mod diagnostic_sample_tests {
+    use super::*;
+
+    #[test]
+    fn diagnostic_samples_preserve_order_counts_and_overlap_without_unbounded_limits() {
+        for (conditions, propositions) in
+            [(0, 0), (0, 40), (40, 0), (5, 40), (40, 5), (5, 5), (20, 20)]
+        {
+            let mut context = PureFactContext::new();
+            for index in 0..conditions {
+                context = context.assume_condition(
+                    ConditionTerm::signed_less_than(
+                        Bitvector32Term::Variable(Variable(660_000 + index)),
+                        Bitvector32Term::Constant(1000),
+                    ),
+                    true,
+                );
+            }
+            for index in 0..propositions {
+                context = context.assume_proposition(Proposition::Predicate {
+                    name: format!("sample_{index:03}"),
+                    arguments: Vec::new(),
+                });
+            }
+            let all = context.pure_facts();
+            for (first, last) in [
+                (0, 0),
+                (12, 0),
+                (8, 24),
+                (0, 32),
+                (usize::MAX, usize::MAX),
+                (4, usize::MAX),
+            ] {
+                let prefix = first.min(32);
+                let suffix = last.min(32 - prefix);
+                let end = prefix.min(all.len());
+                let start = all.len().saturating_sub(suffix).max(end);
+                let expected: Vec<_> = all[..end]
+                    .iter()
+                    .chain(all[start..].iter())
+                    .cloned()
+                    .collect();
+                let ((sample, count), work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        context.diagnostic_fact_sample(first, last)
+                    });
+                assert_eq!(
+                    sample, expected,
+                    "{conditions}/{propositions}, {first}/{last}"
+                );
+                assert_eq!(count, all.len());
+                assert!(
+                    work <= 32,
+                    "unbounded diagnostic request visited {work} facts"
+                );
+            }
+        }
+    }
+}
