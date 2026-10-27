@@ -230,9 +230,19 @@ unit/API/import/scaling tests and all four fixture aggregates (13m41s,
 report-only ten-minute budget warning). The loaded-pointer fixture passed
 in 0.27 seconds there; the stall is reproduced on the broader migration.
 
-Do not resume migration feature work until the loaded-pointer rewrite stall
-has been reduced and fixed. No nightly suite was run; no new census or
-fact-stability acceptance result is claimed by this checkpoint.
+The loaded-pointer stall was reduced to a same-thread equality-graph deadlock:
+read-definition registration called `last_same_named_cell`, which re-ran the
+stop's effect check and attempted to lock that same graph. Retaining the stop
+reason alongside the existing `(snapshot, address, width)` version memo fixes
+the stall without changing the endpoint or the checked proof. The original
+fixture passed in 0.68 seconds; all 56 focused tracker/fixture tests passed.
+The new regressions check that later graph growth does not reclassify the
+retained decision, and measure 8/16/32/64 new steps plus 0/16/64/256 unrelated
+names. A focused before/after fact-stability audit of the stored-pointer
+fixture passed with zero differences. The isolated full `scripts/check.sh` passed all 6,622 unit/API/import/scaling
+tests and all four fixture aggregates in 15m53s (report-only budget warning;
+a separate migration diagnostic build ran concurrently).
+No nightly suite was run; the full migration acceptance audits remain open.
 
 ### Decision: the free decides its frame from proven separation
 

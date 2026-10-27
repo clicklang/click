@@ -1291,3 +1291,39 @@ fn transport_diagnostic_retains_the_actual_cell_walk_and_scope() {
     });
     assert!(take_transport_cell_walk_diagnostics().is_empty());
 }
+
+#[test]
+fn named_cell_stop_retains_the_decision_made_by_its_walk() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let read = Pointer::symbolic(crate::kernel::Variable(981_201));
+    let write = Pointer::symbolic(crate::kernel::Variable(981_202));
+    let memory = intern_c_memory(CMemory::new().store(write.clone(), one()));
+    let here = ProgramPoint::at(&memory);
+    let named = last_same_named_cell(&read, 4, &here).expect("named cell");
+    assert!(matches!(
+        named.stopped_by.reason,
+        StopReason::NotShownSeparate(_)
+    ));
+
+    // Producer definitions may grow the shared naming graph after the walk.
+    // Reading its retained decision must neither reclassify the stop nor
+    // re-enter that graph, which a read-definition consumer can already hold.
+    naming_context()
+        .equality_graph
+        .add_checked_read_equality(&read, &write);
+    let (retained, work) = crate::instrumentation::measure_deterministic_work(|| {
+        last_same(
+            Resource::Cell {
+                pointer: &read,
+                bytes: 4,
+            },
+            &here,
+        )
+        .expect("retained stop")
+    });
+    assert_eq!(retained, named);
+    assert_eq!(
+        work, 0,
+        "a retained stop runs no equality or history checks"
+    );
+}
