@@ -46,8 +46,9 @@ expansion is not expected to eliminate that semantic output.
 Remaining migration after the capability and build-time boundary described in
 [Verifier design](../docs/internals/verifier-design.md#enforced-search-access):
 
-- Audit upkeep/rebuild APIs and remaining broad views, including lazy
-  difference-graph and contradiction-index rebuilds after exact-fact withdrawal.
+- Audit upkeep/rebuild APIs and remaining whole-context `pure_facts` callers,
+  including step-refusal context formatting and lazy difference-graph and
+  contradiction-index rebuilds after exact-fact withdrawal.
   Relabelling a query as upkeep or explicit input must not evade the boundary.
 - Audit large loadability buckets, including shared external-argument blocks,
   and proof search reached while constructing conversion-condition refusals. Bounded premise sampling does
