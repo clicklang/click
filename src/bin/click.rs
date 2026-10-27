@@ -1644,7 +1644,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         ])
         .expect("click expand should emit the checked arithmetic certificate");
         let expanded = fs::read_to_string(&expanded_path).unwrap();
-        assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(expanded.contains("normalize() using {"), "{expanded}");
         assert!(!expanded.contains("solve() using"), "{expanded}");
 
         entry(["verify".to_string(), expanded_path.display().to_string()])
