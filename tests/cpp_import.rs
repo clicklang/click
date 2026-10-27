@@ -90,7 +90,7 @@ int32 probe() { ensures result == 11; }
         let expanded = expand_project_claim_source_by_label(
             &parsed,
             &ProgramInputs::program(&import),
-            "probe.contract",
+            "probe.ensures_0",
         )
         .unwrap();
         let rewritten = parsed.with_entry_source(expanded.clone());
@@ -100,7 +100,7 @@ int32 probe() { ensures result == 11; }
         let position = project_tactic_source_position(
             &rewritten,
             &ProgramInputs::program(&import),
-            "probe.contract",
+            "probe.ensures_0",
             0,
         )
         .unwrap();
@@ -18511,7 +18511,7 @@ fn stored_and_forwarded_cpp_function_pointers_keep_their_contract() {
     };
     let parsed = verify(STORED_FUNCTION_POINTER_SIDECAR)
         .unwrap_or_else(|error| panic!("{}", error.message()));
-    for label in ["stored.contract", "relay.contract", "caller.contract"] {
+    for label in ["stored.ensures_0", "relay.ensures_0", "caller.ensures_0"] {
         let expanded =
             expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
                 .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
