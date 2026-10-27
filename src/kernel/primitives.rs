@@ -12251,7 +12251,7 @@ impl RetainedPremises {
     }
 
     /// A context holding exactly the cited propositions and nothing else.
-    pub(crate) fn context(&self) -> crate::kernel::SelectedFacts {
+    pub(crate) fn context(&self) -> crate::kernel::SelectedFacts<'static> {
         crate::kernel::SelectedFacts::from_propositions(&self.propositions)
     }
 }

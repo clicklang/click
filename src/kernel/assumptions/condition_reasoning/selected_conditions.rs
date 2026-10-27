@@ -497,7 +497,7 @@ mod memory_condition_match_tests {
     }
 }
 
-impl SelectedFacts {
+impl SelectedFacts<'_> {
     pub(crate) fn decide_selected_condition(&self, condition: &ConditionTerm) -> Option<bool> {
         if let Some(value) = self.known_condition_value(condition) {
             return Some(value);

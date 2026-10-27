@@ -764,7 +764,7 @@ impl PureFactContext {
     }
 }
 
-impl SelectedFacts {
+impl SelectedFacts<'_> {
     /// Every order fact, for `solve`'s order search (`has_selected_order_path`,
     /// `selected_increment_preserves_order`). Fast walks read
     /// `OrderFactsByLower` instead.

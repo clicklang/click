@@ -920,7 +920,7 @@ pub(crate) fn check_forall_instantiation(
     discharge_instantiated_guards(instantiated, premises).map(|(_, conclusion)| conclusion)
 }
 
-fn assumptions_from_propositions(propositions: &[Proposition]) -> SelectedFacts {
+fn assumptions_from_propositions(propositions: &[Proposition]) -> SelectedFacts<'static> {
     crate::kernel::reasoning::path_facts::count_context_rebuild_entries(propositions.len());
     SelectedFacts::from_propositions(propositions)
 }

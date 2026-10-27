@@ -890,7 +890,7 @@ impl PureFactContext {
     }
 }
 
-impl SelectedFacts {
+impl SelectedFacts<'_> {
     /// Whether the atomic theory checkers settle `proposition` against this
     /// exact premise set.
     ///
@@ -3098,7 +3098,7 @@ impl PureFactContext {
     }
 }
 
-impl SelectedFacts {
+impl SelectedFacts<'_> {
     pub(super) fn collect_quantified_order_facts_for_condition(
         &self,
         condition: &ConditionTerm,
