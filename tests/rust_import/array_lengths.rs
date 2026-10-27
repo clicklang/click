@@ -50,12 +50,12 @@ fn charon_array_lengths_proof_tools_recheck_metadata_and_array_certificates() {
         }
         for claim in if bounds {
             &[
-                "signed_len.contract",
-                "million_len.contract",
-                "empty_len.contract",
+                "signed_len.ensures_0",
+                "million_len.ensures_0",
+                "empty_len.ensures_0",
             ][..]
         } else {
-            &["length.contract", "empty.contract", "update.contract"][..]
+            &["length.ensures_0", "empty.ensures_0", "update.contract"][..]
         } {
             assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
         }
@@ -116,7 +116,7 @@ fn charon_rust_integer_literals_preserve_native_array_contracts() {
     assert_ne!(sidecar, ARRAYS_SIDECAR);
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, p.prepared().unwrap()).unwrap();
-    assert_cli(&p, &["expand", "--claim", "length.contract", "--in-place"]);
+    assert_cli(&p, &["expand", "--claim", "length.ensures_0", "--in-place"]);
     assert_cli(&p, &["verify"]);
     let invalid = sidecar.replace("ensures result == 0o3usize;", "ensures result == 0o4usize;");
     assert_ne!(invalid, sidecar);

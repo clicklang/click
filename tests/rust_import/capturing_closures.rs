@@ -87,10 +87,10 @@ fn charon_capturing_closure_tools_recheck_expanded_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "__rust_q_I18_capturing_closures_I6_caller_K0.contract",
-        "__rust_q_I18_capturing_closures_I6_caller.contract",
-        "__rust_q_I18_capturing_closures_I5_moved.contract",
-        "__rust_q_I18_capturing_closures_I5_plain.contract",
+        "__rust_q_I18_capturing_closures_I6_caller_K0.ensures_0",
+        "__rust_q_I18_capturing_closures_I6_caller.ensures_0",
+        "__rust_q_I18_capturing_closures_I5_moved.ensures_0",
+        "__rust_q_I18_capturing_closures_I5_plain.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }

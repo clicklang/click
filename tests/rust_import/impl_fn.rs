@@ -83,10 +83,10 @@ fn charon_impl_fn_tools_recheck_expanded_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "__rust_q_I7_impl_fn_I5_apply.contract",
-        "__rust_q_I7_impl_fn_I5_named.contract",
-        "__rust_q_I7_impl_fn_I5_twice.contract",
-        "__rust_q_I7_impl_fn_I4_both.contract",
+        "__rust_q_I7_impl_fn_I5_apply.ensures_0",
+        "__rust_q_I7_impl_fn_I5_named.ensures_0",
+        "__rust_q_I7_impl_fn_I5_twice.ensures_0",
+        "__rust_q_I7_impl_fn_I4_both.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
