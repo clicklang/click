@@ -1097,3 +1097,86 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     );
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
 }
+
+fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> usize {
+    let _session = crate::kernel::VerificationSession::enter();
+    let parameter = TypeParameterName::intern("GenericRewriteScalingT");
+    let stored = CValue::Parameter(Box::new(AlgebraicTerm {
+        algebraic_type: parameter.algebraic_type(),
+        node: AlgebraicTermNode::Variable(Variable(996_030)),
+    }));
+    let mut memory = CMemory::new();
+    for index in 0..=unrelated {
+        memory = memory.store(
+            Pointer {
+                block: PointerBlock::Heap(996_100 + index),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            stored.clone(),
+        );
+    }
+    let memory = crate::kernel::intern_c_memory(memory);
+    let from = CPointerValue::new(
+        Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        CType::Int32Pointer,
+    );
+    let read = AlgebraicTermNode::parameter_load(memory.clone(), from.pointer().clone(), parameter);
+    // Catch up the input's pointer-reachable index once for the warm-query
+    // axis. Every measured alias is still fresh. The cold axis below charges
+    // this initial delta as well and grows cells and queries together.
+    if warm {
+        let _ = AlgebraicTermNode::parameter_load(
+            memory.clone(),
+            Pointer::symbolic(Variable(998_000)),
+            parameter,
+        );
+    }
+    let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+        for index in 0..count {
+            let to = CPointerValue::new(
+                Pointer::symbolic(Variable(997_000 + index)),
+                CType::Int32Pointer,
+            );
+            let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
+            let expected =
+                AlgebraicTermNode::parameter_load(memory.clone(), to.pointer().clone(), parameter);
+            assert_eq!(rewritten, expected);
+            assert_ne!(rewritten, stored);
+        }
+    });
+    work
+}
+
+#[test]
+fn generic_read_alias_rewrites_scale_with_selected_reads() {
+    let samples = [8, 16, 32, 64].map(|count| generic_read_alias_rewrite_work(count, 16, false));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 64),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn generic_read_alias_rewrites_ignore_caught_up_unrelated_cells() {
+    let samples =
+        [0, 16, 64, 256].map(|unrelated| generic_read_alias_rewrite_work(8, unrelated, true));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn generic_read_alias_rewrites_keep_cold_total_work_linear() {
+    let samples = [8, 16, 32, 64].map(|size| generic_read_alias_rewrite_work(size, size, false));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 64),
+        "{samples:?}"
+    );
+}

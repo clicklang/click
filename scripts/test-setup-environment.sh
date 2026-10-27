@@ -229,7 +229,7 @@ if [[ "$platform" == Linux ]]; then
     fi
     [[ -z "$(ls -A "$llvm_root/opt")" && ! -e "$llvm_root/usr/lib/llvm-19" ]]
 
-    printf '#!/usr/bin/env bash\nexit 0\n' > "$directory/llvm-bin/sha256sum"
+    printf '#!/usr/bin/env bash\ncat > /dev/null\nexit 0\n' > "$directory/llvm-bin/sha256sum"
     chmod +x "$directory/llvm-bin/sha256sum"
     PATH="$llvm_path" "$repository/scripts/install-llvm-release.sh" "$llvm_root"
     [[ "$("$llvm_root/usr/lib/llvm-19/bin/llvm-config" --version)" == 19.1.7 ]]

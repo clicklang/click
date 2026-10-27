@@ -1480,6 +1480,13 @@ impl CellStore {
             })
             .map(|(pointer, _)| pointer.clone())
             .collect::<Vec<_>>();
+        // Reachable is a subset of concrete. Equal lengths and no rejected
+        // entries mean this projection changes nothing. Keep the original
+        // persistent root: rebuilding an equal map makes snapshot interning
+        // compare every cell again for each fresh unresolved address.
+        if rejected.is_empty() && reachable.len() == self.concrete.len() {
+            return Some(visited);
+        }
         for pointer in rejected {
             reachable.remove(&pointer);
         }
