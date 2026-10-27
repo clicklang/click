@@ -19341,3 +19341,23 @@ fn grouped_rewritten_claims_close_ownership_in_contract_order() {
     );
     assert!(without_implicit_auto(|| verify_c0_sources(&hostile, &sources)).is_err());
 }
+
+#[test]
+fn post_return_function_unfold_retains_its_equation_through_expansion() {
+    let (source, sources) =
+        mdtest_sources("mdtests/return_fold_retains_post_return_function_unfold.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "pick").unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+
+    let false_equation = source.replace(
+        "have first(Shape::Pair(x, 3)) == x",
+        "have first(Shape::Pair(x, 3)) != x",
+    );
+    assert_ne!(false_equation, source);
+    assert!(verify_c0_sources(&false_equation, &sources).is_err());
+}
