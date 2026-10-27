@@ -17536,7 +17536,7 @@ int32 f(int32 n) {{
         );
         let sources = [("tail.c", c.as_str())];
         let verified_for_label = verify_c0_sources(&source, &sources).unwrap();
-        let expanded = expand_checked_function_claim(&source, &verified_for_label, "f.contract")
+        let expanded = expand_checked_function_claim(&source, &verified_for_label, "f.ensures_0")
             .unwrap_or_else(|error| panic!("{count} branches: {}", error.message()));
         assert!(
             c0_smart_tactic_source_sites(&expanded, &sources)
@@ -18664,7 +18664,7 @@ fn unknown_pointer_bounds_survive_expansion_and_retained_verification() {
     for (fixture, claim, postcondition) in [
         (
             "mdtests/unknown_pointer_formation_keeps_zero_offsets_one_past_and_full_aliases.md",
-            "alias.contract",
+            "alias.ensures_0",
             "ensures result == q + 1;",
         ),
         (
@@ -18679,7 +18679,7 @@ fn unknown_pointer_bounds_survive_expansion_and_retained_verification() {
         ),
         (
             "mdtests/member_pointers_stay_usable_inside_their_subobject.md",
-            "nested.contract",
+            "nested.ensures_0",
             "ensures result == o->inner.second;",
         ),
         (
@@ -18697,8 +18697,10 @@ fn unknown_pointer_bounds_survive_expansion_and_retained_verification() {
         let expanded = expand_verified_function_claim_source_by_label(&source, &verified, claim)
             .unwrap()
             .expect("the verified function claim is declared in this fixture");
-        let position =
-            expansion::position_at_offset(&expanded, expanded.find(postcondition).unwrap());
+        let position = expansion::position_at_offset(
+            &expanded,
+            expanded.find(postcondition.trim_end_matches(';')).unwrap(),
+        );
         session
             .verify_at(&expanded, position.line, position.column)
             .unwrap();
@@ -18772,8 +18774,10 @@ fn packed_pointer_cast_contracts_survive_expansion_and_retained_verification() {
         let expanded = expand_verified_function_claim_source_by_label(&source, &verified, claim)
             .unwrap()
             .expect("the verified function claim is declared in this fixture");
-        let position =
-            expansion::position_at_offset(&expanded, expanded.find(postcondition).unwrap());
+        let position = expansion::position_at_offset(
+            &expanded,
+            expanded.find(postcondition.trim_end_matches(';')).unwrap(),
+        );
         session
             .verify_at(&expanded, position.line, position.column)
             .unwrap();
