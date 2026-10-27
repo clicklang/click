@@ -1,6 +1,71 @@
 use super::*;
 use crate::kernel::loans::LoanLedger;
 
+#[test]
+fn free_retires_a_cached_interior_alias() {
+    let base = Pointer {
+        block: PointerBlock::Heap(945_000),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let alias = Pointer::symbolic(Variable(945_001));
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(alias.clone(), base.offset_by_bytes(8)),
+        true,
+    ));
+    let memory = CMemory::new()
+        .with_heap_allocation_claim(base.clone(), 12)
+        .unwrap()
+        .with_block(base.block.clone(), 12)
+        .store(alias.clone(), int32(7));
+    assert_eq!(memory.load(&alias), CExpressionOutcome::Value(int32(7)));
+    let freed = memory.free_heap_block(&base, &assumptions).unwrap();
+    assert_eq!(
+        freed.load(&alias),
+        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+        "an interior alias must not retain a cached value after free"
+    );
+}
+
+#[test]
+fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
+    let base = Pointer::symbolic(Variable(945_010));
+    let cell = Pointer::symbolic(Variable(945_011));
+    let memory = CMemory::new()
+        .with_heap_allocation_claim(base.clone(), 12)
+        .unwrap()
+        .store(
+            cell.clone(),
+            CValue::Int64(Bitvector32Term::Int64Constant(7)),
+        );
+    let assumptions = PureFactContext::new();
+    for owned_bytes in [0u32, 4, 8] {
+        let mut ownership = ResourceContext::new();
+        if owned_bytes != 0 {
+            ownership = ownership.unchecked_with_fact(CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(
+                    cell.clone(),
+                    0u32.into(),
+                    owned_bytes.into(),
+                    1,
+                ),
+            ));
+        }
+        let freed = memory
+            .clone()
+            .free_heap_block_with_owned_frame(&base, &assumptions, &ownership)
+            .unwrap();
+        assert_eq!(
+            freed.load(&cell),
+            if owned_bytes == 8 {
+                CExpressionOutcome::Value(CValue::Int64(Bitvector32Term::Int64Constant(7)))
+            } else {
+                CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+            },
+            "ownership of {owned_bytes} bytes"
+        );
+    }
+}
+
 fn active_heap_memory_loan(range: CMemoryRange) -> LoanLedger {
     let fact = CResourceFact::own_memory(range);
     let support = ResourceContext::new()
@@ -1001,7 +1066,7 @@ fn separated_persistent_view_survives_free() {
 }
 
 #[test]
-fn free_of_external_allocation_preserves_unrelated_external_cells() {
+fn free_of_external_allocation_forgets_cells_without_separation() {
     let allocation_base = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(908_000)), 4),
@@ -1046,7 +1111,7 @@ fn free_of_external_allocation_preserves_unrelated_external_cells() {
 
     assert_eq!(
         after.memory().load(&unrelated),
-        CExpressionOutcome::Value(int32(37))
+        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
     );
     assert!(
         !after

@@ -149,31 +149,39 @@ At exit, `self.head` is a version name. To match the owned
 cannot show the freed block (a pointer read) separate from `self`. The old
 fold crossed it through facts inside lowering.
 
-### Open decision: the free's two rules disagree
+### Decision: the free decides its frame from proven separation
 
-When the branch stopped, this question was open:
+The user chose the executor to require separation, with the step recording
+ownership-supported before/after read equalities in the equality graph.
+The process must be deterministic and indexed, looking one step back; no
+history scan per query and no fact-aware fallback inside individual checks.
 
-- **The executor** decides which cached cells a `free` keeps with
-  `heap_allocation_may_contain_pointer` (`primitives/memory_state.rs`).
-  For a cell in a different block spelling, it says "may contain" only for
-  an alias at the same offset that is proven equal. So `free(node)` keeps
-  `self.head`'s cached cell by structure, with no facts or resources.
-- **The walk** (`step_effect::affects`, the `HeapFreed` arm) crosses a free
-  only when the blocks are proven distinct, or when
-  `heap_allocation_proven_separate_from_pointer` proves resource
-  separation. So the fact-aware walk stops at the same `free`.
+The investigation found a stale cache entry, but no false verification:
 
-That leaves three choices:
+- A helper returning `p + 2` for an `int32*` gives an interior alias eight
+  bytes into the allocation. Reading through it before `free(p)` verifies;
+  reading after the free is refused for missing read authority. See
+  `an_interior_call_alias_can_be_read_before_free.md` and
+  `an_interior_call_alias_cannot_be_read_after_free.md` in `mdtests/`.
+- The kernel reproduction `free_retires_a_cached_interior_alias` showed that
+  `free_heap_block` nevertheless kept a cached value under a symbolic
+  `q == p + 8` spelling. The same-offset test in
+  `heap_allocation_may_contain_pointer` did not identify this interior alias.
+  Cache retention therefore cannot be used as the walk's separation rule.
 
-1. Let the walk use the executor's rule.
-2. Let the executor use the walk's rule, and record a separation fact at the
-   `free` when ownership proves it.
-3. Find out first whether the executor's cross-block rule is sound.
+The first increment requires complete-cell ownership in the checked residual
+frame before keeping an uncertain cached cell. The step has already consumed
+the allocation’s complete ownership and checked the resources that survive;
+its residual owners are separate from the consumed bytes by construction.
+`owned_memory_member_covering_access` selects a cell’s owner through the
+address-class access index. Unknown cells are forgotten; structurally distinct
+blocks remain untouched. The allocation-status helper is not a separation
+authority.
 
-The proposed first step is the third: write an mdtest where an interior
-alias in another block (`q == p + 8`) is freed through `p`, then read
-through `q`. If that verifies a false claim, it is a soundness bug in
-`free_heap_block`, to file or fix whatever happens to this item.
+Still to implement: record the supported frame equalities at the step and
+use them to restore the pointer-read branch's recursive-stack frames. Keep
+read names structural, and pin the added work with deterministic scaling
+regressions before landing that increment.
 
 ### Also tried, and why it was dropped
 

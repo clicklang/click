@@ -2450,7 +2450,7 @@ fn execute_c_heap_free_paths(
             }
         }
         let memory = working_memory
-            .free_heap_block(pointer.pointer(), &effective_assumptions)
+            .free_heap_block_with_owned_frame(pointer.pointer(), &effective_assumptions, &resources)
             .expect("validated live heap base should free");
         facts.push(ExecutionPureFact::internal(
             Proposition::CHeapAllocationFreed {
