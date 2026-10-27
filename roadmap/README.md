@@ -136,7 +136,7 @@ Specification and proof:
 
 Proof tooling:
 
-- [Smart tactics: four engines, and simple tactics with elided arguments](smart-tactics.md)
+- [Smart tactics: fast checking and enforceable search boundaries](smart-tactics.md)
 - [One fact-aware frame query instead of scattered history walks](fact-aware-frame-walks.md)
 - [Unspellable facts: make every proof-state fact round-trip](unspellable-facts.md)
 
