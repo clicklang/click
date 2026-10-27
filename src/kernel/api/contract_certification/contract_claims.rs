@@ -976,9 +976,9 @@ fn unproved_contract_path_condition(
     let mut last = std::collections::VecDeque::new();
     let mut count = 0;
     let facts = assumptions
-        .condition_fact_pairs()
+        .diagnostic_condition_fact_pairs()
         .map(|(condition, polarity)| Proposition::ConditionIs(condition.clone(), polarity))
-        .chain(assumptions.proposition_facts().cloned());
+        .chain(assumptions.diagnostic_proposition_facts().cloned());
     for fact in facts {
         count += 1;
         if first.len() < 8 {

@@ -7716,10 +7716,13 @@ impl PureFactContext {
 
     /// The atomic ground and universal facts, for the planner's premise
     /// search.
-    pub(crate) fn atomic_general_facts(&self) -> impl Iterator<Item = &Proposition> {
+    pub(crate) fn atomic_general_facts(
+        &self,
+        permission: crate::SearchPermission,
+    ) -> impl Iterator<Item = &Proposition> {
         self.atomic_ground_facts
-            .scan_for_search()
-            .chain(self.atomic_quantified_facts.scan_for_search())
+            .scan_for_search(&permission)
+            .chain(self.atomic_quantified_facts.scan_for_search(&permission))
             .map(SharedIndexFact::as_ref)
     }
 
@@ -7727,9 +7730,12 @@ impl PureFactContext {
     ///
     /// This is a read-only view for a planner outside the kernel: it names
     /// what is available without exposing the index that stores it.
-    pub fn condition_fact_pairs(&self) -> impl Iterator<Item = (&ConditionTerm, bool)> {
+    pub(crate) fn condition_fact_pairs(
+        &self,
+        permission: crate::SearchPermission,
+    ) -> impl Iterator<Item = (&ConditionTerm, bool)> {
         self.condition_facts
-            .scan_for_upkeep()
+            .scan_for_search(&permission)
             .map(|(condition, value)| (condition, *value))
     }
 
@@ -7795,7 +7801,24 @@ impl PureFactContext {
     }
 
     /// The proposition facts of this context, in the index's own order.
-    pub fn proposition_facts(&self) -> impl Iterator<Item = &Proposition> {
+    pub(crate) fn proposition_facts(
+        &self,
+        permission: crate::SearchPermission,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.prop_facts.scan_for_search(&permission)
+    }
+
+    /// Full context only for failure diagnostics, not proof selection.
+    pub(crate) fn diagnostic_condition_fact_pairs(
+        &self,
+    ) -> impl Iterator<Item = (&ConditionTerm, bool)> {
+        self.condition_facts
+            .scan_for_upkeep()
+            .map(|(condition, value)| (condition, *value))
+    }
+
+    /// Full context only for failure diagnostics, not proof selection.
+    pub(crate) fn diagnostic_proposition_facts(&self) -> impl Iterator<Item = &Proposition> {
         self.prop_facts.scan_for_upkeep()
     }
 
@@ -7902,8 +7925,11 @@ impl PureFactContext {
 
     /// The disjunction facts of this context, in the index's own order, for
     /// a planner's case search.
-    pub fn disjunction_fact_propositions(&self) -> impl Iterator<Item = &Proposition> {
-        self.disjunction_facts.scan_for_search()
+    pub(crate) fn disjunction_fact_propositions(
+        &self,
+        permission: crate::SearchPermission,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.disjunction_facts.scan_for_search(&permission)
     }
 
     /// Whether this context holds a disjunction fact.

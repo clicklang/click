@@ -76,3 +76,14 @@ If the change touches code listed under "Fast-part scans" in
 `roadmap/smart-tactics.md`, don't add another scan beside it. Either fix that
 scan (index it, or move it to the slow part with an explicit form) or leave
 it as it is and say so.
+
+## 6. Keep the enforced boundary narrow
+
+Ambient search views require `SearchPermission`, constructed only in
+`surface::planning`. The Cargo build checks kernel dependencies and pins
+legacy simp/diagnostic scan callers in `build_support/search_boundary.rs`.
+Do not fix a boundary failure by widening its allowance or relabelling a query
+as upkeep. Move the search into planning or use explicitly selected premises;
+if a legacy API needs migration, describe that migration and test its boundary.
+Run the boundary regressions with `test(gate_tests::search_boundary::)` in the
+fast-gate binary. This enforcement does not replace deterministic scaling tests.

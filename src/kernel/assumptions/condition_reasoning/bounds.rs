@@ -96,7 +96,7 @@ impl PureFactContext {
         }
         let mut facts = Vec::new();
         let mut complete = true;
-        for (condition, value) in self.order_condition_facts.scan_for_search() {
+        for (condition, value) in self.order_condition_facts.scan_for_legacy_simp() {
             if crate::kernel::assumptions::reasoning_interrupted() {
                 complete = false;
                 break;

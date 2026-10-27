@@ -159,6 +159,16 @@ impl<K: Ord, V> FactMap<K, V> {
     #[track_caller]
     pub(crate) fn scan_for_search(
         &self,
+        _permission: &crate::SearchPermission,
+    ) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
+        self.scan()
+    }
+
+    /// Transitional shared simp/certificate scan. The build-time boundary
+    /// check pins its reviewed callers; new checking code may not use it.
+    #[track_caller]
+    pub(crate) fn scan_for_legacy_simp(
+        &self,
     ) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
         self.scan()
     }
@@ -248,6 +258,16 @@ impl<T: Clone + Ord> FactSet<T> {
     /// [`FactMap::scan_for_search`].
     #[track_caller]
     pub(crate) fn scan_for_search(
+        &self,
+        _permission: &crate::SearchPermission,
+    ) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
+        self.scan()
+    }
+
+    /// Transitional shared simp/certificate scan. The build-time boundary
+    /// check pins its reviewed callers; new checking code may not use it.
+    #[track_caller]
+    pub(crate) fn scan_for_legacy_simp(
         &self,
     ) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
         self.scan()
@@ -376,7 +396,17 @@ impl<T: Ord> ScanSet<T> {
     /// Every element, for a search that expansion removes; see
     /// [`FactMap::scan_for_search`].
     #[track_caller]
-    pub(crate) fn scan_for_search(
+    pub(crate) fn scan_for_search<'a>(
+        &'a self,
+        _permission: &crate::SearchPermission,
+    ) -> ChargedIter<impl DoubleEndedIterator<Item = &'a T> + ExactSizeIterator + use<'a, T>> {
+        self.scan()
+    }
+
+    /// Transitional shared simp/certificate scan. The build-time boundary
+    /// check pins its reviewed callers; new checking code may not use it.
+    #[track_caller]
+    pub(crate) fn scan_for_legacy_simp(
         &self,
     ) -> ChargedIter<impl DoubleEndedIterator<Item = &T> + ExactSizeIterator> {
         self.scan()

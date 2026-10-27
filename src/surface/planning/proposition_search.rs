@@ -26,6 +26,7 @@
 //! operation that needs to know whether a proposition holds uses an exact
 //! route or emits the proposition as an obligation.
 
+use super::SearchPermission;
 use crate::kernel::planning_api::*;
 use crate::kernel::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
@@ -379,7 +380,7 @@ impl PropositionSearch for PureFactContext {
                                 if canonicalize_atomic_loads(left)
                                         == canonicalize_atomic_loads(right)
                         )
-                    || self.proves_condition_from_facts(condition, *value)
+                    || self.proves_condition_from_facts(SearchPermission::new(), condition, *value)
             }
             Proposition::And(left, right) => self.proves(left) && self.proves(right),
             Proposition::Or(left, right) => self.proves(left) || self.proves(right),
@@ -716,7 +717,7 @@ impl PropositionSearch for PureFactContext {
                 return Vec::new();
             }
             let tried = tried.iter().collect::<BTreeSet<_>>();
-            self.proposition_facts()
+            self.proposition_facts(SearchPermission::new())
                 .inspect(|_| record_candidate_visit())
                 .filter(|fact| candidate_family(fact) && usable(fact) && !tried.contains(fact))
                 .cloned()
@@ -1166,7 +1167,7 @@ impl PropositionSearch for PureFactContext {
         body: &Proposition,
     ) -> Option<PropositionDerivationRule> {
         let candidates = self
-            .proposition_facts()
+            .proposition_facts(SearchPermission::new())
             .filter_map(|source| {
                 let Proposition::Exists {
                     var: source_var,
@@ -1342,7 +1343,7 @@ impl PropositionSearch for PureFactContext {
         let mut goal_variables = BTreeSet::new();
         collect_proposition_bitvector_variables(proposition, &mut goal_variables);
         let goal_all_variables = crate::kernel::proposition_variables(proposition);
-        for disjunction in self.disjunction_fact_propositions() {
+        for disjunction in self.disjunction_fact_propositions(SearchPermission::new()) {
             let mut disjunction_variables = BTreeSet::new();
             collect_proposition_bitvector_variables(disjunction, &mut disjunction_variables);
             // A disjunction or goal over no machine variable (an algebraic
@@ -1752,7 +1753,7 @@ mod condition_premise_tests {
         let mut visits = 0;
         loop {
             let mut changed = false;
-            for (condition, value) in context.condition_fact_pairs() {
+            for (condition, value) in context.condition_fact_pairs(SearchPermission::new()) {
                 visits += 1;
                 if selected.contains_key(condition) {
                     continue;
@@ -2001,7 +2002,7 @@ fn connected_atomic_premises(
         select(source);
     }
     if widened {
-        for fact in context.atomic_general_facts() {
+        for fact in context.atomic_general_facts(SearchPermission::new()) {
             if simp_reasoning_interrupted() {
                 return None;
             }
@@ -2076,7 +2077,7 @@ fn atomic_widening_adds_dependencies(
     selected: &PureFactContext,
     reached: &BTreeSet<AtomicConnectionKey>,
 ) -> bool {
-    for fact in context.atomic_general_facts() {
+    for fact in context.atomic_general_facts(SearchPermission::new()) {
         if simp_reasoning_interrupted() || !selected.contains_assumed_exact(fact) {
             return true;
         }
