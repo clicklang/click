@@ -96,7 +96,7 @@ function first_or(xs: List<int32>, fallback: int32) -> int32 {
     }
 }
 
-function is_cons(xs: List<int32>) -> bool {
+function is_cons(xs: List<int32>) -> Bool {
     match xs {
         List::Nil => false,
         List::Cons(value, rest) => true,

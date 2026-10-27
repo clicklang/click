@@ -170,7 +170,7 @@ function heap_addresses(tree: HeapTree) -> List<uint64>
     }
 }
 
-function heap_member(tree: HeapTree, target: struct tree_node*) -> bool
+function heap_member(tree: HeapTree, target: struct tree_node*) -> Bool
     decreases tree
 {
     match tree {

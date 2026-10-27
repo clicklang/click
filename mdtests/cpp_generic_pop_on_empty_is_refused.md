@@ -113,7 +113,7 @@ function first_or<T>(xs: List<T>, fallback: T) -> T {
     }
 }
 
-function is_cons<T>(xs: List<T>) -> bool {
+function is_cons<T>(xs: List<T>) -> Bool {
     match xs {
         List::Nil => false,
         List::Cons(value, rest) => true,

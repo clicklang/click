@@ -5,7 +5,7 @@ truth value, so `1`, or a conditional with an integer branch, is a type
 error rather than C's nonzero test.
 
 ```click
-function flagged(x: int32) -> bool {
+function flagged(x: int32) -> Bool {
     if x > 0 { true } else { 0 }
 }
 ```

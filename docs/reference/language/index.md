@@ -3179,10 +3179,10 @@ theorem, and a `bool` pure function's application are all `bool` values.
 
 <!-- verified-example: mdtests/a_bool_pure_function_states_a_claim.md -->
 ```click
-function positive(x: int32) -> bool { x > 0 }
-function in_range(x: int32) -> bool { x > 0 and x < 10 }
-function outside(x: int32) -> bool { not in_range(x) }
-function choose(flag: bool, x: int32) -> bool {
+function positive(x: int32) -> Bool { x > 0 }
+function in_range(x: int32) -> Bool { x > 0 and x < 10 }
+function outside(x: int32) -> Bool { not in_range(x) }
+function choose(flag: Bool, x: int32) -> Bool {
     if flag { positive(x) } else { false }
 }
 

@@ -5642,7 +5642,19 @@ impl Parser {
         } else {
             match spelling.as_str() {
                 "void" => C0Type::Void,
-                "_Bool" | "bool" | "Bool" => C0Type::Bool,
+                // Stage 5 (decision D4): a function head restates its
+                // language's declaration, `bool` or `_Bool`; Click's own
+                // positions write `Bool`, and a Rust sidecar writes Rust's
+                // `bool` there as it writes `i32`.
+                "_Bool" | "bool" => {
+                    if !self.exact_long_rank && !self.verifies_rust() {
+                        return Err(
+                            self.error(format!("`{spelling}` is not a Click type; write `Bool`"))
+                        );
+                    }
+                    C0Type::Bool
+                }
+                "Bool" => C0Type::Bool,
                 "int8" | "int8_t" => C0Type::Int8,
                 "int16" | "int16_t" => C0Type::Int16,
                 "int32" | "int32_t" => C0Type::Int32,

@@ -14,14 +14,14 @@ A call of a `Bool` function written where a proposition is expected means
 in_range(3);` and `requires flag;` are claims. Predicates are unchanged.
 
 ```click
-function positive(x: int32) -> bool { x > 0 }
-function in_range(x: int32) -> bool { x > 0 and x < 10 }
-function outside(x: int32) -> bool { not in_range(x) }
-function choose(flag: bool, x: int32) -> bool {
+function positive(x: int32) -> Bool { x > 0 }
+function in_range(x: int32) -> Bool { x > 0 and x < 10 }
+function outside(x: int32) -> Bool { not in_range(x) }
+function choose(flag: Bool, x: int32) -> Bool {
     if flag { positive(x) } else { false }
 }
 
-function even(n: int32) -> bool
+function even(n: int32) -> Bool
     decreases n
 {
     if n <= 0 { true } else { not even(n - 1) }
@@ -51,7 +51,7 @@ theorem twelve_is_outside() {
     }
 }
 
-theorem chosen_positive(flag: bool, x: int32) {
+theorem chosen_positive(flag: Bool, x: int32) {
     requires flag;
     requires x > 0;
     ensures choose(flag, x) by {

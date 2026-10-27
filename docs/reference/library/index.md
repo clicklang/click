@@ -509,7 +509,7 @@ function append<T>(xs: List<T>, ys: List<T>) -> List<T>
 ### `list::contains`
 
 ```click
-function contains<T>(xs: List<T>, value: T) -> bool
+function contains<T>(xs: List<T>, value: T) -> Bool
     decreases xs
 {
     match xs {

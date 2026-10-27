@@ -4,7 +4,7 @@
 which means `positive(-1) == true`, does not hold.
 
 ```click
-function positive(x: int32) -> bool { x > 0 }
+function positive(x: int32) -> Bool { x > 0 }
 
 theorem minus_one_is_positive() {
     ensures positive(-1) by {

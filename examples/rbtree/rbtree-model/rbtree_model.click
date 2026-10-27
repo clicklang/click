@@ -25,7 +25,7 @@ function rb_inorder(tree: RbTree) -> List<struct rb_node*>
     }
 }
 
-function rb_member(tree: RbTree, target: struct rb_node*) -> bool
+function rb_member(tree: RbTree, target: struct rb_node*) -> Bool
     decreases tree
 {
     match tree {

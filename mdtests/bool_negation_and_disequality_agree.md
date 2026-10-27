@@ -7,7 +7,7 @@ application or a `Bool` parameter. The range `b == true or b == false` is a
 disjunction, proved like any other by a case split.
 
 ```click
-function positive(x: int32) -> bool { x > 0 }
+function positive(x: int32) -> Bool { x > 0 }
 
 theorem not_false_is_true(x: int32) {
     requires positive(x) != false;
@@ -24,12 +24,12 @@ theorem not_true_is_not(x: int32) {
     ensures not positive(x) by { solve(); }
 }
 
-theorem parameter_not_false_is_true(flag: bool) {
+theorem parameter_not_false_is_true(flag: Bool) {
     requires flag != false;
     ensures flag by { solve(); }
 }
 
-theorem parameter_not_is_false(flag: bool) {
+theorem parameter_not_is_false(flag: Bool) {
     requires not flag;
     ensures flag == false by { solve(); }
 }

@@ -67,7 +67,7 @@ resource parent(p: struct parent*) {
 
 authorized resource child_ref(obj: struct child*) {}
 
-function child_object(obj: struct child*) -> bool { true }
+function child_object(obj: struct child*) -> Bool { true }
 
 resource child_control(obj: struct child*) {
     owns allocation(obj, sizeof(struct child));

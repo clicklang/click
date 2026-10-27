@@ -14,7 +14,7 @@ int *keep(int *p) { return p; }
 verifying "instantiate_takes_integer_and_pointer_binders_in_a_function_proof.c";
 
 function sq(z: Integer) -> Integer { z * z }
-function same(p: int32*, q: int32*) -> bool { p == q }
+function same(p: int32*, q: int32*) -> Bool { p == q }
 
 int32 id(int32 x) {
     requires forall (z: Integer) { sq(z) >= 0 };
