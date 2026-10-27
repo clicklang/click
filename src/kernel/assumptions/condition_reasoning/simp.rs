@@ -489,37 +489,8 @@ impl PureFactContext {
             }
             _ => false,
         };
-        let (left, right) = match condition {
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            } => (left, right),
+        let (left, right) = match memory_match_operands(condition) {
+            MemoryMatchOperands::Words(_, _, left, right) => (left, right),
             _ => return None,
         };
         if !atom(left) || !atom(right) {
@@ -547,9 +518,9 @@ impl PureFactContext {
             terms
         };
         let (left, right) = match &key {
-            ConditionMatchKey::Equal(left, right) | ConditionMatchKey::Order(_, left, right) => {
-                (left, right)
-            }
+            ConditionMatchKey::Equal(left, right)
+            | ConditionMatchKey::Order(_, left, right)
+            | ConditionMatchKey::UnsignedOrder(_, left, right) => (left, right),
             ConditionMatchKey::OffsetEqual(_, _) | ConditionMatchKey::OverflowAdd(_, _) => {
                 return None;
             }
@@ -918,6 +889,32 @@ mod memory_condition_match_tests {
                 .assume_condition(offsets, true)
                 .has_matching_condition_fact_for_memory_resolution(&reversed, true)
         );
+    }
+
+    #[test]
+    fn unsigned_memory_conditions_retain_open_facts_without_mixing_carriers() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let var = |id| Bitvector32Term::Variable(Variable(id));
+        let sum = Bitvector32Term::add(var(996_000), var(996_001));
+        let base = PureFactContext::new()
+            .assume_condition(ConditionTerm::equal(var(996_001), 0u32.into()), true);
+        let goal = ConditionTerm::unsigned_less_than(var(996_000), var(996_002));
+        for value in [false, true] {
+            let source = ConditionTerm::unsigned_less_than(sum.clone(), var(996_002));
+            let held = base.clone().assume_condition(source.clone(), value);
+            assert_eq!(
+                held.indexed_matching_condition_fact_for_memory_resolution(&goal, value),
+                Some(true)
+            );
+            assert!(held.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            let withdrawn = held.without_exact_fact(&Proposition::ConditionIs(source, value));
+            assert!(!withdrawn.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            let signed = base.clone().assume_condition(
+                ConditionTerm::signed_less_than(sum.clone(), var(996_002)),
+                value,
+            );
+            assert!(!signed.has_matching_condition_fact_for_memory_resolution(&goal, value));
+        }
     }
 
     #[test]

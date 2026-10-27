@@ -1452,7 +1452,7 @@ impl PureFactContext {
 
     /// The condition facts filed under a `condition_facts_by_sides` key with
     /// `side` as one of its sides, in `condition_facts` order: every equality,
-    /// signed order, or addition-overflow fact one of whose sides is `side`,
+    /// 32-bit order, or addition-overflow fact one of whose sides is `side`,
     /// so a scan of `condition_facts` that keeps only facts with `side` as a
     /// side can read these instead, with the same result in the same order.
     pub(in crate::kernel) fn condition_facts_with_side(
@@ -1525,6 +1525,10 @@ impl PureFactContext {
             (
                 ConditionMatchKey::Order(strict, ..),
                 ConditionMatchKey::Order(other, lower, upper),
+            )
+            | (
+                ConditionMatchKey::UnsignedOrder(strict, ..),
+                ConditionMatchKey::UnsignedOrder(other, lower, upper),
             ) => {
                 strict == other && left_spellings.contains(lower) && right_spellings.contains(upper)
             }

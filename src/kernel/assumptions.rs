@@ -418,29 +418,41 @@ pub(in crate::kernel) fn condition_match_key(
             }
         }
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::LessThan,
             left: lower,
             right: upper,
         }
         | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::GreaterThan,
             left: upper,
             right: lower,
-        } => ConditionMatchKey::Order(true, canonical(lower), canonical(upper)),
+        } => {
+            if *format == MachineIntegerType::UInt32 {
+                ConditionMatchKey::UnsignedOrder(true, canonical(lower), canonical(upper))
+            } else {
+                ConditionMatchKey::Order(true, canonical(lower), canonical(upper))
+            }
+        }
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::LessEqual,
             left: lower,
             right: upper,
         }
         | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::GreaterEqual,
             left: upper,
             right: lower,
-        } => ConditionMatchKey::Order(false, canonical(lower), canonical(upper)),
+        } => {
+            if *format == MachineIntegerType::UInt32 {
+                ConditionMatchKey::UnsignedOrder(false, canonical(lower), canonical(upper))
+            } else {
+                ConditionMatchKey::Order(false, canonical(lower), canonical(upper))
+            }
+        }
         _ => return None,
     })
 }
@@ -482,33 +494,9 @@ fn condition_has_an_open_side(condition: &ConditionTerm) -> bool {
     match condition {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
             left,
             right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
+            ..
         }
         | ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,

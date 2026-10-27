@@ -9270,18 +9270,21 @@ pub(super) enum ConditionMatchKey {
     OffsetEqual(PointerOffsetTerm, PointerOffsetTerm),
     /// A signed order: strict, then its lower and its upper side.
     Order(bool, Bitvector32Term, Bitvector32Term),
+    /// An unsigned 32-bit order, separate from signed order facts.
+    UnsignedOrder(bool, Bitvector32Term, Bitvector32Term),
     /// Signed addition overflow, with commutative operands ordered.
     OverflowAdd(Bitvector32Term, Bitvector32Term),
 }
 
 impl ConditionMatchKey {
     /// The family of kinds a fact under this key can match: equalities,
-    /// offset equalities, or signed orders.
+    /// offset equalities, or orders of the same signedness.
     pub(super) fn family(&self) -> u8 {
         match self {
             Self::Equal(_, _) => 0,
             Self::OffsetEqual(_, _) => 1,
             Self::Order(_, _, _) => 2,
+            Self::UnsignedOrder(_, _, _) => 4,
             Self::OverflowAdd(_, _) => 3,
         }
     }
@@ -9291,6 +9294,7 @@ impl ConditionMatchKey {
         match self {
             Self::Equal(left, right)
             | Self::Order(_, left, right)
+            | Self::UnsignedOrder(_, left, right)
             | Self::OverflowAdd(left, right) => Some((left, right)),
             Self::OffsetEqual(_, _) => None,
         }
@@ -12611,8 +12615,8 @@ pub struct PureFactContext {
     /// The condition facts `condition_matches` can relate to a query spelled
     /// differently, keyed by their kind and the canonical forms of their two
     /// sides (`condition_match_key`): an equality under its unordered pair of
-    /// sides, a signed order under its strictness and its lower and upper
-    /// side, whichever way it was written. Any other fact matches a query
+    /// sides, a 32-bit order under its signedness, strictness and lower and
+    /// upper side, whichever way it was written. Any other fact matches a query
     /// only when it is that query, which is the exact lookup. A query then
     /// reads the keys its own sides and their recorded-equality classes
     /// spell, so `has_condition_fact` never visits an unrelated fact.
