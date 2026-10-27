@@ -181,3 +181,83 @@ fn equivalent_equality_spellings_use_bounded_lookups() {
         );
     }
 }
+
+#[test]
+fn memory_condition_matching_does_not_multiply_alias_classes() {
+    let mut samples = Vec::new();
+    for size in [8u64, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let left = |id| Bitvector32Term::Variable(Variable(990_000 + id));
+        let right = |id| Bitvector32Term::Variable(Variable(991_000 + id));
+        let mut facts = PureFactContext::new();
+        for id in 1..size {
+            facts = facts
+                .assume_condition(ConditionTerm::equal(left(0), left(id)), true)
+                .assume_condition(ConditionTerm::equal(right(0), right(id)), true);
+        }
+        let goal = ConditionTerm::signed_less_than(left(0), right(0));
+        let (found, missing) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.has_matching_condition_fact_for_memory_resolution(&goal, true)
+        });
+        assert!(!found);
+        let fact = ConditionTerm::signed_less_than(left(size - 1), right(size - 1));
+        facts = facts.assume_condition(fact, true);
+        let (found, hit) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.has_matching_condition_fact_for_memory_resolution(&goal, true)
+        });
+        assert!(found);
+        samples.push((missing, hit));
+    }
+    eprintln!("two memory alias classes at 8/32/128: {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].0 <= pair[0].0 * 6 + 32,
+            "miss multiplies alias classes: {samples:?}"
+        );
+        assert!(
+            pair[1].1 <= pair[0].1 * 6 + 32,
+            "hit multiplies alias classes: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn aliased_memory_condition_matches_ignore_unrelated_facts() {
+    let var = |id| Bitvector32Term::Variable(Variable(id));
+    let mut samples = Vec::new();
+    for size in [8u64, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut facts = PureFactContext::new()
+            .assume_condition(ConditionTerm::equal(var(992_000), var(992_001)), true)
+            .assume_condition(ConditionTerm::equal(var(993_000), var(993_001)), true);
+        for id in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::signed_less_than(var(id), var(id + 10_000)),
+                true,
+            );
+        }
+        let goal = ConditionTerm::signed_greater_than(var(993_000), var(992_000));
+        let source = ConditionTerm::signed_less_than(var(992_001), var(993_001));
+        let (found, missing) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.has_matching_condition_fact_for_memory_resolution(&goal, true)
+        });
+        assert!(!found);
+        for value in [true, false] {
+            let held = facts.clone().assume_condition(source.clone(), value);
+            let (found, hit) = crate::instrumentation::measure_deterministic_work(|| {
+                held.has_matching_condition_fact_for_memory_resolution(&goal, value)
+            });
+            assert!(found);
+            assert!(!held.has_matching_condition_fact_for_memory_resolution(&goal, !value));
+            let withdrawn =
+                held.without_exact_fact(&Proposition::ConditionIs(source.clone(), value));
+            assert!(!withdrawn.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            samples.push((missing, hit));
+        }
+    }
+    eprintln!("aliased memory condition beside 8/32/128 unrelated facts: {samples:?}");
+    assert!(
+        samples.iter().all(|sample| *sample == samples[0]),
+        "{samples:?}"
+    );
+}

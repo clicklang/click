@@ -546,52 +546,29 @@ impl PureFactContext {
             }
             terms
         };
-        let mut keys = BTreeSet::from([key.clone()]);
-        match &key {
-            ConditionMatchKey::Equal(left, right) => {
-                let right_spellings = spellings(right);
-                let left_spellings = spellings(left);
-                if left_spellings
-                    .iter()
-                    .chain(&right_spellings)
-                    .any(|term| self.equality_graph.has_uint64_source(term))
-                {
-                    return None;
-                }
-                for left in left_spellings {
-                    for right in &right_spellings {
-                        keys.insert(if left <= *right {
-                            ConditionMatchKey::Equal(left.clone(), right.clone())
-                        } else {
-                            ConditionMatchKey::Equal(right.clone(), left.clone())
-                        });
-                    }
-                }
-            }
-            ConditionMatchKey::Order(strict, lower, upper) => {
-                let upper_spellings = spellings(upper);
-                let lower_spellings = spellings(lower);
-                if lower_spellings
-                    .iter()
-                    .chain(&upper_spellings)
-                    .any(|term| self.equality_graph.has_uint64_source(term))
-                {
-                    return None;
-                }
-                for lower in lower_spellings {
-                    for upper in &upper_spellings {
-                        keys.insert(ConditionMatchKey::Order(
-                            *strict,
-                            lower.clone(),
-                            upper.clone(),
-                        ));
-                    }
-                }
+        let (left, right) = match &key {
+            ConditionMatchKey::Equal(left, right) | ConditionMatchKey::Order(_, left, right) => {
+                (left, right)
             }
             ConditionMatchKey::OffsetEqual(_, _) | ConditionMatchKey::OverflowAdd(_, _) => {
                 return None;
             }
+        };
+        let right_spellings = spellings(right);
+        let left_spellings = spellings(left);
+        if left_spellings
+            .iter()
+            .chain(&right_spellings)
+            .any(|term| self.equality_graph.has_uint64_source(term))
+        {
+            return None;
         }
+        let keys = self.condition_match_keys_for_spellings(
+            &key,
+            &left_spellings,
+            &right_spellings,
+            || crate::instrumentation::record_deterministic_work(1),
+        );
         let matches = |facts: &crate::persistent::PersistentMap<ConditionTerm, bool>| {
             facts.iter().any(|(fact, fact_value)| {
                 crate::instrumentation::record_deterministic_work(1);
@@ -599,12 +576,13 @@ impl PureFactContext {
             })
         };
         Some(
-            keys.iter()
-                .any(|key| self.condition_facts_by_sides.get(key).is_some_and(matches))
-                || self
-                    .open_condition_facts
-                    .get(&key.family())
-                    .is_some_and(matches),
+            keys.iter().any(|key| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.condition_facts_by_sides.get(key).is_some_and(matches)
+            }) || self
+                .open_condition_facts
+                .get(&key.family())
+                .is_some_and(matches),
         )
     }
 
