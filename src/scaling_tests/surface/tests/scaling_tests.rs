@@ -9724,3 +9724,36 @@ fn early_return_finishing_shares_path_prefixes() {
 fn early_return_finishing_shares_path_prefixes_through_64_returns() {
     assert_early_return_finishing_shares_prefixes(&[8, 16, 32, 64]);
 }
+
+#[test]
+#[ignore = "nightly: four post-return unfold sizes take 0.94s in the parallel gate"]
+fn post_return_function_equations_scale_with_explicit_unfolds() {
+    let fixture = crate::cli::parse_mdtest(
+        std::path::Path::new("return_fold_retains_post_return_function_unfold.md"),
+        include_str!("../../../../mdtests/return_fold_retains_post_return_function_unfold.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let samples = [4, 8, 16, 32].map(|size| {
+        let unfolds = (0..size)
+            .map(|index| format!("unfold(first(Shape::Pair(x, {index})));"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let source = source.replace("unfold(first(Shape::Pair(x, 3)));", &unfolds);
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&source, &sources)
+        });
+        result.unwrap();
+        work
+    });
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 64),
+        "retained unfold equations rescanned the growing return proof: {samples:?}"
+    );
+}

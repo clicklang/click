@@ -244,6 +244,17 @@ tests and all four fixture aggregates in 15m53s (report-only budget warning;
 a separate migration diagnostic build ran concurrently).
 No nightly suite was run; the full migration acceptance audits remain open.
 
+A further recursive-drop proof reduction exposed an independent return-proof
+bookkeeping defect on master: standalone pure-function `unfold` added its
+equation to the branch, but a subsequent `have` and resource fold lost that
+evidence at final return certification. The operation now retains its
+constructed proposition under the pre-unfold facts on the selected return
+path. It adds no equality reasoning or lowering changes. The small C
+regression is `return_fold_retains_post_return_function_unfold.md`; companion
+tests cover expansion, false-equation rejection, and 4/8/16/32 explicit
+unfolds. This repairs that reduced defect, not the remaining migration Rust
+proofs as a whole.
+
 ### Decision: the free decides its frame from proven separation
 
 The user chose the executor to require separation, with the step recording
