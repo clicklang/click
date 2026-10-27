@@ -3148,6 +3148,24 @@ fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
     assert!(expanded.contains("step(inner, {});"), "{expanded}");
 }
 
+/// The loop back edge needs both the current zero and the previous entry's
+/// one. The shared rewrite search must retain that entry when spelling its
+/// selected equality, including in a cold expanded proof.
+#[test]
+#[ignore = "nightly: whole loop claim expansion and cold verification"]
+fn equality_search_expands_loop_ranking_with_previous_entry_fact() {
+    let (click, sources) = mdtest_sources("mdtests/loop_old_parameter_resource_argument.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "advance.contract")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(expanded.contains("rewrite("), "{expanded}");
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
 /// A theorem with a type parameter is checked at a rigid type standing for
 /// any type. Expanding one of its tactics verifies that theorem alone, and
 /// must check it the same way; without the rigid type the proof cannot be

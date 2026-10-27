@@ -1059,12 +1059,10 @@ impl<'a> Proof<'a> {
                 continue;
             }
             check_verification_deadline()?;
-            let Some((kernel, surface)) = self
-                .resolve_simp_premises(std::slice::from_ref(equality), &[])
-                .and_then(|mut spelled| spelled.pop())
-            else {
+            let Some(surface) = self.available_rewrite_equality(equality) else {
                 continue;
             };
+            let kernel = equality.clone();
             let mut forms = Vec::new();
             if let Some(unanchored) = unanchored_equality(&surface)
                 && let Ok(lowered) =
@@ -1128,12 +1126,10 @@ impl<'a> Proof<'a> {
             if candidates.len() >= REWRITE_EQUALITIES {
                 break;
             }
-            let Some((kernel, surface)) = self
-                .resolve_simp_premises(std::slice::from_ref(equality), &[])
-                .and_then(|mut spelled| spelled.pop())
-            else {
+            let Some(surface) = self.available_rewrite_equality(equality) else {
                 continue;
             };
+            let kernel = equality.clone();
             // A fact recorded at a statement's entry is spelled there; its
             // unanchored form denotes the same fact where the proof stands
             // when nothing it names has changed since, which lowering and

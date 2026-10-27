@@ -6294,7 +6294,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
             "size {size} equality lookup made {comparisons} key comparisons"
         );
         let closed = root
-            .try_indexed_goal_equality_rewrite_closure()
+            .try_goal_equality_rewrite_closure()
             .expect("the selected equality should rewrite and normalize the goal");
         assert!(closed.is_complete());
         assert!(matches!(
@@ -6411,7 +6411,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
         }
         let before = fact_node_allocations();
         let closed = root
-            .try_indexed_goal_equality_rewrite_closure()
+            .try_goal_equality_rewrite_closure()
             .expect("the two selected equalities should shrink and normalize the goal");
         let allocations = fact_node_allocations() - before;
         let allocation_bound = 128 * logarithmic_height + 512;
