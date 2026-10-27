@@ -6,8 +6,9 @@
 //! with `to_integer`: an operand of a comparison that reads as Integer, an
 //! argument for an `Integer` parameter of a pure function or theorem, the
 //! value of `let s: Integer`, an `Integer` constructor field, an `Integer`
-//! resource field's `fold` value, the body of a `-> Integer` function, and
-//! every arm of a `match` and branch of an `if` in one of those positions
+//! resource field's `fold` value, the body of a `-> Integer` function,
+//! each `decreases` measure component, and every arm of a `match` and
+//! branch of an `if` in one of those positions
 //! (an `if`'s condition stays a proposition). Where a machine type is
 //! expected the
 //! operation is C's at that type, as written. An untyped `let` has no

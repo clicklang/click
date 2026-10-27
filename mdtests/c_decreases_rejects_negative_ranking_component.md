@@ -39,5 +39,5 @@ int32 drift(int32 n) {
 ```
 
 ```expect
-fail: `0 <= n - 6` at the back edge
+fail: `0 <= to_integer(n) - 6` at the back edge
 ```

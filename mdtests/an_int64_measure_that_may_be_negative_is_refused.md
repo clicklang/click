@@ -1,6 +1,6 @@
-# An int64 measure that may be negative is refused
+# An Integer measure over an int64 counter may be negative
 
-A signed measure owes its lower bound at the back edge: descent through
+An Integer measure owes its lower bound at the back edge: descent through
 negative values is not well founded. `count` steps `i` by two while
 `i < length`, so the last step can take `i` past `length` and the measure
 `length - i` to `-1`. No invariant rules that out, and the loop is refused at
