@@ -448,6 +448,40 @@ impl PureFactContext {
         if exact || matches!(memory_match_operands(condition), MemoryMatchOperands::Exact) {
             return Some(exact);
         }
+        // The matcher also accepts a fixed number of syntactic symmetries.
+        // Probe those exact keys before resolving operands or scanning facts.
+        let lookup = |candidate: ConditionTerm| {
+            crate::instrumentation::record_deterministic_work(1);
+            self.condition_facts.get(&candidate) == Some(&value)
+        };
+        let symmetric_hit = match memory_match_operands(condition) {
+            MemoryMatchOperands::Words(format, relation, left, right) => {
+                use CompareRelation::*;
+                let reversed = match relation {
+                    Equal => Equal,
+                    LessThan => GreaterThan,
+                    LessEqual => GreaterEqual,
+                    GreaterThan => LessThan,
+                    GreaterEqual => LessEqual,
+                };
+                // Condition identity already ignores signedness for 32-bit
+                // equality; order comparisons retain their exact carrier.
+                lookup(ConditionTerm::Compare {
+                    format,
+                    relation: reversed,
+                    left: Box::new(right.clone()),
+                    right: Box::new(left.clone()),
+                })
+            }
+            MemoryMatchOperands::Offsets(left, right) => lookup(ConditionTerm::PointerOffsetEqual(
+                Box::new(right.clone()),
+                Box::new(left.clone()),
+            )),
+            MemoryMatchOperands::Exact => unreachable!("exact-only kinds returned above"),
+        };
+        if symmetric_hit {
+            return Some(true);
+        }
         let atom = |term: &Bitvector32Term| match term {
             Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => true,
             Bitvector32Term::Variable(variable) => {
