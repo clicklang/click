@@ -681,31 +681,37 @@ fn store_separation_through_an_alias_ignores_other_objects_aliases() {
     };
     let (q, identity, marker) = (pointer(0), pointer(1), pointer(2));
     let write = q.offset_by_bytes(8);
-    let mut work = Vec::new();
-    for size in [8u64, 32, 128] {
-        let mut resources = ResourceContext::new()
-            .unchecked_with_fact(own_memory_fact(identity.clone(), 2, 4))
-            .unchecked_with_fact(own_memory_fact(marker.clone(), 0, 1));
-        let mut context = PureFactContext::new().assume_proposition(equal(&q, &identity));
-        for index in 0..size {
-            let (object, alias) = (pointer(10 + 2 * index), pointer(11 + 2 * index));
-            resources = resources.unchecked_with_fact(own_memory_fact(object.clone(), 0, 4));
-            context = context.assume_proposition(equal(&alias, &object));
+    for explicit_owners in [false, true] {
+        let mut work = Vec::new();
+        for size in [8u64, 32, 128] {
+            let mut resources = ResourceContext::new()
+                .unchecked_with_fact(own_memory_fact(identity.clone(), 2, 4))
+                .unchecked_with_fact(own_memory_fact(marker.clone(), 0, 1));
+            let mut context = PureFactContext::new().assume_proposition(equal(&q, &identity));
+            for index in 0..size {
+                let (object, alias) = (pointer(10 + 2 * index), pointer(11 + 2 * index));
+                resources = resources.unchecked_with_fact(own_memory_fact(object.clone(), 0, 4));
+                context = context.assume_proposition(equal(&alias, &object));
+            }
+            let context =
+                context.assume_proposition(Proposition::CResourceComposition(resources.clone()));
+            let context = if explicit_owners {
+                context.with_store_owner(Some(resources))
+            } else {
+                context
+            };
+            let (separated, used) = crate::instrumentation::measure_deterministic_work(|| {
+                let footprint = context.owned_store_footprint(&write, 8);
+                context.access_owned_apart_from_store(&footprint, &write, &marker, 4)
+            });
+            assert!(separated, "size={size}");
+            work.push(used);
         }
-        let context = context
-            .assume_proposition(Proposition::CResourceComposition(resources.clone()))
-            .with_store_owner(Some(resources));
-        let (separated, used) = crate::instrumentation::measure_deterministic_work(|| {
-            let footprint = context.owned_store_footprint(&write, 8);
-            context.access_owned_apart_from_store(&footprint, &write, &marker, 4)
-        });
-        assert!(separated, "size={size}");
-        work.push(used);
+        assert!(
+            work.windows(2).all(|pair| pair[1] <= pair[0] + 8),
+            "aliased store separation work grows with unrelated objects (explicit owners={explicit_owners}): {work:?}"
+        );
     }
-    assert!(
-        work.windows(2).all(|pair| pair[1] <= pair[0] + 8),
-        "aliased store separation work grows with unrelated objects: {work:?}"
-    );
 }
 
 #[test]
@@ -1028,4 +1034,52 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
         samples.iter().all(|work| *work <= samples[0] + 64),
         "fixed overlap must not scan unrelated separation authority: {samples:?}"
     );
+}
+
+/// Without explicit store owners, history still supplies separation, but a
+/// store must select compositions by both accesses rather than scan history.
+#[test]
+fn ownerless_store_separation_ignores_unrelated_composition_history() {
+    let object = |index| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(950_000 + index)),
+    };
+    for growing_partition in [false, true] {
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut resources =
+                ResourceContext::new().unchecked_with_fact(own_memory_fact(object(0), 0, 1));
+            let mut context = PureFactContext::new()
+                .assume_proposition(Proposition::CResourceComposition(resources.clone()));
+            for index in 1..=size {
+                if !growing_partition {
+                    resources = ResourceContext::new();
+                }
+                resources = resources.unchecked_with_fact(own_memory_fact(object(index), 0, 1));
+                context = context
+                    .assume_proposition(Proposition::CResourceComposition(resources.clone()));
+            }
+            // Only this last composition holds the pair. In the growing
+            // partition it adds the read, not the write: querying only the
+            // write's index bucket would miss it.
+            let write = object(if growing_partition { 0 } else { size });
+            let read = object(size + 1);
+            resources = resources.unchecked_with_fact(own_memory_fact(read.clone(), 0, 1));
+            context = context.assume_proposition(Proposition::CResourceComposition(resources));
+            let (answers, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let footprint = context.owned_store_footprint(&write, 4);
+                (
+                    context.access_owned_apart_from_store(&footprint, &write, &read, 4),
+                    context.access_owned_apart_from_store(&footprint, &write, &object(size + 2), 4),
+                )
+            });
+            assert_eq!(answers, (true, false));
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= pair[0] + 8),
+            "ownerless store separation scans history (growing partition={growing_partition}): {samples:?}"
+        );
+    }
 }
