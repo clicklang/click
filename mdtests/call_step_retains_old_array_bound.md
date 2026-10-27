@@ -3,7 +3,9 @@
 A write to `visited` leaves `left` unchanged. The observed resource supplies
 the bound at the current snapshot; the call reads the same cell through its
 entry snapshot. Keep the call theorem's original bound when transporting its
-facts to the statement exit.
+facts to the statement exit. Instantiate the held entry-snapshot bound
+explicitly before the call: simple call checking no longer scans all ambient
+conditions for a memory-equivalent spelling.
 
 ```c filename=probe.c
 int32 probe(int32 *left, int32 *visited, int32 n, int32 cur) {
@@ -35,6 +37,10 @@ int32 probe(int32 *left, int32 *visited, int32 n, int32 cur) {
     observe(bounded(left, n));
     have 0 <= left[cur] and left[cur] < n by {
         instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= left[k] and left[k] < n }, cur);
+        assumption();
+    }
+    have 0 <= old(left[cur]) by {
+        instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= old(left[k]) and old(left[k]) < n }, cur);
         assumption();
     }
     let { result: value } = step(use, {});

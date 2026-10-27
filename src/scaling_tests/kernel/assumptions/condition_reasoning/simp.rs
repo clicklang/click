@@ -30,17 +30,11 @@ fn exact_memory_condition_matches_ignore_other_facts() {
                     context = context.assume_condition(condition(kind, left, index + 10_000), true);
                 }
                 let goal = condition(kind, 950_000, 950_001);
-                // Compound misses still use the general fallback; only
-                // their exact hits are claimed to have constant work here.
-                let missing_work = if kind != 3 {
-                    let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let (found, missing_work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
                         context.has_matching_condition_fact_for_memory_resolution(&goal, true)
                     });
-                    assert!(!found, "exact-only conditions need the stated fact");
-                    work
-                } else {
-                    0
-                };
+                assert!(!found, "unmatched conditions need an explicit fact");
                 context = context.assume_condition(goal.clone(), true);
                 let (found, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
                     context.has_matching_condition_fact_for_memory_resolution(&goal, true)
@@ -313,7 +307,7 @@ fn unsigned_memory_condition_matches_ignore_unrelated_facts() {
 }
 
 #[test]
-fn compound_load_condition_hits_ignore_other_facts() {
+fn compound_load_condition_hits_and_misses_ignore_other_facts() {
     for unsigned in [false, true] {
         for related in [false, true] {
             let mut samples = Vec::new();
@@ -348,13 +342,17 @@ fn compound_load_condition_hits_ignore_other_facts() {
                 let source = condition(compound(named), var(998_000));
                 let goal = condition(compound(raw), var(998_000));
                 assert_ne!(source, goal);
+                let (found, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
+                    facts.has_matching_condition_fact_for_memory_resolution(&goal, true)
+                });
+                assert!(!found);
                 for value in [false, true] {
                     let held = facts.clone().assume_condition(source.clone(), value);
                     let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
                         held.has_matching_condition_fact_for_memory_resolution(&goal, value)
                     });
                     assert!(found);
-                    samples.push(work);
+                    samples.push((miss_work, work));
                 }
             }
             eprintln!("compound load unsigned={unsigned}, related={related}: {samples:?}");

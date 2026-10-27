@@ -279,22 +279,43 @@ Proposition facts (`FactSet`) have no `scan_unindexed` at all now: fast
 code reads them only through an index, and a new whole-set scan there does
 not compile.
 
-**Known fast-part scans** (`scan_unindexed`) still open:
+**Removed (2026-10-27): memory-condition ambient fallback.**
+`has_matching_condition_fact_for_memory_resolution` now declines when its
+indexed routes cannot find a candidate. It no longer calls
+`scanned_matching_condition_fact_for_memory_resolution`, including the old
+debug-only full-scan comparison. This deliberately gives up automatic matches
+between compound expressions filed under different canonical keys. A miss
+means "not established", never that the condition is false. The candidate
+matcher's snapshot, carrier and truth checks are unchanged.
 
-- The memory-resolution condition match's fallback
-  (`scanned_matching_condition_fact_for_memory_resolution`), reached from
-  `functions.rs` and contract certification whenever its index declines.
-  It matches up to memory-resolution equality, which no key spells, and
-  `mdtests/call_step_retains_old_array_bound.md` needs it: the call's
-  `0 <= old(left[cur])` requirement holds by a fact about the same cell at
-  another snapshot named through an equality.
+An explicit proof can establish the required spelling before a call.
+`mdtests/call_step_retains_old_array_bound.md` now instantiates its held
+entry-snapshot bound explicitly before calling `use`; neither the C nor the
+contract changed. `compound_memory_condition_miss_requires_the_explicit_spelling`
+checks the intentional loss of automatic compound matching, retained
+selected-premise reasoning and exact admission, for signed/unsigned orders
+and offset equalities. Scaling tests now cover compound misses as well as
+hits beside unrelated and shared-operand facts at 8/32/128 entries.
+Compound-load misses cost three work units at every size; hits remain at
+seven. The final focused run passed 1,698 tests, including the new boundary
+regression, plus the repaired fixture and two targeted expansion checks.
 
-**Partly fixed (2026-10-27):** exact condition matches now read the condition
+Disabling the fallback left all 1,697 focused tests and 57 enabled example
+projects passing. Of 4,848 enabled Markdown proofs, only that array-bound
+fixture failed; its explicit instantiation repair passed independently.
+
+The indexed atom route still reads its existing family-specific open-fact
+bucket and alias classes; removing the global fallback does not claim that
+those routes have constant cost. Composite-frame expansion remains open.
+
+The earlier index improvements below describe the steps before this cutoff.
+
+**Earlier indexing (2026-10-27):** exact condition matches now read the condition
 fact map before inspecting operands. Integer, pointer-value, 64-bit and other
 exact-only condition kinds also answer misses by lookup: the matcher never
 related those kinds through memory equivalence, so scanning could only find
 the identical fact. The matcher and index share their operand-family
-classification. Non-exact 32-bit comparisons and offset equalities retain
+classification. Non-exact 32-bit comparisons and offset equalities initially retained
 the existing indexed route and fallback. The scaling regression
 `exact_memory_condition_matches_ignore_other_facts` grows unrelated facts
 and facts sharing an operand at 8, 32 and 128 entries. Before this change,
@@ -306,7 +327,7 @@ The same map also answers the matcher's fixed syntactic symmetries: reversed
 32-bit orders, swapped equality operands, signed/unsigned 32-bit equality,
 and swapped offset equalities. These hits need at most two lookups, even
 for compound operands. Scaling tests grow unrelated and shared-operand facts;
-misses still use the existing route because operands may be memory-equivalent
+misses initially used the fallback because operands may be memory-equivalent
 without having identical syntax.
 `symmetric_memory_condition_matches_ignore_other_facts` and
 `equivalent_equality_spellings_use_bounded_lookups` cover 8, 16 and 32 facts,
@@ -326,7 +347,8 @@ per operand before the change. They now cost 65/257/1,025 and 76/268/1,036.
 `aliased_memory_condition_matches_ignore_unrelated_facts` stays at 17 units
 for a miss and 28 for a hit beside 8/32/128 unrelated facts, and checks
 reversed order, both truth values and withdrawal. This fixes candidate
-generation in the indexed path; the general fallback below it remains.
+generation in the indexed path; the general fallback remained until the
+removal above.
 
 Unsigned 32-bit orders now have their own condition-match key family and
 use the same atom-query index. They previously scanned every condition fact
@@ -339,12 +361,12 @@ the same linear measurements above. Compound unsigned facts retain their
 own open-fact bucket; signed facts cannot satisfy unsigned order queries,
 and withdrawing a fact removes it from both indexes.
 
-Compound queries now try their canonical condition key before the general
+Compound queries gained a canonical condition-key lookup before the general
 scan. This catches a load and its registered variable inside a sum or a
 scaled offset; the existing memory matcher still checks each indexed
-candidate. A miss retains the scan because different canonical forms can
-still be memory-equivalent. At 8/32/128 facts,
-`compound_load_condition_hits_ignore_other_facts` measured true hits at
+candidate. At that stage a miss retained the scan because different canonical
+forms can still be memory-equivalent; it now declines as described above. At 8/32/128 facts,
+`compound_load_condition_hits_and_misses_ignore_other_facts` measured true hits at
 159/615/2,439 units before this lookup; hits now cost seven units at every
 size, for both truth values and signednesses, with unrelated facts or facts
 sharing one operand. Separate checks retain scaled-offset matching,
@@ -949,25 +971,18 @@ machine position.
 
 ### 2. Phase E leftovers, measured and deferred
 
-The remaining `scan_unindexed` sites run rarely and stay small across the
-whole suite (counted 2026-10-26):
+The original census found the following remaining sites (2026-10-26); their
+current disposition is:
 
-- `scanned_matching_condition_fact_for_memory_resolution` (`simp.rs`), the
-  fallback when the condition-match index cannot answer: 234 calls, at most
-  60 facts, 15 hits in the original census. Partial progress (2026-10-27):
-  exact hits and exact-only kinds (`IntegerEqual`, pointer equalities,
-  64-bit comparisons and Bool applications) now use the condition fact map.
-  Reversed 32-bit comparisons and offset equalities, and the other signedness
-  spelling of 32-bit equality, also use direct lookups when operands match.
-  Atom queries select existing keys through the shared side index rather
-  than multiplying both operands' alias classes.
-  This indexed atom route includes unsigned 32-bit orders, in a separate
-  family from signed orders, with their own compound-fact fallback bucket.
-  Compound queries try their canonical-key candidates first; successful
-  load/registered-variable matches avoid the scan, while misses retain it.
-  The remaining non-exact 32-bit and offset matches include loaded variables,
-  sums, applications and scalar spellings tied to 64-bit facts; those still
-  need complete keys for memory equivalence.
+- Completed (2026-10-27): the global memory-condition fallback in `simp.rs`.
+  The original census counted 234 calls, at most 60 facts, and 15 hits.
+  After exact/symmetric, atom-alias and canonical compound indexing,
+  remaining misses now decline instead of scanning all facts. This is an
+  intentional completeness tradeoff: explicit proof steps must establish
+  spellings outside those indexed routes. The array-bound call fixture
+  supplies its entry-snapshot bound by explicit instantiation. Atom queries'
+  existing open-fact buckets and alias traversal remain; this change does
+  not certify their scaling for every input shape.
 - `frame_frontier_compositions` (`memory_reasoning.rs`): 328 calls, at most
   7 composite-owning compositions. Needs a by-block index of them.
 

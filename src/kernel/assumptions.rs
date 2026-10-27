@@ -672,17 +672,6 @@ impl Drop for ReasoningProvenanceCollectionGuard {
     }
 }
 
-/// Runs a debug-build cross-check without recording reasoning provenance:
-/// the check re-asks questions the release build skips, and a premise it
-/// recorded would make a debug run's certificates differ from release's.
-#[cfg(debug_assertions)]
-pub(super) fn without_reasoning_provenance<R>(body: impl FnOnce() -> R) -> R {
-    let previous = RECORDING_REASONING_PROVENANCE.with(|recording| recording.replace(true));
-    let result = body();
-    RECORDING_REASONING_PROVENANCE.with(|recording| recording.set(previous));
-    result
-}
-
 struct ReasoningProvenanceRecordingGuard;
 
 impl ReasoningProvenanceRecordingGuard {
