@@ -366,11 +366,50 @@ impl TermClasses {
                             pending.extend(arguments.iter().rev().map(Work::Argument));
                             continue;
                         }
+                        N::MemoryLoad { memory, pointer } => {
+                            let head = self.intern_node(Node::AlgebraicMemoryRead(
+                                ty.clone(),
+                                memory.read_identity(),
+                            ));
+                            let address = self.numeric_address(pointer);
+                            let node = Node::Apply(head, address);
+                            let read = self.intern_node(node.clone());
+                            // A projection's selected-cell equation is producer
+                            // metadata. Consult its exact key, without walking
+                            // the memory history or choosing a term from facts.
+                            if let Some(source) =
+                                crate::kernel::prelude::canonical_load_projection_source(
+                                    memory, pointer,
+                                )
+                            {
+                                let source_head = self.intern_node(Node::AlgebraicMemoryRead(
+                                    ty.clone(),
+                                    source.read_identity(),
+                                ));
+                                let source_read =
+                                    self.intern_node(Node::Apply(source_head, address));
+                                self.close(vec![(read, source_read)]);
+                            }
+                            if let Some(origin) = crate::kernel::prelude::value_load_origin(
+                                memory,
+                                pointer,
+                                crate::kernel::ABSTRACT_VALUE_WIDTH,
+                            ) {
+                                let origin_head = self.intern_node(Node::AlgebraicMemoryRead(
+                                    ty,
+                                    origin.read_identity(),
+                                ));
+                                let origin_read =
+                                    self.intern_node(Node::Apply(origin_head, address));
+                                self.close(vec![(read, origin_read)]);
+                            }
+                            node
+                        }
                         // Match binds payload variables. Do not equate bodies
                         // by a signature that would forget their binding scope.
                         // A conditional is an atom by its whole identity, as a
                         // scalar conditional is.
-                        N::Match { .. } | N::If { .. } | N::MemoryLoad { .. } => {
+                        N::Match { .. } | N::If { .. } => {
                             values.push(self.opaque_argument(&A::Algebraic(term.clone())));
                             continue;
                         }

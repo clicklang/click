@@ -228,7 +228,9 @@ pub(crate) fn canonical_value_load_memory(
     bytes: u32,
 ) -> SharedCMemory {
     let version = cell_version_point(memory, pointer, bytes);
-    canonical_projected_load_memory(version.as_ref().unwrap_or(memory), pointer)
+    let named = canonical_projected_load_memory(version.as_ref().unwrap_or(memory), pointer);
+    record_value_load_origin(memory, &named, pointer, bytes);
+    named
 }
 
 fn canonical_projected_load_memory(source: &SharedCMemory, pointer: &Pointer) -> SharedCMemory {

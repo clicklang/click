@@ -1428,3 +1428,103 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
         "projection lookup visited unrelated definitions: {unrelated_samples:?}"
     );
 }
+
+#[test]
+fn abstract_read_congruence_scales_with_selected_reads() {
+    let parameter = TypeParameterName::intern("ScaledReadT");
+    let memory = intern_c_memory(CMemory::new());
+    let read = |pointer: Pointer| AlgebraicTerm {
+        algebraic_type: parameter.algebraic_type(),
+        node: AlgebraicTermNode::MemoryLoad {
+            memory: memory.clone(),
+            pointer: Box::new(pointer),
+        },
+    };
+    let measure = |size: u64, ambient: u64| {
+        let mut context = PureFactContext::new();
+        for i in 0..ambient {
+            context = context.assume_condition(
+                ConditionTerm::pointer_equal(
+                    Pointer::symbolic(Variable(995_000 + 2 * i)),
+                    Pointer::symbolic(Variable(995_001 + 2 * i)),
+                ),
+                true,
+            );
+        }
+        let anchor = Pointer::symbolic(Variable(994_000));
+        let first = read(anchor.clone());
+        crate::instrumentation::measure_deterministic_work(|| {
+            for i in 1..=size {
+                let alias = Pointer::symbolic(Variable(994_000 + i));
+                let next = read(alias.clone());
+                assert!(!context.equality_graph.are_algebraic_equal(&first, &next));
+                context = context
+                    .assume_condition(ConditionTerm::pointer_equal(anchor.clone(), alias), true);
+                assert!(context.equality_graph.are_algebraic_equal(&first, &next));
+            }
+        })
+        .1
+    };
+    let samples: Vec<_> = [8, 16, 32, 64]
+        .into_iter()
+        .map(|size| measure(size, 0))
+        .collect();
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1] <= 2 * pair[0] + 128,
+            "abstract read congruence revisited prior aliases: {samples:?}"
+        );
+    }
+    let unrelated: Vec<_> = [0, 16, 64, 256]
+        .into_iter()
+        .map(|size| measure(8, size))
+        .collect();
+    assert!(
+        unrelated.iter().all(|work| *work <= unrelated[0] + 128),
+        "abstract read congruence scanned unrelated facts: {unrelated:?}"
+    );
+}
+
+#[test]
+fn abstract_read_origin_lookup_ignores_unrelated_definitions() {
+    let mut samples = Vec::new();
+    for size in [0, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = intern_c_memory(
+            CMemory::new().with_block_without_derivation("local:abstract-origin-scaling", 4),
+        );
+        let parameter = TypeParameterName::intern("ScaledOriginT");
+        for i in 0..size {
+            AlgebraicTermNode::parameter_load(
+                source.clone(),
+                Pointer::symbolic(Variable(993_000 + i)),
+                parameter,
+            );
+        }
+        let address = Pointer::symbolic(Variable(992_000));
+        let CValue::Parameter(named) =
+            AlgebraicTermNode::parameter_load(source.clone(), address.clone(), parameter)
+        else {
+            unreachable!()
+        };
+        let observed = AlgebraicTerm {
+            algebraic_type: parameter.algebraic_type(),
+            node: AlgebraicTermNode::MemoryLoad {
+                memory: source,
+                pointer: Box::new(address),
+            },
+        };
+        let context = PureFactContext::new();
+        let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context
+                .equality_graph
+                .are_algebraic_equal(&named, &observed)
+        });
+        assert!(equal);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "origin lookup visited unrelated producer definitions: {samples:?}"
+    );
+}

@@ -1548,6 +1548,9 @@ impl EqualityGraph {
                     AlgebraicTermNode::PureFunctionApplication { arguments, .. } => {
                         pending.extend(arguments.iter().map(Work::Argument));
                     }
+                    AlgebraicTermNode::MemoryLoad { pointer, .. } => {
+                        pointers.push((**pointer).clone());
+                    }
                     // Binder-bearing match bodies remain opaque.
                     _ => {}
                 },
@@ -1572,6 +1575,7 @@ impl EqualityGraph {
                     | CValue::UInt64(t)
                     | CValue::Int128(t)
                     | CValue::UInt128(t) => pending.push(Work::Machine(t)),
+                    CValue::Parameter(term) => pending.push(Work::Algebraic(term)),
                     _ => {}
                 },
                 Work::Machine(term) => {
