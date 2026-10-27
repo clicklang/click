@@ -289,6 +289,19 @@ not compile.
   `0 <= old(left[cur])` requirement holds by a fact about the same cell at
   another snapshot named through an equality.
 
+**Partly fixed (2026-10-27):** exact condition matches now read the condition
+fact map before inspecting operands. Integer, pointer-value, 64-bit and other
+exact-only condition kinds also answer misses by lookup: the matcher never
+related those kinds through memory equivalence, so scanning could only find
+the identical fact. The matcher and index share their operand-family
+classification. Non-exact 32-bit comparisons and offset equalities retain
+the existing indexed route and fallback. The scaling regression
+`exact_memory_condition_matches_ignore_other_facts` grows unrelated facts
+and facts sharing an operand at 8, 32 and 128 entries. Before this change,
+an Integer miss cost 16, 64 and 256 units and a hit cost 18, 66 and 258.
+Exact-only hits and misses now cost one unit at every size; exact compound
+32-bit comparisons also cost one unit.
+
 **Fixed: the exact check is exact.** Measured across the gate, the
 condition scan `settles_exactly` fell into (`proves_condition_from_facts`)
 ran 18,636 times in fast code and found a fact 27 times, none of which a
@@ -893,9 +906,12 @@ whole suite (counted 2026-10-26):
 
 - `scanned_matching_condition_fact_for_memory_resolution` (`simp.rs`), the
   fallback when the condition-match index cannot answer: 234 calls, at most
-  60 facts, 15 hits. Its query shapes are load variables, sums,
-  `IntegerEqual`, pointer equalities and pure function applications; an
-  index needs keys for those.
+  60 facts, 15 hits in the original census. Partial progress (2026-10-27):
+  exact hits and exact-only kinds (`IntegerEqual`, pointer equalities,
+  64-bit comparisons and Bool applications) now use the condition fact map.
+  The remaining non-exact 32-bit and offset matches include loaded variables,
+  sums, applications and scalar spellings tied to 64-bit facts; those still
+  need complete keys for memory equivalence.
 - `frame_frontier_compositions` (`memory_reasoning.rs`): 328 calls, at most
   7 composite-owning compositions. Needs a by-block index of them.
 
