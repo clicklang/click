@@ -153,7 +153,7 @@ fn libcxx_std_function_holds_a_capturing_lambda() {
         &root,
         &import,
         CAPTURING_SIDECAR,
-        &["caller::(lambda#0).contract", "caller.contract"],
+        &["caller::(lambda#0).ensures_0", "caller.ensures_0"],
     )
     .unwrap_or_else(|error| panic!("{error}"));
     for (before, after, expected) in [

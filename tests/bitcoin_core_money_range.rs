@@ -1350,7 +1350,7 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
     let expanded = expand_project_claim_source_by_label(
         &project,
         &ProgramInputs::program(&import),
-        "probe.contract",
+        "probe.ensures_0",
     )
     .unwrap();
     let rewritten = project.with_entry_source(expanded.clone());
@@ -1360,7 +1360,7 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
     let position = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
-        "probe.contract",
+        "probe.ensures_0",
         0,
     )
     .unwrap();
@@ -4224,7 +4224,7 @@ fn check_pinned_byte_proof(root: &Path, import: &PreparedCppImport, source: &str
     let expanded = expand_project_claim_source_by_label(
         &project,
         &ProgramInputs::program(import),
-        "probe.contract",
+        "probe.ensures_0",
     )
     .unwrap();
     let rewritten = project.with_entry_source(expanded.clone());
@@ -4234,7 +4234,7 @@ fn check_pinned_byte_proof(root: &Path, import: &PreparedCppImport, source: &str
     let position = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(import),
-        "probe.contract",
+        "probe.ensures_0",
         0,
     )
     .unwrap();
