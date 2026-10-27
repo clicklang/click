@@ -315,6 +315,19 @@ reproduction cost 539/2,003/7,859 units at 8/32/128 unrelated facts; the same
 probe costs two units after the lookup. The gate keeps the smaller sizes to
 stay below its per-test time budget.
 
+The atom-query path also shares the ordinary condition matcher's side-index
+selector, rather than constructing every pair of the two operands' aliases.
+It reads filed keys under the smaller class and filters against the other
+class, retaining the memory matcher's byte-offset aliases and 64-bit fallback.
+Previously uncharged fact-map probes are now counted. With that accounting,
+`memory_condition_matching_does_not_multiply_alias_classes` measured misses
+at 114/1,218/17,154 units and hits at 123/1,227/17,163 for 8/32/128 aliases
+per operand before the change. They now cost 65/257/1,025 and 76/268/1,036.
+`aliased_memory_condition_matches_ignore_unrelated_facts` stays at 17 units
+for a miss and 28 for a hit beside 8/32/128 unrelated facts, and checks
+reversed order, both truth values and withdrawal. This fixes candidate
+generation in the indexed path; the general fallback below it remains.
+
 **Fixed: the exact check is exact.** Measured across the gate, the
 condition scan `settles_exactly` fell into (`proves_condition_from_facts`)
 ran 18,636 times in fast code and found a fact 27 times, none of which a
@@ -924,6 +937,8 @@ whole suite (counted 2026-10-26):
   64-bit comparisons and Bool applications) now use the condition fact map.
   Reversed 32-bit comparisons and offset equalities, and the other signedness
   spelling of 32-bit equality, also use direct lookups when operands match.
+  Atom queries select existing keys through the shared side index rather
+  than multiplying both operands' alias classes.
   The remaining non-exact 32-bit and offset matches include loaded variables,
   sums, applications and scalar spellings tied to 64-bit facts; those still
   need complete keys for memory equivalence.
