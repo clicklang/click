@@ -693,3 +693,27 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
         );
     }
 }
+
+#[test]
+fn checked_pointer_read_retention_keeps_a_simplified_address_equation() {
+    let _session = VerificationSession::enter();
+    let memory = intern_c_memory(CMemory::new());
+    let address = Pointer::symbolic(Variable(9072));
+    let read = Pointer::loaded_value(&memory, &address);
+    let named = Pointer::symbolic(Variable(9073));
+    let value = CPointerValue::new(read.clone(), CType::Int32Pointer).with_address(named.clone());
+    let fact = crate::kernel::ExecutionPureFact::logical_read_equation(value, read.clone());
+    assert!(matches!(
+        fact.proposition(),
+        Proposition::ConditionIs(ConditionTerm::PointerEqual(..), true)
+    ));
+    let context = PureFactContext::new();
+    let isolated = context.clone();
+    let untrusted = crate::kernel::ExecutionPureFact::new(fact.proposition().clone());
+    untrusted.retain_pointer_read_definition(&context);
+    assert!(!context.pointers_known_equal(&named, &read));
+    fact.retain_pointer_read_definition(&context);
+    assert!(context.pointers_known_equal(&named, &read));
+    assert!(!context.designations_equal(&named, &read));
+    assert!(!isolated.pointers_known_equal(&named, &read));
+}

@@ -255,6 +255,18 @@ tests cover expansion, false-equation rejection, and 4/8/16/32 explicit
 unfolds. This repairs that reduced defect, not the remaining migration Rust
 proofs as a whole.
 
+The next generic-container reduction found a separate evidence-retention
+bug: a certified full-pointer read equation can normalize to address equality
+when its designation and bounds already match. The temporary-read retention
+helper recognized only the unsimplified full-value equation and dropped the
+address equation. It now retains either exact producer conclusion, without
+adding object authority or a consumer-specific fallback. The kernel
+regression checks uncertified evidence, branch isolation, and distinct
+object designations; scaling covers 8/16/32/64 equations and up to 256
+unrelated facts. The container proof still has a separate mismatch between
+its logical read and its fold-computed child argument; this increment does
+not claim to finish that proof or the migration.
+
 ### Decision: the free decides its frame from proven separation
 
 The user chose the executor to require separation, with the step recording

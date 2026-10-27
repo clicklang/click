@@ -242,3 +242,51 @@ fn cited_pointer_context_construction_scales_with_selected_conditions() {
         assert!(pair[1] <= pair[0] * 5 + 64, "{costs:?}");
     }
 }
+
+fn simplified_pointer_read_retention_work(count: u64, unrelated: u64) -> usize {
+    let _session = VerificationSession::enter();
+    let memory = intern_c_memory(CMemory::new());
+    let mut context = PureFactContext::new();
+    for index in 0..unrelated {
+        context = context.assume_proposition(eq(var(90000 + index), var(91000 + index)));
+    }
+    let facts = (0..count)
+        .map(|index| {
+            let address = Pointer::symbolic(Variable(92000 + index));
+            let read = Pointer::loaded_value(&memory, &address);
+            let named = Pointer::symbolic(Variable(93000 + index));
+            let value =
+                CPointerValue::new(read.clone(), CType::Int32Pointer).with_address(named.clone());
+            let fact = crate::kernel::ExecutionPureFact::logical_read_equation(value, read.clone());
+            (fact, named, read)
+        })
+        .collect::<Vec<_>>();
+    let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+        for (fact, named, read) in &facts {
+            fact.retain_pointer_read_definition(&context);
+            assert!(context.pointers_known_equal(named, read));
+        }
+    });
+    work
+}
+
+#[test]
+fn simplified_pointer_read_retention_scales_with_selected_equations() {
+    let samples = [8, 16, 32, 64].map(|count| simplified_pointer_read_retention_work(count, 64));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 16),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn simplified_pointer_read_retention_ignores_unrelated_facts() {
+    let samples =
+        [0, 16, 64, 256].map(|unrelated| simplified_pointer_read_retention_work(8, unrelated));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
