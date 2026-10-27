@@ -44,7 +44,33 @@ the pairs. The unregistered-term path also visits settled loads at an address.
 The current index does not itself establish a bound on bucket size, pair
 construction, or repeated memory walks.
 
-Intended regression:
+Current reproduction (2026-10-27, base `0b4123b8e`):
+`constant_bridge_candidate_pairs_scale_with_selected_input` in
+`src/scaling_tests/kernel/equality_graph/int32_tests.rs` constructs N reads
+at call-havoc snapshots equal to one unknown value, followed by N reads at
+later call-havoc snapshots equal to distinct constants. Each havoc may write
+the queried cell. Setup is outside the measurement; one constant query
+correctly returns unknown in every case.
+
+| N per group | Candidate pairs | Construction work units | Full query work units |
+| ---: | ---: | ---: | ---: |
+| 4 | 16 | 5 | 1,521 |
+| 8 | 64 | 9 | 6,081 |
+| 16 | 256 | 17 | 24,321 |
+| 32 | 1,024 | 33 | 97,281 |
+
+The regression's near-linear candidate-growth assertion fails. The full query
+cost is `95*N*N + 1` in these samples. Construction allocates N squared pairs
+but charges only N + 1 units. This is a reduced kernel-query reproduction,
+not a remeasurement of the historical full call fixture. A direct-store
+prototype did not reproduce the issue: read-over-write normalization removed
+the candidates. The existing positive control
+`constant_normalization_bridges_a_load_across_a_call` passes, demonstrating
+coverage that a removal would intentionally narrow. No behavior fix has been
+chosen; the failing regression is retained on the investigation branch for
+discussion, not submitted to the merge queue.
+
+Remaining regression coverage before a chosen fix:
 
 - Grow unrelated facts, same-address snapshots, and members of the queried
   equality class independently, at several sizes; cover hits and misses.

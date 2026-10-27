@@ -570,3 +570,85 @@ fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
         assert!(work <= 32, "size={size}, work={work}");
     }
 }
+
+/// Investigation: a fixed constant query must not materialize a Cartesian
+/// product of same-address loads before checking whether any bridge exists.
+/// Expected to fail until the checking/search boundary is repaired; this
+/// investigation is retained locally pending the fix discussion.
+#[test]
+fn constant_bridge_candidate_pairs_scale_with_selected_input() {
+    let mut samples = Vec::new();
+    for size in [4u64, 8, 16, 32] {
+        let _session = VerificationSession::enter();
+        let pointer = Pointer {
+            block: "constant-bridge-scale".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let query = var(880_000);
+        let mut context = PureFactContext::new();
+        let mut memory = CMemory::new().with_block("constant-bridge-scale", 4);
+        for index in 0..size {
+            memory = memory.with_call_memory_havoc(
+                Variable(881_000 + index),
+                &[CMemoryRange::new_with_element_width(
+                    pointer.clone(),
+                    0u32.into(),
+                    1u32.into(),
+                    4,
+                )],
+                &PureFactContext::new(),
+                None,
+            );
+            let load = Bitvector32Term::MemoryLoad(
+                intern_c_memory(memory.clone()),
+                Box::new(pointer.clone()),
+                LoadKind::Int32,
+            );
+            context = context.assume_condition(eq(&load, &query), true);
+        }
+        for index in 0..size {
+            let value = Bitvector32Term::Constant(index as u32 + 1);
+            memory = memory.with_call_memory_havoc(
+                Variable(882_000 + index),
+                &[CMemoryRange::new_with_element_width(
+                    pointer.clone(),
+                    0u32.into(),
+                    1u32.into(),
+                    4,
+                )],
+                &PureFactContext::new(),
+                None,
+            );
+            let load = Bitvector32Term::MemoryLoad(
+                intern_c_memory(memory.clone()),
+                Box::new(pointer.clone()),
+                LoadKind::Int32,
+            );
+            context = context.assume_condition(eq(&load, &value), true);
+        }
+        let (class, constant) = context
+            .equality_graph
+            .scalar_constant_class(&query)
+            .unwrap();
+        assert_eq!(
+            constant,
+            crate::kernel::assumptions::SignedConstantResolution::Unknown
+        );
+        let (pairs, construction_work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.equality_graph.scalar_bridgeable_loads(class).len()
+        });
+        let (answer, query_work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.known_signed_constant_after_normalization(&query)
+        });
+        assert_eq!(answer, None, "havocs separate the snapshots");
+        samples.push((size, pairs, construction_work, query_work));
+    }
+    eprintln!("constant bridge (size, pairs, construction units, query units): {samples:?}");
+    assert!(samples[0].1 > 0, "fixture must reach the candidate route");
+    let first = samples.first().unwrap();
+    let last = samples.last().unwrap();
+    assert!(
+        last.1 <= first.1 * (last.0 / first.0) as usize * 2,
+        "candidate construction must not grow quadratically: {samples:?}"
+    );
+}
