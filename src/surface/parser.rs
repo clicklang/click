@@ -5641,7 +5641,17 @@ impl Parser {
         } else {
             match spelling.as_str() {
                 "void" => C0Type::Void,
-                "_Bool" | "bool" => C0Type::Bool,
+                "_Bool" | "bool" => {
+                    if !self.exact_long_rank {
+                        crate::instrumentation::record_bool_census("click_bool", || {
+                            format!(
+                                "{} `{spelling}`",
+                                self.here().map(|p| p.to_string()).unwrap_or_default()
+                            )
+                        });
+                    }
+                    C0Type::Bool
+                }
                 "int8" | "int8_t" => C0Type::Int8,
                 "int16" | "int16_t" => C0Type::Int16,
                 "int32" | "int32_t" => C0Type::Int32,

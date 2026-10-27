@@ -5277,6 +5277,7 @@ fn lower_spec_comparison_proposition_at_state_in(
                 merge_failure_count = merge_failure_count.saturating_add(1);
                 continue;
             };
+            bool_census_comparison(&left_path.value, operator, &right_path.value);
             if let Some(proposition) = bool_disequality_as_equality(
                 &left_path.value,
                 operator,
@@ -6539,6 +6540,11 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 assumptions,
                 budget,
                 |value, facts, mut obligations| {
+                    if matches!(value, CValue::Bool(_)) != (*target_type == CType::Bool) {
+                        crate::instrumentation::record_bool_census("cast", || {
+                            format!("{value:?} as {target_type:?}")
+                        });
+                    }
                     // A specification's cast is C's conversion, modulo 2^N,
                     // as the same cast in C source is; `to_T(...)` is the
                     // checked conversion.
@@ -6566,7 +6572,14 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             expression,
             assumptions,
             budget,
-            apply_c_bitwise_not,
+            |value, facts, obligations| {
+                if matches!(value, CValue::Bool(_)) {
+                    crate::instrumentation::record_bool_census("arithmetic", || {
+                        format!("~{value:?}")
+                    });
+                }
+                apply_c_bitwise_not(value, facts, obligations)
+            },
         )?,
         SpecExpression::If {
             condition,
@@ -7455,6 +7468,13 @@ fn evaluate_spec_scalar_binary_paths_in(
             ) else {
                 continue;
             };
+            if matches!(left_path.value, CValue::Bool(_))
+                || matches!(right_path.value, CValue::Bool(_))
+            {
+                crate::instrumentation::record_bool_census("arithmetic", || {
+                    format!("{:?} . {:?}", left_path.value, right_path.value)
+                });
+            }
             paths.extend(spec_value_paths_in(
                 apply(
                     left_path.value.clone(),
@@ -8147,6 +8167,9 @@ pub(super) fn conditional_spec_value(
             // `int` of the other; its value, `0` or `1`, is unchanged.
             (CValue::Int32(then_term), CValue::Bool(else_term))
             | (CValue::Bool(then_term), CValue::Int32(else_term)) => {
+                crate::instrumentation::record_bool_census("mixed_arms", || {
+                    format!("{then_term:?} | {else_term:?}")
+                });
                 (then_term, else_term, CValue::Int32)
             }
             _ => return None,
@@ -8201,6 +8224,33 @@ pub(super) fn constant_spec_condition_value(proposition: &Proposition) -> Option
         }
         _ => None,
     }
+}
+
+/// Stage 5 census: a comparison the logical `Bool` refuses, an order on a
+/// `bool` or a `bool` against an integer.
+fn bool_census_comparison(left: &CValue, operator: CComparisonOperator, right: &CValue) {
+    let is_bool = |value: &CValue| matches!(value, CValue::Bool(_));
+    if !is_bool(left) && !is_bool(right) {
+        return;
+    }
+    let ordered = !matches!(
+        operator,
+        CComparisonOperator::Equal | CComparisonOperator::NotEqual
+    );
+    let kind = if ordered {
+        "order"
+    } else if is_bool(left) != is_bool(right) {
+        "integer_comparison"
+    } else if matches!(
+        (left, right),
+        (CValue::Bool(Bitvector32Term::UInt32Constant(_)), _)
+            | (_, CValue::Bool(Bitvector32Term::UInt32Constant(_)))
+    ) {
+        "integer_literal_comparison"
+    } else {
+        return;
+    };
+    crate::instrumentation::record_bool_census(kind, || format!("{left:?} {operator:?} {right:?}"));
 }
 
 /// Whether a `bool` term is a conditional whose leaves are all `0` or `1`,

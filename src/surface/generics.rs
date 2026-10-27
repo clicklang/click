@@ -144,10 +144,16 @@ pub(super) fn instantiate_click_type(
     substitution: &TypeSubstitution,
 ) -> Result<ClickType, String> {
     match click_type {
-        ClickType::Parameter(name) => substitution
-            .get(name)
-            .cloned()
-            .ok_or_else(|| format!("unresolved type parameter `{name}`")),
+        ClickType::Parameter(name) => {
+            let instance = substitution
+                .get(name)
+                .cloned()
+                .ok_or_else(|| format!("unresolved type parameter `{name}`"))?;
+            if instance == ClickType::C(C0Type::Bool) {
+                crate::instrumentation::record_bool_census("generic", || format!("{name} = bool"));
+            }
+            Ok(instance)
+        }
         ClickType::C(_) | ClickType::CObjectPointer { .. } => Ok(click_type.clone()),
         ClickType::Integer => Ok(ClickType::Integer),
         ClickType::Algebraic(application) => Ok(ClickType::Algebraic(instantiate_algebraic_type(
