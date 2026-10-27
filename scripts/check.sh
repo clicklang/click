@@ -284,11 +284,13 @@ if [[ -n "$ci_artifacts" ]]; then
     exit 0
 fi
 
+suite_status=0
 if [[ -n "$nightly" ]]; then
-    # Production libraries, command-line tests and the existing nightly corpus.
-    cargo nextest run "${unit_targets[@]}" --filterset "$unit_filter" "${nextest_args[@]}"
+    # Report both nightly selections even when the first one fails.
+    cargo nextest run "${unit_targets[@]}" --filterset "$unit_filter" "${nextest_args[@]}" \
+        || suite_status=$?
     cargo nextest run "${fixture_targets[@]}" --filterset "$fixture_filter" \
-        --test-threads 1 --no-capture "${nextest_args[@]}"
+        --test-threads 1 --no-capture "${nextest_args[@]}" || suite_status=$?
 else
     # Keep this file for both runs. nextest uses the executable directly;
     # it does not ask Cargo to compile it again for each selected suite.
@@ -326,3 +328,4 @@ fi
 if [[ -z "$nightly" && "$elapsed" -gt 600 ]]; then
     echo "warning: the gate took longer than its ten-minute budget; move slow tests to the nightly gate (docs/internals/testing.md)" >&2
 fi
+exit "$suite_status"
