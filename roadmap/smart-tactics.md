@@ -889,13 +889,23 @@ whole suite (counted 2026-10-26):
 
 Fix each with a scaling test that shows it growing.
 
-### 3. Step 7, partial
+### 3. Completed (2026-10-27): shared equality-chain search
 
-`simp`'s indexed goal-local equality search is still separate from the
-connected rewrite chain; switched off alone it costs a step of
-`examples/modeled-binary-tree` and
-`mdtests/loop_old_parameter_resource_argument.md`. Merging it means
-extending the chain to cover that case first.
+The indexed goal-local route now keeps only its one-rewrite/direct-closure
+shortcut. Longer chains use the same bounded `rewrite_search` as connected,
+selected and listed equalities. Its early entry point keeps direct/typed
+closers and optional function unfolding, so it does not restart full `simp`
+before arithmetic has its turn. The shared route is available inside split
+and unfold continuations, and spells execution equalities at the frontier
+that owns the goal, preserving the previous loop entry's snapshot name.
+This covers `examples/modeled-binary-tree`,
+`mdtests/loop_old_parameter_resource_argument.md` and
+`mdtests/c_named_function_contract_refines_vacuous_guarded_clause.md` without
+changing their proofs. The goal-local mode also retains a native rewrite
+form with explicit carrier casts before its Integer observation, preserving
+a structural source goal in a named contract's abstract post-state and
+round-tripping through expansion. Refuted scalar offsets stop before connected search; the indexed
+shortcut retains goal-local candidate lookup and metadata filtering.
 
 ### 4. Noted, not filed
 
@@ -1001,9 +1011,19 @@ verdict change.
    The greedy loop is gone, and no gate verdict changed. Switched off on
    the day before, the selected chain alone cost a step of
    `examples/arena`, and the restricted chain `examples/input-cursor` and
-   15 mdtests. The indexed goal-local search is still separate: switched
-   off alone, it costs a step of `examples/modeled-binary-tree` and
-   `mdtests/loop_old_parameter_resource_argument.md`.
+   15 mdtests.
+
+   Completed, 2026-10-27: the indexed goal-local route's independent greedy
+   traversal is removed. Its one-rewrite/direct-closure shortcut remains;
+   longer chains use the shared connected search, including inside split
+   and unfold continuations. Rewrite spellings retain the current execution
+   frontier's anchor, which can differ from the last executed statement's
+   anchor at a loop back edge. This covers the tree rotation and historical
+   loop ranking cases above. Existing depth, candidate and attempt budgets
+   are unchanged; selected/listed closer restrictions remain unchanged.
+   The early goal-local entry point uses direct/typed closers and optional
+   function unfolding rather than the late chain's nested `simp`, preserving
+   arithmetic's turn and the `arena` proof's work budget.
 8. **Move definition-condition reading and constructor join into `simp`.**
    Done: both are part of `simp`'s last strategy over the connected facts
    (`try_connected_fact_closure`), definition reading first and constructor

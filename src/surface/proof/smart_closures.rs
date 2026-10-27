@@ -44,12 +44,6 @@ fn indexed_constant_arithmetic_premises(
     selected.into_iter().collect()
 }
 
-/// Goal-changing rewrites kept per link of an equality chain: the first
-/// continues the chain, the others get a one-link closing probe.
-/// How many times `simp`'s selected-premise arithmetic plans again without the
-/// premises it could not spell.
-const MAX_EQUALITY_REWRITE_BRANCHES: usize = 4;
-
 fn is_reflexive_pointer_equality(mut proposition: &Proposition) -> bool {
     let mut positive = true;
     while let Proposition::Not(inner) = proposition {
@@ -4012,7 +4006,7 @@ impl<'a> Proof<'a> {
         attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))
     }
 
-    /// `simp`'s last strategy, over the facts connected to the goal: read
+    /// `simp`'s strategy over the facts connected to the goal: read
     /// the goal out of a function fact's definition; rewrite the goal by a
     /// connected equality once and then `assumption`, then as a bounded
     /// chain whose rewritten goals the cheap closers and a nested `simp`
@@ -4029,7 +4023,7 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_single_rewrite_closure()? {
             return Ok(Some(closed));
         }
-        if let Some(closed) = self.try_connected_equality_chain_closure()? {
+        if let Some(closed) = self.try_connected_equality_chain_closure(RewriteClosers::Ambient)? {
             return Ok(Some(closed));
         }
         self.try_constructor_join_closure()
@@ -4452,14 +4446,14 @@ impl<'a> Proof<'a> {
         if let Some(rewritten) = crate::instrumentation::measure_operation(
             "surface",
             "simp closure",
-            "simp closure: indexed goal equality rewrite",
+            "simp closure: goal equality rewrite",
             || {
-                self.try_indexed_goal_equality_rewrite_closure_excluding(
+                self.try_goal_equality_rewrite_closure_excluding(
                     exclude_exact_goal,
                     allow_function_unfold,
                 )
             },
-        ) {
+        )? {
             return Ok(Some(rewritten));
         }
         // An arithmetic goal the cheap derivations above missed goes to
@@ -5238,7 +5232,7 @@ impl<'a> Proof<'a> {
     /// `unfold` step. The recursive simplification attempt disables further
     /// function unfolding, so recursive definitions cannot turn this smart
     /// tactic into unbounded evaluation.
-    fn try_function_unfold_simp_closure(
+    pub(super) fn try_function_unfold_simp_closure(
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
@@ -7528,150 +7522,32 @@ impl<'a> Proof<'a> {
         None
     }
 
-    /// Tries equalities attached to terms occurring in the current goal.
-    /// This complements the kernel derivation path for arithmetic goals whose
-    /// normal form is exposed only after selected historical equalities are
-    /// rewritten. Candidate lookup is goal-local and persistently indexed.
-    /// Atomic goals may retain a same-width renaming, but each selected
-    /// equality is used at most once; structural goals keep only a closing
-    /// rewrite so their recursive connective proof remains visible.
+    /// A cheap indexed rewrite can close a goal without exploring its
+    /// connected component. Every longer chain uses the shared search,
+    /// also when this entry point is reached after a split or an unfold.
     #[cfg(test)]
-    pub(super) fn try_indexed_goal_equality_rewrite_closure(&self) -> Option<Self> {
-        self.try_indexed_goal_equality_rewrite_closure_excluding(false, true)
+    pub(super) fn try_goal_equality_rewrite_closure(&self) -> Option<Self> {
+        self.try_goal_equality_rewrite_closure_excluding(false, true)
+            .ok()
+            .flatten()
     }
 
-    /// The closure above; with `exclude_goal_fact`, the goal's own ambient
-    /// fact (in either orientation) is not a rewrite candidate, matching the
-    /// atomic derivation's rule when direct closure was rejected as
-    /// non-checkable.
-    pub(super) fn try_indexed_goal_equality_rewrite_closure_excluding(
+    fn try_goal_equality_rewrite_closure_excluding(
         &self,
         exclude_goal_fact: bool,
         allow_function_unfold: bool,
-    ) -> Option<Self> {
-        self.try_indexed_goal_equality_rewrite_direct_closure(exclude_goal_fact)
-            .or_else(|| {
-                self.try_indexed_goal_equality_rewrite_with_options(
-                    exclude_goal_fact,
+    ) -> Result<Option<Self>, ClickError> {
+        match self.try_indexed_direct_equality_rewrite(exclude_goal_fact) {
+            std::ops::ControlFlow::Break(closed) => Ok(closed),
+            std::ops::ControlFlow::Continue(()) => {
+                let Some(_scope) = SimpFallbackScope::enter(SimpFallback::ConnectedFacts) else {
+                    return Ok(None);
+                };
+                self.try_connected_equality_chain_closure(RewriteClosers::GoalLocal {
                     allow_function_unfold,
-                    false,
-                )
-            })
-    }
-
-    pub(super) fn try_indexed_goal_equality_rewrite_direct_closure(
-        &self,
-        exclude_goal_fact: bool,
-    ) -> Option<Self> {
-        // Probe the scalar bounds and remainder identities that need folded
-        // equality congruence. Memory-frame equalities already have a checked
-        // transport path; probing their snapshot aliases first repeats costly
-        // premise spelling and changes the intended transport certificate.
-        let scalar_goal = match self.goal()? {
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), _)
-                if left.block == right.block =>
-            {
-                true
+                })
             }
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessEqual,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::GreaterThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::GreaterEqual,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::LessThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::LessEqual,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::GreaterThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::GreaterEqual,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt64,
-                    relation: CompareRelation::LessThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt64,
-                    relation: CompareRelation::LessEqual,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt64,
-                    relation: CompareRelation::GreaterThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt64,
-                    relation: CompareRelation::GreaterEqual,
-                    ..
-                }
-                | ConditionTerm::IntegerLessThan(..)
-                | ConditionTerm::IntegerLessEqual(..)
-                | ConditionTerm::IntegerGreaterThan(..)
-                | ConditionTerm::IntegerGreaterEqual(..),
-                _,
-            ) => true,
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    left,
-                    right,
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::Equal,
-                    left,
-                    right,
-                },
-                _,
-            ) => [left.as_ref(), right.as_ref()].into_iter().any(|term| {
-                matches!(
-                    term,
-                    Bitvector32Term::Remainder(..)
-                        | Bitvector32Term::UnsignedRemainder(..)
-                        | Bitvector32Term::Binary {
-                            format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
-                            op: MachineBinaryOp::Remainder,
-                            ..
-                        }
-                )
-            }),
-            _ => false,
-        };
-        if !scalar_goal {
-            return None;
         }
-        self.try_indexed_goal_equality_rewrite_with_options(exclude_goal_fact, false, true)
     }
 
     /// One indexed rewrite followed by direct closure of an algebraic
@@ -7687,7 +7563,37 @@ impl<'a> Proof<'a> {
         ) {
             return None;
         }
-        self.try_indexed_goal_equality_rewrite_with_options(false, false, true)
+        self.try_indexed_direct_equality_rewrite(false)
+            .break_value()
+            .flatten()
+    }
+
+    /// Spell a rewrite at the execution frontier that owns its goal. The
+    /// last executed statement can name a different loop iteration state;
+    /// rewriting must retain the recorded entry name of the selected fact.
+    pub(super) fn available_rewrite_equality(
+        &self,
+        equality: &Proposition,
+    ) -> Option<ClickProposition> {
+        let frontier_anchor;
+        let anchor = match self.context.as_ref() {
+            ProofContext::Pure(_) => None,
+            ProofContext::FixedState(context) => context.premise_anchor.as_ref(),
+            ProofContext::Execution(_) => match self.focused_outcome_data() {
+                Some(data) => data.premise_anchor.as_ref(),
+                None => {
+                    frontier_anchor = ProgramPointRef {
+                        region: CodeRegionRef::Region(
+                            self.execution()?.core.frontier.next_statement_index,
+                        ),
+                        kind: ProgramPointKind::Entry,
+                    };
+                    Some(&frontier_anchor)
+                }
+            },
+        };
+        self.available_surface_fact(self.premise_surface_facts()?, anchor, equality)
+            .or_else(|| self.available_surface_fact(self.local_surface_facts(), anchor, equality))
     }
 
     /// A derived call equality need not have a recorded source spelling.
@@ -7780,346 +7686,211 @@ impl<'a> Proof<'a> {
         None
     }
 
-    fn try_indexed_goal_equality_rewrite_with_options(
+    /// Try one indexed equality and a direct closer. This shortcut never
+    /// refines or branches into its own rewrite chain. `Break(None)` stops
+    /// when an equivalent scalar goal is refuted or no source candidate can
+    /// start a chain. `Continue` leaves the shared search to try.
+    pub(super) fn try_indexed_direct_equality_rewrite(
         &self,
         exclude_goal_fact: bool,
-        allow_function_unfold: bool,
-        direct_only: bool,
-    ) -> Option<Self> {
+    ) -> std::ops::ControlFlow<Option<Self>> {
+        use std::ops::ControlFlow::{Break, Continue};
         if matches!(
             self.goal(),
             Some(Proposition::Implies(..) | Proposition::ForAll { .. })
         ) {
-            return None;
+            return Continue(());
         }
         if self.scalar_offset_goal_is_refuted() {
-            return if exclude_goal_fact {
+            return Break(if exclude_goal_fact {
                 None
             } else {
                 self.try_direct_logical_closure().ok().flatten()
-            };
+            });
         }
-        // The direct-only chain never enters typed or function-unfold
-        // search. It can finish a pointer-offset rewrite inside the outer
-        // equality search without restarting that speculative fallback.
-        let _scope = if direct_only {
-            None
-        } else {
-            Some(SimpFallbackScope::enter(SimpFallback::EqualityRewrite)?)
+        let proof = self;
+        let (Some(goal), Some(surface_facts)) = (proof.goal(), self.premise_surface_facts()) else {
+            return Continue(());
         };
-        // A judgment stated at an execution frontier (a `have` inside an
-        // `open` scope, before the outcome) reads its spellings from the
-        // execution's surface map, anchored at the current statement entry.
-        let frontier_anchor = match self.context.as_ref() {
-            ProofContext::Execution(_) if self.focused_outcome_data().is_none() => {
-                self.execution().map(|execution| ProgramPointRef {
-                    region: CodeRegionRef::Region(execution.core.frontier.next_statement_index),
-                    kind: ProgramPointKind::Entry,
-                })
-            }
-            _ => None,
-        };
-        let (surface_facts, premise_anchor) = match self.context.as_ref() {
-            ProofContext::Pure(context) => (&context.theorem_context.surface_requirements, None),
-            ProofContext::FixedState(context) => (
-                context.surface_propositions,
-                context.premise_anchor.as_ref(),
-            ),
-            ProofContext::Execution(_) => match self.focused_outcome_data() {
-                Some(data) => (&data.surface_propositions, data.premise_anchor.as_ref()),
-                None => (
-                    &self.execution()?.surface_propositions,
-                    frontier_anchor.as_ref(),
-                ),
-            },
-        };
-        // One level of the chain: every candidate equality mentioning the
-        // goal is tried as a checked rewrite followed by the closers. Up to
-        // `refinement_limit` rewrites that changed the goal are returned for
-        // the next level; a closing-only probe asks for none.
-        // Different equality paths often reach the same checked obligation.
-        // Retry its closers only when the premise context or logical-read
-        // generation changed. Keep the rewrite/refinement paths themselves:
-        // they may still lead to a different next obligation.
+        let goal = goal.clone();
         let attempted_closures = std::cell::RefCell::new(BTreeSet::new());
-        let level = |proof: &Self,
-                     used: &BTreeSet<Proposition>,
-                     refinement_limit: usize|
-         -> Result<Option<Self>, Vec<(Proposition, Self)>> {
-            let Some(goal) = proof.goal().cloned() else {
-                return Err(Vec::new());
-            };
-            let allows_chain = matches!(goal, Proposition::ConditionIs(_, _))
-                || matches!(goal, Proposition::CResourceSeparate { .. })
-                || matches!(
-                    goal,
-                    Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
-                );
-            let mut refinements: Vec<(Proposition, Self)> = Vec::new();
-            let goal_variable_count = crate::kernel::proposition_variables(&goal).len();
-            // Pointer equalities between scaled offsets are candidates too:
-            // `rewrite` carries one through the address of a load, so a
-            // goal over `p->q->x` reaches `r->x` under `p->q == r`.
-            // Once both pointers have the same base, only their offsets
-            // need rewriting. Selecting on the shared base also nominates
-            // every historical pointer fact about that object, even when
-            // none mentions an offset operand of this comparison.
-            let equality_candidates = match &goal {
-                Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value)
-                    if left.block == right.block =>
-                {
-                    // External arguments share a block and carry the
-                    // actual base as an offset prefix: `(base + i) == base`
-                    // needs facts about `i`, not old reads through `base`.
-                    let zero = crate::kernel::PointerOffsetTerm::Constant(0);
-                    let (left, right) = match (&left.offset, &right.offset) {
-                        (crate::kernel::PointerOffsetTerm::Add(base, index), right)
-                            if base.as_ref() == right =>
-                        {
-                            (index.as_ref(), &zero)
-                        }
-                        (left, crate::kernel::PointerOffsetTerm::Add(base, index))
-                            if left == base.as_ref() =>
-                        {
-                            (&zero, index.as_ref())
-                        }
-                        (
-                            crate::kernel::PointerOffsetTerm::Add(left_base, left_index),
-                            crate::kernel::PointerOffsetTerm::Add(right_base, right_index),
-                        ) if left_base == right_base => (left_index.as_ref(), right_index.as_ref()),
-                        (left, right) => (left, right),
-                    };
-                    proof
-                        .facts()
-                        .load_equalities_mentioning(&Proposition::ConditionIs(
-                            ConditionTerm::PointerOffsetEqual(
-                                Box::new(left.clone()),
-                                Box::new(right.clone()),
-                            ),
-                            *value,
-                        ))
-                }
-                _ => proof.facts().load_equalities_mentioning(&goal),
-            };
-            let equalities = equality_candidates
-                .into_iter()
-                .chain(proof.facts().algebraic_equalities_mentioning(&goal));
-            for equality in equalities {
-                // A reflexive equality cannot change the checked goal.
-                // Avoid reconstructing source spellings for these pointer
-                // metadata facts at every link of the rewrite chain.
-                if is_reflexive_pointer_equality(&equality) {
-                    continue;
-                }
-                // A registered read definition remains available to the
-                // kernel, but cannot supply a source rewrite. Do not search
-                // recorded snapshots for a spelling of this metadata.
-                if crate::kernel::is_verified_load_variable_defining_fact(&equality) {
-                    continue;
-                }
-                let equality_has_literal_endpoint = matches!(
-                    &equality,
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right },
-                        true
-                    ) if matches!(left.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
-                        || matches!(right.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
-                ) || matches!(
-                    &equality,
-                    Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
-                        if matches!(&**left, crate::kernel::IntegerTerm::Constant(_))
-                            || matches!(&**right, crate::kernel::IntegerTerm::Constant(_))
-                );
-                if used.contains(&equality) {
-                    continue;
-                }
-                if exclude_goal_fact
-                    && (equality == goal
-                        || swapped_bitvector_equality(&equality)
-                            .is_some_and(|swapped| swapped == goal))
-                {
-                    continue;
-                }
-                let (surface, candidate_proof) =
-                    match proof.available_surface_fact(surface_facts, premise_anchor, &equality) {
-                        Some(surface) => (surface, proof.clone()),
-                        None => match proof.try_goal_operand_constant_equality(&equality) {
-                            Some(candidate) => candidate,
-                            None => continue,
-                        },
-                    };
-                let proof = &candidate_proof;
-                // `available_surface_fact` has already resolved the spelling
-                // that still lowers to this fact, anchoring a stale constructor
-                // equality at function entry when the written form stopped
-                // denoting it, so only the orientation is open here.
-                let reverse = reverse_surface_equality(&surface);
-                for oriented in std::iter::once(surface).chain(reverse) {
-                    // Automatic refinement reduces symbolic operands to known
-                    // literals. Expanding a literal into an alias creates
-                    // irrelevant branches, especially after a folded cast or
-                    // unsigned-order bias. An explicit `rewrite` still permits
-                    // that checked direction.
-                    if equality_has_literal_endpoint {
-                        let literal_endpoint = |kernel: &Proposition, source: bool| {
-                            matches!(kernel, Proposition::ConditionIs(
-                                ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, true
-                            ) if matches!(if source { left.as_ref() } else { right.as_ref() },
-                                Bitvector32Term::Constant(_)
-                                | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_)))
-                                || matches!(kernel, Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
-                                    if matches!(if source { &**left } else { &**right }, crate::kernel::IntegerTerm::Constant(_)))
-                        };
-                        // A retained source spelling may be a proxy for a
-                        // symbolic operand. Trust its recorded lowering, not
-                        // the spelling's apparent literal syntax.
-                        let source_is_literal = surface_facts
-                            .available_kernel_matching(&oriented, |fact| proof.facts().contains(fact))
-                            .map(|kernel| literal_endpoint(kernel, true))
-                            .or_else(|| {
-                                let reverse = reverse_surface_equality(&oriented)?;
-                                surface_facts.available_kernel_matching(&reverse, |fact| proof.facts().contains(fact))
-                                    .map(|kernel| literal_endpoint(kernel, false))
-                            })
-                            .unwrap_or_else(|| matches!(&oriented, ClickProposition::Comparison { left, .. } if surface_expression_is_constant(left)));
-                        if source_is_literal {
-                            continue;
-                        }
-                    }
-                    // Every candidate is a checked rewrite followed by three
-                    // closers, for each equality mentioning the goal, at
-                    // each link of the chain. Observe the tactic's deadline
-                    // and work budget between candidates, so a search that
-                    // cannot close stops when its tactic's bound runs out.
-                    if crate::instrumentation::deadline_exceeded() {
-                        return Err(Vec::new());
-                    }
-                    let rewrite = proof.apply_step(ProofStep::Rewrite(oriented));
-                    let Ok(rewritten) = rewrite else {
-                        continue;
-                    };
-                    if rewritten.goal() == proof.goal() {
-                        continue;
-                    }
-                    // Checked rewrites preserve this obligation. Once one
-                    // reaches a refuted scalar equality, more equivalent
-                    // rewrites or function expansions cannot help the search.
-                    if rewritten.scalar_offset_goal_is_refuted() {
-                        if !exclude_goal_fact
-                            && let Some(closed) =
-                                rewritten.try_direct_logical_closure().ok().flatten()
-                        {
-                            return Ok(Some(closed));
-                        }
-                        return Err(Vec::new());
-                    }
-                    let closure_key =
-                        rewritten
-                            .goal()
-                            .and_then(proposition_identity_key)
-                            .map(|goal| {
-                                (
-                                    crate::kernel::assumptions::unsalted_assumptions_memo_id(
-                                        rewritten.facts().assumptions(),
-                                    ),
-                                    goal,
-                                )
-                            });
-                    let fresh_closure =
-                        closure_key.is_none_or(|key| attempted_closures.borrow_mut().insert(key));
-                    if fresh_closure
-                        && let Some(closed) = rewritten
-                            .try_direct_logical_closure()
-                            .ok()
-                            .flatten()
-                            .or_else(|| {
-                                (!direct_only
-                                    && matches!(
-                                        rewritten.goal(),
-                                        Some(Proposition::ConditionIs(
-                                            ConditionTerm::PointerEqual(..),
-                                            _
-                                        ))
-                                    ))
-                                .then(|| {
-                                    rewritten.try_indexed_goal_equality_rewrite_direct_closure(
-                                        exclude_goal_fact,
-                                    )
-                                })
-                                .flatten()
-                            })
-                            .or_else(|| {
-                                (!direct_only)
-                                    .then(|| rewritten.try_typed_atomic_simp_closure())
-                                    .flatten()
-                            })
-                            .or_else(|| {
-                                allow_function_unfold
-                                    .then(|| {
-                                        rewritten
-                                            .try_function_unfold_simp_closure(&[])
-                                            .ok()
-                                            .flatten()
-                                    })
-                                    .flatten()
-                            })
+        // Pointer equalities between scaled offsets are candidates too:
+        // `rewrite` carries one through the address of a load, so a
+        // goal over `p->q->x` reaches `r->x` under `p->q == r`.
+        // Once both pointers have the same base, only their offsets
+        // need rewriting. Selecting on the shared base also nominates
+        // every historical pointer fact about that object, even when
+        // none mentions an offset operand of this comparison.
+        let equality_candidates = match &goal {
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value)
+                if left.block == right.block =>
+            {
+                // External arguments share a block and carry the
+                // actual base as an offset prefix: `(base + i) == base`
+                // needs facts about `i`, not old reads through `base`.
+                let zero = crate::kernel::PointerOffsetTerm::Constant(0);
+                let (left, right) = match (&left.offset, &right.offset) {
+                    (crate::kernel::PointerOffsetTerm::Add(base, index), right)
+                        if base.as_ref() == right =>
                     {
-                        return Ok(Some(closed));
+                        (index.as_ref(), &zero)
                     }
-                    // Do not turn a value already present in the goal into a
-                    // fresh symbolic variable merely because the reverse
-                    // orientation of an equality happens to match first.
-                    // Equal-sized variable-to-variable rewrites remain
-                    // available for ordinary equality chains.
-                    let does_not_expand_a_literal = !equality_has_literal_endpoint
-                        || rewritten.goal().is_some_and(|rewritten_goal| {
-                            crate::kernel::proposition_variables(rewritten_goal).len()
-                                <= goal_variable_count
-                        });
-                    if allows_chain
-                        && refinements.len() < refinement_limit
-                        && rewritten.goal() != Some(&goal)
-                        && does_not_expand_a_literal
-                        && !refinements
-                            .iter()
-                            .any(|(_, other)| other.goal() == rewritten.goal())
+                    (left, crate::kernel::PointerOffsetTerm::Add(base, index))
+                        if left == base.as_ref() =>
                     {
-                        refinements.push((equality.clone(), rewritten));
+                        (&zero, index.as_ref())
                     }
-                }
+                    (
+                        crate::kernel::PointerOffsetTerm::Add(left_base, left_index),
+                        crate::kernel::PointerOffsetTerm::Add(right_base, right_index),
+                    ) if left_base == right_base => (left_index.as_ref(), right_index.as_ref()),
+                    (left, right) => (left, right),
+                };
+                proof
+                    .facts()
+                    .load_equalities_mentioning(&Proposition::ConditionIs(
+                        ConditionTerm::PointerOffsetEqual(
+                            Box::new(left.clone()),
+                            Box::new(right.clone()),
+                        ),
+                        *value,
+                    ))
             }
-            Err(refinements)
+            _ => proof.facts().load_equalities_mentioning(&goal),
         };
-        let mut proof = self.clone();
-        let mut used = BTreeSet::new();
-        loop {
-            let refinements = match level(
-                &proof,
-                &used,
-                if direct_only {
-                    0
-                } else {
-                    MAX_EQUALITY_REWRITE_BRANCHES
+        let equalities = equality_candidates
+            .into_iter()
+            .chain(proof.facts().algebraic_equalities_mentioning(&goal));
+        let mut has_source_candidate = false;
+        for equality in equalities {
+            // A reflexive equality cannot change the checked goal.
+            // Avoid reconstructing source spellings for these pointer
+            // metadata facts before the rewrite.
+            if is_reflexive_pointer_equality(&equality) {
+                continue;
+            }
+            // A registered read definition remains available to the
+            // kernel, but cannot supply a source rewrite. Do not search
+            // recorded snapshots for a spelling of this metadata.
+            if crate::kernel::is_verified_load_variable_defining_fact(&equality) {
+                continue;
+            }
+            let equality_has_literal_endpoint = matches!(
+                &equality,
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right },
+                    true
+                ) if matches!(left.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
+                    || matches!(right.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
+            ) || matches!(
+                &equality,
+                Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
+                    if matches!(&**left, crate::kernel::IntegerTerm::Constant(_))
+                        || matches!(&**right, crate::kernel::IntegerTerm::Constant(_))
+            );
+            if exclude_goal_fact
+                && (equality == goal
+                    || swapped_bitvector_equality(&equality).is_some_and(|swapped| swapped == goal))
+            {
+                continue;
+            }
+            let (surface, candidate_proof) = match proof.available_rewrite_equality(&equality) {
+                Some(surface) => (surface, proof.clone()),
+                None => match proof.try_goal_operand_constant_equality(&equality) {
+                    Some(candidate) => candidate,
+                    None => continue,
                 },
-            ) {
-                Ok(closed) => return closed,
-                Err(refinements) => refinements,
             };
-            // A link whose own rewrite does not close may be one step from a
-            // closing link. The first refinement continues the chain; each
-            // other one gets a closing-only probe first, so which change the
-            // candidate order happened to find first does not decide whether
-            // a chain through the goal's equality classes closes.
-            for (equality, rewritten) in refinements.iter().skip(1) {
-                let mut probe_used = used.clone();
-                probe_used.insert(equality.clone());
-                if let Ok(Some(closed)) = level(rewritten, &probe_used, 0) {
-                    return Some(closed);
+            has_source_candidate = true;
+            let proof = &candidate_proof;
+            // `available_surface_fact` has already resolved the spelling
+            // that still lowers to this fact, anchoring a stale constructor
+            // equality at function entry when the written form stopped
+            // denoting it, so only the orientation is open here.
+            let reverse = reverse_surface_equality(&surface);
+            for oriented in std::iter::once(surface).chain(reverse) {
+                // Automatic refinement reduces symbolic operands to known
+                // literals. Expanding a literal into an alias creates
+                // irrelevant branches, especially after a folded cast or
+                // unsigned-order bias. An explicit `rewrite` still permits
+                // that checked direction.
+                if equality_has_literal_endpoint {
+                    let literal_endpoint = |kernel: &Proposition, source: bool| {
+                        matches!(kernel, Proposition::ConditionIs(
+                        ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, true
+                    ) if matches!(if source { left.as_ref() } else { right.as_ref() },
+                        Bitvector32Term::Constant(_)
+                        | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_)))
+                            || matches!(kernel, Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
+                            if matches!(if source { &**left } else { &**right }, crate::kernel::IntegerTerm::Constant(_)))
+                    };
+                    // A retained source spelling may be a proxy for a
+                    // symbolic operand. Trust its recorded lowering, not
+                    // the spelling's apparent literal syntax.
+                    let source_is_literal = surface_facts
+                    .available_kernel_matching(&oriented, |fact| proof.facts().contains(fact))
+                    .map(|kernel| literal_endpoint(kernel, true))
+                    .or_else(|| {
+                        let reverse = reverse_surface_equality(&oriented)?;
+                        surface_facts.available_kernel_matching(&reverse, |fact| proof.facts().contains(fact))
+                            .map(|kernel| literal_endpoint(kernel, false))
+                    })
+                    .unwrap_or_else(|| matches!(&oriented, ClickProposition::Comparison { left, .. } if surface_expression_is_constant(left)));
+                    if source_is_literal {
+                        continue;
+                    }
+                }
+                // Each candidate is one checked rewrite and a direct closer.
+                // Observe the tactic's deadline and work budget between
+                // candidates, including when none can close.
+                if crate::instrumentation::deadline_exceeded() {
+                    return Continue(());
+                }
+                let rewrite = proof.apply_step(ProofStep::Rewrite(oriented));
+                let Ok(rewritten) = rewrite else {
+                    continue;
+                };
+                if rewritten.goal() == proof.goal() {
+                    continue;
+                }
+                // Checked rewrites preserve this obligation. Once one
+                // reaches a refuted scalar equality, more equivalent
+                // rewrites or function expansions cannot help the search.
+                if rewritten.scalar_offset_goal_is_refuted() {
+                    if !exclude_goal_fact
+                        && let Some(closed) = rewritten.try_direct_logical_closure().ok().flatten()
+                    {
+                        return Break(Some(closed));
+                    }
+                    return Break(None);
+                }
+                let closure_key = rewritten
+                    .goal()
+                    .and_then(proposition_identity_key)
+                    .map(|goal| {
+                        (
+                            crate::kernel::assumptions::unsalted_assumptions_memo_id(
+                                rewritten.facts().assumptions(),
+                            ),
+                            goal,
+                        )
+                    });
+                let fresh_closure =
+                    closure_key.is_none_or(|key| attempted_closures.borrow_mut().insert(key));
+                if fresh_closure
+                    && let Some(closed) = rewritten.try_direct_logical_closure().ok().flatten()
+                {
+                    return Break(Some(closed));
                 }
             }
-            let (equality, rewritten) = refinements.into_iter().next()?;
-            used.insert(equality);
-            proof = rewritten;
+        }
+        if has_source_candidate {
+            Continue(())
+        } else {
+            // No indexed source equality can start a chain at this goal.
+            // In particular, internal store records must not trigger a
+            // connected-component walk merely because they mention it.
+            Break(None)
         }
     }
 
@@ -11856,7 +11627,6 @@ thread_local! {
 
 #[derive(Clone, Copy)]
 enum SimpFallback {
-    EqualityRewrite = 1,
     FunctionUnfold = 2,
     ConnectedFacts = 4,
     ArithmeticSubgoal = 8,
