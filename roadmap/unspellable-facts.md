@@ -267,6 +267,24 @@ unrelated facts. The container proof still has a separate mismatch between
 its logical read and its fold-computed child argument; this increment does
 not claim to finish that proof or the migration.
 
+The next isolated increment connects direct pointer reads to the existing
+width-specific observation registry and refreshes a selected read when its
+recorded sources change. A reverse observation-to-name index retains older
+observations after a name is reused. These are structural definition edges,
+including pointer designation and extent; no facts are folded into lowered
+terms. The regression registers both endpoints before the later definition
+arrives, then checks existing and fresh graphs, with a partial-write negative
+control. Scaling covers 8/16/32/64 observations and 0/16/64/256 unrelated names.
+
+In the WIP, the explicit child-pointer rewrite now gets past the container's
+child-tail argument check, but a generic payload read still fails across two
+projected snapshots. The ordinary scaling selection also finds a separate
+pre-existing migration failure in
+`checked_child_read_definitions_scale_with_exchanges_not_ambient_facts`;
+the saved pre-fix and candidate binaries have identical failing work counts.
+The migration is not green, and its remaining fixture and acceptance audits
+have not been rerun for this increment.
+
 ### Decision: the free decides its frame from proven separation
 
 The user chose the executor to require separation, with the step recording

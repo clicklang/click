@@ -717,3 +717,95 @@ fn checked_pointer_read_retention_keeps_a_simplified_address_equation() {
     assert!(!context.designations_equal(&named, &read));
     assert!(!isolated.pointers_known_equal(&named, &read));
 }
+
+#[test]
+fn named_pointer_read_definitions_follow_later_observations() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let name = |memory: &SharedCMemory, cell: &Pointer| {
+        Pointer::loaded_value(
+            &crate::kernel::memory_provenance::canonical_value_load_memory(memory, cell, 8),
+            cell,
+        )
+    };
+    let cell = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let unrelated = Pointer {
+        block: PointerBlock::Heap(985_003),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let first = crate::kernel::intern_c_memory(
+        CMemory::new().store(unrelated.clone(), CValue::UInt32(1u32.into())),
+    );
+    let named = name(&first, &cell);
+    let context = PureFactContext::new();
+    assert!(context.pointers_known_equal(&named, &Pointer::loaded_value(&first, &cell)));
+    let later = crate::kernel::intern_c_memory(
+        first
+            .memory()
+            .clone()
+            .store(unrelated, CValue::UInt32(2u32.into())),
+    );
+    let later_read = Pointer::loaded_value(&later, &cell);
+    // Register both endpoints before their structural equation arrives.
+    // Refresh must work even when neither query endpoint is a new graph term.
+    let _ = context.equality_graph.address_class(&later_read);
+    assert_eq!(named, name(&later, &cell));
+    assert!(PureFactContext::new().pointers_known_equal(&named, &later_read));
+    assert!(
+        crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+            &named,
+            &later_read,
+            &context
+        )
+    );
+    assert!(context.pointers_known_equal(&named, &later_read));
+    assert!(
+        PureFactContext::new().pointers_known_equal(&named, &Pointer::loaded_value(&first, &cell))
+    );
+}
+
+#[test]
+fn structural_pointer_read_definitions_keep_domains_and_reject_partial_writes() {
+    let _session = VerificationSession::enter();
+    let cell = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = intern_c_memory(CMemory::new().store(
+        Pointer {
+            block: PointerBlock::Heap(986_005),
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        CValue::UInt32(1u32.into()),
+    ));
+    let named_memory =
+        crate::kernel::memory_provenance::canonical_value_load_memory(&memory, &cell, 8);
+    let named = CPointerValue::new(
+        Pointer::loaded_value(&named_memory, &cell),
+        CType::Int32Pointer,
+    );
+    let original = CPointerValue::new(Pointer::loaded_value(&memory, &cell), CType::Int32Pointer);
+    let context = PureFactContext::new();
+    assert!(context.equality_graph.knows_condition(
+        &ConditionTerm::PointerValueEqual(Box::new(named.clone()), Box::new(original)),
+        true,
+    ));
+    let changed = intern_c_memory(
+        memory
+            .memory()
+            .clone()
+            .store(cell.offset_by_bytes(4), CValue::UInt32(9u32.into())),
+    );
+    let changed_memory =
+        crate::kernel::memory_provenance::canonical_value_load_memory(&changed, &cell, 8);
+    let changed = CPointerValue::new(
+        Pointer::loaded_value(&changed_memory, &cell),
+        CType::Int32Pointer,
+    );
+    assert!(!context.equality_graph.knows_condition(
+        &ConditionTerm::PointerValueEqual(Box::new(named), Box::new(changed)),
+        true,
+    ));
+}
