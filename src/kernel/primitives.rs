@@ -12829,9 +12829,6 @@ pub struct PureFactContext {
     /// unrelated proposition in the context.
     pub(super) disjunction_facts: crate::kernel::fact_collections::ScanSet<Proposition>,
     pub(super) resource_compositions: super::fact_collections::ScanSet<ResourceContext>,
-    /// The stated compositions owning a composite, the only ones a frame
-    /// frontier expands (`frame_frontier_compositions`).
-    pub(super) composite_owning_compositions: super::fact_collections::ScanSet<ResourceContext>,
     /// The ownership a store in this context writes under, when the writer
     /// stated it: the current state's observable composition and any
     /// composition the store opened from held folded instances, all also
