@@ -1152,18 +1152,29 @@ int32 bad(int32 x) {
         );
     }
 
-    /// A proof `if` arm, the continuation after a `have`, and each arm of a
-    /// `cases` written inside a `have` body are addressed by line: the
-    /// expansion rewrites exactly the selected tactic's lines.
+    /// A tactic in a `cases` arm and one inside a nested smart `have` are
+    /// addressed by line: expansion rewrites only the selected tactic's lines.
     #[test]
     #[ignore = "nightly: 0.7s in the parallel gate"]
-    fn lines_in_proof_if_arms_and_in_cases_arms_inside_a_have_body_select() {
+    fn lines_in_cases_arms_inside_a_have_body_select() {
         let path = mdtest_path("proof_cases_after_c_branch_expands.md");
         let original = fs::read_to_string(&path).unwrap();
         let original_lines = original.lines().collect::<Vec<_>>();
-        // (selected line, first and last line of the rewritten tactic): the
-        // `simp` in the smart `have` on line 61 selects that `have`.
-        for (line, first, last) in [(53, 53, 53), (68, 68, 68), (58, 58, 58), (62, 61, 63)] {
+        let line_of = |text: &str| {
+            original_lines
+                .iter()
+                .position(|line| line.trim() == text)
+                .unwrap()
+                + 1
+        };
+        let direct = line_of("result == 18 => {") + 1;
+        let have = line_of("have result < 0 by {");
+        assert_eq!(original_lines[direct - 1].trim(), "solve();");
+        assert_eq!(original_lines[have].trim(), "solve();");
+        assert_eq!(original_lines[have + 1].trim(), "}");
+        // (selected line, first and last rewritten line): selecting the
+        // `solve` in the smart `have` selects that whole `have`.
+        for (line, first, last) in [(direct, direct, direct), (have + 1, have, have + 2)] {
             let expanded = run_location(&path, &line.to_string())
                 .unwrap_or_else(|error| panic!("line {line}: {error}"));
             assert_ne!(expanded, original);
