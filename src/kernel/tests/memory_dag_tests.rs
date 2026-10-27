@@ -2907,12 +2907,9 @@ fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
     );
 }
 
-/// A constant established only through a load equality across a call: the
-/// caller pinned a cell before a call that havocs a disjoint range, and no
-/// fact relates the two snapshots' loads. Constant normalization must still
-/// find the constant by proving the loads equal from the memory history --
-/// for the post-call load itself, and for a term an equality fact connects
-/// to it, whose class has no constant of its own.
+/// A disjoint call preserves the cell's version. Constant normalization
+/// reads the established relation without searching pairs of load snapshots,
+/// both for the read and for a value explicitly equated to it.
 #[test]
 fn constant_normalization_bridges_a_load_across_a_call() {
     let base = CMemory::new().with_block("arg-memory", 16);

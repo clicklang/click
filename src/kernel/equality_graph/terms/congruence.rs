@@ -218,11 +218,7 @@ impl TermClasses {
                 crate::instrumentation::record_deterministic_work(1);
             }
             let scalar_source = match &work {
-                Work::Machine(term, W::Bits32)
-                    if matches!(term, T::If { .. }) || constants::load_key(term).is_some() =>
-                {
-                    Some(*term)
-                }
+                Work::Machine(term, W::Bits32) if matches!(term, T::If { .. }) => Some(*term),
                 _ => None,
             };
             let node = match work {

@@ -25,51 +25,10 @@ The work below was authorized on 2026-10-27. Suspected walks are investigation
 targets, not claims of measured regressions. Establish a deterministic curve
 before choosing each performance fix. Do not raise limits to hide a defect.
 
-## First increment: measure call normalization
-
-Reproduce the current cost of `add_normalized_verified_ensure_facts`
-(`src/kernel/functions.rs`) through constant normalization in
-`src/kernel/assumptions/condition_reasoning/decision.rs`.
-
-The historical `authority_pool_control_two_members.md` measurement attributed
-about 119,000 of 140,820 units in the second `give_back` call to snapshot
-bridging. That is not a current baseline: the fixture subsequently failed in
-`checkout`, before the measured call. Reproduce on current master, or reduce
-the path below that unrelated proof failure.
-
-Concrete candidate: `constant_class_resolution` calls
-`scalar_bridgeable_loads`, which builds pairs of unknown-class loads and
-settled loads indexed by memory-blind address, then calls `loads_bridge` on
-the pairs. The unregistered-term path also visits settled loads at an address.
-The current index does not itself establish a bound on bucket size, pair
-construction, or repeated memory walks.
-
-Intended regression:
-
-- Grow unrelated facts, same-address snapshots, and members of the queried
-  equality class independently, at several sizes; cover hits and misses.
-- Measure candidate construction and bridge work, including allocation and
-  iteration before a decision starts charging. A counter that omits the
-  expensive loop is not evidence of good scaling.
-- Measure repeated calls/queries as well as one query, to expose repeated
-  history walks and quadratic total work.
-- Retain `counter_call_chain_ensure_lowering_stays_flat_per_call` as an
-  existing control; it is not coverage of all same-address candidate shapes.
-
-Choose the smallest fix after measuring: retain cheap producer-established
-relations, use a justified index, or decline the automatic inference and
-make the necessary premise explicit. Do not add a second history walker.
-Coordinate memory implementation with
-[fact-aware-frame-walks.md](fact-aware-frame-walks.md) and pointer-read naming
-with [unspellable-facts.md](unspellable-facts.md); those items own their
-respective migrations. This item owns the measured cost and enforcement
-requirements, not duplicate migrations.
-
 ## Fast-part scans
 
 The remaining audit targets include indexed walks as well as full scans:
 
-- Constant-normalization candidate pairs and snapshot bridges above.
 - Atom-condition open-fact buckets and alias traversal, including large
   related buckets and repeated failed queries.
 - Resource candidate lookup with open/loaded/symbolic bases and retained
