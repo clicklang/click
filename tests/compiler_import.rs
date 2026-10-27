@@ -209,7 +209,7 @@ fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
             Some(imports[0].identity())
         );
     }
-    let offset = proof.rfind("step_until(function.exit);").unwrap();
+    let offset = proof.rfind("ensures result == 15;").unwrap();
     let line = proof[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -525,7 +525,7 @@ int answer(void) { return ANSWER; }
         theorem.target() == click::languages::c::target::CTarget::X86_64LinuxUserspace
             && theorem.import_identity.as_deref() == Some(imports[0].identity())
     }));
-    let column = proof.find("step_until(function.exit);").unwrap() + 1;
+    let column = proof.find("ensures result == 42;").unwrap() + 1;
     let expanded = expand_c0_prepared_tactic_source_at(proof, &imports, 1, column).unwrap();
     verify_c0_prepared_sources(&expanded, &imports).unwrap();
     // Both whole-file and selected-site checking must reject a target mismatch.
@@ -535,7 +535,7 @@ int answer(void) { return ANSWER; }
         error.message().contains("but the sidecar selects"),
         "{error:?}"
     );
-    let column = wrong.find("step_until(function.exit);").unwrap() + 1;
+    let column = wrong.find("ensures result == 42;").unwrap() + 1;
     assert!(verify_sources_at(&wrong, &ProgramInputs::Prepared(&imports), 1, column).is_err());
     assert!(expand_c0_prepared_tactic_source_at(&wrong, &imports, 1, column).is_err());
     // Opened headers remain lock dependencies even when their bytes do not
