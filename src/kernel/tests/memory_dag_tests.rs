@@ -3060,6 +3060,51 @@ fn seeded_pointer_read_evidence_refuses_partial_changed_and_unknown_footprints()
 }
 
 #[test]
+fn direct_pointer_reads_retain_their_projection_definitions() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Pointer::symbolic(Variable(98_340));
+    let alias = Pointer::symbolic(Variable(98_341));
+    let source =
+        intern_c_memory(CMemory::new().with_block_without_derivation("local:projection", 4));
+    let projected = crate::kernel::memory_provenance::canonical_value_load_memory(
+        &source,
+        &address,
+        crate::kernel::C_POINTER_BYTE_WIDTH,
+    );
+    assert_ne!(projected, source);
+    let named = Pointer::loaded_value(&projected, &address);
+    let observed = Pointer::loaded_value(&source, &alias);
+    let context = PureFactContext::new();
+    assert!(!context.pointers_known_equal(&named, &observed));
+    let context =
+        context.assume_condition(ConditionTerm::pointer_equal(address.clone(), alias), true);
+    assert!(
+        context.pointers_known_equal(&named, &observed),
+        "direct read names must use their producer-recorded projection edge"
+    );
+    assert!(context.equality_graph.knows_condition(
+        &ConditionTerm::pointer_value_equal(
+            CPointerValue::new(named.clone(), CType::Int32Pointer),
+            CPointerValue::new(observed.clone(), CType::Int32Pointer),
+        ),
+        true
+    ));
+    let shifted = context.clone();
+    assert!(shifted.pointers_known_equal(&named.offset_by_bytes(8), &observed.offset_by_bytes(8)));
+    assert!(!shifted.pointers_known_equal(&named.offset_by_bytes(8), &observed));
+    let changed = intern_c_memory(
+        source
+            .memory()
+            .clone()
+            .store(address.clone(), CValue::pointer(Pointer::null())),
+    );
+    assert!(
+        !context.pointers_known_equal(&named, &Pointer::loaded_value(&changed, &address)),
+        "projection metadata does not cross an actual store"
+    );
+}
+
+#[test]
 fn pointer_read_producer_closes_seeded_snapshot_equality_in_the_shared_graph() {
     let a = Pointer::symbolic(Variable(98_330));
     let b = Pointer::symbolic(Variable(98_331));

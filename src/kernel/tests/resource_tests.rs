@@ -1088,6 +1088,87 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
 }
 
 #[test]
+fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
+    let (instance, mut definition, state) = recursive_child_fixture();
+    let arm = &mut definition.matched.as_mut().unwrap().arms[1];
+    arm.contains[0].memory_segment_mut().unwrap().end = c_int32_literal(2);
+    arm.children[0].arguments = vec![SpecExpression::CExpression(CExpression::TypedLoad {
+        pointer: Box::new(c_variable("p")),
+        value_type: CType::Int32Pointer,
+        volatile: false,
+        pointee_constant: false,
+        access_class: None,
+        source: Default::default(),
+    })];
+    let AlgebraicValue::C(CValue::Pointer(parent)) = &instance.arguments()[0] else {
+        unreachable!()
+    };
+    let stored = CPointerValue::new(Pointer::symbolic(Variable(559)), CType::Int32Pointer);
+    let state = state.with_memory(
+        CMemory::new().store(parent.pointer().clone(), CValue::Pointer(stored.clone())),
+    );
+    let observed =
+        Pointer::loaded_value(&intern_c_memory(state.memory().clone()), parent.pointer());
+    let equation = ExecutionPureFact::logical_read_equation(stored, observed)
+        .proposition()
+        .clone();
+    let children = [
+        ("left".into(), Variable(501)),
+        ("right".into(), Variable(502)),
+    ];
+    let Proposition::ConditionIs(condition, truth) = &equation else {
+        unreachable!()
+    };
+    let context = PureFactContext::new();
+    let sibling = context.clone();
+    let before = context.equality_graph.knows_condition(condition, *truth);
+    let sibling_before = sibling.equality_graph.knows_condition(condition, *truth);
+    let mut invalid = definition.clone();
+    invalid.matched.as_mut().unwrap().arms[1].children[0].field_bindings =
+        vec![CResourceChildField::Parent(999)];
+    assert!(
+        crate::kernel::rewrite_resource_instance_selecting_children(
+            &state,
+            &instance,
+            &invalid,
+            std::slice::from_ref(&invalid),
+            &context,
+            true,
+            Some(&children),
+        )
+        .is_err()
+    );
+    assert_eq!(
+        context.equality_graph.knows_condition(condition, *truth),
+        before,
+        "a refused exchange must not publish its scratch read evidence"
+    );
+    let opened = crate::kernel::rewrite_resource_instance_selecting_children(
+        &state,
+        &instance,
+        &definition,
+        std::slice::from_ref(&definition),
+        &context,
+        true,
+        Some(&children),
+    )
+    .unwrap();
+    assert!(
+        context.equality_graph.knows_condition(condition, *truth),
+        "the checked read definition must leave the temporary opening context"
+    );
+    assert_eq!(
+        sibling.equality_graph.knows_condition(condition, *truth),
+        sibling_before,
+        "checked read evidence stays in the selected proof context"
+    );
+    assert!(
+        !opened.semantic_facts.contains(&equation),
+        "raw read definitions are not new public proof-state facts"
+    );
+}
+
+#[test]
 fn recursive_child_kernel_rejects_implicit_parent_handles() {
     let (instance, definition, state) = recursive_child_fixture();
     let assumptions = PureFactContext::new();

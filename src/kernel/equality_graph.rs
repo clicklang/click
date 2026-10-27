@@ -711,14 +711,31 @@ impl EqualityGraph {
         values: impl IntoIterator<Item = &'a Pointer>,
     ) {
         let reads = self.logical_reads.lock().expect("logical pointer reads");
-        if reads.definitions.is_empty() {
-            return;
-        }
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut definitions = Vec::new();
         while let Some(value) = pending.pop() {
             if state.logical_values.contains(&value) {
                 continue;
+            }
+            // Direct pointer-read names carry their own definition instead
+            // of a scalar-load entry. Their projection edge is the same
+            // unconditional producer metadata used below for scalar names.
+            if let Some(load) = value.as_loaded_value() {
+                state.logical_values = state.logical_values.with_value(value.clone());
+                pending.push(load.defining_address.clone());
+                if let Some(source) = crate::kernel::prelude::canonical_load_projection_source(
+                    &load.defining_memory,
+                    &load.defining_address,
+                ) {
+                    let source_read = Pointer::loaded_value(&source, &load.defining_address);
+                    let application = Pointer {
+                        block: source_read.block,
+                        offset: load.displacement,
+                    };
+                    pending.push(application.clone());
+                    definitions.push((value.clone(), application));
+                }
+                crate::instrumentation::record_deterministic_work(1);
             }
             let Some((application, address)) = reads.definitions.get(&value) else {
                 if matches!(value.offset, PointerOffsetTerm::Add(..)) {
