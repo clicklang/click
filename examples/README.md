@@ -55,6 +55,8 @@ Current projects:
 - `rust-unsigned/` checks Rust byte and word arithmetic, casts, and panic freedom.
 - `rust-enums/` checks Rust enum construction, `match`, `if let`, `matches!`,
   and integer `match` through `spec enum` contracts.
+- `rust-bools/` checks Rust `bool` values: comparisons, `!` and connectives as
+  `Bool`s with no path split, and `bool` enum fields and `Option<bool>`.
 - `rust-slices/` checks byte-slice lengths, indexed reads/writes, and slice calls.
 - `rust-arrays/` checks fixed-array reference lengths, typed indexing, element
   reborrows, direct calls, and parent reuse.

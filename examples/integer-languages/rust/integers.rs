@@ -84,3 +84,27 @@ pub fn below_u32(a: u32, b: u32) -> bool {
 pub fn sign_bit_set(u: u32) -> bool {
     (u as i32) < 0
 }
+
+pub fn not_bool(b: bool) -> bool {
+    !b
+}
+
+pub fn and_bool(a: bool, b: bool) -> bool {
+    a && b
+}
+
+pub fn int_to_bool(x: i32) -> bool {
+    x != 0
+}
+
+pub fn bool_to_u8(b: bool) -> u8 {
+    b as u8
+}
+
+pub fn bool_sum(a: bool, b: bool) -> i32 {
+    a as i32 + b as i32
+}
+
+pub fn select_i32(b: bool, x: i32, y: i32) -> i32 {
+    if b { x } else { y }
+}

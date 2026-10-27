@@ -37,3 +37,14 @@ unsigned long wrapping_add_u64(unsigned long a, unsigned long b) noexcept { retu
 bool below_i32(int a, int b) noexcept { return a < b; }
 bool below_u32(unsigned int a, unsigned int b) noexcept { return a < b; }
 bool sign_bit_set(unsigned int u) noexcept { return static_cast<int>(u) < 0; }
+bool not_bool(bool b) noexcept { return !b; }
+bool and_bool(bool a, bool b) noexcept { return a && b; }
+bool int_to_bool(int x) noexcept { return static_cast<bool>(x); }
+unsigned char bool_to_u8(bool b) noexcept { return static_cast<unsigned char>(b); }
+int bool_sum(bool a, bool b) noexcept { return a + b; }
+int select_i32(bool b, int x, int y) noexcept {
+    if (b) {
+        return x;
+    }
+    return y;
+}

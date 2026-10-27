@@ -1266,7 +1266,9 @@ sidecar per language (`c/c.click`, `cpp/cpp.click`, `rust/rust.click`) stating
 the same claims: signed arithmetic under an exact overflow precondition,
 unsigned wrapping through `integer::uint32_wrapping_*`, `uint32` values above
 `INT32_MAX`, sign conversions, signed and unsigned division, remainder and
-right shift, narrowing, 64-bit arithmetic and signed against unsigned order.
+right shift, narrowing, 64-bit arithmetic, signed against unsigned order,
+and `Bool`: negation, conjunction, an integer's truth, a `Bool`'s integer
+value and their sum, and a selection by a `Bool`.
 It is the language-level counterpart of the kernel's per-format matrix
 (`src/kernel/machine_integer/matrix_tests.rs`). The example harness verifies
 the three parts as separate examples, so a language that falls behind fails

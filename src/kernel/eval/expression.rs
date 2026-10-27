@@ -542,6 +542,35 @@ impl Drop for SpecificationAccessScope {
 }
 
 thread_local! {
+    /// How many Rust `Bool` values (decision D5) enclose the current
+    /// evaluation.
+    static CONDITION_VALUES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Marks the evaluation of a Rust `Bool` value's operand (Stage 5, decision
+/// D5): while it lives, a comparison, `!` or connective of simple operands
+/// is the `Bool` it tests, carried as its cast `c as int32` (rule C1), the
+/// same 1 or 0 C's operator yields, with no path split.
+pub(in crate::kernel) struct ConditionValueScope(());
+
+impl ConditionValueScope {
+    pub(in crate::kernel) fn enter() -> Self {
+        CONDITION_VALUES.with(|depth| depth.set(depth.get() + 1));
+        Self(())
+    }
+
+    pub(in crate::kernel) fn is_active() -> bool {
+        CONDITION_VALUES.with(|depth| depth.get() > 0)
+    }
+}
+
+impl Drop for ConditionValueScope {
+    fn drop(&mut self) {
+        CONDITION_VALUES.with(|depth| depth.set(depth.get() - 1));
+    }
+}
+
+thread_local! {
     static KEEP_WORD_REPRESENTATION: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
 }
 
@@ -1920,6 +1949,36 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
     Ok(paths)
 }
 
+/// A Rust `Bool` value (Stage 5, decision D5): `expression`, a comparison,
+/// `!` or connective, evaluated as the `Bool` it tests, with no path split
+/// ([`ConditionValueScope`]). Its operands are evaluated as usual.
+fn evaluate_bool_value_paths(
+    state: &CState,
+    expression: &CExpression,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CExpressionPath>> {
+    let paths = {
+        let _condition_values = ConditionValueScope::enter();
+        evaluate_c_expression_paths(state, expression, assumptions, budget)?
+    };
+    Ok(paths
+        .into_iter()
+        .map(|path| CExpressionPath {
+            outcome: match path.outcome {
+                CExpressionOutcome::Value(value) => ConditionTerm::nonzero_test(&value)
+                    .map(CValue::of_bool)
+                    .map(CExpressionOutcome::Value)
+                    .unwrap_or(CExpressionOutcome::RuntimeError(
+                        CRuntimeError::TypeMismatch,
+                    )),
+                outcome => outcome,
+            },
+            ..path
+        })
+        .collect())
+}
+
 #[allow(clippy::too_many_arguments)] // Cast mode and pointee qualifiers are independent.
 fn evaluate_c_cast_paths(
     state: &CState,
@@ -1932,6 +1991,9 @@ fn evaluate_c_cast_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
+    if integer_mode == CIntegerCastMode::BoolValue {
+        return evaluate_bool_value_paths(state, expression, assumptions, budget);
+    }
     let _word_representation = target_type
         .is_pointer()
         .then(|| WordRepresentationScope::enter(true));
@@ -3499,6 +3561,19 @@ pub(in crate::kernel) fn condition_as_c_int32_paths_valued(
     match decide_with_facts(assumptions, &facts, &condition) {
         Some(holds) => vec![CExpressionPath {
             outcome: CExpressionOutcome::Value(value(holds)),
+            facts,
+            obligations,
+        }],
+        // A Rust `Bool` value (decision D5) is the condition, as its cast.
+        None if ConditionValueScope::is_active() => vec![CExpressionPath {
+            outcome: CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::bool_cast(
+                MachineIntegerType::Int32,
+                if negated {
+                    ConditionTerm::bool_not(condition)
+                } else {
+                    condition
+                },
+            ))),
             facts,
             obligations,
         }],

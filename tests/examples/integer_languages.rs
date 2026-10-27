@@ -106,6 +106,12 @@ const CASES: &[Case] = &[
     Case { name: "below_i32", gaps: [None, None, None] },
     Case { name: "below_u32", gaps: [None, None, None] },
     Case { name: "sign_bit_set", gaps: [None, None, None] },
+    Case { name: "not_bool", gaps: [None, None, None] },
+    Case { name: "and_bool", gaps: [None, None, None] },
+    Case { name: "int_to_bool", gaps: [None, None, None] },
+    Case { name: "bool_to_u8", gaps: [None, None, None] },
+    Case { name: "bool_sum", gaps: [None, None, None] },
+    Case { name: "select_i32", gaps: [None, None, None] },
 ];
 
 /// The language's part of the fixture: `examples/integer-languages/c`, `cpp`

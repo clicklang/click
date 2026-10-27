@@ -315,6 +315,10 @@ impl ConditionTerm {
         use crate::kernel::{Bitvector32Term, CValue, IntegerTerm, MachineIntegerType};
         let is_zero = match value.numeric_value() {
             CValue::Bool(word) => return Some(Self::truth_of_bool_word(word)),
+            // Rule C1a: a cast is nonzero exactly when its `Bool` holds.
+            crate::kernel::integer64_c_value!(word) if word.bool_cast_operand().is_some() => {
+                return word.bool_cast_operand().cloned();
+            }
             crate::kernel::integer32_c_value!(word) => {
                 Self::equal(word.clone(), Bitvector32Term::Constant(0))
             }

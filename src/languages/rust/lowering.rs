@@ -1601,7 +1601,7 @@ impl Context<'_> {
             | E::IntegerFrom { value, .. } => {
                 let (prefix, value) = self.prepared_expr(value)?;
                 let value = match e {
-                    E::Not { .. } => c_not(value),
+                    E::Not { .. } => c_bool_value(c_not(value)),
                     E::BitwiseNot { value_type, .. } => rust_scalar_cast(
                         c_bitwise_not(value),
                         scalar_type(value_type)?.to_kernel_type(),
@@ -1978,7 +1978,7 @@ impl Context<'_> {
                 }
                 Ok(c_variable(name))
             }
-            E::Not { value } => Ok(c_not(self.expr(value)?)),
+            E::Not { value } => Ok(c_bool_value(c_not(self.expr(value)?))),
             E::Borrow { place, value_type } => {
                 if let E::Field { record, field, .. } = place.as_ref()
                     && self
@@ -2090,7 +2090,9 @@ impl Context<'_> {
                     operator.as_str(),
                     "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "and" | "or"
                 ) {
-                    Ok(result)
+                    // A Rust comparison or connective is a `bool` value: the
+                    // condition itself, with no path split (Stage 5, D5).
+                    Ok(c_bool_value(result))
                 } else if matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16)
                     && matches!(operator.as_str(), "add" | "sub" | "mul" | "div" | "rem")
                 {

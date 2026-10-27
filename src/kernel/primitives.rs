@@ -2775,6 +2775,10 @@ pub enum CIntegerCastMode {
     PointerCoercion,
     /// Legacy exact uint64-to-int64 boundary.
     UInt64BitsToInt64,
+    /// The `Bool` value of a Rust comparison, `!` or connective (Stage 5,
+    /// decision D5): its operand's condition is the value, built with no
+    /// path split. Only the Rust front end writes it, at target `bool`.
+    BoolValue,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
