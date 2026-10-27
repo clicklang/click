@@ -473,6 +473,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
         trace
     };
     let mut work_samples = Vec::new();
+    let mut exchange_samples = Vec::new();
     for size in [16, 32, 64, 128] {
         let mut core = ExecutionProofCore::at_entry(folded.clone(), ExecutionFrontier::default());
         core.execution_evidence = (0..size)
@@ -502,25 +503,16 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
                 facts: ExecutionFacts::new(),
             }),
         );
-        let (observed_after, _) = crate::kernel::rewrite_resource_instance(
-            &open,
-            &instance,
-            &definition,
-            facts.assumptions(),
-            false,
-        )
-        .unwrap();
         let base = core.clone();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            core.record_return_resource_rewrite_with_children(
+            core.rewrite_return_resource_instance_with_children(
                 &function,
                 size / 2,
                 &facts,
-                &selected,
-                &facts,
+                &open,
+                &instance,
                 false,
                 None,
-                Some((&open, &observed_after)),
             )
             .unwrap();
         });
@@ -602,6 +594,29 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
             !retained.proves(&extra),
             "a fold must not publish unrelated snapshot assumptions"
         );
+        let mut repeated = base.clone();
+        let mut presented = open.clone();
+        let mut repeated_facts = facts.clone();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                for unfold in [false, true] {
+                    let (result, next_facts) = repeated
+                        .rewrite_return_resource_instance_with_children(
+                            &function,
+                            size / 2,
+                            &repeated_facts,
+                            &presented,
+                            &instance,
+                            unfold,
+                            None,
+                        )
+                        .unwrap();
+                    presented = result.state;
+                    repeated_facts = next_facts;
+                }
+            }
+        });
+        exchange_samples.push(work);
         let mut unrelated = base;
         unrelated.execution_evidence[size / 2] = trace(open.clone());
         assert!(
@@ -614,6 +629,12 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
         assert!(
             pair[1] <= pair[0] + 128,
             "path-local fold work: {work_samples:?}"
+        );
+    }
+    for pair in exchange_samples.windows(2) {
+        assert!(
+            pair[1] <= 2 * pair[0] + 128,
+            "return exchanges revisited their history: {exchange_samples:?}"
         );
     }
 }

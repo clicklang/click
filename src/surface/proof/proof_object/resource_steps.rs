@@ -583,7 +583,20 @@ impl<'a> Proof<'a> {
         let instance_value = instance.clone();
         let instance = &instance_value;
         let construct_fold = !unfold && outcome.is_none() && !definition.reaches_population();
-        let (rewrite, produced_facts) = if construct_fold {
+        let (rewrite, produced_facts) = if let Some(goal) = outcome {
+            execution
+                .core
+                .rewrite_return_resource_instance_with_children(
+                    context.function,
+                    goal.path_index,
+                    self.facts(),
+                    &goal.data.core.state,
+                    instance,
+                    unfold,
+                    selected_children.clone(),
+                )
+                .map(|(rewrite, facts)| (rewrite, Some(facts)))
+        } else if construct_fold {
             execution
                 .core
                 .fold_resource_instance_with_children(
@@ -779,19 +792,6 @@ impl<'a> Proof<'a> {
             after
         };
         let updated_branch = if let Some(goal) = outcome {
-            execution
-                .core
-                .record_return_resource_rewrite_with_children(
-                    context.function,
-                    goal.path_index,
-                    self.facts(),
-                    &selected,
-                    &facts,
-                    unfold,
-                    selected_children.clone(),
-                    Some((&goal.data.core.state, &after)),
-                )
-                .map_err(|error| self.step_error_resource_rewrite(error))?;
             execution.core.state = after.clone().into();
             let mut updated = goal.clone();
             let mut data = (*goal.data).clone();
