@@ -9848,14 +9848,25 @@ impl ExecutionPureFact {
         if !self.is_certified() {
             return;
         }
-        if self.is_logical_read_equation()
-            && let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) =
-                self.proposition()
-        {
-            context
-                .equality_graph
-                .add_checked_pointer_value_equality(left, right);
-            return;
+        if self.is_logical_read_equation() {
+            match self.proposition() {
+                Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
+                    context
+                        .equality_graph
+                        .add_checked_pointer_value_equality(left, right);
+                    return;
+                }
+                // A complete value equation simplifies to address equality
+                // when its designation and bounds already match. Retain that
+                // exact producer conclusion without adding object authority.
+                Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
+                    context
+                        .equality_graph
+                        .add_checked_read_equality(left, right);
+                    return;
+                }
+                _ => {}
+            }
         }
         let Some(
             binding @ GeneratedLoadBinding::Exact {
