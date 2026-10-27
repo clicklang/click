@@ -73,7 +73,7 @@ fn charon_extern_function_tools_recheck_expanded_certificates() {
         &[
             "expand",
             "--claim",
-            "__rust_q_I16_extern_functions_I6_caller.contract",
+            "__rust_q_I16_extern_functions_I6_caller.ensures_0",
             "--in-place",
         ],
     );

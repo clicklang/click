@@ -98,9 +98,9 @@ fn charon_function_pointer_tools_recheck_expanded_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "__rust_q_I17_function_pointers_I5_apply.contract",
-        "__rust_q_I17_function_pointers_I6_caller.contract",
-        "__rust_q_I17_function_pointers_I5_relay.contract",
+        "__rust_q_I17_function_pointers_I5_apply.ensures_0",
+        "__rust_q_I17_function_pointers_I6_caller.ensures_0",
+        "__rust_q_I17_function_pointers_I5_relay.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
