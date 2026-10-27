@@ -2919,3 +2919,79 @@ fn owned_range_validity_is_linear_in_stated_aliases_of_its_base() {
         );
     }
 }
+#[test]
+fn checked_child_read_definitions_scale_with_exchanges_not_ambient_facts() {
+    let (instance, mut definition, state) = recursive_child_fixture();
+    let arm = &mut definition.matched.as_mut().unwrap().arms[1];
+    arm.contains[0].memory_segment_mut().unwrap().end = c_int32_literal(2);
+    arm.children[0].arguments = vec![SpecExpression::CExpression(CExpression::TypedLoad {
+        pointer: Box::new(c_variable("p")),
+        value_type: CType::Int32Pointer,
+        volatile: false,
+        pointee_constant: false,
+        access_class: None,
+        source: Default::default(),
+    })];
+    let children = [
+        ("left".into(), Variable(501)),
+        ("right".into(), Variable(502)),
+    ];
+    let measure = |steps, unrelated| {
+        let mut context = PureFactContext::new();
+        for i in 0..unrelated {
+            context = context.assume_condition(
+                ConditionTerm::pointer_equal(
+                    Pointer::symbolic(Variable(980_000 + i * 2)),
+                    Pointer::symbolic(Variable(980_001 + i * 2)),
+                ),
+                true,
+            );
+        }
+        let mut current = state.clone();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..steps {
+                for unfold in [true, false] {
+                    let rewrite = crate::kernel::rewrite_resource_instance_selecting_children(
+                        &current,
+                        &instance,
+                        &definition,
+                        std::slice::from_ref(&definition),
+                        &context,
+                        unfold,
+                        Some(&children),
+                    )
+                    .unwrap();
+                    current = rewrite.state;
+                    context = rewrite
+                        .semantic_facts
+                        .into_iter()
+                        .fold(context.clone(), PureFactContext::assume_proposition);
+                }
+            }
+        });
+        assert!(
+            current
+                .owned_resource_instance(instance.identity())
+                .is_some()
+        );
+        work
+    };
+    let related: Vec<_> = [8, 16, 32, 64]
+        .into_iter()
+        .map(|steps| measure(steps, 0))
+        .collect();
+    for pair in related.windows(2) {
+        assert!(
+            pair[1] <= pair[0] * 3 + 128,
+            "repeated child exchanges: {related:?}"
+        );
+    }
+    let unrelated: Vec<_> = [0, 16, 64, 256]
+        .into_iter()
+        .map(|size| measure(8, size))
+        .collect();
+    assert!(
+        unrelated.iter().all(|work| *work <= unrelated[0] * 2 + 128),
+        "child read publication scanned ambient facts: {unrelated:?}"
+    );
+}

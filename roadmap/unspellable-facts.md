@@ -159,6 +159,15 @@ specification comparisons now retain their operand types and operator for
 the proof diagnostic. This fixes the probe's lowering, not the remaining
 nested frame equality.
 
+Two shared read-definition prerequisites are now covered independently of the
+pointer-read migration. Direct pointer-read names retain their producer-recorded
+projection edges in the equality graph, just as scalar-backed names do. A
+successful resource fold/unfold also retains its child reads' checked definitions
+in the caller's graph; previously they stayed in a temporary opening context.
+A refused exchange publishes none. These are internal read definitions, not
+new public proof-state facts. Both changes avoid fact-aware query fallbacks and
+have deterministic scaling coverage for selected chains and unrelated state.
+
 ### Decision: the free decides its frame from proven separation
 
 The user chose the executor to require separation, with the step recording

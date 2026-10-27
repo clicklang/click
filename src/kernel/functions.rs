@@ -14744,6 +14744,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     let child_assumptions = assumptions.clone().require_owned_expression_loads();
     let mut resource_bindings = BTreeMap::from([(Variable(u64::MAX), instance.identity)]);
     let mut introduced_children: Vec<ResourceInstance> = Vec::new();
+    let mut child_read_definitions = Vec::new();
     for child in body_children {
         crate::instrumentation::record_deterministic_work(1);
         // The child's own definition supplies the parameter types its
@@ -14808,6 +14809,12 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                         // uses the same graph rather than a fold-only rule.
                         for fact in &paths[0].facts {
                             fact.retain_pointer_read_definition(assumptions);
+                            if fact.is_certified()
+                                && (fact.is_logical_read_equation()
+                                    || fact.generated_load_binding().is_some())
+                            {
+                                child_read_definitions.push(fact.clone());
+                            }
                         }
                         Ok(AlgebraicValue::C(value))
                     }
@@ -15105,6 +15112,13 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     );
             }
         }
+    }
+    // Child evaluation uses the opening context, a temporary extension of
+    // the caller's facts. Once the entire exchange succeeds, carry its
+    // checked read definitions to the caller's graph too. These are the
+    // existing producer equations, not new public body facts.
+    for fact in child_read_definitions {
+        fact.retain_pointer_read_definition(entry_assumptions);
     }
     Ok(ResourceInstanceRewriteResult {
         body_active: active,
