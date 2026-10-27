@@ -1461,7 +1461,7 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
         "{expanded}"
     );
     assert!(
-        claim.contains("extract(to_integer(st.total) == "),
+        claim.contains("extract(to_integer((st.total as int32)) == "),
         "{expanded}"
     );
     if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
@@ -1504,7 +1504,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
         "{expanded}"
     );
     assert!(
-        claim.contains("extract(to_integer(st.total) == "),
+        claim.contains("extract(to_integer((st.total as int32)) == "),
         "{expanded}"
     );
     if let Err(error) = verify_c0_sources(&expanded, &c_sources) {

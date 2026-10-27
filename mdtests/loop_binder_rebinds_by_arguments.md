@@ -49,60 +49,145 @@ void bump_n(struct cell* p, int32 n) {
 
         initialize by solve();
         preserve by {
-            have c.count == i by { solve() using { to_integer(c.count) == to_integer(old(c.count) + i); old(c.count) == 0; }; }
+            have c.count == i by {
+                rewrite(to_integer(c.count) == to_integer((old(c.count) + i)));
+                rewrite(old(c.count) == 0);
+                normalize();
+            }
             unfold(c);
             step();
             step();
-            let d = fold(counter(p), { count: old(c.count) + i });
+            let d = fold(counter(p), { count: (old(c.count) + i) });
             close_invariants() by {
                 both {
-                    solve() using {
-                        at(region(3).entry, i) >= at(region(3).entry, 0);
-                        at(region(3).entry, i) < at(region(3).entry, n);
-                    };
+                    arithmetic_certificate signed_int32 {
+                        premise 0: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >=
+                            at(region(3).entry, 0);
+                        premise 1: at(region(3).entry, i) < at(region(3).entry, n) => at(region(3).entry, i) <
+                            at(region(3).entry, n);
+                        int32_range => n <= 2147483647;
+                        add 1, 2 => ((at(region(3).entry, i) + n) as int32) < ((at(region(3).entry, n) +
+                            2147483647) as int32);
+                        interval_from_affine 0 (at(region(3).entry, i)) (0) (2147483647);
+                        interval_from_affine 3 (at(region(3).entry, i)) (-2147483648) (2147483646);
+                        interval_intersect 4, 5 (0) (2147483646);
+                        interval_atom (1) (1) (1);
+                        interval_add_bounded 6, 7 (1) (2147483647);
+                        trivial => -1 <= 0;
+                        add 0, 9 => ((at(region(3).entry, 0) + -1) as int32) <= ((at(region(3).entry, i) + 0) as
+                            int32);
+                        affine_conclusion 10 8 => (i as int32) >= (0 as int32);
+                        conclusion 11;
+                    }
                 } and {
                     both {
                         intro();
-                        solve() using {
-                            at(region(3).entry, i) < at(region(3).entry, n);
-                        };
+                        arithmetic_certificate signed_int32 {
+                            premise 0: at(region(3).entry, i) < at(region(3).entry, n) => at(region(3).entry, i)
+                                < at(region(3).entry, n);
+                            int32_range => n <= 2147483647;
+                            add 0, 1 => ((at(region(3).entry, i) + n) as int32) < ((at(region(3).entry, n) +
+                                2147483647) as int32);
+                            interval_from_affine 2 (at(region(3).entry, i)) (-2147483648) (2147483646);
+                            interval_atom (1) (1) (1);
+                            interval_add_bounded 3, 4 (-2147483647) (2147483647);
+                            affine_conclusion 0 5 => (i as int32) <= (n as int32);
+                            conclusion 6;
+                        }
                     } and {
                         both {
                             intro();
                             intro();
-                            solve();
+                            normalize();
                         } and {
                             both {
-                                arithmetic_certificate signed_int32 {
-                                    premise 0: n >= 0 => n >= 0;
-                                    premise 1: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >= at(region(3).entry, 0);
-                                    premise 2: at(region(3).entry, i) < at(region(3).entry, n) => at(region(3).entry, i) < at(region(3).entry, n);
-                                    premise 3: n <= 1000 => n <= 1000;
-                                    interval_from_affine 0 (n) (0) (2147483647);
-                                    interval_from_affine 3 (n) (-2147483648) (1000);
-                                    interval_intersect 4, 5 (0) (1000);
-                                    interval_from_affine 1 (at(region(3).entry, i)) (0) (2147483647);
-                                    interval_subtract 6, 7 6 (-2147483647) (1000);
-                                    interval_atom (1) (1) (1);
-                                    interval_subtract 8, 9 8 (-2147483648) (999);
-                                    affine_conclusion 2 10 => 0 <= to_integer(((n - at(region(3).entry, i)) - 1));
-                                    conclusion 11;
+                                have -2147483648 <= (to_integer(at(region(3).entry, i)) + 1) by {
+                                    arithmetic_certificate {
+                                        premise 0: at(region(3).entry, i) >= at(region(3).entry, 0) =>
+                                            at(region(3).entry, i) >= at(region(3).entry, 0);
+                                        trivial => -2147483649 <= 0;
+                                        add 0, 1 => (at(region(3).entry, 0) + -2147483649) <=
+                                            (at(region(3).entry, to_integer(i)) + 0);
+                                        conclusion 2;
+                                    }
+                                }
+                                have (to_integer(at(region(3).entry, i)) + 1) <= 2147483647 by {
+                                    arithmetic_certificate {
+                                        premise 0: at(region(3).entry, i) < at(region(3).entry, n) =>
+                                            at(region(3).entry, i) < at(region(3).entry, n);
+                                        premise 1: n <= 1000 => n <= 1000;
+                                        add 0, 1 => (at(region(3).entry, to_integer(i)) + to_integer(n)) <
+                                            (at(region(3).entry, to_integer(n)) + 1000);
+                                        trivial => -2147482647 <= 0;
+                                        add 2, 3 => (at(region(3).entry, to_integer(i)) + to_integer(n) +
+                                            -2147482647) < (at(region(3).entry, to_integer(n)) + 1000 + 0);
+                                        conclusion 4;
+                                    }
+                                }
+                                have to_integer(i) == (to_integer(at(region(3).entry, i)) + 1) by {
+                                    arithmetic_certificate rules {
+                                        premise 0: -2147483648 <= (to_integer(at(region(3).entry, i)) + 1) =>
+                                            -2147483648 <= (to_integer(at(region(3).entry, i)) + 1);
+                                        premise 1: (to_integer(at(region(3).entry, i)) + 1) <= 2147483647 =>
+                                            (to_integer(at(region(3).entry, i)) + 1) <= 2147483647;
+                                        integer_operation_identity bounds [0, 1] => to_integer(i) ==
+                                            (to_integer(at(region(3).entry, i)) + 1);
+                                        conclusion 0;
+                                    }
+                                }
+                                arithmetic_certificate {
+                                    premise 0: at(region(3).entry, i) < at(region(3).entry, n) =>
+                                        at(region(3).entry, i) < at(region(3).entry, n);
+                                    premise 1: to_integer(i) == (to_integer(at(region(3).entry, i)) + 1) =>
+                                        to_integer(i) == (to_integer(at(region(3).entry, i)) + 1);
+                                    less_equal_from_equal 1 => to_integer(i) <= (to_integer(at(region(3).entry,
+                                        i)) + 1);
+                                    add 0, 2 => (at(region(3).entry, to_integer(i)) + to_integer(i)) <
+                                        (at(region(3).entry, to_integer(n)) + (to_integer(at(region(3).entry,
+                                        i)) + 1));
+                                    conclusion 3;
                                 }
                             } and {
-                                arithmetic_certificate signed_int32 {
-                                    premise 0: n >= 0 => n >= 0;
-                                    premise 1: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >= at(region(3).entry, 0);
-                                    premise 2: n <= 1000 => n <= 1000;
-                                    interval_from_affine 0 (n) (0) (2147483647);
-                                    interval_from_affine 2 (n) (-2147483648) (1000);
-                                    interval_intersect 3, 4 (0) (1000);
-                                    interval_from_affine 1 (at(region(3).entry, i)) (0) (2147483647);
-                                    interval_subtract 5, 6 5 (-2147483647) (1000);
-                                    interval_atom (1) (1) (1);
-                                    interval_subtract 7, 8 7 (-2147483648) (999);
-                                    trivial => 0 <= 0;
-                                    affine_conclusion_pair 10 9 7 => to_integer(((n - at(region(3).entry, i)) - 1)) < to_integer((n - at(region(3).entry, i)));
-                                    conclusion 11;
+                                have -2147483648 <= (to_integer(at(region(3).entry, i)) + 1) by {
+                                    arithmetic_certificate {
+                                        premise 0: at(region(3).entry, i) >= at(region(3).entry, 0) =>
+                                            at(region(3).entry, i) >= at(region(3).entry, 0);
+                                        trivial => -2147483649 <= 0;
+                                        add 0, 1 => (at(region(3).entry, 0) + -2147483649) <=
+                                            (at(region(3).entry, to_integer(i)) + 0);
+                                        conclusion 2;
+                                    }
+                                }
+                                have (to_integer(at(region(3).entry, i)) + 1) <= 2147483647 by {
+                                    arithmetic_certificate {
+                                        premise 0: n <= 1000 => n <= 1000;
+                                        premise 1: at(region(3).entry, i) < at(region(3).entry, n) =>
+                                            at(region(3).entry, i) < at(region(3).entry, n);
+                                        add 0, 1 => (to_integer(n) + at(region(3).entry, to_integer(i))) < (1000
+                                            + at(region(3).entry, to_integer(n)));
+                                        trivial => -2147482647 <= 0;
+                                        add 2, 3 => (to_integer(n) + at(region(3).entry, to_integer(i)) +
+                                            -2147482647) < (1000 + at(region(3).entry, to_integer(n)) + 0);
+                                        conclusion 4;
+                                    }
+                                }
+                                have to_integer(i) == (to_integer(at(region(3).entry, i)) + 1) by {
+                                    arithmetic_certificate rules {
+                                        premise 0: -2147483648 <= (to_integer(at(region(3).entry, i)) + 1) =>
+                                            -2147483648 <= (to_integer(at(region(3).entry, i)) + 1);
+                                        premise 1: (to_integer(at(region(3).entry, i)) + 1) <= 2147483647 =>
+                                            (to_integer(at(region(3).entry, i)) + 1) <= 2147483647;
+                                        integer_operation_identity bounds [0, 1] => to_integer(i) ==
+                                            (to_integer(at(region(3).entry, i)) + 1);
+                                        conclusion 0;
+                                    }
+                                }
+                                arithmetic_certificate {
+                                    premise 0: to_integer(i) == (to_integer(at(region(3).entry, i)) + 1) =>
+                                        to_integer(i) == (to_integer(at(region(3).entry, i)) + 1);
+                                    less_equal_from_equal 0 reverse => (to_integer(at(region(3).entry, i)) + 1)
+                                        <= to_integer(i);
+                                    conclusion 1;
                                 }
                             }
                         }

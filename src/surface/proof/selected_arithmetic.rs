@@ -2244,6 +2244,58 @@ mod scaling_tests {
 mod tests {
     use super::*;
 
+    fn check_listed_operation_identity(ty: &str, bound: &str, operation: &str) {
+        let op = if operation.contains('+') { "+" } else { "-" };
+        let source = format!(
+            r#"
+theorem identity(x: {ty}) {{
+    requires {bound};
+    ensures to_integer({operation}) == to_integer(x) {op} 1 by {{
+        solve() using {{ {bound}; }};
+    }}
+}}
+"#
+        );
+        crate::surface::verify_click_theorems(&source).unwrap();
+        let line = source
+            .lines()
+            .position(|line| line.contains("solve()"))
+            .unwrap();
+        let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
+        let expanded =
+            crate::surface::expand_c0_tactic_source_at(&source, &[], line + 1, column + 1).unwrap();
+        assert!(
+            expanded.contains("integer_operation_identity"),
+            "{expanded}"
+        );
+        without_implicit_auto(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
+        let omitted = source.replace(&format!("using {{ {bound}; }}"), "using {}");
+        assert!(
+            crate::surface::verify_click_theorems(&omitted).is_err(),
+            "an unlisted no-wrap bound must not be read: {omitted}"
+        );
+    }
+
+    #[test]
+    fn listed_premises_prove_signed_add_identity() {
+        check_listed_operation_identity("int32", "x < 2147483647", "x + 1");
+    }
+
+    #[test]
+    fn listed_premises_prove_signed_subtract_identity() {
+        check_listed_operation_identity("int32", "x > -2147483648", "x - 1");
+    }
+
+    #[test]
+    fn listed_premises_prove_unsigned_add_identity() {
+        check_listed_operation_identity("uint64", "x < 18446744073709551615u64", "x + 1u64");
+    }
+
+    #[test]
+    fn listed_premises_prove_unsigned_subtract_identity() {
+        check_listed_operation_identity("uint64", "x > 0u64", "x - 1u64");
+    }
+
     #[test]
     fn auto_proves_an_equality_operation_identity_once() {
         // Each bound of the split equality is proved inside its own `have`,

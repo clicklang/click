@@ -1,18 +1,12 @@
-# A long loop is ranked by an int64 measure
+# A long loop is ranked by an Integer difference
 
 `last` walks a byte range two at a time with a `long` index. Its measure,
-`length - i`, is an `int64`: a ranked carrier beside `int32`, `uint32` and
-`uint64`. It is ranked by signed 64-bit order and, like an `int32` measure,
-owes `0 <= length - i` at the back edge, because a signed value is not a
-natural number by construction.
+`length - i`, is an exact Integer difference. It owes nonnegativity and
+strict descent at the back edge. The native 64-bit counter bounds are
+proved by `solve() using`; they justify the increment's Integer identity.
 
-The 64-bit facts the back edge owes are each one `solve() using`
-(`mdtests/arithmetic_proves_int64_order_goals.md`).
-`a_size_t_loop_stepping_by_two_closes_with_arithmetic.md` is the same loop
-with an unsigned index, which owes no lower bounds.
-
-`an_int64_measure_that_may_be_negative_is_refused.md` is a loop whose
-measure the last step can take below zero, which is refused.
+`an_int64_measure_that_may_be_negative_is_refused.md` retains the refusal
+when the last step can take the measure below zero.
 
 ```c filename=a_long_loop_is_ranked_by_an_int64_measure.c
 unsigned char last(const unsigned char *bytes, long length) {

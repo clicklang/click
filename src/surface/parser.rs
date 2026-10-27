@@ -2806,7 +2806,7 @@ impl Parser {
         }
         let decreases = if self.peek_ident() == Some("decreases") {
             self.position += 1;
-            Some(self.parse_contract_expression()?)
+            Some(self.parse_measure_component()?)
         } else {
             None
         };
@@ -4486,12 +4486,12 @@ impl Parser {
                     if self.peek() == Some(&Token::LParen) {
                         let start = self.position;
                         self.position += 1;
-                        let first = self.parse_contract_expression()?;
+                        let first = self.parse_measure_component()?;
                         if self.peek() == Some(&Token::Comma) {
                             components.push(first);
                             while self.peek() == Some(&Token::Comma) {
                                 self.position += 1;
-                                components.push(self.parse_contract_expression()?);
+                                components.push(self.parse_measure_component()?);
                             }
                             self.expect(Token::RParen)?;
                         } else {
@@ -4499,7 +4499,7 @@ impl Parser {
                         }
                     }
                     if components.is_empty() {
-                        let measure = self.parse_contract_expression()?;
+                        let measure = self.parse_measure_component()?;
                         self.expect(Token::Semicolon)?;
                         decreases = Some(CFunctionDecrease::Unresolved(
                             substitute_contract_expression(&measure, &substitutions)
@@ -11547,21 +11547,26 @@ impl Parser {
             .expect("a contract expression has at least one operand"))
     }
 
+    fn parse_measure_component(&mut self) -> Result<ContractExpression, ClickError> {
+        let component = self.parse_contract_expression()?;
+        Ok(self.at_integer_position(component))
+    }
+
     fn parse_termination_measure(&mut self) -> Result<TerminationMeasure, ClickError> {
         let components = if self.peek() == Some(&Token::LParen) {
             self.position += 1;
             if self.peek() == Some(&Token::RParen) {
                 return Err(self.error("termination measure cannot be empty"));
             }
-            let mut components = vec![self.parse_contract_expression()?];
+            let mut components = vec![self.parse_measure_component()?];
             while self.peek() == Some(&Token::Comma) {
                 self.position += 1;
-                components.push(self.parse_contract_expression()?);
+                components.push(self.parse_measure_component()?);
             }
             self.expect(Token::RParen)?;
             components
         } else {
-            vec![self.parse_contract_expression()?]
+            vec![self.parse_measure_component()?]
         };
         Ok(TerminationMeasure::new(components))
     }

@@ -412,6 +412,19 @@ pub(super) fn observed_native_surface_comparison(
     {
         return written.clone();
     }
+    // A native comparison promotes byte and short operands to int32.
+    // Preserve that carrier when its sides become Integer observations;
+    // observing the original narrow source instead changes the certificate.
+    let native_int32 = matches!(
+        kernel,
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                ..
+            },
+            _
+        )
+    );
     // An operand already written as an Integer (an unsuffixed literal, an
     // observation, or arithmetic over one) keeps its spelling.
     // A literal inside machine arithmetic, the `1` of `value + 1`, is typed
@@ -430,21 +443,25 @@ pub(super) fn observed_native_surface_comparison(
     // A read at a snapshot is observed there, `at(s, to_integer(x))`, which
     // lowers to the same read as the fact; `to_integer(at(s, x))` reads `x`
     // anew.
-    fn observe_operand(operand: &ContractExpression) -> ContractExpression {
+    fn observe_operand(operand: &ContractExpression, native_int32: bool) -> ContractExpression {
         match operand {
             ContractExpression::At {
                 selector,
                 expression,
             } => ContractExpression::At {
                 selector: selector.clone(),
-                expression: Box::new(observe_operand(expression)),
+                expression: Box::new(observe_operand(expression, native_int32)),
             },
             ContractExpression::Old(inner) => {
-                ContractExpression::Old(Box::new(observe_operand(inner)))
+                ContractExpression::Old(Box::new(observe_operand(inner, native_int32)))
             }
             _ => ContractExpression::Call {
                 name: "to_integer".to_string(),
-                arguments: vec![operand.clone()],
+                arguments: vec![if native_int32 {
+                    native_int32_split_operand(operand.clone())
+                } else {
+                    operand.clone()
+                }],
             },
         }
     }
@@ -452,7 +469,7 @@ pub(super) fn observed_native_surface_comparison(
         if written_integer(operand) {
             operand.clone()
         } else {
-            observe_operand(operand)
+            observe_operand(operand, native_int32)
         }
     };
     fn observed(
@@ -502,6 +519,8 @@ pub(in crate::surface::proof) fn integer_plan_to_surface_certificate_with_ranges
     surface_goal: &ClickProposition,
     ranges: &[SpelledBound],
 ) -> Option<IntegerCertificate> {
+    let anchored_goal = surface_comparison_with_anchored_operands(surface_goal);
+    let surface_goal = &anchored_goal;
     let mut source_indices = BTreeMap::new();
     let mut node_surfaces = Vec::with_capacity(plan.nodes.len());
     let mut nodes = Vec::with_capacity(plan.nodes.len());
@@ -1125,11 +1144,21 @@ fn written_integer_observations<'s>(
     // `to_integer(k)`, which an operation identity over it cites.
     let mut index = 0;
     while index < written.len() {
-        if let ContractExpression::Call { arguments, .. } = &written[index]
-            && let ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) =
-                &arguments[0]
-        {
-            let operands = [left.as_ref().clone(), right.as_ref().clone()];
+        if let ContractExpression::Call { arguments, .. } = &written[index] {
+            let operands = match &arguments[0] {
+                ContractExpression::Add(left, right)
+                | ContractExpression::Subtract(left, right) => {
+                    vec![left.as_ref().clone(), right.as_ref().clone()]
+                }
+                ContractExpression::CUnary {
+                    operand,
+                    lowered: CExpression::Cast { .. },
+                } => vec![operand.as_ref().clone()],
+                ContractExpression::CFragment(CExpression::Cast { expression, .. }) => {
+                    vec![ContractExpression::CFragment(expression.as_ref().clone())]
+                }
+                _ => Vec::new(),
+            };
             for operand in operands {
                 let observed = ContractExpression::Call {
                     name: "to_integer".into(),
@@ -3405,7 +3434,7 @@ impl<'a> Proof<'a> {
                 identities.retain(|(_, _, identity)| identity != &unspelled);
                 continue;
             }
-            match self.prove_operation_identities(&used, &written)? {
+            match self.prove_operation_identities(&used, &written, None)? {
                 Ok((proof, established)) => return proof.selected_arithmetic(false, &established),
                 Err(failed) => identities.retain(|(_, _, identity)| identity != &failed),
             }
@@ -3423,6 +3452,7 @@ impl<'a> Proof<'a> {
         &self,
         identities: &[&OperationIdentity],
         written: &[ContractExpression],
+        listed: Option<&[ClickProposition]>,
     ) -> Result<Result<(Self, Vec<(Proposition, ClickProposition)>), Proposition>, ClickError> {
         use crate::kernel::IntegerTerm;
         let mut proof = self.clone();
@@ -3507,7 +3537,14 @@ impl<'a> Proof<'a> {
             };
             for bound in [&lower, &upper].into_iter().filter(|_| binder.is_none()) {
                 let scope = proof.begin_have(bound.clone())?;
-                let Some(closed) = scope.try_selected_arithmetic_without_identities()? else {
+                let closed = if let Some(listed) = listed {
+                    let mut premises = listed.to_vec();
+                    premises.extend(established.iter().map(|(_, surface)| surface.clone()));
+                    scope.apply_step(ProofStep::ArithmeticUsing(premises)).ok()
+                } else {
+                    scope.try_selected_arithmetic_without_identities()?
+                };
+                let Some(closed) = closed else {
                     return Ok(Err(failed.clone()));
                 };
                 proof = closed.join()?;
@@ -3580,7 +3617,7 @@ impl<'a> Proof<'a> {
         let written = written_integer_observations(std::iter::once(surface_goal));
         let identities = identities.iter().collect::<Vec<_>>();
         Ok(self
-            .prove_operation_identities(&identities, &written)?
+            .prove_operation_identities(&identities, &written, None)?
             .ok()
             .map(|(proof, _)| proof))
     }
@@ -3643,16 +3680,24 @@ impl<'a> Proof<'a> {
         if let crate::kernel::IntegerTerm::Machine(machine) = term
             && machine.ty() == crate::kernel::MachineIntegerType::Int32
             && let Some(view) = self.premise_fixed_state_view()
-            && let Some(value) = crate::surface::proof::surface_synthesis::synthesize_surface_value(
+        {
+            // An operation under a stored narrowing refers to the counter's
+            // previous value. Its introduction already has a recorded name;
+            // keep that naming index in scope while spelling the operation.
+            let _recorded =
+                crate::surface::proof::surface_synthesis::SynthesisRecordedPointsScope::enter(
+                    view.fixed_state.recorded_snapshots,
+                );
+            if let Some(value) = crate::surface::proof::surface_synthesis::synthesize_surface_value(
                 &CValue::Int32(machine.value().clone()),
                 view.parameter_binding,
                 view.fixed_state.state,
-            )
-        {
-            return Some(ContractExpression::Call {
-                name: "to_integer".into(),
-                arguments: vec![value],
-            });
+            ) {
+                return Some(ContractExpression::Call {
+                    name: "to_integer".into(),
+                    arguments: vec![native_int32_split_operand(value)],
+                });
+            }
         }
         let operand = |inner: &crate::kernel::SharedIntegerTerm| {
             self.spell_integer_observation(inner, written).map(Box::new)
@@ -9623,6 +9668,50 @@ impl<'a> Proof<'a> {
         self.apply_step(ProofStep::ArithmeticUsing(surfaces.to_vec()))
             .ok()
             .filter(|closed| closed.is_complete() || closed.focused_discharged())
+            .or_else(|| {
+                self.try_listed_operation_identities(surfaces)
+                    .ok()
+                    .flatten()
+            })
+    }
+
+    /// Establish the goal's machine-operation identities from only the
+    /// listed bounds and type ranges, then retry arithmetic with those
+    /// explicit identities. Each bound and identity remains in expansion.
+    fn try_listed_operation_identities(
+        &self,
+        surfaces: &[ClickProposition],
+    ) -> Result<Option<Self>, ClickError> {
+        let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
+            return Ok(None);
+        };
+        if integer_affine_claim(goal).is_none() {
+            return Ok(None);
+        }
+        let premises = surfaces
+            .iter()
+            .map(|surface| {
+                self.lower_cited_surface_proposition(surface, "operation identity premise")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let identities = operation_identities(machine_observations(goal, &premises));
+        if identities.is_empty() {
+            return Ok(None);
+        }
+        let written =
+            written_integer_observations(std::iter::once(surface_goal).chain(surfaces.iter()));
+        let identities = identities.iter().collect::<Vec<_>>();
+        let Ok((proof, established)) =
+            self.prove_operation_identities(&identities, &written, Some(surfaces))?
+        else {
+            return Ok(None);
+        };
+        let mut premises = surfaces.to_vec();
+        premises.extend(established.into_iter().map(|(_, surface)| surface));
+        Ok(proof
+            .apply_step(ProofStep::ArithmeticUsing(premises))
+            .ok()
+            .filter(|closed| closed.is_complete() || closed.focused_discharged()))
     }
 
     fn try_restricted_simp_closure_before_arithmetic(

@@ -1336,7 +1336,11 @@ A listed guarded equality whose definedness guard is not listed has the guard
 proved first, from the other listed facts when they suffice, and is then used as
 its consequent. An `int32` or `int64` definedness goal cites the listed premises
 that bound an operand by a constant in one `int32_defined` or `int64_defined`
-certificate.
+certificate. For an Integer goal observing a machine sum or difference,
+listed bounds and the machine type's range can establish the in-range
+identity, such as `to_integer(x + 1) == to_integer(x) + 1`. Expansion writes
+the range proofs and an `integer_operation_identity` certificate. An
+unsigned operation is used this way only when those bounds prove it does not wrap.
 
 **Failure, checking, and tools:**
 
