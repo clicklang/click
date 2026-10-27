@@ -14373,6 +14373,10 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     } else if state.resources.owned_instance(instance.identity).is_some() {
         return Err("fold result identity is already in use".into());
     }
+    // Capture the caller's closed graph before opening adds temporary facts.
+    // Only an empty memory input is attached here; ambient frames keep their
+    // existing publication. A later fold then advances the selected delta.
+    state.resources.capture_empty_memory_input(assumptions);
     let mut evaluation = instance_body_evaluation(state, instance, definition)?;
     check_instance_resource_arguments(&evaluation, instance, definition, assumptions)?;
     let mut budget = ExecutionBudget::beside_live_state();

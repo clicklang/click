@@ -1802,3 +1802,77 @@ fn an_indexed_read_supplier_does_not_resolve_its_pointer_history() {
         "an existing supplier walked pointer history: {samples:?}"
     );
 }
+
+fn opening_checkpoint_work(steps: u64, unrelated: u64) -> usize {
+    let at = |id| Pointer::symbolic(Variable(987_000 + id));
+    let mut base = PureFactContext::new();
+    for i in 0..unrelated {
+        base = base.assume_condition(
+            ConditionTerm::pointer_equal(at(1000 + 2 * i), at(1001 + 2 * i)),
+            true,
+        );
+    }
+    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        at(0),
+        0u32.into(),
+        4u32.into(),
+        1,
+    ));
+    let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+        for step in 0..steps {
+            let caller = base.clone();
+            let opening = caller.clone();
+            opening
+                .equality_graph
+                .add_checked_read_equality(&at(2 + 2 * step), &at(3 + 2 * step));
+            let resources = ResourceContext::new();
+            resources.capture_empty_memory_input(&caller);
+            // Body evaluation uses a temporary stronger context before it
+            // publishes the constructed read equation back to the caller.
+            resources.synchronize_memory_equalities(&opening);
+            let resources = resources
+                .try_compose_into_valid_context_delaying_normalization(
+                    [
+                        owner.clone(),
+                        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                            at(0).offset_by_bytes(8),
+                            0u32.into(),
+                            4u32.into(),
+                            1,
+                        )),
+                    ],
+                    &opening,
+                )
+                .unwrap();
+            caller
+                .equality_graph
+                .add_checked_read_equality(&at(2 + 2 * step), &at(3 + 2 * step));
+            assert!(
+                resources
+                    .without_fact_incrementally(&owner, &caller)
+                    .is_some()
+            );
+        }
+    });
+    work
+}
+
+#[test]
+fn opening_checkpoints_ignore_unrelated_caller_equalities() {
+    let samples = [0, 16, 64, 256].map(|unrelated| opening_checkpoint_work(4, unrelated));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn opening_checkpoints_scale_with_selected_exchanges() {
+    let samples = [8, 16, 32, 64].map(|steps| opening_checkpoint_work(steps, 64));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 64),
+        "{samples:?}"
+    );
+}

@@ -1099,3 +1099,61 @@ fn symbolic_owned_suffix_start_checks_bounds_and_retained_authority() {
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/primitives/memory_equality_index/cell_tests.rs");
 }
+
+#[test]
+fn captured_empty_caller_does_not_inherit_opening_equalities() {
+    let base = Pointer::symbolic(Variable(987_800));
+    let alias = Pointer::symbolic(Variable(987_801));
+    let caller = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(
+            Pointer::symbolic(Variable(987_802)),
+            Pointer::symbolic(Variable(987_803)),
+        ),
+        true,
+    );
+    let opening = caller.clone().assume_condition(
+        ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+        true,
+    );
+    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        base.clone(),
+        0u32.into(),
+        4u32.into(),
+        1,
+    ));
+    let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        alias.clone(),
+        0u32.into(),
+        4u32.into(),
+        1,
+    ));
+    let resources = ResourceContext::new();
+    resources.capture_empty_memory_input(&caller);
+    resources.synchronize_memory_equalities(&opening);
+    let resources = resources
+        .try_compose_into_valid_context_delaying_normalization(
+            [
+                owner,
+                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                    base.offset_by_bytes(8),
+                    0u32.into(),
+                    4u32.into(),
+                    1,
+                )),
+            ],
+            &opening,
+        )
+        .unwrap();
+    assert!(
+        resources
+            .clone()
+            .without_fact_incrementally(&required, &caller)
+            .is_none()
+    );
+    assert!(!caller.pointers_known_equal(&base, &alias));
+    assert!(
+        resources
+            .without_fact_incrementally(&required, &opening)
+            .is_some()
+    );
+}
