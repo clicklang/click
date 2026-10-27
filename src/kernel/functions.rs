@@ -14744,6 +14744,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     let child_assumptions = assumptions.clone().require_owned_expression_loads();
     let mut resource_bindings = BTreeMap::from([(Variable(u64::MAX), instance.identity)]);
     let mut introduced_children: Vec<ResourceInstance> = Vec::new();
+    let mut child_read_definitions = Vec::new();
     for child in body_children {
         crate::instrumentation::record_deterministic_work(1);
         // The child's own definition supplies the parameter types its
@@ -14808,6 +14809,12 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                         // uses the same graph rather than a fold-only rule.
                         for fact in &paths[0].facts {
                             fact.retain_pointer_read_definition(assumptions);
+                            if fact.is_certified()
+                                && (fact.is_logical_read_equation()
+                                    || fact.generated_load_binding().is_some())
+                            {
+                                child_read_definitions.push(fact.clone());
+                            }
                         }
                         Ok(AlgebraicValue::C(value))
                     }
@@ -15105,6 +15112,13 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     );
             }
         }
+    }
+    // Child evaluation uses the opening context, a temporary extension of
+    // the caller's facts. Once the entire exchange succeeds, carry its
+    // checked read definitions to the caller's graph too. These are the
+    // existing producer equations, not new public body facts.
+    for fact in child_read_definitions {
+        fact.retain_pointer_read_definition(entry_assumptions);
     }
     Ok(ResourceInstanceRewriteResult {
         body_active: active,
@@ -15807,44 +15821,6 @@ pub(super) fn expand_all_composite_resource_facts_at_state(
     let (expanded, _) =
         expand_checked_authority_controls(context, definitions, state, assumptions)?;
     expand_all_composite_resource_facts(&expanded, definitions, state.memory(), assumptions)
-}
-
-/// Expands each owned composite of `context` exactly one level, in place of
-/// its head, and leaves every child composite folded. This is the frontier
-/// boundary the composite lend and `project` use: the kernel does not reason
-/// inside a folded composite beyond its one-level frontier, so a frame check
-/// that consults ownership sees exactly what a lend would. `None` when no
-/// head expanded. Work is charged per head, never per nested level.
-pub(super) fn expand_owned_composite_resource_facts_one_level(
-    context: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
-    assumptions: &PureFactContext,
-) -> Option<ResourceContext> {
-    let heads = context
-        .facts()
-        .iter()
-        .filter(|fact| fact.is_own() && matches!(fact.resource(), CResource::Composite { .. }))
-        .cloned()
-        .collect::<Vec<_>>();
-    let mut expanded = context.clone();
-    let mut changed = false;
-    for head in heads {
-        crate::instrumentation::record_deterministic_work(1);
-        if !expanded.facts().contains(&head) {
-            continue;
-        }
-        let Some(next) =
-            expand_composite_resource_fact(&expanded, &head, definitions, memory, assumptions)
-        else {
-            continue;
-        };
-        if next != expanded {
-            expanded = next;
-            changed = true;
-        }
-    }
-    changed.then_some(expanded)
 }
 
 /// Continues through recursive composites only while their guards are

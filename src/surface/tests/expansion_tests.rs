@@ -1120,7 +1120,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
         click_source,
         &sources,
         "read_terminator",
-        CProofClaim::Grouped,
+        CProofClaim::Ensure(0),
     )
     .expect("the source-identity retry should expand into source");
     assert!(
@@ -1645,12 +1645,19 @@ fn ranked_loops_with_no_invariant_expand_and_reverify() {
 #[test]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn multidimensional_array_field_expands_with_every_subscript() {
-    let anchor = "ensures p->words[1][1] == value by ";
-    let expanded = expand_mdtest_site_and_reverify(
-        "mdtests/struct_wide_integer_arrays.md",
-        anchor,
-        anchor.len(),
-    );
+    let (click_source, c_sources) = mdtest_sources("mdtests/struct_wide_integer_arrays.md");
+    let c_sources = c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&click_source, &c_sources)
+        .expect("the original wide-array proof should verify");
+    // Both postconditions belong to the omitted grouped proof.
+    let expanded = expand_checked_grouped_claim(&click_source, &verified, "update")
+        .expect("the wide-array grouped proof should expand");
+    assert_ne!(expanded, click_source);
+    verify_c0_sources(&expanded, &c_sources)
+        .expect("the expanded wide-array proof should re-verify");
     assert!(
         expanded.contains("have p->words[1][1] == value by {"),
         "{expanded}"
@@ -17536,7 +17543,7 @@ int32 f(int32 n) {{
         );
         let sources = [("tail.c", c.as_str())];
         let verified_for_label = verify_c0_sources(&source, &sources).unwrap();
-        let expanded = expand_checked_function_claim(&source, &verified_for_label, "f.contract")
+        let expanded = expand_checked_function_claim(&source, &verified_for_label, "f.ensures_0")
             .unwrap_or_else(|error| panic!("{count} branches: {}", error.message()));
         assert!(
             c0_smart_tactic_source_sites(&expanded, &sources)
@@ -18664,7 +18671,7 @@ fn unknown_pointer_bounds_survive_expansion_and_retained_verification() {
     for (fixture, claim, postcondition) in [
         (
             "mdtests/unknown_pointer_formation_keeps_zero_offsets_one_past_and_full_aliases.md",
-            "alias.contract",
+            "alias.ensures_0",
             "ensures result == q + 1;",
         ),
         (
@@ -18679,7 +18686,7 @@ fn unknown_pointer_bounds_survive_expansion_and_retained_verification() {
         ),
         (
             "mdtests/member_pointers_stay_usable_inside_their_subobject.md",
-            "nested.contract",
+            "nested.ensures_0",
             "ensures result == o->inner.second;",
         ),
         (
@@ -18697,8 +18704,10 @@ fn unknown_pointer_bounds_survive_expansion_and_retained_verification() {
         let expanded = expand_verified_function_claim_source_by_label(&source, &verified, claim)
             .unwrap()
             .expect("the verified function claim is declared in this fixture");
-        let position =
-            expansion::position_at_offset(&expanded, expanded.find(postcondition).unwrap());
+        let position = expansion::position_at_offset(
+            &expanded,
+            expanded.find(postcondition.trim_end_matches(';')).unwrap(),
+        );
         session
             .verify_at(&expanded, position.line, position.column)
             .unwrap();
@@ -18772,8 +18781,10 @@ fn packed_pointer_cast_contracts_survive_expansion_and_retained_verification() {
         let expanded = expand_verified_function_claim_source_by_label(&source, &verified, claim)
             .unwrap()
             .expect("the verified function claim is declared in this fixture");
-        let position =
-            expansion::position_at_offset(&expanded, expanded.find(postcondition).unwrap());
+        let position = expansion::position_at_offset(
+            &expanded,
+            expanded.find(postcondition.trim_end_matches(';')).unwrap(),
+        );
         session
             .verify_at(&expanded, position.line, position.column)
             .unwrap();

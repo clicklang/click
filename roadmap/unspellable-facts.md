@@ -104,8 +104,9 @@ should not land as one piece.
 - **Tests.** The unit tests that pinned the fold are updated, and there is a
   new mdtest, `a_read_of_a_stored_pointer_cell_stays_a_read.md`.
 
-**Status.** The unit phase has 15 failures. The fixture phase (mdtests and
-examples) has not run, because the gate stops after the unit phase.
+**Original checkpoint status.** The unit phase had the 15 failures below.
+Its fixture phase had not run because the gate stopped after the unit phase.
+See the integration checkpoint below for subsequent results.
 
 - **Nine Rust/Charon tests:**
   - `charon_box_fields_take_and_assign_through_self`
@@ -149,31 +150,123 @@ At exit, `self.head` is a version name. To match the owned
 cannot show the freed block (a pointer read) separate from `self`. The old
 fold crossed it through facts inside lowering.
 
-### Open decision: the free's two rules disagree
+A separate import defect obscured a diagnostic probe: Rust record pointer
+fields lost their nominal pointee name, so `self.head.next` fell back to an
+untyped load at offset zero instead of the declared eight-byte pointer field
+at offset eight. Comparing `self.head` with `old(self.head.next)` then paired
+a pointer with `int32`; the rejected comparison reported only "0 paths".
+Retaining the field's pointee layout restores the typed nested read. Rejected
+specification comparisons now retain their operand types and operator for
+the proof diagnostic. This fixes the probe's lowering, not the remaining
+nested frame equality.
 
-When the branch stopped, this question was open:
+Two shared read-definition prerequisites are now covered independently of the
+pointer-read migration. Direct pointer-read names retain their producer-recorded
+projection edges in the equality graph, just as scalar-backed names do. A
+successful resource fold/unfold also retains its child reads' checked definitions
+in the caller's graph; previously they stayed in a temporary opening context.
+A refused exchange publishes none. These are internal read definitions, not
+new public proof-state facts. Both changes avoid fact-aware query fallbacks and
+have deterministic scaling coverage for selected chains and unrelated state.
 
-- **The executor** decides which cached cells a `free` keeps with
-  `heap_allocation_may_contain_pointer` (`primitives/memory_state.rs`).
-  For a cell in a different block spelling, it says "may contain" only for
-  an alias at the same offset that is proven equal. So `free(node)` keeps
-  `self.head`'s cached cell by structure, with no facts or resources.
-- **The walk** (`step_effect::affects`, the `HeapFreed` arm) crosses a free
-  only when the blocks are proven distinct, or when
-  `heap_allocation_proven_separate_from_pointer` proves resource
-  separation. So the fact-aware walk stops at the same `free`.
+### Integration checkpoint (2026-10-27)
 
-That leaves three choices:
+The migration is continued on `codex/unspellable-free-investigation`, rebased
+onto `14aa465dd` (including the importer fix #2065 and read-definition fix
+#2073). The owned free-frame prototype remains on that branch; its frame
+facts are checked consequences of the free, not unconditional metadata.
 
-1. Let the walk use the executor's rule.
-2. Let the executor use the walk's rule, and record a separation fact at the
-   `free` when ownership proves it.
-3. Find out first whether the executor's cross-block rule is sound.
+PR #2075 (`c4a8153a6`) moves the published return resource exchange inside
+the kernel operation and returns its constructed state and facts. The
+follow-up uses the retained C-body successor during final return certification
+instead of comparing it with a regenerated representation. Existing path
+premise checks still run; this does not remove all legacy trace replay.
 
-The proposed first step is the third: write an mdtest where an interior
-alias in another block (`q == p + 8`) is freed through `p`, then read
-through `q`. If that verifies a false claim, it is a soundness bug in
-`free_heap_block`, to file or fix whatever happens to this item.
+Abstract-value reads now participate in typed address congruence. Their
+pointer operands register through the common graph walk, and exact producer
+projection edges connect their snapshot names. Structural read naming also
+retains the original observation as a width-specific definition: naming had
+already justified that relation but discarded the original snapshot. The
+new graph edges change no lowered terms, scan no facts or memory history,
+and never cross an actual affecting store or mix read types or access widths.
+
+With these increments and the WIP full-pointer substitution correction, the
+unchanged generic Stack proof verifies end to end, including `push` and
+`pop`. Focused regressions check late aliases, nested pointer definitions,
+projection/origin relations, type and width separation, writes, and fact
+withdrawal. Deterministic scaling covers 8/16/32/64 reads and up to 256
+unrelated facts. The complete migration still needs a green gate and the
+remaining spellability/fact-stability acceptance work below.
+
+
+The integrated migration unit gate ran 6,620 tests: 6,609 passed and 11
+failed (five Rust container/drop tests and the six representation tests
+listed above). Box fields, generic Stack, and both held-resource trait tests
+now pass. The false-Stack-claims test still refuses verification, but earlier
+than its expected diagnostic at a concrete `Stack::pop` payload fold.
+
+The separately invoked fixture phase passed the C++ and sidecar aggregates.
+Eight examples failed: `arena`, `binary-tree`, `concurrency-fork-join`,
+`input-cursor`, `owned-segmented-buffer`, `owned-string`, `owned-vector`, and
+`perpetual-service`. The main mdtests reported nine failures and then remained
+in `rewrite_through_a_loaded_pointer_field.md`; that process was stopped
+at 416 seconds after all other main fixtures had finished. This is an
+unresolved migration tooling blocker, not a completed fixture verdict.
+The obsolete `execute()` in `a_read_of_a_stored_pointer_cell_stays_a_read.md`
+was subsequently replaced by `step_until(function.exit)` and passed in a
+focused rerun. The eight other reported failures are:
+
+- `aggregate_parameter_old_pointee.md`
+- `aggregate_parameter_pointee_expires.md`
+- `aggregate_parameter_pointee_contract.md`
+- `aggregate_parameter_pointee_resource.md`
+- `an_entry_view_names_the_entry_address.md`
+- `authority_ordinary_exit_aggregate_parameter_pointee.md`
+- `c_produced_resource_over_returned_struct_field.md`
+- `cpp_generic_class_state_in_a_resource.md`
+
+The isolated abstract-read follow-up passed `scripts/check.sh`: 6,620
+unit/API/import/scaling tests and all four fixture aggregates (13m41s,
+report-only ten-minute budget warning). The loaded-pointer fixture passed
+in 0.27 seconds there; the stall is reproduced on the broader migration.
+
+Do not resume migration feature work until the loaded-pointer rewrite stall
+has been reduced and fixed. No nightly suite was run; no new census or
+fact-stability acceptance result is claimed by this checkpoint.
+
+### Decision: the free decides its frame from proven separation
+
+The user chose the executor to require separation, with the step recording
+ownership-supported before/after read equalities in the equality graph.
+The process must be deterministic and indexed, looking one step back; no
+history scan per query and no fact-aware fallback inside individual checks.
+
+The investigation found a stale cache entry, but no false verification:
+
+- A helper returning `p + 2` for an `int32*` gives an interior alias eight
+  bytes into the allocation. Reading through it before `free(p)` verifies;
+  reading after the free is refused for missing read authority. See
+  `an_interior_call_alias_can_be_read_before_free.md` and
+  `an_interior_call_alias_cannot_be_read_after_free.md` in `mdtests/`.
+- The kernel reproduction `free_retires_a_cached_interior_alias` showed that
+  `free_heap_block` nevertheless kept a cached value under a symbolic
+  `q == p + 8` spelling. The same-offset test in
+  `heap_allocation_may_contain_pointer` did not identify this interior alias.
+  Cache retention therefore cannot be used as the walk's separation rule.
+
+The first increment requires complete-cell ownership in the checked residual
+frame before keeping an uncertain cached cell. The step has already consumed
+the allocation’s complete ownership and checked the resources that survive;
+its residual owners are separate from the consumed bytes by construction.
+`owned_memory_member_covering_access` selects a cell’s owner through the
+address-class access index. Unknown cells are forgotten; structurally distinct
+blocks remain untouched. The allocation-status helper is not a separation
+authority.
+
+The migration checkpoint records supported pointer-cell frame equalities at
+the free step, with deterministic full-step scaling coverage. That increment
+has not landed; remaining container and concrete recursive-drop failures must
+be resolved before the pointer-read migration is green.
 
 ### Also tried, and why it was dropped
 

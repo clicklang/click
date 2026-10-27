@@ -308,10 +308,10 @@ fn charon_owned_array_fields_cli_tools_recheck_expanded_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "moved.contract",
-        "reassigned.contract",
-        "snapshot.contract",
-        "empty_move.contract",
+        "moved.ensures_0",
+        "reassigned.ensures_0",
+        "snapshot.ensures_0",
+        "empty_move.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
@@ -387,10 +387,10 @@ fn charon_array_snapshots_cli_tools_recheck_expanded_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "computed_move.contract",
-        "source_write.contract",
-        "target_write.contract",
-        "sparse.contract",
+        "computed_move.ensures_0",
+        "source_write.ensures_0",
+        "target_write.ensures_0",
+        "sparse.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
@@ -646,10 +646,10 @@ fn charon_shared_iteration_cli_tools_recheck_expanded_certificates() {
     }
     for claim in [
         "borrowed.contract",
-        "moved.contract",
-        "ordered.contract",
+        "moved.ensures_0",
+        "ordered.ensures_0",
         "signed.contract",
-        "empty.contract",
+        "empty.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
@@ -762,10 +762,10 @@ fn charon_array_fields_cli_tools_recheck_borrowed_field_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "read.contract",
+        "read.ensures_0",
         "write.contract",
-        "borrowed_first.contract",
-        "borrowed_byte.contract",
+        "borrowed_first.ensures_0",
+        "borrowed_byte.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
@@ -897,10 +897,10 @@ fn charon_checksum_arithmetic_cli_tools_recheck_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "reduce.contract",
-        "pack.contract",
-        "wide_left.contract",
-        "signed_count.contract",
+        "reduce.ensures_0",
+        "pack.ensures_0",
+        "wide_left.ensures_0",
+        "signed_count.ensures_0",
         "conditional_divide.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
@@ -1406,7 +1406,7 @@ fn charon_slice_cli_tools_recheck_expanded_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "length.contract",
+        "length.ensures_0",
         "write_read.contract",
         "guarded_read.contract",
     ] {
@@ -1518,7 +1518,7 @@ fn charon_array_cli_tools_recheck_expanded_certificates() {
     }
     for claim in [
         "guarded_array.contract",
-        "large_array.contract",
+        "large_array.ensures_0",
         "empty_array.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
@@ -2739,7 +2739,7 @@ fn rust_enum_claims_are_checked_and_step_names_the_match_split() {
 #[ignore = "nightly: checked proof expansion"]
 fn rust_enum_match_expansions_verify() {
     let p = rust_enums_project();
-    for claim in ["grow.contract", "is_empty.contract", "classify.contract"] {
+    for claim in ["grow.ensures_0", "is_empty.ensures_0", "classify.contract"] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
     let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
@@ -2780,9 +2780,9 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
-        "add_byte.contract",
-        "shifted_byte.contract",
-        "low_byte.contract",
+        "add_byte.ensures_0",
+        "shifted_byte.ensures_0",
+        "low_byte.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
         assert_cli(&p, &["verify"]);
@@ -3489,7 +3489,7 @@ fn rust_sidecar_slices_in_rust_syntax_verify() {
     assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
-    assert_cli(&p, &["expand", "--claim", "read.contract", "--in-place"]);
+    assert_cli(&p, &["expand", "--claim", "read.ensures_0", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
 
@@ -3913,7 +3913,7 @@ fn rust_byte_slices_indexing_calls_and_expansion_verify() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     assert_cli(&p, &["audit"]);
-    for claim in ["read.contract", "write.contract", "length.contract"] {
+    for claim in ["read.ensures_0", "write.contract", "length.ensures_0"] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
         assert_cli(&p, &["verify"]);
     }
@@ -3935,7 +3935,7 @@ fn read(bytes: &[u8], index: usize) -> u8 {
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     assert_cli(&p, &["audit"]);
-    assert_cli(&p, &["expand", "--claim", "read.contract", "--in-place"]);
+    assert_cli(&p, &["expand", "--claim", "read.ensures_0", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
 
@@ -4191,9 +4191,9 @@ fn rust_local_array_construction_and_whole_value_copies_verify() {
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
-        "literal.contract",
-        "independent.contract",
-        "replace.contract",
+        "literal.ensures_0",
+        "independent.ensures_0",
+        "replace.ensures_0",
         "copy_into.contract",
         "repeat_call.contract",
         "zero_repeat_call.contract",
@@ -4246,10 +4246,10 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
-        "local.contract",
+        "local.ensures_0",
         "alias.contract",
-        "retarget_mut.contract",
-        "empty.contract",
+        "retarget_mut.ensures_0",
+        "empty.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
         assert_cli(&p, &["verify"]);
@@ -5181,7 +5181,7 @@ fn rust_chunks_exact_direct_nested_loops_keep_independent_state() {
     C0VerificationSession::new_program_prepared(sidecar, &prepared)
         .unwrap_or_else(|error| panic!("{}", error.message()));
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
-    assert_cli(&p, &["expand", "--claim", "nested.contract", "--in-place"]);
+    assert_cli(&p, &["expand", "--claim", "nested.ensures_0", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
 
@@ -5214,7 +5214,7 @@ fn rust_integer_from_preserves_native_unsigned_values() {
     );
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     assert_cli(&p, &["audit"]);
-    assert_cli(&p, &["expand", "--claim", "word.contract", "--in-place"]);
+    assert_cli(&p, &["expand", "--claim", "word.ensures_0", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
 
@@ -5456,10 +5456,10 @@ fn split_gate_fixture_tools_recheck_certificates() {
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
-        "left_length.contract",
-        "right_length.contract",
-        "left_first.contract",
-        "right_first.contract",
+        "left_length.ensures_0",
+        "right_length.ensures_0",
+        "left_first.ensures_0",
+        "right_first.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
@@ -5480,10 +5480,10 @@ fn arrays_gate_fixture_tools_recheck_certificates() {
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
-        "read.contract",
+        "read.ensures_0",
         "write.contract",
-        "signed.contract",
-        "first.contract",
+        "signed.ensures_0",
+        "first.ensures_0",
         "update.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
@@ -5506,9 +5506,9 @@ fn usize_gate_fixture_tools_recheck_certificates() {
     assert_cli(&p, &["audit"]);
     for claim in [
         "add.contract",
-        "mul.contract",
-        "right.contract",
-        "computed.contract",
+        "mul.ensures_0",
+        "right.ensures_0",
+        "computed.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }

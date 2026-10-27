@@ -156,6 +156,11 @@ thread_local! {
     static CANONICAL_LOAD_PROJECTION_SOURCES: std::cell::RefCell<
         std::collections::HashMap<(super::SharedCMemory, Pointer), super::SharedCMemory>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
+    /// The latest producer observation of a named value read. Every stored
+    /// edge is structural and valid only for its recorded access width.
+    static VALUE_LOAD_ORIGINS: std::cell::RefCell<
+        std::collections::HashMap<(super::SharedCMemory, Pointer, u32), super::SharedCMemory>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// Every exact producer-known projection triple. Evidence checks this
     /// durable set rather than requiring its selected source to remain the
     /// preferred source if an older equivalent producer is registered later.
@@ -259,6 +264,7 @@ pub(crate) fn clear_canonical_memory_cache() {
     SOURCE_OBSERVABLE_BY_BLOCK.with(|memo| memo.borrow_mut().clear());
     CANONICAL_LOAD_PROJECTION_SOURCES.with(|sources| sources.borrow_mut().clear());
     CANONICAL_LOAD_PROJECTIONS.with(|projections| projections.borrow_mut().clear());
+    VALUE_LOAD_ORIGINS.with(|origins| origins.borrow_mut().clear());
 }
 
 /// Records the exact source used when load canonicalization constructs a
@@ -289,6 +295,37 @@ pub(in crate::kernel) fn record_canonical_load_projection(
             *preferred = source.clone();
         }
     });
+}
+
+/// Retain the selected-width equation already established by structural
+/// value-load naming. Unlike a projection edge, this may cross writes outside
+/// that width, so it must never be used for a wider observation.
+pub(in crate::kernel) fn record_value_load_origin(
+    origin: &super::SharedCMemory,
+    named: &super::SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+) {
+    if origin != named {
+        VALUE_LOAD_ORIGINS.with(|origins| {
+            origins
+                .borrow_mut()
+                .insert((named.clone(), pointer.clone(), bytes), origin.clone());
+        });
+    }
+}
+
+pub(in crate::kernel) fn value_load_origin(
+    named: &super::SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+) -> Option<super::SharedCMemory> {
+    VALUE_LOAD_ORIGINS.with(|origins| {
+        origins
+            .borrow()
+            .get(&(named.clone(), pointer.clone(), bytes))
+            .cloned()
+    })
 }
 
 /// Returns the retained source for an exact canonical projection endpoint.

@@ -268,26 +268,113 @@ without classifying it:
   steps. Today these are the `simp` scans in
   `condition_reasoning/simp.rs`, each reached only from
   `decide_condition_for_simp`.
-- `scan_unindexed()`: fast code that reads every fact. Each use is a bug
-  in the list below, and the count of uses goes down to zero.
 
 The fast/slow line is expansion: anything that still runs while checking an
 expanded proof must be fast. That is every simple tactic and every kernel
 check, not only code outside `simp`.
 
-Proposition facts (`FactSet`) have no `scan_unindexed` at all now: fast
-code reads them only through an index, and a new whole-set scan there does
-not compile.
+The former `scan_unindexed()` escape hatch is gone from all three fact
+collections (`FactMap`, `FactSet`, and `ScanSet`). The last production users
+were the memory-condition and composite-frame fallbacks removed below.
+A new use no longer compiles.
 
-**Known fast-part scans** (`scan_unindexed`) still open:
+**Removed (2026-10-27): memory-condition ambient fallback.**
+`has_matching_condition_fact_for_memory_resolution` now declines when its
+indexed routes cannot find a candidate. It no longer calls
+`scanned_matching_condition_fact_for_memory_resolution`, including the old
+debug-only full-scan comparison. This deliberately gives up automatic matches
+between compound expressions filed under different canonical keys. A miss
+means "not established", never that the condition is false. The candidate
+matcher's snapshot, carrier and truth checks are unchanged.
 
-- The memory-resolution condition match's fallback
-  (`scanned_matching_condition_fact_for_memory_resolution`), reached from
-  `functions.rs` and contract certification whenever its index declines.
-  It matches up to memory-resolution equality, which no key spells, and
-  `mdtests/call_step_retains_old_array_bound.md` needs it: the call's
-  `0 <= old(left[cur])` requirement holds by a fact about the same cell at
-  another snapshot named through an equality.
+An explicit proof can establish the required spelling before a call.
+`mdtests/call_step_retains_old_array_bound.md` now instantiates its held
+entry-snapshot bound explicitly before calling `use`; neither the C nor the
+contract changed. `compound_memory_condition_miss_requires_the_explicit_spelling`
+checks the intentional loss of automatic compound matching, retained
+selected-premise reasoning and exact admission, for signed/unsigned orders
+and offset equalities. Scaling tests now cover compound misses as well as
+hits beside unrelated and shared-operand facts at 8/32/128 entries.
+Compound-load misses cost three work units at every size; hits remain at
+seven. The final focused run passed 1,698 tests, including the new boundary
+regression, plus the repaired fixture and two targeted expansion checks.
+
+Disabling the fallback left all 1,697 focused tests and 57 enabled example
+projects passing. Of 4,848 enabled Markdown proofs, only that array-bound
+fixture failed; its explicit instantiation repair passed independently. CI
+also exposed a straight-line swap unit proof outside that focused selection;
+its corresponding nightly loop proof used the same route. Both now transport
+the swapped value equalities explicitly, then rewrite the order bounds. The
+original C and claims are unchanged.
+
+The indexed atom route still reads its existing family-specific open-fact
+bucket and alias classes; removing the global fallback does not claim that
+those routes have constant cost. Composite-frame expansion was removed in
+the follow-up described below.
+
+The earlier index improvements below describe the steps before this cutoff.
+
+**Earlier indexing (2026-10-27):** exact condition matches now read the condition
+fact map before inspecting operands. Integer, pointer-value, 64-bit and other
+exact-only condition kinds also answer misses by lookup: the matcher never
+related those kinds through memory equivalence, so scanning could only find
+the identical fact. The matcher and index share their operand-family
+classification. Non-exact 32-bit comparisons and offset equalities initially retained
+the existing indexed route and fallback. The scaling regression
+`exact_memory_condition_matches_ignore_other_facts` grows unrelated facts
+and facts sharing an operand at 8, 32 and 128 entries. Before this change,
+an Integer miss cost 16, 64 and 256 units and a hit cost 18, 66 and 258.
+Exact-only hits and misses now cost one unit at every size; exact compound
+32-bit comparisons also cost one unit.
+
+The same map also answers the matcher's fixed syntactic symmetries: reversed
+32-bit orders, swapped equality operands, signed/unsigned 32-bit equality,
+and swapped offset equalities. These hits need at most two lookups, even
+for compound operands. Scaling tests grow unrelated and shared-operand facts;
+misses initially used the fallback because operands may be memory-equivalent
+without having identical syntax.
+`symmetric_memory_condition_matches_ignore_other_facts` and
+`equivalent_equality_spellings_use_bounded_lookups` cover 8, 16 and 32 facts,
+both truth values and withdrawal. The original reversed compound-equality
+reproduction cost 539/2,003/7,859 units at 8/32/128 unrelated facts; the same
+probe costs two units after the lookup. The gate keeps the smaller sizes to
+stay below its per-test time budget.
+
+The atom-query path also shares the ordinary condition matcher's side-index
+selector, rather than constructing every pair of the two operands' aliases.
+It reads filed keys under the smaller class and filters against the other
+class, retaining the memory matcher's byte-offset aliases and 64-bit fallback.
+Previously uncharged fact-map probes are now counted. With that accounting,
+`memory_condition_matching_does_not_multiply_alias_classes` measured misses
+at 114/1,218/17,154 units and hits at 123/1,227/17,163 for 8/32/128 aliases
+per operand before the change. They now cost 65/257/1,025 and 76/268/1,036.
+`aliased_memory_condition_matches_ignore_unrelated_facts` stays at 17 units
+for a miss and 28 for a hit beside 8/32/128 unrelated facts, and checks
+reversed order, both truth values and withdrawal. This fixes candidate
+generation in the indexed path; the general fallback remained until the
+removal above.
+
+Unsigned 32-bit orders now have their own condition-match key family and
+use the same atom-query index. They previously scanned every condition fact
+even for plain variables. At 8/32/128 unrelated facts, the
+`unsigned_memory_condition_matches_ignore_unrelated_facts` regression's
+miss cost 46/166/646 units and its true hit cost 56/176/656; both truth
+values now cost 17 units for a miss and 28 for a hit at every size.
+The two-alias-class regression covers both signed and unsigned orders with
+the same linear measurements above. Compound unsigned facts retain their
+own open-fact bucket; signed facts cannot satisfy unsigned order queries,
+and withdrawing a fact removes it from both indexes.
+
+Compound queries gained a canonical condition-key lookup before the general
+scan. This catches a load and its registered variable inside a sum or a
+scaled offset; the existing memory matcher still checks each indexed
+candidate. At that stage a miss retained the scan because different canonical
+forms can still be memory-equivalent; it now declines as described above. At 8/32/128 facts,
+`compound_load_condition_hits_and_misses_ignore_other_facts` measured true hits at
+159/615/2,439 units before this lookup; hits now cost seven units at every
+size, for both truth values and signednesses, with unrelated facts or facts
+sharing one operand. Separate checks retain scaled-offset matching,
+withdrawal and refusal after the loaded cell changes.
 
 **Fixed: the exact check is exact.** Measured across the gate, the
 condition scan `settles_exactly` fell into (`proves_condition_from_facts`)
@@ -365,14 +452,32 @@ shallow and through the fact graph, shallow range separation, and range
 against pointer when deciding which memory facts survive a store
 (`shallow_owned_separation_ignores_unrelated_compositions`, and
 `heap_object_stores_and_releases_cost_the_same_at_every_position`, which
-charging made fail on the old scans). Still `scan_unindexed`:
+charging made fail on the old scans).
 
-- the composite frame frontier (`frame_frontier_compositions`), now over
-  the compositions owning a composite only (`composite_owning_compositions`,
-  read from each composition's own count; a composition without one
-  expands to nothing). Its gate once walked
-  every fact of every composition on each store's cell drop
-  (`frame_frontier_ignores_compositions_without_composites`).
+**Removed (2026-10-27): composite-frame expansion.** Frame queries no longer
+open every recorded composition owning a composite. They use the ordinary
+indexed range/pointer separation facts and exposed owned-memory members.
+A folded body contributes no implicit frame evidence; an author can expose
+selected ownership explicitly. The separate indexed store path that opens
+selected *live* resource instances is unchanged.
+
+This removes `frame_frontier_compositions`, its expansion memo and session
+cleanup, the `composite_owning_compositions` collection and its upkeep, and
+the one-level whole-composition expansion helper. The now-unused
+`scan_unindexed` methods are removed from fact collections as well: neither
+the condition map nor the composition set offers that escape hatch.
+`frame_queries_ignore_folded_compositions_until_explicitly_opened` grows
+unrelated and shared-argument folded compositions at 8/32/128 entries. It
+checks automatic refusal, success after explicitly opening the selected
+owners, and refusal of overlapping writes through the actual call-frame
+checker. Refusals cost 20 work units and explicit-opening successes 17, at
+every size in both growth families. Disabling the composite fallback passed
+all 57 enabled example projects and 4,848 enabled Markdown proofs without
+proof changes; its only focused-test failure was the old test requiring
+automatic one-level opening. The final broader run passed 6,319 unit tests,
+including all enabled scaling tests and the repaired straight-line swap.
+Four targeted nightly checks passed, including expansion/reverification of
+the repaired swap loop and its missing-proof negative control.
 
 **Fixed (2026-10-27):** ownerless store separation no longer builds a
 footprint by scanning every stated composition. It retains the write's base
@@ -456,14 +561,11 @@ are `ScanSet`s too:
   every fact the scan could use, visited in the scan's order
   (`pointer_separation_ignores_unrelated_separations`).
 
-Still `scan_unindexed`:
-
-- range separation with both sides matched by memory resolution
-  (`memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution`),
-  which `range_proven_disjoint_from_pointer` falls through to on a miss.
-  Resolution equates loaded pointers whose cells agree across snapshots,
-  so this is the same open question as the memory-resolution condition
-  match above.
+Range separation with both sides matched by memory resolution
+(`memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution`)
+already selects compositions by both queried blocks and separation facts
+through `separation_facts_related_to`. It no longer uses an unindexed scan;
+its former entry here was stale.
 
 **Fixed, by narrowing:** certifying an existential obligation
 (`certification_proves_exists_obligation_from_facts`) tries only the
@@ -886,20 +988,30 @@ parameters and fields, indices, fold accumulators) C's operation silently.
 Measure, before deciding, how many corpus sites do arithmetic in each
 machine position.
 
-### 2. Phase E leftovers, measured and deferred
+### 2. Phase E scan census: both remaining sites removed
 
-The remaining `scan_unindexed` sites run rarely and stay small across the
-whole suite (counted 2026-10-26):
+The original census found the following remaining sites (2026-10-26); their
+current disposition is:
 
-- `scanned_matching_condition_fact_for_memory_resolution` (`simp.rs`), the
-  fallback when the condition-match index cannot answer: 234 calls, at most
-  60 facts, 15 hits. Its query shapes are load variables, sums,
-  `IntegerEqual`, pointer equalities and pure function applications; an
-  index needs keys for those.
-- `frame_frontier_compositions` (`memory_reasoning.rs`): 328 calls, at most
-  7 composite-owning compositions. Needs a by-block index of them.
+- Completed (2026-10-27): the global memory-condition fallback in `simp.rs`.
+  The original census counted 234 calls, at most 60 facts, and 15 hits.
+  After exact/symmetric, atom-alias and canonical compound indexing,
+  remaining misses now decline instead of scanning all facts. This is an
+  intentional completeness tradeoff: explicit proof steps must establish
+  spellings outside those indexed routes. The array-bound call fixture
+  supplies its entry-snapshot bound by explicit instantiation. Atom queries'
+  existing open-fact buckets and alias traversal remain; this change does
+  not certify their scaling for every input shape.
+- Completed (2026-10-27): `frame_frontier_compositions`
+  (`memory_reasoning.rs`), originally 328 calls and at most seven
+  composite-owning compositions. Frame queries now decline if ordinary
+  indexed separation cannot answer; they do not open recorded composites.
+  Explicitly exposed ownership remains usable. Its memo, filtered collection
+  and unused expansion helper are gone, along with the `scan_unindexed` APIs.
 
-Fix each with a scaling test that shows it growing.
+These removals intentionally narrow automatic reasoning. They close the two
+named global scans, not a blanket scaling certification of every indexed
+bucket or alias walk. Each boundary has deterministic scaling coverage.
 
 Completed 2026-10-27: the ownerless `store_compositions` scan (1,435 calls,
 at most 2 compositions in the census). A deterministic scaling reproduction

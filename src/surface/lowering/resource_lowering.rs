@@ -3713,9 +3713,9 @@ pub(in crate::surface) fn contract_expression_element_width(
                                 .pointee_type()
                                 .map(C0Type::to_kernel_type)
                                 .map(CType::byte_width),
-                            // A reference to an enum refers to one value of
-                            // it, as wide as the local holding one.
-                            C0Type::ParameterPointer(name) if name.is_enum() => {
+                            // Abstract values and enums use their model
+                            // width, as do the cells that hold them.
+                            C0Type::ParameterPointer(name) => {
                                 Some(CType::Parameter(name).byte_width())
                             }
                             C0Type::Int32Array(_) => Some(4),

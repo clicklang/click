@@ -347,3 +347,77 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn free_ownership_lookup_ignores_unrelated_resources() {
+    let base = Pointer::symbolic(Variable(946_000));
+    let cell = Pointer::symbolic(Variable(946_001));
+    let range =
+        |p: Pointer| CResourceFact::own_memory(CMemoryRange::new(p, 0u32.into(), 1u32.into()));
+    let assumptions = PureFactContext::new();
+    let mut samples = Vec::new();
+    for count in [0, 16, 64, 256] {
+        let memory = CMemory::new()
+            .with_heap_allocation_claim(base.clone(), 4)
+            .unwrap()
+            .store(cell.clone(), int32(7));
+        let mut ownership = ResourceContext::new().unchecked_with_fact(range(cell.clone()));
+        for index in 0..count {
+            ownership =
+                ownership.unchecked_with_fact(range(Pointer::symbolic(Variable(947_000 + index))));
+        }
+        let (freed, work) = crate::instrumentation::measure_deterministic_work(|| {
+            memory
+                .free_heap_block_with_owned_frame(&base, &assumptions, &ownership)
+                .unwrap()
+        });
+        assert_eq!(freed.load(&cell), CExpressionOutcome::Value(int32(7)));
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] + 32),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn sequential_frees_preserving_one_owned_cell_stay_near_linear() {
+    let mut samples = Vec::new();
+    for count in [8, 16, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Pointer::symbolic(Variable(948_000));
+        let range =
+            |p: Pointer| CResourceFact::own_memory(CMemoryRange::new(p, 0u32.into(), 1u32.into()));
+        let mut memory = CMemory::new().store(cell.clone(), int32(7));
+        let mut ownership = ResourceContext::new().unchecked_with_fact(range(cell.clone()));
+        let bases = (0..count)
+            .map(|index| Pointer {
+                block: PointerBlock::Heap(949_000 + index),
+                offset: PointerOffsetTerm::Constant(0),
+            })
+            .collect::<Vec<_>>();
+        for base in &bases {
+            memory = memory.with_heap_allocation_claim(base.clone(), 4).unwrap();
+            ownership = ownership.unchecked_with_fact(range(base.clone()));
+        }
+        let assumptions = PureFactContext::new();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for base in bases {
+                ownership = ownership
+                    .clone()
+                    .without_exact_representation(&range(base.clone()))
+                    .unwrap();
+                memory = memory
+                    .clone()
+                    .free_heap_block_with_owned_frame(&base, &assumptions, &ownership)
+                    .unwrap();
+                assert_eq!(memory.load(&cell), CExpressionOutcome::Value(int32(7)));
+            }
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
+        "{samples:?}"
+    );
+}

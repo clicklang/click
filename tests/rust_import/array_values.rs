@@ -41,7 +41,7 @@ fn charon_array_copy_after_checked_call_tools_recheck_expanded_certificates() {
     }
     for claim in [
         "__rust_q_I15_copy_after_call_I13_replace_first.contract",
-        "__rust_q_I15_copy_after_call_I15_copy_after_call.contract",
+        "__rust_q_I15_copy_after_call_I15_copy_after_call.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
@@ -165,11 +165,11 @@ fn charon_array_reference_assignments_tools_recheck_expanded_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "swap.contract",
-        "self_copy.contract",
-        "copy_million.contract",
-        "fill_million.contract",
-        "empty.contract",
+        "swap.ensures_0",
+        "self_copy.ensures_0",
+        "copy_million.ensures_0",
+        "fill_million.ensures_0",
+        "empty.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
@@ -237,7 +237,7 @@ fn charon_array_values_unchanged_fixture_verifies_external_snapshots() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "copy_reference.contract",
+        "copy_reference.ensures_0",
         "copy_into.contract",
         "repeat_call.contract",
         "zero_repeat_call.contract",
@@ -338,7 +338,7 @@ fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {
         "copy_million.contract",
         "fill_million.contract",
         "independent.contract",
-        "empty.contract",
+        "empty.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }

@@ -404,7 +404,25 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
             )
             .with_integer_values(integer_values),
         ),
-        None => refusal.message,
+        None => match refusal.dropped_comparison {
+            Some((left, operator, right)) => {
+                use crate::kernel::CComparisonOperator::*;
+                let operator = match operator {
+                    Equal => "==",
+                    NotEqual => "!=",
+                    LessThan => "<",
+                    LessEqual => "<=",
+                    GreaterThan => ">",
+                    GreaterEqual => ">=",
+                };
+                format!(
+                    "cannot compare `{}` and `{}` with `{operator}`",
+                    describe_c0_type(crate::surface::generics::c0_type_from_kernel(left)),
+                    describe_c0_type(crate::surface::generics::c0_type_from_kernel(right))
+                )
+            }
+            None => refusal.message,
+        },
     })?;
     refuse_impossible_loads(
         &obligations

@@ -48,10 +48,10 @@ fn charon_slice_into_iter_tools_agree_on_typed_reads_empty_inputs_and_expansion(
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "first_byte.contract",
-        "first_signed.contract",
-        "first_unsigned.contract",
-        "forward_signed.contract",
+        "first_byte.ensures_0",
+        "first_signed.ensures_0",
+        "first_unsigned.ensures_0",
+        "forward_signed.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }

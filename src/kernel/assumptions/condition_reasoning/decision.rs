@@ -1470,7 +1470,7 @@ impl PureFactContext {
 
     /// The condition facts filed under a `condition_facts_by_sides` key with
     /// `side` as one of its sides, in `condition_facts` order: every equality,
-    /// signed order, or addition-overflow fact one of whose sides is `side`,
+    /// 32-bit order, or addition-overflow fact one of whose sides is `side`,
     /// so a scan of `condition_facts` that keeps only facts with `side` as a
     /// side can read these instead, with the same result in the same order.
     pub(in crate::kernel) fn condition_facts_with_side(
@@ -1510,7 +1510,6 @@ impl PureFactContext {
         &self,
         condition: &ConditionTerm,
     ) -> Vec<crate::kernel::primitives::ConditionMatchKey> {
-        use crate::kernel::primitives::ConditionMatchKey;
         let Some(key) = crate::kernel::assumptions::condition_match_key(condition) else {
             return Vec::new();
         };
@@ -1523,10 +1522,31 @@ impl PureFactContext {
             terms
         };
         let (left_spellings, right_spellings) = (spellings(left), spellings(right));
-        let spells = |candidate: &ConditionMatchKey| match (&key, candidate) {
+        self.condition_match_keys_for_spellings(&key, &left_spellings, &right_spellings, || {
+            crate::instrumentation::spend_decision_fuel(1)
+        })
+    }
+
+    /// Select filed keys under one side's spellings, filtering by the other
+    /// side. Memory matching supplies additional byte-offset aliases; ordinary
+    /// condition matching supplies only its recorded scalar equality classes.
+    /// Each caller retains its own accounting for the indexed candidates.
+    pub(super) fn condition_match_keys_for_spellings(
+        &self,
+        key: &crate::kernel::primitives::ConditionMatchKey,
+        left_spellings: &BTreeSet<Bitvector32Term>,
+        right_spellings: &BTreeSet<Bitvector32Term>,
+        mut visit: impl FnMut(),
+    ) -> Vec<crate::kernel::primitives::ConditionMatchKey> {
+        use crate::kernel::primitives::ConditionMatchKey;
+        let spells = |candidate: &ConditionMatchKey| match (key, candidate) {
             (
                 ConditionMatchKey::Order(strict, ..),
                 ConditionMatchKey::Order(other, lower, upper),
+            )
+            | (
+                ConditionMatchKey::UnsignedOrder(strict, ..),
+                ConditionMatchKey::UnsignedOrder(other, lower, upper),
             ) => {
                 strict == other && left_spellings.contains(lower) && right_spellings.contains(upper)
             }
@@ -1538,9 +1558,9 @@ impl PureFactContext {
             _ => false,
         };
         let enumerated = if left_spellings.len() <= right_spellings.len() {
-            &left_spellings
+            left_spellings
         } else {
-            &right_spellings
+            right_spellings
         };
         let mut keys = BTreeSet::from([key.clone()]);
         for spelling in enumerated {
@@ -1548,7 +1568,7 @@ impl PureFactContext {
                 continue;
             };
             for (candidate, ()) in filed {
-                crate::instrumentation::spend_decision_fuel(1);
+                visit();
                 if spells(candidate) {
                     keys.insert(candidate.clone());
                 }

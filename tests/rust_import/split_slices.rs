@@ -68,9 +68,9 @@ fn charon_split_at_copy_tools_and_expansion_agree() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "copy_right.contract",
-        "reassign_left.contract",
-        "collision.contract",
+        "copy_right.ensures_0",
+        "reassign_left.ensures_0",
+        "collision.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
@@ -87,25 +87,25 @@ fn expand_original(claim: &str) {
 #[test]
 #[ignore = "nightly: 3s in the parallel gate; charon_split_at_original_tools_agree reaches the same code"]
 fn charon_split_at_expand_left_length() {
-    expand_original("left_length.contract");
+    expand_original("left_length.ensures_0");
 }
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 4s in the parallel gate; charon_split_at_original_tools_agree reaches the same code"]
 fn charon_split_at_expand_right_length() {
-    expand_original("right_length.contract");
+    expand_original("right_length.ensures_0");
 }
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 3s in the parallel gate; charon_split_at_original_tools_agree reaches the same code"]
 fn charon_split_at_expand_left_first() {
-    expand_original("left_first.contract");
+    expand_original("left_first.ensures_0");
 }
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 4s in the parallel gate; charon_split_at_original_tools_agree reaches the same code"]
 fn charon_split_at_expand_right_first() {
-    expand_original("right_first.contract");
+    expand_original("right_first.ensures_0");
 }
 
 #[test]

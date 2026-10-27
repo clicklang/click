@@ -6890,6 +6890,9 @@ pub struct ExecutionBudget {
     /// count says nothing about why. Diagnostic only: no evaluation reads it
     /// back.
     pub(super) dropped_fold_body: Option<DroppedFoldBody>,
+    /// A comparison the requested operator could not build for its operands.
+    /// Diagnostic only; it never changes which paths or terms are produced.
+    pub(super) dropped_comparison: Option<(CType, CComparisonOperator, CType)>,
     /// Set when a stated resource relation was dropped because this context
     /// already proves one of its memory ranges is not a valid byte extent.
     /// Unlike [`Self::dropped_range_extent`] the endpoints here need not be
@@ -9293,18 +9296,21 @@ pub(super) enum ConditionMatchKey {
     OffsetEqual(PointerOffsetTerm, PointerOffsetTerm),
     /// A signed order: strict, then its lower and its upper side.
     Order(bool, Bitvector32Term, Bitvector32Term),
+    /// An unsigned 32-bit order, separate from signed order facts.
+    UnsignedOrder(bool, Bitvector32Term, Bitvector32Term),
     /// Signed addition overflow, with commutative operands ordered.
     OverflowAdd(Bitvector32Term, Bitvector32Term),
 }
 
 impl ConditionMatchKey {
     /// The family of kinds a fact under this key can match: equalities,
-    /// offset equalities, or signed orders.
+    /// offset equalities, or orders of the same signedness.
     pub(super) fn family(&self) -> u8 {
         match self {
             Self::Equal(_, _) => 0,
             Self::OffsetEqual(_, _) => 1,
             Self::Order(_, _, _) => 2,
+            Self::UnsignedOrder(_, _, _) => 4,
             Self::OverflowAdd(_, _) => 3,
         }
     }
@@ -9314,6 +9320,7 @@ impl ConditionMatchKey {
         match self {
             Self::Equal(left, right)
             | Self::Order(_, left, right)
+            | Self::UnsignedOrder(_, left, right)
             | Self::OverflowAdd(left, right) => Some((left, right)),
             Self::OffsetEqual(_, _) => None,
         }
@@ -12634,8 +12641,8 @@ pub struct PureFactContext {
     /// The condition facts `condition_matches` can relate to a query spelled
     /// differently, keyed by their kind and the canonical forms of their two
     /// sides (`condition_match_key`): an equality under its unordered pair of
-    /// sides, a signed order under its strictness and its lower and upper
-    /// side, whichever way it was written. Any other fact matches a query
+    /// sides, a 32-bit order under its signedness, strictness and lower and
+    /// upper side, whichever way it was written. Any other fact matches a query
     /// only when it is that query, which is the exact lookup. A query then
     /// reads the keys its own sides and their recorded-equality classes
     /// spell, so `has_condition_fact` never visits an unrelated fact.
@@ -12822,9 +12829,6 @@ pub struct PureFactContext {
     /// unrelated proposition in the context.
     pub(super) disjunction_facts: crate::kernel::fact_collections::ScanSet<Proposition>,
     pub(super) resource_compositions: super::fact_collections::ScanSet<ResourceContext>,
-    /// The stated compositions owning a composite, the only ones a frame
-    /// frontier expands (`frame_frontier_compositions`).
-    pub(super) composite_owning_compositions: super::fact_collections::ScanSet<ResourceContext>,
     /// The ownership a store in this context writes under, when the writer
     /// stated it: the current state's observable composition and any
     /// composition the store opened from held folded instances, all also

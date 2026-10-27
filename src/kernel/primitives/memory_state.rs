@@ -2927,9 +2927,9 @@ fn union_overlay_widths(memory: &CMemory) -> BTreeMap<Pointer, u32> {
 /// is proven distinct from the query pointer's never contain it. Entries in a
 /// block merely spelled differently do, once an assumed pointer equality names
 /// one address under the two spellings; a tried interior-with-offset alias is
-/// answered `false` here, which is conservative — the free-retirement path
-/// clears whole aliased-spelling blocks itself, so no stale cached cell or
-/// zeroed status survives under an alias spelling.
+/// answered `false` here. That negative answer is not separation evidence:
+/// the free-retirement path separately requires separation before keeping a
+/// cached cell, and clears whole blocks for known aliases of the base.
 fn heap_allocation_may_contain_pointer(
     base: &Pointer,
     pointer: &Pointer,
@@ -3390,9 +3390,21 @@ impl CMemory {
     }
 
     pub(in crate::kernel) fn free_heap_block(
+        self,
+        pointer: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, CInvalidFree> {
+        self.free_heap_block_with_owned_frame(pointer, assumptions, &ResourceContext::new())
+    }
+
+    /// Apply a free after execution consumed its full allocation ownership.
+    /// `kept_owners` is the checked residual frame, never the input context:
+    /// its owners coexist with the consumed bytes and survive their retirement.
+    pub(in crate::kernel) fn free_heap_block_with_owned_frame(
         mut self,
         pointer: &Pointer,
         assumptions: &PureFactContext,
+        kept_owners: &ResourceContext,
     ) -> Result<Self, CInvalidFree> {
         // An aliased spelling of this allocation (a contract-returned pointer
         // proven equal to it, e.g. `ensures result == p`) is one address too.
@@ -3459,15 +3471,26 @@ impl CMemory {
         });
         heap.initialized
             .retain_candidates(&candidates, |cell, _| !freed_within(cell));
-        // Cached values go with the storage, union views as well as cells:
-        // nothing may answer a load of freed bytes, under any spelling.
+        // Absence from the retirement set is not separation: a different
+        // block spelling may be an interior alias of this allocation.
+        // The executor has consumed the allocation's complete ownership and
+        // checked the surviving frame. Its remaining owners are separate
+        // from those consumed bytes by construction. Select the owner of
+        // this complete cell through the access index; do not rediscover the
+        // freed extent's ownership (which may have symbolic size).
         self.forget_cached_values(
             ForgetScope::candidates(&candidates),
-            |cell, _| {
+            |cell, value| {
                 if aliased_blocks.contains(&cell.block) || freed_within(cell) {
                     CachedValueFate::Retired
-                } else {
+                } else if pointer.blocks_proven_distinct(cell)
+                    || kept_owners
+                        .owned_memory_member_covering_access(cell, value.byte_width(), assumptions)
+                        .is_some()
+                {
                     CachedValueFate::Kept
+                } else {
+                    CachedValueFate::Forgotten
                 }
             },
             ask_every_slot,

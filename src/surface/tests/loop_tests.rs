@@ -751,10 +751,15 @@ fn explicit_straight_line_swap_transports_an_entry_bound() {
                 ensures p[0] <= p[2];
             } by {
                 step(); step(); step(); step();
-                have p[0] <= p[2] by {
-                    transport(old(p[1]) <= old(p[2]), p[0] <= p[2]) using {
-                        old(p[1]) <= old(p[2]); old(j) == 0;
+                have p[0] == old(p[1]) by {
+                    transport(old(p[1]) == old(p[1]), p[0] == old(p[1])) using {
+                        old(j) == 0;
                     }
+                }
+                have p[2] == old(p[2]) by { normalize(); }
+                have p[0] <= p[2] by {
+                    rewrite(p[0] == old(p[1]));
+                    rewrite(p[2] == old(p[2]));
                     assumption();
                 }
                 step(); solve();
@@ -770,11 +775,30 @@ fn explicit_straight_line_swap_transports_an_entry_bound() {
 fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String) {
     let c = "int32 swap(int32 p[3]) { int32 j; int32 tmp; j = 0; while (j < 1) { if (p[j + 1] < p[j]) { tmp = p[j]; p[j] = p[j + 1]; p[j + 1] = tmp; } j = j + 1; } return 0; }";
     let transport = r#"
-        transport(at(before_swap, p[1] <= p[2]), p[0] <= p[2]) using {
-            at(before_swap, p[1] <= p[2]); at(before_swap, j) == 0;
+        have p[0] == at(before_swap, p[1]) by {
+            transport(at(before_swap, p[1]) == at(before_swap, p[1]), p[0] == at(before_swap, p[1])) using {
+                at(before_swap, j) == 0;
+            }
         }
-        transport(at(before_swap, p[0] <= p[2]), p[1] <= p[2]) using {
-            at(before_swap, p[0] <= p[2]); at(before_swap, j) == 0;
+        have p[1] == at(before_swap, p[0]) by {
+            transport(at(before_swap, p[0]) == at(before_swap, p[0]), p[1] == at(before_swap, p[0])) using {
+                at(before_swap, j) == 0;
+            }
+        }
+        have p[2] == at(before_swap, p[2]) by {
+            transport(at(before_swap, p[2]) == at(before_swap, p[2]), p[2] == at(before_swap, p[2])) using {
+                at(before_swap, j) == 0;
+            }
+        }
+        have p[0] <= p[2] by {
+            rewrite(p[0] == at(before_swap, p[1]));
+            rewrite(p[2] == at(before_swap, p[2]));
+            assumption();
+        }
+        have p[1] <= p[2] by {
+            rewrite(p[1] == at(before_swap, p[0]));
+            rewrite(p[2] == at(before_swap, p[2]));
+            assumption();
         }
     "#;
     let transport = if include_transports { transport } else { "" };

@@ -90,7 +90,7 @@ int32 probe() { ensures result == 11; }
         let expanded = expand_project_claim_source_by_label(
             &parsed,
             &ProgramInputs::program(&import),
-            "probe.contract",
+            "probe.ensures_0",
         )
         .unwrap();
         let rewritten = parsed.with_entry_source(expanded.clone());
@@ -100,7 +100,7 @@ int32 probe() { ensures result == 11; }
         let position = project_tactic_source_position(
             &rewritten,
             &ProgramInputs::program(&import),
-            "probe.contract",
+            "probe.ensures_0",
             0,
         )
         .unwrap();
@@ -442,7 +442,7 @@ int32 probe(int32 input) {
 "#;
     check_first_claim_certificate(&project, &import, proof);
     let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
-    for label in ["Node::Node.contract", "probe.contract"] {
+    for label in ["Node::Node.contract", "probe.ensures_0"] {
         let expanded =
             expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
                 .unwrap();
@@ -3688,7 +3688,7 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
             .iter()
             .map(|site| site.tactic_name.as_str())
             .collect::<Vec<_>>(),
-        vec!["execute", "solve"]
+        vec![click::instrumentation::IMPLICIT_TAIL_TACTIC]
     );
     let execute = project_tactic_source_position(
         &click_project,
@@ -4006,7 +4006,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
             .iter()
             .map(|site| site.tactic_name.as_str())
             .collect::<Vec<_>>(),
-        vec!["execute", "solve", "execute", "solve"]
+        vec![click::instrumentation::IMPLICIT_TAIL_TACTIC; 2]
     );
     let execute = project_tactic_source_position(
         &click_project,
@@ -5999,7 +5999,7 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
             .iter()
             .map(|site| site.tactic_name.as_str())
             .collect::<Vec<_>>(),
-        vec!["execute", "solve"]
+        vec![click::instrumentation::IMPLICIT_TAIL_TACTIC]
     );
     let execute = project_tactic_source_position(
         &click_project,
@@ -9352,10 +9352,11 @@ int32 helper(bool should_throw) throws int32 { ensures result == 5; exceptional 
 int32 relay(bool should_throw) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
-    let hostile = source.replace(
-        "exceptional ensures exception == 7 by",
-        "exceptional ensures exception == 8 by",
-    );
+    let (before, after) = source
+        .rsplit_once("exceptional ensures exception == 7;")
+        .expect("caller has an exceptional postcondition");
+    let hostile = format!("{before}exceptional ensures exception == 8;{after}");
+    assert_ne!(hostile, source);
     fs::write(project.directory.join("bad.click"), &hostile).unwrap();
     let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
     assert!(verify_program_prepared_project(&parsed, &import).is_err());
@@ -15193,10 +15194,11 @@ fn locked_header_graph_preserves_scalar_exception_contracts_offline() {
     int32 choose(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
     "#;
     check_selected_claim_certificate(&project, &import, sidecar);
-    let hostile = sidecar.replace(
-        "exceptional ensures exception == 7 by",
-        "exceptional ensures exception == 8 by",
-    );
+    let (before, after) = sidecar
+        .rsplit_once("exceptional ensures exception == 7;")
+        .expect("caller has an exceptional postcondition");
+    let hostile = format!("{before}exceptional ensures exception == 8;{after}");
+    assert_ne!(hostile, sidecar);
     let path = project.directory.join("hostile.click");
     fs::write(&path, &hostile).unwrap();
     assert!(
@@ -15541,7 +15543,11 @@ int32 helper(bool fail) throws int32 { ensures result == 5; exceptional ensures 
 int64 relay(bool fail) throws int32 { ensures result == 5i64; exceptional ensures exception == 7; }
 "#;
     check_return_call_sidecar(&project, &import, source);
-    let hostile = source.replace("exception == 7 by", "exception == 8 by");
+    let (before, after) = source
+        .rsplit_once("exceptional ensures exception == 7;")
+        .expect("caller has an exceptional postcondition");
+    let hostile = format!("{before}exceptional ensures exception == 8;{after}");
+    assert_ne!(hostile, source);
     let path = project.directory.join("hostile.click");
     fs::write(&path, &hostile).unwrap();
     assert!(
@@ -15835,7 +15841,11 @@ int32 helper(bool fail) throws int32 { ensures result == 5; exceptional ensures 
 int64 relay(bool fail) throws int32 { ensures result == 5i64; exceptional ensures exception == 7; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
-    let hostile = source.replace("exception == 7 by", "exception == 8 by");
+    let (before, after) = source
+        .rsplit_once("exceptional ensures exception == 7;")
+        .expect("caller has an exceptional postcondition");
+    let hostile = format!("{before}exceptional ensures exception == 8;{after}");
+    assert_ne!(hostile, source);
     let path = project.directory.join("hostile.click");
     fs::write(&path, &hostile).unwrap();
     assert!(
@@ -17364,7 +17374,7 @@ int32 probe(int32 input) {
     let expanded = expand_project_claim_source_by_label(
         &parsed,
         &ProgramInputs::program(&import),
-        "probe.contract",
+        "probe.ensures_0",
     )
     .unwrap();
     verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
@@ -18511,7 +18521,7 @@ fn stored_and_forwarded_cpp_function_pointers_keep_their_contract() {
     };
     let parsed = verify(STORED_FUNCTION_POINTER_SIDECAR)
         .unwrap_or_else(|error| panic!("{}", error.message()));
-    for label in ["stored.contract", "relay.contract", "caller.contract"] {
+    for label in ["stored.ensures_0", "relay.ensures_0", "caller.ensures_0"] {
         let expanded =
             expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
                 .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
@@ -18699,7 +18709,7 @@ fn cpp_lambdas_passed_for_a_function_pointer_meet_its_named_contract() {
         verify_program_prepared_project(&parsed, &import).map(|_| parsed)
     };
     let parsed = verify(LAMBDA_SIDECAR).unwrap_or_else(|error| panic!("{}", error.message()));
-    for label in ["caller::(lambda#0).contract", "caller.contract"] {
+    for label in ["caller::(lambda#0).contract", "caller.ensures_0"] {
         let expanded =
             expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
                 .unwrap_or_else(|error| panic!("{label}: {}", error.message()));

@@ -9019,7 +9019,8 @@ mod retained_caller_tests {
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
         let (session, _) = C0VerificationSession::new(&click, &sources).unwrap();
-        let position = expansion::position_at_offset(&click, click.rfind("solve();").unwrap());
+        let position =
+            expansion::position_at_offset(&click, click.find("ensures result == 16").unwrap());
         for _ in 0..2 {
             session
                 .verify_at(&click, position.line, position.column)
@@ -9047,7 +9048,8 @@ mod retained_caller_tests {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let position = expansion::position_at_offset(&click, click.rfind("solve();").unwrap());
+        let position =
+            expansion::position_at_offset(&click, click.find("ensures result == 16").unwrap());
         verify_c0_sources(&click, &sources).unwrap();
         let _tables = crate::kernel::VerificationSession::resume();
         for _ in 0..2 {

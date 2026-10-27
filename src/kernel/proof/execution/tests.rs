@@ -1136,7 +1136,7 @@ fn return_composite_presentations_reject_other_execution_paths() {
 }
 
 #[test]
-fn return_resource_observations_reject_extra_facts_and_other_snapshots() {
+fn return_resource_observations_construct_successors_and_reject_other_paths() {
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance};
     let schema =
         ResourceFieldSchema::new(vec![("model".into(), ResourceFieldType::C(CType::Int32))])
@@ -1165,11 +1165,45 @@ fn return_resource_observations_reject_extra_facts_and_other_snapshots() {
     .unwrap();
     let (function, events) = returned_proposition_trace(&before, &facts);
     let function = function.with_composite_resource_definitions(vec![definition]);
-    let observation = Arc::new(ReturnResourceObservation {
-        context: returned_proposition_context(&before),
-        before: before.clone(),
-        after: after.clone(),
-    });
+    let mut core = ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
+    let mut trace = PersistentSequence::default();
+    for event in &events {
+        trace.push(event.clone());
+    }
+    core.execution_evidence = vec![trace].into();
+    core.evidence_completed = true;
+    core.return_proof_contexts = core
+        .return_proof_contexts
+        .with_inserted(0, returned_proposition_context(&before));
+    let mut unrelated = before.clone();
+    unrelated.memory = unrelated
+        .memory()
+        .clone()
+        .store(Pointer::symbolic(Variable(42)), int32(9));
+    assert!(
+        core.clone()
+            .rewrite_return_resource_instance_with_children(
+                &function, 0, &facts, &unrelated, &instance, true, None,
+            )
+            .is_err()
+    );
+    let (produced, produced_facts) = core
+        .rewrite_return_resource_instance_with_children(
+            &function, 0, &facts, &before, &instance, true, None,
+        )
+        .unwrap();
+    assert_eq!(produced.state, after);
+    assert_eq!(
+        produced_facts.introduced_since(&facts).unwrap().len(),
+        produced.semantic_facts.len()
+    );
+    let retained = core.return_resource_rewrites.get(&0).unwrap().to_vec();
+    let CheckedExecutionEvent::ResourceRewrite(constructed) = retained.last().unwrap() else {
+        panic!("the constructor retains its exchange");
+    };
+    let observation = constructed.return_observation.clone().unwrap();
+    assert_eq!(observation.after, produced.state);
+    assert_eq!(observation.semantic_facts, produced.semantic_facts);
     let check = |after_facts: &ProofFacts, observation| {
         CheckedResourceRewrite::check_with_return_observation(
             &function,
@@ -1201,13 +1235,6 @@ fn return_resource_observations_reject_extra_facts_and_other_snapshots() {
     ] {
         assert!(check(&facts.with_fact(extra), observation.clone()).is_err());
     }
-    let mut changed = (*observation).clone();
-    changed.after.memory = changed
-        .after
-        .memory()
-        .clone()
-        .store(Pointer::symbolic(Variable(42)), int32(9));
-    assert!(check(&facts, Arc::new(changed)).is_err());
     let mut wrong_path = checked;
     let mut other = before.clone();
     other.memory = CMemory::new().with_block("other", 4);

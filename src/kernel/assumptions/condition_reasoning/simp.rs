@@ -1,6 +1,34 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
+/// Only these operand families are compared up to memory resolution.
+/// Every other condition is matched by its exact fact identity. The index
+/// and the matcher share this classification so an exact-only refusal cannot
+/// silently omit a family that the matcher knows how to relate.
+enum MemoryMatchOperands<'a> {
+    Words(
+        MachineIntegerType,
+        CompareRelation,
+        &'a Bitvector32Term,
+        &'a Bitvector32Term,
+    ),
+    Offsets(&'a PointerOffsetTerm, &'a PointerOffsetTerm),
+    Exact,
+}
+
+fn memory_match_operands(condition: &ConditionTerm) -> MemoryMatchOperands<'_> {
+    match condition {
+        ConditionTerm::Compare {
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+            relation,
+            left,
+            right,
+        } => MemoryMatchOperands::Words(*format, *relation, left, right),
+        ConditionTerm::PointerOffsetEqual(left, right) => MemoryMatchOperands::Offsets(left, right),
+        _ => MemoryMatchOperands::Exact,
+    }
+}
+
 impl PureFactContext {
     pub(crate) fn decide_condition_for_simp(&self, condition: &ConditionTerm) -> Option<bool> {
         if let Some(value) = self.known_condition_value(condition) {
@@ -357,60 +385,68 @@ impl PureFactContext {
         condition: &ConditionTerm,
         value: bool,
     ) -> bool {
-        let Some(indexed) =
-            self.indexed_matching_condition_fact_for_memory_resolution(condition, value)
-        else {
-            return self.scanned_matching_condition_fact_for_memory_resolution(condition, value);
-        };
-        #[cfg(debug_assertions)]
-        crate::instrumentation::uncharged_debug_check(|| {
-            let scanned = crate::kernel::assumptions::without_reasoning_provenance(|| {
-                self.scanned_matching_condition_fact_for_memory_resolution(condition, value)
-            });
-            assert_eq!(
-                indexed, scanned,
-                "the indexed memory-resolution fact match disagrees with the full scan for \
-                 {condition:?} = {value}"
-            );
-        });
-        indexed
+        self.indexed_matching_condition_fact_for_memory_resolution(condition, value)
+            .unwrap_or(false)
     }
 
-    fn scanned_matching_condition_fact_for_memory_resolution(
-        &self,
-        condition: &ConditionTerm,
-        value: bool,
-    ) -> bool {
-        self.condition_facts
-            .scan_unindexed()
-            .any(|(fact, fact_value)| {
-                crate::instrumentation::record_deterministic_work(1);
-                *fact_value == value && self.condition_matches_for_simp(fact, condition)
-            })
-    }
-
-    /// The memory-resolution match read from the condition-match index
-    /// instead of a scan of every condition fact, or `None` where the index
-    /// cannot be shown to hold every fact the scan could match.
+    /// Look for a memory-equivalent fact using the supported indexed routes.
+    /// `None` means the query falls outside those routes, not that its
+    /// negation holds. The caller deliberately declines instead of searching
+    /// the whole ambient context. Explicit proof steps can establish the
+    /// required spelling before a call.
     ///
-    /// `condition_matches_for_simp` relates only facts of the query's kind
-    /// family, pairing sides by memory-resolution equality. For a query
-    /// whose sides are both atoms (a constant, or a variable no load names),
-    /// an atom side of a fact is memory-resolution equal to a query side only
-    /// by identity, through the equality graph, by an exact constant pin
-    /// (itself an equality-graph edge), or through an exact
-    /// `PointerOffsetEqual` fact of their byte scalings; those are the
-    /// spellings read here. A fact with a non-atom side is filed among the
-    /// family's open facts and is always asked. The 64-bit equalities pin a
-    /// term to a constant outside the 32-bit equality graph. Only sources
-    /// naming a selected scalar spelling require the ordinary fallback. Debug builds compare every indexed
-    /// answer with the scan.
+    /// Exact identities and syntactic symmetries use direct lookups. Compound
+    /// queries check candidates under their canonical key. Atom queries use
+    /// equality/byte-offset spellings and the family's existing open-fact
+    /// bucket. Every candidate still passes the memory matcher's checks.
     fn indexed_matching_condition_fact_for_memory_resolution(
         &self,
         condition: &ConditionTerm,
         value: bool,
     ) -> Option<bool> {
         use crate::kernel::primitives::ConditionMatchKey;
+        // An exact hit needs no operand reasoning, even for loads and sums.
+        // For exact-only kinds a miss is conclusive too: no other condition
+        // can match under `condition_matches_for_simp`.
+        crate::instrumentation::record_deterministic_work(1);
+        let exact = self.condition_facts.get(condition) == Some(&value);
+        if exact || matches!(memory_match_operands(condition), MemoryMatchOperands::Exact) {
+            return Some(exact);
+        }
+        // The matcher also accepts a fixed number of syntactic symmetries.
+        // Probe those exact keys before resolving operands or scanning facts.
+        let lookup = |candidate: ConditionTerm| {
+            crate::instrumentation::record_deterministic_work(1);
+            self.condition_facts.get(&candidate) == Some(&value)
+        };
+        let symmetric_hit = match memory_match_operands(condition) {
+            MemoryMatchOperands::Words(format, relation, left, right) => {
+                use CompareRelation::*;
+                let reversed = match relation {
+                    Equal => Equal,
+                    LessThan => GreaterThan,
+                    LessEqual => GreaterEqual,
+                    GreaterThan => LessThan,
+                    GreaterEqual => LessEqual,
+                };
+                // Condition identity already ignores signedness for 32-bit
+                // equality; order comparisons retain their exact carrier.
+                lookup(ConditionTerm::Compare {
+                    format,
+                    relation: reversed,
+                    left: Box::new(right.clone()),
+                    right: Box::new(left.clone()),
+                })
+            }
+            MemoryMatchOperands::Offsets(left, right) => lookup(ConditionTerm::PointerOffsetEqual(
+                Box::new(right.clone()),
+                Box::new(left.clone()),
+            )),
+            MemoryMatchOperands::Exact => unreachable!("exact-only kinds returned above"),
+        };
+        if symmetric_hit {
+            return Some(true);
+        }
         let atom = |term: &Bitvector32Term| match term {
             Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => true,
             Bitvector32Term::Variable(variable) => {
@@ -418,45 +454,29 @@ impl PureFactContext {
             }
             _ => false,
         };
-        let (left, right) = match condition {
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            } => (left, right),
-            _ => return None,
-        };
-        if !atom(left) || !atom(right) {
-            return None;
-        }
         let key = crate::kernel::assumptions::condition_match_key(condition)?;
-        if self.condition_facts.get(condition) == Some(&value) {
-            return Some(true);
+        let matches = |facts: &crate::persistent::PersistentMap<ConditionTerm, bool>| {
+            facts.iter().any(|(fact, fact_value)| {
+                crate::instrumentation::record_deterministic_work(1);
+                *fact_value == value && self.condition_matches_for_simp(fact, condition)
+            })
+        };
+        let atom_query = matches!(
+            memory_match_operands(condition),
+            MemoryMatchOperands::Words(_, _, left, right) if atom(left) && atom(right)
+        );
+        if !atom_query {
+            // Loads and their registered variables (including inside sums
+            // and scaled offsets) share a canonical key. It selects candidates,
+            // not a verdict: retain the memory matcher's snapshot checks.
+            crate::instrumentation::record_deterministic_work(1);
+            // Other memory-equivalent spellings may live under different
+            // keys. This fast path deliberately does not search for them.
+            return self
+                .condition_facts_by_sides
+                .get(&key)
+                .is_some_and(matches)
+                .then_some(true);
         }
         let spellings = |term: &Bitvector32Term| {
             let mut terms = BTreeSet::from([term.clone()]);
@@ -478,65 +498,37 @@ impl PureFactContext {
             }
             terms
         };
-        let mut keys = BTreeSet::from([key.clone()]);
-        match &key {
-            ConditionMatchKey::Equal(left, right) => {
-                let right_spellings = spellings(right);
-                let left_spellings = spellings(left);
-                if left_spellings
-                    .iter()
-                    .chain(&right_spellings)
-                    .any(|term| self.equality_graph.has_uint64_source(term))
-                {
-                    return None;
-                }
-                for left in left_spellings {
-                    for right in &right_spellings {
-                        keys.insert(if left <= *right {
-                            ConditionMatchKey::Equal(left.clone(), right.clone())
-                        } else {
-                            ConditionMatchKey::Equal(right.clone(), left.clone())
-                        });
-                    }
-                }
-            }
-            ConditionMatchKey::Order(strict, lower, upper) => {
-                let upper_spellings = spellings(upper);
-                let lower_spellings = spellings(lower);
-                if lower_spellings
-                    .iter()
-                    .chain(&upper_spellings)
-                    .any(|term| self.equality_graph.has_uint64_source(term))
-                {
-                    return None;
-                }
-                for lower in lower_spellings {
-                    for upper in &upper_spellings {
-                        keys.insert(ConditionMatchKey::Order(
-                            *strict,
-                            lower.clone(),
-                            upper.clone(),
-                        ));
-                    }
-                }
-            }
+        let (left, right) = match &key {
+            ConditionMatchKey::Equal(left, right)
+            | ConditionMatchKey::Order(_, left, right)
+            | ConditionMatchKey::UnsignedOrder(_, left, right) => (left, right),
             ConditionMatchKey::OffsetEqual(_, _) | ConditionMatchKey::OverflowAdd(_, _) => {
                 return None;
             }
-        }
-        let matches = |facts: &crate::persistent::PersistentMap<ConditionTerm, bool>| {
-            facts.iter().any(|(fact, fact_value)| {
-                crate::instrumentation::record_deterministic_work(1);
-                *fact_value == value && self.condition_matches_for_simp(fact, condition)
-            })
         };
+        let right_spellings = spellings(right);
+        let left_spellings = spellings(left);
+        if left_spellings
+            .iter()
+            .chain(&right_spellings)
+            .any(|term| self.equality_graph.has_uint64_source(term))
+        {
+            return None;
+        }
+        let keys = self.condition_match_keys_for_spellings(
+            &key,
+            &left_spellings,
+            &right_spellings,
+            || crate::instrumentation::record_deterministic_work(1),
+        );
         Some(
-            keys.iter()
-                .any(|key| self.condition_facts_by_sides.get(key).is_some_and(matches))
-                || self
-                    .open_condition_facts
-                    .get(&key.family())
-                    .is_some_and(matches),
+            keys.iter().any(|key| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.condition_facts_by_sides.get(key).is_some_and(matches)
+            }) || self
+                .open_condition_facts
+                .get(&key.family())
+                .is_some_and(matches),
         )
     }
 
@@ -635,183 +627,41 @@ impl PureFactContext {
         if fact == target {
             return true;
         }
-        match (fact, target) {
+        use MemoryMatchOperands::{Exact, Offsets, Words};
+        match (memory_match_operands(fact), memory_match_operands(target)) {
             (
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    left: target_left,
-                    right: target_right,
-                },
+                Words(_, CompareRelation::Equal, fl, fr),
+                Words(_, CompareRelation::Equal, tl, tr),
             ) => {
-                bitvector_terms_proven_equal_for_memory_resolution(fact_left, target_left, self)
-                    && bitvector_terms_proven_equal_for_memory_resolution(
-                        fact_right,
-                        target_right,
-                        self,
-                    )
-                    || bitvector_terms_proven_equal_for_memory_resolution(
-                        fact_left,
-                        target_right,
-                        self,
-                    ) && bitvector_terms_proven_equal_for_memory_resolution(
-                        fact_right,
-                        target_left,
-                        self,
-                    )
+                bitvector_terms_proven_equal_for_memory_resolution(fl, tl, self)
+                    && bitvector_terms_proven_equal_for_memory_resolution(fr, tr, self)
+                    || bitvector_terms_proven_equal_for_memory_resolution(fl, tr, self)
+                        && bitvector_terms_proven_equal_for_memory_resolution(fr, tl, self)
             }
-            (
-                ConditionTerm::PointerOffsetEqual(fact_left, fact_right),
-                ConditionTerm::PointerOffsetEqual(target_left, target_right),
-            ) => {
-                pointer_offsets_proven_equal_for_memory_resolution(fact_left, target_left, self)
-                    && pointer_offsets_proven_equal_for_memory_resolution(
-                        fact_right,
-                        target_right,
-                        self,
-                    )
-                    || pointer_offsets_proven_equal_for_memory_resolution(
-                        fact_left,
-                        target_right,
-                        self,
-                    ) && pointer_offsets_proven_equal_for_memory_resolution(
-                        fact_right,
-                        target_left,
-                        self,
-                    )
+            (Offsets(fl, fr), Offsets(tl, tr)) => {
+                pointer_offsets_proven_equal_for_memory_resolution(fl, tl, self)
+                    && pointer_offsets_proven_equal_for_memory_resolution(fr, tr, self)
+                    || pointer_offsets_proven_equal_for_memory_resolution(fl, tr, self)
+                        && pointer_offsets_proven_equal_for_memory_resolution(fr, tl, self)
             }
-            (
-                ConditionTerm::Compare {
-                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::LessThan,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                ConditionTerm::Compare {
-                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::LessThan,
-                    left: target_left,
-                    right: target_right,
-                },
-            )
-            | (
-                ConditionTerm::Compare {
-                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::LessEqual,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                ConditionTerm::Compare {
-                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::LessEqual,
-                    left: target_left,
-                    right: target_right,
-                },
-            )
-            | (
-                ConditionTerm::Compare {
-                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::GreaterThan,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                ConditionTerm::Compare {
-                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::GreaterThan,
-                    left: target_left,
-                    right: target_right,
-                },
-            )
-            | (
-                ConditionTerm::Compare {
-                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::GreaterEqual,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                ConditionTerm::Compare {
-                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::GreaterEqual,
-                    left: target_left,
-                    right: target_right,
-                },
-            ) if fact_format == target_format => {
-                bitvector_terms_proven_equal_for_memory_resolution(fact_left, target_left, self)
-                    && bitvector_terms_proven_equal_for_memory_resolution(
-                        fact_right,
-                        target_right,
-                        self,
-                    )
+            (Words(ff, frel, fl, fr), Words(tf, trel, tl, tr)) if ff == tf => {
+                if frel == trel {
+                    bitvector_terms_proven_equal_for_memory_resolution(fl, tl, self)
+                        && bitvector_terms_proven_equal_for_memory_resolution(fr, tr, self)
+                } else if matches!(
+                    (frel, trel),
+                    (CompareRelation::LessThan, CompareRelation::GreaterThan)
+                        | (CompareRelation::GreaterThan, CompareRelation::LessThan)
+                        | (CompareRelation::LessEqual, CompareRelation::GreaterEqual)
+                        | (CompareRelation::GreaterEqual, CompareRelation::LessEqual)
+                ) {
+                    bitvector_terms_proven_equal_for_memory_resolution(fl, tr, self)
+                        && bitvector_terms_proven_equal_for_memory_resolution(fr, tl, self)
+                } else {
+                    false
+                }
             }
-            (
-                ConditionTerm::Compare {
-                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::LessThan,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                ConditionTerm::Compare {
-                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::GreaterThan,
-                    left: target_left,
-                    right: target_right,
-                },
-            )
-            | (
-                ConditionTerm::Compare {
-                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::GreaterThan,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                ConditionTerm::Compare {
-                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::LessThan,
-                    left: target_left,
-                    right: target_right,
-                },
-            )
-            | (
-                ConditionTerm::Compare {
-                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::LessEqual,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                ConditionTerm::Compare {
-                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::GreaterEqual,
-                    left: target_left,
-                    right: target_right,
-                },
-            )
-            | (
-                ConditionTerm::Compare {
-                    format: fact_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::GreaterEqual,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                ConditionTerm::Compare {
-                    format: target_format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::LessEqual,
-                    left: target_left,
-                    right: target_right,
-                },
-            ) if fact_format == target_format => {
-                bitvector_terms_proven_equal_for_memory_resolution(fact_left, target_right, self)
-                    && bitvector_terms_proven_equal_for_memory_resolution(
-                        fact_right,
-                        target_left,
-                        self,
-                    )
-            }
+            (Exact, _) | (_, Exact) => false,
             _ => false,
         }
     }
@@ -941,5 +791,221 @@ impl PureFactContext {
                     || self.bitvector_terms_equal_for_transport(left, fact_right)
                         && self.bitvector_terms_equal_for_transport(right, fact_left)
             })
+    }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    use super::*;
+    include!("../../../scaling_tests/kernel/assumptions/condition_reasoning/simp.rs");
+}
+
+#[cfg(test)]
+mod memory_condition_match_tests {
+    use super::*;
+
+    fn comparison(
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        left: u64,
+        right: u64,
+    ) -> ConditionTerm {
+        ConditionTerm::Compare {
+            format,
+            relation,
+            left: Box::new(Bitvector32Term::Variable(Variable(left))),
+            right: Box::new(Bitvector32Term::Variable(Variable(right))),
+        }
+    }
+
+    #[test]
+    fn memory_condition_matching_keeps_reversed_orders_and_carriers() {
+        use CompareRelation::*;
+        use MachineIntegerType::*;
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [Int32, UInt32] {
+            for (relation, reversed) in [
+                (LessThan, GreaterThan),
+                (LessEqual, GreaterEqual),
+                (GreaterThan, LessThan),
+                (GreaterEqual, LessEqual),
+            ] {
+                let context = PureFactContext::new()
+                    .assume_condition(comparison(Int32, Equal, 960_000, 960_002), true)
+                    .assume_condition(comparison(Int32, Equal, 960_001, 960_003), true)
+                    .assume_condition(comparison(format, relation, 960_000, 960_001), true);
+                assert!(context.has_matching_condition_fact_for_memory_resolution(
+                    &comparison(format, reversed, 960_003, 960_002),
+                    true
+                ));
+                let other_format = if format == Int32 { UInt32 } else { Int32 };
+                assert!(!context.has_matching_condition_fact_for_memory_resolution(
+                    &comparison(other_format, reversed, 960_003, 960_002),
+                    true
+                ));
+            }
+        }
+        let words = PureFactContext::new()
+            .assume_condition(comparison(Int32, Equal, 960_004, 960_005), true);
+        assert!(words.has_matching_condition_fact_for_memory_resolution(
+            &comparison(UInt32, Equal, 960_005, 960_004),
+            true
+        ));
+        let offsets = ConditionTerm::pointer_offset_equal(
+            PointerOffsetTerm::Variable(Variable(960_006)),
+            PointerOffsetTerm::Variable(Variable(960_007)),
+        );
+        let reversed = ConditionTerm::pointer_offset_equal(
+            PointerOffsetTerm::Variable(Variable(960_007)),
+            PointerOffsetTerm::Variable(Variable(960_006)),
+        );
+        assert!(
+            PureFactContext::new()
+                .assume_condition(offsets, true)
+                .has_matching_condition_fact_for_memory_resolution(&reversed, true)
+        );
+    }
+
+    #[test]
+    fn unsigned_memory_conditions_retain_open_facts_without_mixing_carriers() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let var = |id| Bitvector32Term::Variable(Variable(id));
+        let sum = Bitvector32Term::add(var(996_000), var(996_001));
+        let base = PureFactContext::new()
+            .assume_condition(ConditionTerm::equal(var(996_001), 0u32.into()), true);
+        let goal = ConditionTerm::unsigned_less_than(var(996_000), var(996_002));
+        for value in [false, true] {
+            let source = ConditionTerm::unsigned_less_than(sum.clone(), var(996_002));
+            let held = base.clone().assume_condition(source.clone(), value);
+            assert_eq!(
+                held.indexed_matching_condition_fact_for_memory_resolution(&goal, value),
+                Some(true)
+            );
+            assert!(held.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            let withdrawn = held.without_exact_fact(&Proposition::ConditionIs(source, value));
+            assert!(!withdrawn.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            let signed = base.clone().assume_condition(
+                ConditionTerm::signed_less_than(sum.clone(), var(996_002)),
+                value,
+            );
+            assert!(!signed.has_matching_condition_fact_for_memory_resolution(&goal, value));
+        }
+    }
+
+    #[test]
+    fn compound_memory_condition_candidates_preserve_snapshots_and_withdrawal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let pointer = Pointer::symbolic(Variable(999_000));
+        let load = |memory: &CMemory| {
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(memory),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Int32,
+            )
+        };
+        let raw = load(&memory);
+        let named =
+            Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_term(&raw).unwrap().0);
+        let changed = memory
+            .clone()
+            .store(pointer.clone(), CValue::Int32(9u32.into()));
+        let condition = |kind, term| {
+            let left = Bitvector32Term::add(term, 1u32.into());
+            let right = Bitvector32Term::Variable(Variable(999_001));
+            match kind {
+                0 => ConditionTerm::signed_less_than(left, right),
+                1 => ConditionTerm::unsigned_less_than(left, right),
+                _ => ConditionTerm::pointer_offset_equal(
+                    PointerOffsetTerm::scale_int32(left, 4),
+                    PointerOffsetTerm::scale_int32(right, 4),
+                ),
+            }
+        };
+        for kind in 0..3 {
+            let source = condition(kind, named.clone());
+            let goal = condition(kind, raw.clone());
+            for value in [false, true] {
+                let held = PureFactContext::new().assume_condition(source.clone(), value);
+                assert_eq!(
+                    held.indexed_matching_condition_fact_for_memory_resolution(&goal, value),
+                    Some(true)
+                );
+                assert!(held.has_matching_condition_fact_for_memory_resolution(&goal, value));
+                assert!(!held.has_matching_condition_fact_for_memory_resolution(&goal, !value));
+                assert!(!held.has_matching_condition_fact_for_memory_resolution(
+                    &condition(kind, load(&changed)),
+                    value
+                ));
+                let withdrawn =
+                    held.without_exact_fact(&Proposition::ConditionIs(source.clone(), value));
+                assert!(!withdrawn.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            }
+        }
+    }
+
+    #[test]
+    fn compound_memory_condition_miss_requires_the_explicit_spelling() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let var = |id| Bitvector32Term::Variable(Variable(id));
+        let condition = |kind, id| {
+            let left = Bitvector32Term::add(var(id), 1u32.into());
+            let right = var(999_012);
+            match kind {
+                0 => ConditionTerm::signed_less_than(left, right),
+                1 => ConditionTerm::unsigned_less_than(left, right),
+                _ => ConditionTerm::pointer_offset_equal(
+                    PointerOffsetTerm::scale_int32(left, 4),
+                    PointerOffsetTerm::scale_int32(right, 4),
+                ),
+            }
+        };
+        for kind in 0..3 {
+            let source = condition(kind, 999_010);
+            let goal = condition(kind, 999_011);
+            for value in [false, true] {
+                let facts = PureFactContext::new()
+                    .assume_condition(ConditionTerm::equal(var(999_010), var(999_011)), true)
+                    .assume_condition(source.clone(), value);
+                // The old ambient scan found this equivalent spelling. The
+                // fast path deliberately declines; selected-premise reasoning
+                // can still establish it before the call needs the exact fact.
+                assert!(facts.condition_matches_for_simp(&source, &goal));
+                assert!(facts.proves_condition_from_facts_for_simp(&goal, value));
+                assert!(!facts.has_matching_condition_fact_for_memory_resolution(&goal, value));
+                let explicit = facts.assume_condition(goal.clone(), value);
+                assert!(explicit.has_matching_condition_fact_for_memory_resolution(&goal, value));
+                assert!(!explicit.has_matching_condition_fact_for_memory_resolution(&goal, !value));
+            }
+        }
+    }
+
+    #[test]
+    fn exact_memory_condition_matching_respects_truth_and_withdrawal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let goal = comparison(
+            MachineIntegerType::UInt64,
+            CompareRelation::LessThan,
+            960_010,
+            960_011,
+        );
+        let parent = PureFactContext::new().assume_condition(goal.clone(), true);
+        let child = parent.without_exact_fact(&Proposition::ConditionIs(goal.clone(), true));
+        assert!(parent.has_matching_condition_fact_for_memory_resolution(&goal, true));
+        assert!(!parent.has_matching_condition_fact_for_memory_resolution(&goal, false));
+        assert!(!child.has_matching_condition_fact_for_memory_resolution(&goal, true));
+        let child = child.assume_condition(goal.clone(), false);
+        assert!(child.has_matching_condition_fact_for_memory_resolution(&goal, false));
+        assert!(!child.has_matching_condition_fact_for_memory_resolution(&goal, true));
+        let reversed = comparison(
+            MachineIntegerType::UInt64,
+            CompareRelation::GreaterThan,
+            960_011,
+            960_010,
+        );
+        assert!(
+            !parent.has_matching_condition_fact_for_memory_resolution(&reversed, true),
+            "this matcher only transports 32-bit comparisons and offsets; wider conditions need exact identity"
+        );
     }
 }

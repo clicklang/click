@@ -73,9 +73,9 @@ fn charon_closure_tools_recheck_expanded_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "__rust_q_I8_closures_I6_caller_K0.contract",
-        "__rust_q_I8_closures_I6_choose_K1.contract",
-        "__rust_q_I8_closures_I6_choose.contract",
+        "__rust_q_I8_closures_I6_caller_K0.ensures_0",
+        "__rust_q_I8_closures_I6_choose_K1.ensures_0",
+        "__rust_q_I8_closures_I6_choose.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }

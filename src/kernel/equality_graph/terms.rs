@@ -311,6 +311,7 @@ enum Node {
     AlgebraicVariable(crate::kernel::SharedPureApplication, Variable),
     AlgebraicConstructor(crate::kernel::SharedPureApplication, String, usize),
     AlgebraicFunction(crate::kernel::SharedPureApplication, String, usize),
+    AlgebraicMemoryRead(crate::kernel::SharedPureApplication, (u32, u32)),
     Function(
         crate::kernel::SharedPureApplication,
         crate::kernel::CarrierWidth,

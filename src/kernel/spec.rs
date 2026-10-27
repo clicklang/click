@@ -5255,6 +5255,7 @@ fn lower_spec_comparison_proposition_at_state_in(
     let left_path_count = left_paths.len();
     let mut right_path_count = 0usize;
     let mut merge_failure_count = 0usize;
+    let mut rejected_comparison = None;
     for left_path in left_paths {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
@@ -5289,8 +5290,19 @@ fn lower_spec_comparison_proposition_at_state_in(
                     facts,
                     obligations,
                 });
+            } else {
+                rejected_comparison.get_or_insert((
+                    left_path.value.c_type(),
+                    operator,
+                    right_path.value.c_type(),
+                ));
             }
         }
+    }
+    if paths.is_empty()
+        && let Some(comparison) = rejected_comparison
+    {
+        budget.dropped_comparison.get_or_insert(comparison);
     }
     if paths.is_empty() && crate::instrumentation::enabled() {
         crate::instrumentation::emit(crate::instrumentation::VerificationEvent::Diagnostic(

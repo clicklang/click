@@ -605,7 +605,7 @@ fn assert_report_names_claims(report: &str, project: &str, files: &str, claims: 
     );
     for claim in claims {
         assert!(
-            report.contains(&format!("CLAIM    {claim}.contract")),
+            report.contains(&format!("CLAIM    {claim} ")),
             "`{project}` should name claim `{claim}`:\n{report}"
         );
     }
@@ -618,11 +618,14 @@ fn assert_report_names_claims(report: &str, project: &str, files: &str, claims: 
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn project_and_examples_directories_profile_every_sidecar() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let numeric_claims = ["json_object_get_double", "json_object_scale_double"];
+    let numeric_claims = [
+        "json_object_get_double.returns_value",
+        "json_object_scale_double.contract",
+    ];
     let refcount_claims = [
-        "json_object_get_ref_count",
-        "json_object_inc_ref_count",
-        "json_object_set_ref_count",
+        "json_object_get_ref_count.returns_ref_count",
+        "json_object_inc_ref_count.contract",
+        "json_object_set_ref_count.contract",
     ];
 
     let (targets, profiles, report) = profile_report(&manifest.join("examples/jsonc-refcount"));

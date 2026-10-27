@@ -3060,6 +3060,51 @@ fn seeded_pointer_read_evidence_refuses_partial_changed_and_unknown_footprints()
 }
 
 #[test]
+fn direct_pointer_reads_retain_their_projection_definitions() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Pointer::symbolic(Variable(98_340));
+    let alias = Pointer::symbolic(Variable(98_341));
+    let source =
+        intern_c_memory(CMemory::new().with_block_without_derivation("local:projection", 4));
+    let projected = crate::kernel::memory_provenance::canonical_value_load_memory(
+        &source,
+        &address,
+        crate::kernel::C_POINTER_BYTE_WIDTH,
+    );
+    assert_ne!(projected, source);
+    let named = Pointer::loaded_value(&projected, &address);
+    let observed = Pointer::loaded_value(&source, &alias);
+    let context = PureFactContext::new();
+    assert!(!context.pointers_known_equal(&named, &observed));
+    let context =
+        context.assume_condition(ConditionTerm::pointer_equal(address.clone(), alias), true);
+    assert!(
+        context.pointers_known_equal(&named, &observed),
+        "direct read names must use their producer-recorded projection edge"
+    );
+    assert!(context.equality_graph.knows_condition(
+        &ConditionTerm::pointer_value_equal(
+            CPointerValue::new(named.clone(), CType::Int32Pointer),
+            CPointerValue::new(observed.clone(), CType::Int32Pointer),
+        ),
+        true
+    ));
+    let shifted = context.clone();
+    assert!(shifted.pointers_known_equal(&named.offset_by_bytes(8), &observed.offset_by_bytes(8)));
+    assert!(!shifted.pointers_known_equal(&named.offset_by_bytes(8), &observed));
+    let changed = intern_c_memory(
+        source
+            .memory()
+            .clone()
+            .store(address.clone(), CValue::pointer(Pointer::null())),
+    );
+    assert!(
+        !context.pointers_known_equal(&named, &Pointer::loaded_value(&changed, &address)),
+        "projection metadata does not cross an actual store"
+    );
+}
+
+#[test]
 fn pointer_read_producer_closes_seeded_snapshot_equality_in_the_shared_graph() {
     let a = Pointer::symbolic(Variable(98_330));
     let b = Pointer::symbolic(Variable(98_331));
@@ -4488,4 +4533,130 @@ fn an_abstract_value_fact_carries_across_snapshots_only_with_frame_evidence() {
         "a framed field should carry its value across the effect"
     );
     assert!(!framed.proves_algebraic_condition_modulo_snapshots(&read(&after), false));
+}
+
+#[test]
+fn abstract_reads_follow_address_equalities_in_the_shared_graph() {
+    let memory = intern_c_memory(CMemory::new());
+    let left = Pointer::symbolic(Variable(98_490));
+    let right = Pointer::symbolic(Variable(98_491));
+    let parameter = TypeParameterName::intern("ReadCongruenceT");
+    let read = |pointer: &Pointer, memory: &SharedCMemory| AlgebraicTerm {
+        algebraic_type: parameter.algebraic_type(),
+        node: AlgebraicTermNode::MemoryLoad {
+            memory: memory.clone(),
+            pointer: Box::new(pointer.clone()),
+        },
+    };
+    let a = read(&left, &memory);
+    let b = read(&right, &memory);
+    let context = PureFactContext::new();
+    assert!(!context.equality_graph.are_algebraic_equal(&a, &b));
+    let context = context.assume_condition(
+        ConditionTerm::pointer_equal(left.clone(), right.clone()),
+        true,
+    );
+    assert!(
+        context.equality_graph.are_algebraic_equal(&a, &b),
+        "equal addresses give equal abstract reads of the same snapshot"
+    );
+    let changed = intern_c_memory(memory.memory().clone().store(left.clone(), int32(9)));
+    assert!(
+        !context
+            .equality_graph
+            .are_algebraic_equal(&a, &read(&left, &changed))
+    );
+    let source = intern_c_memory(
+        CMemory::new().with_block_without_derivation("local:abstract-read-projection", 4),
+    );
+    let projected = crate::kernel::memory_provenance::canonical_value_load_memory(
+        &source,
+        &left,
+        crate::kernel::ABSTRACT_VALUE_WIDTH,
+    );
+    assert_ne!(projected, source);
+    assert!(
+        context
+            .equality_graph
+            .are_algebraic_equal(&read(&left, &projected), &read(&right, &source),)
+    );
+    // The read's address may itself be a named pointer read. Its producer
+    // definitions must be registered by the common expression operand walk.
+    let nested_left = Pointer::loaded_value(&projected, &left);
+    let nested_right = Pointer::loaded_value(&source, &right);
+    assert!(
+        context
+            .equality_graph
+            .are_algebraic_equal(&read(&nested_left, &memory), &read(&nested_right, &memory),)
+    );
+    let other_type = AlgebraicTerm {
+        algebraic_type: TypeParameterName::intern("ReadCongruenceU").algebraic_type(),
+        node: a.node.clone(),
+    };
+    assert!(!context.equality_graph.are_algebraic_equal(&a, &other_type));
+    assert!(
+        !context
+            .restricted_to_facts(&[], &[])
+            .equality_graph
+            .are_algebraic_equal(&a, &b)
+    );
+}
+
+#[test]
+fn abstract_read_naming_retains_its_selected_width_origin() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Pointer::symbolic(Variable(98_499));
+    let source = intern_c_memory(
+        CMemory::new()
+            .with_block_without_derivation("local:abstract-origin", 4)
+            .store(
+                Pointer {
+                    block: "local:abstract-origin".into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                int32(7),
+            ),
+    );
+    let parameter = TypeParameterName::intern("ReadOriginT");
+    let CValue::Parameter(named) =
+        AlgebraicTermNode::parameter_load(source.clone(), address.clone(), parameter)
+    else {
+        panic!("parameter read");
+    };
+    let observed = AlgebraicTerm {
+        algebraic_type: parameter.algebraic_type(),
+        node: AlgebraicTermNode::MemoryLoad {
+            memory: source.clone(),
+            pointer: Box::new(address.clone()),
+        },
+    };
+    assert_ne!(*named, observed);
+    let context = PureFactContext::new();
+    assert!(
+        context
+            .equality_graph
+            .are_algebraic_equal(&named, &observed)
+    );
+    let AlgebraicTermNode::MemoryLoad { memory, .. } = &named.node else {
+        unreachable!()
+    };
+    assert!(crate::kernel::prelude::value_load_origin(memory, &address, 16).is_none());
+    let changed = intern_c_memory(
+        source
+            .memory()
+            .clone()
+            .store(address.offset_by_bytes(4), int32(9)),
+    );
+    let changed_read = AlgebraicTerm {
+        algebraic_type: parameter.algebraic_type(),
+        node: AlgebraicTermNode::MemoryLoad {
+            memory: changed,
+            pointer: Box::new(address),
+        },
+    };
+    assert!(
+        !context
+            .equality_graph
+            .are_algebraic_equal(&named, &changed_read)
+    );
 }
