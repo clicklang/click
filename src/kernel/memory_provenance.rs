@@ -4785,6 +4785,25 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
                     pending.push(Node::Offset(&right.offset, depth + 1));
                     pending.push(Node::Offset(&left.offset, depth + 1));
                 }
+                // As a word-valued Click application, whose arguments are
+                // keyed by the application's interned identity.
+                ConditionTerm::BoolApplication(_) => {}
+                ConditionTerm::BoolIf {
+                    condition,
+                    then_condition,
+                    else_condition,
+                } => {
+                    pending.push(Node::Condition(else_condition, depth + 1));
+                    pending.push(Node::Condition(then_condition, depth + 1));
+                    pending.push(Node::Condition(condition, depth + 1));
+                }
+                ConditionTerm::BoolEqual(left, right) => {
+                    pending.push(Node::Condition(right, depth + 1));
+                    pending.push(Node::Condition(left, depth + 1));
+                }
+                ConditionTerm::BoolLoad(_, pointer) => {
+                    pending.push(Node::Offset(&pointer.offset, depth + 1));
+                }
             },
             Node::Offset(offset, depth) => match offset {
                 PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
@@ -5304,6 +5323,10 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                     condition_results.push(condition.clone())
                 }
                 ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {
+                    condition_results.push(condition.clone())
+                }
+                // `Bool` values are kept as built, as algebraic equalities are.
+                condition if condition.is_bool_value_form() => {
                     condition_results.push(condition.clone())
                 }
                 ConditionTerm::Float32(float_condition) => {
@@ -5912,6 +5935,27 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
         ConditionTerm::Constant(_)
         | ConditionTerm::Variable(_)
         | crate::kernel::integer_comparison_condition!(_, _) => {}
+        // As a word-valued Click application.
+        ConditionTerm::BoolApplication(_) => {}
+        ConditionTerm::BoolIf {
+            condition,
+            then_condition,
+            else_condition,
+        } => {
+            for condition in [condition, then_condition, else_condition] {
+                collect_condition_memories(condition, memories);
+            }
+        }
+        ConditionTerm::BoolEqual(left, right) => {
+            collect_condition_memories(left, memories);
+            collect_condition_memories(right, memories);
+        }
+        ConditionTerm::BoolLoad(memory, pointer) => {
+            if !memories.contains(memory) {
+                memories.push(memory.clone());
+            }
+            collect_pointer_offset_memories(&pointer.offset, memories);
+        }
     }
 }
 
@@ -6025,6 +6069,8 @@ fn transport_framed_atomic_condition(
         // Mathematical integers carry no snapshot-dependent loads, so this
         // memory transport path has no authority to rewrite them.
         crate::kernel::integer_comparison_condition!(_, _) => return None,
+        // Nor does it for `Bool` values yet: they are not transported.
+        condition if condition.is_bool_value_form() => return None,
         condition => {
             let (op, left, right) = condition
                 .as_bitvector_comparison()

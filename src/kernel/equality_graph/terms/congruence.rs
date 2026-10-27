@@ -25,6 +25,15 @@ pub(super) enum ArgumentTag {
     Integer,
 }
 
+/// The head an interned call gets: a pointer function's value, its
+/// identity, or a `-> Bool` function's application.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::kernel::equality_graph) enum CallHead {
+    Pointer,
+    PointerIdentity,
+    Bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::kernel::equality_graph) enum ConditionKind {
     Int32Eq,
@@ -56,6 +65,12 @@ pub(in crate::kernel::equality_graph) enum ConditionKind {
     UInt32Le,
     UInt32Gt,
     UInt32Ge,
+    /// The logical equality of two `Bool` values (rule L-Eq).
+    BoolEq,
+    /// A fact about a `Bool` value that is not a comparison: an
+    /// application, a conditional or a read. Its truth is the annotation of
+    /// the value's class, which can also arrive through an L-Eq merge.
+    BoolValue,
 }
 
 /// Shared classification for registration and the opaque-atom lookup fast path.
@@ -114,14 +129,32 @@ impl TermClasses {
     }
 
     pub(super) fn intern_pointer_call(&mut self, application: &SharedPureApplication) -> u64 {
-        self.intern_expression(None, None, None, None, Some((application, false)))
+        self.intern_expression(
+            None,
+            None,
+            None,
+            None,
+            Some((application, CallHead::Pointer)),
+        )
     }
 
     pub(super) fn intern_pointer_call_identity(
         &mut self,
         application: &SharedPureApplication,
     ) -> u64 {
-        self.intern_expression(None, None, None, None, Some((application, true)))
+        self.intern_expression(
+            None,
+            None,
+            None,
+            None,
+            Some((application, CallHead::PointerIdentity)),
+        )
+    }
+
+    /// The class of a `-> Bool` pure function's application: its head and
+    /// argument classes, so applications to equal arguments are congruent.
+    pub(super) fn intern_bool_call(&mut self, application: &SharedPureApplication) -> u64 {
+        self.intern_expression(None, None, None, None, Some((application, CallHead::Bool)))
     }
 
     fn intern_expression(
@@ -130,7 +163,7 @@ impl TermClasses {
         algebraic: Option<&crate::kernel::AlgebraicTerm>,
         integer: Option<&crate::kernel::IntegerTerm>,
         value: Option<&CValue>,
-        pointer_call: Option<(&SharedPureApplication, bool)>,
+        pointer_call: Option<(&SharedPureApplication, CallHead)>,
     ) -> u64 {
         enum Binary {
             Int32Add,
@@ -138,7 +171,7 @@ impl TermClasses {
             UInt64(UInt64Binary),
         }
         enum Work<'a> {
-            PointerCall(&'a SharedPureApplication, bool),
+            PointerCall(&'a SharedPureApplication, CallHead),
             Algebraic(&'a crate::kernel::AlgebraicTerm),
             Integer(&'a crate::kernel::IntegerTerm),
             RememberInteger(crate::kernel::SharedIntegerTerm),
@@ -196,10 +229,11 @@ impl TermClasses {
                 Work::PointerCall(application, identity) => {
                     let symbol =
                         SharedPureApplication::intern(application.name().to_owned(), vec![]);
-                    let head = self.intern_node(if identity {
-                        Node::PointerFunctionValue(symbol, application.arguments().len())
-                    } else {
-                        Node::PointerFunction(symbol, application.arguments().len())
+                    let arity = application.arguments().len();
+                    let head = self.intern_node(match identity {
+                        CallHead::PointerIdentity => Node::PointerFunctionValue(symbol, arity),
+                        CallHead::Pointer => Node::PointerFunction(symbol, arity),
+                        CallHead::Bool => Node::BoolFunction(symbol, arity),
                     });
                     pending.push(Work::Call(head, application.arguments().len()));
                     pending.extend(application.arguments().iter().rev().map(Work::Argument));
@@ -1301,6 +1335,9 @@ impl TermClasses {
                 self.address(b.block.clone(), b.offset.clone()).0,
             ),
             C::PointerOffsetEqual(a, b) => (OffsetEq, self.intern(a), self.intern(b)),
+            C::BoolApplication(_) | C::BoolIf { .. } | C::BoolEqual(..) | C::BoolLoad(..) => {
+                return self.bool_node(condition);
+            }
             _ => return None,
         };
         let node = self.intern_node(Node::Condition(kind, left, right));
@@ -1425,8 +1462,156 @@ impl TermClasses {
                 relation: CompareRelation::GreaterEqual,
                 ..
             } => ConditionKind::UInt64Ge,
+            C::BoolEqual(..) => ConditionKind::BoolEq,
+            C::BoolApplication(_) | C::BoolIf { .. } | C::BoolLoad(..) => ConditionKind::BoolValue,
             _ => return None,
         })
+    }
+
+    /// The class of a `Bool` value (`design/machine-integers.md`, Stage 5).
+    ///
+    /// A literal is one class per value, annotated with its truth; a binder
+    /// is its variable's class; an application is a call of its function's
+    /// head on its argument classes, so applications to equal arguments are
+    /// congruent; a conditional is a call of one head on its three classes;
+    /// an equality is the condition node `BoolEq` on its operands' classes,
+    /// true when they meet (rule L-Eq); a read is its snapshot's read head
+    /// applied to its address class. A comparison is its own condition node.
+    /// Each node is interned once, so the work is the value's size. `None`
+    /// for a condition the graph does not intern.
+    pub(in crate::kernel::equality_graph) fn bool_node(&mut self, condition: &C) -> Option<u64> {
+        let node = match condition {
+            C::Constant(value) => {
+                let node = self.intern_node(Node::BoolConstant(*value));
+                self.retain_condition_truth(node, if *value { 1 } else { 2 });
+                node
+            }
+            C::Variable(variable) => {
+                let fresh = !self.nodes.contains_key(&Node::BoolVariable(*variable));
+                let node = self.intern_node(Node::BoolVariable(*variable));
+                if fresh && let Some(truth) = self.bool_binder_truth.get(variable).copied() {
+                    self.retain_condition_truth(node, truth);
+                }
+                node
+            }
+            C::BoolApplication(application) => self.intern_bool_call(application),
+            C::BoolIf {
+                condition,
+                then_condition,
+                else_condition,
+            } => {
+                let mut node = self.intern_node(Node::BoolIf);
+                for operand in [condition, then_condition, else_condition] {
+                    let operand = self.bool_node(operand)?;
+                    node = self.intern_node(Node::Apply(node, operand));
+                }
+                node
+            }
+            C::BoolEqual(left, right) => {
+                let left = self.bool_node(left)?;
+                let right = self.bool_node(right)?;
+                self.intern_node(Node::Condition(ConditionKind::BoolEq, left, right))
+            }
+            C::BoolLoad(memory, pointer) => {
+                let head = self.intern_node(Node::BoolRead(memory.read_identity()));
+                let address = self
+                    .address(pointer.block.clone(), pointer.offset.clone())
+                    .0;
+                self.intern_node(Node::Apply(head, address))
+            }
+            condition => self.condition_node(condition)?,
+        };
+        Some(node)
+    }
+
+    /// Admit a fact about a `Bool` value: its class's truth, and for a true
+    /// equality the merge of its operands' classes (rule L-Eq). A binder's
+    /// fact is admitted only once some `Bool` value has interned the binder,
+    /// so a fact no `Bool` value names adds nothing. One node per subterm,
+    /// one merge.
+    pub(in crate::kernel::equality_graph) fn admit_bool_condition(
+        &mut self,
+        condition: &C,
+        value: bool,
+    ) -> bool {
+        let truth = if value { 1 } else { 2 };
+        let node = match condition {
+            C::Variable(variable) => {
+                let known = self.bool_binder_truth.get(variable).copied().unwrap_or(0);
+                if known | truth != known {
+                    self.bool_binder_truth.insert(*variable, known | truth);
+                }
+                match self.nodes.get(&Node::BoolVariable(*variable)) {
+                    Some(node) => *node,
+                    None => return false,
+                }
+            }
+            C::BoolApplication(_) | C::BoolIf { .. } | C::BoolEqual(..) | C::BoolLoad(..) => {
+                let Some(node) = self.bool_node(condition) else {
+                    return false;
+                };
+                self.condition_kinds = self.condition_kinds.with_value((
+                    Self::condition_kind(condition).expect("a `Bool` value has a kind"),
+                    value,
+                ));
+                node
+            }
+            _ => return false,
+        };
+        self.register_pending_loads();
+        if let (C::BoolEqual(..), true) = (condition, value)
+            && let Some(Application::Condition(_, left, right)) =
+                self.applications.get(&node).copied()
+        {
+            self.close(vec![(left, right)]);
+        }
+        self.retain_condition_truth(node, truth);
+        true
+    }
+
+    /// Whether a `Bool` binder's class has the truth `value`, which an L-Eq
+    /// merge can give it. A binder no `Bool` value has interned is not
+    /// looked at further: its own facts are the fact context's.
+    pub(in crate::kernel::equality_graph) fn knows_bool_binder(
+        &self,
+        variable: crate::kernel::Variable,
+        value: bool,
+    ) -> bool {
+        let Some(node) = self.nodes.get(&Node::BoolVariable(variable)).copied() else {
+            return false;
+        };
+        let truth = if value { 1 } else { 2 };
+        self.condition_truth
+            .get(&self.root(node))
+            .is_some_and(|known| known & truth != 0)
+    }
+
+    /// Whether the graph holds `ConditionIs(condition, value)` for a `Bool`
+    /// value: its class's truth, or for a true equality its operands' meeting.
+    pub(in crate::kernel::equality_graph) fn knows_bool_condition(
+        &mut self,
+        condition: &C,
+        value: bool,
+    ) -> bool {
+        let Some(node) = self.bool_node(condition) else {
+            return false;
+        };
+        self.register_pending_loads();
+        let truth = if value { 1 } else { 2 };
+        if self
+            .condition_truth
+            .get(&self.root(node))
+            .is_some_and(|known| known & truth != 0)
+        {
+            return true;
+        }
+        if let (C::BoolEqual(..), true) = (condition, value)
+            && let Some(Application::Condition(_, left, right)) =
+                self.applications.get(&node).copied()
+        {
+            return self.root(left) == self.root(right);
+        }
+        false
     }
 
     pub(in crate::kernel::equality_graph) fn may_know_condition(

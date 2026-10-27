@@ -641,6 +641,14 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
         | ConditionTerm::Float64(_)
         | ConditionTerm::PointerOffsetEqual(_, _)
         | ConditionTerm::PointerEqual(_, _) => None,
+        // A `Bool` value decides by its shape, as the kernel decides it
+        // with no facts.
+        ConditionTerm::BoolApplication(_)
+        | ConditionTerm::BoolIf { .. }
+        | ConditionTerm::BoolEqual(..)
+        | ConditionTerm::BoolLoad(..) => {
+            PureFactContext::new().decide_condition_for_simp(condition)
+        }
     }
 }
 

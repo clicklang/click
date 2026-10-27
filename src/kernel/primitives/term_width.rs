@@ -457,6 +457,10 @@ pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<Widt
             left,
             right,
         } => (*format, *op == OverflowOperation::ShiftLeft, left, right),
+        // A `Bool` conditional or equality is as well-formed as its parts.
+        C::BoolIf { .. } | C::BoolEqual(..) => {
+            return condition.bool_children().find_map(condition_width_mismatch);
+        }
         _ => return None,
     };
     let (width, site, shift_site) = match CarrierWidth::of_bits(format.format().bits()) {

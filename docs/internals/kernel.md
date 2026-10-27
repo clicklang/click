@@ -744,6 +744,28 @@ the widths a rule supports; it asks the module
 | Usual arithmetic conversions | `conversion::usual_arithmetic_format` | C11 6.3.1.8 in LP64: the format two integer operands are converted to, after promoting narrow formats to `int32` |
 | Narrow-widening word (K8) | `primitives::is_word_cast32`, `Bitvector32Term::word32`, `word_cast32_operand` | the word of `Cast(S -> F, v)` for a narrow `S` and a 32-bit `F` is `v`'s |
 | Narrow-cast word (K7) | `representation::narrow_carrier_mask`; the e-graph's `narrow_cast_node` | the word of `Cast(S -> F, x)` into an 8- or 16-bit `F` is `w & m`, or `((w & m) ^ s) - s` for a signed `F`, with `w` the operand's word or low word |
+| `Bool` conditional (L-If) | `ConditionTerm::open_bool_if`; `PureFactContext::decide_bool_value` | `if c { a } else { b }` holds exactly when `(c and a) or (not c and b)`; opened only when the conditional itself is decided or split |
+| `Bool` equality (L-Eq) | the e-graph's `bool_node`, `admit_bool_condition`, `knows_bool_condition` | a true `a == b` merges the classes of `a` and `b`, which share their truth; a false one contradicts the merge; applications of one function to equal arguments are one class |
+| `Bool` unfolding (L-Unfold) | `ConditionTerm::bool_unfold_equation` | unfolding a `-> Bool` function's application files `application == body` |
+
+The last three rows are the logic of Click `Bool` (Stage 5 of
+`design/machine-integers.md`, decision of 2026-10-26), which is the
+condition sort: a `Bool` term is a `ConditionTerm`. Besides the literals
+(`Constant`), binders (`Variable`) and comparisons it has four value forms
+(`src/kernel/primitives/bool_sort.rs`): `BoolApplication`, `BoolIf`,
+`BoolEqual` and `BoolLoad`, a one-byte `bool` cell's read. Soundness: L-If
+and L-Eq are the two-valued meaning of `if` and of logical equality, and
+L-Unfold is the defining equation of a total pure function, whose
+termination is checked where it is declared. In the e-graph a `Bool`
+value is a class (a literal per value, annotated with its truth; a
+binder's class; a call of a function head on its argument classes; a call
+of the conditional's head on its three classes; the condition node
+`BoolEq`, true when its operands meet; a read head applied to an address
+class), so each subterm is interned once and a merge moves truth in
+constant work. A binder's facts are kept by binder (`bool_binder_truth`)
+until a `Bool` value interns it, so the answer does not depend on which
+fact was filed first. Nothing outside the kernel's tests builds the four
+forms yet.
 
 Rule K7 (decision of 2026-10-26, `design/machine-integers.md`). For `F` of
 `b` = 8 or 16 bits, `m = 2^b - 1`, `s = 2^(b-1)`, and `S` of at most 64

@@ -1346,6 +1346,22 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
             collect_bitvector_reads(left, reads);
             collect_bitvector_reads(right, reads);
         }
+        // As a word-valued Click application: not entered.
+        ConditionTerm::BoolApplication(_) => {}
+        ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+            for child in condition.bool_children() {
+                collect_condition_reads(child, reads);
+            }
+        }
+        // A `bool` cell is one byte.
+        ConditionTerm::BoolLoad(memory, pointer) => push_read(
+            reads,
+            OwnedResource::Cell {
+                pointer: pointer.as_ref().clone(),
+                bytes: 1,
+            },
+            ProgramPoint::at(memory),
+        ),
     }
 }
 

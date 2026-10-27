@@ -1833,7 +1833,15 @@ impl EqualityGraph {
         }
         let mut state = self.state.lock().expect("equality graph");
         self.prepare_condition(&mut state, condition);
-        let supported = state.terms.admit_condition(condition, value);
+        // A `Bool` value or binder (`design/machine-integers.md`, Stage 5):
+        // its class's truth, and for a true equality the merge of its
+        // operands (rule L-Eq).
+        let supported =
+            if condition.is_bool_value_form() || matches!(condition, ConditionTerm::Variable(_)) {
+                state.terms.admit_bool_condition(condition, value)
+            } else {
+                state.terms.admit_condition(condition, value)
+            };
         state.close(Vec::new());
         // Predicate truth is scoped state, not a value equality. Resource
         // indexes apply only admitted equations; unrelated comparisons must
@@ -1880,6 +1888,16 @@ impl EqualityGraph {
             return self.are_integer_equal(a, b);
         }
         let mut state = self.state.lock().expect("equality graph");
+        // A `Bool` value's truth can reach its class through a merge, which
+        // the admitted-kind filter below does not see.
+        if condition.is_bool_value_form() {
+            let known = state.terms.knows_bool_condition(condition, value);
+            state.close(Vec::new());
+            return known;
+        }
+        if let ConditionTerm::Variable(variable) = condition {
+            return state.terms.knows_bool_binder(*variable, value);
+        }
         if !state.terms.may_know_condition(condition, value) {
             return false;
         }

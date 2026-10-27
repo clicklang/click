@@ -439,6 +439,18 @@ impl PureFactContext {
         if let Some(value) = condition.reflexive_value() {
             return Some(value);
         }
+        // A `Bool` binder that an L-Eq merge gave a truth. A binder no
+        // `Bool` value names has no class and is decided as before.
+        if let ConditionTerm::Variable(_) = condition {
+            for value in [true, false] {
+                if self.equality_graph.knows_condition(condition, value) {
+                    return Some(value);
+                }
+            }
+        }
+        if condition.is_bool_value_form() {
+            return self.decide_bool_value(condition);
+        }
         // An Integer comparison of exact observations of one machine type
         // has the truth of its native comparison, which the machine
         // reasoning below decides (`native_comparison_of_integer_observation`).
@@ -1110,6 +1122,46 @@ impl PureFactContext {
             | CComparisonOperator::LessThan
             | CComparisonOperator::GreaterThan => false,
         })
+    }
+
+    /// Decide a `Bool` value that is not a comparison
+    /// (`design/machine-integers.md`, Stage 5): by its own fact, by its
+    /// class in the e-graph (rule L-Eq), or by its parts.
+    ///
+    /// A conditional is opened here, on demand (rule L-If): a decided
+    /// condition selects its branch, and branches decided alike decide it
+    /// whatever the condition. An equality is decided by its decided
+    /// operands. Each part is decided once, through the memo, so the work
+    /// is the value's size; nothing is filed.
+    fn decide_bool_value(&self, condition: &ConditionTerm) -> Option<bool> {
+        if let Some(value) = self.exact_condition_value(condition) {
+            return Some(value);
+        }
+        for value in [true, false] {
+            if self.equality_graph.knows_condition(condition, value) {
+                return Some(value);
+            }
+        }
+        let decide = |operand: &ConditionTerm| match operand {
+            ConditionTerm::Constant(value) => Some(*value),
+            operand => self.decide(operand),
+        };
+        match condition {
+            ConditionTerm::BoolIf {
+                condition,
+                then_condition,
+                else_condition,
+            } => match decide(condition) {
+                Some(true) => decide(then_condition),
+                Some(false) => decide(else_condition),
+                None => {
+                    let then_value = decide(then_condition)?;
+                    (decide(else_condition)? == then_value).then_some(then_value)
+                }
+            },
+            ConditionTerm::BoolEqual(left, right) => Some(decide(left)? == decide(right)?),
+            _ => None,
+        }
     }
 
     pub(in crate::kernel) fn decide_intrinsically(condition: &ConditionTerm) -> Option<bool> {
@@ -2035,6 +2087,11 @@ impl PureFactContext {
             ConditionTerm::IntegerNotEqual(left, right) => {
                 ConditionTerm::integer_not_equal(left.as_ref().clone(), right.as_ref().clone())
             }
+            // A `Bool` value is kept unless the facts decide it.
+            condition if condition.is_bool_value_form() => self
+                .decide(condition)
+                .map(ConditionTerm::Constant)
+                .unwrap_or_else(|| condition.clone()),
             condition => {
                 let (op, left, right) = condition
                     .as_bitvector_comparison()

@@ -1779,6 +1779,37 @@ impl Renderer<'_> {
                 self.push(" = ");
                 self.pointer(b);
             }
+            ConditionTerm::BoolApplication(application) => {
+                self.push(application.name());
+                self.push("(...)");
+            }
+            ConditionTerm::BoolIf {
+                condition,
+                then_condition,
+                else_condition,
+            } => {
+                self.push("if ");
+                self.condition(condition);
+                self.push(" { ");
+                self.condition(then_condition);
+                self.push(" } else { ");
+                self.condition(else_condition);
+                self.push(" }");
+            }
+            ConditionTerm::BoolEqual(a, b) => {
+                self.push("bool(");
+                self.condition(a);
+                self.push(" = ");
+                self.condition(b);
+                self.push(")");
+            }
+            ConditionTerm::BoolLoad(memory, pointer) => {
+                self.push("read<Bool>(");
+                self.memory(memory.as_ref());
+                self.push(", pointer=");
+                self.pointer(pointer);
+                self.push(")");
+            }
             _ => self.push("condition(<bounded operation>)"),
         }
     }

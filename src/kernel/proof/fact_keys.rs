@@ -361,6 +361,11 @@ fn snapshot_blind_proposition_key_one(proposition: &Proposition) -> SnapshotBlin
         Proposition::ConditionIs(crate::kernel::integer_comparison_condition!(_, _), _) => {
             SnapshotBlindPropositionKey::Exact(proposition.clone())
         }
+        // `Bool` values have no snapshot-blind key yet: they are filed
+        // exactly, as integer comparisons are.
+        Proposition::ConditionIs(condition, _) if condition.is_bool_value_form() => {
+            SnapshotBlindPropositionKey::Exact(proposition.clone())
+        }
         Proposition::ConditionIs(condition, value) => {
             SnapshotBlindPropositionKey::Condition(snapshot_blind_condition_key(condition), *value)
         }
@@ -448,6 +453,12 @@ fn snapshot_blind_condition_key(condition: &ConditionTerm) -> SnapshotBlindCondi
         crate::kernel::integer_comparison_condition!(_, _) => {
             unreachable!("integer conditions use the exact proposition index")
         }
+        ConditionTerm::BoolApplication(_)
+        | ConditionTerm::BoolIf { .. }
+        | ConditionTerm::BoolEqual(..)
+        | ConditionTerm::BoolLoad(..) => {
+            unreachable!("`Bool` values use the exact proposition index")
+        }
     }
 }
 
@@ -503,7 +514,7 @@ fn snapshot_blind_bitvector_key(term: &Bitvector32Term) -> SnapshotBlindBitvecto
         } if !matches!(
             condition.as_ref(),
             crate::kernel::integer_comparison_condition!(_, _)
-        ) =>
+        ) && !condition.is_bool_value_form() =>
         {
             SnapshotBlindBitvectorKey::If(
                 Box::new(snapshot_blind_condition_key(condition)),

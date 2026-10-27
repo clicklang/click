@@ -3333,6 +3333,42 @@ fn collect_condition_bound_variables(
             collect_pointer_offset_bound_variables(&left.offset, variables);
             collect_pointer_offset_bound_variables(&right.offset, variables);
         }
+        ConditionTerm::BoolApplication(application) => {
+            for argument in application.arguments() {
+                match argument {
+                    PureFunctionArgument::Value(value) => {
+                        collect_c_value_bound_variables(value, variables)
+                    }
+                    PureFunctionArgument::Algebraic(term) => {
+                        collect_algebraic_bound_variables(term, variables)
+                    }
+                    PureFunctionArgument::Integer(_) => {}
+                    PureFunctionArgument::ArrayRef {
+                        memory, pointer, ..
+                    } => {
+                        collect_memory_bound_variables(memory, variables);
+                        collect_c_value_bound_variables(pointer, variables);
+                    }
+                }
+            }
+        }
+        ConditionTerm::BoolIf {
+            condition,
+            then_condition,
+            else_condition,
+        } => {
+            for condition in [condition, then_condition, else_condition] {
+                collect_condition_bound_variables(condition, variables);
+            }
+        }
+        ConditionTerm::BoolEqual(left, right) => {
+            collect_condition_bound_variables(left, variables);
+            collect_condition_bound_variables(right, variables);
+        }
+        ConditionTerm::BoolLoad(memory, pointer) => {
+            collect_memory_bitvector_variables(memory, variables);
+            collect_pointer_offset_bound_variables(&pointer.offset, variables);
+        }
     }
 }
 
@@ -5099,6 +5135,20 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             substitute_bitvector_variable_in_pointer(left, from, to),
             substitute_bitvector_variable_in_pointer(right, from, to),
         ),
+        condition if condition.is_bool_value_form() => condition
+            .map_bool_value_form(
+                |child| substitute_bitvector_variable_in_condition(child, from, to),
+                |argument| {
+                    substitute_bitvector_variable_in_pure_function_argument(argument, from, to)
+                },
+                |memory, pointer| {
+                    (
+                        substitute_bitvector_variable_in_shared_memory(memory, from, to),
+                        substitute_bitvector_variable_in_pointer(pointer, from, to),
+                    )
+                },
+            )
+            .expect("a `Bool` value form maps"),
         condition => {
             let (op, left, right) = condition
                 .as_bitvector_comparison()
@@ -6072,6 +6122,11 @@ fn substitute_pointer_variable_in_condition(
             substitute_pointer_variable_in_pointer(left, from, to),
             substitute_pointer_variable_in_pointer(right, from, to),
         ),
+        // A `Bool` value's arguments and reads may name the pointer.
+        condition if condition.is_bool_value_form() => {
+            crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
+                .condition(condition)
+        }
         condition => condition.clone(),
     }
 }

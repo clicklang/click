@@ -48,6 +48,7 @@ impl Proposition {
     }
 }
 
+mod bool_sort;
 mod contracts;
 #[cfg(test)]
 mod memory_construction_tests;
@@ -1036,6 +1037,33 @@ pub enum ConditionTerm {
     IntegerGreaterEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerNotEqual(SharedIntegerTerm, SharedIntegerTerm),
+    /// Click `Bool`, the logical sort (`design/machine-integers.md`, Stage
+    /// 5): conditions are its terms, `Constant` and `Variable` above its
+    /// literals and binders. The four forms below are its values that are
+    /// not comparisons. They follow every other variant, so the derived
+    /// order of the conditions before them is unchanged.
+    ///
+    /// The application of a `-> Bool` pure function. Rule L-Unfold relates
+    /// it to the function's body ([`ConditionTerm::bool_unfold_equation`]).
+    BoolApplication(SharedPureApplication),
+    /// `if condition { then } else { else }` over `Bool`. Rule L-If reads
+    /// it as the case split ([`ConditionTerm::open_bool_if`]), opened only
+    /// on demand: by a decision of the conditional itself or by a proof
+    /// step that asks for the split, never when it is assumed.
+    BoolIf {
+        condition: Box<ConditionTerm>,
+        then_condition: Box<ConditionTerm>,
+        else_condition: Box<ConditionTerm>,
+    },
+    /// Logical equality of two `Bool` values, `a == b` (iff). Rule L-Eq: a
+    /// true one merges the two values' classes in the e-graph, where their
+    /// truth is shared; a false one contradicts that merge.
+    BoolEqual(Box<ConditionTerm>, Box<ConditionTerm>),
+    /// The read of a one-byte `bool` cell at the pointer in the snapshot:
+    /// `byte != 0` (the byte rule of Stage 5 bounds the byte to 0 or 1
+    /// where a front end produces the read). Two reads of one cell in one
+    /// snapshot are one value.
+    BoolLoad(SharedCMemory, Box<Pointer>),
 }
 
 /// A condition's identity: the condition itself, with a 32-bit equality's
@@ -1070,6 +1098,14 @@ enum ConditionIdentity<'a> {
     IntegerGreaterEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerNotEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
+    BoolApplication(&'a SharedPureApplication),
+    BoolIf {
+        condition: &'a ConditionTerm,
+        then_condition: &'a ConditionTerm,
+        else_condition: &'a ConditionTerm,
+    },
+    BoolEqual(&'a ConditionTerm, &'a ConditionTerm),
+    BoolLoad(&'a SharedCMemory, &'a Pointer),
 }
 
 impl ConditionTerm {
@@ -1126,6 +1162,18 @@ impl ConditionTerm {
             Self::IntegerGreaterEqual(left, right) => I::IntegerGreaterEqual(left, right),
             Self::IntegerEqual(left, right) => I::IntegerEqual(left, right),
             Self::IntegerNotEqual(left, right) => I::IntegerNotEqual(left, right),
+            Self::BoolApplication(application) => I::BoolApplication(application),
+            Self::BoolIf {
+                condition,
+                then_condition,
+                else_condition,
+            } => I::BoolIf {
+                condition,
+                then_condition,
+                else_condition,
+            },
+            Self::BoolEqual(left, right) => I::BoolEqual(left, right),
+            Self::BoolLoad(memory, pointer) => I::BoolLoad(memory, pointer),
         }
     }
 }
