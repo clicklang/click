@@ -365,19 +365,28 @@ shallow and through the fact graph, shallow range separation, and range
 against pointer when deciding which memory facts survive a store
 (`shallow_owned_separation_ignores_unrelated_compositions`, and
 `heap_object_stores_and_releases_cost_the_same_at_every_position`, which
-charging made fail on the old scans). Still `scan_unindexed`, each over
-every composition:
+charging made fail on the old scans). Still `scan_unindexed`:
 
 - the composite frame frontier (`frame_frontier_compositions`), now over
   the compositions owning a composite only (`composite_owning_compositions`,
   read from each composition's own count; a composition without one
   expands to nothing). Its gate once walked
   every fact of every composition on each store's cell drop
-  (`frame_frontier_ignores_compositions_without_composites`);
-- `store_compositions` when the writer stated no store owners: the
-  owned store footprint collects the member of every composition holding
-  the cell, so its output is as large as the compositions that restate
-  it.
+  (`frame_frontier_ignores_compositions_without_composites`).
+
+**Fixed (2026-10-27):** ownerless store separation no longer builds a
+footprint by scanning every stated composition. It retains the write's base
+spellings, then reads `CompositionMemberIndex` under both accesses' bases
+when the cached read is known. Both keys matter: a later composition can
+add the read while restating the write. Each selected composition's write
+membership is retained for the store, so multiple cached cells do not repeat
+its containment check. Explicit current store owners keep
+their existing once-per-store footprint. The parameter-partition shortcut
+selects any owner of the write through its own keys. The deterministic
+regression `ownerless_store_separation_ignores_unrelated_composition_history`
+covers separate compositions and a growing partition at 8, 32 and 128
+compositions, with successful and refused queries. The old separate-history
+query cost 43, 114 and 402 work units.
 
 **Fixed:** the composition range cover in `proves_resource_separate_inner`
 while the path states a containment fact with a non-memory parent, as
@@ -437,10 +446,13 @@ are `ScanSet`s too:
   (`ranges_directly_disjoint_from_access`) or a pointer
   (`range_proven_disjoint_from_pointer`), and the directed pass of range
   separation, read `memory_separations_near`: the memory separations filed
-  under the blocks their sides name, plus those with a wide side, whose
-  cover can cross a base equality. A shallow containment of a narrow range
-  needs the side in the range's own block, and a direct one a block of the
-  pointer's affine class (`pointer_class_blocks`), so the candidates hold
+  under the blocks their sides name. Wide-sided separations have their own
+  endpoint-block index; shallow callers also select it under their pointers'
+  related roots and affine block classes because wide coverage can cross a
+  base equality, including a translated window. Narrow-only contexts skip
+  that additional alias lookup. A shallow containment of a narrow range in a
+  narrow side needs the side in the range's own block, and a direct one a
+  block of the pointer's affine class (`pointer_class_blocks`), so the candidates hold
   every fact the scan could use, visited in the scan's order
   (`pointer_separation_ignores_unrelated_separations`).
 
@@ -721,12 +733,18 @@ four times the work at a quarter of it.
     Range separation's two scans are now a lookup: the separations filed
     under the blocks related to either queried base by proven equality
     (`related_pointer_root_blocks`), the blocks memory resolution can
-    reach, and those with a wide side, which still share one bucket. Debug
-    builds compare every answer with the scan
+    reach. Completed 2026-10-27: wide-sided facts now also use an endpoint-block
+    index, replacing their global bucket. Callers select wide facts through
+    related pointer roots and affine block classes, including translated
+    aliases; narrow-only contexts retain their ordinary block lookup. The regression grows unrelated wide facts at 8, 32 and 128
+    entries: the old query cost 1,335, 4,623 and 17,775 work units; the indexed
+    query costs 147 at every size. Related alias chains and translated windows
+    cost 370, 418 and 610 units at 4, 16 and 64 aliases per side. Fact withdrawal
+    preserves context forks. Debug builds compare every range-separation answer with the scan
     (`explicit_separation_lookup_reads_only_related_blocks`).
     Non-memory resource separation no longer falls back to every
     separation when a side sits inside memory: it reads the separations
-    filed under that memory's related blocks, the wide bucket and the
+    filed under that memory's related blocks, including wide sides, and the
     residual non-memory list, and debug builds compare it with the scan
     (`a_token_inside_memory_finds_its_separation_without_scanning`).
     Still listed: all compositions at `4280` and `4563` (index:
@@ -836,6 +854,106 @@ Decided by the maintainer on 2026-10-20.
      copied onto several paths: the only split a script sees is one it
      writes (`branch`, `if`, `cases`, `match`) or the implicit tail's.
 
+## Status and handoff (2026-10-26)
+
+Phases A, B, C, D and F are done; each step below says what was done and
+what was measured. What remains:
+
+### 1. Completed (2026-10-27): `decreases` is an Integer position
+
+Every scalar and lexicographic measure component now uses Integer-position
+arithmetic, for pure functions, C contracts and loops. A sum of machine
+values need not fit the machine carrier. The original disjunctive-guard
+reproduction is retained in `mdtests/a_decreases_measure_sum_is_an_integer.md`;
+recursive scalar and tuple sums have a separate regression.
+
+`solve() using` can prove in-range machine addition and subtraction
+identities from its listed premises and type ranges. Expansion emits the
+bounds, operation/cast identities, and final arithmetic certificate.
+Unsigned back edges preserve their snapshot anchors; promoted narrow
+counter observations preserve the comparison's int32 carrier and recorded
+entry names. Signed, unsigned and narrow-counter expansions are checked.
+Existing explicit measure certificates and refusal expectations have been
+migrated; explicitly observed machine arithmetic still wraps.
+
+Open with the maintainer: whether to go further and adopt the 2026-10-15
+rule from `roadmap/standard-library.md` ("narrowing stays explicit")
+everywhere, as Frama-C and Verus do: specification arithmetic on machine
+values is always Integer, and a machine position refuses it until the
+author writes a narrowing (`to_int32(…)`) or `defined(…)`. The 2026-10-24
+type-directed rule instead gives machine positions (typed `let`, machine
+parameters and fields, indices, fold accumulators) C's operation silently.
+Measure, before deciding, how many corpus sites do arithmetic in each
+machine position.
+
+### 2. Phase E leftovers, measured and deferred
+
+The remaining `scan_unindexed` sites run rarely and stay small across the
+whole suite (counted 2026-10-26):
+
+- `scanned_matching_condition_fact_for_memory_resolution` (`simp.rs`), the
+  fallback when the condition-match index cannot answer: 234 calls, at most
+  60 facts, 15 hits. Its query shapes are load variables, sums,
+  `IntegerEqual`, pointer equalities and pure function applications; an
+  index needs keys for those.
+- `frame_frontier_compositions` (`memory_reasoning.rs`): 328 calls, at most
+  7 composite-owning compositions. Needs a by-block index of them.
+
+Fix each with a scaling test that shows it growing.
+
+Completed 2026-10-27: the ownerless `store_compositions` scan (1,435 calls,
+at most 2 compositions in the census). A deterministic scaling reproduction
+showed growth beyond the corpus sizes. Store separation now selects
+compositions from both accesses' base keys at the pair question; explicit
+store owners retain their existing path. See the compositions discussion above and the
+`ownerless_store_separation_ignores_unrelated_composition_history` regression.
+
+Completed 2026-10-27: item 21's global wide-separation bucket. Wide facts are
+filed under their endpoint blocks and selected through the query's related
+pointer roots and affine block classes.
+`wide_separation_lookup_ignores_unrelated_wide_facts` measures
+successful alias queries and refusals beside growing unrelated wide facts;
+`wide_separation_lookup_scales_with_its_related_alias_chain` covers related
+growth and translated windows.
+
+### 3. Completed (2026-10-27): shared equality-chain search
+
+The indexed goal-local route now keeps only its one-rewrite/direct-closure
+shortcut. Longer chains use the same bounded `rewrite_search` as connected,
+selected and listed equalities. Its early entry point keeps direct/typed
+closers and optional function unfolding, so it does not restart full `simp`
+before arithmetic has its turn. The shared route is available inside split
+and unfold continuations, and spells execution equalities at the frontier
+that owns the goal, preserving the previous loop entry's snapshot name.
+This covers `examples/modeled-binary-tree`,
+`mdtests/loop_old_parameter_resource_argument.md` and
+`mdtests/c_named_function_contract_refines_vacuous_guarded_clause.md` without
+changing their proofs. The goal-local mode also retains a native rewrite
+form with explicit carrier casts before its Integer observation, preserving
+a structural source goal in a named contract's abstract post-state and
+round-tripping through expansion. Refuted scalar offsets stop before connected search; the indexed
+shortcut retains goal-local candidate lookup and metadata filtering.
+
+### 4. Noted, not filed
+
+- The kernel call rule's constant normalization
+  (`add_normalized_verified_ensure_facts`, `src/kernel/functions.rs`)
+  bridges loads across snapshots through `loads_bridge`
+  (`src/kernel/assumptions/condition_reasoning/decision.rs`). On
+  2026-10-24 it cost about 119,000 of the 140,820 work units of the second
+  `give_back` call in `pipeline` of
+  `mdtests/authority_pool_control_two_members.md`: a cross-snapshot search
+  inside a simple `step`. It was left to the snapshot/spellability work.
+  That mdtest is nightly-only and currently fails in `checkout` (an
+  arithmetic certificate over `old(count(item(pool, _)))`), so it could not
+  be remeasured.
+- `step()` decides a function exit's outcome
+  (`c_function_outcomes_from_statement_outcome_with_resource_cases`) under
+  the step's own small fact list, not the full proof context; the
+  call-outcome split now passes the full context. Across 9,153 exits in
+  the suite and three targeted probes the two never gave different
+  outcomes, so it was left as is.
+
 ## Plan
 
 The principle describes an end state. The work below reaches it in small
@@ -920,9 +1038,19 @@ verdict change.
    The greedy loop is gone, and no gate verdict changed. Switched off on
    the day before, the selected chain alone cost a step of
    `examples/arena`, and the restricted chain `examples/input-cursor` and
-   15 mdtests. The indexed goal-local search is still separate: switched
-   off alone, it costs a step of `examples/modeled-binary-tree` and
-   `mdtests/loop_old_parameter_resource_argument.md`.
+   15 mdtests.
+
+   Completed, 2026-10-27: the indexed goal-local route's independent greedy
+   traversal is removed. Its one-rewrite/direct-closure shortcut remains;
+   longer chains use the shared connected search, including inside split
+   and unfold continuations. Rewrite spellings retain the current execution
+   frontier's anchor, which can differ from the last executed statement's
+   anchor at a loop back edge. This covers the tree rotation and historical
+   loop ranking cases above. Existing depth, candidate and attempt budgets
+   are unchanged; selected/listed closer restrictions remain unchanged.
+   The early goal-local entry point uses direct/typed closers and optional
+   function unfolding rather than the late chain's nested `simp`, preserving
+   arithmetic's turn and the `arena` proof's work budget.
 8. **Move definition-condition reading and constructor join into `simp`.**
    Done: both are part of `simp`'s last strategy over the connected facts
    (`try_connected_fact_closure`), definition reading first and constructor

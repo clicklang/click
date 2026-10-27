@@ -1504,7 +1504,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
         "{expanded}"
     );
     assert!(
-        claim.contains("extract(to_integer(st.total) == "),
+        claim.contains("extract(to_integer((st.total as int32)) == "),
         "{expanded}"
     );
     if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
@@ -3146,6 +3146,59 @@ fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
     }
     let expanded = expand_c0_claim_source_by_label(&click, &sources, "keep.contract").unwrap();
     assert!(expanded.contains("step(inner, {});"), "{expanded}");
+}
+
+/// The loop back edge needs both the current zero and the previous entry's
+/// one. The shared rewrite search must retain that entry when spelling its
+/// selected equality, including in a cold expanded proof.
+#[test]
+#[ignore = "nightly: whole loop claim expansion and cold verification"]
+fn equality_search_expands_loop_ranking_with_previous_entry_fact() {
+    let (click, sources) = mdtest_sources("mdtests/loop_old_parameter_resource_argument.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "advance.contract")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(expanded.contains("rewrite("), "{expanded}");
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[test]
+#[ignore = "nightly: tree rotation expansion and cold project verification"]
+fn equality_search_expands_tree_rotation() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples/modeled-binary-tree/modeled_binary_tree.click");
+    let source = std::fs::read_to_string(&path).unwrap();
+    let sources = crate::cli::read_verifying_sources(&path, &source).unwrap();
+    let sources = crate::cli::source_refs(&sources);
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "tree_rotate_left.ensures_0")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(expanded.contains("rewrite("), "{expanded}");
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[test]
+#[ignore = "nightly: guarded contract refinement expansion and cold verification"]
+fn equality_search_expands_guarded_contract_refinement() {
+    let (click, sources) =
+        mdtest_sources("mdtests/c_named_function_contract_refines_vacuous_guarded_clause.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(
+        &click,
+        &sources,
+        "increment_is_guarded_progress.ensures_0",
+    )
+    .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(expanded.contains("rewrite("), "{expanded}");
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
 /// A theorem with a type parameter is checked at a rigid type standing for

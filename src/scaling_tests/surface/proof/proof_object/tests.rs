@@ -254,7 +254,7 @@ fn same_block_offset_rewrite_work(
         &[],
     );
     let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
-        root.try_indexed_goal_equality_rewrite_closure()
+        root.try_goal_equality_rewrite_closure()
     });
     let closed = closed.expect("the offset's k == 4 fact should close the pointer equality");
     assert!(closed.is_complete());
@@ -1414,7 +1414,9 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
             &theorem_environment,
         );
         let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
-            root.try_indexed_goal_equality_rewrite_direct_closure(false)
+            root.try_indexed_direct_equality_rewrite(false)
+                .break_value()
+                .flatten()
         });
         let closed = closed.expect("one checked rewrite should expose the recorded bound");
         assert!(closed.is_complete());
@@ -1709,7 +1711,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         );
         let ((closed, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                root.try_indexed_goal_equality_rewrite_closure()
+                root.try_goal_equality_rewrite_closure()
             })
         });
         assert!(
@@ -1762,7 +1764,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
             );
             assert_eq!(
                 proof
-                    .try_indexed_goal_equality_rewrite_closure()
+                    .try_goal_equality_rewrite_closure()
                     .is_some_and(|proof| proof.is_complete()),
                 expected
             );
@@ -2114,7 +2116,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         );
         let ((closed, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                root.try_indexed_goal_equality_rewrite_closure()
+                root.try_goal_equality_rewrite_closure()
             })
         });
         assert!(
@@ -2192,7 +2194,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         );
         assert!(
             recorded
-                .try_indexed_goal_equality_rewrite_closure()
+                .try_goal_equality_rewrite_closure()
                 .is_some_and(|proof| proof.is_complete()),
             "a retained store source must remain usable"
         );
@@ -2229,7 +2231,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             );
             assert_eq!(
                 proof
-                    .try_indexed_goal_equality_rewrite_closure()
+                    .try_goal_equality_rewrite_closure()
                     .is_some_and(|proof| proof.is_complete()),
                 expected
             );
@@ -2342,7 +2344,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
             &theorems,
         );
         let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
-            root.try_indexed_goal_equality_rewrite_closure()
+            root.try_goal_equality_rewrite_closure()
         });
         assert!(closed.is_none(), "offset equality must remain rejected");
         costs.push(work);

@@ -9,13 +9,10 @@ is inside `values[0..4]`; without the requirement the same `step()` is
 refused as a store outside the owned range
 (`mdtests/an_unsigned_index_below_an_unbounded_variable_is_refused.md`).
 
-`4 - x` over the `uint32` counter is a `uint32` measure, ranked by
-unsigned order. The back-edge members are the invariant `x + 1 <=u n` and
-the descent `(0 - x) + 3 <u (0 - x) + 4`, both at the entry value of `x`.
-The closer proves the invariant from the guard. The descent needs
-`x <u 4`, which is the guard composed with the requirement; the closer
-looks up one exact fact per lemma and does not compose a chain, so the
-proof states that fact and the closer does the rest.
+`4 - x` is an Integer measure. The guard bounds the unsigned increment,
+so the closer can relate its observation to `to_integer(x) + 1` and
+prove descent. The proof also states `x < 4` from the guard and requirement
+to bound the store.
 
 ```c filename=an_unsigned_loop_counter_store_is_bounded_by_a_variable_guard.c
 void clear(int32* values, uint32 n) {

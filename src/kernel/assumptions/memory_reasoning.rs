@@ -1641,12 +1641,11 @@ impl PureFactContext {
         false
     }
 
-    /// Decides separation from indexed facts plus range membership, without
-    /// invoking the composition-backed derived-separation search.
-    /// The owned members of this context's resource compositions that hold
-    /// every byte of an access of `bytes` at `write`, computed once per store
-    /// so that [`Self::access_owned_apart_from_store`] can ask each cached
-    /// cell a constant number of indexed questions.
+    /// Prepare ownership separation for a store of `bytes` at `write`.
+    /// Explicit store owners supply their containing members once per store.
+    /// Without them, retain the write's base spellings until
+    /// [`Self::access_owned_apart_from_store`] can select stated compositions
+    /// through the member index under both the write and the cached read.
     ///
     /// Members are found through each composition's base index under the
     /// additive base spellings of `write` (see [`additive_base_spellings`]),
@@ -1658,19 +1657,39 @@ impl PureFactContext {
         write: &Pointer,
         bytes: u32,
     ) -> OwnedStoreFootprint<'_> {
-        let mut members = Vec::new();
         if self.resource_compositions.is_empty() {
-            return OwnedStoreFootprint { members };
+            return OwnedStoreFootprint::Members(Vec::new());
         }
         let spellings = self.base_spellings_through_aliases(write);
-        // Compositions of one context commonly restate one member (a
-        // composite's unfolding beside the context it was unfolded in), and
-        // the containment proof depends only on the range: prove each
-        // distinct range once.
+        match self.store_owners() {
+            Some(owners) => OwnedStoreFootprint::Members(self.store_members_in(
+                owners.iter(),
+                &spellings,
+                bytes,
+            )),
+            // The composition index is complete for pairs, not for every
+            // restatement of one member. Select once the read is known.
+            None => OwnedStoreFootprint::Indexed {
+                spellings,
+                bytes,
+                members: Default::default(),
+            },
+        }
+    }
+
+    fn store_members_in<'a>(
+        &self,
+        compositions: impl IntoIterator<Item = &'a ResourceContext>,
+        spellings: &[(Pointer, Pointer)],
+        bytes: u32,
+    ) -> OwnedStoreMembers<'a> {
+        let mut members = Vec::new();
+        // A range restated by multiple candidate compositions needs only
+        // one containment decision.
         let mut decided = BTreeMap::<&CMemoryRange, bool>::new();
-        for resources in self.store_compositions() {
+        for resources in compositions {
             crate::instrumentation::record_deterministic_work(1);
-            for (base, access) in &spellings {
+            for (base, access) in spellings {
                 for (entry, range) in resources.owned_memory_members_with_base(base) {
                     let contains = *decided
                         .entry(range)
@@ -1681,7 +1700,7 @@ impl PureFactContext {
                 }
             }
         }
-        OwnedStoreFootprint { members }
+        members
     }
 
     /// The additive base spellings of `pointer`, and the same accesses
@@ -1734,13 +1753,24 @@ impl PureFactContext {
         {
             return None;
         }
-        let footprint = self.owned_store_footprint(write, bytes);
-        footprint
-            .members
-            .into_iter()
-            .find_map(|(resources, _, range)| {
-                parameter_partition_root(range.base()).map(|base| (resources, base))
-            })
+        let members = match self.owned_store_footprint(write, bytes) {
+            OwnedStoreFootprint::Members(members) => members,
+            OwnedStoreFootprint::Indexed {
+                spellings, bytes, ..
+            } => {
+                // This optimization needs any composition holding the write,
+                // not all compositions that could separate a pair. The first
+                // admission of its member is listed under the write or is
+                // the index's root.
+                let candidates = self
+                    .composition_members
+                    .listed_under(spellings.iter().map(|(base, _)| base), std::iter::empty());
+                self.store_members_in(candidates, &spellings, bytes)
+            }
+        };
+        members.into_iter().find_map(|(resources, _, range)| {
+            parameter_partition_root(range.base()).map(|base| (resources, base))
+        })
     }
 
     /// Cross-block equalities are filed under their exact endpoints, so a
@@ -1792,19 +1822,57 @@ impl PureFactContext {
     /// were later proven equal must not overlap. Lookup is by base, so the
     /// question costs what the two accesses spell and the members they name,
     /// independent of the other objects owned in the block.
-    pub(in crate::kernel) fn access_owned_apart_from_store(
-        &self,
-        footprint: &OwnedStoreFootprint<'_>,
+    pub(in crate::kernel) fn access_owned_apart_from_store<'a>(
+        &'a self,
+        footprint: &OwnedStoreFootprint<'a>,
         write: &Pointer,
         pointer: &Pointer,
         bytes: u32,
     ) -> bool {
-        if footprint.members.is_empty() {
+        if matches!(footprint, OwnedStoreFootprint::Members(members) if members.is_empty()) {
             return false;
         }
         let spellings = self.base_spellings_through_aliases(pointer);
-        let separated = footprint
-            .members
+        let selected;
+        let members = match footprint {
+            OwnedStoreFootprint::Members(members) => members,
+            OwnedStoreFootprint::Indexed {
+                spellings: write_spellings,
+                bytes: write_bytes,
+                members,
+            } => {
+                let candidates = self.composition_members.listed_under(
+                    write_spellings
+                        .iter()
+                        .chain(&spellings)
+                        .map(|(base, _)| base),
+                    std::iter::empty(),
+                );
+                // One immutable context and write own this footprint. A
+                // composition selected by several cached reads needs its
+                // write-containment result only once, including a miss.
+                let mut cached = members.borrow_mut();
+                selected = candidates
+                    .into_iter()
+                    .flat_map(|resources| {
+                        crate::instrumentation::record_deterministic_work(1);
+                        let identity = std::sync::Arc::as_ptr(&resources.storage) as usize;
+                        cached
+                            .entry(identity)
+                            .or_insert_with(|| {
+                                self.store_members_in(
+                                    std::iter::once(resources),
+                                    write_spellings,
+                                    *write_bytes,
+                                )
+                            })
+                            .clone()
+                    })
+                    .collect::<Vec<_>>();
+                &selected
+            }
+        };
+        let separated = members
             .iter()
             .find(|(resources, write_entry, write_range)| {
                 spellings.iter().any(|(base, access)| {
@@ -2628,9 +2696,12 @@ impl PureFactContext {
         // Each certificate shape has one shallow side, which a narrow query
         // range meets only in its own block.
         if if left.wide_bounds().is_none() && right.wide_bounds().is_none() {
-            self.memory_separations_near([&left.base().block, &right.base().block])
-                .into_iter()
-                .any(directed)
+            self.memory_separations_near(
+                [&left.base().block, &right.base().block],
+                [left.base(), right.base()],
+            )
+            .into_iter()
+            .any(directed)
         } else {
             self.separation_facts_related_to(left, right, directed)
         } {
@@ -2654,7 +2725,7 @@ impl PureFactContext {
     /// contain `left` and `right`. A side contains a queried range only up
     /// to memory resolution, which reaches a block through a proven base
     /// equality, so the candidates are the separations filed under the
-    /// blocks related to either queried base, and those with a wide side
+    /// blocks related to either queried base, including wide sides
     /// (`memory_separations_near`). Debug builds compare every answer with
     /// the scan of every separation.
     fn separation_facts_related_to(
@@ -2668,7 +2739,7 @@ impl PureFactContext {
             .flat_map(|base| crate::kernel::primitives::related_pointer_root_blocks(base, self))
             .collect::<BTreeSet<_>>();
         let indexed = self
-            .memory_separations_near(blocks.iter())
+            .memory_separations_near(blocks.iter(), [left.base(), right.base()])
             .into_iter()
             .any(&certifies);
         #[cfg(debug_assertions)]
@@ -4729,7 +4800,7 @@ impl PureFactContext {
             let mut blocks = self.equality_graph.pointer_class_blocks(&pointer.block);
             blocks.push(range.base().block.clone());
             blocks.push(pointer.block.clone());
-            let candidates = self.memory_separations_near(blocks.iter());
+            let candidates = self.memory_separations_near(blocks.iter(), [range.base(), pointer]);
             if let Some(proposition) = candidates.into_iter().find(|proposition| match proposition
                 .memory_separation()
             {
@@ -5042,7 +5113,8 @@ impl PureFactContext {
         }
         // `range` is narrow here, and both certificate shapes contain it
         // shallowly in one side, so that side is in its block.
-        let candidates = self.memory_separations_near([&range.base().block]);
+        let candidates =
+            self.memory_separations_near([&range.base().block], [range.base(), pointer]);
         if let Some(proposition) =
             candidates
                 .into_iter()
@@ -5284,11 +5356,21 @@ impl PureFactContext {
     }
 }
 
-/// The owned members that contain a store's written bytes; see
+/// Current store owners' containing members, or the write keys needed to
+/// select historical compositions once the read is known; see
 /// [`PureFactContext::owned_store_footprint`].
-pub(in crate::kernel) struct OwnedStoreFootprint<'a> {
-    members: Vec<(&'a ResourceContext, u64, &'a CMemoryRange)>,
+pub(in crate::kernel) enum OwnedStoreFootprint<'a> {
+    Members(OwnedStoreMembers<'a>),
+    Indexed {
+        spellings: Vec<(Pointer, Pointer)>,
+        bytes: u32,
+        // Keys are storage identities; the borrowed context keeps all their
+        // compositions alive, even cached misses with no member reference.
+        members: std::cell::RefCell<BTreeMap<usize, OwnedStoreMembers<'a>>>,
+    },
 }
+
+type OwnedStoreMembers<'a> = Vec<(&'a ResourceContext, u64, &'a CMemoryRange)>;
 
 pub(in crate::kernel) fn parameter_partition_variable(base: &Pointer) -> Option<&Variable> {
     if base.block != crate::kernel::PointerBlock::ExternalArgument {
@@ -5897,5 +5979,40 @@ mod shallow_composition_separation_tests {
             samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
             "pointer separation grew with unrelated separations: {samples:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod wide_separation_index_tests {
+    use super::*;
+
+    #[test]
+    fn wide_separation_withdrawal_and_context_forks_preserve_authority() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = |id: u64| Pointer::symbolic(Variable(9_993_000 + id));
+        let wide = |base| {
+            CMemoryRange::new_wide(
+                base,
+                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::UInt64Constant(8),
+                4,
+            )
+        };
+        let left = wide(pointer(0));
+        let right = wide(pointer(1));
+        let fact = Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(left.clone())),
+            right: Box::new(CResource::Memory(right.clone())),
+        };
+        let parent = PureFactContext::new().assume_proposition(fact.clone());
+        let child = parent.without_exact_fact(&fact);
+        let separate = |context: &PureFactContext| {
+            context.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                &left, &right,
+            )
+        };
+        assert!(separate(&parent));
+        assert!(!separate(&child));
+        assert!(separate(&child.assume_proposition(fact)));
     }
 }

@@ -853,6 +853,12 @@ Maintainer direction, 2026-10-26 (syntax):
   re-pinned; each is byte-identical to what the retired reading adapter
   produced from its original.
 
+- **Integer termination measures (2026-10-26).** Every `decreases` component
+  is an Integer position, including pure functions, recursive C contracts,
+  and lexicographic loop measures. Arithmetic observes each machine operand
+  before operating, so `decreases a + b;` owes no overflow obligation.
+  Resource-application measures keep their existing meaning.
+
 Maintainer direction, 2026-10-26 (Stage 5), superseding the 2026-10-21
 entry "`bool` is logical; C's `_Bool` is an integer":
 

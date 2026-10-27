@@ -2266,10 +2266,13 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
                 .unwrap_err()
                 .contains("several tactics")
         );
-        assert_eq!(
-            target(&shared, 10, Some(31)).unwrap(),
-            click::surface::SourcePosition::new(2, 31),
-        );
+        for column in [23, 32] {
+            assert_eq!(
+                target(&shared, 10, Some(column)).unwrap(),
+                click::surface::SourcePosition::new(2, column),
+            );
+        }
+        assert!(target(&shared, 10, Some(31)).is_err());
 
         // A `cases` arm's block follows `=>`; its tactics are targets too.
         let arm = "theorem arm() {\n    ensures true by {\n        cases {\n            true => {\n                solve();\n            }\n            false => {\n                solve();\n            }\n        }\n    }\n}\n";

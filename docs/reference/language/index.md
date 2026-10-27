@@ -345,7 +345,9 @@ self-recursive function, any pure `int32`, unsigned, or mathematical
 `Integer` expression, or a parenthesized lexicographic tuple of them. Functions
 and resources share one namespace, so that classification happens after name
 resolution rather than from a keyword; there is no `decreases resource`
-spelling. A function-level measure ranks recursive calls:
+spelling. Measure arithmetic is exact Integer arithmetic: `decreases a + b;`
+ranks by `to_integer(a) + to_integer(b)` without a machine-overflow obligation.
+A function-level measure ranks recursive calls:
 
 <!-- verified-example: mdtests/c_decreases_recursive.md -->
 ```click
@@ -602,10 +604,9 @@ no leniency about the descent itself: a measure the body does not move leaves
 the ranking member open exactly as a C one does, as in
 `mdtests/loop_decreases_pure_expression_must_decrease.md`.
 
-A machine component's type is the one C gives the expression. Operands
-narrower than `int` (`_Bool`, `int8`, `int16`, `uint8`, `uint16`) are
-promoted to `int32` first, so a measure over a `uint8` counter is an int32
-measure and owes the signed `0 <= m` member:
+Arithmetic in every measure component is exact Integer arithmetic. For
+example, `decreases 4 - x` means `4 - to_integer(x)`, including when `x`
+is a narrow or unsigned counter:
 
 <!-- verified-example: mdtests/a_uint8_loop_counter_ranks_as_a_promoted_int32.md -->
 ```click
@@ -615,41 +616,25 @@ loop {
 }
 ```
 
-A component whose type, after C's usual arithmetic conversions, is `uint32`
-or `uint64` ranks the loop by unsigned order. That includes a mixed
-expression such as `4 - x` over a `uint32 x`, whose `int32` operand converts
-to `uint32` exactly as C converts it. The measure is the value C computes,
-wraparound included. Its nonnegativity member is the constant `true`, since
-every unsigned value is a natural number, and its decrease member is
-`post < pre` as an unsigned comparison of the two wrapped values. Wrapped
-values are what keep the ranking sound: a back edge on which the measure
-wraps upward, as `3 - x` does when `x` goes from 3 to 4, fails the decrease
-member (`mdtests/an_unsigned_measure_that_wraps_upward_is_refused.md`), and a
-measure the body moves up fails it too
-(`mdtests/an_unsigned_measure_that_grows_is_refused.md`). Division,
-remainder, right shift, and comparisons inside a component use the
-signedness of their operands' common type. An `int64` component, as a
-`long` loop's `length - i` is, ranks by signed 64-bit order and owes
-`0 <= m` as an `int32` one does
-(`mdtests/a_long_loop_is_ranked_by_an_int64_measure.md`,
-`mdtests/an_int64_measure_that_may_be_negative_is_refused.md`). Click
-refuses a shift of a 64-bit value and a `?:` that chooses between 64-bit
-values, and names the refusal. A pure component and a self-recursive
-function's expression measure take the same carriers.
+The C increment still promotes a narrow counter to `int32` and narrows the
+stored result. The closer proves the operation and cast identities from
+the guard and invariant bounds before relating the two Integer readings.
+Unsigned increments similarly need a no-wrap bound; `i < length` supplies
+it even when `length` may be the largest value of its type
+(`mdtests/a_fill_loop_over_a_size_t_range_needs_no_bound.md`).
 
-An unsigned comparison is a `uint32` order, and `uint32` subtraction wraps,
-so order reasoning does not relate `x - 1` to `x` on its own. The closer
-proves an unsigned member with the `uint32_*` order lemmas instead: one lemma
-per member, from the exact fact that lemma requires, as
-`while (x > 0u) x--;` under `decreases x` does
-(`mdtests/an_unsigned_count_down_loop_owes_an_unsigned_descent.md`,
-`mdtests/an_unsigned_loop_to_a_variable_bound_owes_an_unsigned_descent.md`).
-A measure `c - x` over a constant is evaluated to `(0 - x) + c`, and
-`integer::uint32_difference_decreases_after_increment` states its descent in that form
-(`mdtests/an_unsigned_loop_counter_store_is_bounded_by_its_guard.md`). A fact
-that takes two steps, such as `x < 4` from `x < n` and `n <= 4`, is stated in
-the proof
-(`mdtests/an_unsigned_loop_counter_store_is_bounded_by_a_variable_guard.md`).
+A bare machine component such as `decreases x` keeps its carrier. Unsigned
+components use unsigned order and have a trivial nonnegativity member;
+signed components owe `0 <= x`. The unsigned countdown idiom
+`while (x > 0u) x--;` uses the native unsigned order lemmas
+(`mdtests/an_unsigned_count_down_loop_owes_an_unsigned_descent.md`).
+Explicitly observing a machine expression, as in
+`decreases to_integer(3u32 - x)`, retains its wrapping arithmetic. A back
+edge on which that expression wraps upward is refused
+(`mdtests/an_unsigned_measure_that_wraps_upward_is_refused.md`). A plain
+`decreases 3 - x` cannot wrap; it instead owes Integer nonnegativity and
+strict descent. A `long` loop's `length - i` likewise ranks by an Integer
+difference, without a signed 64-bit overflow obligation.
 
 A component whose type is `Integer` ranks the loop in that carrier:
 
@@ -1009,7 +994,8 @@ them a machine type
 | an argument for an `Integer` parameter of a pure function or theorem, including a library theorem and `truncating_quotient` / `truncating_remainder` | Integer |
 | the value of `let s: Integer = ...`, an `Integer` constructor field, an `Integer` resource field's value in a `fold` map, the body of a `-> Integer` function | Integer |
 | an arm of a `match` or a branch of an `if` in an Integer position (the `if`'s condition is a proposition) | Integer |
-| a machine-typed parameter, constructor or resource field; `let s: int32 = ...`, whose unsuffixed literal value is an `int32` in the type's range; an index or memory range; a cast; the argument of `to_integer(...)` or `defined(...)`; an operand of `/ % << >> & \| ^`; a machine fold accumulator or body; a `decreases` measure | that machine type |
+| a machine-typed parameter, constructor or resource field; `let s: int32 = ...`, whose unsuffixed literal value is an `int32` in the type's range; an index or memory range; a cast; the argument of `to_integer(...)` or `defined(...)`; an operand of `/ % << >> & \| ^`; a machine fold accumulator or body | that machine type |
+| a `decreases` measure, and each component of a lexicographic one | Integer |
 | an untyped `let s = ...` | none: arithmetic on a machine value in its value is refused; the binding has its value's type, so one whose value is an Integer is an Integer |
 
 <!-- verified-example: mdtests/a_typed_let_gives_machine_arithmetic_its_meaning.md -->

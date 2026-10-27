@@ -1,15 +1,10 @@
-# An unsigned loop to a variable bound owes an unsigned descent
+# An unsigned loop to a variable bound owes an Integer descent
 
-`while (x < n) x++;` over `uint32` values declares `decreases n - x`, a
-`uint32` measure computed with C's wrapping subtraction. Its decrease member
-is `(n - x) - 1 <u n - x` at the entry value of `x`. That holds exactly when
-`n - x` is not zero, which the guard `x <u n` gives, so no invariant is
-needed: the measure is ranked on the wrapped value C computes, and the
-guard is what keeps that value from wrapping.
-
-The closer states the two steps with the `uint32` order lemmas: the
-difference is nonzero under the guard, and the predecessor of a nonzero
-`uint32` is smaller.
+`while (x < n) x++;` over `uint32` values declares `decreases n - x`,
+an exact Integer difference. The guard proves that the increment cannot
+wrap and that the next measure is nonnegative. The closer emits the
+operation identity for the increment and proves strict Integer descent.
+No extra invariant is needed.
 
 ```c filename=an_unsigned_loop_to_a_variable_bound_owes_an_unsigned_descent.c
 int32 count(uint32 n) {

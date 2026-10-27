@@ -43,6 +43,7 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    "a_decreases_measure_sum_is_an_integer.md", // 2.4s: original disjunctive-guard regression
     // 9.7s in a debug build: eleven sequential branches reach the split limit.
     "execute_stops_at_its_split_limit_on_sequential_branches.md",
     // 1.9s focused; the named scaling regression also checks its work.

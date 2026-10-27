@@ -2155,7 +2155,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         fs::remove_dir_all(&directory).unwrap();
         assert!(
-            error.starts_with("proof error:\n  `release.contract` setup failed\n"),
+            error.starts_with("proof error:\n  `release.body_safety` setup failed\n"),
             "{error}"
         );
         assert!(
