@@ -234,27 +234,6 @@ fn typed_binding_variable(
 /// The integer a `bool` value converts, `w` in C's conversion `w != 0`
 /// (Stage 5: the cast of the `Bool` `not (w == 0)`), or `None`.
 fn bool_operand(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
-    // A `bool` cell's read is still C's conversion of its byte written as a
-    // conditional, `if b == 0 { 0 } else { 1 }`.
-    if let Bitvector32Term::If {
-        condition,
-        then_term,
-        else_term,
-    } = term
-        && matches!(
-            (then_term.as_ref(), else_term.as_ref()),
-            (Bitvector32Term::Constant(0), Bitvector32Term::Constant(1))
-        )
-        && let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left: operand,
-            right: zero,
-        } = condition.as_ref()
-        && matches!(zero.as_ref(), Bitvector32Term::Constant(0))
-    {
-        return Some(operand.as_ref());
-    }
     let condition = term.bool_cast_operand()?.bool_negation_operand()?;
     let ConditionTerm::Compare {
         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,

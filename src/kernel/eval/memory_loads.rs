@@ -413,11 +413,12 @@ fn canonical_integer_read(
     );
     Some(match ty {
         CType::Int8 => Bitvector32Term::signed_byte(value),
-        CType::Bool => Bitvector32Term::if_then_else(
-            ConditionTerm::equal(value, Bitvector32Term::Constant(0)),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-        ),
+        // The byte rule (Stage 5): a `bool` cell's byte `b` is the `Bool`
+        // `b != 0`, carried as its cast.
+        CType::Bool => match crate::kernel::bool_value(value) {
+            CValue::Bool(word) => word,
+            _ => unreachable!("`bool_value` builds a `Bool`"),
+        },
         _ => value,
     })
 }
@@ -4329,11 +4330,12 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
                 Box::new(pointer.clone()),
                 LoadKind::UInt8,
             );
-            Some(CValue::Bool(Bitvector32Term::if_then_else(
-                ConditionTerm::equal(load, Bitvector32Term::Constant(0)),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
-            )))
+            // The byte rule (Stage 5): the read of a `bool` cell whose byte
+            // is `b` is the `Bool` `b != 0`. Every write of such a cell
+            // stores `v as uint8`, 1 or 0 (rule C1), and no write of another
+            // kind or byte view reaches it, so the byte is 0 or 1 and this is
+            // the value the cell holds.
+            Some(crate::kernel::bool_value(load))
         }
         CType::Int8 => Some(memory.symbolic_int8_load(pointer)),
         CType::Int16 => Some(memory.symbolic_int16_load(pointer)),
