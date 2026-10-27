@@ -162,6 +162,12 @@ impl ProofFacts {
 }
 
 pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
+    if let Proposition::ConditionIs(ConditionTerm::BoolEqual(a, b), true) = equality {
+        return Some(Proposition::ConditionIs(
+            ConditionTerm::BoolEqual(b.clone(), a.clone()),
+            true,
+        ));
+    }
     let reversed = match equality {
         Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
             return Some(Proposition::Equal(
@@ -747,6 +753,36 @@ fn rewrite_atomic_proposition_by_exact_equality(
     goal: &Proposition,
     equality: &Proposition,
 ) -> Result<Proposition, AtomicRewriteRefusal> {
+    // A `Bool` equality (Stage 5, rule L-Eq) replaces its left operand by
+    // its right wherever a `Bool` is read. A `Bool` value's equality with a
+    // literal, `b == true` or `b == false`, lowers to the claim on `b`, and
+    // replaces `b` by that literal.
+    let literal = |value: bool| ConditionTerm::Constant(value);
+    let bool_equation = match equality {
+        Proposition::ConditionIs(ConditionTerm::BoolEqual(left, right), true) => {
+            Some((left.as_ref().clone(), right.as_ref().clone()))
+        }
+        Proposition::ConditionIs(value, truth) if value.is_bool_value_form() => {
+            Some((value.clone(), literal(*truth)))
+        }
+        _ => None,
+    };
+    if let Some((left, right)) = &bool_equation {
+        let mut rewrite = super::term_rewrite::TermRewrite::for_condition_exact(left, right);
+        let rewritten = rewrite.proposition(goal);
+        if rewrite.refusal().is_some() {
+            return Err(AtomicRewriteRefusal::Refused(
+                "`Bool` rewrite exceeded its supported scope".into(),
+            ));
+        }
+        return if rewritten != *goal {
+            Ok(rewritten)
+        } else {
+            Err(AtomicRewriteRefusal::Absent(
+                "the `Bool` equality's left side does not occur".into(),
+            ))
+        };
+    }
     if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = equality
     {
         let mut rewrite = super::term_rewrite::TermRewrite::for_pointer_value_exact(left, right);
@@ -1062,6 +1098,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         .unwrap_or_else(|| term.clone())
                 }
                 Bitvector32Term::If { .. }
+                | Bitvector32Term::BoolCast { .. }
                 | Bitvector32Term::RangeFold { .. }
                 | Bitvector32Term::ClickFunctionApplication { .. }
                 | Bitvector32Term::AlgebraicMatch { .. }
@@ -1790,6 +1827,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 .unwrap_or_else(|| term.clone())
             }
             Bitvector32Term::If { .. }
+            | Bitvector32Term::BoolCast { .. }
             | Bitvector32Term::RangeFold { .. }
             | Bitvector32Term::ClickFunctionApplication { .. }
             | Bitvector32Term::AlgebraicMatch { .. }

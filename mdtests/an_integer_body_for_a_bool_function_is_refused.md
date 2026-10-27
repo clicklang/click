@@ -1,6 +1,6 @@
-# An integer body for a `bool` function is refused
+# An integer body for a `Bool` function is refused
 
-A `-> bool` body produces only `bool` values. An integer is not read as a
+A `-> Bool` body produces only `Bool` values. An integer is not read as a
 truth value, so `1`, or a conditional with an integer branch, is a type
 error rather than C's nonzero test.
 
@@ -11,5 +11,5 @@ function flagged(x: int32) -> bool {
 ```
 
 ```expect
-fail: function `flagged` returns bool, but its body can produce `0` of type int32
+fail: function `flagged` returns Bool, but its body can produce `0` of type int32
 ```

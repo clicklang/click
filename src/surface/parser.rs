@@ -1085,6 +1085,7 @@ pub(super) fn is_c_type_keyword(name: &str) -> bool {
         "void"
             | "_Bool"
             | "bool"
+            | "Bool"
             | "struct"
             | "int32"
             | "int"
@@ -5278,7 +5279,7 @@ impl Parser {
     fn refuse_bool_literal_binder(&self, name: &str) -> Result<(), ClickError> {
         if matches!(name, "true" | "false") {
             return Err(self.error(format!(
-                "`{name}` is a `bool` literal and cannot name a Click binder"
+                "`{name}` is a `Bool` literal and cannot name a Click binder"
             )));
         }
         Ok(())
@@ -5641,17 +5642,7 @@ impl Parser {
         } else {
             match spelling.as_str() {
                 "void" => C0Type::Void,
-                "_Bool" | "bool" => {
-                    if !self.exact_long_rank {
-                        crate::instrumentation::record_bool_census("click_bool", || {
-                            format!(
-                                "{} `{spelling}`",
-                                self.here().map(|p| p.to_string()).unwrap_or_default()
-                            )
-                        });
-                    }
-                    C0Type::Bool
-                }
+                "_Bool" | "bool" | "Bool" => C0Type::Bool,
                 "int8" | "int8_t" => C0Type::Int8,
                 "int16" | "int16_t" => C0Type::Int16,
                 "int32" | "int32_t" => C0Type::Int32,

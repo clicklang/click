@@ -311,7 +311,7 @@ impl Bitvector32Term {
 
     pub(crate) fn as_const(&self) -> Option<u32> {
         match self {
-            Self::MachineIntegerCast { .. } => None,
+            Self::MachineIntegerCast { .. } | Self::BoolCast { .. } => None,
 
             Self::MachineIntegerConstant(_) => None,
 

@@ -2961,6 +2961,7 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
             collect_bitvector_atoms(right, atoms);
         }
         crate::kernel::unary_machine_term!(value) => collect_bitvector_atoms(value, atoms),
+        Bitvector32Term::BoolCast { value, .. } => collect_condition_bitvector_atoms(value, atoms),
         Bitvector32Term::If {
             condition,
             then_term,

@@ -90,3 +90,42 @@ fn bool_equality_merges_cost_constant_work_per_link() {
         "decision work grew with the chain: {decide_work:?}"
     );
 }
+
+/// `size` casts `x_k == b_k as int32`, each with `x_k == 0` (rule C1): each
+/// link and each constant is one class operation, so filing them is linear
+/// in `size`, and deciding the last `Bool` is one class lookup.
+#[test]
+fn rule_c1_links_cost_constant_work_per_cast() {
+    let mut assume_work = Vec::new();
+    let mut decide_work = Vec::new();
+    for size in [4u64, 8, 16, 32] {
+        let _session = VerificationSession::enter();
+        let (context, assumed) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut context = PureFactContext::new();
+            for link in 0..size {
+                let cast = Bitvector32Term::bool_cast(
+                    MachineIntegerType::Int32,
+                    applied("member", 520_000 + link),
+                );
+                context = context
+                    .assume_condition(ConditionTerm::equal(word(521_000 + link), cast), true)
+                    .assume_condition(
+                        ConditionTerm::equal(word(521_000 + link), Bitvector32Term::Constant(0)),
+                        true,
+                    );
+            }
+            context
+        });
+        let last = applied("member", 520_000 + size - 1);
+        let (value, decided) =
+            crate::instrumentation::measure_deterministic_work(|| context.decide(&last));
+        assert_eq!(value, Some(false), "size={size}");
+        assume_work.push(assumed);
+        decide_work.push(decided);
+    }
+    assert!(grows_linearly(&assume_work), "assume work {assume_work:?}");
+    assert!(
+        decide_work.windows(2).all(|pair| pair[1] <= pair[0] + 16),
+        "decide work {decide_work:?}"
+    );
+}

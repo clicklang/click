@@ -828,6 +828,19 @@ pub enum Bitvector32Term {
         left: Box<Bitvector32Term>,
         right: Box<Bitvector32Term>,
     },
+    /// Rule C1 (`design/machine-integers.md`, Stage 5): the integer value of
+    /// the `Bool` `value` at the format `to`, `value as to`. It is 1 when
+    /// `value` holds and 0 otherwise, which lie in every format, so it owes
+    /// nothing and its word is 1 or 0 at every width. A specification `Bool`
+    /// travels in a `CValue::Bool` as its cast to `uint8`, the byte a `bool`
+    /// cell holds; its truth is `value`. Built by
+    /// [`Bitvector32Term::bool_cast`], which folds a constant. It follows
+    /// every other variant, so the derived order of the terms before it is
+    /// unchanged.
+    BoolCast {
+        to: MachineIntegerType,
+        value: Box<ConditionTerm>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -6644,6 +6657,15 @@ pub enum ExecutionLimit {
     Paths,
     UnsupportedIntegerExistentialBody,
     UnsupportedPureFunctionResult(CType),
+    /// Stage 5 (`design/machine-integers.md`, decision D2): a `Bool`
+    /// compared with an integer. `Bool` has no integer value.
+    BoolComparedWithInteger,
+    /// An order (`<`, `<=`, `>`, `>=`) on `Bool`.
+    BoolOrdered,
+    /// Arithmetic on a `Bool`, an implicit promotion included.
+    BoolArithmetic,
+    /// A conditional with an `int32` arm and a `Bool` arm.
+    MixedBoolArms,
     /// The execution's fresh-identity counter reached the first identity a
     /// producer outside the execution reserves by a constant base. Every
     /// kernel allocation counts up from one base, and the ranges above it
@@ -6728,6 +6750,10 @@ impl ExecutionLimit {
             Self::UnsupportedIntegerExistentialBody => {
                 "an Integer existential body that must be pure and total".to_string()
             }
+            Self::BoolComparedWithInteger => "a `Bool` compared with an integer".to_string(),
+            Self::BoolOrdered => "an order on `Bool`".to_string(),
+            Self::BoolArithmetic => "arithmetic on a `Bool`".to_string(),
+            Self::MixedBoolArms => "a conditional with an integer and a `Bool` arm".to_string(),
             Self::KernelVariables { ceiling } => {
                 format!("the execution's fresh-identity range, which ends below {ceiling}")
             }
@@ -12616,6 +12642,13 @@ pub struct PureFactContext {
     /// Derived incrementally from `condition_facts`.
     pub(super) condition_facts_by_sides: crate::persistent::PersistentMap<
         ConditionMatchKey,
+        crate::persistent::PersistentMap<ConditionTerm, bool>,
+    >,
+    /// Stage 5, rule L-Eq: each `Bool` equality fact `a == b` filed under
+    /// both operands, with the fact's truth, so a decision of one operand
+    /// reads its partners without visiting any other fact.
+    pub(super) bool_equation_partners: crate::persistent::PersistentMap<
+        ConditionTerm,
         crate::persistent::PersistentMap<ConditionTerm, bool>,
     >,
     /// The keys of `condition_facts_by_sides`, filed under each of their

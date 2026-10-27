@@ -129,11 +129,6 @@ fn promote_c_bool_scalar_operands(left: CValue, right: CValue) -> (CValue, CValu
     if scalar_width(&left, &right).is_none() {
         return (left, right);
     }
-    if crate::kernel::eval::SpecificationReadScope::is_active()
-        && (matches!(left, CValue::Bool(_)) || matches!(right, CValue::Bool(_)))
-    {
-        crate::instrumentation::record_bool_census("promotion", || format!("{left:?} . {right:?}"));
-    }
     let promote = |value| match value {
         CValue::Bool(bits) => CValue::Int32(bits),
         value => value,

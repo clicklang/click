@@ -1,9 +1,9 @@
 # `bool` negation, disequality and `false` agree
 
-A `bool` value is exactly `false` or `true`, so `not b`, `b != true` and
+A `Bool` value is exactly `false` or `true`, so `not b`, `b != true` and
 `b == false` are one claim, as are `b`, `b != false` and `b == true`. No
-lemma is needed to move between the spellings, for a `bool` function's
-application or a `bool` parameter. The range `b == true or b == false` is a
+lemma is needed to move between the spellings, for a `Bool` function's
+application or a `Bool` parameter. The range `b == true or b == false` is a
 disjunction, proved like any other by a case split.
 
 ```click

@@ -540,6 +540,29 @@ impl TermClasses {
                         pending.push(Work::Integer(value));
                         continue;
                     }
+                    // Rule C1: the cast `b as F`, a head applied to `b`'s
+                    // class, linked with it and with the constants 0 and 1.
+                    if let T::BoolCast { to, value } = term
+                        && width == W::of_machine_type(*to)
+                        && let Some(condition) = self.bool_node(value)
+                    {
+                        let head = self.intern_node(Node::BoolCast(*to));
+                        let cast = self.intern_node(Node::Apply(head, condition));
+                        let constant = |value: u32| match width {
+                            W::Bits64 if to.format().is_signed() => {
+                                T::Int64Constant(i64::from(value))
+                            }
+                            W::Bits64 => T::UInt64Constant(u64::from(value)),
+                            _ => T::Constant(value),
+                        };
+                        if width != W::Bits128 {
+                            let zero = self.intern_typed_machine(&constant(0), width);
+                            let one = self.intern_typed_machine(&constant(1), width);
+                            self.link_bool_cast(cast, condition, zero, one);
+                        }
+                        values.push(cast);
+                        continue;
+                    }
                     if let T::ClickFunctionApplication { name, arguments } = term {
                         let symbol = SharedPureApplication::intern(format!("click:{name}"), vec![]);
                         let head = self.intern_node(Node::Function(symbol, width, arguments.len()));

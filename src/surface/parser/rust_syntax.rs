@@ -1382,14 +1382,6 @@ impl Parser {
         let Some(c_type) = self.peek_ident().and_then(rust_scalar_type) else {
             return Ok(None);
         };
-        if c_type == C0Type::Bool && !self.exact_long_rank {
-            crate::instrumentation::record_bool_census("click_bool_rust", || {
-                format!(
-                    "{} `bool`",
-                    self.here().map(|p| p.to_string()).unwrap_or_default()
-                )
-            });
-        }
         self.position += 1;
         Ok(Some(scalar(c_type, false)))
     }

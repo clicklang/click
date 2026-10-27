@@ -1502,9 +1502,16 @@ impl Printer<'_> {
                 value.to_integer(),
                 if value.format().is_signed() { "i" } else { "u" }
             ))),
-            // A specification `bool` is read as the term it names.
-            B::If { .. } if let Some(application) = crate::kernel::spec_bool_term(value) => {
-                self.bitvector(application, hint, depth)
+            // Rule C1. A specification `Bool` travels as its cast to
+            // `uint8`, which reads as the `Bool` itself; any other format is
+            // the written cast `b as F`.
+            B::BoolCast { to, value } => {
+                let condition = self.condition(value, true, depth)?;
+                if *to == crate::kernel::MachineIntegerType::UInt8 {
+                    Some(condition)
+                } else {
+                    Some(cast(machine_type_spelling(*to), condition))
+                }
             }
             B::If {
                 condition,

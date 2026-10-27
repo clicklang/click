@@ -7315,6 +7315,22 @@ pub(super) fn describe_bitvector_with_context(
             format!("{destination:?}").to_ascii_lowercase(),
             describe_integer_term(value)
         ),
+        // Rule C1: a specification `Bool` travels as its cast to `uint8`,
+        // which reads as the `Bool` itself; any other format is the cast.
+        Bitvector32Term::BoolCast { to, value } => {
+            let condition = describe_condition_with_context(value, parameter_binding);
+            if *to == crate::kernel::MachineIntegerType::UInt8 {
+                condition
+            } else {
+                format!(
+                    "({})",
+                    click_cast(
+                        &format!("({condition})"),
+                        &format!("{to:?}").to_ascii_lowercase()
+                    )
+                )
+            }
+        }
         term => {
             let (operator, left, right) = term
                 .as_binary()

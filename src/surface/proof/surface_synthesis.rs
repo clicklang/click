@@ -856,7 +856,8 @@ fn bitvector_term_exceeds_depth_limit(root: &Bitvector32Term) -> bool {
             }
             Bitvector32Term::ClickFunctionApplication { .. }
             | Bitvector32Term::AlgebraicMatch { .. }
-            | Bitvector32Term::IntegerToMachine { .. } => {}
+            | Bitvector32Term::IntegerToMachine { .. }
+            | Bitvector32Term::BoolCast { .. } => {}
             Bitvector32Term::MemoryLoad(_, pointer, _) => {
                 if let PointerOffsetTerm::Int32Scaled { value, .. }
                 | PointerOffsetTerm::Int64Scaled { value, .. } = &pointer.offset
@@ -3284,6 +3285,8 @@ fn synthesize_surface_bitvector(
     };
     match term {
         Bitvector32Term::MachineIntegerCast { .. } => None,
+        // TODO(stage5): synthesize `b as int32`.
+        Bitvector32Term::BoolCast { .. } => None,
 
         Bitvector32Term::MachineIntegerConstant(_) => None,
         Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
@@ -4182,7 +4185,8 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
             }
             Bitvector32Term::ClickFunctionApplication { .. }
             | Bitvector32Term::AlgebraicMatch { .. }
-            | Bitvector32Term::IntegerToMachine { .. } => return false,
+            | Bitvector32Term::IntegerToMachine { .. }
+            | Bitvector32Term::BoolCast { .. } => return false,
         }
     }
     true

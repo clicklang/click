@@ -1273,6 +1273,7 @@ fn collect_memory_load_work<'a>(
                     // separate semantic object. Until checked read evidence
                     // is exposed for that object, invalidate conservatively.
                     Bitvector32Term::If { .. }
+                    | Bitvector32Term::BoolCast { .. }
                     | Bitvector32Term::RangeFold { .. }
                     | Bitvector32Term::PureFunctionApplication { .. }
                     | Bitvector32Term::ClickFunctionApplication { .. }

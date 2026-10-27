@@ -1481,8 +1481,11 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
                     Variable(index as u64),
                 ),
                 C0Type::Void => unreachable!("pure theorem parameters cannot be void"),
-                C0Type::Bool => crate::kernel::spec_bool_value(Bitvector32Term::Variable(
-                    Variable(index as u64),
+                // A `Bool` parameter is a binder of the kernel sort (Stage 5),
+                // carried as its cast to `uint8` (rule C1).
+                C0Type::Bool => CValue::Bool(Bitvector32Term::bool_cast(
+                    crate::kernel::MachineIntegerType::UInt8,
+                    crate::kernel::ConditionTerm::Variable(Variable(index as u64)),
                 )),
                 C0Type::VoidPointer | C0Type::VoidPointerPointer => CValue::typed_pointer(
                     Pointer {

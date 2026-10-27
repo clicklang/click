@@ -266,6 +266,12 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
         T::IntegerToMachine { destination, .. } => {
             Ok(Some(CarrierWidth::of_machine_type(*destination)))
         }
+        // Rule C1: the cast's carrier is its format's; its operand is a
+        // condition, whose own widths are checked.
+        T::BoolCast { to, value } => {
+            condition_width_mismatch(value).map_or(Ok(()), Err)?;
+            Ok(Some(CarrierWidth::of_machine_type(*to)))
+        }
         T::MachineIntegerCast {
             value,
             source,

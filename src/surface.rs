@@ -2129,7 +2129,7 @@ pub(crate) fn proposition_bool_value(
         if *conditionals > BOOL_VALUE_CONDITIONALS {
             return Err(format!(
                 "a proposition used as a `bool` value opens into more than \
-                 {BOOL_VALUE_CONDITIONALS} conditionals; name part of it with a `bool` function"
+                 {BOOL_VALUE_CONDITIONALS} conditionals; name part of it with a `Bool` function"
             ));
         }
         match condition {

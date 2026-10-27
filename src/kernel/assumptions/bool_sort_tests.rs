@@ -260,6 +260,88 @@ fn substitution_reaches_every_part_of_a_bool_value() {
     assert!(!variables.contains(&Variable(80)));
 }
 
+/// `b as int32` (rule C1, Stage 5).
+pub(super) fn cast(condition: ConditionTerm) -> Bitvector32Term {
+    Bitvector32Term::bool_cast(MachineIntegerType::Int32, condition)
+}
+
+fn word_equal(left: Bitvector32Term, right: Bitvector32Term) -> ConditionTerm {
+    ConditionTerm::equal(left, right)
+}
+
+/// Rule C1 links a cast with its `Bool` both ways: the constant the cast's
+/// class holds decides the `Bool`, a cast unequal to 0 is 1, a decided
+/// `Bool`'s cast is its constant, and any other constant is a
+/// contradiction.
+#[test]
+fn rule_c1_links_a_cast_with_its_bool_in_both_directions() {
+    let _session = VerificationSession::enter();
+    let (b, x) = (applied("member", 60), word(61));
+    let with = |value: u32, truth: bool| {
+        PureFactContext::new()
+            .assume_condition(word_equal(x.clone(), cast(b.clone())), true)
+            .assume_condition(
+                word_equal(x.clone(), Bitvector32Term::Constant(value)),
+                truth,
+            )
+    };
+    assert_eq!(with(0, true).decide(&b), Some(false));
+    assert_eq!(with(1, true).decide(&b), Some(true));
+    assert_eq!(with(0, false).decide(&b), Some(true));
+    assert_eq!(with(1, false).decide(&b), Some(false));
+    let decided = PureFactContext::new().assume_condition(b.clone(), true);
+    assert_eq!(
+        decided.decide(&word_equal(cast(b.clone()), Bitvector32Term::Constant(1))),
+        Some(true)
+    );
+    let two = PureFactContext::new()
+        .assume_condition(word_equal(cast(b), Bitvector32Term::Constant(2)), true);
+    assert!(two.is_inconsistent());
+}
+
+/// Two casts in one class have `Bool`s of one truth (rule C1).
+#[test]
+fn two_casts_in_one_class_have_equal_bools() {
+    let _session = VerificationSession::enter();
+    let (a, b) = (binder(70), applied("p", 71));
+    let context = PureFactContext::new()
+        .assume_condition(word_equal(cast(a.clone()), cast(b.clone())), true)
+        .assume_condition(a, true);
+    assert_eq!(context.decide(&b), Some(true));
+}
+
+/// A `Bool` equality fact, true or false, decides one operand from the
+/// other (rule L-Eq), through the operand index and no other fact.
+#[test]
+fn a_bool_equality_fact_decides_one_operand_from_the_other() {
+    let _session = VerificationSession::enter();
+    let (a, b) = (binder(80), binder(81));
+    let unequal = PureFactContext::new()
+        .assume_condition(bool_equal(a.clone(), b.clone()), false)
+        .assume_condition(a.clone(), true);
+    assert_eq!(unequal.decide(&b), Some(false));
+    let equal = PureFactContext::new()
+        .assume_condition(bool_equal(a.clone(), b.clone()), true)
+        .assume_condition(b, false);
+    assert_eq!(equal.decide(&a), Some(false));
+}
+
+/// A `Bool` binder instantiated with a value's word takes that value's
+/// truth: a cast's operand, or C's test of any other word.
+#[test]
+fn a_bool_binder_takes_the_truth_of_its_instance() {
+    let _session = VerificationSession::enter();
+    let flag = Variable(90);
+    let value =
+        Bitvector32Term::bool_cast(MachineIntegerType::UInt8, ConditionTerm::Variable(flag));
+    let instance = applied("q", 91);
+    let substituted = crate::kernel::reasoning::substitute_bitvector_variable(
+        &value,
+        flag,
+        &Bitvector32Term::bool_cast(MachineIntegerType::UInt8, instance.clone()),
+    );
+    assert_eq!(substituted.bool_cast_operand(), Some(&instance));
+}
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/assumptions/bool_sort_tests.rs");

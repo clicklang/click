@@ -1,16 +1,16 @@
-# A `bool` pure function states a claim
+# A `Bool` pure function states a claim
 
-A pure function may return `bool` and take `bool` parameters. Its body is a
-`bool` value: `true`, `false`, a comparison, `and`, `or`, `not` and
-`implies` of `bool` values, a conditional whose branches are `bool` values,
-or a call of another `bool` function. A comparison or connective written as
+A pure function may return `Bool` and take `Bool` parameters. Its body is a
+`Bool` value: `true`, `false`, a comparison, `and`, `or`, `not` and
+`implies` of `Bool` values, a conditional whose branches are `Bool` values,
+or a call of another `Bool` function. A comparison or connective written as
 a value is its truth value: `x > 0 and x < 10` is
 `if x > 0 { if x < 10 { true } else { false } } else { false }`.
 
-A `bool` function may recurse on an `int32` measure, as an `int32` one may.
+A `Bool` function may recurse on an `int32` measure, as an `int32` one may.
 
-A call of a `bool` function written where a proposition is expected means
-`call == true`, as does a `bool` parameter written alone, so `ensures
+A call of a `Bool` function written where a proposition is expected means
+`call == true`, as does a `Bool` parameter written alone, so `ensures
 in_range(3);` and `requires flag;` are claims. Predicates are unchanged.
 
 ```click

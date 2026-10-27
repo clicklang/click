@@ -569,7 +569,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
     }
     fn collect_shallow_term_variables(term: &Bitvector32Term, variables: &mut BTreeSet<Variable>) {
         match term {
-            Bitvector32Term::MachineIntegerCast { .. } => {}
+            Bitvector32Term::MachineIntegerCast { .. } | Bitvector32Term::BoolCast { .. } => {}
 
             Bitvector32Term::Constant(_)
             | Bitvector32Term::UInt32Constant(_)

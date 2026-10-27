@@ -623,6 +623,15 @@ pub(in crate::surface::proof) fn surface_c_condition(
             Box::new(surface_c_condition(left, state)),
             Box::new(surface_c_condition(right, state)),
         ),
+        // A `bool` value is the claim on itself (Stage 5): `Bool` has no
+        // integer value to compare with zero.
+        condition if crate::kernel::c_expression_has_bool_type(state, condition) => {
+            ClickProposition::Comparison {
+                left: expression(condition),
+                operator: ComparisonOperator::NotEqual,
+                right: crate::surface::bool_literal(false),
+            }
+        }
         condition => ClickProposition::Comparison {
             left: expression(condition),
             operator: ComparisonOperator::NotEqual,

@@ -806,6 +806,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
             collect_bitvector_carriers(right, variables);
         }
         crate::kernel::unary_machine_term!(value) => collect_bitvector_carriers(value, variables),
+        Bitvector32Term::BoolCast { value, .. } => collect_condition_carriers(value, variables),
         Bitvector32Term::If {
             condition,
             then_term,
@@ -1491,6 +1492,9 @@ pub(crate) struct TermRewrite<'a> {
     pointer_exact: Option<(&'a Pointer, &'a Pointer)>,
     pointer_value_exact: Option<(&'a CPointerValue, &'a CPointerValue)>,
     pointer_offset_exact: Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)>,
+    /// A `Bool` equality's rewrite (Stage 5, rule L-Eq): every occurrence of
+    /// the first condition is replaced by the second.
+    condition_exact: Option<(&'a ConditionTerm, &'a ConditionTerm)>,
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
     cited_conditions: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     bounded_uint64_indices: Option<std::collections::HashSet<Bitvector32Term>>,
@@ -1665,12 +1669,23 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_value_exact: None,
             pointer_offset_exact: None,
+            condition_exact: None,
             #[cfg(test)]
             visits: 0,
             #[cfg(test)]
             collector_visits: 0,
         }
     }
+
+    /// The rewrite by a true `Bool` equality `from == to` (rule L-Eq): the
+    /// two have the same truth, so either may stand for the other wherever
+    /// a `Bool` is read.
+    pub(crate) fn for_condition_exact(from: &'a ConditionTerm, to: &'a ConditionTerm) -> Self {
+        let mut rewrite = Self::empty();
+        rewrite.condition_exact = Some((from, to));
+        rewrite
+    }
+
     pub(crate) fn for_bits(from: &'a Bitvector32Term, to: &'a Bitvector32Term) -> Self {
         let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
         Self::for_bits_with_budget(from, to, false)
@@ -1741,6 +1756,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_value_exact: None,
             pointer_offset_exact: None,
+            condition_exact: None,
             #[cfg(test)]
             visits: 0,
             #[cfg(test)]
@@ -1892,6 +1908,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_value_exact: None,
             pointer_offset_exact: None,
+            condition_exact: None,
             #[cfg(test)]
             visits: 0,
             #[cfg(test)]
@@ -1987,6 +2004,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_value_exact: None,
             pointer_offset_exact: None,
+            condition_exact: None,
             conditions: None,
             cited_conditions: None,
             bounded_uint64_indices: None,
@@ -2076,6 +2094,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_value_exact: None,
             pointer_offset_exact: None,
+            condition_exact: None,
             conditions: None,
             cited_conditions: None,
             bounded_uint64_indices: None,
@@ -2259,6 +2278,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_value_exact: None,
             pointer_offset_exact: None,
+            condition_exact: None,
             conditions: None,
             cited_conditions: None,
             bounded_uint64_indices: None,
@@ -4710,6 +4730,32 @@ impl<'a> TermRewrite<'a> {
         if let Some(value) = self.cited_condition_value(v) {
             return ConditionTerm::Constant(value);
         }
+        if let Some((from, to)) = self.condition_exact
+            && v == from
+        {
+            self.changed = true;
+            return to.clone();
+        }
+        // A `Bool` atom guards the value it is read in, as the condition of
+        // a conditional does: a fact about it decides that value. So does a
+        // `Bool` conditional's condition.
+        if let Some(conditions) = &mut self.collected_conditions {
+            match v {
+                ConditionTerm::Variable(_)
+                | ConditionTerm::BoolApplication(_)
+                | ConditionTerm::BoolLoad(..) => conditions.push(v.clone()),
+                // Each part of a `Bool` conditional or equality guards it.
+                v if v.is_bool_value_form() => conditions.extend(
+                    v.bool_children()
+                        .filter(|child| {
+                            !matches!(child, ConditionTerm::Constant(_))
+                                && !child.is_bool_value_form()
+                        })
+                        .cloned(),
+                ),
+                _ => {}
+            }
+        }
         let result = match v {
             ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => v.clone(),
             ConditionTerm::AlgebraicEqual(a, b) => ConditionTerm::AlgebraicEqual(
@@ -4848,6 +4894,25 @@ impl<'a> TermRewrite<'a> {
                     ConditionTerm::BoolLoad(memory, pointer) => {
                         ConditionTerm::BoolLoad(memory.clone(), Box::new(self.pointer(pointer)))
                     }
+                    // A rewrite that decided a conditional's condition, or
+                    // made an equality's operands one, leaves what the
+                    // folding constructors would have built, as the word
+                    // conditional above does.
+                    ConditionTerm::BoolIf { .. } if self.integer_exact.is_none() => {
+                        let condition = children.next().expect("a condition");
+                        let then_condition = children.next().expect("a then branch");
+                        let else_condition = children.next().expect("an else branch");
+                        ConditionTerm::bool_if(
+                            folded_machine_condition(condition),
+                            then_condition,
+                            else_condition,
+                        )
+                    }
+                    ConditionTerm::BoolEqual(..) if self.integer_exact.is_none() => {
+                        let left = children.next().expect("a left operand");
+                        let right = children.next().expect("a right operand");
+                        ConditionTerm::bool_equal(left, right)
+                    }
                     v => v
                         .map_bool_value_form(
                             |_| children.next().expect("one rewrite per child"),
@@ -4858,6 +4923,14 @@ impl<'a> TermRewrite<'a> {
                 };
                 if self.checked_work_exhausted() {
                     return ConditionTerm::Constant(false);
+                }
+                // A cited `Bool` value the rewrite of its parts produced,
+                // `f(if f(x) { x } else { y })` read under `f(x)`, is
+                // decided by its citation as the written value is.
+                if rewritten != *v
+                    && let Some(value) = self.cited_condition_value(&rewritten)
+                {
+                    return ConditionTerm::Constant(value);
                 }
                 rewritten
             }
@@ -5255,6 +5328,24 @@ impl<'a> TermRewrite<'a> {
                 Bitvector32Term::IntegerToMachine {
                     value: self.integer_shared(value).into(),
                     destination: *destination,
+                }
+            }
+            // Rule C1: the cast of the rewritten `Bool`, folded when the
+            // rewrite decided it. The `Bool` guards its cast's value.
+            Bitvector32Term::BoolCast { to, value } => {
+                if let Some(conditions) = &mut self.collected_conditions
+                    && !matches!(value.as_ref(), ConditionTerm::Constant(_))
+                {
+                    conditions.push(value.as_ref().clone());
+                }
+                let value = self.condition(value);
+                if self.integer_exact.is_some() {
+                    Bitvector32Term::BoolCast {
+                        to: *to,
+                        value: Box::new(value),
+                    }
+                } else {
+                    Bitvector32Term::bool_cast(*to, folded_machine_condition(value))
                 }
             }
             term => match (term.as_binary(), term.as_unary()) {

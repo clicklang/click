@@ -842,6 +842,7 @@ enum AlphaBitvectorKey {
     Address(Box<AlphaPointerKey>),
     IntegerToMachine(MachineIntegerType, AlphaIntegerKey),
     MachineIntegerCast(MachineIntegerType, MachineIntegerType, Box<Self>),
+    BoolCast(MachineIntegerType, Box<AlphaConditionKey>),
     Int64From32(Box<Self>),
     UInt64From32(Box<Self>),
     UInt32From64(Box<Self>),
@@ -1175,6 +1176,13 @@ enum AlphaConditionKey {
     PointerOffsetEqual(AlphaPointerOffsetKey, AlphaPointerOffsetKey),
     PointerEqual(AlphaPointerKey, AlphaPointerKey),
     IntegerComparison(IntegerComparisonOperator, AlphaIntegerKey, AlphaIntegerKey),
+    /// The `Bool` value forms (Stage 5).
+    BoolApplication {
+        name: String,
+        arguments: Vec<AlphaPureFunctionArgumentKey>,
+    },
+    BoolIf(Box<Self>, Box<Self>, Box<Self>),
+    BoolEqual(Box<Self>, Box<Self>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -2114,6 +2122,14 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
         return None;
     }
     Some(match term {
+        Bitvector32Term::BoolCast { to, value } => AlphaBitvectorKey::BoolCast(
+            *to,
+            Box::new(alpha_condition_key_with_bindings::<ALLOW_LOADS>(
+                value,
+                bindings,
+                next_binder,
+            )?),
+        ),
         Bitvector32Term::MachineIntegerCast {
             value,
             source,
@@ -2505,6 +2521,53 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
             IntegerComparisonOperator::NotEqual,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
+        ),
+        ConditionTerm::BoolApplication(application) => AlphaConditionKey::BoolApplication {
+            name: application.name().to_owned(),
+            arguments: application
+                .arguments()
+                .iter()
+                .map(|argument| {
+                    alpha_pure_function_argument_key_with_bindings::<ALLOW_LOADS>(
+                        argument,
+                        bindings,
+                        next_binder,
+                    )
+                })
+                .collect::<Option<Vec<_>>>()?,
+        },
+        ConditionTerm::BoolIf {
+            condition,
+            then_condition,
+            else_condition,
+        } => AlphaConditionKey::BoolIf(
+            Box::new(alpha_condition_key_with_bindings::<ALLOW_LOADS>(
+                condition,
+                bindings,
+                next_binder,
+            )?),
+            Box::new(alpha_condition_key_with_bindings::<ALLOW_LOADS>(
+                then_condition,
+                bindings,
+                next_binder,
+            )?),
+            Box::new(alpha_condition_key_with_bindings::<ALLOW_LOADS>(
+                else_condition,
+                bindings,
+                next_binder,
+            )?),
+        ),
+        ConditionTerm::BoolEqual(left, right) => AlphaConditionKey::BoolEqual(
+            Box::new(alpha_condition_key_with_bindings::<ALLOW_LOADS>(
+                left,
+                bindings,
+                next_binder,
+            )?),
+            Box::new(alpha_condition_key_with_bindings::<ALLOW_LOADS>(
+                right,
+                bindings,
+                next_binder,
+            )?),
         ),
         _ => return None,
     })
