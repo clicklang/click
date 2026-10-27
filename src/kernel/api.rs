@@ -3180,6 +3180,8 @@ pub struct LoweringRefusal {
     /// Present when the lowering pruned a range fold because its body did not
     /// lower to one symbolic iteration under the fold's binders.
     pub dropped_fold_body: Option<DroppedFoldBody>,
+    /// Operand types and operator of a comparison that could not be built.
+    pub dropped_comparison: Option<(CType, CComparisonOperator, CType)>,
 }
 
 impl From<LoweringRefusal> for String {
@@ -3310,6 +3312,9 @@ fn no_single_path_message<T>(what: &str, paths: &[T], budget: &ExecutionBudget) 
                      range"
                 ),
             }
+        }
+        (0, None) if budget.dropped_comparison.is_some() => {
+            "the comparison could not be constructed for its operand values".to_string()
         }
         (count, _) => format!("the kernel {what} produced {count} paths, not one"),
     }
@@ -3471,6 +3476,7 @@ fn lower_checked_proof_proposition(
     .map_err(|message| LoweringRefusal {
         message,
         dropped_fold_body: None,
+        dropped_comparison: None,
     })?;
     let Some(path) = exactly_selected_spec_proposition_path(&paths, assumptions) else {
         return Err(LoweringRefusal {
@@ -3481,6 +3487,9 @@ fn lower_checked_proof_proposition(
             // concrete still, and its own message keeps precedence.
             dropped_fold_body: (paths.is_empty() && budget.dropped_runtime_error().is_none())
                 .then(|| budget.dropped_fold_body().cloned())
+                .flatten(),
+            dropped_comparison: (paths.is_empty() && budget.dropped_runtime_error().is_none())
+                .then_some(budget.dropped_comparison)
                 .flatten(),
         });
     };
