@@ -111,7 +111,7 @@ fn selected_reasoning_requires_explicit_premises_or_planner_permission() {
     for (body, succeeds) in [
         ("let _ = SelectedFacts::from_propositions(&[1, 2]);", true),
         (
-            "let _ = SelectedFacts { context: PureFactContext::new() };",
+            "let _ = SelectedFacts { context: std::borrow::Cow::Owned(PureFactContext::new()) };",
             false,
         ),
         (
