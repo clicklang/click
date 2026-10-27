@@ -143,6 +143,9 @@ fn carrier_violation(
         },
         T::MachineIntegerCast { destination, .. } if contains(ty, *destination) => Ok(()),
         T::IntegerToMachine { destination, .. } if contains(ty, *destination) => Ok(()),
+        // Rule C1c: a `Bool`'s cast is the word 1 or 0, canonical at every
+        // format.
+        T::BoolCast { .. } => Ok(()),
         T::If {
             then_term,
             else_term,

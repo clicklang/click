@@ -4530,6 +4530,7 @@ impl C0StructLayout {
     /// the initial C++ object slice admits only scalar `int` and `int*` fields
     /// and carries their already-decided ABI offsets across the frontend
     /// boundary without reconstructing source text.
+    #[cfg(test)]
     pub(crate) fn from_explicit_fields(
         fields: Vec<(String, C0Type, u32, u32)>,
         size_bytes: u32,

@@ -1377,6 +1377,11 @@ fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
         },
         crate::kernel::arithmetic_c_value!(term) => match term {
             Bitvector32Term::Variable(variable) => Some(*variable),
+            // A `Bool` binder (Stage 5), carried as its cast.
+            Bitvector32Term::BoolCast { value, .. } => match value.as_ref() {
+                crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
+                _ => None,
+            },
             _ => None,
         },
         CValue::Pointer(pointer) => match &pointer.pointer().offset {

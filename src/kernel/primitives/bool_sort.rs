@@ -205,7 +205,12 @@ impl crate::kernel::Bitvector32Term {
     pub(crate) fn bool_cast(to: crate::kernel::MachineIntegerType, value: ConditionTerm) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         match value {
-            ConditionTerm::Constant(value) => Self::Constant(u32::from(value)),
+            // A constant is the word 1 or 0 at `to`'s carrier.
+            ConditionTerm::Constant(value) => {
+                crate::kernel::MachineIntegerConstant::from_unsigned(to.format(), u128::from(value))
+                    .and_then(|constant| to.constant_term(constant))
+                    .expect("every format holds 0 and 1")
+            }
             value => Self::BoolCast {
                 to,
                 value: Box::new(value),
@@ -218,6 +223,19 @@ impl crate::kernel::Bitvector32Term {
         match self {
             Self::BoolCast { value, .. } => Some(value),
             _ => None,
+        }
+    }
+
+    /// Rule C1: the integer value at format `to` of the `Bool` a
+    /// `CValue::Bool` word carries, `b as to`. A constant word is its own
+    /// value, 0 or 1 at every format; a cast is recast at `to`; and any other
+    /// word reaches `Bool` by `w != 0` first ([`ConditionTerm::truth_of_bool_word`]).
+    pub(crate) fn bool_word_as(to: crate::kernel::MachineIntegerType, word: &Self) -> Self {
+        match word {
+            Self::Constant(value) | Self::UInt32Constant(value) => {
+                Self::bool_cast(to, ConditionTerm::Constant(*value != 0))
+            }
+            word => Self::bool_cast(to, ConditionTerm::truth_of_bool_word(word)),
         }
     }
 }
@@ -237,11 +255,123 @@ impl ConditionTerm {
             Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
                 Self::Constant(*value != 0)
             }
-            word => Self::bool_if(
-                Self::equal(word.clone(), Bitvector32Term::Constant(0)),
-                Self::Constant(false),
-                Self::Constant(true),
-            ),
+            word => Self::bool_not(Self::equal(word.clone(), Bitvector32Term::Constant(0))),
         }
+    }
+
+    /// `not value` as a `Bool` value, the conditional
+    /// `if value { false } else { true }` (rule L-If at constant branches).
+    /// A constant folds, and a negation's negation is its operand. Nothing
+    /// else is read.
+    pub(crate) fn bool_not(value: Self) -> Self {
+        match value {
+            Self::Constant(value) => Self::Constant(!value),
+            value => match value.bool_negation_operand() {
+                Some(operand) => operand.clone(),
+                None => Self::BoolIf {
+                    condition: Box::new(value),
+                    then_condition: Box::new(Self::Constant(false)),
+                    else_condition: Box::new(Self::Constant(true)),
+                },
+            },
+        }
+    }
+
+    /// The operand of a negation `not c` ([`ConditionTerm::bool_not`]), or
+    /// `None`. One match on the root.
+    pub(crate) fn bool_negation_operand(&self) -> Option<&Self> {
+        match self {
+            Self::BoolIf {
+                condition,
+                then_condition,
+                else_condition,
+            } if **then_condition == Self::Constant(false)
+                && **else_condition == Self::Constant(true) =>
+            {
+                Some(condition)
+            }
+            _ => None,
+        }
+    }
+
+    /// The claim `ConditionIs(self, value)` with every outer negation read
+    /// off, so `not (x == 0)` is filed as `x == 0` at the other polarity
+    /// (rule L-If at constant branches). The work is the negation depth.
+    pub(crate) fn truth_claim(&self, value: bool) -> Proposition {
+        let (mut condition, mut value) = (self, value);
+        while let Some(operand) = condition.bool_negation_operand() {
+            condition = operand;
+            value = !value;
+        }
+        Proposition::ConditionIs(condition.clone(), value)
+    }
+
+    /// Integer to `Bool` (Stage 5): C's conversion of a scalar to `bool`,
+    /// the test `value != 0`, or a non-null test for a pointer. It builds no
+    /// node beyond the comparison's negation, and is exact for every value:
+    /// `(bool)2` and `(bool)-1` are true, with no reduction anywhere. `None`
+    /// for a value with no such test (a float, an abstract value).
+    pub(crate) fn nonzero_test(value: &crate::kernel::CValue) -> Option<Self> {
+        use crate::kernel::{Bitvector32Term, CValue, IntegerTerm, MachineIntegerType};
+        let is_zero = match value.numeric_value() {
+            CValue::Bool(word) => return Some(Self::truth_of_bool_word(word)),
+            crate::kernel::integer32_c_value!(word) => {
+                Self::equal(word.clone(), Bitvector32Term::Constant(0))
+            }
+            CValue::Int64(word) => {
+                Self::int64_equal(word.clone(), Bitvector32Term::Int64Constant(0))
+            }
+            CValue::UInt64(word) => {
+                Self::uint64_equal(word.clone(), Bitvector32Term::UInt64Constant(0))
+            }
+            value @ (CValue::Int128(word) | CValue::UInt128(word)) => {
+                let source = MachineIntegerType::from_c_type(value.c_type())?;
+                Self::integer_equal(
+                    IntegerTerm::from_machine(source, word.clone())?,
+                    IntegerTerm::constant_i64(0),
+                )
+            }
+            CValue::Pointer(pointer) => {
+                crate::kernel::eval::pointer_is_null_condition(pointer.pointer().clone())
+            }
+            _ => return None,
+        };
+        Some(Self::bool_not(is_zero))
+    }
+}
+
+impl crate::kernel::CValue {
+    /// The `CValue::Bool` carrier of the `Bool` `value`: its cast to
+    /// `uint8` (rule C1), the byte a `bool` cell holds.
+    pub(crate) fn of_bool(value: ConditionTerm) -> Self {
+        Self::Bool(crate::kernel::Bitvector32Term::bool_cast(
+            crate::kernel::MachineIntegerType::UInt8,
+            value,
+        ))
+    }
+
+    /// The scalar value of type `c_type` whose word is `term`; `None` for a
+    /// type that is not a scalar.
+    pub(crate) fn from_bitvector_term(
+        c_type: crate::kernel::CType,
+        term: crate::kernel::Bitvector32Term,
+    ) -> Option<Self> {
+        use crate::kernel::CType;
+        Some(match c_type {
+            CType::Bool => Self::Bool(term),
+            CType::Int8 => Self::Int8(term),
+            CType::Int16 => Self::Int16(term),
+            CType::Int32 => Self::Int32(term),
+            CType::UInt8 => Self::UInt8(term),
+            CType::UInt16 => Self::UInt16(term),
+            CType::UInt32 => crate::kernel::uint32(term),
+            CType::Int64 => Self::Int64(term),
+            CType::UInt64 => Self::UInt64(term),
+            CType::Int128 => Self::Int128(term),
+            CType::UInt128 => Self::UInt128(term),
+            CType::Float32 => Self::Float32(term),
+            CType::Float64 => Self::Float64(term),
+            _ => return None,
+        })
     }
 }

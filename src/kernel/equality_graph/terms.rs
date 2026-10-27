@@ -2275,6 +2275,21 @@ impl TermClasses {
                 self.retain_condition_truth(link.condition, 2);
             }
         }
+        // Two casts that differ: `a as F != b as F` holds exactly when `a`
+        // and `b` differ in truth, the `Bool` equality `a == b` is false.
+        if let (Some(left), Some(right)) = (
+            self.bool_cast_links.get(&self.root(left)).copied(),
+            self.bool_cast_links.get(&self.root(right)).copied(),
+        ) {
+            for (a, b) in [
+                (left.condition, right.condition),
+                (right.condition, left.condition),
+            ] {
+                let equality =
+                    self.intern_node(Node::Condition(congruence::ConditionKind::BoolEq, a, b));
+                self.retain_condition_truth(equality, 2);
+            }
+        }
     }
 
     fn flush_cast_unions(&mut self) {

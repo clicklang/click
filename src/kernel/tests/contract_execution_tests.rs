@@ -3674,40 +3674,36 @@ fn effect_endpoint_allows_resource_allocation_bookkeeping() {
 }
 
 #[test]
-fn bool_range_fact_requires_a_structurally_normalized_bool() {
-    let variable = Bitvector32Term::Variable(Variable(1));
-    let normalized = bool_value(variable.clone());
-    let CValue::Bool(term) = &normalized else {
-        panic!("bool_value builds a `_Bool` value");
-    };
+fn bool_cast_range_is_rule_c1_of_the_cast() {
+    let flag = ConditionTerm::Variable(Variable(1));
+    let cast = Bitvector32Term::bool_cast(MachineIntegerType::Int32, flag.clone());
     let equals = |constant| {
         Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: Box::new(term.clone()),
-                right: Box::new(Bitvector32Term::Constant(constant)),
-            },
+            ConditionTerm::equal(cast.clone(), Bitvector32Term::Constant(constant)),
             true,
         )
     };
+    let facts = c_bool_cast_range_facts(&CValue::of_bool(flag.clone()))
+        .expect("a `Bool` binder's cast has a range");
     assert_eq!(
-        c_bool_range_fact(&normalized),
-        Some(Proposition::Or(Box::new(equals(0)), Box::new(equals(1))))
+        facts.last(),
+        Some(&Proposition::Or(Box::new(equals(0)), Box::new(equals(1))))
     );
-    // A bare term, an arm outside `{0, 1}`, a constant, and a non-`_Bool`
-    // value state nothing the term's shape does not prove.
-    assert_eq!(c_bool_range_fact(&CValue::Bool(variable.clone())), None);
+    // An integer that is a cast states its own range; a constant, a bare
+    // word and a value that is not a cast state nothing.
     assert_eq!(
-        c_bool_range_fact(&CValue::Bool(Bitvector32Term::if_then_else(
-            ConditionTerm::Variable(Variable(2)),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(2),
-        ))),
+        c_bool_cast_range_facts(&int32(cast.clone())),
+        Some(facts.clone())
+    );
+    assert_eq!(c_bool_cast_range_facts(&bool_value(5)), None);
+    assert_eq!(
+        c_bool_cast_range_facts(&CValue::Bool(Bitvector32Term::Variable(Variable(2)))),
         None
     );
-    assert_eq!(c_bool_range_fact(&bool_value(5)), None);
-    assert_eq!(c_bool_range_fact(&int32(variable)), None);
+    assert_eq!(
+        c_bool_cast_range_facts(&int32(Bitvector32Term::Variable(Variable(2)))),
+        None
+    );
 }
 
 #[test]

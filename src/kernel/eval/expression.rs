@@ -587,7 +587,10 @@ pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
     if SPECIFICATION_READS.with(|depth| depth.get() > 0) {
         return;
     }
-    let Some(range_facts) = crate::kernel::c_narrow_integer_range_facts(value) else {
+    // A `Bool`'s cast has its range too (rule C1b).
+    let Some(range_facts) = crate::kernel::c_narrow_integer_range_facts(value)
+        .or_else(|| crate::kernel::c_bool_cast_range_facts(value))
+    else {
         return;
     };
     for proposition in range_facts {
@@ -616,13 +619,10 @@ pub(in crate::kernel) fn promote_c_path_value(
 ) -> Option<Bitvector32Term> {
     let value = value.numeric_value().clone();
     let to = destination.format();
+    // Rule C1: a promoted `Bool` is its cast at the operation's format.
     if let CValue::Bool(word) = value {
-        return match (to.bits(), to.is_signed()) {
-            (32, _) => Some(word),
-            (64, true) => Some(Bitvector32Term::int64_from_32(word)),
-            (64, false) => Some(Bitvector32Term::uint64_from_32(word)),
-            _ => None,
-        };
+        return matches!(to.bits(), 32 | 64)
+            .then(|| Bitvector32Term::bool_word_as(destination, &word));
     }
     let source = MachineIntegerType::from_c_type(value.c_type())?;
     let from = source.format();
@@ -728,24 +728,24 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
         return Some(value);
     }
     let value = value.numeric_value().clone();
+    // Integer to `Bool` (Stage 5) is the test `value != 0`, exact at every
+    // width: no value is reduced before it is tested.
     if target_type == CType::Bool && matches!(value.c_type(), CType::Int128 | CType::UInt128) {
-        let source = MachineIntegerType::from_c_type(value.c_type())?;
-        let observed = IntegerTerm::from_machine(source, c_value_bitvector_term(&value)?)?;
-        return Some(CValue::Bool(Bitvector32Term::if_then_else(
-            ConditionTerm::integer_equal(observed, IntegerTerm::constant_i64(0)),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-        )));
+        return ConditionTerm::nonzero_test(&value).map(CValue::of_bool);
     }
     if matches!(value.c_type(), CType::Int128 | CType::UInt128)
         || matches!(target_type, CType::Int128 | CType::UInt128)
     {
         let destination = MachineIntegerType::from_c_type(target_type)?;
-        let source = if matches!(value, CValue::Bool(_)) {
-            MachineIntegerType::UInt8
-        } else {
-            MachineIntegerType::from_c_type(value.c_type())?
-        };
+        // Rule C1: a `Bool` widened to 128 bits is its cast, 1 or 0.
+        if let CValue::Bool(word) = &value {
+            let destination = MachineIntegerType::from_c_type(target_type)?;
+            return CValue::from_bitvector_term(
+                target_type,
+                Bitvector32Term::bool_word_as(destination, word),
+            );
+        }
+        let source = MachineIntegerType::from_c_type(value.c_type())?;
         // C's conversion is modulo 2^N for a signed destination too; a
         // specification's owes the signed range. An unsigned destination is
         // modulo 2^N under both (the conversion table's policy column).
@@ -807,42 +807,27 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
 
     match (target_type, value) {
         (CType::Bool, CValue::Bool(value)) => Some(CValue::Bool(value)),
-        (CType::Bool, crate::kernel::integer32_c_value!(value)) => {
-            Some(CValue::Bool(Bitvector32Term::if_then_else(
-                ConditionTerm::equal(value, Bitvector32Term::Constant(0)),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
-            )))
+        // Integer to `Bool` (Stage 5): the test `value != 0`, or a non-null
+        // test for a pointer.
+        (CType::Bool, value @ (crate::kernel::integer64_c_value!(_) | CValue::Pointer(_))) => {
+            ConditionTerm::nonzero_test(&value).map(CValue::of_bool)
         }
-        (CType::Bool, CValue::Int64(value)) => Some(CValue::Bool(Bitvector32Term::if_then_else(
-            ConditionTerm::int64_equal(value, Bitvector32Term::Int64Constant(0)),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-        ))),
-        (CType::Bool, CValue::UInt64(value)) => Some(CValue::Bool(Bitvector32Term::if_then_else(
-            ConditionTerm::uint64_equal(value, Bitvector32Term::UInt64Constant(0)),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-        ))),
-        (CType::Bool, CValue::Pointer(pointer)) => {
-            Some(CValue::Bool(Bitvector32Term::if_then_else(
-                pointer_is_null_condition(pointer.into_pointer()),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
-            )))
-        }
-        (CType::Int32, CValue::Bool(value)) => Some(CValue::Int32(value)),
-        (CType::UInt32, CValue::Bool(value)) => Some(crate::kernel::uint32(value)),
-        (CType::Int8, CValue::Bool(value)) => Some(CValue::Int8(value)),
-        (CType::Int16, CValue::Bool(value)) => Some(CValue::Int16(value)),
-        (CType::UInt8, CValue::Bool(value)) => Some(CValue::UInt8(value)),
-        (CType::UInt16, CValue::Bool(value)) => Some(CValue::UInt16(value)),
-        (CType::Int64, CValue::Bool(value)) => {
-            Some(CValue::Int64(Bitvector32Term::int64_from_32(value)))
-        }
-        (CType::UInt64, CValue::Bool(value)) => {
-            Some(CValue::UInt64(Bitvector32Term::uint64_from_32(value)))
-        }
+        // Rule C1: a `Bool` read as an integer is its cast at the target's
+        // format, 1 when it holds and 0 otherwise.
+        (
+            target @ (CType::Int8
+            | CType::Int16
+            | CType::Int32
+            | CType::UInt8
+            | CType::UInt16
+            | CType::UInt32
+            | CType::Int64
+            | CType::UInt64),
+            CValue::Bool(word),
+        ) => CValue::from_bitvector_term(
+            target,
+            Bitvector32Term::bool_word_as(MachineIntegerType::from_c_type(target)?, &word),
+        ),
         // C's widening between narrow formats reuses the word: K8 reads a
         // widening into 32 bits only.
         (CType::Int16, CValue::Int8(value) | CValue::UInt8(value)) => Some(CValue::Int16(value)),
@@ -3559,20 +3544,26 @@ pub(in crate::kernel) fn c_truthiness_paths(
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Parameter(_) => unreachable!("abstract truthiness must be rejected by the caller"),
         CValue::Void => unreachable!("void truthiness must be rejected by the caller"),
+        // A `Bool` (Stage 5) is tested by its own condition, read through
+        // its negations, so `if (b)` for `b = x` splits on `x == 0`.
         CValue::Bool(bits) => {
-            let is_zero = ConditionTerm::equal(bits, Bitvector32Term::Constant(0));
-            match decide_with_facts(assumptions, &facts, &is_zero) {
-                Some(is_zero) => vec![CTruthinessPath {
-                    is_true: !is_zero,
+            let Proposition::ConditionIs(condition, holds) =
+                ConditionTerm::truth_of_bool_word(&bits).truth_claim(true)
+            else {
+                unreachable!("a truth claim is a condition claim");
+            };
+            match decide_with_facts(assumptions, &facts, &condition) {
+                Some(value) => vec![CTruthinessPath {
+                    is_true: value == holds,
                     facts,
                     obligations,
                 }],
                 None => {
                     let mut true_facts = facts.clone();
-                    add_condition_path_fact(&mut true_facts, assumptions, is_zero.clone(), false)
+                    add_condition_path_fact(&mut true_facts, assumptions, condition.clone(), holds)
                         .expect("unknown bool truthiness fact should be consistent");
                     let mut false_facts = facts;
-                    add_condition_path_fact(&mut false_facts, assumptions, is_zero, true)
+                    add_condition_path_fact(&mut false_facts, assumptions, condition, !holds)
                         .expect("unknown bool truthiness fact should be consistent");
                     vec![
                         CTruthinessPath {

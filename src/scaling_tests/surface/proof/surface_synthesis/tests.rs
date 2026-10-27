@@ -3,7 +3,6 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
@@ -42,18 +41,11 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
             operator: ComparisonOperator::Equal,
             right: surface,
         };
+        // A `Bool` equals itself (rule L-Eq), so the equality folds.
         let lowered = relower_written_proposition(&equality, &state).unwrap();
         assert_eq!(
             lowered,
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(term.clone()),
-                    right: Box::new(term.clone())
-                },
-                true
-            )
+            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
         );
     }
 }
