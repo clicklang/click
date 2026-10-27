@@ -1024,8 +1024,8 @@ mod footprints {
 /// cell's value is read on that path, and only there. The store dropped the
 /// cached cell, so the snapshot after it answers nothing by itself, and the
 /// assumption-free naming walk stops at the store. Under `u != 0` the value
-/// is the earlier `3`; under `u == 0`, or with no fact about `u`, there is
-/// none — never the `3`.
+/// is the earlier `3`; under `u == 0` the store writes the cell, so it is the
+/// stored `7`; with no fact about `u` there is none — never the `3`.
 #[test]
 fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     let cell = at(block("global:g"), 0);
@@ -1057,7 +1057,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     );
     assert_eq!(
         cell_value_on_path(&after, &cell, 4, &index_is_zero(true)),
-        None
+        Some(CValue::Int32(Bitvector32Term::Constant(7)))
     );
     assert_eq!(cell_value_on_path(&after, &cell, 4, &no_facts), None);
 }
