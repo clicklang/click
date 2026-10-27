@@ -165,6 +165,12 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
     /// and a constant shift whose bytes meet no store of the run: each store
     /// is at an unequal constant shift with a gap its bytes clear.
     SeededStoresMissedByShift,
+    /// Every step from `derived` back to `oldest` is one the memoized
+    /// version walk crosses by memory alone
+    /// (`resource_tracker::last_same_point`): one hop for that whole prefix.
+    SameVersion {
+        oldest: SharedCMemory,
+    },
     AssumptionDependent(MemoryDagAssumptionKind),
 }
 
@@ -801,6 +807,10 @@ impl MemoryDagHopJustification {
                         )
                     })
             }
+            // The version walk that produced the hop is its proof: it is valid
+            // by construction and not walked again
+            // (`docs/internals/verification-efficiency.md`).
+            Self::SameVersion { .. } => true,
             Self::AssumptionDependent(_) => false,
         }
     }
@@ -940,7 +950,10 @@ impl MemoryDagCell {
             {
                 return false;
             }
-            current = hop.derivation.base().clone();
+            current = match &hop.justification {
+                MemoryDagHopJustification::SameVersion { oldest } => oldest.clone(),
+                _ => hop.derivation.base().clone(),
+            };
         }
         &current == self.node()
     }
@@ -1518,6 +1531,12 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
 ) -> Option<(MemoryDagCell, CellWalkStop)> {
+    // The version walk takes this lookup's guard at its first step, so it is
+    // asked before the guard is: a walk starting here jumps as one that
+    // reaches here does.
+    let first = resumes_version_walk()
+        .then(|| super::cell_last_same_point(memory, pointer, bytes))
+        .flatten();
     // A lookup of a cell already being looked up is a cycle and has no
     // answer; see `CELL_LOOKUPS_IN_PROGRESS`.
     let _lookup = CellLookupGuard::enter(memory, pointer)?;
@@ -1528,6 +1547,7 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
         assumptions,
         cross_loop_havoc,
         None,
+        first,
     ))
 }
 
@@ -1552,6 +1572,9 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit_and_stop(
     assumptions: &PureFactContext,
     max_hops: usize,
 ) -> Option<(MemoryDagCell, CellWalkStop)> {
+    let first = resumes_version_walk()
+        .then(|| super::memoized_cell_last_same_point(memory, pointer, bytes).flatten())
+        .flatten();
     let _lookup = CellLookupGuard::enter(memory, pointer)?;
     Some(memory_dag_cell_source_walk(
         memory,
@@ -1560,6 +1583,7 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit_and_stop(
         assumptions,
         true,
         Some(max_hops),
+        first,
     ))
 }
 
@@ -1570,6 +1594,7 @@ fn memory_dag_cell_source_walk(
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
     max_hops: Option<usize>,
+    first: Option<SharedCMemory>,
 ) -> (MemoryDagCell, CellWalkStop) {
     let result = memory_dag_cell_source_walk_inner(
         memory,
@@ -1578,9 +1603,19 @@ fn memory_dag_cell_source_walk(
         assumptions,
         cross_loop_havoc,
         max_hops,
+        first,
     );
     record_transport_cell_walk(memory, pointer, bytes, &result.0, result.1, max_hops);
     result
+}
+
+/// Whether a cell walk resumes the memoized version walk. The explicit
+/// whole-pointer recovery (`memory_provenance::complete_pointer_read_value`)
+/// keeps its own full walk: it reads a complete pointer off the cache steps
+/// the version walk skips, and is the logical-read fold that naming pointer
+/// reads by version removes (`roadmap/fact-aware-frame-walks.md`).
+fn resumes_version_walk() -> bool {
+    !crate::kernel::memory_provenance::explicit_dag_check_active()
 }
 
 fn memory_dag_cell_source_walk_inner(
@@ -1590,6 +1625,7 @@ fn memory_dag_cell_source_walk_inner(
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
     max_hops: Option<usize>,
+    mut first: Option<SharedCMemory>,
 ) -> (MemoryDagCell, CellWalkStop) {
     let evidence = super::step_effect::Evidence {
         assumptions,
@@ -1600,6 +1636,34 @@ fn memory_dag_cell_source_walk_inner(
     // The walk ends at a snapshot with no derivation: ids strictly
     // decrease along `base`, so every chain is finite.
     loop {
+        // The memoized version walk crosses every step memory alone shows
+        // separate; facts are applied only at the step where it stopped
+        // (`roadmap/fact-aware-frame-walks.md`). Repeating a query after each
+        // statement then pays for that statement's step, not the history. A
+        // walk bounded by hops bounds its work too, so it jumps only over a
+        // prefix the version walk has already crossed.
+        let oldest = if let Some(first) = first.take() {
+            Some(first)
+        } else if !resumes_version_walk() {
+            None
+        } else if max_hops.is_some() {
+            super::memoized_cell_last_same_point(&current, pointer, bytes).flatten()
+        } else {
+            super::cell_last_same_point(&current, pointer, bytes)
+        };
+        if let Some(oldest) = oldest
+            && oldest != current
+            && let Some(derivation) = current.derivation()
+        {
+            path.push(MemoryDagHop {
+                derived: current.clone(),
+                derivation,
+                justification: MemoryDagHopJustification::SameVersion {
+                    oldest: oldest.clone(),
+                },
+            });
+            current = oldest;
+        }
         if max_hops.is_some_and(|limit| path.len() >= limit) {
             return (
                 MemoryDagCell::Unwritten {

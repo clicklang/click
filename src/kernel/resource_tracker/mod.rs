@@ -1037,7 +1037,18 @@ pub(crate) fn block_version_memo_len() -> usize {
 /// over recorded edges. Snapshots that differ only by effects the recorded
 /// history proves disjoint from the cell share a point, so load variables
 /// stay stable across them.
-fn cell_last_same_point(
+/// [`cell_last_same_point`] when it is already memoized, without walking:
+/// `None` when no answer is cached for this query.
+pub(super) fn memoized_cell_last_same_point(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+) -> Option<Option<SharedCMemory>> {
+    let key = (memory.unchanged_bytes_source(), pointer.clone(), bytes);
+    CELL_VERSION_MEMO.with(|memo| memo.borrow().get(&key).cloned())
+}
+
+pub(super) fn cell_last_same_point(
     memory: &SharedCMemory,
     pointer: &Pointer,
     bytes: u32,
@@ -1070,6 +1081,7 @@ fn cell_last_same_point(
                 };
                 let mut current = memory.clone();
                 let mut visited = Vec::new();
+                let refusals = cell_source::memory_dag_cell_lookup_refusals();
                 let result = loop {
                     let current_key = (current.clone(), pointer.clone(), bytes);
                     if let Some(hit) =
@@ -1103,7 +1115,12 @@ fn cell_last_same_point(
                     if memo.len() >= 100_000 {
                         memo.clear();
                     }
-                    if result.is_some() {
+                    // An answer that met a lookup already in progress is
+                    // weaker than the walk's own answer, so it is not kept
+                    // (`memory_dag_cell_lookup_refusals`).
+                    if result.is_some()
+                        && cell_source::memory_dag_cell_lookup_refusals() == refusals
+                    {
                         for key in visited {
                             memo.insert(key, result.clone());
                         }

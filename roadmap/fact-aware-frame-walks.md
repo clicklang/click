@@ -18,8 +18,12 @@ address, width). Lowering uses only this walk, and it is cheap.
 When the answer needs the path's facts (a `separate` premise, ownership, an
 alias equality), the fact-aware walk (`memory_dag_cell_source` with the
 path's assumptions) answers it. Its result depends on facts, so it is not
-memoized by snapshot. On master it is reached through eight entry points
-with four different walk modes:
+memoized by snapshot. It now resumes the memoized version walk at every
+step and applies facts only where that walk stopped, recording the crossed
+prefix as one `SameVersion` hop; the scaling regression
+`a_fact_aware_cell_walk_resumes_the_memoized_version_walk` measured it
+quadratic in history length before. It is still reached through eight entry
+points with four different walk modes:
 
 - full walk with extended bridging and an explicit DAG check:
   `memory_provenance::complete_pointer_read_value` and
@@ -56,8 +60,7 @@ So whether two reads are related, and what it costs to find out, depends on
 which check asks. The [verification efficiency
 contract](../docs/internals/verification-efficiency.md) requires simple
 checking to scale with the relevant state delta; with four walk modes that
-is hard to state, let alone test. No deterministic curve has been measured
-yet: there is no failing scaling regression, only this structural evidence.
+is hard to state, let alone test.
 
 ## Relation to pointer reads named by version
 

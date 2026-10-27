@@ -2852,15 +2852,38 @@ fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
         )
     })
     .expect("the walk has an answer");
-    let hop = &retained_memory_dag_path(&cell)[0];
+    // The version walk crosses the retirement by itself, so the walk records
+    // it inside one hop; the edge's own rule is what crossed it.
+    assert!(matches!(
+        retained_memory_dag_path(&cell)[0].justification,
+        MemoryDagHopJustification::SameVersion { .. }
+    ));
+    let retired_snapshot = intern_c_memory_ref(&retired);
+    let derivation = retired_snapshot.derivation().expect("the retirement edge");
+    let crate::kernel::resource_tracker::step_effect::StepEffect::Separate(
+        crate::kernel::resource_tracker::step_effect::Separation::Cell(justification),
+    ) = with_extended_dag_bridging(|| {
+        crate::kernel::resource_tracker::step_effect::affects(
+            &derivation,
+            &retired_snapshot,
+            crate::kernel::resource_tracker::Resource::Cell {
+                pointer: &owner,
+                bytes: 4,
+            },
+            &crate::kernel::resource_tracker::step_effect::Evidence {
+                assumptions: &assumptions,
+                cross_loop_havoc: false,
+            },
+        )
+    })
+    else {
+        panic!("the retirement inside its call's havoc is separate from the owner cell");
+    };
     assert_eq!(
-        hop.justification,
+        justification,
         MemoryDagHopJustification::RetirementInsideItsCallHavoc
     );
-    assert!(
-        hop.justification
-            .checks(&hop.derivation, &owner, 4, &assumptions)
-    );
+    assert!(justification.checks(&derivation, &owner, 4, &assumptions));
 
     // The havoc covers four bytes of an eight-byte allocation.
     let called = havoc(214);

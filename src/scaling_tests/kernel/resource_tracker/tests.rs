@@ -116,3 +116,40 @@ fn branch_join_nested_naming_work_tracks_new_branches() {
         "each new branch should pay only for its own two arms: {samples:?}"
     );
 }
+
+#[test]
+fn a_fact_aware_cell_walk_resumes_the_memoized_version_walk() {
+    // Stepping asks about a cell again after each statement. A fact-aware
+    // walk that resumes the memoized version walk pays for each statement's
+    // own step, so asking after every one of `size` unrelated stores costs
+    // work linear in `size`, not one full walk per statement.
+    let mut samples = Vec::new();
+    for size in [16i64, 64, 256] {
+        let cell = at(block("global:g"), 0);
+        let mut memory = entry_memory().store(cell.clone(), one());
+        let assumptions = PureFactContext::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 0..size {
+                memory = memory
+                    .clone()
+                    .store(at(block("global:unrelated"), index * 4), one());
+                let source = cell_source::memory_dag_cell_source(
+                    &intern_c_memory(memory.clone()),
+                    &cell,
+                    4,
+                    &assumptions,
+                    false,
+                )
+                .expect("no lookup of this cell is in progress");
+                assert!(matches!(source, cell_source::MemoryDagCell::Stored { .. }));
+            }
+        });
+        samples.push((size, work));
+    }
+    let (small, small_work) = samples[0];
+    let (large, large_work) = samples[samples.len() - 1];
+    assert!(
+        large_work * (small as usize) <= small_work * (large as usize) * 2,
+        "repeated cell walk work: {samples:?}"
+    );
+}
