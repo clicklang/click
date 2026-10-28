@@ -1624,11 +1624,11 @@ fn canonicalized_pointer_value_from_int_cell(
     let copied_prefix = matches!(
         &defining_load,
         Some(Bitvector32Term::MemoryLoad(_, address, _))
-            if !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                address,
-                pointer,
-                assumptions,
-            )
+            if address.as_ref() != pointer
+                && (purpose != LoadPurpose::Program || SpecificationReadScope::is_active()
+                    || !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                        address, pointer, assumptions,
+                    ))
     );
     // A volatile read may observe a value memory does not record, so it is
     // never named as the snapshot's read of the cell.
@@ -6567,6 +6567,47 @@ mod tests {
             "{:?}",
             prefix.pointer()
         );
+    }
+
+    #[test]
+    fn specification_cached_pointer_prefix_identity_is_fact_stable() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let source = Pointer::symbolic(Variable(989_910));
+        let destination = Pointer::symbolic(Variable(989_911));
+        let read = Bitvector32Term::MemoryLoad(
+            intern_c_memory_ref(&memory),
+            Box::new(source.clone()),
+            LoadKind::Int32,
+        );
+        let variable = load_variable_for_term(&read).unwrap().0;
+        let value = CValue::Int32(Bitvector32Term::Variable(variable));
+        let empty = PureFactContext::new();
+        let facts = empty.clone().assume_condition(
+            ConditionTerm::pointer_equal(source, destination.clone()),
+            true,
+        );
+        let _scope = SpecificationReadScope::enter();
+        for (label, purpose) in [
+            ("logical", LoadPurpose::Logical),
+            ("validity", LoadPurpose::Validity),
+            ("program in specification", LoadPurpose::Program),
+        ] {
+            let evaluate = |context: &PureFactContext| {
+                canonicalized_pointer_value_from_int_cell(
+                    &memory,
+                    &destination,
+                    &value,
+                    CType::Int32Pointer,
+                    &mut ExecutionFacts::new(),
+                    context,
+                    None,
+                    purpose,
+                )
+                .unwrap()
+            };
+            assert_eq!(evaluate(&facts), evaluate(&empty), "{label}");
+        }
     }
 
     #[test]
