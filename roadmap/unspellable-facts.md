@@ -384,3 +384,24 @@ be resolved before the pointer-read migration is green.
   checked step adds.
 - No stepping scaling regression: the frame work above keeps stepping
   linear in the number of statements.
+
+
+### Copied root extents and example checkpoint
+
+The arena refusal after address-class discovery was in the shared typed range
+matcher: a read has an opaque extent, while a held heap-root range has a known
+extent with no opaque name. A full pointer-value equality now connects that
+read extent to the graph's root-extent tag. Numeric address equality alone does
+not; a bounded subobject remains distinct. Lookup uses the selected extent
+class, with deterministic tests for growing alias chains and unrelated facts.
+
+`a_copied_heap_pointer_retains_its_root_extent.md` reproduces the refusal on the
+pointer migration before this fix and verifies afterward. On the migration,
+`arena` and `owned-vector` now pass. Explicit proof links also make the other
+six previously failing examples pass individually, without C or contract edits;
+those proof changes remain on the migration branch. This is not a full migration
+acceptance verdict. The full census and fact-stability audit remain in progress.
+
+The isolated extent fix passed `scripts/check.sh`: 6,672 unit/API/import/scaling
+tests and all four fixture aggregates, in 14m20s while a separate audit ran
+concurrently (report-only budget warning). No nightly suite ran.

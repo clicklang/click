@@ -712,6 +712,11 @@ impl EqualityGraph {
         state.close(Vec::new());
     }
 
+    pub(in crate::kernel) fn opaque_extent_is_root(&self, origin: &Pointer) -> bool {
+        let mut state = self.state.lock().expect("equality graph");
+        state.terms.opaque_extent_is_root(origin)
+    }
+
     pub(in crate::kernel) fn opaque_extents_equal(&self, left: &Pointer, right: &Pointer) -> bool {
         let mut state = self.state.lock().expect("equality graph");
         state.terms.opaque_extents_equal(left, right)

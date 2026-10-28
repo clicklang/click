@@ -1161,6 +1161,18 @@ impl TermClasses {
         )))
     }
 
+    /// Only a complete pointer-value equality can connect an opaque extent
+    /// to the root-extent tag. Numeric address equality cannot do so.
+    pub(in crate::kernel::equality_graph) fn opaque_extent_is_root(
+        &mut self,
+        origin: &crate::kernel::Pointer,
+    ) -> bool {
+        let extent = self.opaque_extent_node(origin);
+        let root = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerRootExtent));
+        self.register_pending_loads();
+        self.root(extent) == self.root(root)
+    }
+
     pub(in crate::kernel::equality_graph) fn opaque_extents_equal(
         &mut self,
         a: &crate::kernel::Pointer,

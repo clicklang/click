@@ -3238,12 +3238,15 @@ impl PureFactContext {
         available: &CMemoryRange,
     ) -> bool {
         self.designations_equal(required.0, &available.designation)
-            && required.1.is_none_or(|extent| {
-                available
-                    .opaque_extent
-                    .as_deref()
-                    .is_some_and(|source| self.opaque_extents_equal(extent, source))
-            })
+            && required
+                .1
+                .is_none_or(|extent| match available.opaque_extent.as_deref() {
+                    Some(source) => self.opaque_extents_equal(extent, source),
+                    None => {
+                        available.carrier_extent_known
+                            && self.equality_graph.opaque_extent_is_root(extent)
+                    }
+                })
     }
 
     pub(in crate::kernel) fn pointer_designations_match(
@@ -11963,3 +11966,6 @@ mod context_restriction_scaling_tests {
     use super::*;
     include!("../scaling_tests/kernel/assumptions/context_restriction.rs");
 }
+
+#[cfg(test)]
+mod root_extent_tests;
