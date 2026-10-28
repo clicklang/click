@@ -46,15 +46,14 @@ impl PureFactContext {
     /// required spelling before a call.
     ///
     /// Exact identities and syntactic symmetries use direct lookups. Compound
-    /// queries check candidates under their canonical key. Atom queries use
-    /// equality/byte-offset spellings. A missing key declines; it never scans
+    /// queries check a singleton under their canonical key. Atomic truth uses
+    /// the maintained equality graph. A missing key declines; it never scans
     /// the family's open facts. Every candidate still passes the memory matcher's checks.
     fn indexed_matching_condition_fact_for_memory_resolution(
         &self,
         condition: &ConditionTerm,
         value: bool,
     ) -> Option<bool> {
-        use crate::kernel::primitives::ConditionMatchKey;
         // An exact hit needs no operand reasoning, even for loads and sums.
         // For exact-only kinds a miss is conclusive too: no other condition
         // can match under `condition_matches_after_memory_resolution`.
@@ -69,7 +68,7 @@ impl PureFactContext {
             crate::instrumentation::record_deterministic_work(1);
             self.condition_facts.get(&candidate) == Some(&value)
         };
-        let symmetric_hit = match memory_match_operands(condition) {
+        let symmetric = match memory_match_operands(condition) {
             MemoryMatchOperands::Words(format, relation, left, right) => {
                 use CompareRelation::*;
                 let reversed = match relation {
@@ -81,22 +80,23 @@ impl PureFactContext {
                 };
                 // Condition identity already ignores signedness for 32-bit
                 // equality; order comparisons retain their exact carrier.
-                lookup(ConditionTerm::Compare {
+                ConditionTerm::Compare {
                     format,
                     relation: reversed,
                     left: Box::new(right.clone()),
                     right: Box::new(left.clone()),
-                })
+                }
             }
-            MemoryMatchOperands::Offsets(left, right) => lookup(ConditionTerm::PointerOffsetEqual(
-                Box::new(right.clone()),
-                Box::new(left.clone()),
-            )),
+            MemoryMatchOperands::Offsets(left, right) => {
+                ConditionTerm::PointerOffsetEqual(Box::new(right.clone()), Box::new(left.clone()))
+            }
             MemoryMatchOperands::Exact => unreachable!("exact-only kinds returned above"),
         };
-        if symmetric_hit {
+        if lookup(symmetric.clone()) {
             return Some(true);
         }
+        // Predicate truth is maintained with the equality classes. Asking
+        // that index does not enumerate the operands' alternative spellings.
         let atom = |term: &Bitvector32Term| match term {
             Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => true,
             Bitvector32Term::Variable(variable) => {
@@ -104,78 +104,32 @@ impl PureFactContext {
             }
             _ => false,
         };
-        let key = crate::kernel::assumptions::condition_match_key(condition)?;
-        let matches = |facts: &crate::persistent::PersistentMap<ConditionTerm, bool>| {
-            facts.iter().any(|(fact, fact_value)| {
-                crate::instrumentation::record_deterministic_work(1);
-                *fact_value == value
-                    && self.condition_matches_after_memory_resolution(fact, condition)
-            })
-        };
-        let atom_query = matches!(
-            memory_match_operands(condition),
-            MemoryMatchOperands::Words(_, _, left, right) if atom(left) && atom(right)
-        );
-        if !atom_query {
-            // Loads and their registered variables (including inside sums
-            // and scaled offsets) share a canonical key. It selects candidates,
-            // not a verdict: retain the memory matcher's snapshot checks.
-            crate::instrumentation::record_deterministic_work(1);
-            // Other memory-equivalent spellings may live under different
-            // keys. This fast path deliberately does not search for them.
-            return self
-                .condition_facts_by_sides
-                .get(&key)
-                .is_some_and(matches)
-                .then_some(true);
-        }
-        let spellings = |term: &Bitvector32Term| {
-            let mut terms = BTreeSet::from([term.clone()]);
-            terms.extend(self.bitvector_equality_class(term));
-            for byte_width in [1, 4] {
-                let scaled = PointerOffsetTerm::scale_int32(term.clone(), byte_width);
-                crate::instrumentation::record_deterministic_work(1);
-                if let Some(aliases) = self.equality_graph.exact_offset_aliases(&scaled) {
-                    for alias in aliases.iter() {
-                        crate::instrumentation::record_deterministic_work(1);
-                        if let PointerOffsetTerm::Int32Scaled { value, .. } = alias
-                            && PointerOffsetTerm::scale_int32(value.as_ref().clone(), byte_width)
-                                == *alias
-                        {
-                            terms.insert(value.as_ref().clone());
-                        }
-                    }
-                }
-            }
-            terms
-        };
-        let (left, right) = match &key {
-            ConditionMatchKey::Equal(left, right)
-            | ConditionMatchKey::Order(_, left, right)
-            | ConditionMatchKey::UnsignedOrder(_, left, right) => (left, right),
-            ConditionMatchKey::OffsetEqual(_, _) | ConditionMatchKey::OverflowAdd(_, _) => {
-                return None;
-            }
-        };
-        let right_spellings = spellings(right);
-        let left_spellings = spellings(left);
-        if left_spellings
-            .iter()
-            .chain(&right_spellings)
-            .any(|term| self.equality_graph.has_uint64_source(term))
+        let atom_order = matches!(memory_match_operands(condition),
+            MemoryMatchOperands::Words(_, relation, left, right)
+                if relation != CompareRelation::Equal && atom(left) && atom(right));
+        if atom_order
+            && (self.equality_graph.knows_condition(condition, value)
+                || self.equality_graph.knows_condition(&symmetric, value))
         {
-            return None;
+            return Some(true);
         }
-        let keys = self.condition_match_keys_for_spellings(
-            &key,
-            &left_spellings,
-            &right_spellings,
-            || crate::instrumentation::record_deterministic_work(1),
-        );
-        Some(keys.iter().any(|key| {
-            crate::instrumentation::record_deterministic_work(1);
-            self.condition_facts_by_sides.get(key).is_some_and(matches)
-        }))
+        let key = crate::kernel::assumptions::condition_match_key(condition)?;
+        crate::instrumentation::record_deterministic_work(1);
+        // A shape bucket is not an explicit premise list. Only its unique
+        // source can be checked implicitly; an ambiguous bucket needs a
+        // selected premise. Keep the memory matcher's snapshot checks.
+        Some(
+            self.condition_facts_by_sides
+                .get(&key)
+                .is_some_and(|facts| {
+                    facts.len() == 1
+                        && facts.iter().any(|(fact, fact_value)| {
+                            crate::instrumentation::record_deterministic_work(1);
+                            *fact_value == value
+                                && self.condition_matches_after_memory_resolution(fact, condition)
+                        })
+                }),
+        )
     }
 
     pub(in crate::kernel) fn has_anchored_bitvector_equality_fact_for_memory_resolution(

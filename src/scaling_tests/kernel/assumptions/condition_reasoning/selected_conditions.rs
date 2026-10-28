@@ -177,7 +177,7 @@ fn equivalent_equality_spellings_use_bounded_lookups() {
 }
 
 #[test]
-fn memory_condition_matching_does_not_multiply_alias_classes() {
+fn memory_condition_matching_does_not_walk_alias_classes() {
     for unsigned in [false, true] {
         let compare = |left, right| {
             if unsigned {
@@ -213,11 +213,11 @@ fn memory_condition_matching_does_not_multiply_alias_classes() {
         eprintln!("two memory alias classes unsigned={unsigned} at 8/32/128: {samples:?}");
         for pair in samples.windows(2) {
             assert!(
-                pair[1].0 <= pair[0].0 * 6 + 32,
+                pair[1].0 <= pair[0].0 + 32,
                 "miss multiplies alias classes: {samples:?}"
             );
             assert!(
-                pair[1].1 <= pair[0].1 * 6 + 32,
+                pair[1].1 <= pair[0].1 + 32,
                 "hit multiplies alias classes: {samples:?}"
             );
         }
@@ -361,5 +361,37 @@ fn compound_load_condition_hits_and_misses_ignore_other_facts() {
                 "{samples:?}"
             );
         }
+    }
+}
+
+#[test]
+fn ordinary_condition_misses_do_not_walk_aliases_or_variable_buckets() {
+    for aliases in [false, true] {
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let var = |id| Bitvector32Term::Variable(Variable(930_000 + id));
+            let mut context = PureFactContext::new();
+            for id in 1..=size {
+                let condition = if aliases {
+                    ConditionTerm::equal(var(0), var(id))
+                } else {
+                    ConditionTerm::signed_less_than(var(0), var(id))
+                };
+                context = context.assume_condition(condition, true);
+            }
+            let goal = ConditionTerm::signed_less_than(var(0), var(1000));
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..4 {
+                    assert!(!context.has_condition_fact(goal.clone(), true));
+                }
+            });
+            samples.push(work);
+        }
+        eprintln!("ordinary condition aliases={aliases}: {samples:?}");
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "{samples:?}"
+        );
     }
 }

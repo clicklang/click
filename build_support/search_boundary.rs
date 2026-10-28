@@ -66,6 +66,24 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
+        if matches!(
+            name,
+            "bitvector_equality_class"
+                | "scalar_evidence_class"
+                | "exact_offset_aliases"
+                | "condition_match_keys_for_spellings"
+        ) && matches!(
+            (self.path, self.function.as_str()),
+            (
+                "src/kernel/assumptions/condition_reasoning/decision.rs",
+                "has_condition_fact" | "decide_by_equivalent_order"
+            ) | (
+                "src/kernel/assumptions/condition_reasoning/selected_conditions.rs",
+                "indexed_matching_condition_fact_for_memory_resolution"
+            )
+        ) {
+            self.errors.push(format!("{}: {}: checked conditions must use indexed truth or selected premises, not alias enumeration ({name})", self.path, self.function));
+        }
         if name == "memory_loadable_candidates" {
             self.errors.push(format!(
                 "{}: {}: whole-block loadability enumeration is test-only; select a source in planning",

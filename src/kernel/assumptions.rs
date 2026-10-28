@@ -12066,3 +12066,9 @@ mod view_alias_scaling_tests {
     use super::*;
     include!("../scaling_tests/kernel/assumptions/view_aliases.rs");
 }
+
+#[cfg(test)]
+mod resource_alias_scaling_tests {
+    use super::*;
+    include!("../scaling_tests/kernel/assumptions/resource_aliases.rs");
+}

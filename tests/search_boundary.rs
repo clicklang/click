@@ -259,3 +259,33 @@ fn checked_view_queries_cannot_restore_alias_enumeration() {
         assert!(boundary::check_source(path, &source).is_ok());
     }
 }
+
+#[test]
+fn checked_conditions_cannot_restore_alias_enumeration() {
+    for (path, function) in [
+        (
+            "src/kernel/assumptions/condition_reasoning/decision.rs",
+            "has_condition_fact",
+        ),
+        (
+            "src/kernel/assumptions/condition_reasoning/decision.rs",
+            "decide_by_equivalent_order",
+        ),
+        (
+            "src/kernel/assumptions/condition_reasoning/selected_conditions.rs",
+            "indexed_matching_condition_fact_for_memory_resolution",
+        ),
+    ] {
+        for method in [
+            "bitvector_equality_class",
+            "scalar_evidence_class",
+            "exact_offset_aliases",
+            "condition_match_keys_for_spellings",
+        ] {
+            let source = format!("fn {function}(c: C, term: T) {{ c.{method}(&term); }}");
+            assert!(boundary::check_source(path, &source).is_err(), "{source}");
+        }
+        let source = format!("fn {function}(c: C, term: T) {{ c.knows_condition(&term, true); }}");
+        assert!(boundary::check_source(path, &source).is_ok());
+    }
+}

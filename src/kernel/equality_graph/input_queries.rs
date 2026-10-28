@@ -209,9 +209,6 @@ impl EqualityGraph {
 }
 
 impl EqualityGraph {
-    pub(in crate::kernel) fn has_uint64_source(&self, term: &Bitvector32Term) -> bool {
-        self.admitted.bitvector64_equality_facts.contains_key(term)
-    }
     pub(in crate::kernel) fn exact_literal_sources(
         &self,
         term: &Bitvector32Term,
@@ -354,12 +351,6 @@ impl EqualityGraph {
 }
 
 impl EqualityGraph {
-    pub(in crate::kernel) fn exact_offset_aliases(
-        &self,
-        offset: &PointerOffsetTerm,
-    ) -> Option<&crate::persistent::PersistentSet<PointerOffsetTerm>> {
-        self.admitted.pointer_offset_aliases.get(offset)
-    }
     pub(in crate::kernel) fn alias_endpoints_at_offset(
         &self,
         offset: &PointerOffsetTerm,
