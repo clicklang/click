@@ -104,7 +104,7 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         fixed_measure_state(left).or_else(|| fixed_measure_state(right))
     };
     match expression {
-        ContractExpression::RegionResult(_) => None,
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => None,
         ContractExpression::Old(_) => Some(FixedMeasureState::Old),
         ContractExpression::At { selector, .. } => Some(FixedMeasureState::At(selector.clone())),
         ContractExpression::IntegerLiteral(_)
@@ -6277,6 +6277,12 @@ impl AnnotationLowerer<'_> {
             }
             ContractExpression::ResourceWildcard => {
                 Err("`_` is only valid inside a `count(...)` resource pattern".to_string())
+            }
+            ContractExpression::RegionAllocation(region) => {
+                let snapshots = self
+                    .snapshots
+                    .ok_or("`.allocation` requires a function execution")?;
+                Ok(SpecExpression::Value(snapshots.region_allocation(region)?))
             }
             ContractExpression::RegionResult(region) => {
                 let snapshots = self

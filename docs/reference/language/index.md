@@ -3573,10 +3573,18 @@ names, such as `statement(0).call(make, 0).result`. It is the value the
 call's region assigned, read at the region's exit, so it names the call's
 result after every local or cell that held it has lost it, and a fact the
 call produced lowers from it exactly
-(`mdtests/a_call_result_is_spelled_by_its_call.md`). A region that is not a
-call producing a result is refused. Click writes a value only the frontend's
+(`mdtests/a_call_result_is_spelled_by_its_call.md`). Allocation regions also expose their nullable return through `.result`;
+other regions that do not produce a result are refused. Click writes a value only the frontend's
 temporary for a call held this way
 (`mdtests/an_unbound_call_result_is_reported_by_its_call.md`).
+
+An allocation region also exposes `R.allocation`, the fresh heap identity
+reserved for its successful outcome. For example, `statement(1).allocation`
+keeps this identity distinct from the nullable `statement(1).result`. The
+name is available after the allocation step and survives reassignment and
+`free`. Naming it does not prove that allocation succeeded or grant access
+to freed memory (`mdtests/an_allocation_result_keeps_its_name_after_reassignment.md`,
+`mdtests/an_allocation_name_does_not_keep_freed_memory_readable.md`).
 
 Click writes points the same way. A diagnostic, a suggested premise or an
 expansion names a recorded point by its statement: `.entry` or `.exit` when

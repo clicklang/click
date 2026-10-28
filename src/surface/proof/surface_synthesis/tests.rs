@@ -2945,3 +2945,81 @@ fn recorded_cells_offer_the_points_that_held_a_value_newest_first() {
     assert_eq!(offered(&value), vec![point(3), point(1)]);
     assert!(offered(&Bitvector32Term::Variable(Variable(940_002))).is_empty());
 }
+
+#[test]
+fn allocation_result_names_survive_reassignment_and_follow_snapshot_scope() {
+    let function =
+        crate::languages::c::syntax::parse_function("void f() { int32* p; p = malloc(4); p = 0; }")
+            .unwrap();
+    let layout = crate::surface::lowering::SourceExecutionLayout::for_function(&function).unwrap();
+    let region = layout
+        .source_path_region(&[SourcePathStep::Statement(1)], ProgramPointKind::Exit)
+        .unwrap();
+    let point = ProgramPointRef {
+        region: CodeRegionRef::Region(region),
+        kind: ProgramPointKind::Exit,
+    };
+    let first = Pointer {
+        block: PointerBlock::Heap(989_030),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let second = Pointer {
+        block: PointerBlock::Heap(989_031),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let state = |pointer: &Pointer| {
+        CState::new().with_local(
+            "p",
+            CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
+        )
+    };
+    let mut snapshots = RecordedSnapshots::new().with_source_layout(layout);
+    assert!(snapshots.region_allocation(&point.region).is_err());
+    snapshots.insert(point.clone(), state(&first));
+    let sibling = snapshots.clone();
+    assert_eq!(
+        snapshots.allocation_result(&first),
+        Some(point.region.clone())
+    );
+    let current = state(&Pointer::null());
+    let raised = {
+        let _points = SynthesisRecordedPointsScope::enter(&snapshots);
+        synthesize_surface_pointer_expression(
+            &first,
+            ParameterBinding::default(),
+            &current,
+            &BTreeMap::new(),
+        )
+    };
+    assert_eq!(
+        raised,
+        Some(ContractExpression::RegionAllocation(point.region.clone()))
+    );
+    let surface = ClickProposition::Comparison {
+        left: ContractExpression::RegionAllocation(point.region.clone()),
+        operator: ComparisonOperator::Equal,
+        right: ContractExpression::QualifiedC {
+            name: "allocation_under_test".to_owned(),
+            lowered: CExpression::Value(CValue::typed_pointer(first.clone(), CType::Int32Pointer)),
+        },
+    };
+    let lowered =
+        relower_written_proposition_with_snapshots(&surface, &current, &current, &snapshots)
+            .unwrap();
+    assert_eq!(
+        lowered,
+        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+    );
+    snapshots.insert(point.clone(), state(&second));
+    assert!(snapshots.allocation_result(&first).is_none());
+    assert_eq!(
+        snapshots.allocation_result(&second),
+        Some(point.region.clone())
+    );
+    assert_eq!(
+        sibling.allocation_result(&first),
+        Some(point.region.clone())
+    );
+    snapshots.remove(&point);
+    assert!(snapshots.allocation_result(&second).is_none());
+}

@@ -811,7 +811,7 @@ fn collect_contract_expression_binding_names(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        ContractExpression::RegionResult(_) => {}
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
@@ -1438,7 +1438,9 @@ fn rewrite_contract_expression_exact(
         (left, right, left_changed || right_changed)
     };
     match expression {
-        ContractExpression::RegionResult(_) => (expression.clone(), false),
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {
+            (expression.clone(), false)
+        }
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
@@ -2511,7 +2513,7 @@ fn collect_contract_expression_referenced_names_one(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        ContractExpression::RegionResult(_) => {}
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::Negate(inner) => {
             collect_contract_expression_referenced_names(inner, names);
@@ -3278,7 +3280,9 @@ pub(in crate::surface) fn substitute_contract_expression_in(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractExpression, String> {
     match expression {
-        ContractExpression::RegionResult(_) => Ok(expression.clone()),
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {
+            Ok(expression.clone())
+        }
         ContractExpression::Old(_) | ContractExpression::At { .. }
             if substitutions.current_c_values =>
         {
@@ -4013,7 +4017,7 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
         contract_expression_as_c_fragment_resolving_fields(expression, field)
     };
     match expression {
-        ContractExpression::RegionResult(_) => None,
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => None,
         ContractExpression::ResourceField(access) => field(access),
         ContractExpression::IntegerLiteral(value) => {
             let value = value.parse::<u64>().ok()?;
@@ -4152,7 +4156,7 @@ pub(in crate::surface) fn contract_expression_to_c_fragment(
     expression: &ContractExpression,
 ) -> Option<CExpression> {
     match expression {
-        ContractExpression::RegionResult(_) => None,
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => None,
         ContractExpression::ResourceField(_) => None,
         ContractExpression::IntegerLiteral(_) | ContractExpression::Negate(_) => {
             resource_argument_to_c_expression(expression).ok()
