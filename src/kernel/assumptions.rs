@@ -5711,33 +5711,53 @@ impl PureFactContext {
         base: &Pointer,
         include_other_spellings: bool,
     ) -> impl Iterator<Item = &Proposition> {
-        // Select structural anchors and known aliases by key. Other ranges in
-        // this block are not candidates merely because they share the block.
-        let mut anchors = vec![base.clone()];
-        if include_other_spellings {
-            anchors.push(Pointer {
-                block: base.block.clone(),
-                offset: PointerOffsetTerm::Constant(0),
-            });
-            let mut offsets = vec![&base.offset];
-            while let Some(offset) = offsets.pop() {
-                if let PointerOffsetTerm::Add(left, right) = offset {
-                    for part in [left.as_ref(), right.as_ref()] {
-                        anchors.push(Pointer {
-                            block: base.block.clone(),
-                            offset: part.clone(),
-                        });
-                        offsets.push(part);
-                    }
+        crate::instrumentation::record_deterministic_work(1);
+        let exact = self
+            .memory_loadable_shape_facts
+            .get(&base.block)
+            .and_then(|shapes| shapes.get(&memory_blind_pointer_fingerprint(base)))
+            .into_iter()
+            .flat_map(|facts| facts.iter());
+        // Do not even prepare an alias class when the exact address answers.
+        let related = std::iter::once_with(move || self.memory_loadable_related_candidates(base))
+            .take(usize::from(include_other_spellings))
+            .flatten();
+        exact
+            .chain(related)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    }
+
+    fn memory_loadable_related_candidates(
+        &self,
+        base: &Pointer,
+    ) -> impl Iterator<Item = &Proposition> {
+        // Structural anchors and known aliases select keys, never all ranges
+        // sharing a block. The exact key was already visited by the caller.
+        let mut anchors = vec![Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        }];
+        let mut offsets = vec![&base.offset];
+        while let Some(offset) = offsets.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let PointerOffsetTerm::Add(left, right) = offset {
+                for part in [left.as_ref(), right.as_ref()] {
+                    anchors.push(Pointer {
+                        block: base.block.clone(),
+                        offset: part.clone(),
+                    });
+                    offsets.push(part);
                 }
             }
-            anchors.extend(self.exact_pointer_aliases(base).cloned());
-            anchors.extend(self.equality_graph.pointer_spellings(base));
         }
-        let mut keys = BTreeSet::new();
+        anchors.extend(self.exact_pointer_aliases(base).cloned());
+        anchors.extend(self.equality_graph.pointer_spellings(base));
+        let mut keys =
+            BTreeSet::from([(base.block.clone(), memory_blind_pointer_fingerprint(base))]);
         let anchors = anchors
             .into_iter()
             .filter_map(|anchor| {
+                crate::instrumentation::record_deterministic_work(1);
                 let key = (
                     anchor.block.clone(),
                     memory_blind_pointer_fingerprint(&anchor),
@@ -5745,19 +5765,18 @@ impl PureFactContext {
                 keys.insert(key.clone()).then_some(key)
             })
             .collect::<Vec<_>>();
-        // Only an explicitly selected singleton needs a source with no
-        // surviving structural anchor. Cached lengths avoid ambient walks.
-        let singleton = include_other_spellings
-            .then(|| self.memory_loadable_facts.get(&base.block))
-            .flatten()
-            .filter(|facts| facts.len() == 1)
-            .and_then(|facts| facts.iter().next())
-            .filter(|fact| match fact {
-                Proposition::CMemoryLoadable { base, .. } => {
-                    !keys.contains(&(base.block.clone(), memory_blind_pointer_fingerprint(base)))
-                }
-                _ => false,
-            });
+        // A selected singleton can cover an address whose structural anchor
+        // normalization erased. Cached length avoids an ambient walk.
+        let singleton =
+            self.memory_loadable_facts
+                .get(&base.block)
+                .filter(|facts| facts.len() == 1)
+                .and_then(|facts| facts.iter().next())
+                .filter(|fact| match fact {
+                    Proposition::CMemoryLoadable { base, .. } => !keys
+                        .contains(&(base.block.clone(), memory_blind_pointer_fingerprint(base))),
+                    _ => false,
+                });
         anchors
             .into_iter()
             .flat_map(move |(block, fingerprint)| {
@@ -5769,7 +5788,6 @@ impl PureFactContext {
                     .flat_map(|facts| facts.iter())
             })
             .chain(singleton)
-            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
     /// The read-defined facts stated at `pointer` for `value_type`, at one

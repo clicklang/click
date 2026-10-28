@@ -108,3 +108,25 @@ fn adjacent_view_looks_up_its_suffix_beside_unrelated_cells_and_ranges() {
     }
     assert!(samples.iter().all(|work| *work <= samples[0] + 16), "adjacent view work: {samples:?}");
 }
+
+#[test]
+fn exact_view_candidate_does_not_prepare_its_alias_class() {
+    let mut samples = Vec::new();
+    for size in [8u64, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(Variable(770_000));
+        let fact = Proposition::CMemoryLoadable { memory: CMemory::new(), base: base.clone(), bytes: 8.into(), wide: false };
+        let mut context = PureFactContext::new().assume_proposition(fact.clone());
+        for index in 0..size {
+            context.equality_graph.add_equality(&base, &Pointer::symbolic(Variable(770_001 + index)));
+        }
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..4 {
+                assert_eq!(context.memory_loadable_candidates_for_base(&base).next(), Some(&fact));
+            }
+        });
+        samples.push(work);
+    }
+    eprintln!("exact view candidate work: {samples:?}");
+    assert!(samples.iter().all(|work| *work == samples[0]), "eager alias preparation: {samples:?}");
+}

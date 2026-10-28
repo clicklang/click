@@ -545,10 +545,30 @@ pub(in crate::surface::proof) fn refuse_unproved_conversion_bounds(
     Ok(())
 }
 
+// Lowering can guard a universal's partial operation with its own domain:
+// forall k. defined(f(k)) implies defined(f(k)). This is syntax, not search,
+// and must not consult ambient facts about a variable bound by the guard.
+fn reflexive_guard(goal: &Proposition) -> bool {
+    let mut pending = vec![goal];
+    while let Some(goal) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match goal {
+            Proposition::ForAll { body, .. } => pending.push(body),
+            Proposition::And(left, right) => {
+                pending.push(left);
+                pending.push(right);
+            }
+            Proposition::Implies(left, right) if left == right => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
 // Interpret only the written logical structure and the kernel's indexed
 // atomic checks. Failure reporting must never run the general proof search.
 fn established_condition(assumptions: &PureFactContext, goal: &Proposition) -> bool {
-    if assumptions.states_required_goal(goal) {
+    if assumptions.states_required_goal(goal) || reflexive_guard(goal) {
         return true;
     }
     match goal {

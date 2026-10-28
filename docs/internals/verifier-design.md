@@ -130,8 +130,8 @@ Selected-context construction starts from an empty fact store, retaining only
 reasoning policy, variable allocation bounds and typing metadata queried by the
 selected load variables. It never clears the inherited graph's pointer sources.
 Step-refusal pure-fact listings use the capped sampler and identify truncation;
-conversion-condition refusals use indexed atomic checks, never general proof
-search. The build boundary checks these diagnostic entry points.
+conversion-condition refusals use indexed atomic checks and structural
+reflexive guards (including under universal binders), never general proof search. The build boundary checks these diagnostic entry points.
 
 `instrumentation::CheckingWorkScope` gives a checked operation its own allowance
 inside or outside a tactic. Selected-context construction installs it with the

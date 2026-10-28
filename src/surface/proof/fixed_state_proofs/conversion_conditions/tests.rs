@@ -425,3 +425,38 @@ mod scaling_tests {
         "../../../../scaling_tests/surface/proof/fixed_state_proofs/conversion_conditions/tests.rs"
     );
 }
+
+#[test]
+fn quantified_reflexive_domain_guard_needs_no_search_or_ambient_fact() {
+    let premise = Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(Bitvector32Term::Variable(Variable(760_000))),
+            right: Box::new(Bitvector32Term::Constant(10)),
+        },
+        true,
+    );
+    let guard = |conclusion| Proposition::ForAll {
+        name: Default::default(),
+        var: Variable(760_000),
+        sort: crate::kernel::Sort::CInt32,
+        body: Box::new(Proposition::Implies(
+            Box::new(premise.clone()),
+            Box::new(conclusion),
+        )),
+    };
+    assert!(established_condition(
+        &PureFactContext::new(),
+        &guard(premise.clone())
+    ));
+    let falsehood = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+    assert!(!established_condition(
+        &PureFactContext::new(),
+        &guard(falsehood.clone())
+    ));
+    assert!(!established_condition(
+        &PureFactContext::new().assume_proposition(premise.clone()),
+        &guard(falsehood)
+    ));
+}

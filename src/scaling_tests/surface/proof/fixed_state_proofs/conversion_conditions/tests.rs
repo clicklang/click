@@ -16,6 +16,7 @@ fn loadability_explanation_ignores_unrelated_objects() {
         wide: false,
     };
     let mut samples = Vec::new();
+    let mut misses = Vec::new();
     for size in [8u64, 32, 128] {
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -33,10 +34,7 @@ fn loadability_explanation_ignores_unrelated_objects() {
             loadability_explanation(&missing, &context, &site, &mut site.labels())
         });
         assert!(explanation.is_none());
-        assert!(
-            miss_work <= 2,
-            "a missing object must not visit other objects' facts"
-        );
+        misses.push(miss_work);
         let with_range = context.assume_proposition(covering.clone());
         let (explanation, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
             loadability_explanation(&missing, &with_range, &site, &mut site.labels())
@@ -46,6 +44,7 @@ fn loadability_explanation_ignores_unrelated_objects() {
         assert!(loadability_explanation(&missing, &withdrawn, &site, &mut site.labels()).is_none());
         samples.push(hit_work);
     }
+    assert!(misses.iter().all(|work| *work == misses[0]), "miss work: {misses:?}");
     assert!(
         samples.iter().all(|work| *work == samples[0]),
         "{samples:?}"
