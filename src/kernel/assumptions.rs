@@ -5882,8 +5882,9 @@ impl PureFactContext {
     /// The read-defined facts stated at `pointer` for `value_type`, at one
     /// of its exact aliases, or at another spelling in its equality class:
     /// the keys [`Self::has_memory_read_defined_evidence`] looks up.
-    pub(crate) fn memory_read_defined_candidates(
+    pub(crate) fn search_memory_read_defined_candidates(
         &self,
+        _permission: crate::SearchPermission,
         pointer: &Pointer,
         value_type: CType,
     ) -> Vec<&Proposition> {
@@ -5899,6 +5900,7 @@ impl PureFactContext {
                 ))
             })
             .flat_map(crate::persistent::PersistentSet::iter)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
             .collect()
     }
 

@@ -29,10 +29,10 @@ before choosing each performance fix. Do not raise limits to hide a defect.
 
 The remaining audit targets include indexed walks as well as full scans:
 
-- Atom-condition alias traversal and large condition-key buckets, including
-  repeated failed queries.
-- Other resource candidate buckets and alias walks, including read-defined
-  evidence, kept-frame fallbacks, snapshot-rich object/provenance indexes,
+- Remaining condition-side buckets used by order/overflow helpers and
+  anchored equality reasoning, including repeated failed queries.
+- Other resource candidate buckets and alias walks, including prepared
+  memory-access candidate buckets, snapshot-rich object/provenance indexes,
   and remaining non-memory separation fallbacks.
 - Repeated memory-history queries, coordinated with the frame-walk item.
 

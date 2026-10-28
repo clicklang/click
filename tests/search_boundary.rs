@@ -248,6 +248,14 @@ fn checked_view_queries_cannot_restore_alias_enumeration() {
             "src/kernel/assumptions/memory_reasoning.rs",
             "proves_memory_loadable_inner",
         ),
+        (
+            "src/kernel/assumptions/memory_reasoning.rs",
+            "has_memory_read_defined_evidence",
+        ),
+        (
+            "src/kernel/assumptions/memory_reasoning.rs",
+            "kept_memory_range_holding_access",
+        ),
     ] {
         for method in ["pointer_spellings", "exact_pointer_aliases"] {
             let source = format!("fn {function}(c: C, base: P) {{ c.{method}(&base); }}");
@@ -288,4 +296,20 @@ fn checked_conditions_cannot_restore_alias_enumeration() {
         let source = format!("fn {function}(c: C, term: T) {{ c.knows_condition(&term, true); }}");
         assert!(boundary::check_source(path, &source).is_ok());
     }
+}
+
+#[test]
+fn kept_frame_fallback_cannot_restore_block_search() {
+    for method in [
+        "owned_memory_members_in_block",
+        "memory_members_with_base",
+        "kept_range_bases_proven_equal",
+    ] {
+        let source = format!("fn kept_memory_range_holding_access(c: C) {{ c.{method}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/assumptions/memory_reasoning.rs", &source).is_err()
+        );
+    }
+    let source = "fn evidence(c: C) { c.search_memory_read_defined_candidates(); }";
+    assert!(boundary::check_source("src/kernel/assumptions/memory_reasoning.rs", source).is_err());
 }

@@ -57,6 +57,19 @@ impl EqualityGraph {
         self.admitted.pointer_block_aliases.keys()
     }
 
+    /// A unique directly stated alias, selected by cached bucket length.
+    /// Multiple alternatives belong to premise search, not checked lookup.
+    pub(in crate::kernel) fn unique_exact_pointer_alias(
+        &self,
+        pointer: &Pointer,
+    ) -> Option<&Pointer> {
+        let aliases = self.admitted.pointer_block_aliases.get(pointer)?;
+        if aliases.len() != 1 {
+            return None;
+        }
+        aliases.iter().next().map(|(alias, _)| alias)
+    }
+
     pub(in crate::kernel) fn exact_pointer_aliases(
         &self,
         pointer: &Pointer,

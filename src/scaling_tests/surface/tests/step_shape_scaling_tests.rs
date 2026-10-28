@@ -769,7 +769,10 @@ fn a_partial_borrow_call_ignores_unrelated_owned_objects() {
 
 #[test]
 fn a_branch_arm_step_ignores_earlier_branches() {
-    let largest = [1, 3].map(|n| {
+    // The first branch has a literal accumulator; later ones have symbolic
+    // bounds. Compare more sizes to distinguish that fixed shape change
+    // from work that keeps growing with earlier branches.
+    let largest = [1, 3, 7].map(|n| {
         let (c, click) = branches(n);
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
             verify_c0_sources(&click, &[("hunt.c", c.as_str())])
@@ -782,11 +785,10 @@ fn a_branch_arm_step_ignores_earlier_branches() {
             .max()
             .expect("branch steps")
     });
+    eprintln!("branch step work at 1/3/7 branches: {largest:?}");
     assert!(
-        largest[1] <= largest[0] + band(largest[0]),
-        "branches: the largest step grows from {} to {} (roadmap/scaling.md)",
-        largest[0],
-        largest[1]
+        !drifts(&largest) && largest[2] <= largest[1] + band(largest[1]),
+        "branch step work grows: {largest:?}"
     );
 }
 
