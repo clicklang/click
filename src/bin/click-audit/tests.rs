@@ -4,6 +4,68 @@ use click::surface::{
     verify_c0_sources_at,
 };
 
+/// Runtime inventory names execution-theorem proofs `T.contract`; every
+/// expansion route must resolve that label to the theorem's postcondition.
+#[test]
+#[ignore = "nightly: execution-theorem label expansion and full claim audits"]
+fn execution_theorem_contract_labels_expand_and_audit() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+    for (fixture, theorem) in [
+        (
+            "named_contract_value_parameter_execution_theorem",
+            "add3_adds_three",
+        ),
+        (
+            "named_contract_value_parameter_execution_theorem",
+            "adds_three_shifts_three",
+        ),
+        ("execution_theorem_imported_tactic", "zero_contract"),
+    ] {
+        let path = root.join(format!("{fixture}.md"));
+        let source = load_audit_source(&path).unwrap();
+        let claim = format!("{theorem}.contract");
+        let legacy = format!("{theorem}.ensures_0");
+        let expanded = expand_claim_with_source(&path, &source, &claim)
+            .unwrap_or_else(|error| panic!("{claim}: {error}"));
+        assert_ne!(expanded, source.container_source);
+        assert_eq!(
+            expanded,
+            expand_claim_with_source(&path, &source, &legacy).unwrap()
+        );
+        let rewritten = rewritten_click_source(&source, &expanded).unwrap();
+        click::surface::without_implicit_auto(|| {
+            verify_rewritten_with_inputs(&source, &claim, &rewritten)
+        })
+        .unwrap_or_else(|error| panic!("{claim}: {error}"));
+        if fixture == "named_contract_value_parameter_execution_theorem" {
+            let CInput::Bundle(sources) = &source.inputs else {
+                panic!("the fixture has ordinary C sources");
+            };
+            assert_eq!(
+                expand_c0_claim_source_by_label(
+                    &source.click_source,
+                    &source_refs(sources),
+                    &claim
+                )
+                .unwrap(),
+                rewritten
+            );
+        }
+        let arguments =
+            parse_arguments(["--claim".to_string(), claim, path.display().to_string()]).unwrap();
+        run_audit(arguments).unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    }
+    assert!(
+        expand_c0_claim_source_by_label(
+            "theorem ordinary() { ensures 1 == 1; }",
+            &[],
+            "ordinary.contract",
+        )
+        .is_err(),
+        "ordinary theorem postconditions do not acquire a grouped contract alias"
+    );
+}
+
 #[test]
 #[ignore = "nightly: C++ generic method expansion and retained/cold rechecks"]
 fn generic_cpp_clause_proofs_stay_on_the_generic_method() {
