@@ -149,12 +149,29 @@ supplied addresses through the graph and retains bounds, lifetime and
 structural-distinctness checks. Preserve existing same-block endpoint expressions
 unless the addresses are already equal; coordinate projection must not obscure
 their stated bounds. Other spellings require search permission.
-The build boundary rejects alias enumeration in these migrated view queries;
-read-defined evidence, kept-frame lookup and condition aliases still need the
-audits listed in the roadmap.
+The build boundary rejects alias enumeration in these migrated view queries.
+
+Condition-fact queries use the maintained truth index and singleton canonical
+shape/variable buckets. Atomic memory-order queries use indexed truth for both
+orientations, retaining the comparison carrier; compound memory queries still
+require their canonical key or an explicit spelling. No query enumerates scalar
+classes to select a premise. Other condition-side bucket helpers remain audit
+targets.
+
+Read-validity evidence uses exact typed/snapshot membership and singleton
+address buckets under structural, affine and concrete storage keys. A selected
+source retains type, address, no-write and lifetime checks. Alternate-source
+enumeration requires planner permission. Kept-frame lookup uses the prepared
+address index; its raw fallback accepts singleton structural/coordinate buckets
+or a unique directly stated alias, never the rest of the block. Opaque reads
+do not trigger history resolution just to discover a supplier. The build boundary
+pins these query paths; remaining resource-index audits are in the roadmap.
 
 `instrumentation::CheckingWorkScope` gives a checked operation its own allowance
-inside or outside a tactic. Selected-context construction installs it with the
+inside or outside a tactic. Atomic memory-condition matching measures one
+comparison of two scalar atoms; its allowance is independent of enclosing
+search. Compound terms and offsets need a separate explicit-size measure before
+receiving the same coverage. Selected-context construction installs it with the
 number of selected entries; ambient fact count cannot enlarge the allowance.
 A scope exhaustion names the checked operation and enclosing tactic/source site
 and reports an engine performance defect. Every unit still charges the enclosing

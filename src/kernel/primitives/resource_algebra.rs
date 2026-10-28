@@ -4121,25 +4121,6 @@ impl ResourceContext {
             == 2
     }
 
-    /// The owned memory members of this composition based in `block`, by the
-    /// block index. Charges one work unit per visited member.
-    pub(in crate::kernel) fn owned_memory_members_in_block<'a>(
-        &'a self,
-        block: &PointerBlock,
-    ) -> impl Iterator<Item = &'a CMemoryRange> + 'a {
-        crate::instrumentation::record_deterministic_work(1);
-        self.storage
-            .index
-            .owned_memory_by_block
-            .get(block)
-            .into_iter()
-            .flat_map(ResourceEntryIds::iter)
-            .filter_map(|entry| {
-                crate::instrumentation::record_deterministic_work(1);
-                self.fact(*entry).memory_own_range()
-            })
-    }
-
     /// The owned memory fact of this composition that structurally contains
     /// `range`, as its entry and its own range.
     ///
@@ -4187,6 +4168,26 @@ impl ResourceContext {
                     .memory_own_range()
                     .map(|range| (*entry, range))
             })
+    }
+
+    /// One unambiguous member under an explicit base. A crowded raw bucket
+    /// needs the prepared address index or an explicitly selected resource.
+    pub(in crate::kernel) fn unique_memory_member_with_base(
+        &self,
+        base: &Pointer,
+        include_views: bool,
+    ) -> Option<&CMemoryRange> {
+        crate::instrumentation::record_deterministic_work(1);
+        let entries = self.storage.index.memory_by_base.get(base)?;
+        if entries.len() != 1 {
+            return None;
+        }
+        let fact = self.fact(*entries.iter().next()?);
+        if include_views {
+            fact.memory_range()
+        } else {
+            fact.memory_own_range()
+        }
     }
 
     /// Flat owned members, and optionally views, from the exact base index.

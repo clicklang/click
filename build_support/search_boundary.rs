@@ -58,11 +58,45 @@ impl Boundary<'_> {
                 ) | (
                     "src/kernel/assumptions/memory_reasoning.rs",
                     "proves_memory_loadable_inner"
+                        | "has_memory_read_defined_evidence"
+                        | "kept_memory_range_holding_access"
                 )
             )
         {
             self.errors.push(format!(
                 "{}: {}: checked view lookup must use indexed coordinates, not alias enumeration ({name})",
+                self.path, self.function
+            ));
+        }
+        if matches!(
+            name,
+            "bitvector_equality_class"
+                | "scalar_evidence_class"
+                | "exact_offset_aliases"
+                | "condition_match_keys_for_spellings"
+        ) && matches!(
+            (self.path, self.function.as_str()),
+            (
+                "src/kernel/assumptions/condition_reasoning/decision.rs",
+                "has_condition_fact" | "decide_by_equivalent_order"
+            ) | (
+                "src/kernel/assumptions/condition_reasoning/selected_conditions.rs",
+                "indexed_matching_condition_fact_for_memory_resolution"
+            )
+        ) {
+            self.errors.push(format!("{}: {}: checked conditions must use indexed truth or selected premises, not alias enumeration ({name})", self.path, self.function));
+        }
+        if self.path == "src/kernel/assumptions/memory_reasoning.rs"
+            && self.function == "kept_memory_range_holding_access"
+            && matches!(
+                name,
+                "owned_memory_members_in_block"
+                    | "memory_members_with_base"
+                    | "kept_range_bases_proven_equal"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: kept-frame fallback requires indexed selection ({name})",
                 self.path, self.function
             ));
         }
@@ -73,7 +107,11 @@ impl Boundary<'_> {
             ));
         }
         if self.path.starts_with("src/kernel/")
-            && name == "search_memory_loadable_candidates_for_base"
+            && matches!(
+                name,
+                "search_memory_loadable_candidates_for_base"
+                    | "search_memory_read_defined_candidates"
+            )
             && !(self.path == "src/kernel/assumptions.rs" && self.function == name)
         {
             self.errors.push(format!(

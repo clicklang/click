@@ -205,56 +205,78 @@ impl PureFactContext {
         pointer: &Pointer,
         value_type: CType,
     ) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        if self.memory_read_defined_facts.is_empty() {
+            return false;
+        }
         let evidence_at = |candidate: &Pointer| {
             let key = (
                 crate::kernel::api::canonicalize_pointer_loads(candidate),
                 value_type,
             );
             crate::instrumentation::record_deterministic_work(1);
-            self.memory_read_defined_facts
-                .get(&key)
-                .is_some_and(|facts| {
-                    facts.iter().any(|fact| {
-                        crate::instrumentation::record_deterministic_work(1);
-                        let Proposition::CMemoryReadDefined {
-                            memory: before,
-                            pointer: source,
-                            ..
-                        } = fact
-                        else {
-                            unreachable!()
-                        };
-                        if source != pointer
-                        && !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                            source, pointer, self,
-                        )
-                    {
-                        return false;
-                    }
-                        // Carry initialization along the evidence's own address:
-                        // a symbolic spelling need not share the physical block's
-                        // lifetime identity. Only after this no-write check may
-                        // the checked pointer equality transport the typed read.
-                        before == memory
-                        || before.read_region_identity(source)
-                            == memory.read_region_identity(source)
-                            && crate::kernel::memory_provenance::typed_read_has_same_memory_source(
-                                before,
-                                memory,
-                                source,
-                                value_type.byte_width(),
-                                self,
-                            )
-                    })
-                })
+            let Some(facts) = self.memory_read_defined_facts.get(&key) else {
+                return false;
+            };
+            let exact = Proposition::CMemoryReadDefined {
+                memory: memory.clone(),
+                pointer: pointer.clone(),
+                value_type,
+            };
+            if facts.contains(&exact) {
+                return true;
+            }
+            // A snapshot bucket is not a premise list. A selected source must
+            // retain its type, address, lifetime, and value-preserving edge.
+            if facts.len() != 1 {
+                return false;
+            }
+            let Some(Proposition::CMemoryReadDefined {
+                memory: before,
+                pointer: source,
+                ..
+            }) = facts.iter().next()
+            else {
+                return false;
+            };
+            if source.blocks_proven_distinct(pointer) || !self.pointers_known_equal(source, pointer)
+            {
+                return false;
+            }
+            before == memory
+                || before.read_region_identity(source) == memory.read_region_identity(source)
+                    && crate::kernel::memory_provenance::typed_read_has_same_memory_source(
+                        before,
+                        memory,
+                        source,
+                        value_type.byte_width(),
+                        self,
+                    )
         };
-        evidence_at(pointer)
-            || self.exact_pointer_aliases(pointer).any(evidence_at)
-            // The class restates field addresses under equal base pointers,
-            // including displaced aliases absent from the exact-fact index.
-            // Visit only this equality component; each candidate still needs
-            // the checked address equality above.
-            || self.equality_graph.pointer_spellings(pointer).iter().any(evidence_at)
+        if evidence_at(pointer) {
+            return true;
+        }
+        let storage = self.equality_graph.storage_address(pointer);
+        if storage != *pointer && evidence_at(&storage) {
+            return true;
+        }
+        if let Some(coordinate) = self.equality_graph.canonical_pointer(pointer)
+            && let Some(offset) = coordinate.offset.to_offset_term()
+            && evidence_at(&Pointer {
+                block: coordinate.representative,
+                offset,
+            })
+        {
+            return true;
+        }
+        // Explicit source selection may use a nonrepresentative spelling.
+        // Cached lengths identify that one source without walking its class.
+        self.memory_read_defined_facts.len() == 1
+            && self
+                .memory_read_defined_facts
+                .keys()
+                .next()
+                .is_some_and(|(source, kind)| *kind == value_type && evidence_at(source))
     }
 
     /// A successful typed specification evaluation proves validity. Value
@@ -1935,15 +1957,10 @@ impl PureFactContext {
     /// The range of `ranges` -- memory a caller kept owning across a call --
     /// that holds every byte of an access of `bytes` at `pointer`.
     ///
-    /// Candidates are found without placing anything: the ranges based at one
-    /// of the access's additive base spellings or an exact alias of one, through
-    /// the base index, and the ranges of the access's block whose base this context proves equal
-    /// to one of those spellings (a pointer field reloaded after a call and
-    /// proven equal to its value before). Only when there is a candidate is
-    /// the placement context built, by `placement`, which may add premises
-    /// (the kept instance bodies' own facts) to this context; the endpoints
-    /// are then proved under it. Work is the access's spellings and the kept
-    /// ranges of its block, never the caller's context.
+    /// The prepared address index selects a member first. Raw contexts use
+    /// singleton base buckets under the access's structural and indexed
+    /// coordinates. Only a selected candidate builds the placement context;
+    /// unrelated aliases and block members never trigger placement.
     pub(in crate::kernel) fn kept_range_holding_access<'a>(
         &self,
         ranges: &'a ResourceContext,
@@ -1994,65 +2011,43 @@ impl PureFactContext {
         {
             return Some(range);
         }
-        let spellings = additive_base_spellings(pointer);
-        let mut spelled = Vec::new();
-        let mut seen = BTreeSet::new();
-        for base in &spellings {
-            for alias in std::iter::once(base).chain(self.exact_pointer_aliases(base)) {
-                for (entry, range) in ranges.memory_members_with_base(alias, include_views) {
-                    if seen.insert(entry) {
-                        spelled.push(range);
-                    }
+        let mut candidates = Vec::new();
+        for base in additive_base_spellings(pointer) {
+            crate::instrumentation::record_deterministic_work(1);
+            let mut anchors = vec![base.clone()];
+            // An opaque read is not an invitation to resolve memory history
+            // just to look for a supplier. Its explicit keys still work.
+            let opaque = matches!(&base.block, PointerBlock::LoadedPointer(_))
+                || matches!(&base.block, PointerBlock::Symbolic(variable)
+                    if crate::kernel::is_load_variable(variable));
+            if !opaque {
+                anchors.push(self.equality_graph.storage_address(&base));
+                if let Some(coordinate) = self.equality_graph.canonical_pointer(&base)
+                    && let Some(offset) = coordinate.offset.to_offset_term()
+                {
+                    anchors.push(Pointer {
+                        block: coordinate.representative,
+                        offset,
+                    });
+                }
+            }
+            if let Some(alias) = self.equality_graph.unique_exact_pointer_alias(&base) {
+                anchors.push(alias.clone());
+            }
+            for anchor in anchors {
+                if let Some(range) = ranges.unique_memory_member_with_base(&anchor, include_views) {
+                    candidates.push(range);
                 }
             }
         }
-        // Try the access's own spellings and exact aliases first. Alias
-        // candidates still require checked coverage of every accessed byte.
-        // Only when none holds the access are the block's other kept ranges asked
-        // for a proved base equality, each question once per fact set
-        // (`kept_range_bases_proven_equal`).
-        let mut placement = Some(placement);
-        let mut placed: Option<PureFactContext> = None;
-        let mut placement_built = false;
-        let mut holding = |candidates: Vec<&'a CMemoryRange>| -> Option<&'a CMemoryRange> {
-            if candidates.is_empty() {
-                return None;
-            }
-            if !placement_built {
-                placed = placement.take().and_then(|placement| placement());
-                placement_built = true;
-            }
-            let context = placed.as_ref().unwrap_or(self);
-            candidates
-                .into_iter()
-                .find(|range| context.kept_range_holds_access(range, pointer, bytes))
-        };
-        if let Some(range) = holding(spelled.clone()) {
-            return Some(range);
+        if candidates.is_empty() {
+            return None;
         }
-        let mut aliased = Vec::new();
-        for range in ranges.owned_memory_members_in_block(&pointer.block) {
-            if spelled.contains(&range) || spellings.contains(range.base()) {
-                continue;
-            }
-            // A fixed interior offset is a candidate for this parent's
-            // footprint. A symbolic difference between unrelated argument
-            // bases is not: admitting it would query every kept range.
-            if pointer
-                .element_index_from_base_with_width(range.base(), range.element_width())
-                .is_some_and(|index| index.as_const().is_some())
-                || spellings.iter().any(|base| {
-                    crate::kernel::reasoning::kept_range_bases_proven_equal(
-                        base,
-                        range.base(),
-                        self,
-                    )
-                })
-            {
-                aliased.push(range);
-            }
-        }
-        holding(aliased)
+        let placed = placement();
+        let context = placed.as_ref().unwrap_or(self);
+        candidates
+            .into_iter()
+            .find(|range| context.kept_range_holds_access(range, pointer, bytes))
     }
 
     /// Whether every byte of an access of `bytes` at `pointer` lies in the

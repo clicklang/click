@@ -97,6 +97,12 @@ lists. Use indexed class/storage coordinates and align a selected source with
 the query; other spellings belong behind `SearchPermission`. Grow both affine
 classes and same-block alias stars in tests, including misses and displaced
 accesses beside unrelated views.
+Condition queries use indexed truth or singleton shape/variable buckets, never
+scalar-class enumeration. Read-validity sources retain their type and snapshot
+checks; alternate-source search requires planner permission. Kept-frame raw
+fallbacks use singleton base buckets, not whole-block scans or alias walks.
+Grow source snapshot buckets and unrelated retained ranges as well as aliases;
+keep exact hits, stale-memory refusals and expansion-without-search coverage.
 Run the boundary regressions with `test(gate_tests::search_boundary::)` in the
 fast-gate binary. This enforcement does not replace deterministic scaling tests.
 

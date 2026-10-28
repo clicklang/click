@@ -57,6 +57,19 @@ impl EqualityGraph {
         self.admitted.pointer_block_aliases.keys()
     }
 
+    /// A unique directly stated alias, selected by cached bucket length.
+    /// Multiple alternatives belong to premise search, not checked lookup.
+    pub(in crate::kernel) fn unique_exact_pointer_alias(
+        &self,
+        pointer: &Pointer,
+    ) -> Option<&Pointer> {
+        let aliases = self.admitted.pointer_block_aliases.get(pointer)?;
+        if aliases.len() != 1 {
+            return None;
+        }
+        aliases.iter().next().map(|(alias, _)| alias)
+    }
+
     pub(in crate::kernel) fn exact_pointer_aliases(
         &self,
         pointer: &Pointer,
@@ -209,9 +222,6 @@ impl EqualityGraph {
 }
 
 impl EqualityGraph {
-    pub(in crate::kernel) fn has_uint64_source(&self, term: &Bitvector32Term) -> bool {
-        self.admitted.bitvector64_equality_facts.contains_key(term)
-    }
     pub(in crate::kernel) fn exact_literal_sources(
         &self,
         term: &Bitvector32Term,
@@ -354,12 +364,6 @@ impl EqualityGraph {
 }
 
 impl EqualityGraph {
-    pub(in crate::kernel) fn exact_offset_aliases(
-        &self,
-        offset: &PointerOffsetTerm,
-    ) -> Option<&crate::persistent::PersistentSet<PointerOffsetTerm>> {
-        self.admitted.pointer_offset_aliases.get(offset)
-    }
     pub(in crate::kernel) fn alias_endpoints_at_offset(
         &self,
         offset: &PointerOffsetTerm,

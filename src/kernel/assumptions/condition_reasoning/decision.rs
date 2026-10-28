@@ -1378,29 +1378,7 @@ impl PureFactContext {
     /// The exact fact of `equivalent`, an order equivalent to the one asked,
     /// directly or through an indexed spelling of its sides.
     fn decide_by_equivalent_order(&self, equivalent: &ConditionTerm) -> Option<bool> {
-        let equivalent = equivalent.clone();
-        if let Some(value) = self.exact_condition_value(&equivalent) {
-            return Some(value);
-        }
-        // An explicitly recorded equality can name the same frozen term
-        // through a load variable. Visit its indexed spellings only; an
-        // unrelated open order fact is never a candidate for this rule.
-        for key in self.condition_match_candidate_keys(&equivalent) {
-            let Some(facts) = self.condition_facts_by_sides.get(&key) else {
-                continue;
-            };
-            for (fact, value) in facts {
-                crate::instrumentation::record_deterministic_work(1);
-                if self.condition_matches(fact, &equivalent) {
-                    record_implicit_reasoning_provenance(
-                        self,
-                        &Proposition::ConditionIs(fact.clone(), *value),
-                    );
-                    return Some(*value);
-                }
-            }
-        }
-        None
+        self.known_condition_value(equivalent)
     }
 
     pub(in crate::kernel) fn has_condition_fact(
@@ -1408,58 +1386,39 @@ impl PureFactContext {
         condition: ConditionTerm,
         value: bool,
     ) -> bool {
-        // The fact itself, by key; then the facts filed under the keys this
-        // query's sides spell, directly or through their recorded-equality
-        // classes, each confirmed by `condition_matches`.
-        let matched = if self.condition_facts.get(&condition) == Some(&value) {
-            Some(Proposition::ConditionIs(condition.clone(), value))
-        } else {
-            self.condition_match_candidate_keys(&condition)
-                .into_iter()
-                .find_map(|key| {
-                    self.condition_facts_by_sides
-                        .get(&key)?
-                        .iter()
-                        .find(|(fact, fact_value)| {
-                            crate::instrumentation::record_deterministic_work(1);
-                            crate::kernel::assumptions::count_condition_fact_visit();
-                            **fact_value == value && self.condition_matches(fact, &condition)
-                        })
-                        .map(|(fact, fact_value)| {
-                            Proposition::ConditionIs(fact.clone(), *fact_value)
-                        })
+        if let Some(known) = self.exact_condition_value(&condition) {
+            return known == value;
+        }
+        if self.equality_graph.knows_condition(&condition, value) {
+            record_implicit_reasoning_provenance(self, &Proposition::ConditionIs(condition, value));
+            return true;
+        }
+        // Exact canonical shape, then at most one source per explicitly
+        // mentioned variable. Neither equality classes nor crowded buckets
+        // are implicit premise lists.
+        let matched = crate::kernel::assumptions::condition_match_key(&condition)
+            .and_then(|key| self.condition_facts_by_sides.get(&key))
+            .filter(|facts| facts.len() == 1)
+            .and_then(|facts| facts.iter().next())
+            .filter(|(fact, fact_value)| {
+                crate::instrumentation::record_deterministic_work(1);
+                **fact_value == value && self.condition_matches(fact, &condition)
+            })
+            .map(|(fact, fact_value)| Proposition::ConditionIs(fact.clone(), *fact_value))
+            .or_else(|| {
+                let mut variables = BTreeSet::new();
+                let _ = crate::kernel::reasoning::variable_collection::collect_condition_index_variables(
+                    &condition, &mut variables,
+                );
+                variables.iter().find_map(|variable| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let facts = self.condition_facts_by_variable.get(variable)?;
+                    if facts.len() != 1 { return None; }
+                    let (fact, fact_value) = facts.iter().next()?;
+                    (*fact_value == value && self.condition_matches(fact.as_ref(), &condition))
+                        .then(|| Proposition::ConditionIs(fact.as_ref().clone(), *fact_value))
                 })
-                .or_else(|| {
-                    let mut variables = BTreeSet::new();
-                    let _ = crate::kernel::reasoning::variable_collection::collect_condition_index_variables(
-                        &condition,
-                        &mut variables,
-                    );
-                    let mut spelled = BTreeSet::new();
-                    for variable in &variables {
-                        spelled.insert(*variable);
-                        for member in self
-                            .equality_graph
-                            .scalar_evidence_class(&Bitvector32Term::Variable(*variable))
-                        {
-                            if let Bitvector32Term::Variable(member) = member {
-                                spelled.insert(member);
-                            }
-                        }
-                    }
-                    spelled.iter().find_map(|variable| {
-                        self.condition_facts_by_variable.get(variable)?.iter().find_map(
-                            |(fact, fact_value)| {
-                                crate::instrumentation::record_deterministic_work(1);
-                                crate::kernel::assumptions::count_condition_fact_visit();
-                                (*fact_value == value
-                                    && self.condition_matches(fact.as_ref(), &condition))
-                                .then(|| Proposition::ConditionIs(fact.as_ref().clone(), *fact_value))
-                            },
-                        )
-                    })
-                })
-        };
+            });
         if let Some(proposition) = matched {
             record_implicit_reasoning_provenance(self, &proposition);
             true
@@ -1493,88 +1452,6 @@ impl PureFactContext {
         }
         facts.sort_unstable_by(|left, right| left.0.cmp(right.0));
         facts
-    }
-
-    /// The `condition_facts_by_sides` keys a fact matching `condition`
-    /// can be filed under: the query's own key, and the filed keys its
-    /// sides' recorded-equality classes spell. The classes are what
-    /// `condition_matches` relates through equality facts; each side's class
-    /// is read once from the indexed equality graph.
-    ///
-    /// The keys come from `condition_match_keys_by_side` under the spellings
-    /// of the side with the smaller class, kept when their other side spells
-    /// the query's other side. That reads one class and the keys filed under
-    /// it, never every pair of the two classes' spellings, and yields exactly
-    /// the filed keys among those pairs, in key order.
-    fn condition_match_candidate_keys(
-        &self,
-        condition: &ConditionTerm,
-    ) -> Vec<crate::kernel::primitives::ConditionMatchKey> {
-        let Some(key) = crate::kernel::assumptions::condition_match_key(condition) else {
-            return Vec::new();
-        };
-        let Some((left, right)) = key.bitvector_sides() else {
-            return vec![key];
-        };
-        let spellings = |term: &Bitvector32Term| {
-            let mut terms = BTreeSet::from([term.clone()]);
-            terms.extend(self.bitvector_equality_class(term));
-            terms
-        };
-        let (left_spellings, right_spellings) = (spellings(left), spellings(right));
-        self.condition_match_keys_for_spellings(&key, &left_spellings, &right_spellings, || {
-            crate::instrumentation::spend_decision_fuel(1)
-        })
-    }
-
-    /// Select filed keys under one side's spellings, filtering by the other
-    /// side. Memory matching supplies additional byte-offset aliases; ordinary
-    /// condition matching supplies only its recorded scalar equality classes.
-    /// Each caller retains its own accounting for the indexed candidates.
-    pub(super) fn condition_match_keys_for_spellings(
-        &self,
-        key: &crate::kernel::primitives::ConditionMatchKey,
-        left_spellings: &BTreeSet<Bitvector32Term>,
-        right_spellings: &BTreeSet<Bitvector32Term>,
-        mut visit: impl FnMut(),
-    ) -> Vec<crate::kernel::primitives::ConditionMatchKey> {
-        use crate::kernel::primitives::ConditionMatchKey;
-        let spells = |candidate: &ConditionMatchKey| match (key, candidate) {
-            (
-                ConditionMatchKey::Order(strict, ..),
-                ConditionMatchKey::Order(other, lower, upper),
-            )
-            | (
-                ConditionMatchKey::UnsignedOrder(strict, ..),
-                ConditionMatchKey::UnsignedOrder(other, lower, upper),
-            ) => {
-                strict == other && left_spellings.contains(lower) && right_spellings.contains(upper)
-            }
-            (ConditionMatchKey::Equal(..), ConditionMatchKey::Equal(a, b))
-            | (ConditionMatchKey::OverflowAdd(..), ConditionMatchKey::OverflowAdd(a, b)) => {
-                left_spellings.contains(a) && right_spellings.contains(b)
-                    || left_spellings.contains(b) && right_spellings.contains(a)
-            }
-            _ => false,
-        };
-        let enumerated = if left_spellings.len() <= right_spellings.len() {
-            left_spellings
-        } else {
-            right_spellings
-        };
-        let mut keys = BTreeSet::from([key.clone()]);
-        for spelling in enumerated {
-            let Some(filed) = self.condition_match_keys_by_side.get(spelling) else {
-                continue;
-            };
-            for (candidate, ()) in filed {
-                visit();
-                if spells(candidate) {
-                    keys.insert(candidate.clone());
-                }
-            }
-        }
-        keys.into_iter().collect()
     }
 
     /// The same scoped fact through the shared condition application index.

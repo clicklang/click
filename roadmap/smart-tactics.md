@@ -29,10 +29,10 @@ before choosing each performance fix. Do not raise limits to hide a defect.
 
 The remaining audit targets include indexed walks as well as full scans:
 
-- Atom-condition alias traversal and large condition-key buckets, including
-  repeated failed queries.
-- Other resource candidate buckets and alias walks, including read-defined
-  evidence, kept-frame fallbacks, snapshot-rich object/provenance indexes,
+- Remaining condition-side buckets used by order/overflow helpers and
+  anchored equality reasoning, including repeated failed queries.
+- Other resource candidate buckets and alias walks, including prepared
+  memory-access candidate buckets, snapshot-rich object/provenance indexes,
   and remaining non-memory separation fallbacks.
 - Repeated memory-history queries, coordinated with the frame-walk item.
 
@@ -89,7 +89,8 @@ policy text alone is not the acceptance criterion.
 
 ## Attribute expensive checking inside search
 
-Extend `CheckingWorkScope` coverage beyond selected-context construction.
+Extend `CheckingWorkScope` coverage beyond selected-context construction and
+atomic memory-condition matching.
 Each newly covered checker names its explicit input/output measure and preserves
 source attribution under nested search. Audit nested tactic budgets as well as
 operation scopes: exclusive profiling must not hide work from enclosing search

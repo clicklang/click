@@ -19441,3 +19441,41 @@ fn alias_view_selection_expands_to_explicit_equality_and_transport() {
         assert!(without_implicit_auto(|| verify_click_theorems(&missing)).is_err());
     }
 }
+
+#[test]
+fn selected_alias_condition_and_read_validity_expand_without_search() {
+    for (name, source, premise) in [
+        (
+            "alias_order",
+            r#"
+            theorem alias_order(a: int32, b: int32, c: int32) {
+                requires a == b;
+                requires b < c;
+                ensures a < c by { solve(); }
+            }
+        "#,
+            "requires a == b;",
+        ),
+        (
+            "alias_read",
+            r#"
+            theorem alias_read(p: int32[], q: int32[]) {
+                requires p == q;
+                requires defined(p[0]);
+                ensures defined(q[0]) by { solve(); }
+            }
+        "#,
+            "requires p == q;",
+        ),
+    ] {
+        verify_click_theorems(source).expect("alias goal should verify");
+        let expanded = expand_c0_claim_source_by_label(source, &[], &format!("{name}.ensures_0"))
+            .expect("alias goal should expand");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        without_implicit_auto(|| verify_click_theorems(&expanded))
+            .expect("explicit alias proof must check");
+        let missing = expanded.replace(premise, "");
+        assert_ne!(missing, expanded);
+        assert!(without_implicit_auto(|| verify_click_theorems(&missing)).is_err());
+    }
+}

@@ -676,20 +676,25 @@ impl PropositionSearch for PureFactContext {
         // two memory ranges of the facts its block pair and the non-memory
         // residue hold. Those are the buckets the kernel's provers consult
         // directly.
-        let indexed = match proposition {
-            _ if goal_base.is_some() => goal_base.map(|base| {
-                self.search_memory_loadable_candidates_for_base(SearchPermission::new(), base)
-                    .inspect(|_| record_candidate_visit())
-                    .filter(usable)
-                    .cloned()
-                    .collect::<Vec<_>>()
-            }),
-            Proposition::CMemoryReadDefined {
-                pointer,
-                value_type,
-                ..
-            } => Some(
-                self.memory_read_defined_candidates(pointer, *value_type)
+        let indexed =
+            match proposition {
+                _ if goal_base.is_some() => goal_base.map(|base| {
+                    self.search_memory_loadable_candidates_for_base(SearchPermission::new(), base)
+                        .inspect(|_| record_candidate_visit())
+                        .filter(usable)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                }),
+                Proposition::CMemoryReadDefined {
+                    pointer,
+                    value_type,
+                    ..
+                } => Some(
+                    self.search_memory_read_defined_candidates(
+                        SearchPermission::new(),
+                        pointer,
+                        *value_type,
+                    )
                     .into_iter()
                     .chain(self.search_memory_loadable_candidates_for_base(
                         SearchPermission::new(),
@@ -699,19 +704,19 @@ impl PropositionSearch for PureFactContext {
                     .filter(usable)
                     .cloned()
                     .collect(),
-            ),
-            Proposition::CResourceSeparate { left, right } => self
-                .resource_separation_candidates(left, right)
-                .map(|facts| {
-                    facts
-                        .into_iter()
-                        .inspect(|_| record_candidate_visit())
-                        .filter(usable)
-                        .cloned()
-                        .collect()
-                }),
-            _ => None,
-        };
+                ),
+                Proposition::CResourceSeparate { left, right } => self
+                    .resource_separation_candidates(left, right)
+                    .map(|facts| {
+                        facts
+                            .into_iter()
+                            .inspect(|_| record_candidate_visit())
+                            .filter(usable)
+                            .cloned()
+                            .collect()
+                    }),
+                _ => None,
+            };
         // The rest of the family is a fallback, reached only when no indexed
         // source justified the goal: a read whose address is itself computed
         // from another read, or a separation entailed through containment in
