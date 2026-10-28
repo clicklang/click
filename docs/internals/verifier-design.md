@@ -114,7 +114,11 @@ constructor. Retained certificate leaves construct it from their named premises.
 Normalization lives in `surface/checking/normalization.rs`.
 Branches retain their parent fact context and extend a cheap persistent clone.
 An opposite exact condition assumption records `false`; it never replaces the
-original condition or deletes its index entries.
+original condition or deletes its index entries. On a context holding this exact false
+premise, scalar specification addition, subtraction, multiplication, division and
+remainder construct their terms without ambient facts: falsehood discharges their
+arithmetic guards. Consistent contexts retain their usual definedness guards and
+provenance, and executed C keeps its undefined-behavior checks.
 Exact fact withdrawal is test-only, for negative controls that remove a premise;
 it is not a production backtracking operation. The build boundary also rejects
 production references to the withdrawal entry points. Tests may pay for index
