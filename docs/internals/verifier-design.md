@@ -113,6 +113,8 @@ planning may reuse a persistent context through `for_search`, which requires
 constructor. Retained certificate leaves construct it from their named premises.
 Normalization lives in `surface/checking/normalization.rs`.
 Branches retain their parent fact context and extend a cheap persistent clone.
+An opposite exact condition assumption records `false`; it never replaces the
+original condition or deletes its index entries.
 Exact fact withdrawal is test-only, for negative controls that remove a premise;
 it is not a production backtracking operation. The build boundary also rejects
 production references to the withdrawal entry points. Tests may pay for index

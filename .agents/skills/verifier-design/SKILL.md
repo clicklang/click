@@ -95,6 +95,7 @@ fast-gate binary. This enforcement does not replace deterministic scaling tests.
 Branching retains the parent `PureFactContext` and extends a cheap persistent
 clone. Do not add a premise and then withdraw it to backtrack. Exact withdrawal
 helpers exist only under `cfg(test)` for missing-premise controls; they may
-rebuild indexes and must not become production APIs. Audit truth-value
-replacement and explicit context restriction separately rather than treating
-them as branch undo.
+rebuild indexes and must not become production APIs. Opposite truth-value assumptions record
+falsehood while retaining the original
+condition and its indexes. Treat explicit context restriction separately from
+branch undo.

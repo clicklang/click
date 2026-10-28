@@ -3056,7 +3056,8 @@ mod tests {
         assert!(!restricted.equality_graph.are_offsets_equal(&a, &c));
         assert!(restricted.equality_graph.are_offsets_equal(&a, &b));
         let reversed = context.clone().assume_condition(bc, false);
-        assert!(!reversed.equality_graph.are_offsets_equal(&a, &c));
+        assert!(reversed.is_inconsistent());
+        assert!(reversed.equality_graph.are_offsets_equal(&a, &c));
         assert!(context.equality_graph.are_offsets_equal(&a, &c));
     }
 

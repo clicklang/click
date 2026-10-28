@@ -6870,12 +6870,17 @@ fn direct_constant_index_tracks_exact_premises_and_forks() {
     let unpinned = context.without_exact_fact(&Proposition::ConditionIs(pin.clone(), true));
     assert_eq!(unpinned.bitvector_constant_from_direct_equalities(&a), None);
     let replaced = context.clone().assume_condition(pin.clone(), false);
-    assert_eq!(replaced.bitvector_constant_from_direct_equalities(&a), None);
+    assert!(replaced.is_inconsistent());
+    assert_eq!(
+        replaced.bitvector_constant_from_direct_equalities(&a),
+        Some(7)
+    );
     assert_eq!(
         context.bitvector_constant_from_direct_equalities(&a),
         Some(7)
     );
     let restored = replaced.assume_condition(pin, true);
+    assert!(restored.is_inconsistent());
     assert_eq!(
         restored.bitvector_constant_from_direct_equalities(&a),
         Some(7)
@@ -6978,10 +6983,11 @@ fn constant_normalization_classes_detect_ambiguity_in_any_insertion_order() {
         "withdrawing the conflict restores the chain's constant"
     );
     let replaced = ambiguous.clone().assume_condition(conflict, false);
+    assert!(replaced.is_inconsistent());
     assert_eq!(
         replaced.known_signed_constant_after_normalization(&counter(4)),
-        Some(4),
-        "replacing the conflict by its negation restores the chain's constant"
+        None,
+        "opposite assumptions do not erase the conflicting constant"
     );
 }
 

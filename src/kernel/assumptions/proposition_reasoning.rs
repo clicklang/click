@@ -4237,6 +4237,14 @@ impl PureFactContext {
     }
 
     pub(crate) fn is_inconsistent(&self) -> bool {
+        // Exact opposite assumptions construct this fact directly, without
+        // deleting the original condition or invalidating derived indexes.
+        if self.prop_facts.contains(&Proposition::ConditionIs(
+            ConditionTerm::Constant(false),
+            true,
+        )) {
+            return true;
+        }
         // The closure can discover a constant conflict on demand, after its
         // facts were filed.
         if self.equality_graph.has_scalar_constant_conflict()

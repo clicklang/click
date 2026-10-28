@@ -68,7 +68,7 @@ fn fact_lookup_transports_comparisons_and_negative_facts_without_arithmetic_sear
 }
 
 #[test]
-fn fact_lookup_preserves_branch_withdrawal_restriction_and_replacement() {
+fn fact_lookup_preserves_branch_withdrawal_restriction_and_contradiction() {
     let source = Proposition::ConditionIs(ConditionTerm::signed_less_than(var(20), var(21)), true);
     let target = Proposition::ConditionIs(ConditionTerm::signed_less_than(var(22), var(21)), true);
     let alias = eq(var(20), var(22));
@@ -87,8 +87,9 @@ fn fact_lookup_preserves_branch_withdrawal_restriction_and_replacement() {
             .contains_known(&target)
     );
     let replaced = child.assume_condition(ConditionTerm::signed_less_than(var(20), var(21)), false);
-    assert!(!replaced.contains_known(&source));
-    assert!(!replaced.contains_known(&target));
+    assert!(replaced.is_inconsistent());
+    assert!(replaced.contains_known(&source));
+    assert!(replaced.contains_known(&target));
 }
 
 #[test]

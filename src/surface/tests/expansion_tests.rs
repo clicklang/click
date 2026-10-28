@@ -19361,3 +19361,19 @@ fn post_return_function_unfold_retains_its_equation_through_expansion() {
     assert_ne!(false_equation, source);
     assert!(verify_c0_sources(&false_equation, &sources).is_err());
 }
+
+#[test]
+fn opposite_path_assumptions_expand_without_search() {
+    let (source, _) = mdtest_sources("mdtests/opposite_path_assumptions_close_the_branch.md");
+    verify_click_theorems(&source).unwrap();
+    for label in [
+        "equality_then_inequality.ensures_0",
+        "inequality_then_equality.ensures_0",
+        "searched_contradictory_branch.ensures_0",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], label).unwrap();
+        without_implicit_auto(|| verify_click_theorems(&expanded)).unwrap();
+    }
+    let missing_opposite = source.replace("x != y implies", "x == y implies");
+    assert!(verify_click_theorems(&missing_opposite).is_err());
+}
