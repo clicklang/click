@@ -1448,7 +1448,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);
             vec![CExpressionPath {
                 outcome: CExpressionOutcome::Value(match value {
-                    CValue::Pointer(pointer) => {
+                    CValue::Pointer(pointer) if !SpecificationReadScope::is_active() => {
                         CValue::Pointer(assumptions.pointer_value_at_entry(pointer))
                     }
                     _ => value.clone(),
