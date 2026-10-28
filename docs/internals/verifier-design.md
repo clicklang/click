@@ -141,9 +141,17 @@ charges each visited candidate. Search can choose a covering view and expansion
 writes `transport(source, target) using { ... }`; explicit selection checks in
 a restricted context. The build boundary rejects kernel calls to that search
 entry point and rejects the test-only whole-block census. The atomic coverage
-fallback uses the same checked candidate lookup. This bounds bucket enumeration,
-not the separate alias and
-structural-anchor walks still listed in the roadmap.
+fallback uses the same checked candidate lookup. Checked view lookup uses
+structural offsets, the maintained affine class coordinate and its unique
+concrete storage anchor; it never enumerates the alias class. A singleton
+selected source may have another block spelling: checking aligns the two
+supplied addresses through the graph and retains bounds, lifetime and
+structural-distinctness checks. Preserve existing same-block endpoint expressions
+unless the addresses are already equal; coordinate projection must not obscure
+their stated bounds. Other spellings require search permission.
+The build boundary rejects alias enumeration in these migrated view queries;
+read-defined evidence, kept-frame lookup and condition aliases still need the
+audits listed in the roadmap.
 
 `instrumentation::CheckingWorkScope` gives a checked operation its own allowance
 inside or outside a tactic. Selected-context construction installs it with the

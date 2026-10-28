@@ -236,3 +236,26 @@ fn conversion_refusals_cannot_call_search() {
         );
     }
 }
+
+#[test]
+fn checked_view_queries_cannot_restore_alias_enumeration() {
+    for (path, function) in [
+        (
+            "src/kernel/assumptions.rs",
+            "memory_loadable_related_candidates",
+        ),
+        (
+            "src/kernel/assumptions/memory_reasoning.rs",
+            "proves_memory_loadable_inner",
+        ),
+    ] {
+        for method in ["pointer_spellings", "exact_pointer_aliases"] {
+            let source = format!("fn {function}(c: C, base: P) {{ c.{method}(&base); }}");
+            assert!(boundary::check_source(path, &source).is_err(), "{source}");
+        }
+        let source = format!(
+            "fn {function}(c: C, base: P) {{ c.canonical_pointer(&base); c.storage_address(&base); }}"
+        );
+        assert!(boundary::check_source(path, &source).is_ok());
+    }
+}

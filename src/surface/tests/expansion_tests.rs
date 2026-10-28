@@ -19412,3 +19412,32 @@ fn ambiguous_view_bucket_search_expands_to_selected_transport() {
         .replace("requires viewable(data[0..3]);", "");
     assert!(without_implicit_auto(|| verify_click_theorems(&missing)).is_err());
 }
+
+#[test]
+fn alias_view_selection_expands_to_explicit_equality_and_transport() {
+    let source = r#"
+        theorem alias_view(root: int32[], source: int32[], alias: int32[], other: int32[]) {
+            requires root == source;
+            requires root == alias;
+            requires viewable(source[0..8]);
+            requires viewable(other[0..8]);
+            ensures viewable(alias[0..1]) by { solve(); }
+        }
+    "#;
+    verify_click_theorems(source).expect("search should select the aliased source view");
+    let expanded = expand_c0_claim_source_by_label(source, &[], "alias_view.ensures_0")
+        .expect("alias selection must have an explicit proof");
+    assert!(!expanded.contains("solve("), "{expanded}");
+    assert!(expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("using {"), "{expanded}");
+    without_implicit_auto(|| verify_click_theorems(&expanded))
+        .expect("selected aliases must check without implicit search");
+    for premise in [
+        "requires root == alias;",
+        "requires viewable(source[0..8]);",
+    ] {
+        let missing = expanded.replace(premise, "");
+        assert_ne!(missing, expanded);
+        assert!(without_implicit_auto(|| verify_click_theorems(&missing)).is_err());
+    }
+}
