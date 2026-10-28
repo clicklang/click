@@ -2929,13 +2929,10 @@ impl ResourceContext {
             .find(|available| resource_fact_entails(available, required, assumptions))
     }
 
-    /// [`Self::direct_match_candidates`], narrowed for a token or composite
-    /// whose first argument is a pointer to the facts of its shape whose
-    /// first argument is related to that pointer, as normalization relates
-    /// them (its root, the roots its recorded equalities select, and its
-    /// exact aliases), plus those whose first argument is not a pointer.
-    /// Two such facts with unrelated first pointers have no fact that could
-    /// prove those pointers equal, so neither entails the other.
+    /// Select token/composite candidates by shape and the first pointer's
+    /// closed address class on published inputs. Raw compositions retain the
+    /// structural-root view until their producer publishes them. Candidate
+    /// selection grants no authority: the caller checks the full arguments.
     pub(in crate::kernel) fn direct_match_candidates_for(
         &self,
         fact: &CResourceFact,
@@ -2950,6 +2947,22 @@ impl ResourceContext {
             return self.direct_match_candidates(fact).collect();
         };
         let shape = (fact.family(), name.clone(), arguments.len());
+        if let Some(found) = self.class_shape_candidates(fact, assumptions) {
+            let mut entries = found
+                .iter()
+                .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+                .copied()
+                .collect::<BTreeSet<_>>();
+            if let Some(unrooted) = self.storage.index.exact_shapes_by_root.get(&(
+                shape.0,
+                shape.1.clone(),
+                shape.2,
+                None,
+            )) {
+                entries.extend(unrooted.iter().copied());
+            }
+            return entries.into_iter().map(|entry| self.fact(entry)).collect();
+        }
         let mut entries = BTreeSet::new();
         let roots = std::iter::once(None).chain(
             related_pointer_roots(pointer, assumptions)
@@ -12023,3 +12036,6 @@ thread_local! {
 pub(crate) fn take_whole_normalization_facts() -> usize {
     WHOLE_NORMALIZATION_FACTS.with(|count| count.replace(0))
 }
+
+#[cfg(test)]
+mod read_definition_index_tests;

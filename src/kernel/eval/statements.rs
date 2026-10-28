@@ -1969,7 +1969,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
             let Some(resources) = state
                 .resources
                 .clone()
-                .without_fact(&allocation, &effective_assumptions)
+                .without_fact_incrementally(&allocation, &effective_assumptions)
             else {
                 paths.push(CStatementExecutionPath::new(
                     CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
@@ -1986,7 +1986,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 old_count.clone(),
                 old_range_width,
             ));
-            let Some(resources) = resources.without_fact(&complete_access, &effective_assumptions)
+            let Some(resources) =
+                resources.without_fact_incrementally(&complete_access, &effective_assumptions)
             else {
                 // A live mutex consumed ownership of its storage; name it
                 // rather than the bytes it took.
