@@ -36,7 +36,8 @@ fn wide_equality_bounds_use_incremental_index_and_preserve_branches() {
         let original = facts.clone();
         let equality = ConditionTerm::uint64_equal(target, Bitvector32Term::UInt64Constant(0));
         let changed = facts.assume_condition(equality, false);
-        assert_eq!(changed.decide(&bound), None);
+        assert!(changed.is_inconsistent());
+        assert_eq!(changed.decide(&bound), Some(true));
         assert_eq!(original.decide(&bound), Some(true));
     }
 }

@@ -1651,15 +1651,14 @@ mod tests {
         assert_eq!(branch.signed_interval(&y), Some((0, 10)));
         assert_eq!(parent.signed_interval(&x), Some((0, i64::from(i32::MAX))));
         assert_eq!(parent.signed_interval(&y), Some((i64::from(i32::MIN), 10)));
-        let withdrawn = branch.assume_condition(ConditionTerm::equal(x.clone(), y.clone()), false);
-        assert_eq!(
-            withdrawn.signed_interval(&x),
-            Some((0, i64::from(i32::MAX)))
-        );
-        assert_eq!(
-            withdrawn.signed_interval(&y),
-            Some((i64::from(i32::MIN), 10))
-        );
+        let impossible = branch.assume_condition(ConditionTerm::equal(x.clone(), y.clone()), false);
+        assert!(impossible.is_inconsistent());
+        assert_eq!(impossible.signed_interval(&x), Some((0, 10)));
+        assert_eq!(impossible.signed_interval(&y), Some((0, 10)));
+        let sibling = parent.assume_condition(ConditionTerm::equal(x.clone(), y.clone()), false);
+        assert!(!sibling.is_inconsistent());
+        assert_eq!(sibling.signed_interval(&x), Some((0, i64::from(i32::MAX))));
+        assert_eq!(sibling.signed_interval(&y), Some((i64::from(i32::MIN), 10)));
     }
 
     #[test]

@@ -497,10 +497,15 @@ context-free form), joined by the context's equalities; a merge moves the
 smaller class's edges. `is_inconsistent` reads whether any key is in
 conflict, so it costs nothing per fact
 (`one_added_fact_and_the_query_cost_the_same_beside_any_number_of_facts`).
-Replacing an equality's truth value clears the index, which the next query
-rebuilds, as replacement does for the difference graph. This remaining rebuild
-path is tracked in `roadmap/smart-tactics.md`. Test-only premise withdrawal also
-clears these indexes; production branches retain their parent context instead.
+Assuming the opposite truth value of an exact held condition preserves the
+condition and its indexes and directly records `false` in the proposition fact
+set. `is_inconsistent` reads that exact fact before consulting derived indexes.
+The false fact has ordinary proof syntax and survives premise reconstruction;
+explicitly restricting away that fact removes its authority. The regression
+`contradictory_branch_creation_does_not_rebuild_ambient_indexes` measures repeated
+contradictory branches beside 32, 128 and 512 unrelated facts. Test-only premise
+withdrawal can still invalidate these indexes; production branches retain their
+parent context instead.
 Nothing else is compared:
 two endpoints that only memory resolution, the add rule, or another theory
 rule could equate are not related, and neither is an alias guard to a

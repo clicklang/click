@@ -13,9 +13,10 @@ here are not implemented and have no current acceptance criteria.
 
 Premise-withdrawal controls described below are test-only: they check that a
 result depends on its support. Production branches retain the parent context
-and extend a persistent clone. Index deletion also exists for condition-value
-replacement and explicit context restriction; those are separate from branch
-backtracking and remain subject to the checking cost contract.
+and extend a persistent clone. Opposite assumptions record `false` without
+replacing the original condition
+or deleting its equality support. Explicit context restriction remains separate
+from branch backtracking and subject to the checking cost contract.
 
 ## Pointer comparison evidence
 

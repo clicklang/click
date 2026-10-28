@@ -4982,9 +4982,10 @@ fn post_execution_solve_uses_the_introduced_antecedent_for_contradiction() {
     let expanded = expand_function_proof_source(click_source, &sources, "branch_value")
         .expect("the retained introduced contradiction should expand");
     assert!(expanded.contains("intro();"), "{expanded}");
-    assert!(expanded.contains("contradiction("), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
         .expect("the introduced contradiction should check independently");
+    let false_on_the_reachable_branch = expanded.replace("result == 1", "result == 2");
+    assert!(verify_c0_sources(&false_on_the_reachable_branch, &sources).is_err());
 }
 
 #[test]
@@ -19360,4 +19361,31 @@ fn post_return_function_unfold_retains_its_equation_through_expansion() {
     );
     assert_ne!(false_equation, source);
     assert!(verify_c0_sources(&false_equation, &sources).is_err());
+}
+
+#[test]
+fn opposite_path_assumptions_expand_without_search() {
+    let (source, _) = mdtest_sources("mdtests/opposite_path_assumptions_close_the_branch.md");
+    verify_click_theorems(&source).unwrap();
+    for label in [
+        "equality_then_inequality.ensures_0",
+        "inequality_then_equality.ensures_0",
+        "searched_contradictory_branch.ensures_0",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], label).unwrap();
+        without_implicit_auto(|| verify_click_theorems(&expanded)).unwrap();
+    }
+    let missing_opposite = source.replace("x != y implies", "x == y implies");
+    assert!(verify_click_theorems(&missing_opposite).is_err());
+}
+
+#[test]
+fn disjunctive_loop_entry_keeps_one_preservation_certificate() {
+    let (source, sources) = mdtest_sources("mdtests/loop_conjunctive_guard_exits.md");
+    let sources = sources
+        .iter()
+        .map(|(name, body)| (name.as_str(), body.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "either.contract").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }

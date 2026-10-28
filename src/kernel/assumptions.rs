@@ -3932,6 +3932,7 @@ impl PureFactContext {
         Self::fingerprint(4, &(variable, key, value))
     }
 
+    #[cfg(test)]
     fn withdraw_typed_pointer_read_definition(&mut self, condition: &ConditionTerm, value: bool) {
         if !value {
             return;
@@ -6855,6 +6856,7 @@ impl PureFactContext {
         match proposition {
             Proposition::ConditionIs(condition, value) => {
                 self.condition_facts.get(condition) == Some(value)
+                    || self.prop_facts.contains(proposition)
             }
             Proposition::And(left, right) => {
                 self.contains_assumed_exact(left) && self.contains_assumed_exact(right)
@@ -6986,13 +6988,32 @@ impl PureFactContext {
         next
     }
 
+    /// A repeated assumption is either redundant or immediately contradictory.
+    /// Keep the first condition entry and all its indexes. Record contradiction
+    /// as an ordinary false proposition, so retained premises and reconstruction
+    /// preserve it without needing a hidden flag or an index rebuild. The
+    /// proposition set is distinct from the condition map: even a prior
+    /// `false == false` fact must not be replaced to record falsehood.
+    fn restates_condition(&mut self, condition: &ConditionTerm, value: bool) -> bool {
+        let Some(known) = self.condition_facts.get(condition).copied() else {
+            return false;
+        };
+        if known != value {
+            self.insert_proposition_fact(Proposition::ConditionIs(
+                ConditionTerm::Constant(false),
+                true,
+            ));
+        }
+        true
+    }
+
     fn assume_condition_once(mut self, condition: ConditionTerm, value: bool) -> Self {
         // Proof branches frequently restate a path fact (for example while
         // lowering the consequent of an implication). Preserve the shared
         // persistent view on that idempotent insertion: `Arc::make_mut`
         // would otherwise clone the complete fact map and every derived
         // index before discovering that nothing changed.
-        if self.condition_facts.get(&condition) == Some(&value) {
+        if self.restates_condition(&condition, value) {
             return self;
         }
         #[cfg(test)]
@@ -7177,15 +7198,13 @@ impl PureFactContext {
         {
             self = self.assume_condition_uncharged(overflow, false);
         }
-        let old = self.condition_facts.get(&condition).copied();
+        // Filing derived facts above can itself establish this condition.
+        // Apply the same monotone rule before committing the original entry.
+        if self.restates_condition(&condition, value) {
+            return self;
+        }
         self.execution_variable_ceiling.file_condition(&condition);
         self.condition_facts = self.condition_facts.with_inserted(condition.clone(), value);
-        if let Some(source) = self
-            .execution_fact_projection
-            .get(&ContextFactKey::Condition(condition.clone()))
-        {
-            self.equality_graph.adjust_pointer_fact(source, false);
-        }
         self.execution_fact_projection.insert(
             ContextFactKey::Condition(condition.clone()),
             std::sync::Arc::new(ExecutionPureFact::new(Proposition::ConditionIs(
@@ -7194,44 +7213,7 @@ impl PureFactContext {
             ))),
         );
         self.adjust_pointer_class_fact(&Proposition::ConditionIs(condition.clone(), value), true);
-        if old.is_none() {
-            self.adjust_memory_load_condition_index(&condition, true);
-        }
-        if let Some(old) = old {
-            if self
-                .equality_graph
-                .admitted
-                .congruence_conditions
-                .contains_key(&condition)
-            {
-                self.equality_graph
-                    .admitted
-                    .congruence_conditions
-                    .remove(&condition);
-                self.rebuild_equality_graph();
-            }
-            self.adjust_stated_proposition_index(
-                &Proposition::ConditionIs(condition.clone(), old),
-                false,
-            );
-            self.adjust_scalar_evidence_input(&condition, old, false);
-            self.adjust_bitvector64_equality(&condition, old, false);
-            self.adjust_exact_constant_equality(&condition, old, false);
-
-            self.adjust_condition_match_indexes(&condition, old, false);
-            self.adjust_signed_order_bound(&condition, old, false);
-            self.adjust_null_pointer_offset(&condition, old, false);
-            self.adjust_pointer_block_alias(&condition, old, false);
-            self.adjust_pointer_offset_alias(&condition, old, false);
-            self.adjust_int32_graph_equality(&condition, old, false);
-            self.adjust_uint64_graph_equality(&condition, old, false);
-            self.adjust_algebraic_graph_equality(
-                &Proposition::ConditionIs(condition.clone(), old),
-                false,
-            );
-            self.withdraw_typed_pointer_read_definition(&condition, old);
-            self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), old));
-        }
+        self.adjust_memory_load_condition_index(&condition, true);
         self.adjust_stated_proposition_index(
             &Proposition::ConditionIs(condition.clone(), value),
             true,
@@ -7979,6 +7961,7 @@ impl PureFactContext {
                 if weakened.condition_facts.get(condition) == Some(value) {
                     weakened.forget_condition_fact(condition, *value);
                 }
+                weakened.remove_proposition_fact(proposition);
             }
             Proposition::Not(body) => match body.as_ref() {
                 Proposition::ConditionIs(condition, value)
@@ -8064,7 +8047,9 @@ impl PureFactContext {
         required
             .condition_facts
             .scan_explicit_input()
-            .all(|(condition, value)| self.condition_facts.get(condition) == Some(value))
+            .all(|(condition, value)| {
+                self.contains_assumed_exact(&Proposition::ConditionIs(condition.clone(), *value))
+            })
             && required
                 .equality_graph
                 .admitted
@@ -8084,7 +8069,7 @@ impl PureFactContext {
             && required
                 .prop_facts
                 .scan_explicit_input()
-                .all(|proposition| self.prop_facts.contains(proposition))
+                .all(|proposition| self.contains_assumed_exact(proposition))
             && required
                 .resource_compositions
                 .scan_explicit_input()
@@ -11887,4 +11872,10 @@ mod diagnostic_sample_tests {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod contradictory_branch_scaling_tests {
+    use super::*;
+    include!("../scaling_tests/kernel/assumptions/contradictory_branches.rs");
 }

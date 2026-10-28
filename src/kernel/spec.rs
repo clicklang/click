@@ -5666,15 +5666,15 @@ fn evaluate_spec_add_chain_paths_in(
                     continue;
                 };
                 next.extend(spec_value_paths_in(
-                    apply_c_add(
-                        state,
+                    apply_spec_arithmetic(
                         left_path.value.clone(),
                         right_path.value,
-                        None,
-                        None,
                         facts,
                         obligations,
                         assumptions,
+                        |left, right, facts, obligations, context| {
+                            apply_c_add(state, left, right, None, None, facts, obligations, context)
+                        },
                     ),
                     budget,
                 ));
@@ -6376,15 +6376,24 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 assumptions,
                 budget,
                 |left, right, facts, obligations| {
-                    apply_c_add(
-                        state,
+                    apply_spec_arithmetic(
                         left,
                         right,
-                        left_step_width,
-                        right_step_width,
                         facts,
                         obligations,
                         assumptions,
+                        |left, right, facts, obligations, context| {
+                            apply_c_add(
+                                state,
+                                left,
+                                right,
+                                left_step_width,
+                                right_step_width,
+                                facts,
+                                obligations,
+                                context,
+                            )
+                        },
                     )
                 },
             )?
@@ -6399,15 +6408,24 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 assumptions,
                 budget,
                 |left, right, facts, obligations| {
-                    apply_c_subtract(
-                        state,
+                    apply_spec_arithmetic(
                         left,
                         right,
-                        left_step_width,
-                        right_step_width,
                         facts,
                         obligations,
                         assumptions,
+                        |left, right, facts, obligations, context| {
+                            apply_c_subtract(
+                                state,
+                                left,
+                                right,
+                                left_step_width,
+                                right_step_width,
+                                facts,
+                                obligations,
+                                context,
+                            )
+                        },
                     )
                 },
             )?
@@ -6419,7 +6437,14 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_multiply(left, right, facts, obligations, assumptions)
+                apply_spec_arithmetic(
+                    left,
+                    right,
+                    facts,
+                    obligations,
+                    assumptions,
+                    apply_c_multiply,
+                )
             },
         )?,
         SpecExpression::Divide(left, right) => evaluate_spec_scalar_binary_paths_in(
@@ -6429,7 +6454,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_divide(left, right, facts, obligations, assumptions)
+                apply_spec_arithmetic(left, right, facts, obligations, assumptions, apply_c_divide)
             },
         )?,
         SpecExpression::Remainder(left, right) => evaluate_spec_scalar_binary_paths_in(
@@ -6439,7 +6464,14 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_remainder(left, right, facts, obligations, assumptions)
+                apply_spec_arithmetic(
+                    left,
+                    right,
+                    facts,
+                    obligations,
+                    assumptions,
+                    apply_c_remainder,
+                )
             },
         )?,
         SpecExpression::ShiftLeft(left, right) => evaluate_spec_scalar_binary_paths_in(
@@ -7432,6 +7464,52 @@ fn spec_expression_pointer_step_width(state: &CState, expression: &SpecExpressio
         SpecExpression::Subtract(left, _) => spec_expression_pointer_step_width(state, left),
         _ => None,
     }
+}
+
+/// An impossible specification path still needs the term named by its syntax.
+/// Its recorded falsehood discharges every arithmetic domain guard; do not let
+/// an arbitrary decision in that context select only an undefined C path.
+/// Consistent contexts and pointer operations retain their ordinary lowering.
+fn apply_spec_arithmetic(
+    left: CValue,
+    right: CValue,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    apply: impl Fn(
+        CValue,
+        CValue,
+        ExecutionFacts,
+        Vec<ProofObligation>,
+        &PureFactContext,
+    ) -> Vec<CExpressionPath>,
+) -> Vec<CExpressionPath> {
+    if !assumptions.contains_assumed_exact(&Proposition::ConditionIs(
+        ConditionTerm::Constant(false),
+        true,
+    )) || matches!(left, CValue::Pointer(_) | CValue::PointerInteger(_))
+        || matches!(right, CValue::Pointer(_) | CValue::PointerInteger(_))
+    {
+        return apply(left, right, facts, obligations, assumptions);
+    }
+    apply(
+        left,
+        right,
+        ExecutionFacts::default(),
+        Vec::new(),
+        &PureFactContext::new(),
+    )
+    .into_iter()
+    .map(|mut path| {
+        // These are the operator's arithmetic guards, all discharged by
+        // the exact false premise. Keep the operands' own facts and debts.
+        path.facts = facts.clone();
+        let mut inherited = obligations.clone();
+        inherited.extend(path.obligations);
+        path.obligations = inherited;
+        path
+    })
+    .collect()
 }
 
 fn evaluate_spec_scalar_binary_paths_in(
@@ -8736,4 +8814,10 @@ mod certificate_observation_tests {
             assert_eq!(lower(), ordinary);
         }
     }
+}
+
+#[cfg(test)]
+mod arithmetic_domain_scaling_tests {
+    use super::*;
+    include!("../scaling_tests/kernel/spec/arithmetic_domains.rs");
 }

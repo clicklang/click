@@ -1859,7 +1859,7 @@ mod condition_premise_tests {
     }
 
     #[test]
-    fn condition_selection_tracks_restriction_replacement_and_exclusion() {
+    fn condition_selection_tracks_restriction_contradiction_and_exclusion() {
         let (context, goal) = chain(8, 20);
         let selected = connected_condition_premises(&context, &goal, false).unwrap();
         let restricted = context.restricted_to_facts(&selected, &[]);
@@ -1869,10 +1869,11 @@ mod condition_premise_tests {
         );
         let condition = chain_fact(1);
         let replaced = context.clone().assume_condition(condition.clone(), false);
+        assert!(replaced.is_inconsistent());
         assert!(
             connected_condition_premises(&replaced, &goal, false)
                 .unwrap()
-                .contains(&(condition, false))
+                .contains(&(condition, true))
         );
         let stated = context.assume_proposition(goal.clone());
         assert_eq!(
