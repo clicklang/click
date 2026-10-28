@@ -119,6 +119,7 @@ impl EqualityGraph {
                 ..EqualityGraphState::default()
             }),
             logical_reads: self.logical_reads.clone(),
+            resolve_stored_values: self.resolve_stored_values,
         }
     }
 

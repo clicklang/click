@@ -2232,6 +2232,7 @@ pub(crate) fn load_substitution_term_visits() -> usize {
 }
 
 pub(crate) fn clear_load_canonicalization_caches() {
+    STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().clear());
     MEMORY_SHOWN_CELLS.with(|cache| cache.borrow_mut().clear());
     LOAD_VARIABLE_CACHE.with(|cache| cache.borrow_mut().clear());
     TERM_CACHE.with(|cache| cache.borrow_mut().clear());
@@ -2278,6 +2279,7 @@ pub(crate) fn capture_load_variable_registry() -> LoadRegistryState {
 }
 
 pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
+    STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().clear());
     POINTER_READ_OBSERVATIONS
         .with(|registry| *registry.borrow_mut() = state.pointer_observations.clone());
     WIDE_LOAD_OBSERVATIONS
@@ -2294,6 +2296,7 @@ pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
 }
 
 pub(crate) fn clear_load_variable_registry() {
+    STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().clear());
     MEMORY_SHOWN_CELLS.with(|cache| cache.borrow_mut().clear());
     POINTER_READ_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
@@ -2338,10 +2341,31 @@ pub(crate) fn read_over_write_value(term: &Bitvector32Term) -> Option<Bitvector3
     else {
         return None;
     };
-    let stored = memory.known_value(&pointer)?;
+    let stored = memory
+        .known_value(&pointer)
+        .or_else(|| memory.known_value(&stored_pointer_address(&pointer)?))?;
     let read = kind.read_cell(&stored)?;
     let value = crate::kernel::spec::c_value_bitvector_term(&read)?;
     (value != *term).then_some(value)
+}
+
+/// `address` with its base read through the pointer read-over-write
+/// authority: an address offset from a pointer read whose snapshot stores a
+/// pointer at the read's address is that pointer, offset alike. Both steps
+/// read memory, never facts.
+fn stored_pointer_address(address: &Pointer) -> Option<Pointer> {
+    let PointerBlock::LoadedPointer(_) = &address.block else {
+        return None;
+    };
+    let read = Pointer {
+        block: address.block.clone(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let stored = pointer_read_over_write_value(&read)?;
+    Some(Pointer {
+        block: stored.block,
+        offset: PointerOffsetTerm::add(stored.offset, address.offset.clone()),
+    })
 }
 
 /// The comparison form of `proposition`: each read of a stored cell
@@ -2389,7 +2413,61 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
             &resolved, variable, &value,
         );
     }
+    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value) = &resolved {
+        let left_value = pointer_read_over_write_value(left);
+        let right_value = pointer_read_over_write_value(right);
+        if left_value.is_some() || right_value.is_some() {
+            let left = left_value.unwrap_or_else(|| left.as_ref().clone());
+            let right = right_value.unwrap_or_else(|| right.as_ref().clone());
+            // Two reads of one stored pointer compare equal; the comparison
+            // form is a lookup aid, so it states that outright.
+            let condition = if left == right {
+                ConditionTerm::Constant(true)
+            } else {
+                ConditionTerm::pointer_equal(left, right)
+            };
+            resolved = Proposition::ConditionIs(condition, *value);
+        }
+    }
+    // A pointer value carries a designation and an extent beside its address,
+    // so each read side resolves to the whole stored value, and the
+    // comparison is rebuilt from the two values: equal addresses alone never
+    // make two pointer values equal.
+    if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), value) =
+        &resolved
+    {
+        let resolve = |side: &CPointerValue| {
+            // The whole stored value defines the unmodified read. An
+            // explicitly selected subobject or changed domain is a different
+            // value even when it carries that same numeric read address.
+            if side != &CPointerValue::new(side.pointer().clone(), side.c_type()) {
+                return None;
+            }
+            pointer_read_over_write_c_value(side.pointer())
+                .map(|stored| stored.with_type(side.c_type()))
+        };
+        let (left_value, right_value) = (resolve(left), resolve(right));
+        if left_value.is_some() || right_value.is_some() {
+            let left = left_value.unwrap_or_else(|| left.as_ref().clone());
+            let right = right_value.unwrap_or_else(|| right.as_ref().clone());
+            let condition = match ConditionTerm::pointer_value_equal(left, right) {
+                ConditionTerm::PointerEqual(left, right) if left == right => {
+                    ConditionTerm::Constant(true)
+                }
+                condition => condition,
+            };
+            resolved = Proposition::ConditionIs(condition, *value);
+        }
+    }
     (&resolved != proposition).then_some(resolved)
+}
+
+/// The read-over-write authority for a pointer read: the pointer stored at
+/// the read's address in the snapshot it reads, as a cell or as the pointer
+/// view of a union cell, when that snapshot records one. A cell holding the
+/// read itself resolves to nothing.
+pub(crate) fn pointer_read_over_write_value(pointer: &Pointer) -> Option<Pointer> {
+    pointer_read_over_write_c_value(pointer).map(|stored| stored.pointer().clone())
 }
 
 /// The complete pointer stored at this read's address, when the snapshot's
@@ -2609,6 +2687,65 @@ pub(crate) fn pointer_load_identity(memory: &SharedCMemory, address: &Pointer) -
             }
         }
     })
+}
+
+/// The block a pointer read's value lies in by the read-over-write authority:
+/// the block of the pointer memory alone shows stored at the read's address
+/// (`memory_shown_cell_value`). `None` when memory shows no pointer there.
+pub(crate) fn loaded_pointer_stored_block(identity: PointerLoadId) -> Option<PointerBlock> {
+    let mut current = identity;
+    let mut path = Vec::new();
+    let (terminal, complete) = loop {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(cached) =
+            STORED_POINTER_BLOCKS.with(|cache| cache.borrow().get(&current).cloned())
+        {
+            break (
+                Some(cached.unwrap_or(PointerBlock::LoadedPointer(current))),
+                true,
+            );
+        }
+        if !STORED_POINTER_BLOCKS_RUNNING.with(|running| running.borrow_mut().insert(current)) {
+            // A memory naming walk can ask about the read it is resolving.
+            // That recursive question supplies no definition and is not memoized.
+            break (None, false);
+        }
+        path.push(current);
+        match immediate_stored_pointer_block(current) {
+            Some(PointerBlock::LoadedPointer(next)) => current = next,
+            Some(block) => break (Some(block), true),
+            None => break (Some(PointerBlock::LoadedPointer(current)), true),
+        }
+    };
+    for read in path {
+        STORED_POINTER_BLOCKS_RUNNING.with(|running| running.borrow_mut().remove(&read));
+        if complete {
+            let value = terminal
+                .clone()
+                .filter(|block| *block != PointerBlock::LoadedPointer(read));
+            STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().insert(read, value));
+        }
+    }
+    terminal.filter(|block| *block != PointerBlock::LoadedPointer(identity))
+}
+
+thread_local! {
+    static STORED_POINTER_BLOCKS: std::cell::RefCell<std::collections::HashMap<PointerLoadId, Option<PointerBlock>>> = std::cell::RefCell::new(std::collections::HashMap::new());
+    static STORED_POINTER_BLOCKS_RUNNING: std::cell::RefCell<std::collections::HashSet<PointerLoadId>> = std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+fn immediate_stored_pointer_block(identity: PointerLoadId) -> Option<PointerBlock> {
+    let (memory, address) = registered_pointer_load(identity)?;
+    if !holds_pointer_cell(memory.memory(), &address) {
+        return None;
+    }
+    let CValue::Pointer(stored) =
+        memory_shown_cell_value(&memory, &address, crate::kernel::C_POINTER_BYTE_WIDTH)?
+    else {
+        return None;
+    };
+    (stored.pointer().block != PointerBlock::LoadedPointer(identity))
+        .then(|| stored.pointer().block.clone())
 }
 
 /// Decode a pointer-load name without consulting scalar-load metadata.
@@ -7173,5 +7310,100 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/eval/memory_loads/tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod pointer_comparison_tests {
+    use super::*;
+    use crate::kernel::VerificationSession;
+
+    #[test]
+    fn pointer_read_comparison_preserves_the_complete_stored_extent() {
+        let _session = VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(989_001));
+        let target = Pointer::symbolic(Variable(989_002));
+        let stored = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: target.clone(),
+                width: 4u32.into(),
+            },
+        ));
+        let memory =
+            intern_c_memory(CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone())));
+        let read = CPointerValue::new(Pointer::loaded_value(&memory, &slot), CType::Int32Pointer);
+        let equal = Proposition::ConditionIs(
+            ConditionTerm::PointerValueEqual(Box::new(read.clone()), Box::new(stored)),
+            true,
+        );
+        assert!(holds_by_read_over_write(&equal));
+        let larger = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: target,
+                width: 8u32.into(),
+            },
+        ));
+        let unequal = Proposition::ConditionIs(
+            ConditionTerm::PointerValueEqual(Box::new(read), Box::new(larger)),
+            true,
+        );
+        assert!(!holds_by_read_over_write(&unequal));
+    }
+
+    #[test]
+    fn pointer_read_comparison_keeps_explicit_bounds_on_the_read() {
+        let _session = VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(989_020));
+        let target = Pointer::symbolic(Variable(989_021));
+        let stored = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: target.clone(),
+                width: 4u32.into(),
+            },
+        ));
+        let memory =
+            intern_c_memory(CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone())));
+        let read = CPointerValue::new(Pointer::loaded_value(&memory, &slot), CType::Int32Pointer)
+            .with_extent(Some(SubobjectExtent {
+                start: target,
+                width: 8u32.into(),
+            }));
+        let unequal = Proposition::ConditionIs(
+            ConditionTerm::PointerValueEqual(Box::new(read), Box::new(stored)),
+            true,
+        );
+        assert!(!holds_by_read_over_write(&unequal));
+    }
+
+    #[test]
+    fn integer_read_over_write_follows_a_stored_pointer_address() {
+        let _session = VerificationSession::enter();
+        let slot = Pointer {
+            block: PointerBlock::Heap(989_003),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let target = Pointer {
+            block: PointerBlock::Heap(989_004),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = intern_c_memory(
+            CMemory::new()
+                .store(
+                    slot.clone(),
+                    CValue::typed_pointer(target.clone(), CType::Int32Pointer),
+                )
+                .store(target.offset_by_bytes(4), CValue::Int32(37u32.into())),
+        );
+        let address = Pointer::loaded_value(&memory, &slot).offset_by_bytes(4);
+        let raw = Bitvector32Term::MemoryLoad(memory, Box::new(address), LoadKind::Int32);
+        let (name, _) = load_variable_for_term(&raw).expect("the integer read has a version name");
+        assert_eq!(
+            read_over_write_value(&Bitvector32Term::Variable(name)),
+            Some(37u32.into())
+        );
+    }
+
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/eval/memory_loads/pointer_comparison_tests.rs");
     }
 }
