@@ -87,6 +87,11 @@ as upkeep. Failure messages use the capped diagnostic sampler, never an
 ambient scan to compute an omitted count or select the ends. Move the search into planning or use `SelectedFacts::from_propositions` for
 explicitly selected premises;
 if a legacy API needs migration, describe that migration and test its boundary.
+An indexed bucket is not explicit input. Loadability checking permits one
+implicit fact per address shape and uses exact membership for stated goals;
+do not recover a missed proof by enumerating an ambiguous bucket. Select its
+source in planning, retain the explicit transport in expansion, and test both
+exact hits and misses as the bucket grows.
 Run the boundary regressions with `test(gate_tests::search_boundary::)` in the
 fast-gate binary. This enforcement does not replace deterministic scaling tests.
 

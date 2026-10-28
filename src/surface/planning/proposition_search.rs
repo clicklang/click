@@ -661,11 +661,10 @@ impl PropositionSearch for PureFactContext {
             }
             _ => false,
         };
-        // A loadability or store goal is decided from the loadability facts
-        // of its own block and from nothing else in that family: that is
-        // the only bucket the kernel's loadable prover reads. Selecting
-        // from the same index keeps every answer while leaving facts about
-        // other objects unvisited.
+        // The planner may enumerate an address's ambiguous loadability
+        // bucket. Each trial below gives the checker an explicitly selected
+        // source; the checker itself refuses ambiguous buckets. Other address
+        // shapes remain unvisited unless a structural anchor or alias names them.
         let goal_base = match proposition {
             Proposition::CMemoryLoadable { base, .. } => Some(base),
             Proposition::CMemoryCanStore { pointer, .. } => Some(pointer),
@@ -679,7 +678,7 @@ impl PropositionSearch for PureFactContext {
         // directly.
         let indexed = match proposition {
             _ if goal_base.is_some() => goal_base.map(|base| {
-                self.memory_loadable_candidates_for_base(base)
+                self.search_memory_loadable_candidates_for_base(SearchPermission::new(), base)
                     .inspect(|_| record_candidate_visit())
                     .filter(usable)
                     .cloned()
@@ -692,7 +691,10 @@ impl PropositionSearch for PureFactContext {
             } => Some(
                 self.memory_read_defined_candidates(pointer, *value_type)
                     .into_iter()
-                    .chain(self.memory_loadable_candidates_for_base(pointer))
+                    .chain(self.search_memory_loadable_candidates_for_base(
+                        SearchPermission::new(),
+                        pointer,
+                    ))
                     .inspect(|_| record_candidate_visit())
                     .filter(usable)
                     .cloned()
@@ -1273,7 +1275,8 @@ impl PropositionSearch for PureFactContext {
         if bytes.as_const() != Some(1) {
             return None;
         }
-        for source in self.memory_loadable_candidates_for_base(base) {
+        for source in self.search_memory_loadable_candidates_for_base(SearchPermission::new(), base)
+        {
             let mut candidate = PureFactContext::new().assume_proposition(source.clone());
             for premise in &premises {
                 candidate = candidate.assume_proposition(premise.clone());
@@ -1302,10 +1305,13 @@ impl PropositionSearch for PureFactContext {
         if !matches!(instantiated, Proposition::CMemoryLoadable { .. }) {
             return None;
         }
-        for source in self.memory_loadable_candidates_for_base(match &instantiated {
-            Proposition::CMemoryLoadable { base, .. } => base,
-            _ => unreachable!(),
-        }) {
+        for source in self.search_memory_loadable_candidates_for_base(
+            SearchPermission::new(),
+            match &instantiated {
+                Proposition::CMemoryLoadable { base, .. } => base,
+                _ => unreachable!(),
+            },
+        ) {
             let candidate = self.with_only_proposition_facts(std::slice::from_ref(source));
             if crate::kernel::api::loadable_covered_by_fact(&candidate, &instantiated) {
                 return Some(PropositionDerivationRule::ExistsLoadableRange {

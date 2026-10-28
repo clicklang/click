@@ -57,3 +57,37 @@ fn witness_collection_stops_when_its_work_budget_is_exhausted() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn ambiguous_address_enumeration_requires_search_and_charges_candidates() {
+    for size in [8u32, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::CState::new().memory().clone();
+        let base = Pointer::symbolic(Variable(795_000));
+        let mut context = PureFactContext::new();
+        for extent in 1..=size {
+            context = context.assume_proposition(Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: base.clone(),
+                bytes: extent.into(),
+                wide: false,
+            });
+        }
+        assert!(
+            context
+                .memory_loadable_candidates_for_base(&base)
+                .next()
+                .is_none()
+        );
+        let (visited, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context
+                .search_memory_loadable_candidates_for_base(SearchPermission::new(), &base)
+                .count()
+        });
+        assert_eq!(visited, size as usize);
+        assert!(
+            work >= visited,
+            "unaccounted search candidates: {work} < {visited}"
+        );
+    }
+}

@@ -6,6 +6,9 @@ mod boundary;
 fn checking_rejects_planner_dependencies_and_enumeration_escape_hatches() {
     for source in [
         "use crate::surface::planning::proposition_search::PropositionSearch;",
+        "fn check(c: C) { c.memory_loadable_candidates(&block); }",
+        "fn check(c: C, permission: P) { c.search_memory_loadable_candidates_for_base(permission, &base); }",
+        "use crate::kernel::C::search_memory_loadable_candidates_for_base as views;",
         "use crate::{surface as s};",
         "fn check() { crate::surface::hidden!(); }",
         "fn check() { include!(\"hidden.rs\"); }",

@@ -31,9 +31,11 @@ The remaining audit targets include indexed walks as well as full scans:
 
 - Atom-condition alias traversal and large condition-key buckets, including
   repeated failed queries.
-- Resource candidate lookup with many views at the same address/shape and
-  long alias components. Audit snapshot-rich buckets and remaining non-memory
-  separation fallbacks; structural anchor lookup alone does not bound those.
+- Long alias components in loadability candidate lookup. The per-shape
+  singleton rule does not bound the number of alias keys visited.
+- Other resource candidate buckets, including read-defined evidence and
+  snapshot-rich object/provenance indexes, and remaining non-memory
+  separation fallbacks.
 - Repeated memory-history queries, coordinated with the frame-walk item.
 
 For each confirmed defect, retain its small reproduction and deterministic
@@ -54,6 +56,9 @@ Remaining migration after the capability and build-time boundary described in
 - Audit diagnostic work beyond premise sampling, including resource rendering
   and large terms in selected premises. Bounded premise counts alone do not
   bound output size.
+  Resource lifecycle refusals that return only a string also need a readable
+  failed goal; a storage refusal should not require reading kernel code to
+  identify the required view.
 - Audit Surface checked drivers that import planning helpers. Move exact
   checking helpers to the checking side and separate implicit closer calls;
   extend dependency enforcement when those mixed modules are separated.

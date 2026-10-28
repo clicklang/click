@@ -192,3 +192,173 @@ fn exact_view_candidate_does_not_prepare_its_alias_class() {
         "eager alias preparation: {samples:?}"
     );
 }
+
+#[test]
+fn memory_view_miss_does_not_scan_same_address_extents() {
+    let mut samples = Vec::new();
+    for size in [8u32, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let base = Pointer::symbolic(Variable(780_000));
+        let mut context = PureFactContext::new();
+        for extent in 1..=size {
+            context = context.assume_proposition(Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: base.clone(),
+                bytes: extent.into(),
+                wide: false,
+            });
+        }
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..4 {
+                assert!(!context.proves_memory_loadable(&memory, &base, &4096.into()));
+            }
+        });
+        assert!(context.proves_memory_loadable(&memory, &base, &size.into()));
+        samples.push(work);
+    }
+    eprintln!("same address view miss work: {samples:?}");
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 16),
+        "same address bucket scan: {samples:?}"
+    );
+}
+
+#[test]
+fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
+    for wide in [false, true] {
+        for snapshots in [false, true] {
+            let mut misses = Vec::new();
+            let mut hits = Vec::new();
+            let mut selected_work = Vec::new();
+            for size in [8u32, 32, 128] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let memory = CMemory::new();
+                let base = Pointer::symbolic(Variable(790_000));
+                let extent = |n: u32| {
+                    if wide {
+                        Bitvector32Term::UInt64Constant(u64::from(n))
+                    } else {
+                        Bitvector32Term::Constant(n)
+                    }
+                };
+                let mut context = PureFactContext::new();
+                let mut selected = None;
+                for index in 1..=size {
+                    let source = if snapshots {
+                        memory.clone().store(
+                            Pointer::symbolic(Variable(790_001 + u64::from(index))),
+                            CValue::Int32(7.into()),
+                        )
+                    } else {
+                        memory.clone()
+                    };
+                    let fact = Proposition::CMemoryLoadable {
+                        memory: source,
+                        base: base.clone(),
+                        bytes: extent(index * 4),
+                        wide,
+                    };
+                    if index == size / 2 {
+                        selected = Some(fact.clone());
+                    }
+                    context = context.assume_proposition(fact);
+                }
+                let selected = selected.unwrap();
+                let proves = |context: &PureFactContext, bytes: &Bitvector32Term| {
+                    if wide {
+                        context.proves_native_memory_loadable(&memory, &base, bytes)
+                    } else {
+                        context.proves_memory_loadable(&memory, &base, bytes)
+                    }
+                };
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    for _ in 0..4 {
+                        assert!(!proves(&context, &extent(4096)));
+                    }
+                });
+                misses.push(work);
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    for _ in 0..4 {
+                        let Proposition::CMemoryLoadable { memory, bytes, .. } = &selected else {
+                            unreachable!()
+                        };
+                        assert!(if wide {
+                            context.proves_native_memory_loadable(memory, &base, bytes)
+                        } else {
+                            context.proves_memory_loadable(memory, &base, bytes)
+                        });
+                    }
+                });
+                assert!(work >= 4, "exact view lookups must charge work");
+                hits.push(work);
+                // Six bytes is a valid subrange, but no asserted extent is six.
+                // Ambiguity is a refusal, not an arbitrary premise choice.
+                assert!(!proves(&context, &extent(6)));
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    let selected_context = crate::kernel::SelectedFacts::from_propositions(
+                        std::slice::from_ref(&selected),
+                    );
+                    assert!(proves(&selected_context, &extent(6)));
+                    assert!(!proves(&selected_context, &extent(4096)));
+                });
+                selected_work.push(work);
+                assert!(!proves(&PureFactContext::new(), &extent(6)));
+            }
+            eprintln!(
+                "view buckets wide={wide} snapshots={snapshots}: misses={misses:?}, hits={hits:?}, selected={selected_work:?}"
+            );
+            for samples in [misses, hits, selected_work] {
+                assert!(
+                    samples.iter().all(|work| *work <= samples[0] + 16),
+                    "{samples:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn atomic_view_miss_cannot_reopen_coverage_bucket_scans() {
+    for same_address in [false, true] {
+        let mut samples = Vec::new();
+        for size in [8u32, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let memory = CMemory::new();
+            let base = Pointer::symbolic(Variable(796_000));
+            let mut context = PureFactContext::new();
+            for index in 1..=size {
+                context = context.assume_proposition(Proposition::CMemoryLoadable {
+                    memory: memory.clone(),
+                    base: if same_address {
+                        base.clone()
+                    } else {
+                        base.offset_by_bytes(index * 16)
+                    },
+                    bytes: index.into(),
+                    wide: false,
+                });
+            }
+            let goal = Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: base.clone(),
+                bytes: 4096.into(),
+                wide: false,
+            };
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..4 {
+                    assert!(!context.proves_atomic_without_search(&goal));
+                    assert!(!crate::kernel::api::loadable_covered_by_fact(
+                        &context, &goal
+                    ));
+                }
+            });
+            samples.push(work);
+        }
+        eprintln!("atomic view miss same_address={same_address}: {samples:?}");
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 16),
+            "{samples:?}"
+        );
+    }
+}

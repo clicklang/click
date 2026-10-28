@@ -19389,3 +19389,26 @@ fn disjunctive_loop_entry_keeps_one_preservation_certificate() {
     let expanded = expand_c0_claim_source_by_label(&source, &sources, "either.contract").unwrap();
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
+
+#[test]
+fn ambiguous_view_bucket_search_expands_to_selected_transport() {
+    let source = r#"
+        theorem choose_view(data: int32[]) {
+            requires viewable(data[0..2]);
+            requires viewable(data[0..3]);
+            ensures viewable(data[0..1]) by { solve(); }
+        }
+    "#;
+    verify_click_theorems(source).expect("search should select a covering view");
+    let expanded = expand_c0_claim_source_by_label(source, &[], "choose_view.ensures_0")
+        .expect("the selected view should expand");
+    assert!(expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("using {"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
+    without_implicit_auto(|| verify_click_theorems(&expanded))
+        .expect("explicit transport must check without the implicit search");
+    let missing = expanded
+        .replace("requires viewable(data[0..2]);", "")
+        .replace("requires viewable(data[0..3]);", "");
+    assert!(without_implicit_auto(|| verify_click_theorems(&missing)).is_err());
+}

@@ -407,106 +407,114 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
     else {
         return false;
     };
-    // Only a loadable fact of the goal's block can cover it; the index files
-    // each under its base's block.
-    let covered = assumptions
-        .memory_loadable_candidates(&base.block)
-        .any(|fact| {
-            let Proposition::CMemoryLoadable {
-                memory: fact_memory,
-                base: fact_base,
-                bytes: fact_bytes,
-                wide: false,
-            } = fact
-            else {
-                return false;
-            };
-            if fact_base.block != base.block {
-                return false;
-            }
-            // Loadability of a covering span transports across differences in
-            // embedded memory snapshots and recorded write effects just like an exact-range
-            // fact does.
-            if fact_memory != memory
-                && !crate::kernel::reasoning::memory_range_still_available(
-                    fact_memory,
-                    memory,
-                    base,
-                    assumptions,
-                )
-                && !c_memories_canonically_equal(fact_memory, memory)
-                && !c_memories_connected_by_effects(fact_memory, memory, assumptions)
-            {
-                return false;
-            }
-            // The region rule reasons at element granularity and can cover a
-            // constant-size cell even when its symbolic byte offset is too wide
-            // for this rule's signed arithmetic.
-            if assumptions
-                .simplify_bitvector_under_assumptions(bytes)
-                .as_const()
-                .is_some_and(|byte_width| {
-                    assumptions.proves_loadable_cell_from_region_elements(
-                        fact_base, fact_bytes, base, byte_width,
+    // Exact membership stays indexed. A covering source must be unambiguous
+    // at an indexed address shape, or explicitly selected by the planner;
+    // this fallback must not reopen an ambient block scan after checking
+    // has already declined its candidate buckets.
+    crate::instrumentation::record_deterministic_work(1);
+    let covered = assumptions.contains_assumed_exact(goal)
+        || assumptions
+            .memory_loadable_candidates_for_base(base)
+            .any(|fact| {
+                let Proposition::CMemoryLoadable {
+                    memory: fact_memory,
+                    base: fact_base,
+                    bytes: fact_bytes,
+                    wide: false,
+                } = fact
+                else {
+                    return false;
+                };
+                if fact_base.block != base.block {
+                    return false;
+                }
+                // Loadability of a covering span transports across differences in
+                // embedded memory snapshots and recorded write effects just like an exact-range
+                // fact does.
+                if fact_memory != memory
+                    && !crate::kernel::reasoning::memory_range_still_available(
+                        fact_memory,
+                        memory,
+                        base,
+                        assumptions,
                     )
-                })
-            {
-                return true;
-            }
-            let Some(delta_bytes) =
-                pointer_offset_byte_delta(assumptions, &base.offset, &fact_base.offset)
-            else {
-                return false;
-            };
-            let delta = assumptions.simplify_bitvector_under_assumptions(&delta_bytes);
-            let width = assumptions.simplify_bitvector_under_assumptions(bytes);
-            let span = assumptions.simplify_bitvector_under_assumptions(fact_bytes);
-            // Concrete byte counts are mathematical extents, including counts
-            // above i32::MAX. Never compare their wrapped 32-bit sum.
-            if let (Some(delta), Some(width), Some(span)) =
-                (delta.as_const(), width.as_const(), span.as_const())
-            {
-                return u64::from(delta) + u64::from(width) <= u64::from(span);
-            }
+                    && !c_memories_canonically_equal(fact_memory, memory)
+                    && !c_memories_connected_by_effects(fact_memory, memory, assumptions)
+                {
+                    return false;
+                }
+                // The region rule reasons at element granularity and can cover a
+                // constant-size cell even when its symbolic byte offset is too wide
+                // for this rule's signed arithmetic.
+                if assumptions
+                    .simplify_bitvector_under_assumptions(bytes)
+                    .as_const()
+                    .is_some_and(|byte_width| {
+                        assumptions.proves_loadable_cell_from_region_elements(
+                            fact_base, fact_bytes, base, byte_width,
+                        )
+                    })
+                {
+                    return true;
+                }
+                let Some(delta_bytes) =
+                    pointer_offset_byte_delta(assumptions, &base.offset, &fact_base.offset)
+                else {
+                    return false;
+                };
+                let delta = assumptions.simplify_bitvector_under_assumptions(&delta_bytes);
+                let width = assumptions.simplify_bitvector_under_assumptions(bytes);
+                let span = assumptions.simplify_bitvector_under_assumptions(fact_bytes);
+                // Concrete byte counts are mathematical extents, including counts
+                // above i32::MAX. Never compare their wrapped 32-bit sum.
+                if let (Some(delta), Some(width), Some(span)) =
+                    (delta.as_const(), width.as_const(), span.as_const())
+                {
+                    return u64::from(delta) + u64::from(width) <= u64::from(span);
+                }
 
-            let start = Bitvector32Term::Constant(0);
-            let end = assumptions.simplify_bitvector_under_assumptions(&Bitvector32Term::add(
-                delta.clone(),
-                width.clone(),
-            ));
-            // The signed order prover can establish a byte inequality only
-            // while every operand and the sum retain their nonnegative integer
-            // meaning. The sum of two nonnegative signed words cannot wrap the
-            // 32-bit word; end >= delta rules out signed overflow.
-            let nonwrapping_sum = crate::kernel::assumptions::signed_byte_sum_is_nonwrapping(
-                &delta,
-                &width,
-                &end,
-                |left, right| certification_proves_signed_le(assumptions, left, right),
-            );
-            let ends_in_bounds = nonwrapping_sum
-                && ((certification_proves_signed_le(assumptions, &start, &span)
-                    && certification_proves_signed_le(assumptions, &end, &span))
-                    || {
-                        // Strip additive constants in exact unsigned byte counts.
-                        // Two nonnegative signed bases plus nonnegative signed
-                        // shifts cannot wrap a 32-bit word, even when the resulting
-                        // byte span exceeds i32::MAX.
-                        let (end_base, end_shift) = split_additive_constant(&end);
-                        let (span_base, span_shift) = split_additive_constant(&span);
-                        end_shift <= i32::MAX as u32
-                            && span_shift <= i32::MAX as u32
-                            && end_shift <= span_shift
-                            && certification_proves_signed_le(assumptions, &start, &end_base)
-                            && certification_proves_signed_le(assumptions, &start, &span_base)
-                            && certification_proves_signed_le(assumptions, &end_base, &end)
-                            && certification_proves_signed_le(assumptions, &end_base, &span_base)
-                    });
-            if ends_in_bounds {
-                return true;
-            }
-            false
-        });
+                let start = Bitvector32Term::Constant(0);
+                let end = assumptions.simplify_bitvector_under_assumptions(&Bitvector32Term::add(
+                    delta.clone(),
+                    width.clone(),
+                ));
+                // The signed order prover can establish a byte inequality only
+                // while every operand and the sum retain their nonnegative integer
+                // meaning. The sum of two nonnegative signed words cannot wrap the
+                // 32-bit word; end >= delta rules out signed overflow.
+                let nonwrapping_sum = crate::kernel::assumptions::signed_byte_sum_is_nonwrapping(
+                    &delta,
+                    &width,
+                    &end,
+                    |left, right| certification_proves_signed_le(assumptions, left, right),
+                );
+                let ends_in_bounds = nonwrapping_sum
+                    && ((certification_proves_signed_le(assumptions, &start, &span)
+                        && certification_proves_signed_le(assumptions, &end, &span))
+                        || {
+                            // Strip additive constants in exact unsigned byte counts.
+                            // Two nonnegative signed bases plus nonnegative signed
+                            // shifts cannot wrap a 32-bit word, even when the resulting
+                            // byte span exceeds i32::MAX.
+                            let (end_base, end_shift) = split_additive_constant(&end);
+                            let (span_base, span_shift) = split_additive_constant(&span);
+                            end_shift <= i32::MAX as u32
+                                && span_shift <= i32::MAX as u32
+                                && end_shift <= span_shift
+                                && certification_proves_signed_le(assumptions, &start, &end_base)
+                                && certification_proves_signed_le(assumptions, &start, &span_base)
+                                && certification_proves_signed_le(assumptions, &end_base, &end)
+                                && certification_proves_signed_le(
+                                    assumptions,
+                                    &end_base,
+                                    &span_base,
+                                )
+                        });
+                if ends_in_bounds {
+                    return true;
+                }
+                false
+            });
     if covered {
         crate::kernel::record_implicit_reasoning_provenance(assumptions, goal);
     }

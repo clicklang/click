@@ -49,6 +49,21 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
+        if name == "memory_loadable_candidates" {
+            self.errors.push(format!(
+                "{}: {}: whole-block loadability enumeration is test-only; select a source in planning",
+                self.path, self.function
+            ));
+        }
+        if self.path.starts_with("src/kernel/")
+            && name == "search_memory_loadable_candidates_for_base"
+            && !(self.path == "src/kernel/assumptions.rs" && self.function == name)
+        {
+            self.errors.push(format!(
+                "{}: {}: ambiguous loadability buckets require planning ({name})",
+                self.path, self.function
+            ));
+        }
         if matches!(
             name,
             "without_exact_fact" | "forget_condition_fact" | "remove_proposition_fact"
