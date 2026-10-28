@@ -1676,10 +1676,14 @@ fn canonicalized_pointer_value_from_int_cell(
     // value is still present in the recorded memory. Select that whole value
     // inside the typed read producer; never infer its bounds from the prefix
     // or publish the known pointer as an unconditional name for one cell.
-    if let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
-        result.designation(),
-        assumptions,
-    ) {
+    // Recovery may cross a store using separation facts. Specification
+    // lowering must retain the read term; its equalities belong in the graph.
+    if !SpecificationReadScope::is_active()
+        && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
+            result.designation(),
+            assumptions,
+        )
+    {
         return Some(CValue::Pointer(stored.with_type(value_type)));
     }
     if let Some(load) = defining_load {
@@ -2006,7 +2010,10 @@ fn canonicalized_symbolic_load_value_with_identity(
         &crate::kernel::intern_c_memory_ref(memory),
         &address,
     );
-    if !assumptions.should_force_symbolic_external_loads()
+    // As in the cached-prefix route, fact-supported recovery cannot choose
+    // the value of a specification expression.
+    if !SpecificationReadScope::is_active()
+        && !assumptions.should_force_symbolic_external_loads()
         && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
             complete_read.designation(),
             assumptions,
@@ -6604,6 +6611,74 @@ mod tests {
         );
         let _scope = SpecificationReadScope::enter();
         assert_eq!(evaluate(&facts), evaluate(&empty));
+    }
+
+    #[test]
+    fn specification_cached_pointer_value_does_not_follow_fact_supported_frames() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(989_930));
+        let write = Pointer::symbolic(Variable(989_931));
+        let target = Pointer::symbolic(Variable(989_932));
+        let stored = CPointerValue::new(target.clone(), CType::Int32Pointer)
+            .with_extent(Some(SubobjectExtent::constant(target, 4)));
+        let memory = CMemory::new()
+            .store(slot.clone(), CValue::Pointer(stored.clone()))
+            .without_possible_aliasing_cells(&write, 4, &PureFactContext::new())
+            .store(write.clone(), CValue::Int32(7u32.into()));
+        assert!(memory.known_value(&slot).is_none());
+        let variable =
+            load_variable_for_exact_cell(&intern_c_memory_ref(&memory), &slot, LoadKind::Int32, 8);
+        let cached = CValue::Int32(Bitvector32Term::Variable(variable));
+        let own = |pointer| {
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                pointer,
+                0u32.into(),
+                1u32.into(),
+                8,
+            ))
+        };
+        let empty = PureFactContext::new();
+        let context = empty
+            .clone()
+            .assume_proposition(Proposition::CResourceComposition(
+                ResourceContext::new()
+                    .unchecked_with_fact(own(slot.clone()))
+                    .unchecked_with_fact(own(write)),
+            ));
+        let _scope = SpecificationReadScope::enter();
+        for purpose in [
+            LoadPurpose::Logical,
+            LoadPurpose::Validity,
+            LoadPurpose::Program,
+        ] {
+            let read = |facts: &PureFactContext| {
+                canonicalized_pointer_value_from_int_cell(
+                    &memory,
+                    &slot,
+                    &cached,
+                    CType::Int32Pointer,
+                    &mut ExecutionFacts::new(),
+                    facts,
+                    None,
+                    purpose,
+                )
+                .expect("typed cached read")
+            };
+            assert_eq!(read(&context), read(&empty));
+            let uncached_read = |facts: &PureFactContext| {
+                canonicalized_symbolic_load_value_with_identity(
+                    &memory,
+                    &slot,
+                    CType::Int32Pointer,
+                    &mut ExecutionFacts::new(),
+                    facts,
+                    None,
+                    purpose,
+                )
+                .expect("typed uncached read")
+            };
+            assert_eq!(uncached_read(&context), uncached_read(&empty));
+        }
     }
 
     #[test]
