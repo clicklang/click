@@ -7656,8 +7656,12 @@ impl TheoremDefinition {
 
     /// The ensure `label` names, by [`Self::ensure_claim_label`]. A
     /// flattened aggregate clause's members share a label; this is the
-    /// first of them.
+    /// first of them. An execution theorem's whole-contract label names
+    /// its single postcondition too.
     pub fn ensure_index_by_label(&self, label: &str) -> Option<usize> {
+        if self.executes.is_some() && label == claim_labels::contract_claim_label(&self.name) {
+            return (!self.ensures.is_empty()).then_some(0);
+        }
         label.strip_prefix(self.name.as_str())?.strip_prefix('.')?;
         (0..self.ensures.len()).find(|index| self.ensure_claim_label(*index) == label)
     }
