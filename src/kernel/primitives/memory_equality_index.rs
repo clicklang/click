@@ -1,4 +1,4 @@
-//! Persistent pairing of memory occurrences with trusted pointer classes.
+//! Persistent pairing of resource occurrences with trusted pointer classes.
 //!
 //! Equality only selects candidates. Consumption checks the live occurrence's
 //! ownership, quantity and coverage in the ordinary resource algebra. Derived
@@ -8,6 +8,7 @@ mod cell_tests;
 #[cfg(test)]
 mod projection_tests;
 mod read_intervals;
+mod shape_points;
 pub(super) mod structural;
 pub(super) mod symbolic;
 use read_intervals::ReadIntervals;
@@ -409,6 +410,7 @@ pub(super) struct PairedMemoryIndex {
     graph: EqualityGraph,
     addresses: MemoryAddresses,
     points: AddressPoints,
+    shapes: shape_points::ShapePoints,
     symbolic: symbolic::RangeSupports,
     points_initialized: bool,
 }
@@ -1358,7 +1360,7 @@ impl ResourceContext {
     /// memory supplier is admitted. Nonempty retained inputs keep their
     /// existing publication; this boundary never republishes an ambient frame.
     pub(in crate::kernel) fn capture_empty_memory_input(&self, assumptions: &PureFactContext) {
-        if self.storage.index.memory_by_block.is_empty() {
+        if shape_points::payload_is_empty(&self.storage) {
             let caller = self.pair_memory_equalities(assumptions, true, None);
             self.memory_equalities
                 .lock()
@@ -1381,8 +1383,8 @@ impl ResourceContext {
                 // Its next attachment can adopt that branch's closed graph
                 // without traversing unrelated admitted inputs. A second
                 // mutation flushes both deltas, so work cannot accumulate.
-                if published.resources.index.memory_by_block.is_empty()
-                    && !self.storage.index.memory_by_block.is_empty()
+                if shape_points::payload_is_empty(&published.resources)
+                    && !shape_points::payload_is_empty(&self.storage)
                     && Self::history_tail_is(
                         self.storage
                             .history
@@ -1458,8 +1460,8 @@ impl ResourceContext {
             .memory_equalities
             .lock()
             .expect("memory equality index");
-        if self.storage.index.memory_by_block.is_empty() {
-            // No memory occurrences means no class-keyed IDs to rebase.
+        if shape_points::payload_is_empty(&self.storage) {
+            // No address-keyed resource occurrences means no IDs to rebase.
             // Capture the already closed source in constant work. Retain only
             // the producer-selected caller boundary alongside the current one;
             // a temporary opening context must not discard their common prefix.
@@ -1501,7 +1503,7 @@ impl ResourceContext {
                     .by_inputs
                     .get(&key.root())
                     .filter(|index| {
-                        index.points_initialized && index.resources.index.memory_by_block.is_empty()
+                        index.points_initialized && shape_points::payload_is_empty(&index.resources)
                     })
                     .cloned()
             })
@@ -1547,7 +1549,7 @@ impl ResourceContext {
                 // An empty payload has no namespace coupling. Adopt the
                 // source's closed state, including on a preexisting sibling,
                 // instead of walking or reapplying unrelated input history.
-                let adopt_source = index.resources.index.memory_by_block.is_empty();
+                let adopt_source = shape_points::payload_is_empty(&index.resources);
                 let mut graph = if adopt_source {
                     source.clone()
                 } else {
@@ -1560,6 +1562,9 @@ impl ResourceContext {
                     query.register(&graph);
                 }
                 for (_, insert, fact) in changed.iter().rev() {
+                    if index.points_initialized && *insert {
+                        shape_points::ShapePoints::register(fact, &graph);
+                    }
                     if index.points_initialized
                         && *insert
                         && let Some(range) = fact.memory_range()
@@ -1576,6 +1581,7 @@ impl ResourceContext {
                         .expect("address prefix")
                     {
                         index.points.merge(merge.moved, merge.kept);
+                        index.shapes.merge(merge.moved, merge.kept);
                         index.symbolic.merge(merge.moved, merge.kept);
                     }
                     graph
@@ -1585,6 +1591,7 @@ impl ResourceContext {
                 for (entry, insert, fact) in changed.into_iter().rev() {
                     if index.points_initialized {
                         index.points.update(entry, insert, &fact, &graph);
+                        index.shapes.update(entry, insert, &fact, &graph);
                         index.symbolic.update(entry, insert, &fact, &graph);
                     }
                     let Some(range) = fact.memory_range() else {
@@ -1676,6 +1683,7 @@ impl ResourceContext {
             graph,
             addresses,
             points: AddressPoints::default(),
+            shapes: shape_points::ShapePoints::default(),
             symbolic: symbolic::RangeSupports::default(),
             points_initialized: false,
         });
@@ -1693,6 +1701,7 @@ impl ResourceContext {
             graph,
             addresses: MemoryAddresses::default(),
             points: AddressPoints::default(),
+            shapes: shape_points::ShapePoints::default(),
             symbolic: symbolic::RangeSupports::default(),
             points_initialized: true,
         })
@@ -1703,15 +1712,18 @@ impl ResourceContext {
     fn registered_memory_index(&self, graph: EqualityGraph) -> std::sync::Arc<PairedMemoryIndex> {
         let mut symbolic = symbolic::RangeSupports::default();
         for (_, fact) in self.storage.facts.iter() {
+            shape_points::ShapePoints::register(fact, &graph);
             if let Some(range) = fact.memory_range() {
                 symbolic.register_object(range, &graph);
                 symbolic::RangeSupports::register(range, &graph);
             }
         }
         let mut points = AddressPoints::default();
+        let mut shapes = shape_points::ShapePoints::default();
         let mut addresses = MemoryAddresses::default();
         for (entry, fact) in self.storage.facts.iter() {
             points.update(*entry, true, fact, &graph);
+            shapes.update(*entry, true, fact, &graph);
             symbolic.update(*entry, true, fact, &graph);
             if let Some(range) = fact.memory_range() {
                 addresses.update_in_graph(range, fact.is_own(), *entry, true, &graph, fact);
@@ -1722,6 +1734,7 @@ impl ResourceContext {
             graph,
             addresses,
             points,
+            shapes,
             symbolic,
             points_initialized: true,
         })
