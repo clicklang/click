@@ -6,7 +6,9 @@ fn refusal_fact_listing_is_bounded() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::Variable(Variable(710_000 + index)), true));
+                ConditionTerm::Variable(Variable(710_000 + index)),
+                true,
+            ));
         }
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
             listed_context_pure_facts(&[], Some(&context))
@@ -15,5 +17,8 @@ fn refusal_fact_listing_is_bounded() {
         assert!(!facts.is_empty());
     }
     eprintln!("refusal listing work: {samples:?}");
-    assert!(samples.iter().all(|work| *work <= samples[0] + 16), "ambient diagnostic scan: {samples:?}");
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 16),
+        "ambient diagnostic scan: {samples:?}"
+    );
 }

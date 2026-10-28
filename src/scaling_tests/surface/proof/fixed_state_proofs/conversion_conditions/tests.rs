@@ -44,7 +44,10 @@ fn loadability_explanation_ignores_unrelated_objects() {
         assert!(loadability_explanation(&missing, &withdrawn, &site, &mut site.labels()).is_none());
         samples.push(hit_work);
     }
-    assert!(misses.iter().all(|work| *work == misses[0]), "miss work: {misses:?}");
+    assert!(
+        misses.iter().all(|work| *work == misses[0]),
+        "miss work: {misses:?}"
+    );
     assert!(
         samples.iter().all(|work| *work == samples[0]),
         "{samples:?}"
