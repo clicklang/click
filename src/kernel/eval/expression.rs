@@ -3065,7 +3065,9 @@ fn read_c_lvalue_paths_without_ranges(
                 let outcome = match state.locals.get(name) {
                     Some(value) if lvalue.value_type.accepts(value) => CExpressionOutcome::Value(
                         match value {
-                            CValue::Pointer(pointer) => {
+                            // A specification names the local's stored value;
+                            // facts justify equalities, not a different domain.
+                            CValue::Pointer(pointer) if !SpecificationReadScope::is_active() => {
                                 CValue::Pointer(local_assumptions.pointer_value_at_entry(pointer))
                             }
                             _ => value.clone(),
