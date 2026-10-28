@@ -2261,6 +2261,29 @@ fn execute_c_heap_free_paths(
             continue;
         }
 
+        // Resolve the allocation's owned base through the same argument
+        // equality used to consume its token. A proven alias names that
+        // allocation; it must not create a second lifetime under the alias.
+        let allocation_query = CResourceFact::own_designated_allocation(pointer.clone(), 0);
+        let declared_allocation = state
+            .resources
+            .direct_match_candidates_for(&allocation_query, &effective_assumptions)
+            .into_iter()
+            .filter_map(CResourceFact::allocation_value)
+            .find(|(base, _)| {
+                crate::kernel::resource_arguments_proven_equal(
+                    &CValue::Pointer((*base).clone().with_type(CType::Int32Pointer)).into(),
+                    &CValue::Pointer(pointer.clone().with_type(CType::Int32Pointer)).into(),
+                    &effective_assumptions,
+                )
+            });
+        let (pointer, declared_allocation) = match declared_allocation {
+            Some((base, bytes)) => (
+                base.clone().with_type(pointer.c_type()),
+                Some(bytes.clone()),
+            ),
+            None => (pointer, None),
+        };
         if state
             .memory
             .heap
@@ -2276,16 +2299,6 @@ fn execute_c_heap_free_paths(
             continue;
         }
 
-        // Discovery uses the token shape and pointer-root index. The exact
-        // allocation-base check below remains the authority boundary.
-        let allocation_query = CResourceFact::own_designated_allocation(pointer.clone(), 0);
-        let declared_allocation = state
-            .resources
-            .direct_match_candidates_for(&allocation_query, &effective_assumptions)
-            .into_iter()
-            .filter_map(CResourceFact::allocation)
-            .find(|(base, _)| **base == *pointer.pointer())
-            .map(|(_, bytes)| bytes.clone());
         let element_width = pointer
             .c_type()
             .pointee_type()

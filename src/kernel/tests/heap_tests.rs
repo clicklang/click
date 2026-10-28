@@ -2358,3 +2358,5 @@ fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
     assert_ne!(value.pointer(), &Pointer::null());
     assert_eq!(resolved.memory.heap.live_allocations.len(), 1);
 }
+
+mod free_base_alias_tests;
