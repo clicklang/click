@@ -578,8 +578,8 @@ comparisons, shifts, and bitwise operators, assignments, and returns.
 
 ### One meaning for a narrow value
 
-A term of an 8- or 16-bit format (`int8`, `uint8`, `int16`, `uint16`, and
-`_Bool` read as `uint8`) has a 32-bit carrier word that is the canonical
+A term of an 8- or 16-bit format (`int8`, `uint8`, `int16`, `uint16`) has a
+32-bit carrier word that is the canonical
 element of its format: the sign extension of a signed value, the zero
 extension of an unsigned one. `to_integer` of the term is that value, and no
 rule reads "the low bits of a word". Producers keep the invariant; readers
@@ -752,9 +752,12 @@ the widths a rule supports; it asks the module
 | `Bool` conditional (L-If) | `ConditionTerm::open_bool_if`; `PureFactContext::decide_bool_value` | `if c { a } else { b }` holds exactly when `(c and a) or (not c and b)`; opened only when the conditional itself is decided or split |
 | `Bool` equality (L-Eq) | the e-graph's `bool_node`, `admit_bool_condition`, `knows_bool_condition` | a true `a == b` merges the classes of `a` and `b`, which share their truth; a false one contradicts the merge; applications of one function to equal arguments are one class |
 | `Bool` unfolding (L-Unfold) | `ConditionTerm::bool_unfold_equation`; `unfold` lowers `f(args) == body` to `BoolEqual` | unfolding a `-> Bool` function's application files `application == body` |
-| `Bool` to integer (C1) | `Bitvector32Term::BoolCast`, `bool_cast`; the e-graph's `link_bool_cast`, `cast_value_truth`, `cast_disequality_truth` | `b as F` is 1 when `b` holds and 0 otherwise: a decided `b` merges the cast's class with that constant, the constant 1 or 0 decides `b`, any other constant is a contradiction, a cast unequal to 0 or to 1 decides `b`, and two casts in one class have equal `Bool`s |
+| `Bool` to integer (C1) | `Bitvector32Term::BoolCast`, `bool_cast`, `bool_word_as`; the e-graph's `link_bool_cast`, `cast_value_truth`, `cast_disequality_truth`; `c_bool_cast_range_facts` | `b as F` is 1 when `b` holds and 0 otherwise: a decided `b` merges the cast's class with that constant, the constant 1 or 0 decides `b`, any other constant is a contradiction, a cast unequal to 0 or to 1 decides `b`, two casts in one class have equal `Bool`s, and two unequal casts have unequal `Bool`s; the cast's word is canonical at every format (C1c), and `0 <= b as int32 <= 1` with `b as int32 == 0 or b as int32 == 1` is filed where a C `bool` value is introduced (C1b) |
+| Integer to `Bool` | `ConditionTerm::nonzero_test`, `bool_not` | C's `(bool)x`, an assignment or argument at `bool`, and a C++ conversion are the `Bool` `x != 0` (a non-null test for a pointer), the negation `if x == 0 { false } else { true }`, exact at every width; a cast `b as F` tested against zero is `b` |
+| Byte rule | `eval::memory_loads::symbolic_load_value_unrecorded`, `canonical_integer_read`, `primitives::cell_store::cell_run_value` | a store of a `Bool` writes its byte `b as uint8`; a read of a `bool` cell whose byte is `β` is the `Bool` `β != 0`; no write of another kind and no byte view reaches a `bool` cell |
+| Rust `Bool` values (D5) | `CIntegerCastMode::BoolValue`, `c_bool_value`; `eval::expression::ConditionValueScope` | a Rust comparison, `!`, or connective of a local or a value is the `Bool` it tests, carried as its C1 cast, with no path split; a branch or loop condition stays the comparison it tests |
 
-The last four rows are the logic of Click `Bool` (Stage 5 of
+The last seven rows are the logic of Click `Bool` (Stage 5 of
 `design/machine-integers.md`, decision of 2026-10-26), which is the
 condition sort: a `Bool` term is a `ConditionTerm`. Besides the literals
 (`Constant`), binders (`Variable`) and comparisons it has four value forms
@@ -773,13 +776,19 @@ until a `Bool` value interns it, so the answer does not depend on which
 fact was filed first. The specification lowers `-> Bool` applications to
 `BoolApplication`, `Bool` binders to `Variable`, `Bool` conditionals to
 `BoolIf` and `Bool` equalities to `BoolEqual`; no front end builds
-`BoolLoad` yet. A specification `Bool` travels in a `CValue::Bool` as its
-cast to `uint8`, `BoolCast { to: UInt8, value }`, the byte a `bool` cell
-holds, and its truth is `value`
-(`ConditionTerm::truth_of_bool_word`). A C or C++ `bool` value is still a
-word in this stage and reaches `Bool` by `w != 0`. A `Bool` binder
-instantiated with a word takes that word's truth (substitution of a
-condition variable). A `Bool` equality fact is filed under both operands
+`BoolLoad` yet (a `bool` cell's read is `byte != 0` over the byte load, so
+the load resolutions every other cell read uses apply to it). Every `Bool`
+value, in a specification and in C, C++ and Rust alike, travels in a
+`CValue::Bool` as its cast to `uint8`, `BoolCast { to: UInt8, value }`, the
+byte a `bool` cell holds, and its truth is `value`
+(`ConditionTerm::truth_of_bool_word`; a constant word is its own truth). A
+C, C++ or Rust `bool` parameter, call result or enum field is a named
+`Bool` binder, `ConditionTerm::Variable`; two locals a branch joins apart
+become a fresh binder. `if (b)` splits on `b`'s condition, read through its
+negations (`ConditionTerm::truth_claim`), and C's `a == b` over two `bool`s
+is their logical equality (C1a). A `Bool` binder instantiated with a word
+takes that word's truth (substitution of a condition variable, and the
+same replacement in the rewriter when a `match` binds one). A `Bool` equality fact is filed under both operands
 (`PureFactContext::bool_equation_partners`), so a decided operand decides
 the other (L-Eq) in one lookup. Soundness of C1: `b` is two-valued, so its
 cast takes exactly the values 1 and 0, which lie in every format.

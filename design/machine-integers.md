@@ -14,7 +14,8 @@ excluding test files. They size the work; they are not an audit.
 ## The problem
 
 Click supports ten machine integer types: `int8` to `uint64`, `int128` and
-`uint128`. `_Bool`, `size_t`, `usize` and `isize` are aliases of these.
+`uint128`. `size_t`, `usize` and `isize` are aliases of these. (`_Bool`
+was one too; since Stage 5 it is the logical `Bool`, not a format.)
 Nothing in the kernel says once what a value of one of these types is, how
 it converts, or which rules hold for it. Each rule carries its own list of
 supported widths, and the lists disagree.
@@ -604,7 +605,8 @@ Progress:
   and C++ and Rust call `conversion::convert_value`. The operation's
   format is C11 6.3.1.8's rank rule stated once over formats
   (`conversion::usual_arithmetic_format`), which `scalar_width` asks.
-  What stays outside the table: `_Bool` (no machine format until Stage 5),
+  What stays outside the table: `_Bool` (not a machine format; Stage 5
+  made it the logical `Bool`),
   C's word reuse between narrow formats (`int8`/`uint8` to `int16`,
   `uint8` to `uint16`; K8 covers 32-bit destinations only), and the
   legacy mask readers of `integer_cast_identity`, since a byte stored into
