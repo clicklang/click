@@ -39,6 +39,7 @@ pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
 pub(in crate::kernel) use condition_reasoning::held_order_at;
 pub(in crate::kernel) use condition_reasoning::narrowed_cast_identity;
 
+#[cfg(test)]
 #[derive(Clone, Debug)]
 pub(super) struct PointerValueUndo {
     source: std::sync::Arc<ConditionTerm>,
@@ -3148,6 +3149,7 @@ impl PureFactContext {
     /// cannot forget one equality, so a withdrawal refiles the equalities
     /// that remain: work in the equalities held, not in unrelated facts.
     fn rebuild_equality_graph(&mut self) {
+        #[cfg(test)]
         if let Some(graph) = &self.restoring_pointer_graph {
             self.equality_graph = graph.as_ref().clone();
             return;
@@ -6342,6 +6344,7 @@ impl PureFactContext {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn remove_proposition_fact(&mut self, proposition: &Proposition) {
         if self.prop_facts.remove(proposition).is_some() {
             self.adjust_pointer_class_fact(proposition, false);
@@ -6992,6 +6995,7 @@ impl PureFactContext {
         if self.condition_facts.get(&condition) == Some(&value) {
             return self;
         }
+        #[cfg(test)]
         let pointer_predecessor =
             (value && matches!(condition, ConditionTerm::PointerValueEqual(..))).then(|| {
                 (
@@ -7268,6 +7272,7 @@ impl PureFactContext {
             self.admit_bool_binder_truths(&condition);
         }
         self.content_fingerprint ^= Self::fingerprint(1, &(condition, value));
+        #[cfg(test)]
         if let Some((source, graph)) = pointer_predecessor {
             self.pointer_value_undo = Some(std::sync::Arc::new(PointerValueUndo {
                 source,
@@ -7963,14 +7968,11 @@ impl PureFactContext {
         self.prop_facts.contains(proposition)
     }
 
-    /// One checked weakening: this context without the single exact entry
-    /// that `proposition` names, with the indexes keyed by that entry
-    /// adjusted.
-    ///
-    /// Removing one exact entry touches only the persistent indexes keyed by
-    /// it; it never rebuilds or scans the fact set. A `proposition` that is
-    /// not an exact fact here leaves the context unchanged.
-    pub fn without_exact_fact(&self, proposition: &Proposition) -> Self {
+    /// Test-only negative control: remove one premise and repair its indexes.
+    /// This may rebuild derived indexes or defer rebuilding until a later query.
+    /// Production branches retain the parent context and extend a cheap clone.
+    #[cfg(test)]
+    pub(crate) fn without_exact_fact(&self, proposition: &Proposition) -> Self {
         let mut weakened = self.clone();
         match proposition {
             Proposition::ConditionIs(condition, value) => {
@@ -7991,6 +7993,7 @@ impl PureFactContext {
         weakened
     }
 
+    #[cfg(test)]
     fn forget_condition_fact(&mut self, condition: &ConditionTerm, assumed: bool) {
         crate::instrumentation::record_deterministic_work(1);
         let predecessor = self.pointer_value_undo.take().filter(|undo| {

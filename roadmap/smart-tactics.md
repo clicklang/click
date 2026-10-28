@@ -48,7 +48,10 @@ Remaining migration after the capability and build-time boundary described in
 
 - Audit upkeep/rebuild APIs and remaining whole-context `pure_facts` callers,
   including step-refusal context formatting and lazy difference-graph and
-  contradiction-index rebuilds after exact-fact withdrawal.
+  contradiction-index rebuilds when `assume_condition` replaces an already-held
+  condition with its opposite truth value. Audit why callers need replacement
+  and prefer retained parent contexts for branching; do not optimize deletion
+  as a backtracking mechanism.
   Relabelling a query as upkeep or explicit input must not evade the boundary.
 - Audit large loadability buckets, including shared external-argument blocks,
   and proof search reached while constructing conversion-condition refusals. Bounded premise sampling does

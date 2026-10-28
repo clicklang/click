@@ -12,8 +12,7 @@
 //! It plans; it does not issue authority. It advances state only through
 //! checked kernel operations ([`PureFactContext::assume_proposition`],
 //! [`PureFactContext::restricted_to_facts`],
-//! [`PureFactContext::with_only_proposition_facts`],
-//! [`PureFactContext::without_exact_fact`]) and public exact queries, and
+//! [`PureFactContext::with_only_proposition_facts`]) and public exact queries, and
 //! everything it finds is returned as a [`PropositionDerivation`] whose
 //! checker is local, deterministic, and still in the kernel. The atomic
 //! theory checkers the leaves call (`decide`, `proves_memory_loadable`,

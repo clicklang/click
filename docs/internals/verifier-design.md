@@ -112,6 +112,11 @@ planning may reuse a persistent context through `for_search`, which requires
 `SearchPermission`. The type has no mutable dereference or unchecked context
 constructor. Retained certificate leaves construct it from their named premises.
 Normalization lives in `surface/checking/normalization.rs`.
+Branches retain their parent fact context and extend a cheap persistent clone.
+Exact fact withdrawal is test-only, for negative controls that remove a premise;
+it is not a production backtracking operation. The build boundary also rejects
+production references to the withdrawal entry points. Tests may pay for index
+rebuilds after removing a premise; those helpers have no fast-checking guarantee.
 `tests/search_boundary.rs` checks rejected dependencies, aliases, method
 references, macro tokens, extra diagnostic scans, and capability privacy.
 

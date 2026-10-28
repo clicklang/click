@@ -44,6 +44,15 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
+        if matches!(
+            name,
+            "without_exact_fact" | "forget_condition_fact" | "remove_proposition_fact"
+        ) {
+            self.errors.push(format!(
+                "{}: {}: fact withdrawal is test-only; retain the parent context for branches ({name})",
+                self.path, self.function
+            ));
+        }
         if matches!(name, "diagnostic_fact_sample") {
             *self
                 .counts
