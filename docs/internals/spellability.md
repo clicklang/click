@@ -43,6 +43,14 @@ checked. Each one costs completeness, expansion, or a readable report.
   region's exit (`RecordedSnapshots::region_result`): the source layout maps
   each call region to the local it assigns, and each frontend result
   temporary back to its call (`SourceExecutionLayout::temporary_call_region`).
+  A heap allocation keeps its nullable return value as `<region>.result` and
+  names its success identity as `<region>.allocation`. The producer reserves
+  both identities before the null check. The allocation exit indexes the heap
+  pointer in `RecordedSnapshots::allocation_results`; raising it uses that name
+  after reassignment or `free`. The name grants no allocation success, liveness,
+  or read authority. Its value is constructed from the producer's recorded
+  pending allocation, without facts or a history scan. The index is scoped with
+  recorded snapshots and removes a name when its exit is replaced or removed.
   Recorded points index each integer value, and each pointer's block, by the
   point and the local it was first given to (`RecordedSnapshots::value_points`
   and `pointer_points`, filled from the locals each recorded state changed),

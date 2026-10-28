@@ -13984,7 +13984,7 @@ impl Parser {
         let start = self.position;
         let found = self.parse_code_region_ref().is_ok()
             && self.peek() == Some(&Token::Dot)
-            && self.peek_next() == Some(&Token::Ident("result".to_string()));
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "result" || name == "allocation");
         self.position = start;
         found
     }
@@ -14015,12 +14015,17 @@ impl Parser {
             let (name, lowered) = self.parse_qualified_c_name()?;
             return Ok(ContractExpression::QualifiedC { name, lowered });
         }
-        // `<region>.result`: the value a call's region produced, beside the
-        // region's `entry` and `exit` points.
+        // Region values sit beside their `entry` and `exit` points: `.result`
+        // is the returned value; `.allocation` is the fresh heap identity.
         if self.looks_like_region_result() {
             let region = self.parse_code_region_ref()?;
+            let allocation = self.peek_next() == Some(&Token::Ident("allocation".to_string()));
             self.position += 2;
-            return Ok(ContractExpression::RegionResult(region));
+            return Ok(if allocation {
+                ContractExpression::RegionAllocation(region)
+            } else {
+                ContractExpression::RegionResult(region)
+            });
         }
         if self.peek_ident() == Some("match") {
             if self.match_nesting >= MATCH_NESTING_LIMIT {

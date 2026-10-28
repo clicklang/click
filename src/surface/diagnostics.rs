@@ -6574,6 +6574,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         return describe_add_contract_expression(expression);
     }
     match expression {
+        ContractExpression::RegionAllocation(region) => {
+            format!("{}.allocation", describe_code_region_ref(region))
+        }
         ContractExpression::RegionResult(region) => {
             format!("{}.result", describe_code_region_ref(region))
         }
