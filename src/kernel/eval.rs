@@ -139,3 +139,5 @@ pub(super) use statements::{
     StatementJudgment, execute_c_statement_paths, execute_statement_paths,
     execute_statement_paths_with_prefix, paths_after_scope_exit, scope_declared_names,
 };
+
+pub(crate) use memory_loads::pointer_read_over_write_c_value;

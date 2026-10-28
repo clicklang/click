@@ -810,3 +810,76 @@ fn structural_pointer_read_definitions_keep_domains_and_reject_partial_writes() 
         true,
     ));
 }
+
+#[test]
+fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites() {
+    let _session = VerificationSession::enter();
+    let slot = Pointer::symbolic(Variable(987_001));
+    let target = Pointer::symbolic(Variable(987_002));
+    let stored = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+        SubobjectExtent {
+            start: target.clone(),
+            width: 4u32.into(),
+        },
+    ));
+    let memory =
+        intern_c_memory(CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone())));
+    let read = CPointerValue::new(Pointer::loaded_value(&memory, &slot), CType::Int32Pointer);
+    assert_ne!(read, stored);
+    let facts = PureFactContext::new();
+    assert!(facts.equality_graph.knows_condition(
+        &ConditionTerm::PointerValueEqual(Box::new(read.clone()), Box::new(stored.clone())),
+        true
+    ));
+    let larger = stored.clone().with_extent(Some(SubobjectExtent {
+        start: target,
+        width: 8u32.into(),
+    }));
+    assert!(!facts.equality_graph.knows_condition(
+        &ConditionTerm::PointerValueEqual(Box::new(read), Box::new(larger)),
+        true
+    ));
+    let changed = intern_c_memory(
+        memory
+            .memory()
+            .clone()
+            .store(slot.offset_by_bytes(4), CValue::UInt32(9u32.into())),
+    );
+    let changed_read =
+        CPointerValue::new(Pointer::loaded_value(&changed, &slot), CType::Int32Pointer);
+    assert!(!facts.equality_graph.knows_condition(
+        &ConditionTerm::PointerValueEqual(Box::new(changed_read), Box::new(stored)),
+        true
+    ));
+}
+
+#[test]
+fn a_fact_retained_pointer_cache_is_not_an_unconditional_read_definition() {
+    let _session = VerificationSession::enter();
+    let slot = Pointer::symbolic(Variable(987_010));
+    let other = Pointer::symbolic(Variable(987_011));
+    let stored = CPointerValue::new(Pointer::symbolic(Variable(987_012)), CType::Int32Pointer);
+    let written = CMemoryRange::new(other, 0u32.into(), 2u32.into());
+    let separated = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(written.clone())),
+        right: Box::new(CResource::Memory(CMemoryRange::new(
+            slot.clone(),
+            0u32.into(),
+            2u32.into(),
+        ))),
+    });
+    let before = CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone()));
+    let after = before.with_call_memory_havoc(Variable(987_013), &[written], &separated, None);
+    assert_eq!(
+        after.known_value(&slot),
+        Some(CValue::Pointer(stored.clone()))
+    );
+    let read = CPointerValue::new(
+        Pointer::loaded_value(&intern_c_memory(after), &slot),
+        CType::Int32Pointer,
+    );
+    assert!(!PureFactContext::new().equality_graph.knows_condition(
+        &ConditionTerm::PointerValueEqual(Box::new(read), Box::new(stored)),
+        true
+    ));
+}

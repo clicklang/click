@@ -351,3 +351,46 @@ fn later_pointer_read_definitions_ignore_unrelated_names() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn complete_pointer_read_registration_scales_with_new_definitions() {
+    fn work(steps: u64, unrelated: u64) -> usize {
+        let _session = VerificationSession::enter();
+        let mut facts = PureFactContext::new();
+        for i in 0..unrelated {
+            facts = facts.assume_condition(
+                ConditionTerm::signed_less_than(
+                    Bitvector32Term::Variable(Variable(988_100 + i)),
+                    1000u32.into(),
+                ),
+                true,
+            );
+        }
+        let slot = Pointer::symbolic(Variable(988_001));
+        let mut value =
+            CPointerValue::new(Pointer::symbolic(Variable(988_002)), CType::Int32Pointer);
+        let mut memory = CMemory::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..steps {
+                memory = memory
+                    .clone()
+                    .store(slot.clone(), CValue::Pointer(value.clone()));
+                let next = CPointerValue::new(
+                    Pointer::loaded_value(&intern_c_memory_ref(&memory), &slot),
+                    CType::Int32Pointer,
+                );
+                assert!(facts.equality_graph.knows_condition(
+                    &ConditionTerm::PointerValueEqual(Box::new(next.clone()), Box::new(value)),
+                    true
+                ));
+                value = next;
+            }
+        });
+        work
+    }
+    let ambient = [0, 8, 16, 64].map(|n| work(4, n));
+    assert!(ambient.iter().all(|w| *w <= ambient[0] + 32), "{ambient:?}");
+    let chain = [2, 4, 8, 16].map(|n| work(n, 8));
+    assert!(chain[0] > 0);
+    assert!(chain.windows(2).all(|p| p[1] <= 3 * p[0]), "{chain:?}");
+}
