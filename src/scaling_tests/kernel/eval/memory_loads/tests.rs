@@ -1759,7 +1759,7 @@ fn scalar_projection_congruence_scales_with_selected_versions() {
         for i in 0..selected {
             memory = memory.with_call_memory_havoc(
                 Variable(948_000 + i),
-                &[range.clone()],
+                std::slice::from_ref(&range),
                 &facts,
                 None,
             );
