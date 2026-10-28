@@ -421,3 +421,67 @@ fn sequential_frees_preserving_one_owned_cell_stay_near_linear() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn sequential_free_pointer_frames_stay_near_linear() {
+    let mut samples = Vec::new();
+    for count in [8, 16, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Pointer::symbolic(Variable(951_000));
+        let value = Pointer::symbolic(Variable(951_001));
+        let mut memory = CMemory::new().store(cell.clone(), CValue::pointer(value));
+        let mut resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(cell.clone(), 0u32.into(), 1u32.into(), 8),
+        ));
+        let bases = (0..count)
+            .map(|index| Pointer {
+                block: PointerBlock::Heap(952_000 + index),
+                offset: PointerOffsetTerm::Constant(0),
+            })
+            .collect::<Vec<_>>();
+        for base in &bases {
+            memory = memory.with_heap_allocation_claim(base.clone(), 4).unwrap();
+            resources = resources
+                .unchecked_with_fact(CResourceFact::own_allocation(base.clone(), 4))
+                .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                    base.clone(),
+                    0u32.into(),
+                    1u32.into(),
+                )));
+        }
+        let mut state = CState::new()
+            .with_memory(memory)
+            .with_resource_context(resources);
+        let mut assumptions = PureFactContext::new();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for base in bases {
+                state = state.clone().with_local("p", CValue::pointer(base));
+                let paths = execute_c_statement_paths(
+                    &state,
+                    &c_heap_free(c_variable("p")),
+                    &assumptions,
+                    CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                    &mut ExecutionBudget::default(),
+                )
+                .unwrap();
+                let [path] = paths.as_slice() else {
+                    panic!("one free outcome")
+                };
+                let CStatementOutcome::Normal(after) = &path.outcome else {
+                    panic!("free succeeds: {:?}", path.outcome);
+                };
+                for fact in &path.facts {
+                    assumptions = assumptions
+                        .clone()
+                        .assume_proposition(fact.proposition().clone());
+                }
+                state = after.as_ref().clone();
+            }
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
+        "{samples:?}"
+    );
+}

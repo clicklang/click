@@ -3852,15 +3852,26 @@ impl PureFactContext {
     /// This rule relates load applications only. An execution value's bridge
     /// remains scoped to its certified binding, including restricted contexts.
     fn register_pointer_read_source(&self, memory: &SharedCMemory, address: &Pointer) {
+        if let Some(source) = self.pointer_read_source(memory, address) {
+            self.equality_graph.add_checked_pointer_read_equality(
+                &Pointer::loaded_value(memory, address),
+                &Pointer::loaded_value(&source, address),
+            );
+        }
+    }
+
+    pub(in crate::kernel) fn pointer_read_source(
+        &self,
+        memory: &SharedCMemory,
+        address: &Pointer,
+    ) -> Option<SharedCMemory> {
         // This producer names an LP64 pointer read, whose width is known
         // even when no scalar load was recorded at the same address.
         let bytes = crate::kernel::C_POINTER_BYTE_WIDTH;
         let start = crate::kernel::prelude::canonical_load_projection_source(memory, address)
             .unwrap_or_else(|| memory.clone());
-        let Some(derivation) = start.derivation() else {
-            return;
-        };
-        let source = match derivation.as_ref() {
+        let derivation = start.derivation()?;
+        match derivation.as_ref() {
             CMemoryDerivation::CellsSeeded { run, .. } => run.read_source(address, bytes),
             CMemoryDerivation::Store {
                 base,
@@ -3869,30 +3880,33 @@ impl PureFactContext {
             } => {
                 // Select over exactly one store. Align to its explicitly
                 // named block using established graph equality, then check
-                // complete byte separation. No search of older snapshots,
-                // ownership frames, or spellings is allowed here.
+                // complete byte separation, or use the selected ownership
+                // composition's two disjoint complete cells. This checks one
+                // store edge; it never searches older snapshots.
                 let read = if write.blocks_proven_distinct(address) {
                     Some(address.clone())
                 } else {
                     self.equality_graph.pointer_in_block(address, &write.block)
                 };
-                read.filter(|read| {
+                let separate = read.is_some_and(|read| {
                     crate::kernel::reasoning::exact_access_byte_overlap(
                         write,
                         value.byte_width(),
-                        read,
+                        &read,
                         bytes,
                     ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
                 })
-                .map(|_| base.clone())
+                    || crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                        write,
+                        value.byte_width(),
+                        address,
+                        bytes,
+                        self,
+                    )
+                    .is_some();
+                separate.then(|| base.clone())
             }
             _ => None,
-        };
-        if let Some(source) = source {
-            self.equality_graph.add_checked_pointer_read_equality(
-                &Pointer::loaded_value(memory, address),
-                &Pointer::loaded_value(&source, address),
-            );
         }
     }
 
@@ -10075,13 +10089,18 @@ impl ExecutionPureFact {
     }
 
     pub(in crate::kernel) fn logical_read_equation(value: CPointerValue, read: Pointer) -> Self {
+        let read = CPointerValue::new(read, value.c_type());
+        Self::logical_pointer_value_equation(value, read)
+    }
+
+    pub(in crate::kernel) fn logical_pointer_value_equation(
+        left: CPointerValue,
+        right: CPointerValue,
+    ) -> Self {
         Self {
             logical_read_equation: true,
             ..Self::certified(Proposition::ConditionIs(
-                ConditionTerm::pointer_value_equal(
-                    value.clone(),
-                    CPointerValue::new(read, value.c_type()),
-                ),
+                ConditionTerm::pointer_value_equal(left, right),
                 true,
             ))
         }

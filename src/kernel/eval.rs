@@ -78,7 +78,6 @@ pub(crate) use memory_loads::load_registry_entry_count;
 pub(crate) use memory_loads::load_term_access_width;
 #[cfg(test)]
 pub(crate) use memory_loads::load_variable_for_cell;
-#[cfg(test)]
 pub(crate) use memory_loads::load_variable_for_cell_with_origin;
 pub(crate) use memory_loads::load_variable_for_exact_cell;
 pub(crate) use memory_loads::load_variable_for_term;

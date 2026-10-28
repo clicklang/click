@@ -2463,9 +2463,30 @@ fn execute_c_heap_free_paths(
                 }
             }
         }
-        let memory = working_memory
-            .free_heap_block_with_owned_frame(pointer.pointer(), &effective_assumptions, &resources)
+        let (memory, pointer_frames) = working_memory
+            .free_heap_block_and_owned_pointer_frames(
+                pointer.pointer(),
+                &effective_assumptions,
+                &resources,
+            )
             .expect("validated live heap base should free");
+        for (address, value_type) in pointer_frames {
+            let CValue::Pointer(before) =
+                before_free.symbolic_pointer_version_load(&address, value_type)
+            else {
+                unreachable!("a pointer version read has pointer type");
+            };
+            let CValue::Pointer(after) = memory.symbolic_pointer_version_load(&address, value_type)
+            else {
+                unreachable!("a pointer version read has pointer type");
+            };
+            if before != after {
+                facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+                    ConditionTerm::pointer_value_equal(before, after),
+                    true,
+                )));
+            }
+        }
         facts.push(ExecutionPureFact::internal(
             Proposition::CHeapAllocationFreed {
                 before: before_free,

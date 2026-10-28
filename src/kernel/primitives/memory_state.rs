@@ -3401,11 +3401,24 @@ impl CMemory {
     /// `kept_owners` is the checked residual frame, never the input context:
     /// its owners coexist with the consumed bytes and survive their retirement.
     pub(in crate::kernel) fn free_heap_block_with_owned_frame(
-        mut self,
+        self,
         pointer: &Pointer,
         assumptions: &PureFactContext,
         kept_owners: &ResourceContext,
     ) -> Result<Self, CInvalidFree> {
+        self.free_heap_block_and_owned_pointer_frames(pointer, assumptions, kept_owners)
+            .map(|(memory, _)| memory)
+    }
+
+    /// The retained pointer cells whose frames need the checked ownership
+    /// context, collected by the free's own retention decision. The executor
+    /// names their two reads and publishes their equalities beside the free.
+    pub(in crate::kernel) fn free_heap_block_and_owned_pointer_frames(
+        mut self,
+        pointer: &Pointer,
+        assumptions: &PureFactContext,
+        kept_owners: &ResourceContext,
+    ) -> Result<(Self, Vec<(Pointer, CType)>), CInvalidFree> {
         // An aliased spelling of this allocation (a contract-returned pointer
         // proven equal to it, e.g. `ensures result == p`) is one address too.
         // Retiring through one identity has to retire it through both, else a
@@ -3478,16 +3491,29 @@ impl CMemory {
         // from those consumed bytes by construction. Select the owner of
         // this complete cell through the access index; do not rediscover the
         // freed extent's ownership (which may have symbolic size).
+        let mut pointer_frames = Vec::new();
         self.forget_cached_values(
             ForgetScope::candidates(&candidates),
             |cell, value| {
                 if aliased_blocks.contains(&cell.block) || freed_within(cell) {
                     CachedValueFate::Retired
-                } else if pointer.blocks_proven_distinct(cell)
-                    || kept_owners
-                        .owned_memory_member_covering_access(cell, value.byte_width(), assumptions)
-                        .is_some()
+                } else if pointer.blocks_proven_distinct(cell) {
+                    CachedValueFate::Kept
+                } else if kept_owners
+                    .owned_memory_member_covering_access(cell, value.byte_width(), assumptions)
+                    .is_some()
                 {
+                    let value_type = match value {
+                        CachedValue::Cell(value) => value.c_type(),
+                        CachedValue::UnionView(value_type, _) => value_type,
+                    };
+                    // Function pointers do not yet use logical version reads.
+                    if value_type.pointee_type().is_some()
+                        && !matches!(value_type, CType::FunctionPointer(_))
+                        && !crate::instrumentation::in_uncharged_debug_check()
+                    {
+                        pointer_frames.push((cell.clone(), value_type));
+                    }
                     CachedValueFate::Kept
                 } else {
                     CachedValueFate::Forgotten
@@ -3505,7 +3531,7 @@ impl CMemory {
                 },
             );
         }
-        Ok(self)
+        Ok((self, pointer_frames))
     }
 
     pub(in crate::kernel) fn live_heap_block_size(
@@ -7267,6 +7293,24 @@ impl CMemory {
             Box::new(pointer.clone()),
             LoadKind::Float64,
         ))
+    }
+
+    /// [`Self::symbolic_pointer_load`] for a logical read: the pointer read
+    /// is named by the cell's version ([`Pointer::version_read`]).
+    pub(in crate::kernel) fn symbolic_pointer_version_load(
+        &self,
+        pointer: &Pointer,
+        value_type: CType,
+    ) -> CValue {
+        let snapshot = crate::kernel::intern_c_memory(self.clone());
+        // A version read is a named read, or a value the memory holds for the
+        // cell, either of which already carries its definition.
+        match Pointer::version_read_value(&snapshot, pointer) {
+            Ok(held) => CValue::Pointer(held.with_type(value_type)),
+            Err(value) => CValue::Pointer(CPointerValue::from_read(
+                value, value_type, &snapshot, pointer,
+            )),
+        }
     }
 
     pub(in crate::kernel) fn symbolic_pointer_load(

@@ -1627,3 +1627,69 @@ fn naming_an_unsigned_32_bit_read_costs_what_naming_its_word_costs() {
         "naming an unsigned read grew with unrelated cells: {samples:?}"
     );
 }
+
+#[test]
+fn typed_pointer_read_store_frames_use_the_selected_edge_and_owners() {
+    fn work(count: u32, unrelated: u64) -> usize {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(981_100));
+        let write = Pointer::symbolic(Variable(981_101));
+        let own = |pointer| {
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                pointer,
+                0u32.into(),
+                1u32.into(),
+                8,
+            ))
+        };
+        let mut resources = ResourceContext::new()
+            .unchecked_with_fact(own(slot.clone()))
+            .unchecked_with_fact(own(write.clone()));
+        for n in 0..unrelated {
+            resources =
+                resources.unchecked_with_fact(own(Pointer::symbolic(Variable(982_000 + n))));
+        }
+        let mut context =
+            PureFactContext::new().assume_proposition(Proposition::CResourceComposition(resources));
+        let mut memory = CMemory::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for n in 0..count {
+                let before = intern_c_memory_ref(&memory);
+                memory = memory.clone().store(
+                    write.clone(),
+                    CValue::UInt64(Bitvector32Term::UInt64Constant(n.into())),
+                );
+                let after = intern_c_memory_ref(&memory);
+                let source = context
+                    .pointer_read_source(&after, &slot)
+                    .expect("complete owned frame");
+                assert_eq!(source.read_identity(), before.read_identity());
+                let CValue::Pointer(before_value) =
+                    source.symbolic_pointer_version_load(&slot, CType::Int64Pointer)
+                else {
+                    unreachable!()
+                };
+                let CValue::Pointer(after_value) =
+                    memory.symbolic_pointer_version_load(&slot, CType::Int64Pointer)
+                else {
+                    unreachable!()
+                };
+                let fact =
+                    ExecutionPureFact::logical_pointer_value_equation(before_value, after_value);
+                context = context.clone().assume_execution_pure_fact(&fact);
+            }
+        });
+        work
+    }
+    let chain = [4, 8, 16, 32].map(|n| work(n, 0));
+    assert!(chain[0] > 0);
+    assert!(
+        chain.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{chain:?}"
+    );
+    let ambient = [0, 16, 64, 256].map(|n| work(4, n));
+    assert!(
+        ambient.iter().all(|work| *work <= ambient[0] + 32),
+        "{ambient:?}"
+    );
+}
