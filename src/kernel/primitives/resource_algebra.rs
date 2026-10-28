@@ -11008,6 +11008,11 @@ impl CResourceFact {
     }
 
     pub fn allocation(&self) -> Option<(&Pointer, &Bitvector32Term)> {
+        self.allocation_value()
+            .map(|(base, bytes)| (base.pointer(), bytes))
+    }
+
+    pub(in crate::kernel) fn allocation_value(&self) -> Option<(&CPointerValue, &Bitvector32Term)> {
         let Self::Own(CResource::Token { name, arguments }, _) = self else {
             return None;
         };
@@ -11021,7 +11026,7 @@ impl CResourceFact {
         else {
             return None;
         };
-        Some((base.pointer(), bytes))
+        Some((base, bytes))
     }
 
     pub(in crate::kernel) fn may_refer_to_memory_block(&self, block: &PointerBlock) -> bool {
