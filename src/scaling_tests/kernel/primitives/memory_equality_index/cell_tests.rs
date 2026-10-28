@@ -1876,3 +1876,93 @@ fn opening_checkpoints_scale_with_selected_exchanges() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn query_read_definition_merges_scale_with_changed_suppliers() {
+    fn work(count: u32, unrelated_count: u32, register_query: bool) -> usize {
+        let _session = crate::kernel::VerificationSession::enter();
+        let name = |memory: &SharedCMemory, address: &Pointer| {
+            crate::kernel::memory_provenance::canonical_value_load_memory(memory, address, 8);
+            Pointer::canonical_loaded_value(memory, address)
+        };
+        let unrelated = Pointer {
+            block: PointerBlock::Heap(989_810),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let first = crate::kernel::intern_c_memory(
+            CMemory::new().store(unrelated.clone(), CValue::UInt32(1u32.into())),
+        );
+        let later = crate::kernel::intern_c_memory(
+            first
+                .memory()
+                .clone()
+                .store(unrelated, CValue::UInt32(2u32.into())),
+        );
+        let mut resources = ResourceContext::new();
+        let mut pairs = Vec::new();
+        for n in 0..count {
+            let cell = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Constant(i64::from(n) * 16),
+            };
+            let named = name(&first, &cell);
+            let read = Pointer::loaded_value(&later, &cell);
+            let own = |base, start, end| {
+                CResourceFact::own_memory(CMemoryRange::new_with_element_width(base, start, end, 8))
+            };
+            let left = own(read.clone(), 0u32.into(), 1u32.into());
+            let right = own(named.clone(), 1u32.into(), 2u32.into());
+            let extra = own(read.clone(), 2u32.into(), 3u32.into());
+            resources = resources
+                .unchecked_with_fact(left.clone())
+                .unchecked_with_fact(right.clone())
+                .unchecked_with_fact(extra.clone());
+            pairs.push((cell, named, read, left, right, extra));
+        }
+        for n in 0..unrelated_count {
+            resources = resources.unchecked_with_fact(view(
+                &Pointer {
+                    block: PointerBlock::Heap(990_000 + u64::from(n)),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                0,
+                8,
+            ));
+        }
+        let facts = PureFactContext::new();
+        resources.synchronize_memory_equalities(&facts);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (cell, named, read, left, right, extra) in pairs {
+                let paired = resources.pair_memory_equalities(&facts, false, None);
+                assert_eq!(named, name(&later, &cell));
+                if register_query {
+                    assert!(paired.graph.are_equal(&named, &read));
+                }
+                resources = resources
+                    .clone()
+                    .without_exact_representation(&left)
+                    .unwrap();
+                resources = resources
+                    .clone()
+                    .without_exact_representation(&right)
+                    .unwrap();
+                resources = resources.without_exact_representation(&extra).unwrap();
+                assert!(!resources.permits_memory_read(&read, 8, &facts));
+            }
+        });
+        work
+    }
+    for register_query in [false, true] {
+        let chain = [4, 8, 16, 32].map(|count| work(count, 16, register_query));
+        assert!(chain[0] > 0);
+        assert!(
+            chain.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+            "{chain:?}"
+        );
+        let ambient = [0, 16, 64, 256].map(|count| work(4, count, register_query));
+        assert!(
+            ambient.iter().all(|work| *work <= ambient[0] + 64),
+            "{ambient:?}"
+        );
+    }
+}

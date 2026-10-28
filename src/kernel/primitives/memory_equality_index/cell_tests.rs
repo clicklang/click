@@ -1157,3 +1157,98 @@ fn captured_empty_caller_does_not_inherit_opening_equalities() {
             .is_some()
     );
 }
+
+#[test]
+fn removing_a_supplier_after_a_query_registers_a_late_read_definition() {
+    remove_suppliers_with_late_read_definition(true);
+}
+
+#[test]
+fn removing_a_supplier_registers_its_late_read_definition() {
+    remove_suppliers_with_late_read_definition(false);
+}
+
+fn remove_suppliers_with_late_read_definition(register_query: bool) {
+    let _session = crate::kernel::VerificationSession::enter();
+    let name = |memory: &SharedCMemory, address: &Pointer| {
+        crate::kernel::memory_provenance::canonical_value_load_memory(memory, address, 8);
+        Pointer::canonical_loaded_value(memory, address)
+    };
+    let cell = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let unrelated = Pointer {
+        block: PointerBlock::Heap(989_800),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let first = crate::kernel::intern_c_memory(
+        CMemory::new().store(unrelated.clone(), CValue::UInt32(1u32.into())),
+    );
+    let named = name(&first, &cell);
+    let later = crate::kernel::intern_c_memory(
+        first
+            .memory()
+            .clone()
+            .store(unrelated, CValue::UInt32(2u32.into())),
+    );
+    let later_read = Pointer::loaded_value(&later, &cell);
+    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        later_read.clone(),
+        0u32.into(),
+        1u32.into(),
+        8,
+    ));
+    let facts = PureFactContext::new();
+    let other_owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        named.clone(),
+        1u32.into(),
+        2u32.into(),
+        8,
+    ));
+    let unrelated_view = view(
+        &Pointer {
+            block: PointerBlock::Heap(989_801),
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        0,
+        8,
+    );
+    let extra_owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        later_read.clone(),
+        2u32.into(),
+        3u32.into(),
+        8,
+    ));
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(extra_owner.clone())
+        .unchecked_with_fact(owner.clone())
+        .unchecked_with_fact(other_owner.clone())
+        .unchecked_with_fact(unrelated_view);
+    resources.synchronize_memory_equalities(&facts);
+    let paired = resources.pair_memory_equalities(&facts, false, None);
+    assert_ne!(
+        paired
+            .graph
+            .canonical_pointer(&named)
+            .unwrap()
+            .representative,
+        paired
+            .graph
+            .canonical_pointer(&later_read)
+            .unwrap()
+            .representative
+    );
+    assert_eq!(named, name(&later, &cell));
+    if register_query {
+        assert!(paired.graph.are_equal(&named, &later_read));
+    }
+    let after = resources
+        .without_exact_representation(&owner)
+        .expect("remove the held supplier");
+    let after = after.without_exact_representation(&extra_owner).unwrap();
+    let after = after
+        .without_exact_representation(&other_owner)
+        .expect("remove the second supplier");
+    assert!(!after.permits_memory_read(&later_read, 8, &facts));
+}

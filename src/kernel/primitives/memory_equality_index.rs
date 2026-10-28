@@ -408,6 +408,9 @@ impl MemoryAddresses {
 pub(super) struct PairedMemoryIndex {
     resources: std::sync::Arc<ResourceContextStorage>,
     graph: EqualityGraph,
+    // Queries may register read definitions in `graph`. Payload coordinates
+    // belong to this immutable checkpoint until their merge delta is applied.
+    indexed_graph: EqualityGraph,
     addresses: MemoryAddresses,
     points: AddressPoints,
     shapes: shape_points::ShapePoints,
@@ -1561,12 +1564,14 @@ impl ResourceContext {
                 if let Some(query) = query {
                     query.register(&graph);
                 }
-                for (_, insert, fact) in changed.iter().rev() {
-                    if index.points_initialized && *insert {
+                // Removed suppliers may have acquired read definitions since
+                // insertion too. Finish registering the entire selected delta
+                // before moving payloads into their new classes.
+                for (_, _, fact) in changed.iter().rev() {
+                    if index.points_initialized {
                         shape_points::ShapePoints::register(fact, &graph);
                     }
                     if index.points_initialized
-                        && *insert
                         && let Some(range) = fact.memory_range()
                     {
                         index.symbolic.register_object(range, &graph);
@@ -1577,7 +1582,7 @@ impl ResourceContext {
                     Vec::new()
                 } else {
                     for merge in graph
-                        .address_merges_since(&index.graph)
+                        .address_merges_since(&index.indexed_graph)
                         .expect("address prefix")
                     {
                         index.points.merge(merge.moved, merge.kept);
@@ -1585,7 +1590,7 @@ impl ResourceContext {
                         index.symbolic.merge(merge.moved, merge.kept);
                     }
                     graph
-                        .pointer_merges_since(&index.graph)
+                        .pointer_merges_since(&index.indexed_graph)
                         .expect("pointer prefix")
                 };
                 for (entry, insert, fact) in changed.into_iter().rev() {
@@ -1602,7 +1607,11 @@ impl ResourceContext {
                         fact.is_own(),
                         entry,
                         insert,
-                        if adopt_source { &graph } else { &index.graph },
+                        if adopt_source {
+                            &graph
+                        } else {
+                            &index.indexed_graph
+                        },
                         &fact,
                     );
                 }
@@ -1610,6 +1619,7 @@ impl ResourceContext {
                     index.addresses.merge(merge);
                 }
                 index.resources = self.storage.clone();
+                index.indexed_graph = graph.clone();
                 index.graph = graph;
                 cache.by_inputs = cache.by_inputs.with_inserted(key, paired.clone());
                 if register_input {
@@ -1680,6 +1690,7 @@ impl ResourceContext {
         };
         let paired = std::sync::Arc::new(PairedMemoryIndex {
             resources: self.storage.clone(),
+            indexed_graph: graph.clone(),
             graph,
             addresses,
             points: AddressPoints::default(),
@@ -1698,6 +1709,7 @@ impl ResourceContext {
     fn empty_memory_index(&self, graph: EqualityGraph) -> std::sync::Arc<PairedMemoryIndex> {
         std::sync::Arc::new(PairedMemoryIndex {
             resources: self.storage.clone(),
+            indexed_graph: graph.clone(),
             graph,
             addresses: MemoryAddresses::default(),
             points: AddressPoints::default(),
@@ -1731,6 +1743,7 @@ impl ResourceContext {
         }
         std::sync::Arc::new(PairedMemoryIndex {
             resources: self.storage.clone(),
+            indexed_graph: graph.clone(),
             graph,
             addresses,
             points,
