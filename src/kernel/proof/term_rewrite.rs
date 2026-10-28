@@ -4501,7 +4501,9 @@ impl<'a> TermRewrite<'a> {
             let address = self.pointer(&read.defining_address);
             let block = if address != read.defining_address {
                 self.changed = true;
-                Pointer::canonical_loaded_value(&read.defining_memory, &address).block
+                // Rewriting changes the selected address, not the read into
+                // its stored value. Keep the immutable defining snapshot.
+                Pointer::version_read(&read.defining_memory, &address).block
             } else {
                 p.block.clone()
             };
@@ -7402,6 +7404,37 @@ mod pointer_integer_rewrite_tests {
         assert_ne!(expected, stored, "a rewritten logical read stays a read");
         let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
         assert_eq!(rewritten, expected);
+    }
+
+    #[test]
+    fn full_pointer_rewrite_keeps_the_read_version_and_snapshot() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = CPointerValue::new(
+            Pointer::symbolic(Variable(996_010)),
+            CType::Int32PointerPointer,
+        );
+        let to = CPointerValue::new(
+            Pointer::symbolic(Variable(996_011)),
+            CType::Int32PointerPointer,
+        );
+        let stored = CValue::pointer(Pointer::symbolic(Variable(996_012)));
+        let memory = CMemory::new().store(to.pointer().clone(), stored.clone());
+        let read = memory.symbolic_pointer_version_load(from.pointer(), CType::Int32Pointer);
+        let expected = memory.symbolic_pointer_version_load(to.pointer(), CType::Int32Pointer);
+        assert_ne!(expected, stored, "a rewritten logical read stays a read");
+        let rewrite = || TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
+        assert_eq!(rewrite(), expected);
+        let later = memory.store(
+            to.pointer().clone(),
+            CValue::pointer(Pointer::symbolic(Variable(996_013))),
+        );
+        let later_read = later.symbolic_pointer_version_load(to.pointer(), CType::Int32Pointer);
+        assert_ne!(later_read, expected);
+        assert_eq!(
+            rewrite(),
+            expected,
+            "later stores do not move the selected read"
+        );
     }
 
     #[test]

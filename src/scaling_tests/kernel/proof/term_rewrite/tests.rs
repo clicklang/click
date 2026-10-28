@@ -1180,3 +1180,61 @@ fn generic_read_alias_rewrites_keep_cold_total_work_linear() {
         "{samples:?}"
     );
 }
+
+fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
+    let _session = crate::kernel::VerificationSession::enter();
+    let to = CPointerValue::new(
+        Pointer::symbolic(Variable(997_500)),
+        CType::Int32PointerPointer,
+    );
+    let stored = CValue::pointer(Pointer::symbolic(Variable(997_501)));
+    let mut memory = CMemory::new();
+    for index in 0..unrelated {
+        memory = memory.store(
+            Pointer::symbolic(Variable(998_500 + index)),
+            CValue::Int32(7u32.into()),
+        );
+    }
+    let memory = memory.store(to.pointer().clone(), stored.clone());
+    let inputs = (0..count)
+        .map(|index| {
+            let from = CPointerValue::new(
+                Pointer::symbolic(Variable(999_500 + index)),
+                CType::Int32PointerPointer,
+            );
+            let read = memory.symbolic_pointer_version_load(from.pointer(), CType::Int32Pointer);
+            (from, read)
+        })
+        .collect::<Vec<_>>();
+    let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
+        inputs
+            .iter()
+            .map(|(from, read)| TermRewrite::for_pointer_value_exact(from, &to).value(read))
+            .collect::<Vec<_>>()
+    });
+    let expected = memory.symbolic_pointer_version_load(to.pointer(), CType::Int32Pointer);
+    assert_ne!(expected, stored);
+    assert!(rewritten.iter().all(|value| *value == expected));
+    work
+}
+
+#[test]
+fn full_pointer_read_version_rewrites_scale_with_selected_reads() {
+    let samples = [8, 16, 32, 64].map(|count| full_pointer_read_version_rewrite_work(count, 16));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 64),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn full_pointer_read_version_rewrites_ignore_unrelated_cells() {
+    let samples =
+        [0, 16, 64, 256].map(|unrelated| full_pointer_read_version_rewrite_work(8, unrelated));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
+}
