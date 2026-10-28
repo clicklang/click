@@ -2031,9 +2031,9 @@ fn audit_claim_rewrite(
         })?
     };
     let original = worker.source.container_source.clone();
-    if expanded == original {
-        return Err("expansion returned the original sidecar unchanged".to_string());
-    }
+    // Runtime discovery can observe an implicit tail after an already
+    // complete explicit script. Its unchanged expansion is a fixed point;
+    // it still has to pass the smart-site and cold, no-implicit-auto checks.
     let expanded_click_source = rewritten_click_source(&worker.source, &expanded)
         .map_err(|error| format!("expanded proof container did not parse: {error}"))?;
     claim_source_position_for_source(&worker.source, &expanded_click_source, &site.claim)?;

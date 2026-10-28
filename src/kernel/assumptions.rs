@@ -7867,6 +7867,7 @@ impl PureFactContext {
     ///
     /// This is a read-only view for a planner outside the kernel: it names
     /// what is available without exposing the index that stores it.
+    #[cfg(test)]
     pub(crate) fn condition_fact_pairs(
         &self,
         permission: crate::SearchPermission,

@@ -629,7 +629,7 @@ impl PropositionSearch for PureFactContext {
                 proposition,
                 Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), _)
             )
-            && crate::kernel::SelectedFacts::for_search(&self, SearchPermission::new())
+            && crate::kernel::SelectedFacts::for_search(self, SearchPermission::new())
                 .proves_atomic_for_derivation_with_id(proposition, extended_rules)
                 .0
                 .is_none()
@@ -866,7 +866,7 @@ impl PropositionSearch for PureFactContext {
                         _
                     )
                 )
-                && crate::kernel::SelectedFacts::for_search(&self, SearchPermission::new())
+                && crate::kernel::SelectedFacts::for_search(self, SearchPermission::new())
                     .proves_atomic_for_derivation_with_id(proposition, extended_rules)
                     .0
                     .is_none()
@@ -2170,7 +2170,7 @@ fn native_view_prefix_premises(
         premises.push(coverage);
     } else {
         let (evidence, _) =
-            crate::kernel::SelectedFacts::for_search(&context, SearchPermission::new())
+            crate::kernel::SelectedFacts::for_search(context, SearchPermission::new())
                 .proves_atomic_for_derivation_with_id(&coverage, true);
         let Some(AtomicPropositionDerivationEvidence::WideOrderPath {
             format: crate::kernel::MachineIntegerType::UInt64,
@@ -2453,7 +2453,7 @@ mod atomic_reduction_tests {
             let b = reduce(&second, &goal, second_id);
             for (selected, original) in [(&a.0, &first), (&b.0, &second)] {
                 assert!(
-                    crate::kernel::SelectedFacts::for_search(&selected, SearchPermission::new())
+                    crate::kernel::SelectedFacts::for_search(selected, SearchPermission::new())
                         .proves_atomic_for_derivation_with_id(&goal, true)
                         .0
                         .is_some()

@@ -4,6 +4,68 @@ use click::surface::{
     verify_c0_sources_at,
 };
 
+/// Runtime inventory names execution-theorem proofs `T.contract`; every
+/// expansion route must resolve that label to the theorem's postcondition.
+#[test]
+#[ignore = "nightly: execution-theorem label expansion and full claim audits"]
+fn execution_theorem_contract_labels_expand_and_audit() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+    for (fixture, theorem) in [
+        (
+            "named_contract_value_parameter_execution_theorem",
+            "add3_adds_three",
+        ),
+        (
+            "named_contract_value_parameter_execution_theorem",
+            "adds_three_shifts_three",
+        ),
+        ("execution_theorem_imported_tactic", "zero_contract"),
+    ] {
+        let path = root.join(format!("{fixture}.md"));
+        let source = load_audit_source(&path).unwrap();
+        let claim = format!("{theorem}.contract");
+        let legacy = format!("{theorem}.ensures_0");
+        let expanded = expand_claim_with_source(&path, &source, &claim)
+            .unwrap_or_else(|error| panic!("{claim}: {error}"));
+        assert_ne!(expanded, source.container_source);
+        assert_eq!(
+            expanded,
+            expand_claim_with_source(&path, &source, &legacy).unwrap()
+        );
+        let rewritten = rewritten_click_source(&source, &expanded).unwrap();
+        click::surface::without_implicit_auto(|| {
+            verify_rewritten_with_inputs(&source, &claim, &rewritten)
+        })
+        .unwrap_or_else(|error| panic!("{claim}: {error}"));
+        if fixture == "named_contract_value_parameter_execution_theorem" {
+            let CInput::Bundle(sources) = &source.inputs else {
+                panic!("the fixture has ordinary C sources");
+            };
+            assert_eq!(
+                expand_c0_claim_source_by_label(
+                    &source.click_source,
+                    &source_refs(sources),
+                    &claim
+                )
+                .unwrap(),
+                rewritten
+            );
+        }
+        let arguments =
+            parse_arguments(["--claim".to_string(), claim, path.display().to_string()]).unwrap();
+        run_audit(arguments).unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    }
+    assert!(
+        expand_c0_claim_source_by_label(
+            "theorem ordinary() { ensures 1 == 1; }",
+            &[],
+            "ordinary.contract",
+        )
+        .is_err(),
+        "ordinary theorem postconditions do not acquire a grouped contract alias"
+    );
+}
+
 #[test]
 #[ignore = "nightly: C++ generic method expansion and retained/cold rechecks"]
 fn generic_cpp_clause_proofs_stay_on_the_generic_method() {
@@ -2047,39 +2109,44 @@ int32 compare(uint8 bytes[]) {
     let incomplete =
         click_source.replace("solve();", "have 1 == 1 by { normalize(); } assumption();");
     verify_c0_sources(&incomplete, &[("compare.c", c_source)]).unwrap();
-    let source = load_audit_source(&path).unwrap();
-    let expected_error = click::surface::without_implicit_auto(|| {
-        verify_rewritten_with_inputs(&source, &sites[0].claim, &incomplete)
-    })
-    .expect_err("the incomplete expansion needs implicit auto");
-    let (requests, receiver) = mpsc::channel::<SessionRequest>();
-    let (responses, response_receiver) = mpsc::channel();
-    let thread = thread::spawn(move || {
-        for request in receiver {
-            responses
-                .send(Ok(SessionResponse {
-                    cost: PhaseCost {
-                        work: 0,
-                        elapsed: Duration::ZERO,
-                    },
-                    expansion: request.expansion_claim.map(|_| incomplete.clone()),
-                }))
-                .unwrap();
-        }
-    });
-    let mut worker = AuditSessionWorker {
-        source,
-        requests: Some(requests),
-        responses: response_receiver,
-        thread: Some(thread),
-        initialization: PhaseCost {
-            work: 0,
-            elapsed: Duration::ZERO,
-        },
-    };
-    let error = audit_claim_rewrite(&sites[0], &mut worker, &limits, deadline)
-        .expect_err("a whole-claim rewrite must include the implicit auto's evidence");
-    assert_eq!(error, expected_error);
+    // Even an unchanged candidate must fail if a bare step still relies on
+    // implicit automation. Exercise both changed and byte-identical replies.
+    for original in [click_source, incomplete.as_str()] {
+        let source = load_audit_source_from_text(&path, original.to_string()).unwrap();
+        let expected_error = click::surface::without_implicit_auto(|| {
+            verify_rewritten_with_inputs(&source, &sites[0].claim, &incomplete)
+        })
+        .expect_err("the incomplete expansion needs implicit auto");
+        let (requests, receiver) = mpsc::channel::<SessionRequest>();
+        let (responses, response_receiver) = mpsc::channel();
+        let expansion = incomplete.clone();
+        let thread = thread::spawn(move || {
+            for request in receiver {
+                responses
+                    .send(Ok(SessionResponse {
+                        cost: PhaseCost {
+                            work: 0,
+                            elapsed: Duration::ZERO,
+                        },
+                        expansion: request.expansion_claim.map(|_| expansion.clone()),
+                    }))
+                    .unwrap();
+            }
+        });
+        let mut worker = AuditSessionWorker {
+            source,
+            requests: Some(requests),
+            responses: response_receiver,
+            thread: Some(thread),
+            initialization: PhaseCost {
+                work: 0,
+                elapsed: Duration::ZERO,
+            },
+        };
+        let error = audit_claim_rewrite(&sites[0], &mut worker, &limits, deadline)
+            .expect_err("a whole-claim rewrite must include the implicit auto's evidence");
+        assert_eq!(error, expected_error);
+    }
 }
 
 /// A negative mdtest is a boundary of the entire audit, including runtime
@@ -2210,4 +2277,29 @@ fn keep_going_audits_other_claims_after_implicit_discovery_cannot_locate_a_proof
             .expect("the deadline must still stop discovery")
             .contains(RUN_LIMIT_EXHAUSTED)
     );
+}
+
+/// A written script may already close every obligation before its implicit
+/// tail is observed. A byte-identical expansion must still satisfy the full
+/// audit, including cold verification with implicit automation disabled.
+#[test]
+fn a_fully_explicit_script_has_an_auditable_fixed_point() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/simple_statement_step.md");
+    let source = load_audit_source(&path).unwrap();
+    let claim = "identity.contract";
+    click::surface::without_implicit_auto(|| {
+        verify_rewritten_with_inputs(&source, claim, &source.click_source)
+    })
+    .expect("the original script is already explicit");
+    assert_eq!(
+        expand_claim_with_source(&path, &source, claim).unwrap(),
+        source.container_source
+    );
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        claim.to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).expect("an already explicit proof is a valid fixed point");
 }
