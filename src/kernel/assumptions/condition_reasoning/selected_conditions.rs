@@ -54,6 +54,19 @@ impl PureFactContext {
         condition: &ConditionTerm,
         value: bool,
     ) -> Option<bool> {
+        // One comparison of two scalar atoms is fixed explicit input. Its
+        // checked cost stays distinct from the search that may invoke it.
+        // Compound terms and offsets need their own input-size measure.
+        let scalar_atom = |term: &Bitvector32Term| match term {
+            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => true,
+            Bitvector32Term::Variable(variable) => {
+                crate::kernel::eval::registered_load_for_variable(variable).is_none()
+            }
+            _ => false,
+        };
+        let _checking = matches!(memory_match_operands(condition),
+            MemoryMatchOperands::Words(_, _, left, right) if scalar_atom(left) && scalar_atom(right))
+            .then(|| crate::instrumentation::CheckingWorkScope::new("match atomic memory condition", 1));
         // An exact hit needs no operand reasoning, even for loads and sums.
         // For exact-only kinds a miss is conclusive too: no other condition
         // can match under `condition_matches_after_memory_resolution`.
@@ -97,16 +110,9 @@ impl PureFactContext {
         }
         // Predicate truth is maintained with the equality classes. Asking
         // that index does not enumerate the operands' alternative spellings.
-        let atom = |term: &Bitvector32Term| match term {
-            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => true,
-            Bitvector32Term::Variable(variable) => {
-                crate::kernel::eval::registered_load_for_variable(variable).is_none()
-            }
-            _ => false,
-        };
         let atom_order = matches!(memory_match_operands(condition),
             MemoryMatchOperands::Words(_, relation, left, right)
-                if relation != CompareRelation::Equal && atom(left) && atom(right));
+                if relation != CompareRelation::Equal && scalar_atom(left) && scalar_atom(right));
         if atom_order
             && (self.equality_graph.knows_condition(condition, value)
                 || self.equality_graph.knows_condition(&symmetric, value))
@@ -972,5 +978,71 @@ impl SelectedFacts<'_> {
                     || self.bitvector_terms_equal_for_transport(left, fact_right)
                         && self.bitvector_terms_equal_for_transport(right, fact_left)
             })
+    }
+}
+
+#[cfg(test)]
+mod checking_attribution_tests {
+    use super::*;
+    use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
+
+    #[test]
+    fn atomic_condition_check_and_search_exhaustion_have_distinct_reports() {
+        for expensive_check in [true, false] {
+            let _session = crate::kernel::VerificationSession::enter();
+            instrumentation::with_tactic_work_limits(
+                TacticWorkLimits {
+                    simple: if expensive_check { 1 } else { 10 },
+                    smart: 20,
+                    control: 20,
+                },
+                || {
+                    instrumentation::collect(|| {
+                        let tactic = TacticEvent {
+                            source_tactic_path: None,
+                            claim: "condition_budget".into(),
+                            tactic_index: 0,
+                            tactic_name: "solve".into(),
+                            class: "smart".into(),
+                            statement_index: 3,
+                            source_index: 4,
+                        };
+                        instrumentation::emit(VerificationEvent::TacticStarted(tactic.clone()));
+                        let context = PureFactContext::new();
+                        let query = ConditionTerm::signed_less_than(
+                            Bitvector32Term::Variable(Variable(945_000)),
+                            Bitvector32Term::Variable(Variable(945_001)),
+                        );
+                        let (_, work) = instrumentation::measure_deterministic_work(|| {
+                            for _ in 0..if expensive_check { 1 } else { 8 } {
+                                assert!(
+                                    !context.has_matching_condition_fact_for_memory_resolution(
+                                        &query, true
+                                    )
+                                );
+                            }
+                        });
+                        let message = instrumentation::deadline_context();
+                        if expensive_check {
+                            assert_eq!(work, 3);
+                            assert!(
+                                message.contains("match atomic memory condition")
+                                    && message.contains("engine performance defect"),
+                                "{message}"
+                            );
+                            assert!(
+                                message.contains("solve") && message.contains("source tactic 4"),
+                                "{message}"
+                            );
+                        } else {
+                            assert_eq!(work, 24);
+                            assert!(message.contains("smart search is heuristic"), "{message}");
+                            assert!(!message.contains("engine performance defect"), "{message}");
+                        }
+                        instrumentation::emit(VerificationEvent::TacticFailed(tactic));
+                    });
+                },
+            );
+        }
     }
 }

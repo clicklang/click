@@ -89,7 +89,8 @@ policy text alone is not the acceptance criterion.
 
 ## Attribute expensive checking inside search
 
-Extend `CheckingWorkScope` coverage beyond selected-context construction.
+Extend `CheckingWorkScope` coverage beyond selected-context construction and
+atomic memory-condition matching.
 Each newly covered checker names its explicit input/output measure and preserves
 source attribution under nested search. Audit nested tactic budgets as well as
 operation scopes: exclusive profiling must not hide work from enclosing search

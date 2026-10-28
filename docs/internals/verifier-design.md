@@ -168,7 +168,10 @@ do not trigger history resolution just to discover a supplier. The build boundar
 pins these query paths; remaining resource-index audits are in the roadmap.
 
 `instrumentation::CheckingWorkScope` gives a checked operation its own allowance
-inside or outside a tactic. Selected-context construction installs it with the
+inside or outside a tactic. Atomic memory-condition matching measures one
+comparison of two scalar atoms; its allowance is independent of enclosing
+search. Compound terms and offsets need a separate explicit-size measure before
+receiving the same coverage. Selected-context construction installs it with the
 number of selected entries; ambient fact count cannot enlarge the allowance.
 A scope exhaustion names the checked operation and enclosing tactic/source site
 and reports an engine performance defect. Every unit still charges the enclosing
