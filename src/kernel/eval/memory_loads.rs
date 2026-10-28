@@ -107,7 +107,7 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
             }
         }
     }
-    if !volatile {
+    if !volatile && !SpecificationReadScope::is_active() {
         for path in &mut paths {
             if let CExpressionOutcome::Value(CValue::Pointer(value)) = &mut path.outcome {
                 *value = assumptions.pointer_value_at_entry(value);
@@ -6567,6 +6567,43 @@ mod tests {
             "{:?}",
             prefix.pointer()
         );
+    }
+
+    #[test]
+    fn specification_pointer_reads_do_not_adopt_fact_supplied_bounds() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let address = Pointer::symbolic(Variable(989_920));
+        let evaluate = |context: &PureFactContext| {
+            let paths = evaluate_c_memory_load_paths(
+                &memory,
+                address.clone(),
+                CType::Int32Pointer,
+                ExecutionFacts::new(),
+                Vec::new(),
+                context,
+                true,
+                false,
+                None,
+                None,
+            );
+            let CExpressionOutcome::Value(CValue::Pointer(value)) = &paths[0].outcome else {
+                panic!("pointer read");
+            };
+            value.clone()
+        };
+        let empty = PureFactContext::new();
+        let value = evaluate(&empty);
+        let bounded = value.clone().with_extent(Some(SubobjectExtent {
+            start: value.pointer().clone(),
+            width: 4u32.into(),
+        }));
+        let facts = empty.clone().assume_condition(
+            ConditionTerm::PointerValueEqual(Box::new(value.clone()), Box::new(bounded)),
+            true,
+        );
+        let _scope = SpecificationReadScope::enter();
+        assert_eq!(evaluate(&facts), evaluate(&empty));
     }
 
     #[test]
