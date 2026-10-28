@@ -1201,6 +1201,13 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     let CheckedExecutionEvent::ResourceRewrite(constructed) = retained.last().unwrap() else {
         panic!("the constructor retains its exchange");
     };
+    assert!(matches!(
+        constructed
+            .after_state
+            .resources()
+            .instance_consumption(instance.identity()),
+        Some(crate::kernel::primitives::InstanceConsumption::Unfold)
+    ));
     let observation = constructed.return_observation.clone().unwrap();
     assert_eq!(observation.after, produced.state);
     assert_eq!(observation.semantic_facts, produced.semantic_facts);
@@ -1246,6 +1253,89 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
         trace_completion(&function, &invalid, facts.assumptions(), false).err(),
         Some("return resource observation belongs to a different execution path"),
     );
+}
+
+#[test]
+fn return_exchange_keeps_the_published_body_snapshot() {
+    use crate::kernel::{
+        CPointerValue, ResourceFieldSchema, ResourceFieldType, ResourceInstance, SpecMemory,
+    };
+    let pointer = Pointer::symbolic(Variable(810_000));
+    let schema =
+        ResourceFieldSchema::new(vec![("model".into(), ResourceFieldType::C(CType::Int32))])
+            .unwrap();
+    let instance = ResourceInstance::new(
+        Variable(810_001),
+        "observed".into(),
+        vec![].into(),
+        schema.clone(),
+        vec![int32(7).into()].into(),
+    )
+    .unwrap();
+    let definition = CCompositeResourceDefinition::new(
+        "observed",
+        vec![],
+        None,
+        false,
+        vec![],
+        vec![SpecProposition::Comparison {
+            left: SpecExpression::MemoryLoad {
+                memory: SpecMemory::Current,
+                pointer: Box::new(SpecExpression::Value(CValue::Pointer(CPointerValue::new(
+                    pointer.clone(),
+                    CType::Int32Pointer,
+                )))),
+                value_type: CType::Int32,
+            },
+            operator: CComparisonOperator::Equal,
+            right: SpecExpression::Value(int32(7)),
+        }],
+    )
+    .with_instance_schema(Some(schema));
+    let physical = CState::new();
+    // Publication may materialize an observed value without modifying the
+    // retained execution snapshot. The exchange belongs to that publication.
+    let published = physical
+        .clone()
+        .with_memory(physical.memory().clone().store(pointer, int32(7)));
+    let facts = ProofFacts::default();
+    assert!(
+        crate::kernel::rewrite_resource_instance(
+            &physical,
+            &instance,
+            &definition,
+            facts.assumptions(),
+            false,
+        )
+        .is_err()
+    );
+    let (function, events) = returned_proposition_trace(&physical, &facts);
+    let function = function.with_composite_resource_definitions(vec![definition]);
+    let mut core = ExecutionProofCore::at_entry(physical.clone(), ExecutionFrontier::default());
+    let mut trace = PersistentSequence::default();
+    for event in events {
+        trace.push(event);
+    }
+    core.execution_evidence = vec![trace].into();
+    core.evidence_completed = true;
+    let mut context = returned_proposition_context(&physical);
+    Arc::make_mut(&mut context).published = CFunctionOutcome::Return {
+        value: int32(0),
+        state: Box::new(published.clone()),
+    };
+    core.return_proof_contexts = core.return_proof_contexts.with_inserted(0, context);
+    let (produced, _) = core
+        .rewrite_return_resource_instance_with_children(
+            &function, 0, &facts, &published, &instance, false, None,
+        )
+        .unwrap();
+    let events = core.return_resource_rewrites.get(&0).unwrap().to_vec();
+    let (outcome, _, _) = trace_completion(&function, &events, facts.assumptions(), false).unwrap();
+    let CStatementOutcome::Return { state, .. } = outcome else {
+        panic!("return expected")
+    };
+    assert_eq!(state.memory(), physical.memory());
+    assert_eq!(state.resources(), produced.state.resources());
 }
 
 #[test]

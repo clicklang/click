@@ -7357,6 +7357,22 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                     if **state != rewrite.before_state {
                         return Err("post-return resource rewrite has a different input state");
                     }
+                    if let Some(observation) = &rewrite.return_observation {
+                        // This private event retains the kernel producer's
+                        // completed exchange. Its premises were checked there;
+                        // do not choose and check the body again at C's snapshot.
+                        if return_origin.as_ref() != Some(&observation.context.origin) {
+                            return Err(
+                                "return resource observation belongs to a different execution path",
+                            );
+                        }
+                        for fact in &observation.semantic_facts {
+                            *executed_under =
+                                std::mem::take(executed_under).assume_proposition(fact.clone());
+                        }
+                        **state = rewrite.after_state.clone();
+                        continue;
+                    }
                     if let Some(instance) = &rewrite.instance
                         && rewrite.definition.condition().is_some()
                     {
@@ -7481,17 +7497,6 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                         {
                             *executed_under =
                                 std::mem::take(executed_under).assume_proposition(fact);
-                        }
-                    }
-                    if let Some(observation) = &rewrite.return_observation {
-                        if return_origin.as_ref() != Some(&observation.context.origin) {
-                            return Err(
-                                "return resource observation belongs to a different execution path",
-                            );
-                        }
-                        for fact in &observation.semantic_facts {
-                            *executed_under =
-                                std::mem::take(executed_under).assume_proposition(fact.clone());
                         }
                     }
                     **state = rewrite.after_state.clone();
@@ -10609,22 +10614,43 @@ impl ExecutionProofCore {
                 }
             }
         };
-        // Compute the exchange in the retained C-body state, not the
-        // caller-side projection used by postcondition expressions.
         CheckedResourceRewrite::check_instance_definition(function, definition)?;
-        let retained = crate::kernel::rewrite_resource_instance_selecting_children(
-            &before_state,
-            instance,
-            definition,
-            function.composite_resource_definitions(),
-            before_facts.assumptions(),
-            unfold,
-            selected_children.as_deref(),
-        )
-        .map_err(|refusal| refusal.describe())?;
+        let retained_after = if let Some((presented_before, produced)) = observed {
+            // The producer already applied the selected body at the logical
+            // return state. Transfer its resource delta, not a second fold in
+            // a different snapshot with differently named pointer arguments.
+            let resources = before_state.resources().clone().with_constructed_exchange(
+                presented_before.resources(),
+                produced.state.resources(),
+            )?;
+            let mut retained = produced.state.clone().with_resource_context(resources);
+            retained.memory = before_state.memory().clone();
+            retained.locals = before_state.locals().clone();
+            retained.enclosing_frame_holds_locals = before_state.enclosing_frame_holds_locals;
+            Arc::make_mut(&mut retained.population_effects).predicate_count_permissions =
+                before_state
+                    .population_effects
+                    .predicate_count_permissions
+                    .clone();
+            Arc::make_mut(&mut retained.population_effects).creation =
+                before_state.population_effects.creation.clone();
+            retained
+        } else {
+            crate::kernel::rewrite_resource_instance_selecting_children(
+                &before_state,
+                instance,
+                definition,
+                function.composite_resource_definitions(),
+                before_facts.assumptions(),
+                unfold,
+                selected_children.as_deref(),
+            )
+            .map_err(|refusal| refusal.describe())?
+            .state
+        };
         let mut rewrite = CheckedResourceRewrite {
             before_state,
-            after_state: retained.state,
+            after_state: retained_after,
             before_facts: before_facts.clone(),
             after_facts: after_facts.clone(),
             definition: definition.clone(),
