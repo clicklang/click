@@ -4475,11 +4475,10 @@ impl<'a> TermRewrite<'a> {
                 offset: PointerOffsetTerm::add(to.offset.clone(), displacement),
             };
         }
-        // A read's origin depends on its storage address, rather than on
-        // the numeric address held in that cell. A full pointer substitution
-        // can therefore re-express a selected read at the substituted cell.
-        // Keep this separate from numeric rewrites of the read's result.
-        if self.pointer_value_exact.is_some()
+        // A read depends on its selected address. Substitute full pointers
+        // or numeric indices through that address, retaining the read's
+        // defining snapshot and memoizing shared read definitions.
+        if (self.pointer_value_exact.is_some() || self.bitvector.is_some())
             && !self.source_disabled
             && let Some(read) = p.as_loaded_value()
         {
@@ -7434,6 +7433,44 @@ mod pointer_integer_rewrite_tests {
             rewrite(),
             expected,
             "later stores do not move the selected read"
+        );
+    }
+
+    #[test]
+    fn numeric_index_rewrite_keeps_nested_pointer_read_versions_and_snapshots() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = Bitvector32Term::Variable(Variable(996_020));
+        let to = Bitvector32Term::Variable(Variable(996_021));
+        let address = |index| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(index, 8),
+        };
+        let destination = address(to.clone());
+        let stored = CValue::pointer(Pointer::symbolic(Variable(996_022)));
+        let memory = CMemory::new().store(destination.clone(), stored.clone());
+        let shared = crate::kernel::intern_c_memory(memory.clone());
+        let mut input = address(from.clone());
+        let mut expected = destination.clone();
+        for depth in 1..=32 {
+            input = Pointer::version_read(&shared, &input);
+            expected = Pointer::version_read(&shared, &expected);
+            assert_eq!(
+                TermRewrite::for_bits(&from, &to).pointer(&input),
+                expected,
+                "nested read depth {depth}",
+            );
+        }
+        let later = memory.store(
+            destination,
+            CValue::pointer(Pointer::symbolic(Variable(996_023))),
+        );
+        let _ = later.symbolic_pointer_version_load(&address(to.clone()), CType::Int32Pointer);
+        assert_eq!(TermRewrite::for_bits(&from, &to).pointer(&input), expected);
+        let value = CValue::pointer(input);
+        assert_eq!(
+            TermRewrite::for_bits(&from, &to).value(&value),
+            CValue::pointer(expected),
+            "all projections of the same read retain its version",
         );
     }
 

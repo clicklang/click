@@ -3502,12 +3502,24 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
     let candidates = AliasCandidates::of_block(&pointer.block);
     let unresolved = matches!(
         pointer.block,
-        PointerBlock::Symbolic(_) | PointerBlock::LoadedPointer(_)
+        PointerBlock::Symbolic(_)
+            | PointerBlock::LoadedPointer(_)
+            | PointerBlock::ExternalArgument
+            | PointerBlock::ExternalObject(_)
     );
     // A load through an unresolved pointer observes only pointer-reachable
     // cells; reading them from the store's maintained reachable map skips
     // the slots no pointer value can reach without visiting each one.
-    let reachable = unresolved.then(|| memory.cells.caught_up_pointer_reachable());
+    let reachable = unresolved.then(|| {
+        if matches!(
+            pointer.block,
+            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+        ) {
+            memory.cells.caught_up_external_reachable()
+        } else {
+            memory.cells.caught_up_pointer_reachable()
+        }
+    });
     let mut visited = 0usize;
     // Lazily: the collection below stops at the first cell that is not a
     // cached load, so an ordinary store costs one visit, not every cell.
@@ -4924,6 +4936,54 @@ fn mixed_index_offsets_require_exact_observations_and_matching_strides() {
             &truncated
         ),
         Some(false)
+    );
+}
+
+#[test]
+fn external_load_projection_retains_aliases_across_cell_updates() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointers = [
+        PointerBlock::Symbolic(Variable(998_900)),
+        PointerBlock::ExternalArgument,
+        PointerBlock::ExternalObject(Variable(998_901)),
+        PointerBlock::Concrete("global:projection".into()),
+        PointerBlock::Concrete("local:projection".into()),
+        PointerBlock::Heap(998_902),
+        PointerBlock::Temporary(998_903),
+    ]
+    .map(|block| Pointer {
+        block,
+        offset: PointerOffsetTerm::Constant(0),
+    });
+    let mut memory = CMemory::new();
+    for pointer in &pointers {
+        memory = memory.store(pointer.clone(), CValue::Int32(7u32.into()));
+    }
+    for load in [&pointers[1], &pointers[2]] {
+        let projected = canonical_memory_for_pointer_load(&memory, load);
+        for pointer in &pointers {
+            assert_eq!(
+                projected.has_known_cell_at(pointer),
+                pointer.block.observable_by_load(&load.block),
+                "{pointer:?} through {load:?}"
+            );
+        }
+    }
+    let updated = memory
+        .clone()
+        .store(pointers[0].clone(), CValue::Int32(9u32.into()));
+    let projected = canonical_memory_for_pointer_load(&updated, &pointers[1]);
+    assert_eq!(
+        projected.known_value(&pointers[0]),
+        Some(CValue::Int32(9u32.into()))
+    );
+    let removed = updated.without_cell(&pointers[0]);
+    let projected = canonical_memory_for_pointer_load(&removed, &pointers[1]);
+    assert!(!projected.has_known_cell_at(&pointers[0]));
+    let original = canonical_memory_for_pointer_load(&memory, &pointers[1]);
+    assert_eq!(
+        original.known_value(&pointers[0]),
+        Some(CValue::Int32(7u32.into()))
     );
 }
 
