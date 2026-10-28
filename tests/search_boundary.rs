@@ -174,3 +174,27 @@ fn selected_reasoning_requires_explicit_premises_or_planner_permission() {
         );
     }
 }
+
+#[test]
+fn fact_withdrawal_is_only_available_in_tests() {
+    for path in ["src/kernel/checker.rs", "src/surface/planning/search.rs"] {
+        for source in [
+            "fn check(c: C, p: P) { c.without_exact_fact(&p); }",
+            "fn check() { let f = C::remove_proposition_fact; }",
+            "fn check() { hidden!(c.forget_condition_fact(p)); }",
+            "impl C { fn without_exact_fact(&self) {} }",
+        ] {
+            assert!(
+                boundary::check_source(path, source).is_err(),
+                "accepted {source}"
+            );
+        }
+        assert!(
+            boundary::check_source(
+                path,
+                "impl C { #[cfg(test)] fn without_exact_fact(&self) {} }"
+            )
+            .is_ok()
+        );
+    }
+}

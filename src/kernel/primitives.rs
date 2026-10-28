@@ -12706,7 +12706,9 @@ pub struct PureFactContext {
     pub(super) equality_graph: super::equality_graph::EqualityGraph,
     /// Producer-retained predecessor for withdrawing the latest full-pointer
     /// premise. Exact persistent roots identify the unchanged fact frontier.
+    #[cfg(test)]
     pub(super) pointer_value_undo: Option<Arc<super::assumptions::PointerValueUndo>>,
+    #[cfg(test)]
     pub(super) restoring_pointer_graph: Option<Arc<super::equality_graph::EqualityGraph>>,
     /// Addresses of the first elements of two separated memory ranges of
     /// one block, keyed by the unordered pair and carrying the separation

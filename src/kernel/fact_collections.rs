@@ -246,6 +246,7 @@ impl<T: Clone + Ord> FactSet<T> {
         self.0.insert(value)
     }
 
+    #[cfg(test)]
     pub(crate) fn remove(&mut self, value: &T) -> Option<T> {
         self.0.remove(value)
     }

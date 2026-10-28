@@ -89,3 +89,12 @@ explicitly selected premises;
 if a legacy API needs migration, describe that migration and test its boundary.
 Run the boundary regressions with `test(gate_tests::search_boundary::)` in the
 fast-gate binary. This enforcement does not replace deterministic scaling tests.
+
+## 7. Preserve branch contexts
+
+Branching retains the parent `PureFactContext` and extends a cheap persistent
+clone. Do not add a premise and then withdraw it to backtrack. Exact withdrawal
+helpers exist only under `cfg(test)` for missing-premise controls; they may
+rebuild indexes and must not become production APIs. Audit truth-value
+replacement and explicit context restriction separately rather than treating
+them as branch undo.
