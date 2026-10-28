@@ -389,14 +389,15 @@ fn bounded_audit_batches_only_claims_that_fit_the_remaining_cap() {
         std::env::temp_dir().join(format!("click-audit-cap-selection-{}", std::process::id()));
     fs::create_dir_all(&directory).unwrap();
     let path = directory.join("two.md");
+    // Two written smart sites per claim exercise both split and batched caps.
     fs::write(
         &path,
         "# Bounded audit selection\n\n```c filename=two.c\n\
          int32 first(int32 x) { return x; }\n\
          int32 second(int32 x) { return x; }\n```\n\n```click\n\
          verifying \"two.c\";\n\
-         int32 first(int32 x) { ensures result == x; }\n\
-         int32 second(int32 x) { ensures result == x; }\n\
+         int32 first(int32 x) { ensures result == x; } by { step_until(function.exit); solve(); }\n\
+         int32 second(int32 x) { ensures result == x; } by { step_until(function.exit); solve(); }\n\
          ```\n\n```expect\npass\n```\n",
     )
     .unwrap();
