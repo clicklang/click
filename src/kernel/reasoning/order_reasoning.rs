@@ -729,6 +729,7 @@ pub(in crate::kernel) fn instantiate_range_fold_step(
 pub(in crate::kernel) struct IntegerRangeFacts {
     pub(in crate::kernel) lower: Option<i64>,
     pub(in crate::kernel) upper: Option<i64>,
+    #[cfg(test)]
     pub(in crate::kernel) excluded: BTreeSet<i64>,
 }
 

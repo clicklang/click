@@ -104,7 +104,13 @@ fallbacks use singleton base buckets, not whole-block scans or alias walks.
 Grow source snapshot buckets and unrelated retained ranges as well as aliases;
 keep exact hits, stale-memory refusals and expansion-without-search coverage.
 Order/overflow helpers use maintained direct extrema and strict-bound witnesses;
-do not restore condition-side scans. Prepared access returns one
+do not restore condition-side scans or symbolic order-component walks in
+interval checking. Require explicit intermediate bounds for longer chains.
+Constant equality evidence selects extrema or singleton symbolic sources;
+anchored memory equality selects singleton endpoint sources, retaining the
+existing snapshot checks. Contiguous exclusion runs are maintained at admission,
+not traversed at query time. Grow equality stars, symbolic order chains and
+branches, and excluded-value runs, including hits, misses and branch isolation. Prepared access returns one
 `SelectedMemoryAccess`, never a supplier iterator to resource checking. Failure
 of its provenance, quantity or coverage check is final. Keep explicit footprint
 composition separate, and grow overlapping supplier buckets on refusal as well

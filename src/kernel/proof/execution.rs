@@ -10632,8 +10632,20 @@ impl ExecutionProofCore {
                     .population_effects
                     .predicate_count_permissions
                     .clone();
-            Arc::make_mut(&mut retained.population_effects).creation =
-                before_state.population_effects.creation.clone();
+            if produced.state.population_effects.creation
+                == presented_before.population_effects.creation
+            {
+                Arc::make_mut(&mut retained.population_effects).creation =
+                    before_state.population_effects.creation.clone();
+            } else {
+                // A named population fold/unfold constructs a birth/death
+                // receipt. Keep that receipt and restore only the retained
+                // environment identity, not the old ledger contents.
+                retained.restore_population_creation_after_call(
+                    before_state.population_effects.creation.as_ref(),
+                    produced.state.population_effects.creation.as_ref(),
+                );
+            }
             retained
         } else {
             crate::kernel::rewrite_resource_instance_selecting_children(
