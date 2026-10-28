@@ -1568,6 +1568,99 @@ impl ResourceContext {
         )
     }
 
+    /// Carry the resource delta of a constructed logical exchange onto its
+    /// retained execution state. Occurrence identities survive publication;
+    /// persistent differences visit only the producer's changed entries.
+    pub(in crate::kernel) fn with_constructed_exchange(
+        mut self,
+        before: &Self,
+        after: &Self,
+    ) -> Result<Self, &'static str> {
+        let changes = before
+            .storage
+            .entry_by_occurrence
+            .diff(&after.storage.entry_by_occurrence)
+            .map(|(occurrence, old, new)| (*occurrence, old.copied(), new.copied()))
+            .collect::<Vec<_>>();
+        // Resolve removals before removing an owner: that removal can also
+        // expire several of the selected supported occurrences.
+        let mut removals = Vec::new();
+        for (occurrence, old, _) in &changes {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(old) = old {
+                if let CResource::Instance(instance) = before.fact(*old).resource() {
+                    self.record_instance_consumption(
+                        instance.identity(),
+                        after.instance_consumption(instance.identity()).cloned(),
+                    );
+                }
+                if let Some(entry) = self.storage.entry_by_occurrence.get(occurrence).copied() {
+                    removals.push(entry);
+                } else if before.fact(*old).is_own() {
+                    return Err("return exchange lost a retained owned occurrence");
+                }
+            }
+        }
+        for entry in removals {
+            if self.storage.facts.contains_key(&entry) {
+                self.remove_entry(entry);
+            }
+        }
+        for (occurrence, _, new) in changes {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(entry) = new else {
+                continue;
+            };
+            if let CResource::Instance(instance) = after.fact(entry).resource() {
+                self.record_instance_consumption(
+                    instance.identity(),
+                    after.instance_consumption(instance.identity()).cloned(),
+                );
+            }
+            self.insert_fact_with_support_occurrence_and_metadata_at(
+                after.fact(entry).clone(),
+                after.storage.supported_by.get(&entry).cloned(),
+                after
+                    .storage
+                    .support_occurrence_by_projection
+                    .get(&entry)
+                    .copied(),
+                after
+                    .storage
+                    .support_metadata_by_projection
+                    .get(&occurrence)
+                    .cloned(),
+                Some(occurrence),
+            );
+            if let Some(binding) = after.loan_dependency(occurrence) {
+                self = self.with_loan_dependency(occurrence, binding.clone());
+            }
+        }
+        // Folded expansions retain the snapshot at which their body was
+        // constructed. They must travel with the authority, not be rebuilt
+        // against the retained C snapshot on the next unfold.
+        for (occurrence, _, expansion) in before
+            .storage
+            .expansions_by_support_occurrence
+            .diff(&after.storage.expansions_by_support_occurrence)
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(entry) = self.storage.entry_by_occurrence.get(occurrence).copied() else {
+                continue;
+            };
+            let support = self.fact(entry).clone();
+            self = match expansion {
+                Some(expansion) => self.with_cached_supported_expansion_arc(
+                    *occurrence,
+                    &support,
+                    expansion.clone(),
+                ),
+                None => self.without_cached_supported_expansion_for_occurrence(*occurrence),
+            };
+        }
+        Ok(self)
+    }
+
     /// Exact multiplicity of one representation, for an opt-in proof trace.
     pub(crate) fn exact_count(&self, fact: &CResourceFact) -> usize {
         self.storage
