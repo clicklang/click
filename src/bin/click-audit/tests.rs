@@ -1010,7 +1010,7 @@ fn prepared_audit_reuses_validated_inputs_across_sites() {
     .unwrap();
     fs::write(
         &path,
-        "verifying \"unit.c\";\nint32 identity(int32 x) { ensures result == x; }\n",
+        "verifying \"unit.c\";\nint32 identity(int32 x) { ensures result == x; } by { step_until(function.exit); solve(); }\n",
     )
     .unwrap();
     fs::write(
@@ -1027,7 +1027,11 @@ fn prepared_audit_reuses_validated_inputs_across_sites() {
         .and_then(|project| project.lock())
         .unwrap();
     let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
-    assert!(sites.len() >= 2);
+    assert_eq!(
+        sites.len(),
+        2,
+        "the fixture must exercise two written smart sites"
+    );
     let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
     // An active audit has already selected an immutable input. Any attempt to
     // reread the importer per tactic would now fail. A new audit must fail.

@@ -1494,7 +1494,7 @@ int32& probe(int32& value) { views value; ensures &result == &value; ensures res
         &parsed,
         &ProgramInputs::program(&import),
         "probe.contract",
-        1,
+        0,
     )
     .unwrap();
     for expanded in [
