@@ -3730,8 +3730,11 @@ mod tests {
     #[test]
     fn a_long_run_does_not_widen_constant_lookups() {
         let block = PointerBlock::Concrete("cell-store-long-run".to_string());
-        let source = source(11);
         let samples = [1usize, 10, 100, 1000].map(|small| {
+            // Each size starts with cold version caches; otherwise the first
+            // sample alone pays for the shared block-version prefix.
+            let _session = crate::kernel::VerificationSession::enter();
+            let source = source(11);
             // No two of these runs share a slot, so each is added whole.
             let mut store = CellStore::new();
             for index in 0..small {

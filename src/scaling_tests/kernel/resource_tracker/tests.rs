@@ -202,3 +202,44 @@ fn retained_cell_stops_scale_with_new_steps_and_ignore_other_names() {
         assert_eq!(work, 0, "unrelated names: {size}");
     }
 }
+
+#[test]
+fn fresh_cell_offsets_share_the_whole_block_version_prefix() {
+    let samples = [8usize, 16, 32, 64].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = intern_c_memory(CMemory::new());
+        let mut memory = entry.memory().clone();
+        for index in 0..size {
+            memory = memory.store(
+                at(PointerBlock::Temporary(998_980 + index as u64), 0),
+                one(),
+            );
+        }
+        let current = point(&memory);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 0..size {
+                let pointer = at(PointerBlock::ExternalArgument, index as i64 * 4);
+                assert_eq!(
+                    last_same_point(
+                        Resource::Cell {
+                            pointer: &pointer,
+                            bytes: 4
+                        },
+                        &current
+                    )
+                    .unwrap()
+                    .snapshot(),
+                    &entry,
+                );
+            }
+        });
+        work
+    });
+    assert!(samples[0] > 0);
+    assert!(
+        samples
+            .windows(3)
+            .all(|p| p[2] - p[1] <= 2 * (p[1] - p[0]) + 8),
+        "fresh offsets after separate stores: {samples:?}"
+    );
+}
