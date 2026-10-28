@@ -198,9 +198,11 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
         assert!(
             permitted,
             "alignment: {:?}",
-            resources
-                .read_access_entries(&query, 1, &facts)
-                .map(|c| c.index.graph.pointer_at_base_with_wide_index(&query, &base))
+            resources.read_access(&query, 1, &facts).map(|c| c
+                .source
+                .index
+                .graph
+                .pointer_at_base_with_wide_index(&query, &base))
         );
         samples.push(work);
         assert!(!resources.permits_memory_read(&query, 2, &facts));
@@ -701,5 +703,131 @@ fn logical_field_coordinates_keep_symbolic_offsets_without_scanning_aliases() {
     assert!(
         samples[2].1 <= samples[0].1 * 3 + 128,
         "logical read lookup copied unrelated indexes: {samples:?}"
+    );
+}
+
+#[test]
+fn prepared_access_provenance_misses_do_not_scan_overlapping_suppliers() {
+    let mut samples = Vec::new();
+    for size in [8u32, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let base = Pointer::symbolic(Variable(960_000));
+        let unrelated_origin = Pointer::symbolic(Variable(960_001));
+        let mut resources = ResourceContext::new_with_equalities(&facts);
+        for end in 1..=size {
+            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
+                CMemoryRange::new(base.clone(), 0u32.into(), end.into()),
+            ));
+        }
+        resources.synchronize_memory_equalities(&facts);
+        assert!(resources.permits_designated_memory_read(
+            &base.offset_by_bytes(1),
+            Some((&base, None)),
+            4,
+            &facts
+        ));
+        assert!(!resources.permits_memory_read(&base.offset_by_bytes(size * 4 + 1), 4, &facts));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..4 {
+                assert!(!resources.permits_designated_memory_read(
+                    &base.offset_by_bytes(1),
+                    Some((&unrelated_origin, None)),
+                    4,
+                    &facts
+                ));
+            }
+        });
+        samples.push(work);
+    }
+    eprintln!("prepared provenance misses: {samples:?}");
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn prepared_object_provenance_lookup_does_not_enumerate_same_object_views() {
+    let mut samples = Vec::new();
+    for size in [8u32, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let base = Pointer::symbolic(Variable(961_000));
+        let missing = Pointer::symbolic(Variable(961_001));
+        let mut resources = ResourceContext::new_with_equalities(&facts);
+        for end in 1..=size {
+            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
+                CMemoryRange::new(base.clone(), 0u32.into(), end.into()),
+            ));
+        }
+        resources.synchronize_memory_equalities(&facts);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..4 {
+                assert!(resources.memory_object_evidence(&base, &facts).is_some());
+                assert!(resources.memory_object_evidence(&missing, &facts).is_none());
+            }
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn prepared_write_and_storage_refusals_do_not_scan_owner_buckets() {
+    let mut samples = Vec::new();
+    for size in [8u32, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let base = Pointer::symbolic(Variable(962_000));
+        let missing = Pointer::symbolic(Variable(962_001));
+        let query = base.offset_by_bytes(4);
+        let mut resources = ResourceContext::new_with_equalities(&facts);
+        for end in 1..=size {
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+                CMemoryRange::new(base.clone(), 0u32.into(), end.into()),
+            ));
+        }
+        resources.synchronize_memory_equalities(&facts);
+        assert!(
+            resources
+                .designated_memory_write_range(&query, Some((&base, None)), 4, &facts)
+                .is_some()
+        );
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..4 {
+                assert!(
+                    resources
+                        .designated_memory_write_range(&query, Some((&missing, None)), 4, &facts)
+                        .is_none()
+                );
+                assert!(!resources.owns_designated_storage_access(
+                    &query,
+                    (&missing, None),
+                    4,
+                    &facts
+                ));
+                assert!(!resources.permits_designated_storage_read(
+                    &query,
+                    Some((&missing, None)),
+                    4,
+                    &facts
+                ));
+                assert!(!resources.permits_designated_pointer_position(
+                    &query,
+                    &base,
+                    (&missing, None),
+                    &facts
+                ));
+            }
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
     );
 }

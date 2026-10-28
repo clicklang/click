@@ -29,11 +29,11 @@ before choosing each performance fix. Do not raise limits to hide a defect.
 
 The remaining audit targets include indexed walks as well as full scans:
 
-- Remaining condition-side buckets used by order/overflow helpers and
-  anchored equality reasoning, including repeated failed queries.
-- Other resource candidate buckets and alias walks, including prepared
-  memory-access candidate buckets, snapshot-rich object/provenance indexes,
-  and remaining non-memory separation fallbacks.
+- Anchored equality condition-side buckets and general signed-interval
+  reconstruction through symbolic order-bound chains, including repeated misses.
+- Remaining non-memory resource candidate buckets and separation fallbacks.
+  Audit snapshot-rich provenance registration and history upkeep separately
+  from indexed object-witness selection.
 - Repeated memory-history queries, coordinated with the frame-walk item.
 
 For each confirmed defect, retain its small reproduction and deterministic

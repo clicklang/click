@@ -630,11 +630,36 @@ impl Iterator for MemoryAccessCandidates {
         self.entries.find(|entry| *entry != owner)
     }
 }
+/// One implicit supplier selected by the address/width index. A failed quantity,
+/// provenance, or containment check is final; checking cannot request alternatives.
+/// Explicit footprint composition keeps its separate, output-sensitive iterator.
+pub(super) struct SelectedMemoryAccess {
+    source: MemoryAccessCandidates,
+    entry: ResourceEntryId,
+}
+impl SelectedMemoryAccess {
+    pub(super) fn entry(&self) -> ResourceEntryId {
+        self.entry
+    }
+    pub(super) fn address(&self) -> Option<Pointer> {
+        self.source.address(self.entry)
+    }
+}
 impl MemoryAccessCandidates {
+    fn select(mut self) -> Option<SelectedMemoryAccess> {
+        let _checking =
+            crate::instrumentation::CheckingWorkScope::new("select indexed memory supplier", 1);
+        let entry = self.next()?;
+        Some(SelectedMemoryAccess {
+            source: self,
+            entry,
+        })
+    }
+
     // Affine interval hits are tentative. A view of a split prefix must not
     // hide the sole owner of the query's selected base. Keep the supplier in
     // this same graph checkpoint and let the ordinary consumer check it.
-    fn prefer_owned_supplier(mut self, read: bool) -> Self {
+    fn prefer_owned_supplier(mut self, read: bool, bytes: u32) -> Self {
         if read && !self.entries.exact() {
             let direct = ResourceContext::sole_access_supplier(&self.index, &self.query, true);
             let owner = direct.or_else(|| {
@@ -645,7 +670,42 @@ impl MemoryAccessCandidates {
                         ResourceContext::sole_access_supplier(&self.index, &query, true)
                     })
             });
-            self.preferred_owner = owner.map(|entry| (entry, true));
+            // Structural supplier indexes also retain zero quantities and
+            // other fields of the same object. Such an owner must not hide the
+            // interval selected for this access. Read only this occurrence's
+            // indexed coordinates; unknown symbolic coverage remains tentative.
+            self.preferred_owner = owner
+                .filter(|entry| {
+                    let Some(fact) = self.index.resources.facts.get(entry) else {
+                        return false;
+                    };
+                    if fact
+                        .owned_quantity_term()
+                        .and_then(|quantity| quantity.as_const())
+                        == Some(0)
+                    {
+                        return false;
+                    }
+                    let in_span = || {
+                        let range = fact.memory_range()?;
+                        let start = i128::from(range.signed_constant_start()?)
+                            * i128::from(range.element_width());
+                        let end = i128::from(range.signed_constant_end()?)
+                            * i128::from(range.element_width());
+                        let query = self.index.graph.canonical_pointer(&self.query)?;
+                        let base = self.index.graph.canonical_pointer(range.base())?;
+                        if query.representative != base.representative {
+                            return None;
+                        }
+                        let offset = query.offset.constant_difference(&base.offset)?;
+                        let bytes = i128::from(
+                            crate::kernel::assumptions::read_candidate_byte_width(bytes),
+                        );
+                        Some(start <= offset && offset.checked_add(bytes)? <= end)
+                    };
+                    in_span() != Some(false)
+                })
+                .map(|entry| (entry, true));
         }
         self
     }
@@ -859,11 +919,12 @@ impl ObjectEvidenceSources {
             .expect("memory equality index")
             .published
             .as_ref()?;
-        let mut candidates = self
+        let candidates = self
             .address_resources
-            .read_access_entries(pointer, 1, assumptions)?;
-        let entry = candidates.next()?;
+            .read_access(pointer, 1, assumptions)?;
+        let entry = candidates.entry();
         let range = candidates
+            .source
             .index
             .resources
             .facts
@@ -873,6 +934,7 @@ impl ObjectEvidenceSources {
         // block. Preserve the supplier's complete base, rather than asking
         // for a constant displacement from that block's zero coordinate.
         candidates
+            .source
             .index
             .graph
             .pointer_at_constant_base(pointer, range.base())
@@ -1256,7 +1318,7 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> bool {
         let pointer = range.start_pointer();
-        self.write_access_entries(&pointer, range.element_width(), assumptions)
+        self.write_access(&pointer, range.element_width(), assumptions)
             .is_some()
             && self.memory_write_range(&pointer, range.element_width(), assumptions) == Some(range)
     }
@@ -1289,31 +1351,30 @@ impl ResourceContext {
             .expect("memory equality index")
             .published
             .clone()?;
-        let select = |mut entries: MemoryAccessCandidates, needs_current_equality: bool| {
-            while let Some(entry) = entries.next() {
-                crate::instrumentation::record_deterministic_work(1);
-                let fact = self.storage.facts.get(&entry)?;
-                let Some(range) = (if include_views {
-                    fact.memory_range()
-                } else {
-                    fact.memory_own_range()
-                }) else {
-                    continue;
-                };
-                if fact.owned_quantity_term().is_some_and(|quantity| {
-                    !super::resource_algebra::resource_quantity_is_positive(quantity, assumptions)
-                }) {
-                    continue;
-                }
-                let Some(address) = entries.address(entry) else {
-                    continue;
-                };
-                if needs_current_equality && !assumptions.pointers_known_equal(pointer, &address) {
-                    continue;
-                }
-                if assumptions.kept_range_holds_access(range, &address, bytes) {
-                    return Some(range);
-                }
+        let select = |entries: SelectedMemoryAccess, needs_current_equality: bool| {
+            let entry = entries.entry();
+            crate::instrumentation::record_deterministic_work(1);
+            let fact = self.storage.facts.get(&entry)?;
+            let Some(range) = (if include_views {
+                fact.memory_range()
+            } else {
+                fact.memory_own_range()
+            }) else {
+                return None;
+            };
+            if fact.owned_quantity_term().is_some_and(|quantity| {
+                !super::resource_algebra::resource_quantity_is_positive(quantity, assumptions)
+            }) {
+                return None;
+            }
+            let Some(address) = entries.address() else {
+                return None;
+            };
+            if needs_current_equality && !assumptions.pointers_known_equal(pointer, &address) {
+                return None;
+            }
+            if assumptions.kept_range_holds_access(range, &address, bytes) {
+                return Some(range);
             }
             None
         };
@@ -1332,22 +1393,21 @@ impl ResourceContext {
                     .or_else(|| {
                         Self::relative_access_entries(&published, pointer, bytes, !include_views)
                     })
-            && let Some(range) = select(
-                MemoryAccessCandidates {
-                    entries,
-                    query: pointer.clone(),
-                    index: published,
-                    preferred_owner: None,
-                },
-                true,
-            )
+            && let Some(selected) = (MemoryAccessCandidates {
+                entries,
+                query: pointer.clone(),
+                index: published,
+                preferred_owner: None,
+            })
+            .select()
+            && let Some(range) = select(selected, true)
         {
             return Some(range);
         }
         let candidates = if include_views {
-            self.read_access_entries(pointer, bytes, assumptions)
+            self.read_access(pointer, bytes, assumptions)
         } else {
-            self.write_access_entries(pointer, bytes, assumptions)
+            self.write_access(pointer, bytes, assumptions)
         }?;
         select(candidates, false)
     }
@@ -1881,16 +1941,17 @@ impl ResourceContext {
         Some(entry)
     }
 
-    /// Indexed read candidates, or a sole retained supplier in the selected
+    /// One indexed read supplier, or a sole retained supplier in the selected
     /// affine class. Unsupported or ambiguous inputs fail closed; queries never
     /// publish input, retry address spellings, or search a resource frame.
-    pub(super) fn read_access_entries(
+    pub(super) fn read_access(
         &self,
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
-    ) -> Option<MemoryAccessCandidates> {
-        self.access_entries(pointer, bytes, assumptions, false)
+    ) -> Option<SelectedMemoryAccess> {
+        self.access_entries(pointer, bytes, assumptions, false)?
+            .select()
     }
 
     // Follow only the query's explicit additive prefixes. The relative
@@ -1971,7 +2032,7 @@ impl ResourceContext {
                     index: direct,
                     preferred_owner: None,
                 }
-                .prefer_owned_supplier(!owned),
+                .prefer_owned_supplier(!owned, bytes),
             );
         }
         let index = self.pair_memory_equalities(assumptions, false, Some(pointer));
@@ -2016,7 +2077,7 @@ impl ResourceContext {
                 index,
                 preferred_owner: None,
             }
-            .prefer_owned_supplier(!owned),
+            .prefer_owned_supplier(!owned, bytes),
         )
     }
 
@@ -2033,18 +2094,38 @@ impl ResourceContext {
         self.concrete_access_entries(pointer, bytes, assumptions, true)
     }
 
-    /// Write candidates from the shared trusted graph/index checkpoint.
-    /// Beside views, a prepared, complete affine block with one memory owner
-    /// needs no supplier search even when its bounds or access are symbolic.
-    /// Ambiguity or unsupported equality reports unknown before checking; a
-    /// selected owner's failed quantity or coverage check is final.
-    pub(super) fn write_access_entries(
+    /// Whole-scalar consumption requires an unambiguous supplier. Inspecting
+    /// the first two indexed entries establishes uniqueness without a bucket scan.
+    pub(super) fn unique_write_access(
         &self,
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
-    ) -> Option<MemoryAccessCandidates> {
-        self.access_entries(pointer, bytes, assumptions, true)
+    ) -> Option<SelectedMemoryAccess> {
+        let mut candidates = self.access_entries(pointer, bytes, assumptions, true)?;
+        let entry = candidates.next()?;
+        if candidates.next().is_some() {
+            return None;
+        }
+        Some(SelectedMemoryAccess {
+            source: candidates,
+            entry,
+        })
+    }
+
+    /// One write supplier from the shared trusted graph/index checkpoint.
+    /// Beside views, a prepared, complete affine block with one memory owner
+    /// needs no supplier search even when its bounds or access are symbolic.
+    /// Ambiguity or unsupported equality reports unknown before checking; a
+    /// selected owner's failed quantity or coverage check is final.
+    pub(super) fn write_access(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> Option<SelectedMemoryAccess> {
+        self.access_entries(pointer, bytes, assumptions, true)?
+            .select()
     }
 
     #[cfg(test)]
@@ -2262,23 +2343,23 @@ mod tests {
             ),
         ));
         resources.synchronize_memory_equalities(&facts);
-        let mut candidates = resources
-            .read_access_entries(&query, 1, &facts)
+        let candidates = resources
+            .read_access(&query, 1, &facts)
             .expect("buffer supplier remains indexed");
         assert!(
-            candidates.index.graph.are_equal(&query, &wide),
+            candidates.source.index.graph.are_equal(&query, &wide),
             "cursor equality remains checked"
         );
         assert_eq!(
             candidates
+                .source
                 .index
                 .graph
                 .pointer_at_base_with_wide_index(&query, &base),
             Some(wide),
             "alignment keeps native index"
         );
-        let entry = candidates.next().expect("buffer candidate");
-        assert!(candidates.address(entry).is_some(), "candidate address");
+        assert!(candidates.address().is_some(), "candidate address");
         assert!(resources.permits_memory_read(&query, 1, &facts));
         assert!(resources.permits_memory_read(&query.offset_by_bytes(1), 1, &facts));
         assert!(!resources.permits_memory_read(&query, 2, &facts));

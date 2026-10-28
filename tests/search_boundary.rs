@@ -313,3 +313,48 @@ fn kept_frame_fallback_cannot_restore_block_search() {
     let source = "fn evidence(c: C) { c.search_memory_read_defined_candidates(); }";
     assert!(boundary::check_source("src/kernel/assumptions/memory_reasoning.rs", source).is_err());
 }
+
+#[test]
+fn order_and_access_checks_cannot_restore_candidate_enumeration() {
+    for path in [
+        "src/kernel/assumptions/condition_reasoning/order_paths.rs",
+        "src/kernel/assumptions/condition_reasoning/overflow_intervals.rs",
+    ] {
+        assert!(
+            boundary::check_source(path, "fn check(c: C) { c.condition_facts_with_side(t); }")
+                .is_err()
+        );
+        assert!(
+            boundary::check_source(
+                path,
+                "fn check(c: C) { c.checked_order_bounds.interval(t, false); }"
+            )
+            .is_ok()
+        );
+    }
+    for name in [
+        "MemoryAccessCandidates",
+        "access_entries",
+        "indexed_access_entries",
+    ] {
+        let source = format!("fn check(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
+}
+
+#[test]
+fn checked_provenance_cannot_restore_alias_bucket_search() {
+    for (function, method) in [
+        ("designations_equal", "direct_aliases"),
+        ("opaque_extents_equal", "direct_aliases"),
+        (
+            "known_value_of_framed_pointer_read",
+            "exact_pointer_aliases",
+        ),
+    ] {
+        let source = format!("fn {function}(c: C) {{ c.{method}(); }}");
+        assert!(boundary::check_source("src/kernel/assumptions.rs", &source).is_err());
+    }
+}
