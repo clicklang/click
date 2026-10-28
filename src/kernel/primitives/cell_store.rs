@@ -1022,6 +1022,7 @@ struct PointerReachableIndex {
     cells: SnapshotMap<Pointer, CValue>,
     generation: u64,
     reachable: SnapshotMap<Pointer, CValue>,
+    external: SnapshotMap<Pointer, CValue>,
 }
 
 #[derive(Clone)]
@@ -1400,6 +1401,16 @@ impl CellStore {
     /// map sharing structure with every earlier answer on this store's
     /// lineage. Costs the cells changed since that lineage last asked.
     pub(in crate::kernel) fn caught_up_pointer_reachable(&self) -> SnapshotMap<Pointer, CValue> {
+        self.caught_up_load_reachable(false)
+    }
+
+    /// External pointers cannot observe local slots, heaps, or temporaries.
+    /// Maintain that projection beside the general reachable map by delta.
+    pub(in crate::kernel) fn caught_up_external_reachable(&self) -> SnapshotMap<Pointer, CValue> {
+        self.caught_up_load_reachable(true)
+    }
+
+    fn caught_up_load_reachable(&self, external: bool) -> SnapshotMap<Pointer, CValue> {
         let generation = super::memory_state::never_address_taken_generation();
         let mut guard = self.pointer_reachable_index.lock().unwrap();
         let mut index = guard
@@ -1409,6 +1420,7 @@ impl CellStore {
                 cells: SnapshotMap::new(),
                 generation,
                 reachable: SnapshotMap::new(),
+                external: SnapshotMap::new(),
             });
         let changes = index
             .cells
@@ -1423,6 +1435,19 @@ impl CellStore {
             if super::block_is_never_address_taken_local(&key.block) {
                 continue;
             }
+            if key
+                .block
+                .observable_by_load(&PointerBlock::ExternalArgument)
+            {
+                match self.concrete.get(&key) {
+                    Some(value) => {
+                        index.external.insert(key.clone(), value.clone());
+                    }
+                    None => {
+                        index.external.remove(&key);
+                    }
+                }
+            }
             match self.concrete.get(&key) {
                 Some(value) => {
                     index.reachable.insert(key, value.clone());
@@ -1433,19 +1458,24 @@ impl CellStore {
             }
         }
         index.cells = self.concrete.clone();
-        let reachable = index.reachable.clone();
+        let reachable = if external {
+            index.external.clone()
+        } else {
+            index.reachable.clone()
+        };
         *guard = Some(index);
         reachable
     }
 
     /// Projects the concrete cells onto what a load through an unresolved
-    /// pointer (`load`, in a `Symbolic` or `LoadedPointer` block) can observe,
+    /// pointer (`Symbolic`, `LoadedPointer`, or an external block) can observe,
     /// keeping a cell when `keep` holds. Such a block may alias every block
     /// except the slot of a local whose address is never taken and, for a
     /// loaded pointer, locals that did not exist when it was read; so `keep`
     /// can only reject a cell of a `local:` block or of the load's own block
     /// (a constant offset shown disjoint). The projection therefore starts
-    /// from the pointer-reachable map, shared and caught up by its own
+    /// from the corresponding reachable map (external pointers also exclude
+    /// local, heap, and temporary storage), shared and caught up by its own
     /// changes, and asks `keep` about those two key ranges alone: its cost is
     /// those cells and the changes since, not the cells of other objects.
     /// `None` when the store holds runs, which the general projection handles.
@@ -1457,7 +1487,14 @@ impl CellStore {
         if !self.runs.is_empty() {
             return None;
         }
-        let mut reachable = self.caught_up_pointer_reachable();
+        let mut reachable = if matches!(
+            load.block,
+            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+        ) {
+            self.caught_up_external_reachable()
+        } else {
+            self.caught_up_pointer_reachable()
+        };
         let locals = PointerBlock::Concrete("local:".to_string());
         let own_block = reachable
             .range::<_, Pointer>((
@@ -1487,11 +1524,31 @@ impl CellStore {
         if rejected.is_empty() && reachable.len() == self.concrete.len() {
             return Some(visited);
         }
-        for pointer in rejected {
-            reachable.remove(&pointer);
+        for pointer in &rejected {
+            reachable.remove(pointer);
         }
         self.reset();
         self.concrete = reachable;
+        // The producer already knows this projection. Retain its index
+        // directly instead of diffing away every omitted cell on the next read.
+        let index = self
+            .pointer_reachable_index
+            .get_mut()
+            .unwrap()
+            .as_mut()
+            .expect("the reachable projection prepared its index");
+        index.cells = self.concrete.clone();
+        index.reachable = self.concrete.clone();
+        if matches!(
+            load.block,
+            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+        ) {
+            index.external = self.concrete.clone();
+        } else {
+            for pointer in rejected {
+                index.external.remove(&pointer);
+            }
+        }
         Some(visited)
     }
 
