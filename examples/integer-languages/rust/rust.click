@@ -169,9 +169,6 @@ fn below_u32(a: u32, b: u32) -> bool {
 fn sign_bit_set(u: u32) -> bool {
     ensures result implies u > 2147483647u32;
     ensures u > 2147483647u32 implies result;
-} by {
-    if (u as i32) < 0 { step_until(function.exit); solve(); }
-    else { step_until(function.exit); solve(); }
 }
 
 fn not_bool(b: bool) -> bool {

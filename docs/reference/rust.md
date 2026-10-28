@@ -371,11 +371,7 @@ In the program, a Rust `bool` is Click's `Bool`. A comparison, `!`, `&&` or
 split: `let c = a < b;` and `match o { Some(b) => !b, None => true }` need no
 written case split, and `a != b` over two `bool`s is their logical
 disequality. `b as u8` and `b as i32` are 1 when `b` holds and 0 otherwise.
-A condition the implicit tail would have split on is now one fact, so a claim
-that needs each case separately, such as `u > 2147483647u32 implies result`
-for `(u as i32) < 0`, is proved with a written `if` on the condition
-([`examples/integer-languages/rust/rust.click`](https://github.com/clicklang/click/tree/master/examples/integer-languages/rust/rust.click),
-`sign_bit_set`). `&bool` parameters and slices of `bool` are not supported.
+`&bool` parameters and slices of `bool` are not supported.
 
 ### Integer literals
 

@@ -15,3 +15,4 @@ pub(in crate::kernel) use order_paths::{
 };
 mod overflow_intervals;
 mod selected_conditions;
+mod sign_bit;

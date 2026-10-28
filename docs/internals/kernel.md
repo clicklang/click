@@ -694,7 +694,12 @@ returns preserve the `uint32` type tag. Scalar narrowing in C is GCC's
 modulo 2^N conversion at every boundary and adds no obligation; into a one- or
 two-byte type it yields a `MachineIntegerCast` node, filed with the
 destination's range, which is the operand's carrier once the operand's range
-is known (`narrowed_cast_identity`). C++20 integral conversions and Rust `as`
+is known (`narrowed_cast_identity`). A conversion between the two
+signednesses of one width changes no bit, so its signed reading is negative
+exactly when its unsigned reading exceeds the signed maximum: the decision
+procedure and the known-condition lookup read each test as the other, at
+8, 16, 32 and 64 bits (`condition_reasoning/sign_bit.rs`; at 8 and 16 bits
+once the operand's range is known). C++20 integral conversions and Rust `as`
 build the same node and file the same range. A specification's cast is the same
 modular conversion; a checked conversion is written `to_T(...)` and owes the
 destination range. A checked narrowing cast yields the same node, with the
