@@ -192,6 +192,34 @@ fn parses_arguments_and_duration_units() {
     assert_eq!(arguments.path, PathBuf::from("examples"));
 }
 
+/// The internal translation-unit suffix is not legal Click syntax. Calls
+/// in snapshot paths use the source spelling, with each occurrence retained.
+#[test]
+#[ignore = "nightly: static-call snapshot expansion and full claim audit"]
+fn static_call_snapshot_paths_expand_and_audit() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/c_static_function.md");
+    let source = load_audit_source(&path).unwrap();
+    let claim = "run.contract";
+    let expanded = expand_claim_with_source(&path, &source, claim)
+        .expect("static calls have a source spelling in expanded snapshots");
+    let rewritten = rewritten_click_source(&source, &expanded).unwrap();
+    assert!(rewritten.contains("call(add_one, 0)"), "{rewritten}");
+    assert!(rewritten.contains("call(add_one, 1)"), "{rewritten}");
+    assert!(!rewritten.contains("#inline:"), "{rewritten}");
+    assert!(!rewritten.contains("#file-static:"), "{rewritten}");
+    click::surface::without_implicit_auto(|| {
+        verify_rewritten_with_inputs(&source, claim, &rewritten)
+    })
+    .expect("the printed call occurrences resolve to their original regions");
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        claim.to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).expect("the original static-call proof audits completely");
+}
+
 #[test]
 fn work_options_count_units_and_refuse_durations() {
     let error = parse_arguments(["--performance-slack", "500ms", "examples"].map(str::to_string))

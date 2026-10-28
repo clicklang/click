@@ -612,7 +612,10 @@ impl SourceExecutionLayout {
             if let syntax::C0Statement::CallAssign { function_name, .. }
             | syntax::C0Statement::Call { function_name, .. } = statement
             {
-                layout.call_targets.insert(index, function_name.clone());
+                layout.call_targets.insert(
+                    index,
+                    crate::surface::call_source_spelling(function_name).to_string(),
+                );
             }
             if let syntax::C0Statement::CallAssign { target, .. }
             | syntax::C0Statement::HeapAllocate { target, .. } = statement
