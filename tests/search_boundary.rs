@@ -198,3 +198,38 @@ fn fact_withdrawal_is_only_available_in_tests() {
         );
     }
 }
+
+#[test]
+fn step_refusal_cannot_materialize_the_ambient_context() {
+    assert!(
+        boundary::check_source(
+            "src/surface/proof/cursor_execution.rs",
+            "fn listed_context_pure_facts(c: C) { c.pure_facts(); }",
+        )
+        .is_err()
+    );
+    assert!(
+        boundary::check_source(
+            "src/surface/proof/cursor_execution.rs",
+            "fn listed_context_pure_facts(c: C) { c.diagnostic_fact_sample(32, 0); }",
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn conversion_refusals_cannot_call_search() {
+    for source in [
+        "use crate::surface::planning::proposition_search::PropositionSearch;",
+        "fn explain(c: C, p: P) { c.proves(p); }",
+        "fn explain(c: C) { c.pure_facts(); }",
+    ] {
+        assert!(
+            boundary::check_source(
+                "src/surface/proof/fixed_state_proofs/conversion_conditions.rs",
+                source
+            )
+            .is_err()
+        );
+    }
+}

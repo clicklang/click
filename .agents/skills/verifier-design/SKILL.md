@@ -99,3 +99,12 @@ rebuild indexes and must not become production APIs. Opposite truth-value assump
 falsehood while retaining the original
 condition and its indexes. Treat explicit context restriction separately from
 branch undo.
+
+## 8. Keep checking failures distinct from search exhaustion
+
+Use `CheckingWorkScope` for migrated checked operations, with an allowance
+measure derived from explicit input or produced state, never ambient fact count.
+Add deterministic tests for one expensive check inside search and many cheap
+checks exhausting search. Preserve the original tactic and whole-run charges;
+nested scope measurements must not be added again to profile totals. A scope is
+a containment guard, not permission to scan or a substitute for growth tests.

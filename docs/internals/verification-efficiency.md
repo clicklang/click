@@ -714,16 +714,21 @@ walk it replaces.
 ## Atomic source selection
 
 Atomic memory and resource source selection uses the kernel's candidate
-indexes. Viewability and store goals read their block's viewability bucket;
-read-defined goals first read the address's typed evidence, exact aliases and
-equality spellings; memory separation reads the unordered block-pair bucket.
-Candidates are still checked by the kernel, and viewability pairs come from
-the concatenation lookup rather than pair trials
-(`loadable_candidate_selection_ignores_facts_about_other_objects`). When no
-indexed source succeeds, read-defined, resource, and non-memory separation
-goals fall back to visiting the remaining family once, and the cold
-viewability shape index is rebuilt over all loadable facts; both are known
-violations of the fast-part rule.
+indexes. Viewability queries select address shapes from structural anchors and
+known aliases; a singleton selected view can cover a displaced address. They do
+not enumerate all other ranges in the block. Adjacent-view checks select a
+suffix at the prefix's endpoint, including an exactly addressed materialized
+cell or dense run span ending at its next hole, instead of pairing ambient
+ranges or enumerating memory cells and runs.
+Candidate snapshots, extents and pointer equality still pass the kernel checks.
+Read-defined goals use typed evidence, exact aliases and equality spellings;
+memory separation uses the unordered block-pair bucket. Large buckets at the
+same address and long alias components still need separate growth audits.
+
+Atom memory-condition matching uses exact/canonical condition keys and keys
+from equality spellings. A miss does not consult the family's entire open-fact
+bucket. A condition requiring a different spelling can be established explicitly
+before the checked operation. Compound-query and carrier/snapshot controls remain.
 
 Atomic certificate planning keeps persistent syntax adjacency for condition
 and proposition facts, keyed by value variables and explicit pointer blocks;

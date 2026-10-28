@@ -303,7 +303,7 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
         samples.push(work);
     }
     assert!(
-        samples[2] - samples[1] <= 5 * (samples[1] - samples[0]) + 64,
+        samples[2].saturating_sub(samples[1]) <= 5 * samples[1].saturating_sub(samples[0]) + 64,
         "covering loadability must scale linearly: {samples:?}"
     );
     eprintln!("covering loadability work: {samples:?}");

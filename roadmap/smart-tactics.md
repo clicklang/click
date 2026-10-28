@@ -29,11 +29,11 @@ before choosing each performance fix. Do not raise limits to hide a defect.
 
 The remaining audit targets include indexed walks as well as full scans:
 
-- Atom-condition open-fact buckets and alias traversal, including large
-  related buckets and repeated failed queries.
-- Resource candidate lookup with open/loaded/symbolic bases and retained
-  whole-block fallback, where still present. Confirm current callers before
-  carrying forward an old census claim.
+- Atom-condition alias traversal and large condition-key buckets, including
+  repeated failed queries.
+- Resource candidate lookup with many views at the same address/shape and
+  long alias components. Audit snapshot-rich buckets and remaining non-memory
+  separation fallbacks; structural anchor lookup alone does not bound those.
 - Repeated memory-history queries, coordinated with the frame-walk item.
 
 For each confirmed defect, retain its small reproduction and deterministic
@@ -47,13 +47,13 @@ Remaining migration after the capability and build-time boundary described in
 [Verifier design](../docs/internals/verifier-design.md#enforced-search-access):
 
 - Audit upkeep/rebuild APIs and remaining whole-context `pure_facts` callers,
-  including step-refusal context formatting and explicit context restriction.
+  beyond the bounded step-refusal sampler and selected-context constructor.
   Branches retain parent contexts; do not reintroduce fact deletion as a
   backtracking mechanism.
   Relabelling a query as upkeep or explicit input must not evade the boundary.
-- Audit large loadability buckets, including shared external-argument blocks,
-  and proof search reached while constructing conversion-condition refusals. Bounded premise sampling does
-  not bound the rest of a diagnostic.
+- Audit diagnostic work beyond premise sampling, including resource rendering
+  and large terms in selected premises. Bounded premise counts alone do not
+  bound output size.
 - Audit Surface checked drivers that import planning helpers. Move exact
   checking helpers to the checking side and separate implicit closer calls;
   extend dependency enforcement when those mixed modules are separated.
@@ -86,9 +86,11 @@ policy text alone is not the acceptance criterion.
 
 ## Attribute expensive checking inside search
 
-Audit existing per-class budgets and exclusive-time attribution before adding
-new reporting. A checker called by `solve` must not hide its cost or its
-failure under a SMART label merely because its caller searches.
+Extend `CheckingWorkScope` coverage beyond selected-context construction.
+Each newly covered checker names its explicit input/output measure and preserves
+source attribution under nested search. Audit nested tactic budgets as well as
+operation scopes: exclusive profiling must not hide work from enclosing search
+limits. A checker called by `solve` must not hide a failure under a SMART label.
 
 Intended regressions use synthetic deterministic work, not sleeps:
 

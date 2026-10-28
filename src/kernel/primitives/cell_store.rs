@@ -2025,6 +2025,29 @@ impl CellStore {
             .map(|slot| slot.run.value_width())
     }
 
+    /// Initialized bytes starting at one addressed cell. Dense runs stop at
+    /// their next hole, found by an ordered lookup rather than enumerating
+    /// live intervals. A strided run authorizes only the selected cell.
+    pub(crate) fn contiguous_bytes_at(&self, pointer: &Pointer) -> Option<u32> {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(value) = self.concrete.get(pointer) {
+            return Some(value.byte_width());
+        }
+        let slot = self.live_run_slot(pointer)?;
+        let width = slot.run.value_width();
+        if width != slot.run.element_width {
+            return Some(width);
+        }
+        let end = slot
+            .run
+            .holes
+            .intervals
+            .range((slot.index, 0)..)
+            .next()
+            .map_or(slot.run.count, |(low, _)| *low);
+        end.checked_sub(slot.index)?.checked_mul(width)
+    }
+
     /// Whether the live run slots `observable` accepts are the same cells in
     /// both stores, answered from the runs alone: `Some(true)` when they are,
     /// so the observable cells agree exactly when the concrete ones do, and

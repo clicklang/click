@@ -25,6 +25,11 @@ fn allowance(path: &str, function: &str, name: &str) -> usize {
             "consulted_premises",
             "diagnostic_fact_sample",
         ) => 1,
+        (
+            "src/surface/proof/cursor_execution.rs",
+            "listed_context_pure_facts",
+            "diagnostic_fact_sample",
+        ) => 1,
         _ => 0,
     }
 }
@@ -52,6 +57,22 @@ impl Boundary<'_> {
                 "{}: {}: fact withdrawal is test-only; retain the parent context for branches ({name})",
                 self.path, self.function
             ));
+        }
+        if self.path == "src/surface/proof/cursor_execution.rs"
+            && self.function == "listed_context_pure_facts"
+            && name == "pure_facts"
+        {
+            self.errors
+                .push("step refusal must use the bounded diagnostic sampler".into());
+        }
+        if self.path == "src/surface/proof/fixed_state_proofs/conversion_conditions.rs"
+            && matches!(
+                name,
+                "PropositionSearch" | "proves" | "derive_proposition" | "pure_facts"
+            )
+        {
+            self.errors
+                .push("conversion refusals must not search or scan the ambient context".into());
         }
         if matches!(name, "diagnostic_fact_sample") {
             *self
