@@ -725,7 +725,7 @@ fn contains_scoped_expression_shape(
         return false;
     }
     match expression {
-        ContractExpression::RegionResult(_) => false,
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => false,
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
             shape == ScopedExpressionShape::AlgebraicMatch
                 || contains_scoped_expression_shape(scrutinee, shape)
@@ -2934,7 +2934,7 @@ pub(super) fn infer_contract_expression_type(
         return Ok(Some(value_type));
     }
     match expression {
-        ContractExpression::RegionResult(_) => Ok(None),
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(None),
         ContractExpression::ResourceField(access) => match &access.click_type {
             Some(ClickType::C(ty)) => Ok(Some(*ty)),
             Some(ClickType::Integer) => Ok(None),
@@ -4163,7 +4163,7 @@ fn validate_contract_expression_calls(
         return Ok(());
     }
     match expression {
-        ContractExpression::RegionResult(_) => Ok(()),
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(()),
         ContractExpression::IntegerLiteral(_) => Ok(()),
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             validate_contract_expression_calls(inner, click_functions, context)

@@ -5396,7 +5396,7 @@ pub(in crate::kernel) fn sync_stack_local(state: &mut CState, name: &str, value:
 
 /// A pointer value moved from a pending allocation's base to its resolved
 /// block. Its subobject extent, which names the same block, moves with it.
-fn rebase_resolved_allocation(
+pub(in crate::kernel) fn rebase_resolved_allocation(
     value: &CPointerValue,
     base: &Pointer,
     resolved: &Pointer,

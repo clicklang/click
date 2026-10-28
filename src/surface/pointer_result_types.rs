@@ -543,6 +543,7 @@ impl Analysis<'_> {
             | ContractExpression::Binding(_)
             | ContractExpression::CBinding(_)
             | ContractExpression::RegionResult(_)
+            | ContractExpression::RegionAllocation(_)
             | ContractExpression::CFragment(_) => {}
         }
         Ok(())

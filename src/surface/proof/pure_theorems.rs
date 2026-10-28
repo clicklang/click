@@ -3043,7 +3043,7 @@ pub(super) fn click_function_applications(
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match term {
-            ContractExpression::RegionResult(_) => {}
+            ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
             ContractExpression::IntegerLiteral(_) => {}
             ContractExpression::CUnary { operand: inner, .. }
             | ContractExpression::Negate(inner) => expression(inner, known_facts, applications),

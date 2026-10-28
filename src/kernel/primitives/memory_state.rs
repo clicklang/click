@@ -3983,6 +3983,31 @@ impl CMemory {
         !self.heap.pending_allocations.is_empty()
     }
 
+    /// Name the success identity already reserved by this allocation producer.
+    /// This is a value observation, not evidence that allocation succeeded or
+    /// that the object is still live. No facts or memory history are consulted.
+    pub(crate) fn fresh_allocation_identity(
+        &self,
+        result: &CPointerValue,
+    ) -> Option<CPointerValue> {
+        let base = result.pointer();
+        match base.block {
+            PointerBlock::Heap(_) => Some(result.clone()),
+            PointerBlock::Symbolic(variable)
+                if self.heap.pending_allocations.contains_key(base) =>
+            {
+                let resolved = Pointer {
+                    block: PointerBlock::Heap(variable.0),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                Some(crate::kernel::eval::rebase_resolved_allocation(
+                    result, base, &resolved,
+                ))
+            }
+            _ => None,
+        }
+    }
+
     pub(in crate::kernel) fn heap_identity_in_use(&self, identity: u64) -> bool {
         self.blocks.contains_key(&PointerBlock::Heap(identity))
             || self

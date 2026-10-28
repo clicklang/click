@@ -4740,6 +4740,11 @@ fn synthesize_surface_pointer_expression(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-expression")?;
+    if let Some(region) = SYNTHESIS_RECORDED_POINTS
+        .with(|points| points.borrow().as_ref()?.allocation_result(pointer))
+    {
+        return Some(ContractExpression::RegionAllocation(region));
+    }
     if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
         return Some(field);
     }

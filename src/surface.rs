@@ -366,6 +366,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "any",
     "at",
     "at-expression",
+    "region-allocation",
     "auto",
     "bool",
     "by",
@@ -2589,7 +2590,7 @@ pub(crate) fn collect_current_contract_expression_variables(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        ContractExpression::RegionResult(_) => {}
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::AlgebraicVariable { name, .. } => {
             names.insert(name.clone());
@@ -2841,6 +2842,8 @@ pub enum ContractExpression {
     /// this one value; it is the result its region assigned, read at the
     /// region's exit.
     RegionResult(CodeRegionRef),
+    /// The fresh heap identity of an allocation region, distinct from its nullable result.
+    RegionAllocation(CodeRegionRef),
     Old(Box<ContractExpression>),
     At {
         selector: SnapshotSelector,
@@ -3000,6 +3003,9 @@ struct RecordedSnapshots {
     /// Filled and checked as `value_points` is.
     pointer_points:
         crate::persistent::PersistentMap<(crate::kernel::PointerBlock, String), SnapshotSelector>,
+    /// Allocation results keep the region that introduced them, independently
+    /// of later pointer reads or assignments to the result local.
+    allocation_results: crate::persistent::PersistentMap<crate::kernel::Pointer, CodeRegionRef>,
     /// The recorded point at which each scalar model-field value was first
     /// held by its resource instance, keyed by the value's variable: a field
     /// value no nearer state's instance holds is spelled at that point.
@@ -3050,6 +3056,7 @@ impl Default for RecordedSnapshots {
             memory_points: imbl::OrdMap::new(),
             value_points: crate::persistent::PersistentMap::default(),
             pointer_points: crate::persistent::PersistentMap::default(),
+            allocation_results: crate::persistent::PersistentMap::default(),
             field_points: crate::persistent::PersistentMap::default(),
             last_locals: None,
             last_resources: None,
@@ -3265,6 +3272,32 @@ impl RecordedSnapshots {
         ))
     }
 
+    fn region_allocation(&self, region: &CodeRegionRef) -> Result<CValue, String> {
+        let (point, local) = self.region_result(region)?;
+        let CodeRegionRef::Region(index) = &point.region else {
+            unreachable!("resolved region")
+        };
+        let layout = self
+            .source_layout
+            .clone()
+            .or_else(diagnostics::spelling_layout)
+            .ok_or("`.allocation` names an allocation region being executed")?;
+        if layout.allocation_result_local(*index).is_none() {
+            return Err("`.allocation` requires a fresh allocation region".to_string());
+        }
+        let state = self
+            .get(&SnapshotSelector::ProgramPoint(point))
+            .ok_or("`.allocation` names an allocation this proof has not executed yet")?;
+        let Some(CValue::Pointer(result)) = state.locals().get(&local) else {
+            return Err("allocation result was not recorded at its exit".to_string());
+        };
+        state
+            .memory()
+            .fresh_allocation_identity(result)
+            .map(CValue::Pointer)
+            .ok_or_else(|| "region has no fresh allocation identity".to_string())
+    }
+
     /// The program point `selector` names, spelled as it is recorded: a
     /// statement path as its `region(N)`, and a loop under its first label
     /// when the loop has one.
@@ -3475,6 +3508,53 @@ impl RecordedSnapshots {
         self.last_memory = Some(state.memory().clone());
     }
 
+    fn update_allocation_result(
+        &mut self,
+        selector: &SnapshotSelector,
+        prior: Option<&CState>,
+        next: Option<&CState>,
+    ) {
+        let SnapshotSelector::ProgramPoint(ProgramPointRef {
+            region: CodeRegionRef::Region(index),
+            kind: ProgramPointKind::Exit,
+        }) = selector
+        else {
+            return;
+        };
+        let Some(local) = self
+            .source_layout
+            .as_ref()
+            .and_then(|layout| layout.allocation_result_local(*index))
+        else {
+            return;
+        };
+        let result = |state: &CState| {
+            let CValue::Pointer(value) = state.locals().get(local)? else {
+                return None;
+            };
+            state
+                .memory()
+                .fresh_allocation_identity(value)
+                .map(|value| value.pointer().clone())
+        };
+        let region = CodeRegionRef::Region(*index);
+        if let Some(old) = prior.and_then(result)
+            && self.allocation_results.get(&old) == Some(&region)
+        {
+            self.allocation_results.remove(&old);
+        }
+        if let Some(new) = next.and_then(result)
+            && self.allocation_results.get(&new).is_none()
+        {
+            self.allocation_results.insert(new, region);
+        }
+    }
+
+    fn allocation_result(&self, pointer: &crate::kernel::Pointer) -> Option<CodeRegionRef> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.allocation_results.get(pointer).cloned()
+    }
+
     /// The recorded points whose memories are nearest `memory` in the order
     /// memories were made, with their states: those at or after it, nearest
     /// first, where a read made in `memory` between recorded points (inside
@@ -3583,6 +3663,7 @@ impl RecordedSnapshots {
     fn insert(&mut self, selector: impl Into<SnapshotSelector>, state: CState) -> Option<CState> {
         let selector = self.recorded_spelling(selector.into());
         let prior = self.get(&selector).cloned();
+        self.update_allocation_result(&selector, prior.as_ref(), Some(&state));
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
             self.memory_points
                 .insert(memory.read_identity(), selector.clone());
@@ -3633,6 +3714,7 @@ impl RecordedSnapshots {
     fn remove<K: RecordedSnapshotKey + ?Sized>(&mut self, key: &K) -> Option<CState> {
         let selector = self.recorded_spelling(key.to_selector());
         let prior = self.get(key).cloned();
+        self.update_allocation_result(&selector, prior.as_ref(), None);
         if let Some(memory) = prior
             .as_ref()
             .and_then(|state| crate::kernel::interned_storage_of(state.memory()))
@@ -6532,7 +6614,7 @@ fn contract_expression_reads_memory(
     callees: &mut Vec<String>,
 ) -> bool {
     match expression {
-        ContractExpression::RegionResult(_) => false,
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => false,
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
