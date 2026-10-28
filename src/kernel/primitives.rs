@@ -2336,6 +2336,20 @@ impl PointerBlock {
         if loaded_before(self, other) || loaded_before(other, self) {
             return true;
         }
+        // A pointer read holds the pointer its snapshot stores at the read's
+        // address (the read-over-write authority), so it lies in that
+        // pointer's block. This reads memory, never facts.
+        let stored_block = |block: &Self| match block {
+            Self::LoadedPointer(identity) => {
+                crate::kernel::eval::loaded_pointer_stored_block(*identity)
+            }
+            _ => None,
+        };
+        if stored_block(self).is_some_and(|stored| stored.proven_distinct(other))
+            || stored_block(other).is_some_and(|stored| self.proven_distinct(&stored))
+        {
+            return true;
+        }
         // A symbolic block is a logic variable that later facts may constrain
         // to any address, including a heap block named below (a contract
         // postcondition such as `result == destination` does exactly that).

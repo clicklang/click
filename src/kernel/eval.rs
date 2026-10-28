@@ -141,3 +141,5 @@ pub(super) use statements::{
 };
 
 pub(crate) use memory_loads::pointer_read_over_write_c_value;
+
+pub(crate) use memory_loads::loaded_pointer_stored_block;

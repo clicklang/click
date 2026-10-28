@@ -889,8 +889,9 @@ pub(crate) fn clear_version_memos() {
 /// dozen cells paid for the whole dependency chain of each again. One empty
 /// context per verification session registers each term once. It holds no
 /// fact: its graph carries only the producer-recorded read definitions that
-/// any context registers on demand, and it is rebuilt whenever the thread's
-/// read table is replaced.
+/// any context registers on demand. It does not derive stored-value
+/// equations, whose authority requires this naming walk to have finished.
+/// It is rebuilt whenever the thread's read table is replaced.
 fn naming_context() -> std::rc::Rc<PureFactContext> {
     NAMING_CONTEXT.with(|context| {
         let mut context = context.borrow_mut();
@@ -899,7 +900,9 @@ fn naming_context() -> std::rc::Rc<PureFactContext> {
         {
             return current.clone();
         }
-        let fresh = std::rc::Rc::new(PureFactContext::new());
+        let mut fresh = PureFactContext::new();
+        fresh.equality_graph = crate::kernel::equality_graph::EqualityGraph::for_naming();
+        let fresh = std::rc::Rc::new(fresh);
         *context = Some(fresh.clone());
         fresh
     })

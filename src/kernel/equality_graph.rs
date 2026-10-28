@@ -387,6 +387,7 @@ pub(in crate::kernel) struct EqualityGraph {
     // They contain no hypotheses, read authority, or snapshot transport. Like term interning, discovery is shared by evaluation
     // forks; each fork still closes these definitions against its own facts.
     logical_reads: std::sync::Arc<std::sync::Mutex<LogicalPointerReads>>,
+    resolve_stored_values: bool,
 }
 
 #[derive(Clone, Default)]
@@ -483,12 +484,25 @@ pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<Bitvector32Te
     ))
 }
 
+impl EqualityGraph {
+    /// Naming consumes producer definitions, but cannot ask for stored-value
+    /// equations: establishing those equations itself calls the naming walk.
+    /// Checking graphs add them after naming has established their authority.
+    pub(in crate::kernel) fn for_naming() -> Self {
+        Self {
+            resolve_stored_values: false,
+            ..Self::default()
+        }
+    }
+}
+
 impl Default for EqualityGraph {
     fn default() -> Self {
         Self {
             state: Default::default(),
             admitted: Default::default(),
             logical_reads: LOGICAL_POINTER_READS.with(|reads| reads.borrow().clone()),
+            resolve_stored_values: true,
         }
     }
 }
@@ -497,6 +511,7 @@ impl Clone for EqualityGraph {
     fn clone(&self) -> Self {
         Self {
             logical_reads: self.logical_reads.clone(),
+            resolve_stored_values: self.resolve_stored_values,
             admitted: self.admitted.clone(),
             state: std::sync::Mutex::new(self.state.lock().expect("equality graph").clone()),
         }
@@ -764,15 +779,17 @@ impl EqualityGraph {
             // A pointer read equals the pointer its snapshot stores at the
             // read's address (the read-over-write authority): memory records
             // it, so it is term metadata like a definition, never a fact.
-            if let PointerBlock::LoadedPointer(_) = &value.block {
+            if self.resolve_stored_values
+                && let PointerBlock::LoadedPointer(_) = &value.block
+            {
                 let read = Pointer {
                     block: value.block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 };
                 if !state.logical_values.contains(&read) {
                     state.logical_values = state.logical_values.with_value(read.clone());
-                    // The authority walks memory history under a fresh naming
-                    // context, which reads this thread's read table itself.
+                    // The authority uses the producer-only naming context,
+                    // which reads this thread's read table itself.
                     drop(reads);
                     let stored = crate::kernel::eval::pointer_read_over_write_c_value(&read);
                     reads = self.logical_reads.lock().expect("logical pointer reads");
