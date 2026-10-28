@@ -4748,7 +4748,6 @@ impl Pointer {
     /// holds, which the read-over-write authority relates to the read
     /// (`eval::pointer_read_over_write_value`). A cell holding its own read
     /// is that read.
-    #[cfg(test)]
     pub(crate) fn version_read(memory: &SharedCMemory, address: &Pointer) -> Self {
         match Self::version_read_value(memory, address) {
             Ok(held) => held.pointer().clone(),
