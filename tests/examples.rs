@@ -2908,3 +2908,25 @@ fn produced_population_predicate_expands_and_retains_its_return_state() {
     )
     .unwrap();
 }
+
+#[test]
+#[ignore = "nightly: selected linked-list frame expansion and recheck"]
+fn written_store_alias_frame_expands_and_rechecks() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/do_while_restored_field_frame_remains_separate.md");
+    limits::spawn(
+        "written alias frame expansion",
+        "click-written-alias-frame".into(),
+        move || {
+            let fixture = click::cli::read_mdtest(&path).unwrap();
+            let source = fixture.click_source.unwrap();
+            let sources = source_refs(&fixture.c_sources);
+            verify_c0_sources(&source, &sources).expect("manual frame proof verifies");
+            let expanded =
+                click::surface::expand_c0_claim_source_by_label(&source, &sources, "walk.contract")
+                    .expect("manual frame proof expands");
+            verify_c0_sources(&expanded, &sources).expect("expanded manual frame proof verifies");
+        },
+    )
+    .unwrap();
+}

@@ -31,31 +31,17 @@ These are concrete checking call paths. Code inspection establishes the walks;
 measure their growth before choosing fixes. Existing flat tests with unrelated
 facts do not establish flat cost as the queried class or bucket grows.
 
-1. **Literal discovery through written equality chains.**
-   `EqualityGraph::direct_scalar_constant` in `src/kernel/equality_graph/evidence.rs`
-   follows equality edges and their source buckets. Its
-   `decide_bitvector_equality_shallow` caller is used by memory address
-   equality/separation checks in `src/kernel/reasoning/memory_resolution.rs`.
-   It is also reached by `simplify_bitvector_under_assumptions`.
-   Measure chains, stars, repeated hits and misses, and unrelated classes.
-   A probe with 8/32/128 equalities, ending at the literal 7, measured a memory
-   address-distinctness query against index 9 at 48/120/408 work units for a
-   chain and 34/58/154 for a star; disjoint equality classes stayed at 18.
-   Four repeated shallow equality checks cost 108/396/1548 on those chains.
-   Unpinned and compound-expression misses stayed flat in this probe.
-   Distinguish direct written-equality connectivity from general congruence and
-   arithmetic folding before replacing the query with a class summary; the
-   existing `direct_constant_index_tracks_exact_premises_and_forks` test
-   explicitly distinguishes these judgments. Turn the reproduction into a
-   flat-growth regression with the fix, not a test requiring the current walk.
-2. **Store ownership footprint selection.**
+1. **Store ownership member selection and preservation.**
    `owned_store_footprint` in `src/kernel/assumptions/memory_reasoning.rs` is
    called by memory-store processing in `src/kernel/primitives/memory_state.rs`.
-   `base_spellings_through_aliases` enumerates pointer aliases;
-   `store_members_in` examines ownership members under the resulting bases.
-   Measure growing alias classes and overlapping member buckets, keeping actual
-   changed-cell work separate from candidate discovery.
-3. **Direct resource support selection.**
+   Written address bases no longer enumerate alias classes, but
+   `store_members_in` still examines ownership members under those bases.
+   Measure overlapping member buckets and repeated stores, keeping actual
+   changed-cell work separate from candidate discovery. Restrict implicit
+   preservation reasoning first, then repair affected proofs with explicit
+   separation and transport. Add automation only for demonstrated proof
+   friction; do not assume that all current automatic preservation must remain.
+2. **Direct resource support selection.**
    `directly_supporting_owned_entry_with_separation` and
    `has_other_directly_supporting_owned_entry` in
    `src/kernel/primitives/resource_algebra.rs` examine candidate resources.

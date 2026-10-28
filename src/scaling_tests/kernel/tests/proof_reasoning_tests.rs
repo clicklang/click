@@ -1062,7 +1062,7 @@ fn direct_constant_lookup_ignores_unrelated_condition_facts() {
 }
 
 #[test]
-fn direct_constant_lookup_work_scales_with_the_reached_chain() {
+fn direct_constant_lookup_declines_chains_until_the_endpoint_is_stated() {
     let var = |id| Bitvector32Term::Variable(Variable(400_000 + id));
     for size in [16u64, 64, 256] {
         let mut context = PureFactContext::new();
@@ -1074,8 +1074,14 @@ fn direct_constant_lookup_work_scales_with_the_reached_chain() {
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.bitvector_constant_from_direct_equalities(&var(0))
         });
+        assert_eq!(result, None);
+        assert!(work <= 12, "size={size}, refusal work={work}");
+        let explicit = context.assume_condition(ConditionTerm::equal(var(0), 7u32.into()), true);
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            explicit.bitvector_constant_from_direct_equalities(&var(0))
+        });
         assert_eq!(result, Some(7));
-        assert!(work <= 6 * size as usize + 8, "size={size}, work={work}");
+        assert!(work <= 12, "size={size}, explicit work={work}");
     }
 }
 

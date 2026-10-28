@@ -315,5 +315,21 @@ the saved read first, then normalize using that equality and the saved value.
 This explicitly supplies the connection that an ambiguous constant endpoint
 bucket cannot choose. Build-time boundary checks reject the removed enumeration routes, and
 `condition_buckets` scaling regressions grow both related and unrelated state.
-These guarantees do not yet cover all arithmetic premise collectors; remaining
-audits are tracked in `roadmap/smart-tactics.md`.
+Other remaining checking walks are tracked in `roadmap/smart-tactics.md`.
+
+### Written literal and ownership queries
+
+`direct_scalar_constant` accepts a literal or an exact stated Int32/UInt32
+literal equality in either orientation. The existing scalar-class summary
+nominates its value; ambiguous summaries decline. A chain or arithmetic folding
+alone does not supply the written premise: derive and state the endpoint
+literal equality explicitly. Checking reads at most four exact premise keys,
+without traversing equality evidence edges.
+
+Store ownership footprint lookup uses only the additive bases written in the
+access. It does not enumerate their pointer alias classes. When a resource is
+owned under another spelling, state the alias and separation explicitly and
+use `transport ... using` to carry the required read across the write, as in
+`mdtests/do_while_restored_field_frame_remains_separate.md`. Build-boundary
+checks reject the removed evidence and alias enumeration routes. Ownership
+member selection and cached-read preservation remain roadmap targets.

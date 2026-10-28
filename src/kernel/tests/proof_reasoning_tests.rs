@@ -6843,59 +6843,49 @@ fn lower_bound_search_ignores_unrelated_facts() {
 }
 
 #[test]
-fn direct_constant_index_tracks_exact_premises_and_forks() {
+fn direct_constant_index_requires_written_premises_and_preserves_forks() {
     let a = Bitvector32Term::Variable(Variable(97_010));
     let b = Bitvector32Term::Variable(Variable(97_011));
     let edge = ConditionTerm::equal(a.clone(), b.clone());
-    let reverse = ConditionTerm::equal(b.clone(), a.clone());
-    let pin = ConditionTerm::equal(b.clone(), 7u32.into());
     let context = PureFactContext::new()
         .assume_condition(edge.clone(), true)
-        .assume_condition(reverse.clone(), true)
-        .assume_condition(pin.clone(), true);
+        .assume_condition(ConditionTerm::equal(b.clone(), 7u32.into()), true);
+    assert_eq!(context.bitvector_constant_from_direct_equalities(&a), None);
     assert_eq!(
-        context.bitvector_constant_from_direct_equalities(&a),
+        context.bitvector_constant_from_direct_equalities(&b),
         Some(7)
     );
-    let without_edge = context.without_exact_fact(&Proposition::ConditionIs(edge.clone(), true));
+    let pin = ConditionTerm::equal(a.clone(), 7u32.into());
+    let explicit = context.clone().assume_condition(pin.clone(), true);
     assert_eq!(
-        without_edge.bitvector_constant_from_direct_equalities(&a),
+        explicit.bitvector_constant_from_direct_equalities(&a),
         Some(7)
     );
-    let disconnected = without_edge.without_exact_fact(&Proposition::ConditionIs(reverse, true));
+    assert_eq!(context.bitvector_constant_from_direct_equalities(&a), None);
+    let removed = explicit.without_exact_fact(&Proposition::ConditionIs(pin.clone(), true));
+    assert_eq!(removed.bitvector_constant_from_direct_equalities(&a), None);
+    let restricted = explicit.restricted_to_facts(&[(edge, true)], &[]);
     assert_eq!(
-        disconnected.bitvector_constant_from_direct_equalities(&a),
+        restricted.bitvector_constant_from_direct_equalities(&a),
         None
     );
-    let unpinned = context.without_exact_fact(&Proposition::ConditionIs(pin.clone(), true));
-    assert_eq!(unpinned.bitvector_constant_from_direct_equalities(&a), None);
-    let replaced = context.clone().assume_condition(pin.clone(), false);
-    assert!(replaced.is_inconsistent());
+    let contradictory = explicit.clone().assume_condition(pin, false);
+    assert!(contradictory.is_inconsistent());
+    // Opposite assumptions do not withdraw the original written premise.
     assert_eq!(
-        replaced.bitvector_constant_from_direct_equalities(&a),
+        contradictory.bitvector_constant_from_direct_equalities(&a),
         Some(7)
     );
-    assert_eq!(
-        context.bitvector_constant_from_direct_equalities(&a),
-        Some(7)
-    );
-    let restored = replaced.assume_condition(pin, true);
-    assert!(restored.is_inconsistent());
-    assert_eq!(
-        restored.bitvector_constant_from_direct_equalities(&a),
-        Some(7)
-    );
-    // Folding and wide equality have different judgments. Only exact written
-    // int32 equalities are traversed by this query.
     let compound = Bitvector32Term::add(a.clone(), 1u32.into());
     assert_eq!(
-        context.bitvector_constant_from_direct_equalities(&compound),
+        explicit.bitvector_constant_from_direct_equalities(&compound),
         None
     );
-    let explicit =
-        context.assume_condition(ConditionTerm::equal(compound.clone(), 8u32.into()), true);
+    let with_compound = explicit
+        .clone()
+        .assume_condition(ConditionTerm::equal(compound.clone(), 8u32.into()), true);
     assert_eq!(
-        explicit.bitvector_constant_from_direct_equalities(&compound),
+        with_compound.bitvector_constant_from_direct_equalities(&compound),
         Some(8)
     );
     let wide = PureFactContext::new().assume_condition(
@@ -6903,18 +6893,35 @@ fn direct_constant_index_tracks_exact_premises_and_forks() {
         true,
     );
     assert_eq!(wide.bitvector_constant_from_direct_equalities(&a), None);
-    // Conflicting premises still select the literal reached first by the
-    // original fact-ordered stack walk, rather than a new graph policy.
-    let conflicting = explicit.assume_condition(ConditionTerm::equal(a.clone(), 9u32.into()), true);
+    let conflicting = explicit
+        .clone()
+        .assume_condition(ConditionTerm::equal(a.clone(), 9u32.into()), true);
     assert_eq!(
         conflicting.bitvector_constant_from_direct_equalities(&a),
-        Some(7)
-    );
-    let restricted = conflicting.restricted_to_facts(&[(edge, true)], &[]);
-    assert_eq!(
-        restricted.bitvector_constant_from_direct_equalities(&a),
         None
     );
+    assert_eq!(
+        explicit.bitvector_constant_from_direct_equalities(&a),
+        Some(7)
+    );
+    for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+        for (left, right) in [
+            (a.clone(), 0xffff_ffffu32.into()),
+            (0xffff_ffffu32.into(), a.clone()),
+        ] {
+            let fact = ConditionTerm::Compare {
+                format,
+                relation: CompareRelation::Equal,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+            let facts = PureFactContext::new().assume_condition(fact, true);
+            assert_eq!(
+                facts.bitvector_constant_from_direct_equalities(&a),
+                Some(u32::MAX)
+            );
+        }
+    }
 }
 
 /// Constant normalization keeps its decisions when its classes are built
