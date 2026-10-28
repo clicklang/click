@@ -296,60 +296,31 @@ impl EqualityGraph {
 }
 
 impl EqualityGraph {
-    /// Literal discovery constrained to exact written scalar premises.
+    /// Read a literal or one exact written equality to it; never follow a chain.
+    /// The existing class summary nominates the constant, but does not supply
+    /// the written premise. State that equality explicitly when a chain or
+    /// arithmetic folding is needed to derive it. Ambiguous classes decline.
     pub(in crate::kernel) fn direct_scalar_constant(&self, term: &Bitvector32Term) -> Option<u32> {
         if let Some(value) = term.as_const() {
             return Some(value);
         }
         use crate::kernel::assumptions::SignedConstantResolution as R;
-        if matches!(
-            self.scalar_constant_class(term).map(|(_, value)| value),
-            None | Some(R::Unknown)
-        ) {
+        let (_, R::Known(value)) = self.scalar_constant_class(term)? else {
             return None;
-        }
-        let mut pending = vec![term.clone()];
-        let mut visited = BTreeSet::new();
-        while let Some(current) = pending.pop() {
-            crate::instrumentation::record_deterministic_work(1);
-            if !visited.insert(current.clone()) {
-                continue;
-            }
-            if let Some(value) = current.as_const() {
-                return Some(value);
-            }
-            let mut sources = BTreeMap::new();
-            if let Some(neighbors) = self
-                .admitted
-                .scalar_evidence_inputs
-                .get(&equality_graph_term_key(&current))
-            {
-                for (_, premises) in neighbors.iter() {
-                    for (condition, _) in premises.iter() {
-                        let ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                            relation: CompareRelation::Equal,
-                            left: a,
-                            right: b,
-                        } = condition
-                        else {
-                            continue;
-                        };
-                        let other = if **a == current {
-                            b
-                        } else if **b == current {
-                            a
-                        } else {
-                            continue;
-                        };
-                        sources.insert(condition, other.as_ref());
-                    }
-                }
-            }
-            for other in sources.values() {
+        };
+        let literal = Bitvector32Term::Constant(value as u32);
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+            for (left, right) in [(term, &literal), (&literal, term)] {
                 crate::instrumentation::record_deterministic_work(1);
-                crate::kernel::assumptions::count_condition_fact_visit();
-                pending.push((*other).clone());
+                let condition = ConditionTerm::Compare {
+                    format,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(left.clone()),
+                    right: Box::new(right.clone()),
+                };
+                if self.admitted.scalar_evidence_keys.contains_key(&condition) {
+                    return Some(value as u32);
+                }
             }
         }
         None

@@ -1668,7 +1668,7 @@ impl PureFactContext {
         if self.resource_compositions.is_empty() {
             return OwnedStoreFootprint::Members(Vec::new());
         }
-        let spellings = self.base_spellings_through_aliases(write);
+        let spellings = self.written_base_spellings(write);
         match self.store_owners() {
             Some(owners) => OwnedStoreFootprint::Members(self.store_members_in(
                 owners.iter(),
@@ -1711,41 +1711,17 @@ impl PureFactContext {
         members
     }
 
-    /// The additive base spellings of `pointer`, and the same accesses
-    /// rooted at each pointer that recorded cross-block equalities join to one
-    /// of those bases. Ownership is filed under the spelling that introduced
-    /// it: a matched arm owns `identity->next` while the C stores through
-    /// `q->next`, and assumed `q == p` and `p == identity` make them one
-    /// cell. The class only proposes bases; each member's containment of the
-    /// access is still proved. The walk visits the bases' own alias classes.
-    fn base_spellings_through_aliases(&self, pointer: &Pointer) -> Vec<(Pointer, Pointer)> {
-        let spellings = additive_base_spellings(pointer);
-        let mut result = spellings
-            .iter()
-            .map(|base| (base.clone(), pointer.clone()))
-            .collect::<Vec<_>>();
-        for base in &spellings {
-            let Some(displacement) = pointer.offset_from_base(base) else {
-                continue;
-            };
-            for alias in &self.pointer_alias_class(base) {
+    /// Only bases written in the access itself. Derive separation under a
+    /// different spelling explicitly and transport the needed read across the
+    /// store; automatic ownership lookup never enumerates pointer aliases.
+    fn written_base_spellings(&self, pointer: &Pointer) -> Vec<(Pointer, Pointer)> {
+        additive_base_spellings(pointer)
+            .into_iter()
+            .map(|base| {
                 crate::instrumentation::record_deterministic_work(1);
-                // The class proposes; the access it roots must equal this one.
-                let rooted = Pointer {
-                    block: alias.block.clone(),
-                    offset: PointerOffsetTerm::add(alias.offset.clone(), displacement.clone()),
-                };
-                if !self.pointers_proven_equal_ignoring_memory_separation(&rooted, pointer) {
-                    continue;
-                }
-                for spelling in additive_base_spellings(&rooted) {
-                    if !result.iter().any(|(known, _)| *known == spelling) {
-                        result.push((spelling, rooted.clone()));
-                    }
-                }
-            }
-        }
-        result
+                (base, pointer.clone())
+            })
+            .collect()
     }
 
     /// A flat parameter partition without path equalities. Non-atomic bases
@@ -1840,7 +1816,7 @@ impl PureFactContext {
         if matches!(footprint, OwnedStoreFootprint::Members(members) if members.is_empty()) {
             return false;
         }
-        let spellings = self.base_spellings_through_aliases(pointer);
+        let spellings = self.written_base_spellings(pointer);
         let selected;
         let members = match footprint {
             OwnedStoreFootprint::Members(members) => members,
@@ -5831,4 +5807,10 @@ mod wide_separation_index_tests {
         assert!(!separate(&child));
         assert!(separate(&child.assume_proposition(fact)));
     }
+}
+
+#[cfg(test)]
+mod written_store_base_scaling_tests {
+    use super::*;
+    include!("../../scaling_tests/kernel/assumptions/memory_reasoning/written_store_bases.rs");
 }

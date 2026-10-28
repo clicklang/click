@@ -70,6 +70,18 @@ void walk(struct Node* p, int32* marker) {
         Path::Top => { contradiction(c.model == Path::Top); },
         Path::Step(identity, before) => {
             let { up: previous } = unfold(c);
+            have q == identity;
+            have separate(memory(marker[0]), memory(identity->next));
+            have marker[0] == 9;
+            mark before_store;
+            step();
+            have marker[0] == 9 by {
+                transport(at(before_store, marker[0]) == 9, marker[0] == 9) using {
+                    at(before_store, marker[0]) == 9;
+                    q == identity;
+                    separate(memory(marker[0]), memory(identity->next));
+                };
+            }
             step_until(function.exit); solve();
         },
     }
