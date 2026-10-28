@@ -4,6 +4,39 @@
 use super::*;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
+#[test]
+fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Pointer::symbolic(Variable(989_900));
+    let value = CPointerValue::new(pointer.clone(), CType::Int32Pointer);
+    let bounded = value.clone().with_extent(Some(SubobjectExtent {
+        start: pointer,
+        width: 4u32.into(),
+    }));
+    let empty = PureFactContext::new();
+    let facts = empty.assume_condition(
+        ConditionTerm::PointerValueEqual(Box::new(value.clone()), Box::new(bounded)),
+        true,
+    );
+    assert_ne!(facts.pointer_value_at_entry(&value), value);
+    let expression = CExpression::Value(CValue::Pointer(value.clone()));
+    let _specification = crate::kernel::eval::SpecificationReadScope::enter();
+    for context in [&PureFactContext::new(), &facts] {
+        let paths = evaluate_c_expression_paths(
+            &CState::new(),
+            &expression,
+            context,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(
+            paths[0].outcome,
+            CExpressionOutcome::Value(CValue::Pointer(value.clone())),
+        );
+    }
+}
+
 /// The only specification-conditional branch lowering decides is the one a
 /// literally constant condition folds away. Folding stays exact in both
 /// directions; a condition that needs an ambient fact is not decided here,
