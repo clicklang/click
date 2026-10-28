@@ -741,74 +741,25 @@ impl PureFactContext {
                 })
             })
             .collect::<Vec<_>>();
-        // A materialized cell is loadable without a separate proposition.
-        // Including it as a premise-free region lets a store extend an
-        // already-loadable prefix in the same kernel rule.
-        regions.extend(
+        // A materialized cell is selected at the requested address, never
+        // by enumerating the memory's unrelated cells, runs or union fields.
+        let cell_region = |pointer: &Pointer| {
             memory
                 .cells
-                .concrete()
-                .iter()
-                .filter_map(|(pointer, value)| {
-                    let byte_width = value.byte_width();
-                    (byte_width > 0 && memory.is_loadable_concretely(pointer, byte_width)).then(
-                        || {
-                            (
-                                None,
-                                crate::kernel::api::canonicalize_pointer_loads(pointer),
-                                Bitvector32Term::Constant(byte_width),
-                                true,
-                            )
-                        },
+                .contiguous_bytes_at(pointer)
+                .filter(|width| *width > 0)
+                .map(|width| {
+                    (
+                        None,
+                        pointer.clone(),
+                        Bitvector32Term::Constant(width),
+                        true,
                     )
-                }),
-        );
-        // A seeded run is a compact sequence of materialized cells. Keep
-        // each live contiguous interval as one byte region instead of naming
-        // every cell just to consider adjacency. Holes never grant liveness.
-        for run in memory.cells.runs() {
-            crate::instrumentation::record_deterministic_work(1);
-            let width = run.value_width();
-            if width > 0 && width == run.element_width() {
-                for (low, high) in run.live_intervals().intervals() {
-                    crate::instrumentation::record_deterministic_work(1);
-                    if let Some(bytes) = (high - low).checked_mul(width) {
-                        regions.push((
-                            None,
-                            crate::kernel::api::canonicalize_pointer_loads(&run.slot_pointer(low)),
-                            Bitvector32Term::Constant(bytes),
-                            true,
-                        ));
-                    }
-                }
-            } else if width > 0 && run.live_slot_index(base).is_some() {
-                // A strided run does not cover its gaps. Its actual cell at
-                // the requested address can still join an adjacent region.
-                regions.push((None, base.clone(), Bitvector32Term::Constant(width), true));
-            }
-        }
-        regions.extend(
-            memory
-                .union_cells
-                .iter()
-                .filter_map(|((pointer, _), value)| {
-                    let byte_width = value.byte_width();
-                    (byte_width > 0 && memory.is_loadable_concretely(pointer, byte_width)).then(
-                        || {
-                            (
-                                None,
-                                crate::kernel::api::canonicalize_pointer_loads(pointer),
-                                Bitvector32Term::Constant(byte_width),
-                                true,
-                            )
-                        },
-                    )
-                }),
-        );
+                })
+        };
+        regions.extend(cell_region(base));
         let base = crate::kernel::api::canonicalize_pointer_loads(base);
-        for (prefix_index, (prefix_fact, prefix_base, prefix_bytes, prefix_current)) in
-            regions.iter().enumerate()
-        {
+        for (prefix_fact, prefix_base, prefix_bytes, prefix_current) in &regions {
             let prefix_starts_at_goal = prefix_base == &base
                 || crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                     prefix_base,
@@ -820,10 +771,44 @@ impl PureFactContext {
             if !prefix_starts_at_goal {
                 continue;
             }
-            for (suffix_index, (suffix_fact, suffix_base, suffix_bytes, suffix_current)) in
-                regions.iter().enumerate()
-            {
-                if prefix_index == suffix_index {
+            // The prefix names its endpoint, so read suffix evidence at
+            // that key instead of pairing it with every range in the block.
+            let endpoint = prefix_bytes
+                .as_const()
+                .map(|width| base.offset_by_bytes(width))
+                .or_else(|| {
+                    int32_element_count_from_bytes(prefix_bytes)
+                        .map(|count| base.offset_by_int32_elements(count))
+                });
+            let Some(endpoint) = endpoint else {
+                continue;
+            };
+            let mut suffixes = self
+                .memory_loadable_candidates_for_base(&endpoint)
+                .filter_map(|fact| {
+                    let Proposition::CMemoryLoadable {
+                        memory: before,
+                        base: address,
+                        bytes: extent,
+                        wide: false,
+                    } = fact
+                    else {
+                        return None;
+                    };
+                    compatible(before, address).then(|| {
+                        (
+                            Some(fact),
+                            crate::kernel::api::canonicalize_pointer_loads(address),
+                            extent.clone(),
+                            before == memory
+                                || crate::kernel::api::c_memories_canonically_equal(before, memory),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+            suffixes.extend(cell_region(&endpoint));
+            for (suffix_fact, suffix_base, suffix_bytes, suffix_current) in &suffixes {
+                if prefix_fact.is_some() && prefix_fact == suffix_fact {
                     continue;
                 }
                 // Historical proposition facts cannot be concatenated with

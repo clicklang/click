@@ -47,8 +47,8 @@ impl PureFactContext {
     ///
     /// Exact identities and syntactic symmetries use direct lookups. Compound
     /// queries check candidates under their canonical key. Atom queries use
-    /// equality/byte-offset spellings and the family's existing open-fact
-    /// bucket. Every candidate still passes the memory matcher's checks.
+    /// equality/byte-offset spellings. A missing key declines; it never scans
+    /// the family's open facts. Every candidate still passes the memory matcher's checks.
     fn indexed_matching_condition_fact_for_memory_resolution(
         &self,
         condition: &ConditionTerm,
@@ -172,15 +172,10 @@ impl PureFactContext {
             &right_spellings,
             || crate::instrumentation::record_deterministic_work(1),
         );
-        Some(
-            keys.iter().any(|key| {
-                crate::instrumentation::record_deterministic_work(1);
-                self.condition_facts_by_sides.get(key).is_some_and(matches)
-            }) || self
-                .open_condition_facts
-                .get(&key.family())
-                .is_some_and(matches),
-        )
+        Some(keys.iter().any(|key| {
+            crate::instrumentation::record_deterministic_work(1);
+            self.condition_facts_by_sides.get(key).is_some_and(matches)
+        }))
     }
 
     pub(in crate::kernel) fn has_anchored_bitvector_equality_fact_for_memory_resolution(
@@ -350,7 +345,7 @@ mod memory_condition_match_tests {
     }
 
     #[test]
-    fn unsigned_memory_conditions_retain_open_facts_without_mixing_carriers() {
+    fn unsigned_atom_memory_conditions_require_an_indexed_spelling() {
         let _session = crate::kernel::VerificationSession::enter();
         let var = |id| Bitvector32Term::Variable(Variable(id));
         let sum = Bitvector32Term::add(var(996_000), var(996_001));
@@ -362,9 +357,11 @@ mod memory_condition_match_tests {
             let held = base.clone().assume_condition(source.clone(), value);
             assert_eq!(
                 held.indexed_matching_condition_fact_for_memory_resolution(&goal, value),
-                Some(true)
+                Some(false)
             );
-            assert!(held.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            assert!(!held.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            let named = held.clone().assume_condition(goal.clone(), value);
+            assert!(named.has_matching_condition_fact_for_memory_resolution(&goal, value));
             let withdrawn = held.without_exact_fact(&Proposition::ConditionIs(source, value));
             assert!(!withdrawn.has_matching_condition_fact_for_memory_resolution(&goal, value));
             let signed = base.clone().assume_condition(

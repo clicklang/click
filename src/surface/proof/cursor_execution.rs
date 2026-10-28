@@ -477,14 +477,39 @@ fn listed_context_pure_facts(
     delta: &[Proposition],
     context: Option<&PureFactContext>,
 ) -> Vec<Proposition> {
-    let Some(context) = context else {
-        return delta.to_vec();
-    };
-    let mut facts = context.pure_facts();
-    facts.extend_from_slice(delta);
+    const LIMIT: usize = 32;
+    let mut facts = delta.iter().take(LIMIT).cloned().collect::<Vec<_>>();
+    if let Some(context) = context {
+        facts.extend(context.diagnostic_fact_sample(LIMIT - facts.len(), 0).0);
+    }
     facts.sort();
     facts.dedup();
     facts
+}
+
+fn describe_step_proof_context(
+    delta: &[Proposition],
+    context: Option<&PureFactContext>,
+    resources: &[CResourceFact],
+    binding: ParameterBinding<'_>,
+    execution: &(impl ExecutionFactSource + ?Sized),
+) -> String {
+    let mut description = describe_proof_context(
+        &listed_context_pure_facts(delta, context),
+        resources,
+        binding,
+        execution,
+    );
+    let total = context.map_or(0, |context| {
+        let (conditions, propositions) = context.fact_counts();
+        conditions + propositions
+    });
+    if total.saturating_add(delta.len()) > 32 {
+        description.push_str(
+            "\n  pure facts shown are a bounded sample of the context and statement facts",
+        );
+    }
+    description
 }
 
 pub(super) fn execute_branch_step_from_frontier_position(
@@ -607,8 +632,9 @@ pub(super) fn execute_branch_step_from_frontier_position(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not prove that the next C `if` condition `{}` is {expected}; got {} feasible condition paths{paths}\n{}",
             describe_c_expression(&condition),
             condition_transitions.len(),
-            describe_proof_context(
-                &listed_context_pure_facts(available_pure_facts, context),
+            describe_step_proof_context(
+                available_pure_facts,
+                context,
                 &current_resources,
                 parameter_binding,
                 &[]
@@ -2842,8 +2868,9 @@ fn execute_step_from_frontier_position_selecting_path(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
                 describe_function_outcome(&outcome, parameter_binding),
                 crate::surface::diagnostics::describe_c_statement_site(),
-                describe_proof_context(
-                    &listed_context_pure_facts(available_pure_facts, context),
+                describe_step_proof_context(
+                    available_pure_facts,
+                    context,
                     &current_resources,
                     parameter_binding,
                     &[]
@@ -2930,8 +2957,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 describe_statement_head(&step_statement),
                 describe_call_bindings(&step_statement, function_environment),
                 crate::surface::diagnostics::describe_c_statement_site(),
-                describe_proof_context(
-                    &listed_context_pure_facts(available_pure_facts, context),
+                describe_step_proof_context(
+                available_pure_facts, context,
                     &current_resources,
                     parameter_binding,
                     &[]
@@ -2979,8 +3006,9 @@ fn execute_step_from_frontier_position_selecting_path(
                     .count()
                     == 1,
             ),
-            describe_proof_context(
-                &listed_context_pure_facts(available_pure_facts, context),
+            describe_step_proof_context(
+                available_pure_facts,
+                context,
                 &current_resources,
                 parameter_binding,
                 &[]
@@ -3542,8 +3570,9 @@ fn execute_step_from_frontier_position_selecting_path(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
                 describe_function_outcome(&outcome, parameter_binding),
                 crate::surface::diagnostics::describe_c_statement_site(),
-                describe_proof_context(
-                    &listed_context_pure_facts(available_pure_facts, context),
+                describe_step_proof_context(
+                    available_pure_facts,
+                    context,
                     &current_resources,
                     parameter_binding,
                     &execution_pure_facts
@@ -3590,8 +3619,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 describe_statement_head(&step_statement),
                 describe_call_bindings(&step_statement, function_environment),
                 crate::surface::diagnostics::describe_c_statement_site(),
-                describe_proof_context(
-                    &listed_context_pure_facts(available_pure_facts, context),
+                describe_step_proof_context(
+                available_pure_facts, context,
                     &current_resources,
                     parameter_binding,
                     &execution_pure_facts
@@ -4377,4 +4406,10 @@ mod cursor_sequence_tests {
             .join()
             .expect("large straight-line cursor advancement should be stack bounded");
     }
+}
+
+#[cfg(test)]
+mod refusal_scaling_tests {
+    use super::*;
+    include!("../../scaling_tests/surface/proof/cursor_refusals.rs");
 }
