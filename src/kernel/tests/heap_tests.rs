@@ -66,6 +66,100 @@ fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
     }
 }
 
+#[test]
+fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
+    let base = Pointer {
+        block: PointerBlock::Heap(950_000),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let cell = Pointer::symbolic(Variable(950_001));
+    let value = Pointer {
+        block: PointerBlock::Heap(950_002),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = CMemory::new()
+        .with_heap_allocation_claim(base.clone(), 4)
+        .unwrap()
+        .store(cell.clone(), CValue::pointer(value));
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::own_allocation(base.clone(), 4))
+        .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            base.clone(),
+            0u32.into(),
+            1u32.into(),
+        )))
+        .unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(cell.clone(), 0u32.into(), 1u32.into(), 8),
+        ));
+    let state = CState::new()
+        .with_memory(memory)
+        .with_resource_context(resources)
+        .with_local("p", CValue::pointer(base));
+    let paths = execute_c_statement_paths(
+        &state,
+        &c_heap_free(c_variable("p")),
+        &PureFactContext::new(),
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    let [path] = paths.as_slice() else {
+        panic!("one free outcome");
+    };
+    let CStatementOutcome::Normal(after) = &path.outcome else {
+        panic!("free succeeds: {:?}", path.outcome);
+    };
+    let CValue::Pointer(before_read) = state
+        .memory()
+        .symbolic_pointer_version_load(&cell, CType::Int32Pointer)
+    else {
+        unreachable!()
+    };
+    let CValue::Pointer(after_read) = after
+        .memory()
+        .symbolic_pointer_version_load(&cell, CType::Int32Pointer)
+    else {
+        unreachable!()
+    };
+    assert_ne!(
+        before_read, after_read,
+        "fact-supported frames do not choose read names"
+    );
+    let equality = Proposition::ConditionIs(
+        ConditionTerm::pointer_value_equal(before_read, after_read),
+        true,
+    );
+    assert!(
+        path.facts
+            .iter()
+            .any(|fact| fact.proposition() == &equality),
+        "the step publishes the frame itself"
+    );
+    let Proposition::ConditionIs(condition, true) = &equality else {
+        unreachable!()
+    };
+    assert!(
+        !PureFactContext::new()
+            .equality_graph
+            .knows_condition(condition, true),
+        "the graph needs the step's frame evidence"
+    );
+    let learned = path
+        .facts
+        .iter()
+        .fold(PureFactContext::new(), |facts, fact| {
+            facts.assume_proposition(fact.proposition().clone())
+        });
+    assert!(learned.equality_graph.knows_condition(condition, true));
+    assert!(
+        !learned
+            .restricted_to_facts(&[], &[])
+            .equality_graph
+            .knows_condition(condition, true),
+        "restricting all facts must withdraw the graph's frame authority"
+    );
+}
+
 fn active_heap_memory_loan(range: CMemoryRange) -> LoanLedger {
     let fact = CResourceFact::own_memory(range);
     let support = ResourceContext::new()

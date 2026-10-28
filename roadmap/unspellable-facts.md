@@ -405,3 +405,44 @@ acceptance verdict. The full census and fact-stability audit remain in progress.
 The isolated extent fix passed `scripts/check.sh`: 6,672 unit/API/import/scaling
 tests and all four fixture aggregates, in 14m20s while a separate audit ran
 concurrently (report-only budget warning). No nightly suite ran.
+
+### Complete pointer frames at their producers (2026-10-28)
+
+The stored-read definition and comparison prerequisites have merged (#2098,
+#2099), followed by cold pointer-domain query registration (#2100). The last
+fix passed 6,693 tests and all four fixture aggregates; fresh domain queries
+no longer depend on a preceding address query.
+
+The free now publishes complete before/after pointer-value equalities for
+cells its own retention pass kept using checked residual ownership. The pass
+collects these cells while making the existing retention decision. Their
+names remain structural; the graph learns the frame only from the step's
+facts, and restricting those facts withdraws its authority.
+
+A typed C read using a scalar cache also needs to preserve the complete
+pointer's domain. On the rebased migration, the unchanged generic-stack and
+recursive-drop `pop` proofs failed to fold the remaining node even though a
+redundant `have self.head == old(self.head.next)` repaired them. The numeric
+address was already equal; an eight-byte read's domain was missing its frame
+across an earlier store. The read now selects its already-computed structural
+boundary, checks that one edge with indexed complete-byte separation, and
+emits the full pointer-value equality. It does not walk history or add a
+resource-check fallback. Four-byte ownership does not justify this frame.
+
+These producer changes close the three Rust failures exposed by rebasing the
+migration onto #2099 without further edits to its Rust proofs. The two
+generic-container controls also pass. Reduced tests cover a partial overwrite,
+missing or partial ownership, and harmless later stores hiding the relevant
+boundary. Deterministic tests cover consecutive frees including fact insertion,
+read-frame chains, and unrelated owners. The logical-lowering switch and the
+full spelling/fact-stability acceptance audit remain separate work.
+
+
+The first frame gate passed all 6,700 unit/API/import/scaling tests, then
+`arena` exposed an existing resource-index counter underflow. The reduced repair
+is PR #2101 (auto-merge requested): retain an immutable graph checkpoint matching
+the payload, and register changed suppliers' definitions before applying merge
+deltas, including removed suppliers. Its full gate passed 6,696 tests and all
+four fixture aggregates in 9m26s. Two small regressions distinguish query-time
+registration from removal-time registration; deterministic scaling covers both.
+The repaired frame branch verifies `arena`; its full gate is being rerun.
