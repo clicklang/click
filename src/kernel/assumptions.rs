@@ -24,6 +24,7 @@ pub(in crate::kernel) fn count_condition_fact_visit() {
 }
 use std::cell::{Cell, RefCell};
 
+pub(in crate::kernel) mod checked_order_bounds;
 mod condition_reasoning;
 pub(super) mod contradictions;
 pub(in crate::kernel) mod variable_chains;
@@ -2824,6 +2825,7 @@ impl PureFactContext {
     }
 
     fn adjust_signed_order_bound(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
+        self.checked_order_bounds.adjust(condition, value, insert);
         self.order_facts_by_lower.adjust(condition, value, insert);
         self.signed_variable_chains.adjust(condition, value, insert);
         if let Some((left, right, strict)) = condition_as_order_fact(condition, value) {
@@ -3188,8 +3190,8 @@ impl PureFactContext {
                 .equality_graph
                 .admitted
                 .designation_graph
-                .direct_aliases(right)
-                .any(|alias| {
+                .unique_direct_alias(right)
+                .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
                     crate::kernel::memory_provenance::pointer_read_designations_equal(
                         left, alias, self,
@@ -3199,8 +3201,8 @@ impl PureFactContext {
                 .equality_graph
                 .admitted
                 .designation_graph
-                .direct_aliases(left)
-                .any(|alias| {
+                .unique_direct_alias(left)
+                .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
                     crate::kernel::memory_provenance::pointer_read_designations_equal(
                         alias, right, self,
@@ -3216,8 +3218,8 @@ impl PureFactContext {
                 .equality_graph
                 .admitted
                 .extent_graph
-                .direct_aliases(b)
-                .any(|alias| {
+                .unique_direct_alias(b)
+                .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
                     crate::kernel::memory_provenance::pointer_read_extents_equal(a, alias, self)
                 })
@@ -3225,8 +3227,8 @@ impl PureFactContext {
                 .equality_graph
                 .admitted
                 .extent_graph
-                .direct_aliases(a)
-                .any(|alias| {
+                .unique_direct_alias(a)
+                .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
                     crate::kernel::memory_provenance::pointer_read_extents_equal(alias, b, self)
                 })
@@ -3371,9 +3373,15 @@ impl PureFactContext {
     /// Address aliases select existing full-value premises; only the selected
     /// read's complete eight-byte source can authorize their pointer metadata.
     fn known_value_of_framed_pointer_read(&self, value: &CPointerValue) -> Option<CPointerValue> {
-        for alias in self.exact_pointer_aliases(value.pointer()) {
+        let source = {
+            let _checking =
+                crate::instrumentation::CheckingWorkScope::new("select framed pointer source", 1);
+            crate::instrumentation::record_deterministic_work(1);
+            let alias = self
+                .equality_graph
+                .unique_exact_pointer_alias(value.pointer())?;
             let address = ConditionTerm::pointer_equal(value.pointer().clone(), alias.clone());
-            let Some(sources) = self
+            let sources = self
                 .equality_graph
                 .admitted
                 .pointer_address_sources
@@ -3383,49 +3391,48 @@ impl PureFactContext {
                         .admitted
                         .pointer_address_sources
                         .get(&address.flipped())
-                })
-            else {
+                })?;
+            // A source bucket can grow with snapshots of this same address. Its
+            // cached cardinality decides whether implicit selection is unambiguous.
+            if sources.len() != 1 {
+                return None;
+            }
+            sources.iter().next()?
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        let ConditionTerm::PointerValueEqual(left, right) = source else {
+            return None;
+        };
+        for read in [left.as_ref(), right.as_ref()] {
+            if read.pointer() != value.pointer()
+                || read.extent_is_known()
+                || read.extent().is_some()
+                || read.opaque_extent() != Some(read.designation())
+            {
                 continue;
-            };
-            for source in sources.iter() {
-                crate::instrumentation::record_deterministic_work(1);
-                let ConditionTerm::PointerValueEqual(left, right) = source else {
-                    continue;
-                };
-                for read in [left.as_ref(), right.as_ref()] {
-                    if read.pointer() != value.pointer()
-                        || read.extent_is_known()
-                        || read.extent().is_some()
-                        || read.opaque_extent() != Some(read.designation())
-                    {
-                        continue;
-                    }
-                    let representative = self
-                        .equality_graph
-                        .admitted
-                        .pointer_value_classes
-                        .representative(read);
-                    let representative = super::pointer_designations::prefer_pointer(
-                        &representative,
-                        &self.equality_graph.pointer_value_representative(read),
-                    );
-                    // An opaque candidate supplies no known extent. Reject it
-                    // before walking a frame that cannot make it usable.
-                    if !representative.extent_is_known() {
-                        continue;
-                    }
-                    if crate::kernel::memory_provenance::pointer_read_designations_equal(
-                        value.designation(),
-                        read.designation(),
-                        self,
-                    ) && crate::kernel::memory_provenance::pointer_read_extents_equal(
-                        value.designation(),
-                        read.designation(),
-                        self,
-                    ) {
-                        return Some(representative);
-                    }
-                }
+            }
+            let representative = self
+                .equality_graph
+                .admitted
+                .pointer_value_classes
+                .representative(read);
+            let representative = super::pointer_designations::prefer_pointer(
+                &representative,
+                &self.equality_graph.pointer_value_representative(read),
+            );
+            if !representative.extent_is_known() {
+                continue;
+            }
+            if crate::kernel::memory_provenance::pointer_read_designations_equal(
+                value.designation(),
+                read.designation(),
+                self,
+            ) && crate::kernel::memory_provenance::pointer_read_extents_equal(
+                value.designation(),
+                read.designation(),
+                self,
+            ) {
+                return Some(representative);
             }
         }
         None
@@ -4346,6 +4353,7 @@ impl PureFactContext {
     }
 
     pub(super) fn rebuild_signed_order_bounds(&mut self) {
+        self.checked_order_bounds = Default::default();
         self.order_facts_by_lower = OrderFactsByLower::default();
         self.signed_order_bounds = crate::persistent::PersistentMap::default();
         self.int64_signed_order_bounds = crate::persistent::PersistentMap::default();
@@ -12074,4 +12082,10 @@ mod view_alias_scaling_tests {
 mod resource_alias_scaling_tests {
     use super::*;
     include!("../scaling_tests/kernel/assumptions/resource_aliases.rs");
+}
+
+#[cfg(test)]
+mod condition_bucket_scaling_tests {
+    use super::*;
+    include!("../scaling_tests/kernel/assumptions/condition_buckets.rs");
 }

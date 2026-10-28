@@ -100,6 +100,33 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
+        if self.path == "src/kernel/assumptions.rs"
+            && ((matches!(
+                self.function.as_str(),
+                "designations_equal" | "opaque_extents_equal"
+            ) && name == "direct_aliases")
+                || (self.function == "known_value_of_framed_pointer_read"
+                    && name == "exact_pointer_aliases"))
+        {
+            self.errors.push(format!("{}: {}: checked provenance requires indexed equality or a singleton source ({name})", self.path, self.function));
+        }
+        if name == "condition_facts_with_side"
+            && matches!(
+                self.path,
+                "src/kernel/assumptions/condition_reasoning/order_paths.rs"
+                    | "src/kernel/assumptions/condition_reasoning/overflow_intervals.rs"
+            )
+        {
+            self.errors.push(format!("{}: {}: checked order and overflow queries require indexed extrema or selected witnesses ({name})", self.path, self.function));
+        }
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && matches!(
+                name,
+                "MemoryAccessCandidates" | "access_entries" | "indexed_access_entries"
+            )
+        {
+            self.errors.push(format!("{}: {}: checked access requires one SelectedMemoryAccess, not candidate enumeration ({name})", self.path, self.function));
+        }
         if name == "memory_loadable_candidates" {
             self.errors.push(format!(
                 "{}: {}: whole-block loadability enumeration is test-only; select a source in planning",

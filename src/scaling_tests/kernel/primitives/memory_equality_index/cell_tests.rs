@@ -1790,9 +1790,7 @@ fn an_indexed_read_supplier_does_not_resolve_its_pointer_history() {
         ));
         resources.synchronize_memory_equalities(&context);
         let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
-            resources
-                .read_access_entries(&pointer, 4, &context)
-                .is_some()
+            resources.read_access(&pointer, 4, &context).is_some()
         });
         assert!(found);
         samples.push(work);

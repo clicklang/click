@@ -48,60 +48,25 @@ impl PureFactContext {
     }
 
     /// The range of `term` that its own recorded constant order bounds give,
-    /// read from `signed_order_bounds` at the term's canonical form: one
-    /// keyed lookup, no chain, no scan of the fact set. `None` when no
+    /// read from the maintained extrema at the term's canonical form: one
+    /// keyed lookup, no chain, no scan of its bound bucket. `None` when no
     /// constant bound is filed there. For a caller that runs per cell and
-    /// may not search; [`Self::signed_interval`] is the complete answer.
+    /// may not search; [`Self::signed_interval`] performs general reconstruction.
     pub(in crate::kernel) fn indexed_constant_interval(
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, i64)> {
-        let mut lower = i64::from(i32::MIN);
-        let mut upper = i64::from(i32::MAX);
-        let mut bounded = false;
-        for bound in self.exact_signed_order_bounds(term)? {
-            crate::instrumentation::record_deterministic_work(1);
-            let Some(value) = signed_bitvector_constant(&bound.other) else {
-                continue;
-            };
-            bounded = true;
-            match (bound.upper, bound.strict) {
-                (true, true) => upper = upper.min(value - 1),
-                (true, false) => upper = upper.min(value),
-                (false, true) => lower = lower.max(value + 1),
-                (false, false) => lower = lower.max(value),
-            }
-        }
-        bounded.then_some((lower, upper))
+        let term = crate::kernel::eval::canonical_term(term);
+        self.checked_order_bounds.interval(&term, false)
     }
 
-    /// The `uint32` counterpart of [`Self::indexed_constant_interval`]: the
-    /// unsigned range of `term` its own recorded constant `uint32` order
-    /// bounds give, read from `uint32_order_bounds` at the term's canonical
-    /// form. `None` when no constant bound is filed there.
+    /// Direct unsigned constant extrema, maintained separately from signed facts.
     pub(in crate::kernel) fn indexed_unsigned32_constant_interval(
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, i64)> {
         let term = crate::kernel::eval::canonical_term(term);
-        let bounds = self.uint32_order_bounds.get(&term)?;
-        let mut lower = 0;
-        let mut upper = i64::from(u32::MAX);
-        let mut bounded = false;
-        for (_, other, strict, is_upper) in bounds.keys() {
-            crate::instrumentation::record_deterministic_work(1);
-            let Some(value) = other.as_const().map(i64::from) else {
-                continue;
-            };
-            bounded = true;
-            match (is_upper, strict) {
-                (true, true) => upper = upper.min(value - 1),
-                (true, false) => upper = upper.min(value),
-                (false, true) => lower = lower.max(value + 1),
-                (false, false) => lower = lower.max(value),
-            }
-        }
-        bounded.then_some((lower, upper))
+        self.checked_order_bounds.interval(&term, true)
     }
 
     /// The exact `uint32` order facts that bound `term` by a constant,
@@ -261,27 +226,14 @@ impl PureFactContext {
                 }
                 if right == Bitvector32Term::Constant(1) {
                     let int_min = Bitvector32Term::Constant(i32::MIN as u32);
-                    let strict_lower_bound = self.condition_facts_with_side(&left).into_iter().find_map(
-                        |(condition, value)| {
-                            (matches!(
-                                (condition, value),
-                                (ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: lower, right: fact_left }, true)
-                                    if lower.as_ref() == &int_min
-                                        && fact_left.as_ref() == &left
-                            ) || matches!(
-                                (condition, value),
-                                (ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::GreaterThan, left: fact_left, right: lower }, true)
-                                    if lower.as_ref() == &int_min
-                                        && fact_left.as_ref() == &left
-                            ))
-                            .then(|| Proposition::ConditionIs(condition.clone(), *value))
-                        },
-                    );
-                    if let Some(provenance) = &strict_lower_bound {
-                        record_implicit_reasoning_provenance(self, provenance);
+                    if self.has_condition_fact(
+                        ConditionTerm::signed_less_than(int_min, left.clone()),
+                        true,
+                    ) {
                         return Some(false);
                     }
                 }
+
                 // The operands' intervals subtracted over the integers: the
                 // subtraction is defined exactly when that fits. Not the
                 // `signed_interval` of the difference, which reads the bounds
@@ -330,45 +282,9 @@ impl PureFactContext {
                     // interval reconstruction. Loop execution commonly has
                     // an exact strict bound on a materialized local even when
                     // that bound is awkward to transport into a full range.
-                    let strict_upper_bound = self
-                        .condition_facts_with_side(&left)
-                        .into_iter()
-                        .find_map(|(condition, value)| match (condition, value) {
-                            (
-                                ConditionTerm::Compare {
-                                    format: MachineIntegerType::Int32,
-                                    relation: CompareRelation::LessThan,
-                                    left: fact_left,
-                                    right: _,
-                                },
-                                true,
-                            ) => (fact_left.as_ref() == &left)
-                                .then(|| Proposition::ConditionIs(condition.clone(), *value)),
-                            (
-                                ConditionTerm::Compare {
-                                    format: MachineIntegerType::Int32,
-                                    relation: CompareRelation::GreaterThan,
-                                    left: _,
-                                    right: fact_left,
-                                },
-                                true,
-                            ) => (fact_left.as_ref() == &left)
-                                .then(|| Proposition::ConditionIs(condition.clone(), *value)),
-                            _ => None,
-                        });
-                    let direct_nonoverflowing_upper_bound = self
-                        .condition_facts_with_side(&left)
-                        .into_iter()
-                        .find_map(|(condition, value)| {
-                            matches!(
-                                (condition, value),
-                                (ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessEqual, left: fact_left, right: upper }, true)
-                                    if fact_left.as_ref() == &left
-                                        && signed_bitvector_constant(upper)
-                                            .is_some_and(|upper| upper < i64::from(i32::MAX))
-                            )
-                            .then(|| Proposition::ConditionIs(condition.clone(), *value))
-                        });
+                    let strict_upper_bound = self.checked_order_bounds.strict_upper(&left);
+                    let direct_nonoverflowing_upper_bound =
+                        self.checked_order_bounds.upper_below_max(&left);
                     if let Some(provenance) = strict_upper_bound
                         .as_ref()
                         .or(direct_nonoverflowing_upper_bound.as_ref())

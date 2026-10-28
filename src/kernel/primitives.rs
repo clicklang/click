@@ -12760,6 +12760,7 @@ pub struct PureFactContext {
     /// `has_pointer_offset_snapshot_fact` checks.
     pub(super) pointer_offset_equalities_by_shape:
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<ConditionTerm>>,
+    pub(super) checked_order_bounds: super::assumptions::checked_order_bounds::CheckedOrderBounds,
     pub(super) signed_order_bounds: crate::persistent::PersistentMap<
         Bitvector32Term,
         crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,

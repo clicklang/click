@@ -1444,7 +1444,7 @@ impl PureFactContext {
         for (key, ()) in keys {
             if let Some(filed) = self.condition_facts_by_sides.get(key) {
                 for fact in filed {
-                    crate::instrumentation::spend_decision_fuel(1);
+                    crate::instrumentation::record_deterministic_work(1);
                     crate::kernel::assumptions::count_condition_fact_visit();
                     facts.push(fact);
                 }

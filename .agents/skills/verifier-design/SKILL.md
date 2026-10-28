@@ -103,6 +103,16 @@ checks; alternate-source search requires planner permission. Kept-frame raw
 fallbacks use singleton base buckets, not whole-block scans or alias walks.
 Grow source snapshot buckets and unrelated retained ranges as well as aliases;
 keep exact hits, stale-memory refusals and expansion-without-search coverage.
+Order/overflow helpers use maintained direct extrema and strict-bound witnesses;
+do not restore condition-side scans. Prepared access returns one
+`SelectedMemoryAccess`, never a supplier iterator to resource checking. Failure
+of its provenance, quantity or coverage check is final. Keep explicit footprint
+composition separate, and grow overlapping supplier buckets on refusal as well
+as success. Object-provenance lookup selects an indexed witness; it does not
+filter its object bucket. Designation/extent fallbacks use singleton direct
+aliases; framed pointer recovery requires a singleton full-pointer source.
+Grow same-address snapshot buckets and direct-alias stars, keeping exact class
+hits and stale-read/extent refusals.
 Run the boundary regressions with `test(gate_tests::search_boundary::)` in the
 fast-gate binary. This enforcement does not replace deterministic scaling tests.
 

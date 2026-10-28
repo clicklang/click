@@ -3904,6 +3904,27 @@ fn budget_stopped_explicit_transport_retains_its_checked_prefix_and_goal() {
                 || verify_c0_sources(source, &c),
             )
             .expect_err("the explicit transport exhausts its work allowance");
+            if limit == 0 {
+                // Checked work inside the preceding smart step has the same
+                // simple allowance. A zero allowance must stop that check,
+                // rather than misattribute it to the later transport/search.
+                assert!(
+                    error.message().contains("inside checking operation"),
+                    "{}",
+                    error.message()
+                );
+                assert!(
+                    error.message().contains("inside tactic `step_until`"),
+                    "{}",
+                    error.message()
+                );
+                assert!(
+                    error.message().contains("engine performance defect"),
+                    "{}",
+                    error.message()
+                );
+                return;
+            }
             assert!(
                 error.message().contains("tactic `transport`"),
                 "{}",

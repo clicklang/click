@@ -126,6 +126,30 @@ rebuilds after removing a premise; those helpers have no fast-checking guarantee
 `tests/search_boundary.rs` checks rejected dependencies, aliases, method
 references, macro tokens, extra diagnostic scans, and capability privacy.
 
+Direct order queries read persistent constant-bound extrema and strict-upper
+witnesses keyed by the written or canonical endpoint. Admission updates only the
+new fact's endpoints; queries do not filter an endpoint's condition bucket.
+The build boundary rejects condition-side enumeration in order/overflow helpers.
+General interval reconstruction and anchored equality still have separate audit
+targets in the roadmap.
+
+Prepared memory-access checking receives `SelectedMemoryAccess`: one indexed
+supplier and its retained graph checkpoint, with no candidate iterator. Read,
+write, storage, pointer-position and kept-frame checks validate that supplier's
+quantity, provenance and coverage; a refusal does not try another supplier.
+Whole-scalar consumption also requires uniqueness, established by inspecting at
+most two indexed entries. Explicit footprint composition retains its separate
+output-sensitive interface. The resource checker cannot import or call the raw
+access-candidate API. Object-provenance queries use the object-identity index's
+nonempty witness or singleton symbolic supplier. Designation/opaque-extent
+fallback comparisons use a singleton direct alias after indexed equality fails.
+Framed pointer-value recovery requires one address alias and one full-pointer
+source in that address bucket; multiple snapshots do not authorize a hidden
+source search. Complete-read, snapshot, designation and extent checks still
+apply to the selected source. The direct order, supplier, and provenance-source
+lookup stages have their own `CheckingWorkScope`, charged to one explicit query
+key. These scopes do not excuse scans or cover general memory-history traversal.
+
 Selected-context construction starts from an empty fact store, retaining only
 reasoning policy, variable allocation bounds and typing metadata queried by the
 selected load variables. It never clears the inherited graph's pointer sources.

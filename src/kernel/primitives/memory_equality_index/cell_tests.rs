@@ -814,7 +814,7 @@ fn sole_symbolic_write_owner_preserves_bounds_authority_and_forks() {
         1,
     ));
     let ambiguous = resources.clone().unchecked_with_fact(second.clone());
-    assert!(ambiguous.write_access_entries(&query, 1, &facts).is_none());
+    assert!(ambiguous.write_access(&query, 1, &facts).is_none());
     let restored = ambiguous.without_exact_representation(&second).unwrap();
     assert_eq!(restored.memory_write_range(&query, 1, &facts), Some(&range));
     assert_eq!(
@@ -1251,4 +1251,23 @@ fn remove_suppliers_with_late_read_definition(register_query: bool) {
         .without_exact_representation(&other_owner)
         .expect("remove the second supplier");
     assert!(!after.permits_memory_read(&later_read, 8, &facts));
+}
+
+#[test]
+fn a_different_owned_field_does_not_hide_the_selected_read_view() {
+    let facts = PureFactContext::new();
+    let base = Pointer::symbolic(Variable(965_000));
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(view(&base, 0, 8))
+        .unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(base.clone(), 8u32.into(), 24u32.into(), 1),
+        ));
+    resources.synchronize_memory_equalities(&facts);
+    assert!(resources.permits_memory_read(&base, 4, &facts));
+    assert!(resources.memory_write_range(&base, 4, &facts).is_none());
+    assert!(
+        resources
+            .memory_write_range(&base.offset_by_bytes(8), 4, &facts)
+            .is_some()
+    );
 }
