@@ -671,8 +671,10 @@ impl EqualityGraph {
         let address_changed = state
             .terms
             .add_address_equality(left_address, right_address);
+        // Keep the selected producer terms even when definitions already
+        // imply the union: checkpoint replay must register these dependencies.
+        state.remember_input(inputs::Input::CheckedRead(left.clone(), right.clone()));
         if state.close(vec![(left.clone(), right.clone())]) || address_changed {
-            state.remember_input(inputs::Input::CheckedRead(left.clone(), right.clone()));
             state.checked_read_generation =
                 NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -687,8 +689,8 @@ impl EqualityGraph {
     ) {
         self.add_checked_read_equality(left.pointer(), right.pointer());
         let mut state = self.state.lock().expect("equality graph");
+        state.remember_input(inputs::Input::PointerValue(left.clone(), right.clone()));
         if state.terms.add_pointer_value_equality(left, right) {
-            state.remember_input(inputs::Input::PointerValue(left.clone(), right.clone()));
             state.checked_read_generation =
                 NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -704,8 +706,8 @@ impl EqualityGraph {
     ) {
         self.add_checked_read_equality(left, right);
         let mut state = self.state.lock().expect("equality graph");
+        state.remember_input(inputs::Input::PointerReadValue(left.clone(), right.clone()));
         if state.terms.merge_pointer_read_domains(left, right) {
-            state.remember_input(inputs::Input::PointerReadValue(left.clone(), right.clone()));
             state.checked_read_generation =
                 NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -727,9 +729,10 @@ impl EqualityGraph {
         state: &mut EqualityGraphState,
         values: impl IntoIterator<Item = &'a Pointer>,
     ) {
-        let reads = self.logical_reads.lock().expect("logical pointer reads");
+        let mut reads = self.logical_reads.lock().expect("logical pointer reads");
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut definitions = Vec::new();
+        let mut stored_values = Vec::new();
         let mut read_domains = Vec::new();
         while let Some(value) = pending.pop() {
             let direct_read = value.as_loaded_value();
@@ -758,6 +761,28 @@ impl EqualityGraph {
             {
                 continue;
             }
+            // A pointer read equals the pointer its snapshot stores at the
+            // read's address (the read-over-write authority): memory records
+            // it, so it is term metadata like a definition, never a fact.
+            if let PointerBlock::LoadedPointer(_) = &value.block {
+                let read = Pointer {
+                    block: value.block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                if !state.logical_values.contains(&read) {
+                    state.logical_values = state.logical_values.with_value(read.clone());
+                    // The authority walks memory history under a fresh naming
+                    // context, which reads this thread's read table itself.
+                    drop(reads);
+                    let stored = crate::kernel::eval::pointer_read_over_write_c_value(&read);
+                    reads = self.logical_reads.lock().expect("logical pointer reads");
+                    if let Some(stored) = stored {
+                        pending.push(stored.pointer().clone());
+                        definitions.push((read.clone(), stored.pointer().clone()));
+                        stored_values.push((read, stored));
+                    }
+                }
+            }
             // Direct pointer-read names carry their own definition instead
             // of a scalar-load entry. Their projection edge is the same
             // unconditional producer metadata used below for scalar names.
@@ -779,6 +804,9 @@ impl EqualityGraph {
                     definitions.push((value.clone(), application));
                 }
                 crate::instrumentation::record_deterministic_work(1);
+            }
+            if reads.definitions.is_empty() {
+                continue;
             }
             let Some((application, address)) = reads.definitions.get(&value) else {
                 if matches!(value.offset, PointerOffsetTerm::Add(..)) {
@@ -835,8 +863,18 @@ impl EqualityGraph {
             let application = state.register_pointer_address(application);
             state.terms.add_address_equality(value, application);
         }
+        // Projection and selected-width naming preserve the complete pointer
+        // read, including its object and extent, not only its address.
         for (read, source) in read_domains {
             state.terms.merge_pointer_read_domains(&read, &source);
+        }
+        // A complete stored pointer supplies the read's object and bounds,
+        // not merely its numeric address. Keep this producer definition in
+        // the graph so lowering can retain the read's structural identity.
+        for (read, stored) in stored_values {
+            state
+                .terms
+                .add_pointer_value_equality(&CPointerValue::new(read, stored.c_type()), &stored);
         }
         state.close(definitions);
     }

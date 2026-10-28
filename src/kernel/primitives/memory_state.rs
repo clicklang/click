@@ -6160,6 +6160,14 @@ impl CMemory {
             .cloned()
     }
 
+    /// The pointer a typed union view records at exactly `pointer`, when one
+    /// does: one key range, as [`Self::union_views_at`] reads it.
+    pub(in crate::kernel) fn known_union_pointer(&self, pointer: &Pointer) -> Option<CValue> {
+        self.union_views_at(pointer)
+            .find(|(_, value)| matches!(value, CValue::Pointer(_)))
+            .map(|(_, value)| value.clone())
+    }
+
     #[cfg(test)]
     pub(in crate::kernel) fn store_union(
         self,

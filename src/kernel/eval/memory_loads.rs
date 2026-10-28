@@ -2232,6 +2232,7 @@ pub(crate) fn load_substitution_term_visits() -> usize {
 }
 
 pub(crate) fn clear_load_canonicalization_caches() {
+    MEMORY_SHOWN_CELLS.with(|cache| cache.borrow_mut().clear());
     LOAD_VARIABLE_CACHE.with(|cache| cache.borrow_mut().clear());
     TERM_CACHE.with(|cache| cache.borrow_mut().clear());
 }
@@ -2293,6 +2294,7 @@ pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
 }
 
 pub(crate) fn clear_load_variable_registry() {
+    MEMORY_SHOWN_CELLS.with(|cache| cache.borrow_mut().clear());
     POINTER_READ_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     crate::kernel::equality_graph::clear_logical_pointer_reads();
@@ -2388,6 +2390,125 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
         );
     }
     (&resolved != proposition).then_some(resolved)
+}
+
+/// The complete pointer stored at this read's address, when the snapshot's
+/// fact-free version walk establishes it. Retained caches alone are not evidence.
+pub(crate) fn pointer_read_over_write_c_value(pointer: &Pointer) -> Option<CPointerValue> {
+    let read = pointer.as_loaded_value()?;
+    if read.displacement != PointerOffsetTerm::Constant(0) {
+        return None;
+    }
+    // Only a cached pointer can be the stored pointer; anything else needs no
+    // walk of the cell's history, nor a run's element built to look at.
+    if !holds_pointer_cell(read.defining_memory.memory(), &read.defining_address) {
+        return None;
+    }
+    let CValue::Pointer(stored) = memory_shown_cell_value(
+        &read.defining_memory,
+        &read.defining_address,
+        crate::kernel::C_POINTER_BYTE_WIDTH,
+    )?
+    else {
+        return None;
+    };
+    (stored.pointer() != pointer).then_some(stored)
+}
+
+thread_local! {
+    // [`memory_shown_cell_value`] is a function of the interned snapshot, the
+    // address and the width, so it is memoized per session; a query met again
+    // while its own walk runs (the walk asks block distinctness, which asks
+    // this) answers nothing rather than recursing.
+    static MEMORY_SHOWN_CELLS: std::cell::RefCell<
+        std::collections::HashMap<(SharedCMemory, Pointer, u32), Option<CValue>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+    static MEMORY_SHOWN_IN_PROGRESS: std::cell::RefCell<
+        std::collections::HashSet<(SharedCMemory, Pointer, u32)>,
+    > = std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+/// Whether `memory` caches a whole pointer at exactly `address`, as a cell or
+/// as a union cell's pointer view.
+fn holds_pointer_cell(memory: &CMemory, address: &Pointer) -> bool {
+    matches!(
+        memory.cells.concrete().get(address),
+        Some(CValue::Pointer(_))
+    ) || memory.known_union_pointer(address).is_some()
+}
+
+/// The value `memory` holds at exactly `address`, as a cell or as the pointer
+/// view of a union cell, when memory alone shows it: the assumption-free
+/// version walk (`resource_tracker::last_same`) stops at a step that wrote
+/// the cell. A cell a havoc kept because a fact showed it separate holds its
+/// value only where that fact holds, so it gives nothing here; the
+/// read-over-write authority never stands in for a frame fact.
+fn memory_shown_cell_value(
+    memory: &SharedCMemory,
+    address: &Pointer,
+    bytes: u32,
+) -> Option<CValue> {
+    let key = (memory.clone(), address.clone(), bytes);
+    if let Some(hit) = MEMORY_SHOWN_CELLS.with(|cache| cache.borrow().get(&key).cloned()) {
+        return hit;
+    }
+    if !MEMORY_SHOWN_IN_PROGRESS.with(|running| running.borrow_mut().insert(key.clone())) {
+        return None;
+    }
+    let shown = memory_shown_cell_value_uncached(memory, address, bytes);
+    MEMORY_SHOWN_IN_PROGRESS.with(|running| running.borrow_mut().remove(&key));
+    MEMORY_SHOWN_CELLS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= 100_000 {
+            cache.clear();
+        }
+        cache.insert(key, shown.clone());
+    });
+    shown
+}
+
+fn memory_shown_cell_value_uncached(
+    memory: &SharedCMemory,
+    address: &Pointer,
+    bytes: u32,
+) -> Option<CValue> {
+    // The read's own snapshot must hold the cell: a projection interned from
+    // several sources names its oldest, which need not be this read's.
+    let held = memory
+        .known_value(address)
+        .or_else(|| memory.known_union_pointer(address))?;
+    let source = crate::kernel::prelude::canonical_load_projection_source(memory, address)
+        .unwrap_or_else(|| memory.clone());
+    let last = crate::kernel::resource_tracker::last_same_named_cell(
+        address,
+        bytes,
+        &crate::kernel::resource_tracker::ProgramPoint::at(&source),
+    )?;
+    // The step the walk stopped at must have left the cached cell standing
+    // for the cell's bytes by memory alone. A store elsewhere that overlaps
+    // the cell changed some of them, whatever a cached cell still says; a
+    // havoc keeps a cell only where a frame fact showed it separate, and that
+    // fact, not the cache, is the authority for it.
+    match last.point.snapshot().derivation().as_deref() {
+        Some(CMemoryDerivation::Store { pointer, value, .. })
+            if last.stopped_by.reason == crate::kernel::resource_tracker::StopReason::Affected
+                && (pointer != address || value.byte_width() < bytes) =>
+        {
+            None
+        }
+        Some(CMemoryDerivation::CallHavoc { .. } | CMemoryDerivation::LoopHavoc { .. }) => None,
+        // A step the walk could not show separate from the cell (a store or a
+        // release through an unrelated address) left the cache standing only
+        // where a fact shows it separate.
+        _ if matches!(
+            last.stopped_by.reason,
+            crate::kernel::resource_tracker::StopReason::NotShownSeparate(_)
+        ) =>
+        {
+            None
+        }
+        _ => Some(held),
+    }
 }
 
 /// Whether `proposition` holds by the read-over-write authority alone: its
