@@ -883,3 +883,46 @@ fn a_fact_retained_pointer_cache_is_not_an_unconditional_read_definition() {
         true
     ));
 }
+
+#[test]
+fn pointer_domain_queries_register_stored_read_definitions_without_prior_address_queries() {
+    let _session = VerificationSession::enter();
+    let slot = Pointer::symbolic(Variable(989_100));
+    let target = Pointer::symbolic(Variable(989_101));
+    let stored = CPointerValue::new(target.clone(), CType::Int32Pointer);
+    let memory =
+        intern_c_memory(CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone())));
+    let read = Pointer::loaded_value(&memory, &slot);
+    let root = Pointer {
+        block: PointerBlock::Heap(989_102),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let root_memory = intern_c_memory(CMemory::new().store(
+        slot.clone(),
+        CValue::typed_pointer(root, CType::Int32Pointer),
+    ));
+    let root_read = Pointer::loaded_value(&root_memory, &slot);
+    // Each query starts with a cold graph. A preceding numeric/full-pointer
+    // equality query must not be needed to make its domain definition visible.
+    assert_eq!(
+        [
+            EqualityGraph::default().designations_equal(&read, stored.designation()),
+            EqualityGraph::default().opaque_extents_equal(&read, stored.opaque_extent().unwrap()),
+            EqualityGraph::default().opaque_extent_is_root(&root_read),
+        ],
+        [true, true, true]
+    );
+    let partial = intern_c_memory(
+        memory
+            .memory()
+            .clone()
+            .store(slot.offset_by_bytes(4), CValue::UInt32(0u32.into())),
+    );
+    let partial_read = Pointer::loaded_value(&partial, &slot);
+    assert!(!EqualityGraph::default().designations_equal(&partial_read, stored.designation()));
+    assert!(
+        !EqualityGraph::default()
+            .opaque_extents_equal(&partial_read, stored.opaque_extent().unwrap())
+    );
+    assert!(!EqualityGraph::default().opaque_extent_is_root(&partial_read));
+}

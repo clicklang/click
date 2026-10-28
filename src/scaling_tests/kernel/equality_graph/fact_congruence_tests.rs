@@ -394,3 +394,51 @@ fn complete_pointer_read_registration_scales_with_new_definitions() {
     assert!(chain[0] > 0);
     assert!(chain.windows(2).all(|p| p[1] <= 3 * p[0]), "{chain:?}");
 }
+
+#[test]
+fn pointer_domain_queries_scale_with_selected_read_definitions() {
+    fn work(steps: u64, unrelated: u64) -> usize {
+        let _session = VerificationSession::enter();
+        let mut graph = EqualityGraph::default();
+        for i in 0..unrelated {
+            graph.add_equality(
+                &Pointer::symbolic(Variable(991_000 + 2 * i)),
+                &Pointer::symbolic(Variable(991_001 + 2 * i)),
+            );
+        }
+        let slot = Pointer::symbolic(Variable(989_110));
+        let target = Pointer {
+            block: PointerBlock::Heap(989_111),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut previous = target.clone();
+        let mut memory = CMemory::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..steps {
+                memory = memory.clone().store(
+                    slot.clone(),
+                    CValue::typed_pointer(previous.clone(), CType::Int32Pointer),
+                );
+                let read = Pointer::loaded_value(&intern_c_memory_ref(&memory), &slot);
+                assert!(graph.designations_equal(&read, &target));
+                assert!(graph.opaque_extent_is_root(&read));
+                if previous != target {
+                    assert!(graph.opaque_extents_equal(&read, &previous));
+                }
+                previous = read;
+            }
+        });
+        work
+    }
+    let ambient = [0, 16, 64, 256].map(|n| work(4, n));
+    assert!(
+        ambient.iter().all(|work| *work <= ambient[0] + 32),
+        "{ambient:?}"
+    );
+    let chain = [4, 8, 16, 32].map(|n| work(n, 16));
+    assert!(chain[0] > 0);
+    assert!(
+        chain.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
+        "{chain:?}"
+    );
+}
