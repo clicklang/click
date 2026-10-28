@@ -19,21 +19,27 @@ fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
         true,
     );
     assert_ne!(facts.pointer_value_at_entry(&value), value);
-    let expression = CExpression::Value(CValue::Pointer(value.clone()));
+    let state = CState::new().with_local("p", CValue::Pointer(value.clone()));
     let _specification = crate::kernel::eval::SpecificationReadScope::enter();
-    for context in [&PureFactContext::new(), &facts] {
-        let paths = evaluate_c_expression_paths(
-            &CState::new(),
-            &expression,
-            context,
-            &mut ExecutionBudget::default(),
-        )
-        .unwrap();
-        assert_eq!(paths.len(), 1);
-        assert_eq!(
-            paths[0].outcome,
-            CExpressionOutcome::Value(CValue::Pointer(value.clone())),
-        );
+    for expression in [
+        CExpression::Value(CValue::Pointer(value.clone())),
+        CExpression::Variable("p".to_owned()),
+    ] {
+        for context in [&PureFactContext::new(), &facts] {
+            let paths = evaluate_c_expression_paths(
+                &state,
+                &expression,
+                context,
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap();
+            assert_eq!(paths.len(), 1);
+            assert_eq!(
+                paths[0].outcome,
+                CExpressionOutcome::Value(CValue::Pointer(value.clone())),
+                "{expression:?}",
+            );
+        }
     }
 }
 
