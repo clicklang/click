@@ -92,6 +92,11 @@ implicit fact per address shape and uses exact membership for stated goals;
 do not recover a missed proof by enumerating an ambiguous bucket. Select its
 source in planning, retain the explicit transport in expansion, and test both
 exact hits and misses as the bucket grows.
+Checked view queries also must not enumerate pointer spellings or exact alias
+lists. Use indexed class/storage coordinates and align a selected source with
+the query; other spellings belong behind `SearchPermission`. Grow both affine
+classes and same-block alias stars in tests, including misses and displaced
+accesses beside unrelated views.
 Run the boundary regressions with `test(gate_tests::search_boundary::)` in the
 fast-gate binary. This enforcement does not replace deterministic scaling tests.
 

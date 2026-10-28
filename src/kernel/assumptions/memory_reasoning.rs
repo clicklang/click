@@ -473,7 +473,13 @@ impl PureFactContext {
         else {
             return false;
         };
-        let Some(delta) = self.wide_element_index_of_access(base, source, 1) else {
+        if base.blocks_proven_distinct(source) {
+            return false;
+        }
+        // The source is selected already. Align these two addresses through
+        // the maintained graph instead of trying every spelling of the query.
+        let aligned = self.loadable_query_at_source(base, source);
+        let Some(delta) = self.wide_element_index_of_access(&aligned, source, 1) else {
             return false;
         };
         // The signed pointer displacement must represent this exact
@@ -558,44 +564,8 @@ impl PureFactContext {
         {
             return true;
         }
-        // A modular pointer result can name the same storage as a viewed
-        // range under a different symbolic block. Transport its liveness
-        // only through checked pointer equality, keeping the availability
-        // check at the evidence's own address. Visit this equality component,
-        // rather than searching unrelated loadability facts.
-        let spellings = self.equality_graph.pointer_spellings(base);
-        if self
-            .exact_pointer_aliases(base)
-            .chain(spellings.iter())
-            .any(|alias| {
-                crate::instrumentation::record_deterministic_work(1);
-                alias != base
-                    && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                        base, alias, self,
-                    )
-                    && self.memory_loadable_candidates_for_base(alias).any(|fact| {
-                        let Proposition::CMemoryLoadable {
-                            memory: before,
-                            base: evidence_base,
-                            bytes: extent,
-                            wide: false,
-                        } = fact
-                        else {
-                            return false;
-                        };
-                        crate::instrumentation::record_deterministic_work(1);
-                        memory_range_still_available(before, memory, evidence_base, self)
-                            && self.proves_loadable_region_from_structural_range(
-                                evidence_base,
-                                extent,
-                                alias,
-                                bytes,
-                            )
-                    })
-            })
-        {
-            return true;
-        }
+        // Candidate lookup uses structural and canonical address keys. It
+        // never restates the query at every alias to discover a source view.
         if self
             .memory_loadable_candidates_for_base(base)
             .any(|proposition| {
@@ -988,6 +958,22 @@ impl PureFactContext {
         .then_some(sum)
     }
 
+    /// Preserve same-block range expressions: their written endpoint guards
+    /// refer to those terms, not to a reassociated affine difference. Equality
+    /// can replace an exact selected address; otherwise only a different block
+    /// needs the indexed coordinate projection.
+    fn loadable_query_at_source(&self, query: &Pointer, source: &Pointer) -> Pointer {
+        if self.pointers_known_equal(query, source) {
+            source.clone()
+        } else if query.block == source.block {
+            query.clone()
+        } else {
+            self.equality_graph
+                .pointer_at_base(query, source)
+                .unwrap_or_else(|| query.clone())
+        }
+    }
+
     /// Callers establish that the source range is available in the relevant
     /// snapshot before comparing its base and 32-bit byte extent.
     fn same_base_and_loadable_extent_match(
@@ -1015,6 +1001,12 @@ impl PureFactContext {
         base: &Pointer,
         bytes: &Bitvector32Term,
     ) -> bool {
+        if base.blocks_proven_distinct(range_base) {
+            return false;
+        }
+        let aligned = self.loadable_query_at_source(base, range_base);
+        let base = &aligned;
+
         if self.same_base_and_loadable_extent_match(range_base, range_bytes, base, bytes) {
             return true;
         }

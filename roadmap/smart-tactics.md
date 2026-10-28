@@ -31,11 +31,9 @@ The remaining audit targets include indexed walks as well as full scans:
 
 - Atom-condition alias traversal and large condition-key buckets, including
   repeated failed queries.
-- Long alias components in loadability candidate lookup. The per-shape
-  singleton rule does not bound the number of alias keys visited.
-- Other resource candidate buckets, including read-defined evidence and
-  snapshot-rich object/provenance indexes, and remaining non-memory
-  separation fallbacks.
+- Other resource candidate buckets and alias walks, including read-defined
+  evidence, kept-frame fallbacks, snapshot-rich object/provenance indexes,
+  and remaining non-memory separation fallbacks.
 - Repeated memory-history queries, coordinated with the frame-walk item.
 
 For each confirmed defect, retain its small reproduction and deterministic

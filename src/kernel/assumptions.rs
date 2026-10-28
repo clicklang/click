@@ -5710,9 +5710,9 @@ impl PureFactContext {
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
-    /// Return at most one fact per address shape. An ambiguous bucket is not
-    /// an implicit premise list: search must select a source first. Structural
-    /// anchor and alias traversal is separate from this bucket bound.
+    /// Return at most one fact per structural or indexed address shape.
+    /// Ambiguous buckets and other alias spellings require premise search.
+    /// A singleton selected source may be checked across block spellings.
     pub(crate) fn memory_loadable_candidates_for_base(
         &self,
         base: &Pointer,
@@ -5755,10 +5755,30 @@ impl PureFactContext {
         // Do not even prepare an alias class when the exact address answers.
         let related =
             std::iter::once_with(move || self.memory_loadable_related_candidates(base, permission))
-                .take(usize::from(include_other_spellings))
+                .take(usize::from(
+                    include_other_spellings && !self.memory_loadable_facts.is_empty(),
+                ))
                 .flatten();
         exact
             .chain(related)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .filter(move |fact| match fact {
+                Proposition::CMemoryLoadable { base: source, .. } => {
+                    !base.blocks_proven_distinct(source)
+                }
+                _ => false,
+            })
+    }
+
+    /// Class enumeration is premise selection, not part of checked lookup.
+    fn memory_loadable_aliases_for_search(
+        &self,
+        _permission: crate::SearchPermission,
+        base: &Pointer,
+    ) -> impl Iterator<Item = Pointer> {
+        self.exact_pointer_aliases(base)
+            .cloned()
+            .chain(self.equality_graph.pointer_spellings(base))
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
@@ -5768,8 +5788,9 @@ impl PureFactContext {
         permission: Option<crate::SearchPermission>,
     ) -> impl Iterator<Item = &Proposition> {
         let search = permission.is_some();
-        // Structural anchors and known aliases select keys, never all ranges
-        // sharing a block. The exact key was already visited by the caller.
+        // Structural and maintained class coordinates select keys, never all
+        // class members or ranges sharing a block. The exact key was already
+        // visited by the caller. Only a planner can append other spellings.
         let mut anchors = vec![Pointer {
             block: base.block.clone(),
             offset: PointerOffsetTerm::Constant(0),
@@ -5787,8 +5808,29 @@ impl PureFactContext {
                 }
             }
         }
-        anchors.extend(self.exact_pointer_aliases(base).cloned());
-        anchors.extend(self.equality_graph.pointer_spellings(base));
+        // Two indexed coordinates, independent of the number of spellings:
+        // the maintained affine representative and a unique concrete anchor.
+        if let Some(coordinate) = self.equality_graph.canonical_pointer(base)
+            && let Some(offset) = coordinate.offset.to_offset_term()
+        {
+            anchors.push(Pointer {
+                block: coordinate.representative.clone(),
+                offset: PointerOffsetTerm::Constant(0),
+            });
+            anchors.push(Pointer {
+                block: coordinate.representative,
+                offset,
+            });
+        }
+        let storage = self.equality_graph.storage_address(base);
+        anchors.push(Pointer {
+            block: storage.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        });
+        anchors.push(storage);
+        if let Some(permission) = permission {
+            anchors.extend(self.memory_loadable_aliases_for_search(permission, base));
+        }
         let mut keys =
             BTreeSet::from([(base.block.clone(), memory_blind_pointer_fingerprint(base))]);
         let anchors = anchors
@@ -5808,6 +5850,15 @@ impl PureFactContext {
             self.memory_loadable_facts
                 .get(&base.block)
                 .filter(|facts| facts.len() == 1)
+                .or_else(|| {
+                    // An explicitly selected view may use another block's
+                    // spelling. Cached lengths select it without an alias
+                    // walk; coverage still checks the two supplied addresses.
+                    (self.memory_loadable_facts.len() == 1)
+                        .then(|| self.memory_loadable_facts.values().next())
+                        .flatten()
+                        .filter(|facts| facts.len() == 1)
+                })
                 .and_then(|facts| facts.iter().next())
                 .filter(|fact| match fact {
                     Proposition::CMemoryLoadable { base, .. } => !keys

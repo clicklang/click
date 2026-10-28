@@ -49,6 +49,23 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
+        if matches!(name, "exact_pointer_aliases" | "pointer_spellings")
+            && matches!(
+                (self.path, self.function.as_str()),
+                (
+                    "src/kernel/assumptions.rs",
+                    "memory_loadable_related_candidates"
+                ) | (
+                    "src/kernel/assumptions/memory_reasoning.rs",
+                    "proves_memory_loadable_inner"
+                )
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: checked view lookup must use indexed coordinates, not alias enumeration ({name})",
+                self.path, self.function
+            ));
+        }
         if name == "memory_loadable_candidates" {
             self.errors.push(format!(
                 "{}: {}: whole-block loadability enumeration is test-only; select a source in planning",
