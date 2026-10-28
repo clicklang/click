@@ -31,7 +31,13 @@
             "wrapping_add_u64",
             "below_i32",
             "below_u32",
-            "sign_bit_set"
+            "sign_bit_set",
+            "not_bool",
+            "and_bool",
+            "int_to_bool",
+            "bool_to_u8",
+            "bool_sum",
+            "select_i32"
           ]
         }
       }

@@ -76,8 +76,14 @@ fn first(x: Option<u64>) -> u64 {
 }
 
 // A guard bounds the operand of a narrow unsigned addition: its panic check
-// is `i <= 4294967295u32 - 1u32`, in the unsigned domain.
+// is `i <= 4294967295u32 - 1u32`, in the unsigned domain. The guard is a
+// `bool` value, split where the `if` tests it; that fact has no source
+// spelling for selected-premise arithmetic to cite, so the proof splits on
+// the comparison itself.
 fn step_below(i: u32, n: u32) -> u32 {
     ensures i < n implies result == i + 1u32;
     ensures i >= n implies result == i;
+} by {
+    if i < n { step_until(function.exit); solve(); }
+    else { step_until(function.exit); solve(); }
 }

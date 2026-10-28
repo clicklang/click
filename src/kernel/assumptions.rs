@@ -7055,6 +7055,17 @@ impl PureFactContext {
 
     fn knows_condition_or_stated_separation(&self, condition: &ConditionTerm, value: bool) -> bool {
         self.equality_graph.knows_condition(condition, value)
+            // A signedness conversion's sign test is known when its
+            // operand's half-range test is, and the reverse
+            // (`condition_reasoning::sign_bit`).
+            || self
+                .sign_bit_equivalent_conditions(condition)
+                .into_iter()
+                .any(|equivalent| {
+                    Self::without_sign_bit_rule(|| {
+                        self.equality_graph.knows_condition(&equivalent, value)
+                    })
+                })
             || (!value && self.addresses_separated_by_class(condition))
             || native_comparison_of_integer_observation(condition, value).is_some_and(
                 |(native, truth)| self.contains_known(&Proposition::ConditionIs(native, truth)),
@@ -7102,7 +7113,30 @@ impl PureFactContext {
             };
             (decided, self.reduce_by_decided_conditions(&proposition))
         };
+        // An 8- or 16-bit signedness conversion's sign test, which names a
+        // cast no plain comparison of its operand does, also files its
+        // operand's half-range test, and the reverse
+        // (`condition_reasoning::sign_bit`). A 32- or 64-bit one needs no
+        // filing: both tests compare one word, and a lookup of either finds
+        // the other.
+        let sign_bit_equivalents = if condition.names_narrow_signedness_cast()
+            && self.condition_facts.get(&condition) != Some(&value)
+        {
+            self.sign_bit_equivalent_conditions(&condition)
+        } else {
+            Vec::new()
+        };
         let mut next = self.assume_condition_once(condition, value);
+        if !sign_bit_equivalents.is_empty() {
+            next = Self::without_sign_bit_rule(|| {
+                sign_bit_equivalents
+                    .into_iter()
+                    .filter(|equivalent| !matches!(equivalent, ConditionTerm::Constant(_)))
+                    .fold(next, |next, equivalent| {
+                        next.assume_condition_once(equivalent, value)
+                    })
+            });
+        }
         if let Some((condition, value, selected)) = decided {
             next = next.assume_decided_algebraic_if(condition, value, selected);
         }

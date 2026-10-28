@@ -9,7 +9,7 @@
             "integers.cpp": {
               "compilation_database_sha256": "0337aeb66a0064eb98c5cc95939c231aeae05b47fddc52c61381aef78b761375",
               "dependencies": {},
-              "logical_source_sha256": "8217eb6d2603e7a14b7eaa857dc37cc5278c6ab9775af96d048d4a41122f0ca4",
+              "logical_source_sha256": "f870461de694ef93625ee5dc96962d1562bb9e7ba0bd8f7021560ff4e03fa090",
               "prepared_roots": [
                 "$unit",
                 "$project"
@@ -44,7 +44,7 @@
                 "target": "x86_64-unknown-linux-gnu"
               },
               "schema": 6,
-              "source_sha256": "8217eb6d2603e7a14b7eaa857dc37cc5278c6ab9775af96d048d4a41122f0ca4"
+              "source_sha256": "f870461de694ef93625ee5dc96962d1562bb9e7ba0bd8f7021560ff4e03fa090"
             }
           }
         },
@@ -56,17 +56,17 @@
         "sources": {
           "integers.cpp": {
             "artifact": {
-              "bytes": 79098,
+              "bytes": 100604,
               "path": ".click/integers_cpp/integers.cpp.click-cpp.json",
-              "sha256": "44301f4074519921992491660b90d2330d3353bf1f54530799951800bcf6fa35"
+              "sha256": "c6cb9f2282171045f199c800c1fc566eb3f0b2ba4b840b6d3af11412b8057ca3"
             },
-            "identity": "16f8b21c3a560970cf9289ff50e30d4598ab9b6ab615248b04f5b69f00ee7f96",
+            "identity": "31375a05749f0fab992e7353900a6a7ac6c227941858d573ab3ab8ed96ff8b36",
             "inputs": {
-              "$unit/integers.cpp": "8217eb6d2603e7a14b7eaa857dc37cc5278c6ab9775af96d048d4a41122f0ca4"
+              "$unit/integers.cpp": "f870461de694ef93625ee5dc96962d1562bb9e7ba0bd8f7021560ff4e03fa090"
             }
           }
         },
-        "unit": "a74d40e0b4fca8681d1a3fc0a15bedbd8b6f78e8e2a2e27bb944f8d6650e5b06"
+        "unit": "7366b38d47142e1619980ba07a504d1e558ecca33c13d054747a02519977c3d5"
       }
     }
   }

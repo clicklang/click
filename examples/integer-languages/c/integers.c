@@ -39,3 +39,14 @@ unsigned long wrapping_add_u64(unsigned long a, unsigned long b) { return a + b;
 bool below_i32(int a, int b) { return a < b; }
 bool below_u32(unsigned int a, unsigned int b) { return a < b; }
 bool sign_bit_set(unsigned int u) { return (int)u < 0; }
+bool not_bool(bool b) { return !b; }
+bool and_bool(bool a, bool b) { return a && b; }
+bool int_to_bool(int x) { return x; }
+unsigned char bool_to_u8(bool b) { return b; }
+int bool_sum(bool a, bool b) { return a + b; }
+int select_i32(bool b, int x, int y) {
+    if (b) {
+        return x;
+    }
+    return y;
+}

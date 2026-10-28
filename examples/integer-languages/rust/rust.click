@@ -154,10 +154,7 @@ fn below_i32(a: i32, b: i32) -> bool {
     ensures (a == -2147483648 and b == 0) implies result;
 } by {
     if a == -2147483648 and b == 0 { step_until(function.exit); solve(); }
-    else {
-        if a < b { step_until(function.exit); solve(); }
-        else { step_until(function.exit); solve(); }
-    }
+    else { step_until(function.exit); solve(); }
 }
 
 fn below_u32(a: u32, b: u32) -> bool {
@@ -166,13 +163,40 @@ fn below_u32(a: u32, b: u32) -> bool {
     ensures (a == 2147483648u32 and b == 0u32) implies not result;
 } by {
     if a == 2147483648u32 and b == 0u32 { step_until(function.exit); solve(); }
-    else {
-        if a < b { step_until(function.exit); solve(); }
-        else { step_until(function.exit); solve(); }
-    }
+    else { step_until(function.exit); solve(); }
 }
 
 fn sign_bit_set(u: u32) -> bool {
     ensures result implies u > 2147483647u32;
     ensures u > 2147483647u32 implies result;
+}
+
+fn not_bool(b: bool) -> bool {
+    ensures result implies not b;
+    ensures not b implies result;
+}
+
+fn and_bool(a: bool, b: bool) -> bool {
+    ensures result implies a and b;
+    ensures a and b implies result;
+}
+
+fn int_to_bool(x: i32) -> bool {
+    ensures result implies x != 0;
+    ensures x != 0 implies result;
+}
+
+fn bool_to_u8(b: bool) -> u8 {
+    ensures b implies result == 1u8;
+    ensures not b implies result == 0u8;
+}
+
+fn bool_sum(a: bool, b: bool) -> i32 {
+    ensures 0 <= result and result <= 2;
+    ensures (a and b) implies result == 2;
+}
+
+fn select_i32(b: bool, x: i32, y: i32) -> i32 {
+    ensures b implies result == x;
+    ensures not b implies result == y;
 }

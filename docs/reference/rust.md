@@ -366,6 +366,13 @@ sidecar keeps every comparison a proposition. A `bool` parameter is a claim
 too: `ensures early implies result == 7;`. Rust has no cast to `bool`, so
 `x as bool` is refused.
 
+In the program, a Rust `bool` is Click's `Bool`. A comparison, `!`, `&&` or
+`||` that produces a `bool` value is the condition it tests, with no path
+split: `let c = a < b;` and `match o { Some(b) => !b, None => true }` need no
+written case split, and `a != b` over two `bool`s is their logical
+disequality. `b as u8` and `b as i32` are 1 when `b` holds and 0 otherwise.
+`&bool` parameters and slices of `bool` are not supported.
+
 ### Integer literals
 
 An unsuffixed literal takes its type from what it is compared or combined

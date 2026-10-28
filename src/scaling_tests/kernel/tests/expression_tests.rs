@@ -288,3 +288,62 @@ fn narrow_value_range_construction_ignores_unrelated_order_facts() {
         );
     }
 }
+
+/// Stage 5, decision D5: a Rust `bool` value of a comparison is the
+/// condition, with no path split, so `n` such assignments are one path whose
+/// work grows linearly, where C's 0/1 comparison splits into `2^n`.
+#[test]
+fn rust_bool_values_do_not_split_paths() {
+    let mut previous = None;
+    for size in [4usize, 8, 16, 32] {
+        let mut state =
+            CState::new().with_local("limit", int32(Bitvector32Term::Variable(Variable(50))));
+        let mut statement = c_skip();
+        for index in 0..size {
+            state = state
+                .with_local(
+                    format!("a_{index}"),
+                    int32(Bitvector32Term::Variable(Variable(100 + index as u64))),
+                )
+                .with_local(
+                    format!("c_{index}"),
+                    CValue::Bool(Bitvector32Term::Constant(0)),
+                );
+            statement = c_seq(
+                statement,
+                c_assign(
+                    format!("c_{index}"),
+                    c_bool_value(c_less_than(
+                        c_variable(format!("a_{index}")),
+                        c_variable("limit"),
+                    )),
+                ),
+            );
+        }
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            execute_c_statement_paths(
+                &state,
+                &statement,
+                &PureFactContext::new(),
+                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+        });
+        assert_eq!(paths.len(), 1, "{size} assignments");
+        let CStatementOutcome::Normal(state) = &paths[0].outcome else {
+            panic!("{size}: {:?}", paths[0].outcome);
+        };
+        let Some(CValue::Bool(word)) = state.locals.get("c_0") else {
+            panic!("{size}: `c_0` is a `Bool`");
+        };
+        assert!(word.bool_cast_operand().is_some(), "{size}: {word:?}");
+        if let Some((previous_size, previous_work)) = previous {
+            assert!(
+                work <= previous_work * 2 * size / previous_size + 64,
+                "{previous_size} -> {size}: {previous_work} -> {work}"
+            );
+        }
+        previous = Some((size, work));
+    }
+}

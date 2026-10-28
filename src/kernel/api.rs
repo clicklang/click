@@ -2177,6 +2177,16 @@ pub fn c_integer_cast_modulo(expression: CExpression, target_type: CType) -> CEx
     result
 }
 
+/// The `Bool` value of a Rust comparison, `!` or connective (decision D5):
+/// the condition itself, with no path split.
+pub fn c_bool_value(expression: CExpression) -> CExpression {
+    let mut result = c_cast(expression, CType::Bool);
+    if let CExpression::Cast { integer_mode, .. } = &mut result {
+        *integer_mode = CIntegerCastMode::BoolValue;
+    }
+    result
+}
+
 /// The C++20 uint64-to-int64 rule, distinct from an ordinary C cast.
 pub fn c_uint64_bits_to_int64(expression: CExpression) -> CExpression {
     let mut result = c_cast(expression, CType::Int64);

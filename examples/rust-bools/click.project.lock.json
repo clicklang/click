@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "units": {
+    "bools": {
+      "language": "rust",
+      "lock": {
+        "envelope": 1,
+        "frontend": {
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
+        },
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "92c1f6268b31028223a9437a4cad40af0ba067e6b6154ef6ca1449445920cc0e"
+        },
+        "sources": {
+          "bools.rs": {
+            "artifact": {
+              "bytes": 56975,
+              "path": ".click/bools/bools.rs.ullbc",
+              "sha256": "84ba037be4ae64a07de44ab6fbf4c1af79bf5af3e1aff7c585a301f2069ac326"
+            },
+            "identity": "1e96944d85b3a992caebb2046bd74f894ed9de1f2e4e7cdf7c09b40a69b72ae8",
+            "inputs": {
+              "bools.rs": "92c1f6268b31028223a9437a4cad40af0ba067e6b6154ef6ca1449445920cc0e"
+            }
+          }
+        },
+        "unit": "59b2e5dc355757345fd27dfc8c44981a372009fbf56f01cbb51e19a1542cbf7e"
+      }
+    }
+  }
+}

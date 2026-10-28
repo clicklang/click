@@ -4713,6 +4713,24 @@ fn apply_c_equality(
             assumptions,
         );
     }
+    // Rule C1a: two `Bool`s' integer values are equal exactly when the
+    // `Bool`s are, so `a == b` over `bool`s is their logical equality.
+    if let (CValue::Bool(left_word), CValue::Bool(right_word)) =
+        (left.numeric_value(), right.numeric_value())
+        && left_word.bool_cast_operand().is_some()
+        && right_word.bool_cast_operand().is_some()
+    {
+        return condition_as_c_int32_paths_valued(
+            ConditionTerm::bool_equal(
+                ConditionTerm::truth_of_bool_word(left_word),
+                ConditionTerm::truth_of_bool_word(right_word),
+            ),
+            facts,
+            obligations,
+            assumptions,
+            negated,
+        );
+    }
     let (left, right) = promote_c_bool_scalar_operands(left, right);
     if let Some(width @ (ScalarWidth::Int64 | ScalarWidth::UInt64)) = scalar_width(&left, &right) {
         let facts = facts;
@@ -4847,6 +4865,21 @@ pub(in crate::kernel) fn evaluate_c_not_paths(
     let mut paths = Vec::new();
     for path in evaluate_c_condition_paths(state, expression, assumptions, budget)? {
         match path.outcome {
+            // A Rust `Bool` value (decision D5): `not c`, with no split.
+            CExpressionOutcome::Value(value)
+                if super::ConditionValueScope::is_active()
+                    && ConditionTerm::nonzero_test(&value).is_some() =>
+            {
+                let condition = ConditionTerm::nonzero_test(&value).expect("tested above");
+                paths.push(CExpressionPath {
+                    outcome: CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::bool_cast(
+                        MachineIntegerType::Int32,
+                        ConditionTerm::bool_not(condition),
+                    ))),
+                    facts: path.facts,
+                    obligations: path.obligations,
+                });
+            }
             CExpressionOutcome::Value(value) => {
                 paths.extend(
                     c_truthiness_paths(value, path.facts, path.obligations, assumptions)
@@ -4881,6 +4914,60 @@ pub(in crate::kernel) fn evaluate_c_not_paths(
     Ok(paths)
 }
 
+/// A Rust connective's `Bool` value (decision D5): `left and right` or
+/// `left or right` as the `Bool` conditional over its operands' conditions,
+/// with no path split. Only operands that are a local or a value are read
+/// so: evaluating one has no effect and no undefined behavior, so reading
+/// `right` where C would not is the same. `None` for any other operand,
+/// which keeps C's short-circuit evaluation.
+fn connective_bool_value_paths(
+    state: &CState,
+    left: &CExpression,
+    right: &CExpression,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+    combine: impl Fn(ConditionTerm, ConditionTerm) -> ConditionTerm,
+) -> ExecutionResult<Option<Vec<CExpressionPath>>> {
+    let simple =
+        |operand: &CExpression| matches!(operand, CExpression::Variable(_) | CExpression::Value(_));
+    if !simple(left) || !simple(right) {
+        return Ok(None);
+    }
+    let left_paths = evaluate_c_expression_paths(state, left, assumptions, budget)?;
+    let right_paths = evaluate_c_expression_paths(state, right, assumptions, budget)?;
+    let ([left_path], [right_path]) = (left_paths.as_slice(), right_paths.as_slice()) else {
+        return Ok(None);
+    };
+    let (CExpressionOutcome::Value(left_value), CExpressionOutcome::Value(right_value)) =
+        (&left_path.outcome, &right_path.outcome)
+    else {
+        return Ok(None);
+    };
+    let (Some(left_condition), Some(right_condition)) = (
+        ConditionTerm::nonzero_test(left_value),
+        ConditionTerm::nonzero_test(right_value),
+    ) else {
+        return Ok(None);
+    };
+    let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+        &left_path.facts,
+        &left_path.obligations,
+        &right_path.facts,
+        &right_path.obligations,
+        assumptions,
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(vec![CExpressionPath {
+        outcome: CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::bool_cast(
+            MachineIntegerType::Int32,
+            combine(left_condition, right_condition),
+        ))),
+        facts,
+        obligations,
+    }]))
+}
+
 pub(in crate::kernel) fn evaluate_c_logical_and_paths(
     state: &CState,
     left: &CExpression,
@@ -4888,6 +4975,14 @@ pub(in crate::kernel) fn evaluate_c_logical_and_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
+    if super::ConditionValueScope::is_active()
+        && let Some(paths) =
+            connective_bool_value_paths(state, left, right, assumptions, budget, |left, right| {
+                ConditionTerm::bool_if(left, right, ConditionTerm::Constant(false))
+            })?
+    {
+        return Ok(paths);
+    }
     let mut paths = Vec::new();
     for left_path in evaluate_c_condition_paths(state, left, assumptions, budget)? {
         match left_path.outcome {
@@ -4979,6 +5074,14 @@ pub(in crate::kernel) fn evaluate_c_logical_or_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
+    if super::ConditionValueScope::is_active()
+        && let Some(paths) =
+            connective_bool_value_paths(state, left, right, assumptions, budget, |left, right| {
+                ConditionTerm::bool_if(left, ConditionTerm::Constant(true), right)
+            })?
+    {
+        return Ok(paths);
+    }
     let mut paths = Vec::new();
     for left_path in evaluate_c_condition_paths(state, left, assumptions, budget)? {
         match left_path.outcome {
