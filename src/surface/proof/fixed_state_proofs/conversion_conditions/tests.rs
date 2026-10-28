@@ -450,6 +450,14 @@ fn quantified_reflexive_domain_guard_needs_no_search_or_ambient_fact() {
         &PureFactContext::new(),
         &guard(premise.clone())
     ));
+    let mut integer_guard = guard(premise.clone());
+    if let Proposition::ForAll { sort, .. } = &mut integer_guard {
+        *sort = crate::kernel::Sort::Integer;
+    }
+    assert!(!established_condition(
+        &PureFactContext::new(),
+        &integer_guard
+    ));
     let falsehood = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
     assert!(!established_condition(
         &PureFactContext::new(),

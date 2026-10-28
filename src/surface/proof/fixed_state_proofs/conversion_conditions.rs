@@ -548,12 +548,19 @@ pub(in crate::surface::proof) fn refuse_unproved_conversion_bounds(
 // Lowering can guard a universal's partial operation with its own domain:
 // forall k. defined(f(k)) implies defined(f(k)). This is syntax, not search,
 // and must not consult ambient facts about a variable bound by the guard.
+// Preserve the native int32 guarded-domain route only. Integer and other
+// binders have different domain obligations; logical reflexivity alone must
+// not discharge those (including a partial free expression under Integer).
 fn reflexive_guard(goal: &Proposition) -> bool {
     let mut pending = vec![goal];
     while let Some(goal) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match goal {
-            Proposition::ForAll { body, .. } => pending.push(body),
+            Proposition::ForAll {
+                sort: crate::kernel::Sort::CInt32,
+                body,
+                ..
+            } => pending.push(body),
             Proposition::And(left, right) => {
                 pending.push(left);
                 pending.push(right);
