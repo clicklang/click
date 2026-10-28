@@ -2109,39 +2109,44 @@ int32 compare(uint8 bytes[]) {
     let incomplete =
         click_source.replace("solve();", "have 1 == 1 by { normalize(); } assumption();");
     verify_c0_sources(&incomplete, &[("compare.c", c_source)]).unwrap();
-    let source = load_audit_source(&path).unwrap();
-    let expected_error = click::surface::without_implicit_auto(|| {
-        verify_rewritten_with_inputs(&source, &sites[0].claim, &incomplete)
-    })
-    .expect_err("the incomplete expansion needs implicit auto");
-    let (requests, receiver) = mpsc::channel::<SessionRequest>();
-    let (responses, response_receiver) = mpsc::channel();
-    let thread = thread::spawn(move || {
-        for request in receiver {
-            responses
-                .send(Ok(SessionResponse {
-                    cost: PhaseCost {
-                        work: 0,
-                        elapsed: Duration::ZERO,
-                    },
-                    expansion: request.expansion_claim.map(|_| incomplete.clone()),
-                }))
-                .unwrap();
-        }
-    });
-    let mut worker = AuditSessionWorker {
-        source,
-        requests: Some(requests),
-        responses: response_receiver,
-        thread: Some(thread),
-        initialization: PhaseCost {
-            work: 0,
-            elapsed: Duration::ZERO,
-        },
-    };
-    let error = audit_claim_rewrite(&sites[0], &mut worker, &limits, deadline)
-        .expect_err("a whole-claim rewrite must include the implicit auto's evidence");
-    assert_eq!(error, expected_error);
+    // Even an unchanged candidate must fail if a bare step still relies on
+    // implicit automation. Exercise both changed and byte-identical replies.
+    for original in [click_source, incomplete.as_str()] {
+        let source = load_audit_source_from_text(&path, original.to_string()).unwrap();
+        let expected_error = click::surface::without_implicit_auto(|| {
+            verify_rewritten_with_inputs(&source, &sites[0].claim, &incomplete)
+        })
+        .expect_err("the incomplete expansion needs implicit auto");
+        let (requests, receiver) = mpsc::channel::<SessionRequest>();
+        let (responses, response_receiver) = mpsc::channel();
+        let expansion = incomplete.clone();
+        let thread = thread::spawn(move || {
+            for request in receiver {
+                responses
+                    .send(Ok(SessionResponse {
+                        cost: PhaseCost {
+                            work: 0,
+                            elapsed: Duration::ZERO,
+                        },
+                        expansion: request.expansion_claim.map(|_| expansion.clone()),
+                    }))
+                    .unwrap();
+            }
+        });
+        let mut worker = AuditSessionWorker {
+            source,
+            requests: Some(requests),
+            responses: response_receiver,
+            thread: Some(thread),
+            initialization: PhaseCost {
+                work: 0,
+                elapsed: Duration::ZERO,
+            },
+        };
+        let error = audit_claim_rewrite(&sites[0], &mut worker, &limits, deadline)
+            .expect_err("a whole-claim rewrite must include the implicit auto's evidence");
+        assert_eq!(error, expected_error);
+    }
 }
 
 /// A negative mdtest is a boundary of the entire audit, including runtime
@@ -2272,4 +2277,29 @@ fn keep_going_audits_other_claims_after_implicit_discovery_cannot_locate_a_proof
             .expect("the deadline must still stop discovery")
             .contains(RUN_LIMIT_EXHAUSTED)
     );
+}
+
+/// A written script may already close every obligation before its implicit
+/// tail is observed. A byte-identical expansion must still satisfy the full
+/// audit, including cold verification with implicit automation disabled.
+#[test]
+fn a_fully_explicit_script_has_an_auditable_fixed_point() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/simple_statement_step.md");
+    let source = load_audit_source(&path).unwrap();
+    let claim = "identity.contract";
+    click::surface::without_implicit_auto(|| {
+        verify_rewritten_with_inputs(&source, claim, &source.click_source)
+    })
+    .expect("the original script is already explicit");
+    assert_eq!(
+        expand_claim_with_source(&path, &source, claim).unwrap(),
+        source.container_source
+    );
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        claim.to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).expect("an already explicit proof is a valid fixed point");
 }
