@@ -4,7 +4,8 @@ use super::fact_reasoning::exactly_available_fact;
 use super::{ProofFacts, PropositionObligation, PropositionSource};
 use crate::kernel::CompareRelation;
 use crate::kernel::*;
-use std::collections::BTreeSet;
+use std::cell::RefCell;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// A checked goal refinement and its path-local load-transport evidence.
 /// Only this module can construct or change its semantic result.
@@ -634,48 +635,94 @@ fn rewrite_through_load_variable(
     ))
 }
 
-/// `rewrite` looks through a loaded pointer the same way: a pointer whose
-/// block is the identity of a load (`Pointer::loaded`) is the value of that
-/// load, so a rewrite of the load's address gives the rewritten load, and
-/// the pointer becomes that load's identity. Nested loads are rewritten
-/// through at most `depth` levels.
+/// Read definitions selected by one address substitution. Cache by read
+/// identity, not by a deep memory or address key; misses are shared too.
+type PointerReadRewrites = RefCell<HashMap<PointerBlock, Option<Pointer>>>;
+
+/// Substitute through the selected read-definition chain, then rebuild it
+/// outward. The explicit stack is bounded by those definitions, not a depth
+/// cutoff. A repeated identity refuses a cyclic definition without looping.
 fn rewrite_through_loaded_pointer_block(
     pointer: &Pointer,
     rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
-    depth: usize,
+    cache: &PointerReadRewrites,
 ) -> Option<Pointer> {
-    let PointerBlock::Symbolic(variable) = &pointer.block else {
-        return None;
-    };
-    if depth == 0 || !crate::kernel::is_load_variable(variable) {
-        return None;
+    fn name_read(
+        memory: SharedCMemory,
+        address: Pointer,
+        kind: Option<LoadKind>,
+    ) -> Option<Pointer> {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(kind) = kind else {
+            return Some(Pointer::version_read(&memory, &address));
+        };
+        // Name the legacy scalar-carrier read, too: folding stored bits can
+        // discard the rewritten read or cease to be a pointer carrier.
+        let load = crate::kernel::canonical_form_of_load(memory, address, kind);
+        let variable = match load {
+            Bitvector32Term::Variable(variable) => variable,
+            load @ Bitvector32Term::MemoryLoad(_, _, _) => {
+                crate::kernel::load_variable_for_term(&load)?.0
+            }
+            _ => return None,
+        };
+        Some(Pointer::symbolic(variable))
     }
-    let (memory, address) = crate::kernel::registered_load_origin_for_variable(variable)
-        .or_else(|| crate::kernel::registered_load_for_variable(variable))?;
-    let kind = crate::kernel::registered_load_kind_for_variable(variable)?;
-    let rewritten_address = {
-        let direct = rewrite_pointer(&address);
-        if direct != address {
-            direct
-        } else {
-            rewrite_through_loaded_pointer_block(&address, rewrite_pointer, depth - 1)?
+
+    let mut cursor = pointer.clone();
+    let mut seen = HashSet::new();
+    let mut frames = Vec::new();
+    let mut result = loop {
+        crate::instrumentation::record_deterministic_work(1);
+        let cached = cache.borrow().get(&cursor.block).cloned();
+        if let Some(cached) = cached {
+            break cached;
         }
-    };
-    let load = crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
-        memory,
-        Box::new(rewritten_address),
-        kind,
-    ));
-    let named = match load {
-        Bitvector32Term::Variable(variable) => variable,
-        load @ Bitvector32Term::MemoryLoad(_, _, _) => {
-            crate::kernel::load_variable_for_term(&load)?.0
+        if !seen.insert(cursor.block.clone()) {
+            break None;
         }
-        _ => return None,
+        let definition = match &cursor.block {
+            PointerBlock::LoadedPointer(identity) => {
+                crate::kernel::eval::registered_pointer_load(*identity)
+                    .map(|(memory, address)| (memory, address, None))
+            }
+            PointerBlock::Symbolic(variable) if crate::kernel::is_load_variable(variable) => {
+                crate::kernel::registered_load_origin_for_variable(variable)
+                    .or_else(|| crate::kernel::registered_load_for_variable(variable))
+                    .zip(crate::kernel::registered_load_kind_for_variable(variable))
+                    .map(|((memory, address), kind)| (memory, address, Some(kind)))
+            }
+            _ => None,
+        };
+        let Some((memory, address, kind)) = definition else {
+            cache.borrow_mut().insert(cursor.block, None);
+            break None;
+        };
+        let rewritten = rewrite_pointer(&address);
+        if rewritten != address {
+            let named = name_read(memory, rewritten, kind);
+            cache.borrow_mut().insert(cursor.block, named.clone());
+            break named;
+        }
+        frames.push((cursor.block, memory, kind, address.offset.clone()));
+        cursor = address;
     };
-    Some(Pointer {
-        block: PointerBlock::Symbolic(named),
-        offset: pointer.offset.clone(),
+    for (block, memory, kind, displacement) in frames.into_iter().rev() {
+        result = result.and_then(|address| {
+            name_read(
+                memory,
+                Pointer {
+                    block: address.block,
+                    offset: PointerOffsetTerm::add(address.offset, displacement),
+                },
+                kind,
+            )
+        });
+        cache.borrow_mut().insert(block, result.clone());
+    }
+    result.map(|base| Pointer {
+        block: base.block,
+        offset: PointerOffsetTerm::add(base.offset, pointer.offset.clone()),
     })
 }
 
@@ -1435,6 +1482,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 offset,
             }
         };
+        let read_rewrites = PointerReadRewrites::default();
         let rewrite_pointer = |pointer: &Pointer| {
             if pointer == left.as_ref() {
                 return right.as_ref().clone();
@@ -1443,19 +1491,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             if &rewritten != pointer {
                 return rewritten;
             }
-            // A loaded pointer is the read of its defining address; the
-            // rewritten address reads the same cell.
-            if let Some(read) = pointer.as_loaded_value() {
-                let address = rewrite_pointer_directly(&read.defining_address);
-                if address != read.defining_address {
-                    let loaded = Pointer::canonical_loaded_value(&read.defining_memory, &address);
-                    return Pointer {
-                        offset: PointerOffsetTerm::add(loaded.offset, read.displacement),
-                        block: loaded.block,
-                    };
-                }
-            }
-            rewrite_through_loaded_pointer_block(pointer, &rewrite_pointer_directly, 8)
+            rewrite_through_loaded_pointer_block(pointer, &rewrite_pointer_directly, &read_rewrites)
                 .unwrap_or(rewritten)
         };
         // A pointer equality also rewrites the subject of a load: replacing
@@ -2191,6 +2227,133 @@ fn rewrite_atomic_proposition_by_exact_equality(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn address_rewrite_reaches_legacy_pointer_reads_beyond_eight_levels() {
+        let _session = VerificationSession::enter();
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let from = Pointer::symbolic(Variable(998_930));
+        let to = Pointer::symbolic(Variable(998_931));
+        let other = from.clone();
+        let rewritten_other = to.clone();
+        let cited =
+            Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
+        let facts = ProofFacts::default().with_fact(cited.clone());
+        let read = |address: &Pointer| {
+            Pointer::symbolic(crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                address,
+                LoadKind::Int32,
+                4,
+            ))
+        };
+        let mut input = from;
+        let mut expected = to;
+        for depth in 1..=32 {
+            input = read(&input);
+            expected = read(&expected);
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(input.clone(), other.clone()),
+                true,
+            );
+            let result = facts.check_equality_rewrite(&goal, &cited).unwrap();
+            let wanted = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(expected.clone(), rewritten_other.clone()),
+                true,
+            );
+            assert_eq!(result.proposition(), &wanted, "read depth {depth}");
+        }
+    }
+
+    #[test]
+    fn address_rewrite_preserves_native_read_versions_beside_a_shallow_occurrence() {
+        let _session = VerificationSession::enter();
+        let from = Pointer::symbolic(Variable(998_940));
+        let to = Pointer::symbolic(Variable(998_941));
+        let stored = CValue::pointer(Pointer::symbolic(Variable(998_942)));
+        let memory = CMemory::new().store(to.clone(), stored);
+        let memory = crate::kernel::intern_c_memory(memory);
+        let cited =
+            Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
+        let facts = ProofFacts::default().with_fact(cited.clone());
+        let mut input = from.clone();
+        let mut expected = to.clone();
+        for depth in 1..=32 {
+            input = Pointer::version_read(&memory, &input);
+            expected = Pointer::version_read(&memory, &expected);
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(input.clone(), from.clone()),
+                true,
+            );
+            let wanted = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(expected.clone(), to.clone()),
+                true,
+            );
+            assert_eq!(
+                facts
+                    .check_equality_rewrite(&goal, &cited)
+                    .unwrap()
+                    .proposition(),
+                &wanted,
+                "read depth {depth}"
+            );
+        }
+        let later = memory.memory().clone().store(
+            to.clone(),
+            CValue::pointer(Pointer::symbolic(Variable(998_943))),
+        );
+        let _ = later.symbolic_pointer_version_load(&to, CType::Int32Pointer);
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(input.offset_by_bytes(8), from.clone()),
+            true,
+        );
+        let wanted = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(expected.offset_by_bytes(8), to.clone()),
+            true,
+        );
+        assert_eq!(
+            facts
+                .check_equality_rewrite(&goal, &cited)
+                .unwrap()
+                .proposition(),
+            &wanted,
+            "the displaced read retains the original snapshot"
+        );
+    }
+
+    #[test]
+    fn address_rewrite_keeps_legacy_reads_named_when_the_target_stores_bits() {
+        let _session = VerificationSession::enter();
+        let from = Pointer::symbolic(Variable(998_960));
+        let to = Pointer::symbolic(Variable(998_961));
+        let memory = crate::kernel::intern_c_memory(
+            CMemory::new().store(to.clone(), CValue::Int32(7u32.into())),
+        );
+        let read = |address: &Pointer| {
+            let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
+                memory.clone(),
+                address.clone(),
+                LoadKind::Int32,
+            ) else {
+                panic!("expected a named read")
+            };
+            Pointer::symbolic(variable)
+        };
+        let input = read(&from);
+        let expected = read(&to);
+        let cited =
+            Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
+        let facts = ProofFacts::default().with_fact(cited.clone());
+        let goal = Proposition::ConditionIs(ConditionTerm::pointer_equal(input, from), true);
+        let wanted = Proposition::ConditionIs(ConditionTerm::pointer_equal(expected, to), true);
+        assert_eq!(
+            facts
+                .check_equality_rewrite(&goal, &cited)
+                .unwrap()
+                .proposition(),
+            &wanted
+        );
+    }
 
     fn observed_native_bound(ty: MachineIntegerType) -> Bitvector32Term {
         match ty {

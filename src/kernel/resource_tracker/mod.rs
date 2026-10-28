@@ -1119,8 +1119,17 @@ fn cell_last_same_version(
                     assumptions: &assumptions,
                     cross_loop_havoc: false,
                 };
-                let mut current = memory.clone();
-                let mut visited = Vec::new();
+                // Whole-block separation applies to every address in the block.
+                // Reuse its memoized prefix before the byte-specific walk so a
+                // fresh offset does not retrace all unrelated stores. The block
+                // rule is assumption-free and stronger than cell separation.
+                let mut current =
+                    block_last_same_point(&memory, &pointer.block).unchanged_bytes_source();
+                let mut visited = if current != memory {
+                    vec![key.clone()]
+                } else {
+                    Vec::new()
+                };
                 let refusals = cell_source::memory_dag_cell_lookup_refusals();
                 let result = loop {
                     let current_key = (current.clone(), pointer.clone(), bytes);

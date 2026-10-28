@@ -930,3 +930,130 @@ fn integer_observation_rewrite_work_tracks_selected_comparison_leaves() {
         );
     }
 }
+
+fn pointer_read_chain_rewrite_work(
+    depth: usize,
+    repeats: usize,
+    cells: u64,
+    native: bool,
+    hit: bool,
+) -> usize {
+    let _session = VerificationSession::enter();
+    let from = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(998_950)), 8),
+    };
+    let to = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(998_951)), 8),
+    };
+    let mut memory = CMemory::new();
+    for index in 0..cells {
+        memory = memory.store(
+            Pointer {
+                block: PointerBlock::Temporary(999_000 + index),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CValue::Int32(7u32.into()),
+        );
+    }
+    let memory = crate::kernel::intern_c_memory(memory);
+    let read = |address: &Pointer| {
+        if native {
+            Pointer::version_read(&memory, address)
+        } else {
+            let term = crate::kernel::canonical_form_of_load(
+                memory.clone(),
+                address.clone(),
+                LoadKind::Int32,
+            );
+            let Bitvector32Term::Variable(variable) = term else {
+                panic!("expected a named read")
+            };
+            Pointer::symbolic(variable)
+        }
+    };
+    let mut input = from.clone();
+    for _ in 0..depth {
+        input = read(&input);
+    }
+    let rewrite = |address: &Pointer| {
+        if hit && address == &from {
+            to.clone()
+        } else {
+            address.clone()
+        }
+    };
+    let (outputs, work) = crate::instrumentation::measure_deterministic_work(|| {
+        let cache = PointerReadRewrites::default();
+        (0..repeats)
+            .map(|index| {
+                rewrite_through_loaded_pointer_block(
+                    &input.clone().offset_by_bytes(index as u32),
+                    &rewrite,
+                    &cache,
+                )
+            })
+            .collect::<Vec<_>>()
+    });
+    if hit {
+        let mut expected = to;
+        for _ in 0..depth {
+            expected = read(&expected);
+        }
+        for (index, output) in outputs.into_iter().enumerate() {
+            assert_eq!(output, Some(expected.clone().offset_by_bytes(index as u32)));
+        }
+    } else {
+        assert!(outputs.iter().all(Option::is_none));
+    }
+    work
+}
+
+#[test]
+fn pointer_read_chain_rewrites_scale_with_selected_definitions() {
+    for native in [false, true] {
+        let samples = [8, 16, 32, 64]
+            .map(|depth| pointer_read_chain_rewrite_work(depth, 1, 16, native, true));
+        assert!(samples[0] > 0);
+        assert!(
+            samples
+                .windows(3)
+                .all(|p| p[2] - p[1] <= 2 * (p[1] - p[0]) + 8),
+            "{native}: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn pointer_read_chain_rewrites_share_hits_and_misses() {
+    for native in [false, true] {
+        for hit in [false, true] {
+            let samples = [1, 4, 16, 64]
+                .map(|repeats| pointer_read_chain_rewrite_work(64, repeats, 16, native, hit));
+            assert!(samples[0] > 0);
+            for (repeats, work) in [1, 4, 16, 64].into_iter().zip(samples) {
+                assert!(
+                    work <= samples[0] + 16 * repeats,
+                    "native={native} hit={hit}: {samples:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn pointer_read_chain_rewrites_ignore_surrounding_storage() {
+    for native in [false, true] {
+        // A nonempty snapshot makes legacy reads register their definitions
+        // in the naming graph; the empty snapshot takes a cheaper path. Compare
+        // nonempty sizes to isolate growth, without warming any target read.
+        let samples = [1, 16, 64, 256]
+            .map(|cells| pointer_read_chain_rewrite_work(16, 1, cells, native, true));
+        assert!(samples[0] > 0);
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 64),
+            "{native}: {samples:?}"
+        );
+    }
+}
