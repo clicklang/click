@@ -29,8 +29,10 @@ before choosing each performance fix. Do not raise limits to hide a defect.
 
 The remaining audit targets include indexed walks as well as full scans:
 
-- Anchored equality condition-side buckets and general signed-interval
-  reconstruction through symbolic order-bound chains, including repeated misses.
+- Remaining premise collectors for signed definedness and widened arithmetic:
+  audit `signed_constant_bound_facts` and its direct-order/literal-source
+  buckets. Also audit direct-equality evidence traversal outside interval
+  checking; interval queries use class summaries, but other callers remain.
 - Remaining non-memory resource candidate buckets and separation fallbacks.
   Audit snapshot-rich provenance registration and history upkeep separately
   from indexed object-witness selection.

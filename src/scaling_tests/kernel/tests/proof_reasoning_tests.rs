@@ -1994,13 +1994,9 @@ fn a_decision_that_spends_its_fuel_ends_undecided_and_is_not_memoized() {
     assert_eq!(facts.decide(query), *expected);
 }
 
-/// Catches a lookup of the condition facts about one term that scans every
-/// condition fact. The increment-overflow decision's direct bound searches
-/// for `x + 1` read `condition_facts_with_side(x)`: it must return exactly
-/// the facts a full scan would keep, in the same order, and visit the same
-/// facts beside 16 to 256 bounds on unrelated values.
+/// Direct interval summaries ignore unrelated conditions, including compound endpoints.
 #[test]
-fn condition_facts_with_one_side_ignore_unrelated_facts() {
+fn direct_compound_interval_ignores_unrelated_facts() {
     let variable = |id: u64| Bitvector32Term::Variable(Variable(94_000 + id));
     let x = Bitvector32Term::multiply(variable(0), variable(2));
     let mut visited = Vec::new();
@@ -2030,23 +2026,11 @@ fn condition_facts_with_one_side_ignore_unrelated_facts() {
                 true,
             );
         }
-        PureFactContext::reset_condition_fact_visits();
-        let filed = facts.condition_facts_with_side(&x);
-        visited.push(PureFactContext::condition_fact_visits());
-        let scanned = facts
-            .condition_facts
-            .iter()
-            .filter(|(condition, _)| {
-                crate::kernel::assumptions::condition_match_key(condition)
-                    .and_then(|key| {
-                        key.bitvector_sides()
-                            .map(|(left, right)| left == &x || right == &x)
-                    })
-                    .unwrap_or(false)
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(filed, scanned, "the facts with `x` as a side at {size}");
-        assert_eq!(filed.len(), 3);
+        let (interval, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.indexed_constant_interval(&x)
+        });
+        visited.push(work);
+        assert_eq!(interval, Some((i64::from(i32::MIN) + 1, 5)));
     }
     eprintln!("facts with one side, visits at 16/64/256 unrelated bounds: {visited:?}");
     assert!(

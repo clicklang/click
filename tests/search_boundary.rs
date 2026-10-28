@@ -315,10 +315,12 @@ fn kept_frame_fallback_cannot_restore_block_search() {
 }
 
 #[test]
-fn order_and_access_checks_cannot_restore_candidate_enumeration() {
+fn order_equality_and_access_checks_cannot_restore_candidate_enumeration() {
     for path in [
         "src/kernel/assumptions/condition_reasoning/order_paths.rs",
         "src/kernel/assumptions/condition_reasoning/overflow_intervals.rs",
+        "src/kernel/assumptions/condition_reasoning/decision.rs",
+        "src/kernel/assumptions/condition_reasoning/selected_conditions.rs",
     ] {
         assert!(
             boundary::check_source(path, "fn check(c: C) { c.condition_facts_with_side(t); }")
@@ -356,5 +358,42 @@ fn checked_provenance_cannot_restore_alias_bucket_search() {
     ] {
         let source = format!("fn {function}(c: C) {{ c.{method}(); }}");
         assert!(boundary::check_source("src/kernel/assumptions.rs", &source).is_err());
+    }
+}
+
+#[test]
+fn signed_interval_cannot_restore_order_chain_walks() {
+    for method in [
+        "upper_bounds_for_search",
+        "lower_bounds_for_search",
+        "chained_signed_constant_bound",
+        "exact_signed_order_bounds",
+        "exact_signed_order_bounds_for_key",
+    ] {
+        let source = format!("fn signed_interval(c: C) {{ c.{method}(t); }}");
+        assert!(
+            boundary::check_source(
+                "src/kernel/assumptions/condition_reasoning/overflow_intervals.rs",
+                &source
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn constant_equality_evidence_cannot_restore_bucket_enumeration() {
+    for (function, method) in [
+        ("signed_constant_evidence", "signed_order_bound_entries"),
+        ("indexed_exact_int32_constant", "exact_literal_sources"),
+    ] {
+        let source = format!("fn {function}(c: C) {{ c.{method}(t); }}");
+        assert!(
+            boundary::check_source(
+                "src/kernel/assumptions/condition_reasoning/decision.rs",
+                &source
+            )
+            .is_err()
+        );
     }
 }

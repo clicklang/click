@@ -297,3 +297,23 @@ common mechanism names belong to.
 - [Testing](testing.md): how to write a scaling test and measure deterministic
   work.
 - [Architecture](architecture.md) and [Kernel](kernel.md): the code layout.
+
+### Direct intervals and equality evidence
+
+Fast signed-interval checking reads maintained endpoint extrema and scalar-class
+summaries, then recurses only over the written expression. It does not walk a
+symbolic order component: derive and state an intermediate bound explicitly
+when a goal needs a chain. Contiguous written disequalities are maintained as
+excluded-value runs, so trimming interval endpoints takes indexed lookups.
+
+Constant-equality evidence selects numeric extrema and at most one unambiguous
+symbolic source per direction. Anchored memory equality checks exact membership
+or one singleton source per written endpoint, with the same memory-resolution
+and snapshot checks. Ambiguity declines; it does not enumerate the endpoint
+bucket. For a transported read's constant value, prove the current read equals
+the saved read first, then normalize using that equality and the saved value.
+This explicitly supplies the connection that an ambiguous constant endpoint
+bucket cannot choose. Build-time boundary checks reject the removed enumeration routes, and
+`condition_buckets` scaling regressions grow both related and unrelated state.
+These guarantees do not yet cover all arithmetic premise collectors; remaining
+audits are tracked in `roadmap/smart-tactics.md`.

@@ -231,11 +231,10 @@ fn equal_value_interval_queries_scale_with_delta_and_skip_unrelated_facts() {
     );
 }
 
-/// The chain walk reads the facts on the chain alone: its work grows
-/// linearly with the chain length and not at all with unrelated order
-/// facts, including unrelated chains.
+/// An implicit order chain is not searched. An explicit endpoint bound
+/// restores the interval without changing query cost as either component grows.
 #[test]
-fn order_chain_bound_work_is_linear_in_the_chain_and_flat_in_unrelated_facts() {
+fn order_chain_interval_requires_explicit_endpoint_bound() {
     let chain_context = |length: u64, unrelated: u64| {
         let mut assumptions = PureFactContext::new();
         for index in 0..unrelated {
@@ -268,26 +267,25 @@ fn order_chain_bound_work_is_linear_in_the_chain_and_flat_in_unrelated_facts() {
     let measure = |length: u64, unrelated: u64| {
         let (assumptions, start) = chain_context(length, unrelated);
         let (bound, work) = crate::instrumentation::measure_deterministic_work(|| {
-            assumptions.chained_signed_constant_bound(&start, true)
+            assumptions.signed_interval(&start)
         });
-        assert_eq!(bound, Some(999), "length {length}, unrelated {unrelated}");
-        work
-    };
-    let flat = [0, 4, 16, 64].map(|unrelated| measure(8, unrelated));
-    assert!(
-        flat.iter().all(|work| *work == flat[0]),
-        "chain walk work grew with unrelated facts: {flat:?}"
-    );
-    let by_length = [4, 8, 16, 32].map(|length| measure(length, 16));
-    for pair in by_length.windows(2) {
-        // Each link is filed at both endpoints, so doubling the chain at
-        // most doubles the entries read, plus a constant.
-        assert!(
-            pair[1] <= 2 * pair[0] + 4,
-            "chain walk work is not linear in the chain: {by_length:?}"
+        assert_eq!(bound, Some((0, i64::from(i32::MAX))));
+        let explicit = assumptions.assume_condition(
+            ConditionTerm::signed_less_than(start.clone(), Bitvector32Term::Constant(1000)),
+            true,
         );
-    }
-    assert!(by_length[3] > by_length[0], "{by_length:?}");
+        let (bound, explicit_work) =
+            crate::instrumentation::measure_deterministic_work(|| explicit.signed_interval(&start));
+        assert_eq!(bound, Some((0, 999)));
+        (work, explicit_work)
+    };
+    let samples = [8, 32, 128].map(|size| measure(size, size));
+    assert!(
+        samples
+            .iter()
+            .all(|work| work.0 <= samples[0].0 + 32 && work.1 <= samples[0].1 + 32),
+        "{samples:?}"
+    );
 }
 
 #[test]

@@ -9328,17 +9328,6 @@ impl ConditionMatchKey {
             Self::OverflowAdd(_, _) => 3,
         }
     }
-
-    /// The two `Bitvector32Term` sides, for the kinds that have them.
-    pub(super) fn bitvector_sides(&self) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
-        match self {
-            Self::Equal(left, right)
-            | Self::Order(_, left, right)
-            | Self::UnsignedOrder(_, left, right)
-            | Self::OverflowAdd(left, right) => Some((left, right)),
-            Self::OffsetEqual(_, _) => None,
-        }
-    }
 }
 
 /// The block and first symbolic atom (canonical) of a memory base; see
@@ -12668,14 +12657,6 @@ pub struct PureFactContext {
         ConditionTerm,
         crate::persistent::PersistentMap<ConditionTerm, bool>,
     >,
-    /// The keys of `condition_facts_by_sides`, filed under each of their
-    /// `Bitvector32Term` sides. A query reads the keys filed under one
-    /// side's spellings and keeps those whose other side spells the query's
-    /// other side, so it never forms every pair of the two sides' spellings.
-    pub(super) condition_match_keys_by_side: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<ConditionMatchKey, ()>,
-    >,
     /// The facts of `condition_facts_by_sides` with a side that is not an
     /// atom (a constant, or a variable that no load names): a load, a sum,
     /// a conditional. `condition_matches` can prove such a side equal to a
@@ -12760,6 +12741,7 @@ pub struct PureFactContext {
     /// `has_pointer_offset_snapshot_fact` checks.
     pub(super) pointer_offset_equalities_by_shape:
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<ConditionTerm>>,
+    pub(super) checked_scalar_facts: super::assumptions::checked_scalar_facts::CheckedScalarFacts,
     pub(super) checked_order_bounds: super::assumptions::checked_order_bounds::CheckedOrderBounds,
     pub(super) signed_order_bounds: crate::persistent::PersistentMap<
         Bitvector32Term,
